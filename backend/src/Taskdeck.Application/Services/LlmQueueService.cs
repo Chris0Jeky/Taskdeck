@@ -12,6 +12,7 @@ public class LlmQueueService : ILlmQueueService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
+    private readonly CaptureIntakeService _captureIntake;
 
     // ProcessNextRequestAsync claims the single oldest claimable non-capture request, so it only
     // needs the oldest N candidates — not the full Pending backlog. Bounds the claim-scan window
@@ -19,14 +20,25 @@ public class LlmQueueService : ILlmQueueService
     // "no pending requests" (the caller retries).
     private const int ClaimScanLimit = 100;
 
+    /// <summary>
+    /// <paramref name="captureStore"/> and <paramref name="contextFabricSettings"/> feed the canonical
+    /// <see cref="CaptureIntakeService"/>: a capture-shaped request enqueued through this service is
+    /// mirrored into the durable Capture aggregate exactly like one created through
+    /// <see cref="CaptureService"/> while <c>ContextFabric:DualWriteCaptures</c> is on (ADR-0065,
+    /// CF-01 #2255 — the enqueue path may not bypass the dual-write seam). Both default to null, which
+    /// leaves shipped behaviour unchanged.
+    /// </summary>
     public LlmQueueService(
         IUnitOfWork unitOfWork,
         IAuthorizationService authorizationService,
-        DevelopmentSandboxSettings? sandboxSettings = null)
+        DevelopmentSandboxSettings? sandboxSettings = null,
+        ICaptureStore? captureStore = null,
+        ContextFabricSettings? contextFabricSettings = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
+        _captureIntake = new CaptureIntakeService(captureStore, contextFabricSettings);
     }
 
     public async Task<Result<LlmRequestDto>> AddToQueueAsync(Guid userId, CreateLlmRequestDto dto)
@@ -59,6 +71,7 @@ public class LlmQueueService : ILlmQueueService
 
             var requestType = dto.RequestType;
             var payload = dto.Payload;
+            CapturePayloadV1? capturePayload = null;
             if (CaptureRequestContract.IsCaptureRequestType(requestType))
             {
                 var payloadResult = CaptureRequestContract.ParsePayload(payload, allowServerAttributionFields: false);
@@ -70,12 +83,22 @@ public class LlmQueueService : ILlmQueueService
                 // Normalize the type from the parsed payload's source, not the caller's string, so
                 // a transcript payload enqueued under the general capture type (or vice versa)
                 // still lands in the correct worker lane.
-                requestType = CaptureRequestContract.ResolveRequestTypeForSource(payloadResult.Value.Source);
-                payload = CaptureRequestContract.SerializePayload(payloadResult.Value);
+                capturePayload = payloadResult.Value;
+                requestType = CaptureRequestContract.ResolveRequestTypeForSource(capturePayload.Source);
+                payload = CaptureRequestContract.SerializePayload(capturePayload);
             }
 
             var request = new LlmRequest(userId, requestType, payload, dto.BoardId);
             await _unitOfWork.LlmQueue.AddAsync(request);
+
+            if (capturePayload is not null)
+            {
+                // Same canonical intake as CaptureService.CreateAsync: a capture enqueued here is
+                // mirrored (with its inline text asset) while dual-write is on, in the same unit of
+                // work as the queue row. No-op while the flag is off.
+                await _captureIntake.MirrorLegacyCaptureAsync(request, capturePayload, userId, dto.BoardId);
+            }
+
             await _unitOfWork.SaveChangesAsync();
 
             return Result.Success(MapToDto(request));

@@ -66,7 +66,7 @@
 | [0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md) | Custom Fields, Aggregates, and Threshold Rules | Accepted (maintainer ruling 2026-08-29, q-4 A, recorded on #2091) | 2026-08-26 |
 | [0063](ADR-0063-archived-board-card-write-protection.md) | Archived Boards Reject Card Writes Until Restored | Accepted (maintainer scope ruling on `#2080`, 2026-08-24) | 2026-08-26 |
 | [0064](ADR-0064-machine-paths-are-exact-lowercase.md) | Machine-Facing Paths Are Exact Lowercase; Non-Canonical Spellings Are 404 at Every Layer | Accepted (maintainer ruling 2026-08-30, v0.3 RC deck q-10 A, recorded on `#1992`) | 2026-08-30 |
-| [0065](ADR-0065-context-fabric-capture-representation-processing.md) | Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing | Accepted under delegation (maintainer's 2026-08-30 mandate; nine conditions ruled by the agent pass on `#2254`, revisable) | 2026-08-30 |
+| [0065](ADR-0065-context-fabric-capture-representation-processing.md) | Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing | Accepted (confirmed 2026-08-30 with amendments — rulings first made under the maintainer's delegation on `#2254`, then confirmed the same day after the external audit of PR `#2280`; `SourceAsset` foundation, three capture state axes, producer principal and requested/effective intent, Worker Protocol v1-alpha, `IBlobStore` reference semantics, v0.4 gates A–D, risk-based CF-22 gate — see the ADR's *Amendments* section) | 2026-08-30 |
 
 > Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
 > archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,

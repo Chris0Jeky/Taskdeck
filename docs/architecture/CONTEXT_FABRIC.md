@@ -3,10 +3,11 @@
 Last Updated: 2026-08-30
 
 **Authority:** ADR-0065 (`docs/decisions/ADR-0065-context-fabric-capture-representation-processing.md`),
-whose acceptance conditions were ruled under the maintainer's 2026-08-30 delegation on tracker CF-00
-(`#2254`). This page is the agent-facing map of the architecture: what is shipped, what the scaffold
-PR (`#2280`) adds, what each CF issue adds, and where the seams are. Shipped truth stays in
-`docs/STATUS.md`.
+Accepted — confirmed by the maintainer on 2026-08-30 with the amendments recorded in its *Amendments*
+section (tracker CF-00 `#2254`). This page is the agent-facing map of the architecture: what is
+shipped, what the scaffold PR (`#2280`) and the same-day reconciliation pass add, what each CF issue
+adds, and where the seams are. Shipped truth stays in `docs/STATUS.md`. The external audit that drove
+the reconciliation and its disposition: `docs/analysis/2026-08-30-context-fabric/AUDIT_RECONCILIATION.md`.
 
 ## 1. The invariant
 
@@ -19,29 +20,44 @@ Five concerns that the transcript wedge kept too close together are now separate
 
 | Concern | Object | Today (shipped) | Target |
 | --- | --- | --- | --- |
-| What entered | `Capture` + `SourceAsset` | `LlmRequest` row with a `CapturePayloadV1` JSON payload; `SourceArtefact` + `ArtefactBlob` | Durable `Capture` aggregate (scaffolded), `SourceArtefact` evolving into the source asset |
-| What Taskdeck derived | `Representation` (+ typed payloads) | `Transcript`, `ArtefactExtraction` | Header façade over both (CF-06), OCR/description payloads later |
+| What entered | `Capture` + `SourceAsset` | `LlmRequest` row with a `CapturePayloadV1` JSON payload; `SourceArtefact` + `ArtefactBlob` | Durable `Capture` aggregate holding immutable `SourceAsset`s (both scaffolded; typed/pasted text is an inline asset, `SourceArtefact` adapts behind `LegacyArtefactId`) |
+| What Taskdeck derived | `Representation` (+ typed payloads) | `Transcript`, `ArtefactExtraction` | Header façade over both (CF-06 — draft contract), OCR/description payloads later |
 | Where it belongs | `ContextBinding` | board required by `CaptureTriageService` and `ChatService` | Resolver at change-planning time (CF-09); boardless understanding |
 | What should change | `ChangeSet` = `AutomationProposal` | proposal operations, revisions, Preview == Apply | Unchanged; candidates compile into it (CF-08) |
-| Who allowed it | `AuthorityDecision` + receipt | explicit approve, explicit execute (review-first) | Same, plus a named policy for exactly one reversible class after evidence (CF-22) |
+| Who allowed it | `AuthorityDecision` + receipt | explicit approve, explicit execute (review-first) | Same, plus a named policy for exactly one reversible class after evidence (CF-22, stretch) |
 
-## 2. Code map (scaffold PR `#2280`, 2026-08-30)
+### Capture state is three axes, not one enum
+
+| Axis | Enum | Who writes it | Values |
+| --- | --- | --- | --- |
+| User disposition | `CaptureUserDisposition` | the person | Active · Kept · Archived (terminal; never erases outcomes) |
+| Processing summary | `CaptureProcessingSummary` | the CF-03 runner, from job/run records (a projection column) | Idle · Processing · Partial · Ready · Failed |
+| Action state | `CaptureActionState` | planning records — candidates, bindings, change sets, receipts (a projection column) | Unplanned · NeedsInput · NeedsReview · Acted |
+
+`Capture.Timeline` (`CaptureTimeline.Project`) is the one-line step the UI shows — *Received →
+Preparing → Understood → Needs input / Needs review → Acted*, with *Kept*, *Failed*, *Archived* as resting
+states. It is computed, never persisted as the only truth, so a kept, partially processed, already-acted
+capture loses nothing. `Partial` renders as *Understood* with the failed leg listed beneath it.
+
+## 2. Code map (scaffold PR `#2280` + reconciliation pass, 2026-08-30)
 
 | Layer | File | Role |
 | --- | --- | --- |
-| Domain | `Enums/CaptureModality.cs`, `CaptureOriginAdapter.cs`, `CaptureProducerKind.cs`, `CaptureIntentMode.cs` | The four independent capture dimensions (ADR-0065 §Decision 2) |
+| Domain | `Enums/CaptureModality.cs`, `CaptureOriginAdapter.cs`, `CaptureProducerKind.cs` (Human · Agent · Integration), `CaptureIntentMode.cs` | The capture dimensions (ADR-0065 §Decision 2, amended): modality is per asset (`PrimaryModality` is a list summary); import is an origin, not a producer; intent is requested vs effective |
 | Domain | `Enums/CaptureSourceMapping.cs` | Total forward mapping from the legacy `CaptureSource`; lossy reverse for compatibility readers; test enumerates the enum |
-| Domain | `Enums/CaptureLifecycleState.cs` (+ `CaptureLifecyclePolicy`) | User-legible capture timeline, independent of job state |
-| Domain | `Enums/RepresentationKind.cs`, `EvidenceAnchorKind.cs`, `SemanticCandidateKind.cs`, `SemanticCandidateState.cs`, `ProcessingJobState.cs`, `ProcessorExecutionMode.cs` | Vocabulary for CF-03/06/07/08 |
-| Domain | `Processing/ProcessingCapability.cs` | The capability vocabulary; manifests may declare only these |
-| Domain | `Entities/Capture.cs` | The durable aggregate; `FromQueueRequest` builds the ID-preserving mirror |
-| Application | `Interfaces/ICaptureStore.cs` | Persistence façade (implemented: `EfCaptureStore`) |
-| Application | `Interfaces/IRepresentationStore.cs`, `Interfaces/IBlobStore.cs` | Contracts fixed for CF-06 / CF-23; **no implementation registered yet** |
-| Application | `Processing/ProcessorManifest.cs`, `ProcessorManifestValidator.cs`, `Processing/Schemas/processor-manifest.v1.schema.json` | Processor self-description and its rules |
-| Application | `Processing/Protocol/WorkerProtocol.cs` | Taskdeck Worker Protocol v1 envelopes + structural validator (`docs/architecture/WORKER_PROTOCOL_V1.md`) |
-| Application | `Services/ContextFabricSettings.cs` (`ContextFabric:DualWriteCaptures`, default `false`) | Migration switches; `CaptureService` mirrors new captures when on |
-| Infrastructure | `Persistence/Configurations/CaptureConfiguration.cs`, migration `20260830034447_AddCaptureAggregate`, `Repositories/EfCaptureStore.cs` | The `Captures` table (empty on an unchanged install) |
-| Tests | `Domain.Tests/CaptureTests.cs`, `CaptureSourceMappingTests.cs`, `ProcessingCapabilityTests.cs`; `Application.Tests/Processing/*`, `Services/CaptureServiceDualWriteTests.cs`; `MigrationBootstrapTests` (table present) | Proving checks for the scaffold |
+| Domain | `Enums/CaptureUserDisposition.cs` (+ `CaptureUserDispositionMapping`), `CaptureProcessingSummary.cs`, `CaptureActionState.cs`, `CaptureTimeline.cs` | The three state axes and the timeline projection |
+| Domain | `Enums/RepresentationKind.cs`, `RepresentationQualityState.cs`, `EvidenceAnchorKind.cs`, `SemanticCandidateKind.cs`, `SemanticCandidateState.cs`, `ProcessingJobState.cs`, `ProcessorExecutionMode.cs`, `SourceAssetStorageKind.cs` | Vocabulary for CF-03/06/07/08/23 |
+| Domain | `Processing/ProcessingCapability.cs` | The capability vocabulary; `Externalizable` vs `InProcessOnly` (`context.resolve`, `change.plan`, `change.verify` never leave the process) |
+| Domain | `Entities/Capture.cs` | The durable aggregate: owner + `ProducedByPrincipalId`, `RequestedIntent` / `EffectiveIntent` / `IntentResolvedByRunId`, the three axes, `LegacySourceSnapshot`, up to 32 `SourceAssets`; `FromQueueRequest` builds the ID-preserving mirror |
+| Domain | `Entities/SourceAsset.cs`, `SourceAssetTextPayload.cs` | One immutable input: modality, media type, SHA-256, size, storage kind (`InlineText` · `Blob` · `ExternalReference` · `LegacyArtefact`); text kept verbatim in its own row |
+| Application | `Services/CaptureIntakeService.cs` | **The one writer** of the aggregate: mirrors a legacy queue row + its inline text asset while `ContextFabric:DualWriteCaptures` is on; called by `CaptureService.CreateAsync` and `LlmQueueService.AddToQueueAsync` |
+| Application | `Interfaces/ICaptureStore.cs` | Persistence façade (implemented: `EfCaptureStore`, aggregate-aware; `GetByIdForUserAsync` is owner-scoped, `ExistsAsync` is an id-only probe with no callers yet; set-based erasure) |
+| Application | `Interfaces/IRepresentationStore.cs`, `Interfaces/IBlobStore.cs` | **Draft** contracts for CF-06 / CF-23 — reference-semantics blob store; representation header with quality state and a migration-window nullable `CaptureId`; **no implementation registered** |
+| Application | `Processing/ProcessorManifest.cs`, `ProcessorManifestValidator.cs`, `Processing/Schemas/processor-manifest.v1.schema.json`, `whisperx-processor.example.json` | Processor self-description with per-capability `capabilityContracts`; strict kebab-case enums; schema + canonical example embedded and read by the tests |
+| Application | `Processing/Protocol/WorkerProtocol.cs` | Taskdeck Worker Protocol **v1-alpha** envelopes + structural validator (`docs/architecture/WORKER_PROTOCOL_V1.md`) |
+| Application | `Services/ContextFabricSettings.cs` (`ContextFabric:DualWriteCaptures`, default `false`) | Migration switches |
+| Infrastructure | `Persistence/Configurations/CaptureConfiguration.cs`, `SourceAssetConfiguration.cs`, `SourceAssetTextPayloadConfiguration.cs`; migrations `20260830034447_AddCaptureAggregate`, `20260830141427_ReconcileContextFabricScaffold`; `Repositories/EfCaptureStore.cs` | The `Captures`, `SourceAssets`, `SourceAssetTextPayloads` tables (empty on an unchanged install) |
+| Tests | `Domain.Tests/CaptureTests.cs`, `CaptureTimelineTests.cs`, `SourceAssetTests.cs`, `CaptureSourceMappingTests.cs`, `ProcessingCapabilityTests.cs`; `Application.Tests/Processing/*`, `Services/CaptureServiceDualWriteTests.cs`, `LlmQueueServiceDualWriteTests.cs`; `MigrationBootstrapTests` (tables present + `EfCaptureStore` round-trip on SQLite) | Proving checks |
 
 Unchanged and still authoritative: `CaptureRequestContract` and the queue lanes (ADR-0045), `Transcript`
 and `ProvenanceEvidenceLink` (ADR-0045 §7), `SourceArtefact` / `ArtefactExtraction` (ADR-0046),
@@ -54,53 +70,87 @@ and `ProvenanceEvidenceLink` (ADR-0045 §7), `SourceArtefact` / `ArtefactExtract
 `context.resolve`, `change.plan`, `change.verify`.
 
 Representation-producing capabilities (`ProcessingCapability.RepresentationProducing`) may never touch
-work state; `semantic.extract` produces candidates; `context.resolve` binds targets; `change.plan`
-compiles candidates into proposal operations; `change.verify` checks preconditions before execution.
+work state; `semantic.extract` produces a typed candidate batch; `context.resolve` binds targets;
+`change.plan` compiles candidates into proposal operations; `change.verify` checks preconditions before
+execution. **Externalizable** (may run in a sidecar or remote processor): everything up to and including
+`semantic.extract`. **In-process only:** `context.resolve`, `change.plan`, `change.verify` — plus
+authority evaluation and execution, which are not capabilities at all — because they need live domain
+state, permissions, policy and concurrency semantics. The manifest validator rejects a sidecar or remote
+manifest that declares an in-process capability.
 
-## 4. Policy families (independent by design)
+## 4. Policy families (independent by design, visibly distinct vocabularies)
 
 | Family | Controls | Presets | Issue |
 | --- | --- | --- | --- |
-| Processing profile | egress class, providers/regions, device use, quality vs latency, budgets, escalation, retention, vocabulary | Private · Balanced (default, one-time consent before any remote processor) · Controlled · Expert | CF-10 |
-| Authority profile | what may change, where, under which evidence and risk | exactly ADR-0057's Observe · Suggest · Assist · Operate · Autonomous · Custom — **none of it exists in code yet**: there is no authority profile, no `AuthorityDecision`, no `ExecutionReceipt`; review-first (explicit approve, explicit execute) is the only shipped policy | CF-22 (first slice, own gate) |
-| Presentation profile | how much machinery is visible | Flow · Guided (default for new users) · Control — replaces `guided / workbench / agent` (`#1972`) | CF-21 |
+| Processing profile | egress class, providers/regions, device use, quality vs latency, budgets, escalation, retention, vocabulary | Private · Balanced (default, one-time consent before any remote processor) · **Strict** (renamed from *Controlled* on 2026-08-30 so it cannot be confused with the *Control* presentation) · Expert | CF-10 |
+| Authority profile | what may change, where, under which evidence and risk | exactly ADR-0057's Observe · Suggest · Assist · Operate · Autonomous · Custom — **none of it exists in code yet**: there is no authority profile, no `AuthorityDecision`, no `ExecutionReceipt`; review-first (explicit approve, explicit execute) is the only shipped policy | CF-22 (stretch; own gate) |
+| Presentation profile | how much machinery is visible | Flow · Guided (default for new users) · Control — replaces `guided / workbench / agent` (`#1972`). Retiring the *Agent* **selector** (byte-identical to Workbench) retires nothing else: Agents, Runs, agent attribution and agent capabilities stay | CF-21 |
 
-## 5. Slices and issues
+## 5. Slices, issues, and the v0.4 gates
 
 | Slice | Issues | Milestone |
 | --- | --- | --- |
-| 0 ratify + measure | CF-00 `#2254` (v0.4); CF-24 `#2277` (v0.6 — the corpus needs the voice vertical's fixtures to exist first) | v0.4 / v0.6 |
-| 1 durable Capture | CF-01 `#2255`, CF-02 `#2256` | v0.4 |
-| 2 jobs and runs | CF-03 `#2257`, CF-05 `#2259` | v0.4 |
+| 0 ratify + measure | CF-00 `#2254`; **CF-24A** `#2319` corpus + benchmark command (v0.5, before CF-13/CF-15); **CF-24B** `#2277` runtime metrics + Control dashboard (v0.6) | v0.4 / v0.5 / v0.6 |
+| 1 durable Capture + SourceAsset | CF-01 `#2255` (builds on this reconciliation), CF-02 `#2256` | v0.4 |
+| 2 jobs and runs | CF-03 `#2257` (also defines the minimal `ProcessingPolicySnapshot` CF-14 needs), CF-05 `#2259` | v0.4 |
 | 3 representations + anchors | CF-06 `#2260`, CF-07 `#2261` | v0.4 |
-| storage seam | CF-23 `#2276` | v0.4 |
-| 4 candidates | CF-08 `#2262` | v0.5 |
-| 5 registry + routing | CF-04 `#2258` — pulled into **v0.4** because the ADR-0048 worker `#1429` (already v0.4) is its first sidecar; it is the one v0.4 item that is *not* behaviour-preserving (it launches supervised processes); CF-10 `#2264`, CF-11 `#2265`, CF-15 `#2269`, CF-18 `#2272`, GEN-03 `#1317` | v0.4 → v0.6 |
-| 6 Universal Capture + resolver + review | CF-09 `#2263`, CF-20 `#2273`, CF-21 `#2274` | v0.5 |
-| voice vertical | CF-12 `#2266`, CF-13 `#2267`, CF-14 `#2268`, CF-16 `#2270`, CF-17 `#2271` | v0.5 / v0.6 |
-| 7 delegated authority | CF-22 `#2275` | v0.6 (gated) |
+| storage seam | CF-23 `#2276` (reference semantics) | v0.4 |
+| 4 candidates | CF-08 `#2262` (umbrella — split into one-PR children before `Now`) | v0.5 |
+| 5 registry + routing | CF-04 `#2258` — v0.4 because the ADR-0048 worker `#1429` is its first sidecar; umbrella, split before `Now`; the protocol stays v1-alpha until PdfPig **and** WhisperX pass conformance; CF-10 `#2264`, CF-11 `#2265`, CF-15 `#2269`, CF-18 `#2272`, GEN-03 `#1317` | v0.4 → v0.6 |
+| 6 Universal Capture + resolver + review | CF-09 `#2263`, CF-20 `#2273` (umbrella; hosts CF-16's `VoiceCapturePanel`), CF-21 `#2274` | v0.5 |
+| voice vertical | CF-12 `#2266`, CF-13 `#2267` (fixtures from CF-24A `#2319`; the **accessible** route the v0.5 gate needs), CF-14 `#2268` (explicit per-run configuration, no CF-10 dependency), CF-16 `#2270` (reusable `useVoiceRecording` + `VoiceCapturePanel`), CF-17 `#2271` | v0.5 / v0.6 |
+| 7 delegated authority | CF-22 `#2275` — **stretch / blocked, release-blocker = false** | v0.6 |
 | 8 hosted scale | object-store `IBlobStore`, durable queue, GPU workers | v0.9, only on measured demand (ADR-0061 stage 3) |
 
-The first credible vertical: **CF-01 → CF-12 → CF-14 → CF-06/07 → existing triage → existing proposal
-compiler → CF-16** (voice note → time-anchored transcript → reviewable proposal → approve → apply →
-audio evidence playback).
+**The first credible vertical (valid order):**
+
+```text
+reconciliation pass (this) → CF-01 durable Capture + SourceAsset foundation
+    → { CF-02 dimensions · CF-03 jobs/runs · CF-23 blob store }
+    → { CF-04 worker host · CF-06 representations · CF-12 audio source }
+    → { CF-05 semantic.extract · CF-07 anchors }
+    → CF-14 WhisperX dogfood route and/or CF-13 lightweight user route
+    → CF-16 voice UX + audio evidence → existing proposal / review / apply
+```
+
+**v0.4 internal gates** (public registration last; milestone membership alone makes no child a release
+blocker):
+
+| Gate | Proves | Content |
+| --- | --- | --- |
+| A — Fabric persistence | the data model | Capture, SourceAsset, jobs/runs, representations, anchors, blob semantics (CF-01/02/03/06/07/23) |
+| B — Processor containment | the boundary | Worker Protocol proven with PdfPig through `#1429`; security and resource caps (CF-04) |
+| C — Trusted hosted instance | the operator | backup/restore, key custody, private users, operating runbook (ADR-0061 stage 1, `#1772`) |
+| D — Public hosted beta | strangers | untrusted-user threat model, registration, cost ceilings, incident path (`#2243`) |
+
+**v0.5 gate:** the first vertical live-verified **and** one speech route genuinely accessible to an
+ordinary user — CF-13's lightweight route one-click, downloaded-on-enable or bundled, or a consented
+managed route. WhisperX through a manually configured Python/CUDA environment is a dogfooding route,
+not the public "Speak" promise.
 
 ## 6. Rules an implementer must not break
 
-1. A capture is valid the moment its source is stored; no job failure may make it unreadable.
+1. A capture is valid the moment its source assets are stored; no job failure may make it unreadable,
+   and one failed asset never fails a capture whose other assets succeeded (`Partial`).
 2. Migrations are ID-preserving (`Capture.Id = LlmRequest.Id`); nothing renumbers.
-3. Processors have no mutation tools; content is data, never instructions (GEN-09 `#1323`).
-4. Router v1 is constraints + ordered preference + a persisted route receipt; no scoring before the
-   CF-24 corpus exists.
-5. Review-first stays the only shipped authority policy until CF-22 passes its own gate.
-6. Blobs stay in SQLite locally; object storage only under ADR-0061 stage 3.
-7. No new `CaptureSource` values, no new request-type lane predicates.
+3. Source assets are immutable; typed and pasted text is a `SourceAsset`, never job state and never
+   the capture's note. Derived normalised text is a representation.
+4. Capture state is three axes; the timeline is a projection. Never reintroduce a single lifecycle enum.
+5. Every capture creation path writes the aggregate through `CaptureIntakeService`.
+6. Processors have no mutation tools; content is data, never instructions (GEN-09 `#1323`); sidecars
+   and remote processors declare only externalizable capabilities.
+7. Router v1 is constraints + ordered preference + a persisted route receipt; no scoring before the
+   CF-24A corpus exists.
+8. Review-first stays the only shipped authority policy until CF-22 passes its own gate.
+9. Blobs stay in SQLite locally; a blob object is deleted only when its last reference is released;
+   object storage only under ADR-0061 stage 3.
+10. No new `CaptureSource` values, no new request-type lane predicates.
 
 ## 7. Verify
 
 ```text
-dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureTests|FullyQualifiedName~CaptureSourceMappingTests|FullyQualifiedName~ProcessingCapabilityTests"
-dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~Processing|FullyQualifiedName~CaptureService"
-dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~MigrationBootstrapTests"
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureTests|FullyQualifiedName~CaptureSourceMappingTests|FullyQualifiedName~ProcessingCapabilityTests|FullyQualifiedName~SourceAssetTests|FullyQualifiedName~CaptureTimelineTests"
+dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~Processing|FullyQualifiedName~CaptureService|FullyQualifiedName~LlmQueueService|FullyQualifiedName~AccountDeletion"
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~MigrationBootstrapTests|FullyQualifiedName~McpApplicationServiceRegistrationTests"
 dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1
 ```

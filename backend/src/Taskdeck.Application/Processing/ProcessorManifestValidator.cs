@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Taskdeck.Application.Processing.Protocol;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Processing;
 
@@ -12,10 +13,11 @@ public sealed record ProcessorManifestValidationResult(IReadOnlyList<string> Err
 /// <summary>
 /// Enforces the manifest rules of <c>processor-manifest.v1.schema.json</c> in code (shape, bounds,
 /// enumerations — unknown members are already rejected at parse time) plus the semantic rules a JSON
-/// schema cannot express (capability vocabulary, locality/network consistency). The schema file is
-/// the published contract; it is not evaluated at runtime. A manifest that fails here is rejected at
-/// registration (CF-04 conformance rule 1) so the router never has to reason about a processor whose
-/// declarations are inconsistent.
+/// schema cannot express (capability vocabulary, locality/network consistency, sidecars and remote
+/// processors limited to externalizable capabilities, one contract per declared capability). The
+/// schema file is the published contract; it is not evaluated at runtime. A manifest that fails here
+/// is rejected at registration (CF-04 conformance rule 1) so the router never has to reason about a
+/// processor whose declarations are inconsistent.
 /// </summary>
 public static class ProcessorManifestValidator
 {
@@ -26,13 +28,18 @@ public static class ProcessorManifestValidator
     public const int MaxLanguageLength = 20;
     public const int MaxFeatureLength = 80;
     public const int MaxHostLength = 255;
-    public const int MaxOutputSchemaLength = 200;
+    public const int MaxSchemaIdentifierLength = 200;
 
     private static readonly Regex IdPattern = new("^[a-z0-9]+(?:[._-][a-z0-9]+)*$", RegexOptions.Compiled);
     private static readonly Regex CurrencyPattern = new("^[A-Z]{3}$", RegexOptions.Compiled);
     private static readonly HashSet<string> DataClasses = new(StringComparer.Ordinal)
     {
         "text", "audio", "image", "document", "metadata"
+    };
+
+    private static readonly HashSet<string> OutputFamilies = new(StringComparer.Ordinal)
+    {
+        WorkerProtocol.OutputRepresentation, WorkerProtocol.OutputCandidateBatch, WorkerProtocol.OutputDiagnostic
     };
 
     public static ProcessorManifestValidationResult Validate(ProcessorManifest? manifest)
@@ -54,7 +61,7 @@ public static class ProcessorManifestValidator
         if (manifest.DisplayName is { Length: > MaxDisplayNameLength })
             errors.Add($"displayName: at most {MaxDisplayNameLength} chars");
 
-        ValidateCapabilities(manifest.Capabilities, errors);
+        ValidateCapabilities(manifest, errors);
 
         if (manifest.Execution is null || !Enum.IsDefined(manifest.Execution.Value))
             errors.Add("execution: required, one of in-process | sidecar | remote");
@@ -65,8 +72,8 @@ public static class ProcessorManifestValidator
         ValidateStringList(manifest.Accepts, "accepts", MaxAcceptLength, required: true, unique: false, errors);
         ValidateStringList(manifest.Languages, "languages", MaxLanguageLength, required: false, unique: false, errors);
         ValidateStringList(manifest.Features, "features", MaxFeatureLength, required: false, unique: true, errors);
-        ValidateStringList(manifest.OutputSchemas, "outputSchemas", MaxOutputSchemaLength, required: false, unique: false, errors);
 
+        ValidateCapabilityContracts(manifest, errors);
         ValidateResources(manifest.Resources, errors);
         ValidatePrivacy(manifest, errors);
         ValidateCostModel(manifest.CostModel, errors);
@@ -74,8 +81,9 @@ public static class ProcessorManifestValidator
         return new ProcessorManifestValidationResult(errors);
     }
 
-    private static void ValidateCapabilities(IReadOnlyList<string>? capabilities, List<string> errors)
+    private static void ValidateCapabilities(ProcessorManifest manifest, List<string> errors)
     {
+        var capabilities = manifest.Capabilities;
         if (capabilities is null || capabilities.Count == 0)
         {
             errors.Add("capabilities: at least one capability is required");
@@ -84,6 +92,7 @@ public static class ProcessorManifestValidator
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var reportedUnknown = new HashSet<string>(StringComparer.Ordinal);
+        var externalized = manifest.Execution is ProcessorExecutionMode.Sidecar or ProcessorExecutionMode.Remote;
         foreach (var capability in capabilities)
         {
             var value = capability ?? string.Empty;
@@ -93,8 +102,80 @@ public static class ProcessorManifestValidator
                 continue;
             }
 
-            if (!ProcessingCapability.IsKnown(value) && reportedUnknown.Add(value))
-                errors.Add($"capabilities: '{value}' is not a known capability");
+            if (!ProcessingCapability.IsKnown(value))
+            {
+                if (reportedUnknown.Add(value))
+                    errors.Add($"capabilities: '{value}' is not a known capability");
+                continue;
+            }
+
+            if (externalized && !ProcessingCapability.IsExternalizable(value))
+                errors.Add($"capabilities: '{value}' stays in-process (it reads live domain state and policy) and cannot be declared by a sidecar or remote processor");
+        }
+    }
+
+    private static void ValidateCapabilityContracts(ProcessorManifest manifest, List<string> errors)
+    {
+        var contracts = manifest.CapabilityContracts;
+        if (contracts is null || contracts.Count == 0)
+        {
+            errors.Add("capabilityContracts: one contract per declared capability is required");
+            return;
+        }
+
+        var declared = new HashSet<string>(manifest.Capabilities?.Where(capability => capability is not null) ?? Array.Empty<string>(), StringComparer.Ordinal);
+
+        foreach (var capability in declared)
+        {
+            if (!contracts.ContainsKey(capability))
+                errors.Add($"capabilityContracts: '{capability}' is declared without a contract");
+        }
+
+        foreach (var (capability, contract) in contracts)
+        {
+            var prefix = $"capabilityContracts['{capability}']";
+
+            if (!declared.Contains(capability))
+                errors.Add($"{prefix}: not a declared capability");
+
+            if (contract is null)
+            {
+                errors.Add($"{prefix}: must not be null");
+                continue;
+            }
+
+            if (contract.Outputs is null || contract.Outputs.Count == 0)
+            {
+                errors.Add($"{prefix}.outputs: at least one output family is required");
+            }
+            else
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var family in contract.Outputs)
+                {
+                    var value = family ?? string.Empty;
+                    if (!OutputFamilies.Contains(value))
+                        errors.Add($"{prefix}.outputs: '{value}' is not one of representation | candidate-batch | diagnostic");
+                    else if (!seen.Add(value))
+                        errors.Add($"{prefix}.outputs: '{value}' is declared twice");
+                }
+
+                if (seen.Count > 0 && !seen.Contains(WorkerProtocol.OutputRepresentation) && !seen.Contains(WorkerProtocol.OutputCandidateBatch))
+                    errors.Add($"{prefix}.outputs: a capability must emit representations or candidate batches, not diagnostics alone");
+
+                if (ProcessingCapability.IsKnown(capability))
+                {
+                    if (capability == ProcessingCapability.SemanticExtract && seen.Contains(WorkerProtocol.OutputRepresentation) && !seen.Contains(WorkerProtocol.OutputCandidateBatch))
+                        errors.Add($"{prefix}.outputs: semantic.extract emits candidate batches");
+                    if (capability != ProcessingCapability.SemanticExtract && seen.Contains(WorkerProtocol.OutputCandidateBatch))
+                        errors.Add($"{prefix}.outputs: only semantic.extract emits candidate batches");
+                }
+            }
+
+            ValidateStringList(contract.OutputSchemas, $"{prefix}.outputSchemas", MaxSchemaIdentifierLength, required: true, unique: true, errors);
+
+            if (contract.OptionsSchema is not null && (contract.OptionsSchema.Length == 0 || contract.OptionsSchema.Length > MaxSchemaIdentifierLength))
+                errors.Add($"{prefix}.optionsSchema: must be non-empty and at most {MaxSchemaIdentifierLength} chars");
         }
     }
 
@@ -212,7 +293,7 @@ public static class ProcessorManifestValidator
             return;
 
         if (costModel.Type is null || !Enum.IsDefined(costModel.Type.Value))
-            errors.Add("costModel.type: one of free-local | compute-time | per-minute | per-token | per-page | custom");
+            errors.Add("costModel.type: required when costModel is present, one of free-local | compute-time | per-minute | per-token | per-page | custom");
 
         if (costModel.Currency is not null && !CurrencyPattern.IsMatch(costModel.Currency))
             errors.Add("costModel.currency: must be a three-letter ISO code");

@@ -15,8 +15,7 @@ public class CaptureService : ICaptureService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
-    private readonly ICaptureStore? _captureStore;
-    private readonly ContextFabricSettings _contextFabricSettings;
+    private readonly CaptureIntakeService _captureIntake;
 
     public CaptureService(
         IUnitOfWork unitOfWork,
@@ -27,9 +26,10 @@ public class CaptureService : ICaptureService
 
     /// <summary>
     /// The container-resolved constructor. <paramref name="captureStore"/> receives the ID-preserving
-    /// mirror of every new capture while <see cref="ContextFabricSettings.DualWriteCaptures"/> is on
-    /// (ADR-0065 §Decision 1, CF-01 #2255); with the default settings, or without a store, the service
-    /// behaves exactly as before.
+    /// mirror of every new capture (with its inline text source asset) through the canonical
+    /// <see cref="CaptureIntakeService"/> while <see cref="ContextFabricSettings.DualWriteCaptures"/>
+    /// is on (ADR-0065 §Decision 1, CF-01 #2255); with the default settings, or without a store, the
+    /// service behaves exactly as before.
     /// </summary>
     public CaptureService(
         IUnitOfWork unitOfWork,
@@ -39,8 +39,7 @@ public class CaptureService : ICaptureService
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
-        _captureStore = captureStore;
-        _contextFabricSettings = contextFabricSettings ?? new ContextFabricSettings();
+        _captureIntake = new CaptureIntakeService(captureStore, contextFabricSettings);
     }
 
     public async Task<Result<CaptureItemDto>> CreateAsync(
@@ -97,27 +96,19 @@ public class CaptureService : ICaptureService
 
             await _unitOfWork.LlmQueue.AddAsync(request, cancellationToken);
 
-            if (_contextFabricSettings.DualWriteCaptures && _captureStore is not null)
-            {
-                // ADR-0065 §Decision 1 / CF-01 (#2255): mirror the new capture into the durable
-                // Capture aggregate under the queue row's own id, so the later backfill and the Inbox
-                // read switch are ID-preserving. Staged into the same unit of work as the queue row:
-                // both rows commit together or not at all. The queue row stays the source of truth
-                // for Inbox reads until CF-01 flips the read path. The producer dimension comes from
-                // CaptureSourceMapping (an Import source is an Import producer, an integration source
-                // an Integration producer); this seam does not know the principal kind beyond that,
-                // so it never overrides the mapping.
-                var mirror = Capture.FromQueueRequest(
-                    request.Id,
-                    userId,
-                    sourceResult.Value,
-                    dto.BoardId,
-                    payload.ClientCreatedAt,
-                    dto.TitleHint,
-                    intent: CaptureIntentMode.Organize,
-                    capturedAtServer: request.CreatedAt);
-                await _captureStore.AddAsync(mirror, cancellationToken);
-            }
+            // ADR-0065 §Decision 1 / CF-01 (#2255): the canonical intake mirrors the new capture into
+            // the durable Capture aggregate under the queue row's own id (with the text as an
+            // immutable source asset) while ContextFabric:DualWriteCaptures is on, staged into the
+            // same unit of work as the queue row so both commit together or not at all. The queue row
+            // stays the source of truth for Inbox reads until CF-01 flips the read path. This seam
+            // does not know the principal kind beyond what CaptureSourceMapping derives, so it never
+            // overrides the mapping's producer.
+            await _captureIntake.MirrorLegacyCaptureAsync(
+                request,
+                attributedPayload,
+                userId,
+                dto.BoardId,
+                cancellationToken: cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 

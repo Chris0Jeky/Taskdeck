@@ -18,6 +18,20 @@ public sealed class CaptureSourceMappingTests
         }
     }
 
+    [Theory]
+    [InlineData(CaptureSource.Import)]
+    [InlineData(CaptureSource.MarkdownImport)]
+    public void Resolve_ShouldMapImportSourcesToAHumanProducerOverTheImportOrigin(CaptureSource source)
+    {
+        // Importing is a transport a person performs, not a principal kind (ADR-0065 §Decision 2,
+        // amended 2026-08-30): there is no Import producer.
+        var dimensions = CaptureSourceMapping.Resolve(source);
+
+        dimensions.Producer.Should().Be(CaptureProducerKind.Human);
+        dimensions.Origin.Should().Be(CaptureOriginAdapter.Import);
+        Enum.GetNames<CaptureProducerKind>().Should().NotContain("Import");
+    }
+
     [Fact]
     public void Resolve_ShouldRejectUndefinedValues()
     {

@@ -92,7 +92,7 @@ Stable reference material belongs in topical subfolders.
   - includes `analysis/2026-02-23_testing-harness-synthesis.md` for testing-harness wave reconciliation (`#254` to `#260`).
   - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
   - includes `analysis/2026-07-10_revival_assessment.md` — the revive-vs-archive evidence base (7 code-review dimensions with adversarially verified claims + market research) behind ADR-0044 and `REVIVAL_PLAN.md`.
-  - includes `analysis/2026-08-30-context-fabric/` — the maintainer's Context Fabric planning pack as received (blueprint, worker-protocol proof of concept, manifest schema and example, issue seeds, diagram) plus `RECONCILIATION.md`, the pack-versus-repository verification and re-think behind ADR-0065, the CF-NN wave and the release ladder to v1.0.
+  - includes `analysis/2026-08-30-context-fabric/` — the maintainer's Context Fabric planning pack as received (blueprint, worker-protocol proof of concept, manifest schema and example, issue seeds, diagram) plus `RECONCILIATION.md`, the pack-versus-repository verification and re-think behind ADR-0065, the CF-NN wave and the release ladder to v1.0, and, from the same day, `EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md` (the external audit of PR #2280 as received) with `AUDIT_RECONCILIATION.md` (its disposition — what was accepted, amended, or declined, and where each landed).
 - `InReview/`
   - Human or in-review source packs awaiting extraction into canonical docs or issue waves.
 - `archive/`

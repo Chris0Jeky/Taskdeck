@@ -17,6 +17,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The published processor-manifest contract and its canonical example travel with the assembly
+         so tests and tooling read the shipped bytes, never a copy (ADR-0065 / CF-04). -->
+    <EmbeddedResource Include="Processing\Schemas\processor-manifest.v1.schema.json" LogicalName="Taskdeck.Application.Processing.Schemas.processor-manifest.v1.schema.json" />
+    <EmbeddedResource Include="Processing\Schemas\whisperx-processor.example.json" LogicalName="Taskdeck.Application.Processing.Schemas.whisperx-processor.example.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" />

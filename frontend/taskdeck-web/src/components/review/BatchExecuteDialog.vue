@@ -30,6 +30,7 @@ const dialogAnchor = ref<HTMLElement | null>(null)
 const doneButton = ref<HTMLButtonElement | null>(null)
 let dialogEl: HTMLElement | null = null
 let enterKeyHeld = false
+let activeKeyupListening = false
 
 function eventBelongsTo(button: HTMLButtonElement | null, event: KeyboardEvent): boolean {
   return event.target instanceof Node && button?.contains(event.target) === true
@@ -60,26 +61,33 @@ function onDialogKeydown(event: KeyboardEvent) {
   }
 }
 
-function onDialogKeyup(event: KeyboardEvent) {
+function onActiveDialogKeyup(event: KeyboardEvent) {
   if (event.key === 'Enter' && !event.isComposing) enterKeyHeld = false
 }
 
 function detachDialogKeyListeners() {
   dialogEl?.removeEventListener('keydown', onDialogKeydown)
-  dialogEl?.removeEventListener('keyup', onDialogKeyup)
+  if (activeKeyupListening) {
+    window.removeEventListener('keyup', onActiveDialogKeyup, true)
+    activeKeyupListening = false
+  }
   dialogEl = null
   enterKeyHeld = false
 }
 
 // The status node exists in both dialog phases, so its closest dialog remains
-// stable while Confirm is replaced by the receipt view and Done button.
-watch(dialogAnchor, (anchor) => {
+// stable while Confirm is replaced by the receipt view and Done button. Keyup
+// is captured at window because disabling Confirm can move focus to body before
+// the physical Enter release. The global listener lives only with this open
+// dialog anchor and is detached before any replacement is attached.
+watch([() => props.open, dialogAnchor], ([isOpen, anchor]) => {
   detachDialogKeyListeners()
-  if (!anchor) return
+  if (!isOpen || !anchor) return
   dialogEl = anchor.closest<HTMLElement>('.td-dialog')
   if (!dialogEl) return
   dialogEl.addEventListener('keydown', onDialogKeydown)
-  dialogEl.addEventListener('keyup', onDialogKeyup)
+  window.addEventListener('keyup', onActiveDialogKeyup, true)
+  activeKeyupListening = true
 })
 
 onUnmounted(detachDialogKeyListeners)
