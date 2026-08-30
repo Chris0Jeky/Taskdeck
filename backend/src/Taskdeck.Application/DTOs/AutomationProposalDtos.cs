@@ -107,7 +107,13 @@ public enum BatchExecuteOutcome
     /// <summary>The proposal was already Applied before this call (idempotent replay); nothing was written.</summary>
     Skipped = 1,
 
-    /// <summary>This item failed. <c>ErrorCode</c> carries the same code single execute would have returned.</summary>
+    /// <summary>
+    /// This item failed; <c>ErrorCode</c> carries the reason. Mostly the same code single execute
+    /// would have returned, but NOT always: a proposal the caller cannot see reports
+    /// <c>NotFound</c> here where single execute answers <c>Forbidden</c> (so a batch cannot
+    /// enumerate other people's proposals), and <c>Conflict</c> from the approved-revision echo has
+    /// no single-execute counterpart at all, since that endpoint takes no pin.
+    /// </summary>
     Failed = 2,
 }
 

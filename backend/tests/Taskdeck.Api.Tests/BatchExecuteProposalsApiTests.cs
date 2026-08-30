@@ -212,8 +212,11 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
             "/api/automation/proposals/execute",
             new ExecuteProposalsRequest { Proposals = [Select(ownersProposal)] });
 
-        // 404, matching what single execute answers for an id the caller cannot see. Answering 403
-        // would re-leak precisely what the per-item rows were changed to hide: that the id is real.
+        // 404. This is deliberately NOT what single execute answers for the same proposal - that
+        // returns 403 - and the difference is the point: answering 403 here would re-leak precisely
+        // what the per-item rows were changed to hide, that the id is real. Single execute keeps its
+        // 403 because it carries one id per request; only the 500-per-request amplification was
+        // closed, not the underlying distinction.
         real.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var invented = await strangerClient.PostAsJsonAsync(

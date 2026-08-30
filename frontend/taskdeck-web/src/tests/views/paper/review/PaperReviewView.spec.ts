@@ -533,6 +533,38 @@ describe('PaperReviewView', () => {
     expect(mocks.dismissProposals).not.toHaveBeenCalled()
   })
 
+  it('force-closes an open apply-approved dialog when archived history activates', async () => {
+    // The withholding test above mounts each mode separately, so it can only prove the affordance
+    // is absent on a fresh archived mount. It cannot see the transition: a reviewer who already has
+    // the confirmation open when the surface flips to read-only history would otherwise be left
+    // holding a dialog whose confirm button performs a board write the mode forbids. Only a flip on
+    // the SAME instance exercises the watcher that closes it.
+    const createCardOp = {
+      ...makeProposal().operations[0],
+      actionType: 'create',
+      targetType: 'card',
+    }
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'approved-1', status: 'Approved', summary: 'Approved one', operations: [createCardOp] }),
+        makeProposal({ id: 'approved-2', status: 'Approved', summary: 'Approved two', operations: [createCardOp] }),
+      ],
+      '/workspace/review',
+    )
+
+    await wrapper.get('[data-testid="queue-batch-execute"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="batch-execute-dialog"]')).not.toBeNull()
+
+    await wrapper.vm.$router.push('/workspace/review?history=archived')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-view"]').attributes('data-history-mode')).toBe('archived')
+    expect(document.body.querySelector('[data-testid="batch-execute-dialog"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="batch-execute-confirm"]')).toBeNull()
+    expect(mocks.executeProposals).not.toHaveBeenCalled()
+  })
+
   it('withholds the apply-approved batch action in archived history', async () => {
     // Archived history is read-only, and Apply-approved is a board write. Offering it here would
     // advertise a mutation the mode forbids - the same reason the decision rail and the bulk

@@ -156,8 +156,10 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
         // efficient oracle otherwise: 500 guessed ids in one request would separate "exists but is
         // not yours" from "does not exist" in a single round trip, enumerating other people's
         // proposals. So an item on a board the caller cannot even read is reported exactly as a
-        // missing one - same code, same message, no timing difference worth the name, since neither
-        // reaches the executor. Forbidden is reserved for a board the caller CAN read: they already
+        // missing one - same code, same message, and neither reaches the executor. Response TIMING
+        // was not measured: the two paths do differ in work done (a resolved proposal has been read
+        // from the store, an unknown id has not), so a timing side channel is not ruled out here.
+        // Forbidden is reserved for a board the caller CAN read: they already
         // know that proposal exists, so naming the real reason discloses nothing and telling them
         // "not found" about a row on a board in front of them would be a lie.
         if (proposal.BoardId is Guid boardId)

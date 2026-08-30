@@ -412,9 +412,15 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     /// Deliberately NOT all-or-none, and deliberately never 207: a syntactically valid request
     /// returns 200 with one outcome row per requested proposal. Partial success is the contract, so
     /// a failing item - including one the caller may not execute - isolates to its own
-    /// <c>Failed</c> row rather than rejecting the whole request. The one exception is a request in
-    /// which EVERY item failed authorization: that is indistinguishable in intent from a forbidden
-    /// request, so it is reported as a whole-request 403.
+    /// <c>Failed</c> row rather than rejecting the whole request.
+    /// </para>
+    /// <para>
+    /// The one exception is a request in which NOTHING was executable, which collapses to a single
+    /// status: every row <c>NotFound</c> gives 404 (an inaccessible proposal is reported exactly as
+    /// a missing one, so the batch cannot be used to enumerate other people's proposals), and every
+    /// row <c>Forbidden</c> gives 403 (only reachable for boards the caller can already read).
+    /// Anything mixed stays 200. Note this differs from single execute, which answers 403 where
+    /// this endpoint answers 404; see the collapse block below for why that gap is deliberate.
     /// </para>
     /// <para>
     /// Idempotency is per item and works exactly as single execute's does: the key is carried into
@@ -509,9 +515,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!result.IsSuccess)
             return result.ToErrorActionResult();
 
-        // A request in which NOTHING was executable is not a partial success worth 200. It collapses
-        // to the status single execute would have returned for the same one proposal, which keeps
-        // the batch from becoming a status oracle its single-proposal sibling is not:
+        // A request in which NOTHING was executable is not a partial success worth 200:
         //
         //   every item NotFound  -> 404. Covers missing proposals AND ones the caller cannot see,
         //                           which the service has already made indistinguishable; answering
@@ -521,6 +525,16 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         //                           existence is not news.
         //
         // Anything mixed stays 200 with per-item rows: some work was attempted.
+        //
+        // This is NOT parity with single execute, and does not claim to be. Measured on this head:
+        // single execute answers 403 for a proposal on a board the caller cannot read, and 403 for
+        // a foreign board-less proposal (AuthorizeProposalAsync -> EnsureBoardPermissionAsync,
+        // AuthenticatedControllerBase). Batch deliberately answers 404 for the same cases, which is
+        // strictly less leaky. Single execute's own 403-vs-404 distinction is left exactly as it
+        // was: it carries one id per request, so it is a one-bit oracle a caller could already
+        // build by hand. What this endpoint closed is the AMPLIFICATION - 500 ids per round trip -
+        // not the underlying distinction. Narrowing single execute to match is a separate decision
+        // with its own compatibility question, and is deliberately not taken here.
         var results = result.Value.Results;
         if (results.Count > 0 && results.All(item => item.Outcome == BatchExecuteOutcome.Failed))
         {
