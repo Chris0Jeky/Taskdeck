@@ -21,8 +21,8 @@
 #
 #   smart-ci-shadow.yml      Smart CI control plane in OBSERVATION mode (ADR-0066, CI-02 #2326)
 #     ├── Smart CI / Plan                     base-ref planner on pull_request_target (read-only, no head code)
-#     ├── Smart CI / Planner Self-Test        head-side planner/gate/pin tests on pull_request (R4 control lane)
 #     └── Smart CI / Required Gate            stable context; shadow until CI-03 #2327 registers it — changes NO job selection here
+#   smart-ci-self-test.yml   Smart CI / Planner Self-Test — head-side planner/gate/pin tests on pull_request (R4 control lane)
 #
 #   ci-extended.yml          optional PR lane (label/path/manual dispatch)
 #     ├── actionlint workflow lint

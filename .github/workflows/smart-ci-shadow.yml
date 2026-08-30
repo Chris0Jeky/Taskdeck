@@ -10,8 +10,11 @@
 #                         checked-out tooling come from the PR's BASE commit, so a PR
 #                         cannot loosen the policy that plans it; the changed-file list
 #                         comes from the API (metadata only).
-#   self-test             runs on `pull_request` — the head's own planner/gate/pin
-#                         tests: this is the R4 hosted-control lane for control changes.
+#   Smart CI / Planner Self-Test lives in smart-ci-self-test.yml on `pull_request` — the
+#                         head's own planner/gate/pin tests (the R4 hosted-control lane). It is a
+#                         separate workflow on purpose: a job named like the gate must never be
+#                         created by a `pull_request` run, because a skipped job counts as
+#                         successful for branch protection.
 #
 # `Smart CI / Required Gate` is the stable check context CI-03 #2327 will register in
 # branch protection once >=20 PRs have run without a false red. Until then a red gate
@@ -32,14 +35,13 @@ on:
       - ready_for_review
       - labeled
       - unlabeled
-  pull_request:
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: smart-ci-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  group: smart-ci-control-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
@@ -48,7 +50,6 @@ env:
 jobs:
   plan:
     name: Smart CI / Plan
-    if: ${{ github.event_name == 'pull_request_target' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -115,31 +116,9 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
-  self-test:
-    name: Smart CI / Planner Self-Test
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Planner, gate and pin-inventory self-tests
-        run: node --test scripts/ci/smart-ci/*.test.mjs
-
-      - name: External action pin inventory (report only until CI-11 completes the migration)
-        run: node scripts/ci/smart-ci/action-pins.mjs --markdown "$GITHUB_STEP_SUMMARY"
-
   required-gate:
     name: Smart CI / Required Gate
-    if: ${{ always() && github.event_name == 'pull_request_target' }}
+    if: ${{ always() }}
     needs:
       - plan
     runs-on: ubuntu-latest
