@@ -97,6 +97,19 @@ const columnWidthStyle = computed(() => ({
   flex: `0 0 ${responsiveColumnWidth.value}`,
   width: responsiveColumnWidth.value,
 }))
+/*
+ * Phone lanes stack vertically (see the `max-width: 640px` block below), which
+ * makes each lane wrapper a cross-axis flex item of an `align-items: flex-start`
+ * column rail — i.e. shrink-to-fit. `.paper-board-column` carries
+ * `container-type: inline-size`, and inline-size containment makes an element
+ * contribute nothing to its own intrinsic width, so a shrink-to-fit ancestor
+ * collapses the lane to padding width and zero-sizes the absolutely positioned
+ * card opener (#2232). Giving the wrapper a definite width at phone mode keeps
+ * the column's own `width: 100%` resolvable and the opener clickable.
+ */
+const laneStyle = computed(() => viewportMode.value === 'phone'
+  ? { width: '100%' }
+  : {})
 const cardPresentation = computed(() => viewportMode.value === 'desktop' ? 'inspector' : 'modal')
 const discardDialogOpen = computed(() => Boolean(pendingCard.value || pendingNavigation.value))
 const discardDialogDescription = computed(() => pendingCard.value
@@ -806,6 +819,7 @@ async function addStarterColumns() {
           v-for="(column, idx) in sortedColumns"
           :key="column.id"
           class="paper-board-view__lane"
+          :style="laneStyle"
           :data-column-dnd-id="column.id"
           :class="{
             'paper-board-view__lane--dragging': draggedColumn?.id === column.id,
@@ -1255,6 +1269,9 @@ async function addStarterColumns() {
   }
   .paper-board-view__lanes:not(.paper-board-view__lanes--snap) .paper-board-view__lane {
     display: block;
+    /* Definite cross-axis size — see `laneStyle` (#2232). Without it the lane
+     * shrink-to-fits around an inline-size-contained column and collapses. */
+    width: 100%;
   }
 }
 

@@ -178,7 +178,7 @@ unverified.
 | Tampered or spoofed download | SHA-256 file plus a custom provenance record, built from a pinned checkout; **no Authenticode signature, no user-grade installer, no release SBOM, no GitHub attestation** | **partial — `#1167` wave (`#2148`–`#2152`)**, `RELEASE_TRUST_AND_DISTRIBUTION.md` "Current truth" |
 | Tampered or substituted **container image** | `release-container.yml` publishes the GHCR image on `v*` tags under `{{version}}`, `{{major}}.{{minor}}` and `latest` (`.github/workflows/release-container.yml:92-96`) via `docker/build-push-action@v7` with **no checksum sidecar, no cosign signature and no `provenance` or `sbom` attestation** (`:98-110`) — the registry addresses it by digest, but nothing signs or attests it | **open** — the `#1167` wave (`#2148`–`#2152`) is scoped to *file* artefacts; container signing and attestation are not covered by it |
 | A mutable tag is repointed under a running operator | None in-product. The operator mitigation is **digest pinning**: deploy the `@sha256:` digest form rather than `:latest` or `:0.2`, record the digest, and re-pin deliberately at upgrade time | **partial (operator procedure)** |
-| `latest` follows a prerelease | Measured at this branch's HEAD, `latest` is enabled for **every** `v*` tag, prereleases included (`.github/workflows/release-container.yml:95`), so a `v0.3.0-rc.1` tag would move `latest` onto a release candidate | **open — `#2217`**. PR `#2223` is the in-flight fix that keeps `latest` off prereleases; it is **not present at this branch's merge base** (`d9adf8705`), so this row states what the branch can verify, not the post-merge state |
+| `latest` follows a prerelease | **Closed by PR `#2223` (merged 2026-08-29, `ecc02a6ae`):** `release-container.yml` gates `latest` and `{{major}}.{{minor}}` on `!contains(github.ref_name, '-')`, so `v0.3.0-rc.1` publishes only `0.3.0-rc.1`, and `release-desktop.yml` flags the GitHub Release as a prerelease from draft creation through publish. Rehearsals cannot exercise the publish job; the first real prerelease tag is the proof | **shipped — verification pending** until the first real prerelease tag (`v0.3.0-rc.1`) publishes and the `:latest` digest is shown unchanged |
 
 ## 5. Residual risks for the beta — the honest list
 
@@ -201,7 +201,7 @@ unverified.
    firewall the origin and keep `/health/ready` off the public perimeter (§6.2).
 7. **Artefacts are unsigned**, with no SBOM or attestation; users must verify a SHA-256 by hand and
    click through a SmartScreen warning. **The GHCR image is worse off than the file artefacts** — it
-   has no checksum sidecar at all, and `latest` currently follows prereleases (`#2217`). Pin by
+   has no checksum sidecar at all (`latest` no longer follows prereleases since PR `#2223`). Pin by
    digest.
 8. **Plain HTTP is a documented supported posture** for LAN testing, and the JWT travels over it.
 9. **Cross-user isolation is asserted but not adversarially proven at beta scale** — no third-party

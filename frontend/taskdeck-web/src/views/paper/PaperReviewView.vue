@@ -31,7 +31,11 @@ import {
   normalizeProposalStatus,
   sortProposalsByRisk,
 } from '../../utils/automation'
-import { proposalIdsEqual } from '../../utils/proposalIdentity'
+import {
+  proposalIdsEqual,
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { useRoute } from 'vue-router'
@@ -285,6 +289,21 @@ function preferredActiveProposalId(proposals: readonly ApiProposal[]): string | 
   )
 }
 
+/**
+ * Set when a background queue poll dropped the proposal the reviewer was on
+ * (#2215 A).
+ *
+ * Another session settling or withdrawing the active proposal used to slide the
+ * selection onto the next pending row: `ReviewMain` is keyed on the proposal id,
+ * so it was re-created and focus dropped out of the decision controls, while the
+ * window-level review keymap stayed enabled for the newly selected record. The
+ * next ⏎ / ⌫ / D / E therefore decided a proposal the reviewer never chose.
+ *
+ * While this holds an id the surface renders an explicit notice instead, with
+ * `activeProposal` null — which is also what disables the keymap.
+ */
+const activeProposalSettledElsewhere = ref<string | null>(null)
+
 const activeProposal = computed<ApiProposal | null>(() => {
   // A valid deep link names one exact proposal; it is never a hint to fall back
   // to the first actionable row. Match case-insensitively, but return the
@@ -298,6 +317,11 @@ const activeProposal = computed<ApiProposal | null>(() => {
       ) ?? null
     )
   }
+  // A poll removed the row under the reviewer. Hold the surface on the notice
+  // rather than promoting whatever sorted into its place (#2215 A). Ranked
+  // below the deep link because a hash names one exact proposal explicitly, and
+  // a poll cannot evict a hash target anyway — `refreshProposals` pins it.
+  if (activeProposalSettledElsewhere.value) return null
   // Queue filters intentionally remove decided rows. Keep the exact item at
   // the decision locus instead of falling through to an unrelated proposal.
   if (decisionReceipt.value) {
@@ -342,15 +366,75 @@ function recordDecisionReceipt(proposalId: string, kind: DecisionReceipt) {
   explicitActiveId.value = proposalId
 }
 
+/**
+ * Armed for exactly one selection change by a landed background poll (#2215 A).
+ *
+ * A poll is the only thing that moves the queue without the reviewer asking, so
+ * an active-proposal change observed while this is armed is by definition not
+ * one they made. It is disarmed by the first firing of the watcher below, and —
+ * for the case where the selection did NOT change and that watcher never runs —
+ * on the tick after the flush the queue assignment scheduled.
+ */
+let queueReplacedByPoll = false
+
+function onQueueReplacedByPoll() {
+  queueReplacedByPoll = true
+  void nextTick(() => {
+    queueReplacedByPoll = false
+  })
+}
+
 watch(
   () => activeProposal.value?.id,
-  (id) => {
+  (id, previousId) => {
+    const replacedByPoll = queueReplacedByPoll
+    // Disarm before anything else: setting the notice below makes
+    // `activeProposal` null, which re-triggers this same watcher, and a second
+    // firing must not overwrite the recorded id with the fallback row's.
+    queueReplacedByPoll = false
+    if (replacedByPoll && previousId && !proposalIdsEqual(id, previousId)) {
+      activeProposalSettledElsewhere.value = previousId
+      return
+    }
     if (id && !explicitActiveId.value) {
       // sync explicit id so subsequent action results stay anchored
       explicitActiveId.value = id
     }
   },
 )
+
+const settledElsewhereReturnRef = ref<HTMLButtonElement | null>(null)
+
+/**
+ * The notice replaces the whole decision column, so focus would otherwise land
+ * on `<body>` with nothing announced. Move it to the notice's own control: that
+ * is both the safe target the reviewer's next keystroke acts on and what makes
+ * assistive tech read the notice out.
+ */
+watch(activeProposalSettledElsewhere, (id) => {
+  if (!id) return
+  void nextTick(() => {
+    settledElsewhereReturnRef.value?.focus?.()
+  })
+})
+
+/**
+ * Leave the notice deliberately: drop the pin AND the stale explicit selection
+ * so the ordinary "first pending row" default resumes.
+ *
+ * It also re-reads the queue explicitly, because the notice states only that
+ * the row LEFT the queue — a single poll answer does not prove it was decided.
+ * The list endpoint omits a PendingReview proposal whose `deferredUntil` is in
+ * the future and is capped at 200 rows, so an authoritative read (which
+ * `loadProposals` is, and which also re-runs `openProposalFromHash`) is the
+ * honest way to find out what is actually there now (#2215 review round 1).
+ */
+function dismissSettledElsewhereNotice() {
+  activeProposalSettledElsewhere.value = null
+  explicitActiveId.value = null
+  decisionReceipt.value = null
+  void loadProposals()
+}
 
 watch(
   hashProposalId,
@@ -360,7 +444,11 @@ watch(
       (proposal) =>
         proposalIdsEqual(proposal.id, id) && matchesActiveBoardFilter(proposal.boardId),
     )
-    if (target) explicitActiveId.value = target.id
+    if (target) {
+      explicitActiveId.value = target.id
+      // A deep link names one exact proposal; it outranks the #2215 A notice.
+      activeProposalSettledElsewhere.value = null
+    }
   },
   { immediate: true },
 )
@@ -440,13 +528,29 @@ function scrollDiffIntoView() {
 
 // Clear the preview whenever the active proposal changes so a diff loaded
 // for one proposal never leaks onto the next (mirrors legacy behaviour).
+// #2215 B: the pane is keyed on the proposal AND its latest revision. Keying it
+// on the id alone left a diff on screen that had been computed for the PREVIOUS
+// revision once a poll brought in a revision another reviewer had saved — while
+// Approve pins, and Apply executes, whatever the server holds latest. Dropping
+// the pane is the honest answer: re-opening it fetches the revision-aware diff.
 watch(
-  () => activeProposal.value?.id ?? null,
-  (id) => {
-    if (previewDiffProposalId.value && !proposalIdsEqual(previewDiffProposalId.value, id)) {
-      latestDiffRequestId += 1
-      clearPreviewDiff()
-    }
+  () => [activeProposal.value?.id ?? null, proposalRevisionIdentity(activeProposal.value)] as const,
+  (current, previous) => {
+    if (!previewDiffProposalId.value) return
+    const [id, revisionId] = current
+    const [previousId, previousRevisionId] = previous ?? [null, null]
+    const proposalChanged = !proposalIdsEqual(previewDiffProposalId.value, id)
+    // Round 2: the key is the EFFECTIVE revision, and only a genuine move
+    // counts. `latestRevisionId` is nulled on the wire the moment a proposal
+    // leaves PendingReview, so approving a revised proposal used to read as a
+    // collaborator revision change and wiped the reviewer's own open diff —
+    // and, running before the read-only conversion watcher, it wiped the pane
+    // rather than letting it convert to the decision-time presentation.
+    const revisionChanged =
+      proposalIdsEqual(previousId, id) && proposalRevisionMoved(previousRevisionId, revisionId)
+    if (!proposalChanged && !revisionChanged) return
+    latestDiffRequestId += 1
+    clearPreviewDiff()
   },
 )
 
@@ -508,6 +612,8 @@ watch(isArchivedHistory, (readOnly) => {
 
 watch(activeBoardFilter, () => {
   clearBatchSelection()
+  // A new board scope is a new queue; the notice describes the old one.
+  activeProposalSettledElsewhere.value = null
 })
 
 const revisionBadge = computed(() =>
@@ -1603,7 +1709,7 @@ onMounted(() => {
   // per-board and silent on proposals -- so a bounded, visibility-aware poll is
   // what keeps an open Review page from showing "Nothing waiting" while a
   // proposal sits pending server-side (#2194).
-  startQueueRefresh(canRefreshQueue)
+  startQueueRefresh(canRefreshQueue, { onQueueReplaced: onQueueReplacedByPoll })
   // Membership has no realtime event to subscribe to (the only hub is
   // per-board and silent on access grants), so the composable reads it once
   // here and refreshes on tab re-entry. See useWorkspaceCollaboration.
@@ -1618,6 +1724,8 @@ onUnmounted(() => {
 })
 
 function selectProposal(id: string) {
+  // An explicit choice supersedes the #2215 A notice.
+  activeProposalSettledElsewhere.value = null
   decisionReceipt.value = null
   explicitActiveId.value = id
   openProposal(id)
@@ -1630,6 +1738,7 @@ function returnToReview() {
 
 function onQueueFilterChange(filter: QueueFilter) {
   clearBatchSelection()
+  activeProposalSettledElsewhere.value = null
   // A receipt is authoritative until the reviewer explicitly selects another
   // proposal. In particular, a filter must not rewrite a deep link to a
   // fallback row after the linked proposal has just been decided. #1940
@@ -1878,6 +1987,24 @@ async function onClearBoardScope() {
           {{ $t('review.empty.accessRevoked.title') }}
         </h2>
         <p class="tk-lede">{{ $t('review.empty.accessRevoked.body') }}</p>
+      </template>
+      <template v-else-if="activeProposalSettledElsewhere">
+        <div class="tk-eyebrow">{{ $t('review.empty.settledElsewhere.eyebrow') }}</div>
+        <h2 class="tk-h2" data-testid="paper-review-settled-elsewhere">
+          {{ $t('review.empty.settledElsewhere.title') }}
+        </h2>
+        <p class="tk-lede" role="status" aria-live="polite">
+          {{ $t('review.empty.settledElsewhere.body') }}
+        </p>
+        <button
+          ref="settledElsewhereReturnRef"
+          type="button"
+          class="paper-review-deep__clear-scope"
+          data-testid="paper-review-settled-elsewhere-return"
+          @click="dismissSettledElsewhereNotice"
+        >
+          {{ $t('review.empty.settledElsewhere.return') }}
+        </button>
       </template>
       <template v-else-if="unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>

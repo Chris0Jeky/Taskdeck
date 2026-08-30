@@ -630,4 +630,97 @@ describe('useReviewActions', () => {
 
     expect(loadProposals).toHaveBeenCalled()
   })
+  // #2215 B — the open diff pane is keyed on the proposal AND its revision.
+
+  it('closes an open diff when a queue refresh brings a newer revision (#2215 B)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // Another reviewer saves a revision; the queue read brings the new
+    // latestRevisionId. The pane on screen was computed for the previous one,
+    // while Approve pins and Apply executes the server's latest.
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-2' } as Partial<ApiProposal>)]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(actions.selectedDiff.value).toBeNull()
+    expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
+  it('keeps an open diff when a revised proposal is approved (#2215 round 2)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // The backend nulls `latestRevisionId` for every non-PendingReview status
+    // and pins the approved revision instead; that is not a revision change.
+    proposals.value = [
+      makeProposal({
+        status: 'Approved',
+        latestRevisionId: null,
+        approvedRevisionId: 'rev-1',
+      } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
+  })
+
+  it('converts rather than wipes an open diff when a revised proposal is rejected (#2215 round 2)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    vi.mocked(automationApi.getProposal).mockResolvedValue(makeProposal())
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffMode.value).toBe('live')
+
+    // Reject pins nothing, so the effective identity legitimately goes to null.
+    // The pane must reach the read-only stored presentation (#1397 LOW-5), not
+    // vanish because the revision watcher fired first.
+    proposals.value = [
+      makeProposal({
+        status: 'Rejected',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+        diffPreview: 'stored diff text',
+      } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored diff text')
+  })
+
+  it('keeps an open diff when a queue refresh brings the same revision (#2215 B)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-1' } as Partial<ApiProposal>)]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // An ordinary poll that changes nothing must not blink the pane away.
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-1' } as Partial<ApiProposal>)]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
+  })
 })

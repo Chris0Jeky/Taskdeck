@@ -22,6 +22,16 @@ Backend provider runtime now supports:
   - OpenAI adapter maps pseudonymous end-user token to provider `user` field
   - capture queue payload provenance now persists actor/correlation/source attribution metadata for audit follow-through
 
+Provider keys are supplied through configuration — `appsettings.local.json` or `Llm__*` environment
+variables — and checked with the **Verify LLM** probe; there is no in-app OpenAI-key entry, rotation
+or removal screen in v0.x (maintainer ruling 2026-08-30 on `#1879`, RC deck q-11 A; ADR-0055). The
+**Settings → API Keys** page manages *Taskdeck's own* scoped keys for MCP/HTTP clients, not provider
+keys. **Known defect, fix pending (`#2233`):** today a leftover retired-provider variable
+(`Llm__Provider=Gemini` or any `Llm__Gemini__*`) in the Windows user environment is a fatal packaged
+start, exactly as the retired-provider rules below describe; the accepted direction is that a packaged
+start ignores such *inherited* variables with a value-blind warning while retired settings written in
+Taskdeck's own files stay fail-loud.
+
 The OpenAI adapter sends `max_completion_tokens` (never the legacy `max_tokens`) and omits
 `temperature` for reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`), which reject
 non-default temperature values on chat completions. Reasoning effort is left at the model
@@ -47,7 +57,7 @@ Selection is deterministic through `LlmProviderSelectionPolicy`:
 - relative checked-in `appsettings.json` and `appsettings.{Environment}.json` selectors are defaults, not explicit migration choices; a supported selector from a higher-precedence environment-variable, command-line, in-memory, absolute `appsettings.local.json`, or custom JSON source is explicit
 - unknown provider values also fall back deterministically to `Mock`
 - the retired `Gemini` selector is always a fatal startup error with migration guidance; a remaining `Llm:Gemini` settings section is fatal unless a higher-precedence operator source explicitly selects a supported provider, including `Mock`
-- from v0.3.0-rc.1, in the packaged Windows desktop build only, retired provider configuration inherited from the PROCESS ENVIRONMENT (retired `Llm__Gemini__*` children and a retired `Llm__Provider` selector) is dropped from configuration before selection so a leftover Gemini-era profile still starts; selection then proceeds from the remaining supported configuration, which for a profile carrying only retired keys is the packaged `Mock` default, announced once as `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored` and in the in-app provider status (neither states which provider was selected, because a stale retired child can sit beside a valid supported selector that stays in force); retired settings in Taskdeck's own `appsettings.json` / `appsettings.local.json`, and every non-desktop host, keep the fail-closed behaviour above (#2233)
+- from v0.3.0-rc.1, in the packaged Windows desktop build only, retired provider configuration inherited from the PROCESS ENVIRONMENT (retired `Llm__Gemini__*` children and a retired `Llm__Provider` selector) is dropped from configuration before selection so a leftover Gemini-era profile still starts; selection then proceeds from the remaining supported configuration, which for a profile carrying only retired keys is the packaged `Mock` default, announced once as `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored` and in the in-app provider status (neither states which provider was selected, because a stale retired child can sit beside a valid supported selector that stays in force); retired settings from every other source - Taskdeck's own `appsettings.json` / `appsettings.local.json`, Docker Compose, and a command-line `--Llm:Provider=Gemini` - and every non-desktop host keep the fail-closed behaviour above (#2233)
 - the retired Compose wrapper `TASKDECK_LLM_GEMINI_API_KEY` is reduced by the shipped Compose file to a boolean presence marker; a non-empty legacy value fails startup with fixed migration guidance, and its value is never forwarded into Taskdeck configuration or diagnostics
 - selected provider config must pass provider-specific validation (`BaseUrl`, `Model`, `TimeoutSeconds`, and an API key where required)
 - `BaseUrl` is additionally validated by `SsrfProtectionService.ValidateLlmProviderUrl` (SEC-26 PR `#905`): private IPv4 (`127/8`, `10/8`, `172.16/12`, `192.168/16`), IPv6 ranges (`::1`, `fc00::/7`, `fe80::/10`), IPv4-mapped IPv6, cloud metadata hostnames (`metadata.google.internal`, `metadata.goog`, AWS IMDS `169.254.169.254`, AWS IMDSv2 IPv6 `fd00:ec2::254`, Alibaba `100.100.100.200`), and non-HTTPS URLs are rejected except for the exact gated `localhost` case below; the selection policy falls back to Mock when validation fails
