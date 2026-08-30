@@ -1688,6 +1688,52 @@ describe('captureStore', () => {
       }
     })
 
+    it('fetches an evicted tracked item when no detail was previously cached', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const trackedId = 'selected-evicted'
+        const visibleRows = Array.from({ length: 200 }, (_, index) => ({
+          id: `visible-${index}`,
+          userId: 'u1',
+          boardId: null,
+          status: 'New',
+          source: 'Typed',
+          textExcerpt: `visible ${index}`,
+          createdAt: new Date().toISOString(),
+          processedAt: null,
+          errorMessage: null,
+          disposition: null,
+        }))
+        vi.mocked(captureApi.listItems).mockResolvedValue(visibleRows as never)
+        vi.mocked(captureApi.getItem).mockResolvedValue({
+          ...degradedDetail('Failed', DEGRADED_NOTICE),
+          id: trackedId,
+        })
+
+        expect(store.detailById[trackedId]).toBeUndefined()
+        store.pollBatchTriageCompletion([trackedId], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        expect(captureApi.getItem).toHaveBeenCalledWith(
+          trackedId,
+          expect.objectContaining({ skipRetry: true }),
+        )
+        expect(store.detailById[trackedId]).toMatchObject({
+          status: 'Failed',
+          errorMessage: DEGRADED_NOTICE,
+        })
+        expect(store.items).toHaveLength(200)
+        expect(store.items.some((item) => item.id === trackedId)).toBe(false)
+
+        const callsAtCompletion = vi.mocked(captureApi.listItems).mock.calls.length
+        await vi.advanceTimersByTimeAsync(6_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtCompletion)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('aborts an in-flight read and discards its late response after cleanup', async () => {
       vi.useFakeTimers()
       const store = useCaptureStore()

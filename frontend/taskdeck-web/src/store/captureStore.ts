@@ -474,12 +474,12 @@ export const useCaptureStore = defineStore('capture', () => {
     const isCurrent = options.isCurrent ?? (() => true)
     const stale = itemIds.filter((id) => {
       const detail = detailById.value[id]
-      if (!detail) return false
       const summary = items.value.find((item) => item.id === id)
-      // A tracked item can fall beyond the newest-first list cap. Its cached
-      // detail is then the only user-visible surface, so refresh it directly
-      // instead of waiting for a summary row that cannot reappear in this page.
+      // A tracked item can fall beyond the newest-first list cap. Its detail
+      // is then the only authoritative surface, so fetch it directly even when
+      // the user selected the row without previously opening/caching it.
       if (!summary) return true
+      if (!detail) return false
       if (!isTriageTerminalStatus(summary.status)) return false
       return (
         summary.status !== detail.status ||
