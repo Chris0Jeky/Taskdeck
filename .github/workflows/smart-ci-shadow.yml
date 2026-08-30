@@ -1,0 +1,191 @@
+# =============================================================================
+# Smart CI (shadow) — the ADR-0066 control plane in OBSERVATION mode.
+#
+# What this workflow does NOT do: it changes no ci-required.yml job selection, it
+# is not a required check, it never checks out or executes pull-request head code
+# in the control-plane jobs, it uses no secrets, and its token is read-only.
+#
+# Personal-account control-plane placement (ADR-0066 §8, CI-02 #2326):
+#   plan / required-gate  run on `pull_request_target` — the workflow file and the
+#                         checked-out tooling come from the PR's BASE commit, so a PR
+#                         cannot loosen the policy that plans it; the changed-file list
+#                         comes from the API (metadata only).
+#   self-test             runs on `pull_request` — the head's own planner/gate/pin
+#                         tests: this is the R4 hosted-control lane for control changes.
+#
+# `Smart CI / Required Gate` is the stable check context CI-03 #2327 will register in
+# branch protection once >=20 PRs have run without a false red. Until then a red gate
+# means a planner/plan defect (missing or invalid plan, planner error, SHA or policy
+# digest mismatch), never a product verdict.
+#
+# Topology context: header of ci-required.yml. Docs: docs/ci/SMART_CI.md.
+# =============================================================================
+
+name: Smart CI
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - labeled
+      - unlabeled
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: smart-ci-${{ github.event_name }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: 24.13.1
+
+jobs:
+  plan:
+    name: Smart CI / Plan
+    if: ${{ github.event_name == 'pull_request_target' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the base commit (control plane — never the PR head)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: List changed files (API metadata only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" --paginate \
+            --jq '.[] | [.status, .filename, (.previous_filename // "")] | @tsv' \
+            > artifacts/changed-files.tsv
+          printf 'changed files: %s\n' "$(wc -l < artifacts/changed-files.tsv)"
+
+      - name: Resolve the merge tree (git objects only; nothing is executed)
+        continue-on-error: true
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if git fetch --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge"; then
+            git rev-parse 'FETCH_HEAD^{tree}' > artifacts/merge-tree-sha.txt
+          else
+            echo "merge ref unavailable (conflict, or not computed yet)" >&2
+          fi
+
+      - name: Plan
+        env:
+          CI_EXECUTION_MODE: ${{ vars.CI_EXECUTION_MODE || 'hosted' }}
+        run: |
+          set -euo pipefail
+          plan_args=()
+          if [ -s artifacts/merge-tree-sha.txt ]; then
+            plan_args+=(--merge-tree-sha "$(cat artifacts/merge-tree-sha.txt)")
+          fi
+          node scripts/ci/smart-ci/plan.mjs \
+            --policy ci/policy.v1.json \
+            --event "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
+            --changed-files artifacts/changed-files.tsv \
+            --execution-mode "$CI_EXECUTION_MODE" \
+            --out artifacts/ci-plan.json \
+            --summary "$GITHUB_STEP_SUMMARY" \
+            "${plan_args[@]}"
+
+      - name: Upload plan receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: smart-ci-plan-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: artifacts/ci-plan.json
+          retention-days: 14
+          if-no-files-found: error
+
+  self-test:
+    name: Smart CI / Planner Self-Test
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Planner, gate and pin-inventory self-tests
+        run: node --test scripts/ci/smart-ci/*.test.mjs
+
+      - name: External action pin inventory (report only until CI-11 completes the migration)
+        run: node scripts/ci/smart-ci/action-pins.mjs --markdown "$GITHUB_STEP_SUMMARY"
+
+  required-gate:
+    name: Smart CI / Required Gate
+    if: ${{ always() && github.event_name == 'pull_request_target' }}
+    needs:
+      - plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout the base commit (control plane — never the PR head)
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download plan receipt
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          name: smart-ci-plan-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: artifacts
+
+      - name: Evaluate (shadow — red only for planner/plan defects)
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          node scripts/ci/smart-ci/evaluate-gate.mjs \
+            --plan artifacts/ci-plan.json \
+            --policy ci/policy.v1.json \
+            --mode shadow \
+            --expected-head "$EXPECTED_HEAD" \
+            --expected-base "$EXPECTED_BASE" \
+            --plan-job-result "$PLAN_RESULT" \
+            --receipt artifacts/ci-run.json \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload gate receipt
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: smart-ci-receipt-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: artifacts/ci-run.json
+          retention-days: 14
+          if-no-files-found: ignore
