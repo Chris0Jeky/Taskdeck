@@ -204,6 +204,43 @@ public sealed class ProcessorManifestValidatorTests
     }
 
     [Fact]
+    public void TryParse_ShouldRejectUnknownMembersLikeTheSchemaDoes()
+    {
+        // additionalProperties: false in processor-manifest.v1.schema.json — a typo'd or unknown
+        // field must not parse clean.
+        var json = WhisperXManifest.Replace("\"displayName\": \"WhisperX Local\",", "\"displayName\": \"WhisperX Local\", \"capabilites\": [],");
+
+        ProcessorManifest.TryParse(json, out _, out var error).Should().BeFalse();
+        error.Should().StartWith("Manifest JSON is malformed");
+    }
+
+    [Fact]
+    public void Validate_ShouldReportUnknownCapabilitiesOnceAndDuplicatesSeparately()
+    {
+        var manifest = ParseExample() with { Capabilities = new[] { "bogus", "bogus" } };
+
+        var errors = ProcessorManifestValidator.Validate(manifest).Errors;
+
+        errors.Where(error => error.Contains("'bogus' is not a known capability")).Should().ContainSingle();
+        errors.Where(error => error.Contains("'bogus' is declared twice")).Should().ContainSingle();
+    }
+
+    [Fact]
+    public void Validate_ShouldStillReportHostAndDataClassErrorsWhenNetworkRequiredIsMissing()
+    {
+        var manifest = ParseExample() with
+        {
+            Privacy = new ProcessorPrivacyDeclaration(null, new[] { "" }, new[] { "biometric" }, null)
+        };
+
+        var errors = ProcessorManifestValidator.Validate(manifest).Errors;
+
+        errors.Should().Contain("privacy.networkRequired: required");
+        errors.Should().Contain(error => error.StartsWith("privacy.allowedHosts:"));
+        errors.Should().Contain(error => error.Contains("'biometric' is not one of"));
+    }
+
+    [Fact]
     public void TryParse_ShouldRejectAnUnknownEnumValueAsMalformed()
     {
         var json = WhisperXManifest.Replace("\"sidecar\"", "\"mainframe\"");

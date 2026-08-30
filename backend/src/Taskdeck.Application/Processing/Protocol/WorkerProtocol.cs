@@ -24,7 +24,21 @@ public static class WorkerProtocol
     public const string StatusFailed = "failed";
     public const string StatusCancelled = "cancelled";
 
-    public static readonly JsonSerializerOptions JsonOptions = ProcessorManifestJson.Options;
+    /// <summary>Content-handle schemes the host issues; anything else is rejected before a run starts.</summary>
+    public const string SpoolHandleScheme = "spool://";
+    public const string ContentHandleScheme = "content://";
+
+    /// <summary>
+    /// Wire settings: camelCase, kebab-case enums, nulls omitted. Unlike manifests, protocol messages
+    /// tolerate unknown members so a newer sidecar can add fields without breaking an older host.
+    /// </summary>
+    public static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower) }
+    };
 
     public static string Serialize<T>(T value) => JsonSerializer.Serialize(value, JsonOptions);
 
@@ -152,9 +166,10 @@ public sealed record ProcessorUsage(
     int? PeakVramMb);
 
 /// <summary>
-/// Structural validation of protocol messages. Host-side enforcement of deadlines, output caps and
-/// network denial belongs to the supervisor (CF-04); this validator only rejects malformed envelopes
-/// before any work starts or any result is persisted.
+/// Structural validation of protocol messages: the JSON-RPC envelope, run parameters and results.
+/// Host-side enforcement of deadlines, output caps, cancellation grace and network denial belongs to
+/// the supervisor (CF-04); this validator only rejects malformed messages before any work starts or
+/// any result is persisted.
 /// </summary>
 public static class WorkerProtocolValidator
 {
@@ -162,6 +177,39 @@ public static class WorkerProtocolValidator
     {
         WorkerProtocol.StatusCompleted, WorkerProtocol.StatusFailed, WorkerProtocol.StatusCancelled
     };
+
+    /// <summary>
+    /// JSON-RPC 2.0 response rules: the version string, a non-empty id (the host matches it to the
+    /// request), and exactly one of <c>result</c> / <c>error</c>.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateResponseEnvelope<TResult>(JsonRpcResponse<TResult>? response, string? expectedId = null)
+    {
+        var errors = new List<string>();
+
+        if (response is null)
+        {
+            errors.Add("response: missing");
+            return errors;
+        }
+
+        if (!string.Equals(response.JsonRpc, WorkerProtocol.JsonRpcVersion, StringComparison.Ordinal))
+            errors.Add($"response.jsonrpc: must be \"{WorkerProtocol.JsonRpcVersion}\"");
+
+        if (string.IsNullOrWhiteSpace(response.Id))
+            errors.Add("response.id: required");
+        else if (expectedId is not null && !string.Equals(response.Id, expectedId, StringComparison.Ordinal))
+            errors.Add($"response.id: expected '{expectedId}'");
+
+        var hasResult = response.Result is not null;
+        var hasError = response.Error is not null;
+        if (hasResult == hasError)
+            errors.Add("response: exactly one of result or error must be present");
+
+        if (hasError && string.IsNullOrWhiteSpace(response.Error!.Message))
+            errors.Add("response.error.message: required");
+
+        return errors;
+    }
 
     public static IReadOnlyList<string> ValidateRunParams(ProcessorRunParams? parameters)
     {
@@ -192,6 +240,9 @@ public static class WorkerProtocolValidator
                 errors.Add("params.input.mediaType: required");
             if (string.IsNullOrWhiteSpace(input.ContentHandle))
                 errors.Add("params.input.contentHandle: required");
+            else if (!input.ContentHandle.StartsWith(WorkerProtocol.SpoolHandleScheme, StringComparison.Ordinal)
+                     && !input.ContentHandle.StartsWith(WorkerProtocol.ContentHandleScheme, StringComparison.Ordinal))
+                errors.Add($"params.input.contentHandle: must be a host-issued {WorkerProtocol.SpoolHandleScheme} or {WorkerProtocol.ContentHandleScheme} handle, never a path");
             if (input.Sha256 is null || input.Sha256.Length != 64 || input.Sha256.Any(character => !Uri.IsHexDigit(character)))
                 errors.Add("params.input.sha256: must be a 64-character hexadecimal digest");
             if (input.ByteSize <= 0)

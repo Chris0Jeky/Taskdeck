@@ -74,6 +74,52 @@ public sealed class CaptureServiceDualWriteTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once, "the mirror commits with the queue row");
     }
 
+    [Theory]
+    [InlineData("markdownImport", CaptureProducerKind.Import, CaptureOriginAdapter.Import, CaptureModality.Document)]
+    [InlineData("import", CaptureProducerKind.Import, CaptureOriginAdapter.Import, CaptureModality.Document)]
+    [InlineData("meetingIntegration", CaptureProducerKind.Integration, CaptureOriginAdapter.Integration, CaptureModality.Text)]
+    [InlineData("vsCodeExtension", CaptureProducerKind.Human, CaptureOriginAdapter.VsCodeExtension, CaptureModality.Text)]
+    public async Task CreateAsync_WithDualWriteEnabled_ShouldStampTheProducerFromTheMappingNotTheCaller(
+        string source,
+        CaptureProducerKind expectedProducer,
+        CaptureOriginAdapter expectedOrigin,
+        CaptureModality expectedModality)
+    {
+        // Review finding on the scaffold PR: the seam must never override the mapping's producer —
+        // an ID-preserving mirror with the wrong producer would need a data migration to repair.
+        Capture? mirrored = null;
+        _captureStoreMock
+            .Setup(s => s.AddAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()))
+            .Callback<Capture, CancellationToken>((capture, _) => mirrored = capture)
+            .Returns(Task.CompletedTask);
+        var service = CreateService(dualWrite: true);
+
+        var result = await service.CreateAsync(_userId, new CreateCaptureItemDto(null, "imported text", source));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mirrored!.Producer.Should().Be(expectedProducer);
+        mirrored.OriginAdapter.Should().Be(expectedOrigin);
+        mirrored.PrimaryModality.Should().Be(expectedModality);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithDualWriteEnabled_ShouldAcceptATitleHintTheLegacyContractAccepts()
+    {
+        Capture? mirrored = null;
+        _captureStoreMock
+            .Setup(s => s.AddAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()))
+            .Callback<Capture, CancellationToken>((capture, _) => mirrored = capture)
+            .Returns(Task.CompletedTask);
+        var service = CreateService(dualWrite: true);
+
+        var result = await service.CreateAsync(
+            _userId,
+            new CreateCaptureItemDto(null, "typed note", "typed", TitleHint: "clipped\r\npage title"));
+
+        result.IsSuccess.Should().BeTrue("a capture the legacy contract accepts must not be rejected by the mirror");
+        mirrored!.UserTitle.Should().Be("clipped \npage title");
+    }
+
     [Fact]
     public async Task CreateAsync_WithDualWriteEnabled_ShouldCarryTheBoardAsContextHint()
     {

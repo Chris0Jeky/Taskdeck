@@ -1,6 +1,6 @@
 # ADR-0065: Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing
 
-- **Status**: Accepted under delegation (2026-08-30). The maintainer widened the pass mid-session
+- **Status**: Accepted (under delegation, 2026-08-30). The maintainer widened the pass mid-session
   ("continue working on this part, go as far as you can … I'll leave this to you. I want you to pave
   the way to (possibly even) v1.0"), so the nine acceptance conditions below were **ruled by the
   agent pass under that explicit delegation** and recorded, with reasons, on tracker CF-00
@@ -21,8 +21,8 @@
   (ambient channel: VS Code over desktop voice — *partially superseded* by §Voice ruling), ADR-0045
   (transcript lane — *adapted*, not replaced), ADR-0046 (generalist expansion — *amended* in
   decisions 4 and 5), ADR-0047/ADR-0048 (extraction permit gate and memory-capped worker process —
-  *reused* as the first sidecar host), ADR-0057 (delegated authority — *implemented in shape only*,
-  still direction-only), ADR-0060 (canonical work model — *respected*: candidate kinds are a
+  *reused* as the first sidecar host), ADR-0057 (delegated authority — this ADR *names the shape* its
+  future implementation will take; nothing of it is implemented and it stays direction-only), ADR-0060 (canonical work model — *respected*: candidate kinds are a
   separate axis from item types, and the compiler targets `Card` until stage 5), ADR-0061 (hosted
   boundary — object storage only at its stage 3), GP-06, GP-08, GP-09, GP-10.
 
@@ -365,8 +365,10 @@ chains.
 ## Acceptance conditions
 
 Ruled under the maintainer's 2026-08-30 delegation and recorded with reasons on tracker CF-00
-(`#2254`): (1) *Context Fabric* internal, public wedge line as in §Decision; (2) foundation slices
-0–3 and the storage seam join v0.4 beside the hosted beta, the payoff wave is v0.5; (3) candidates
+(`#2254`): (1) *Context Fabric* internal, public wedge line as in §Decision; (2) the
+behaviour-preserving foundation slices 1–3 and the storage seam join v0.4 beside the hosted beta,
+together with the Worker Protocol host (CF-04, slice 5) that the already-scheduled ADR-0048 worker
+`#1429` needs — the one v0.4 item that is not behaviour-preserving; the payoff wave is v0.5; (3) candidates
 are persisted; (4) `IBlobStore` with `SqliteBlobStore` now, object storage only at ADR-0061 stage
 3; (5) fresh-install default *Balanced* with one-time explicit consent before the first remote
 processor; (6) first delegated class = create-card from an explicit `Act` capture into a named
@@ -397,7 +399,7 @@ as originally posed:
 - `docs/analysis/2026-08-30-context-fabric/TASKDECK_WORKER_PROTOCOL_POC.md`,
   `processor-manifest.schema.json`, `whisperx-processor.example.json` — the worker protocol proof
   of concept and manifest contract
-- `docs/REVIVAL_PLAN.md` §4 Phase 5 and §7 — the wave and its (pending) new-surface authority
+- `docs/REVIVAL_PLAN.md` §4 Phase 5 and §7 — the wave and its new-surface authority
 - `docs/strategy/PRODUCT_DIRECTION.md` §1, §5, §7 — engine statement, ladder proposal, open decision
 - ADR-0005, ADR-0033, ADR-0045, ADR-0046, ADR-0047, ADR-0048, ADR-0057, ADR-0060, ADR-0061
 - Issues: `#1276` (voice re-ignition, RC deck q-9), `#1317`/`#1318`/`#1320`/`#1323` (GEN-03/04/06/09),

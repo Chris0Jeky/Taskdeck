@@ -186,26 +186,45 @@ public sealed class Capture : Entity
 
     public void Retitle(string? userTitle)
     {
-        UserTitle = NormalizeBounded(userTitle, MaxUserTitleLength, "Capture title");
+        var normalized = NormalizeBounded(userTitle, MaxUserTitleLength, "Capture title");
+        if (string.Equals(UserTitle, normalized, StringComparison.Ordinal))
+            return;
+
+        UserTitle = normalized;
         Touch();
     }
 
+    /// <summary>
+    /// Trims, bounds and sanitises free text. Control characters other than LF and TAB are replaced
+    /// by spaces rather than rejected: the legacy capture contract accepts them in a title hint, so a
+    /// mirrored row must never fail where the queue row succeeds (the dual-write must be
+    /// behaviour-preserving in both flag states). Length is still enforced, matching the legacy cap.
+    /// </summary>
     private static string? NormalizeBounded(string? value, int maxLength, string label)
     {
         if (string.IsNullOrWhiteSpace(value))
             return null;
 
-        var trimmed = value.Trim();
+        var sanitized = string.Create(value.Length, value, static (span, source) =>
+        {
+            for (var index = 0; index < source.Length; index++)
+            {
+                var character = source[index];
+                span[index] = char.IsControl(character) && character != '\n' && character != '\t'
+                    ? ' '
+                    : character;
+            }
+        });
+
+        var trimmed = sanitized.Trim();
+        if (trimmed.Length == 0)
+            return null;
+
         if (trimmed.Length > maxLength)
         {
             throw new DomainException(
                 ErrorCodes.ValidationError,
                 $"{label} cannot exceed {maxLength} characters");
-        }
-
-        if (trimmed.Any(character => char.IsControl(character) && character != '\n' && character != '\t'))
-        {
-            throw new DomainException(ErrorCodes.ValidationError, $"{label} cannot contain control characters");
         }
 
         return trimmed;

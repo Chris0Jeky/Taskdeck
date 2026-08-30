@@ -10,9 +10,12 @@ public sealed record ProcessorManifestValidationResult(IReadOnlyList<string> Err
 }
 
 /// <summary>
-/// Enforces <c>processor-manifest.v1.schema.json</c> plus the semantic rules a JSON schema cannot
-/// express. A manifest that fails here is rejected at registration (CF-04 conformance rule 1) so the
-/// router never has to reason about a processor whose declarations are inconsistent.
+/// Enforces the manifest rules of <c>processor-manifest.v1.schema.json</c> in code (shape, bounds,
+/// enumerations — unknown members are already rejected at parse time) plus the semantic rules a JSON
+/// schema cannot express (capability vocabulary, locality/network consistency). The schema file is
+/// the published contract; it is not evaluated at runtime. A manifest that fails here is rejected at
+/// registration (CF-04 conformance rule 1) so the router never has to reason about a processor whose
+/// declarations are inconsistent.
 /// </summary>
 public static class ProcessorManifestValidator
 {
@@ -80,16 +83,18 @@ public static class ProcessorManifestValidator
         }
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var reportedUnknown = new HashSet<string>(StringComparer.Ordinal);
         foreach (var capability in capabilities)
         {
-            if (!ProcessingCapability.IsKnown(capability))
+            var value = capability ?? string.Empty;
+            if (!seen.Add(value))
             {
-                errors.Add($"capabilities: '{capability}' is not a known capability");
+                errors.Add($"capabilities: '{value}' is declared twice");
                 continue;
             }
 
-            if (!seen.Add(capability))
-                errors.Add($"capabilities: '{capability}' is declared twice");
+            if (!ProcessingCapability.IsKnown(value) && reportedUnknown.Add(value))
+                errors.Add($"capabilities: '{value}' is not a known capability");
         }
     }
 
@@ -161,12 +166,6 @@ public static class ProcessorManifestValidator
             return;
         }
 
-        if (privacy.NetworkRequired is null)
-        {
-            errors.Add("privacy.networkRequired: required");
-            return;
-        }
-
         ValidateStringList(privacy.AllowedHosts, "privacy.allowedHosts", MaxHostLength, required: false, unique: true, errors);
 
         if (privacy.DataClasses is not null)
@@ -176,6 +175,14 @@ public static class ProcessorManifestValidator
                 if (!DataClasses.Contains(dataClass))
                     errors.Add($"privacy.dataClasses: '{dataClass}' is not one of text | audio | image | document | metadata");
             }
+        }
+
+        if (privacy.NetworkRequired is null)
+        {
+            // Report the field-level problems above first so a registry sees every error at once,
+            // then stop: the consistency rules below are meaningless without the network flag.
+            errors.Add("privacy.networkRequired: required");
+            return;
         }
 
         var networkRequired = privacy.NetworkRequired.Value;

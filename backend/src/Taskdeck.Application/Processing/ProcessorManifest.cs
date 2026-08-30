@@ -77,7 +77,11 @@ public sealed record ProcessorCostModel(
     string? Currency,
     decimal? UnitPrice);
 
-/// <summary>Serializer settings shared by the manifest and the worker protocol (camelCase, kebab-case enums).</summary>
+/// <summary>
+/// Serializer settings for manifests (camelCase, kebab-case enums). Unknown members are rejected at
+/// parse time, which is the runtime form of the schema's <c>additionalProperties: false</c>; the
+/// schema file itself is the published contract and is not evaluated at runtime.
+/// </summary>
 public static class ProcessorManifestJson
 {
     public static readonly JsonSerializerOptions Options = new()
@@ -85,6 +89,7 @@ public static class ProcessorManifestJson
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower) }
     };
 }

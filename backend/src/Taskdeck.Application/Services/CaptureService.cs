@@ -103,7 +103,10 @@ public class CaptureService : ICaptureService
                 // Capture aggregate under the queue row's own id, so the later backfill and the Inbox
                 // read switch are ID-preserving. Staged into the same unit of work as the queue row:
                 // both rows commit together or not at all. The queue row stays the source of truth
-                // for Inbox reads until CF-01 flips the read path.
+                // for Inbox reads until CF-01 flips the read path. The producer dimension comes from
+                // CaptureSourceMapping (an Import source is an Import producer, an integration source
+                // an Integration producer); this seam does not know the principal kind beyond that,
+                // so it never overrides the mapping.
                 var mirror = Capture.FromQueueRequest(
                     request.Id,
                     userId,
@@ -111,8 +114,7 @@ public class CaptureService : ICaptureService
                     dto.BoardId,
                     payload.ClientCreatedAt,
                     dto.TitleHint,
-                    intent: CaptureIntentMode.Organize,
-                    producerOverride: CaptureProducerKind.Human);
+                    intent: CaptureIntentMode.Organize);
                 await _captureStore.AddAsync(mirror, cancellationToken);
             }
 

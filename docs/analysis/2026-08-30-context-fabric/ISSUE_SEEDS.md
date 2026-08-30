@@ -1,5 +1,14 @@
 # Taskdeck Context Fabric — issue seeds
 
+Last Updated: 2026-08-30
+
+> **As received (2026-08-30 planning pack) — not current scope.** These seeds were superseded the same day
+> by the ruled wave on tracker CF-00 `#2254` (children `#2255`–`#2277`) and by ADR-0065; where they differ,
+> the issues and the ADR win. Known differences: the ADR is **0065** (not 0063); backfill is
+> **ID-preserving**, not "where feasible"; CF-23 ships **only** the SQLite `IBlobStore` (object storage is
+> forbidden before ADR-0061 stage 3); and **CF-22 needs a recorded maintainer go on `#2275` in addition to
+> the CF-24 evidence** — metrics alone never open the delegated-authority gate.
+
 These are architecture-sized seeds, not one release milestone. Each implementation issue should be split into reviewable PRs.
 
 ## CF-00 — Ratify Context Fabric terminology and compatibility boundary

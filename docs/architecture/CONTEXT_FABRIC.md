@@ -4,8 +4,9 @@ Last Updated: 2026-08-30
 
 **Authority:** ADR-0065 (`docs/decisions/ADR-0065-context-fabric-capture-representation-processing.md`),
 whose acceptance conditions were ruled under the maintainer's 2026-08-30 delegation on tracker CF-00
-(`#2254`). This page is the agent-facing map of the architecture: what is shipped, what is scaffolded on
-`main`, what each CF issue adds, and where the seams are. Shipped truth stays in `docs/STATUS.md`.
+(`#2254`). This page is the agent-facing map of the architecture: what is shipped, what the scaffold
+PR (`#2280`) adds, what each CF issue adds, and where the seams are. Shipped truth stays in
+`docs/STATUS.md`.
 
 ## 1. The invariant
 
@@ -24,7 +25,7 @@ Five concerns that the transcript wedge kept too close together are now separate
 | What should change | `ChangeSet` = `AutomationProposal` | proposal operations, revisions, Preview == Apply | Unchanged; candidates compile into it (CF-08) |
 | Who allowed it | `AuthorityDecision` + receipt | explicit approve, explicit execute (review-first) | Same, plus a named policy for exactly one reversible class after evidence (CF-22) |
 
-## 2. Code map (scaffold landed 2026-08-30)
+## 2. Code map (scaffold PR `#2280`, 2026-08-30)
 
 | Layer | File | Role |
 | --- | --- | --- |
@@ -61,20 +62,20 @@ compiles candidates into proposal operations; `change.verify` checks preconditio
 | Family | Controls | Presets | Issue |
 | --- | --- | --- | --- |
 | Processing profile | egress class, providers/regions, device use, quality vs latency, budgets, escalation, retention, vocabulary | Private · Balanced (default, one-time consent before any remote processor) · Controlled · Expert | CF-10 |
-| Authority profile | what may change, where, under which evidence and risk | exactly ADR-0057's Observe · Suggest (shipped default) · Assist · Operate · Autonomous · Custom | CF-22 (first slice, own gate) |
+| Authority profile | what may change, where, under which evidence and risk | exactly ADR-0057's Observe · Suggest · Assist · Operate · Autonomous · Custom — **none of it exists in code yet**: there is no authority profile, no `AuthorityDecision`, no `ExecutionReceipt`; review-first (explicit approve, explicit execute) is the only shipped policy | CF-22 (first slice, own gate) |
 | Presentation profile | how much machinery is visible | Flow · Guided (default for new users) · Control — replaces `guided / workbench / agent` (`#1972`) | CF-21 |
 
 ## 5. Slices and issues
 
 | Slice | Issues | Milestone |
 | --- | --- | --- |
-| 0 ratify + measure | CF-00 `#2254`, CF-24 `#2277` (corpus) | v0.4 / v0.6 |
+| 0 ratify + measure | CF-00 `#2254` (v0.4); CF-24 `#2277` (v0.6 — the corpus needs the voice vertical's fixtures to exist first) | v0.4 / v0.6 |
 | 1 durable Capture | CF-01 `#2255`, CF-02 `#2256` | v0.4 |
 | 2 jobs and runs | CF-03 `#2257`, CF-05 `#2259` | v0.4 |
 | 3 representations + anchors | CF-06 `#2260`, CF-07 `#2261` | v0.4 |
 | storage seam | CF-23 `#2276` | v0.4 |
 | 4 candidates | CF-08 `#2262` | v0.5 |
-| 5 registry + routing | CF-04 `#2258` (v0.4), CF-10 `#2264`, CF-11 `#2265`, CF-15 `#2269`, CF-18 `#2272`, GEN-03 `#1317` | v0.4 → v0.6 |
+| 5 registry + routing | CF-04 `#2258` — pulled into **v0.4** because the ADR-0048 worker `#1429` (already v0.4) is its first sidecar; it is the one v0.4 item that is *not* behaviour-preserving (it launches supervised processes); CF-10 `#2264`, CF-11 `#2265`, CF-15 `#2269`, CF-18 `#2272`, GEN-03 `#1317` | v0.4 → v0.6 |
 | 6 Universal Capture + resolver + review | CF-09 `#2263`, CF-20 `#2273`, CF-21 `#2274` | v0.5 |
 | voice vertical | CF-12 `#2266`, CF-13 `#2267`, CF-14 `#2268`, CF-16 `#2270`, CF-17 `#2271` | v0.5 / v0.6 |
 | 7 delegated authority | CF-22 `#2275` | v0.6 (gated) |

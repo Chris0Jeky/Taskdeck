@@ -221,6 +221,59 @@ public sealed class WorkerProtocolSerializationTests
     }
 
     [Fact]
+    public void ValidateRunParams_ShouldRejectAContentHandleThatIsNotHostIssued()
+    {
+        var parameters = new ProcessorRunParams(
+            WorkerProtocol.Version,
+            ProcessingCapability.AudioTranscribe,
+            new ProcessorRunInput(Guid.NewGuid(), "audio/webm", @"C:\Users\someone\secret.webm", ValidSha, 10),
+            null,
+            null);
+
+        WorkerProtocolValidator.ValidateRunParams(parameters)
+            .Should().ContainSingle(error => error.Contains("contentHandle") && error.Contains("never a path"));
+
+        var content = parameters with { Input = parameters.Input! with { ContentHandle = "content://a1b2" } };
+        WorkerProtocolValidator.ValidateRunParams(content).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ValidateResponseEnvelope_ShouldEnforceJsonRpcRules()
+    {
+        var ok = WorkerProtocol.Deserialize<JsonRpcResponse<ProcessorRunResult>>(PocResult);
+        WorkerProtocolValidator.ValidateResponseEnvelope(ok, expectedId: "job-7f41").Should().BeEmpty();
+
+        var wrongId = WorkerProtocolValidator.ValidateResponseEnvelope(ok, expectedId: "job-other");
+        wrongId.Should().ContainSingle(error => error.Contains("expected 'job-other'"));
+
+        var both = new JsonRpcResponse<ProcessorRunResult>(
+            "1.0",
+            "",
+            ok!.Result,
+            new JsonRpcError(WorkerProtocolErrorCodes.ProcessorFailure, "", null));
+        var errors = WorkerProtocolValidator.ValidateResponseEnvelope(both);
+
+        errors.Should().Contain(error => error.Contains("jsonrpc"));
+        errors.Should().Contain("response.id: required");
+        errors.Should().Contain("response: exactly one of result or error must be present");
+        errors.Should().Contain("response.error.message: required");
+
+        var neither = new JsonRpcResponse<ProcessorRunResult>(WorkerProtocol.JsonRpcVersion, "job-1", null, null);
+        WorkerProtocolValidator.ValidateResponseEnvelope(neither)
+            .Should().ContainSingle(error => error.Contains("exactly one of result or error"));
+    }
+
+    [Fact]
+    public void ProtocolMessages_ShouldTolerateUnknownMembersUnlikeManifests()
+    {
+        var json = PocProgress.Replace("\"messageCode\": \"audio.transcribing\"", "\"messageCode\": \"audio.transcribing\", \"futureField\": 1");
+
+        var notification = WorkerProtocol.Deserialize<JsonRpcNotification<ProcessorProgressParams>>(json);
+
+        notification!.Params.MessageCode.Should().Be("audio.transcribing");
+    }
+
+    [Fact]
     public void ValidateRunParams_ShouldRejectMissingInput()
     {
         var errors = WorkerProtocolValidator.ValidateRunParams(

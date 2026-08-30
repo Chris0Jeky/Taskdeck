@@ -28,10 +28,12 @@ move or edit work (GP-06, GP-09, ADR-0065 §Decision 9).
 ## 2. Security model
 
 - Taskdeck starts the sidecar and owns its lifetime; an orphaned process is a host bug, not a feature.
-- Each process receives a per-process random **session secret**; messages carrying the wrong secret are
-  dropped and the process is terminated.
+- Each process receives a per-process random **session secret** at launch (an environment variable
+  the host sets — it is *not* a field on the JSON-RPC envelopes); a process that cannot present it on
+  `processor.describe` is terminated. Transport-level; implemented by the CF-04 supervisor.
 - Inputs are supplied through a Taskdeck-managed **spool directory** (`spool://<handle>`) or a
-  short-lived authenticated **content handle** — never an arbitrary filesystem path the user supplied.
+  short-lived authenticated **content handle** (`content://<handle>`) — never an arbitrary filesystem
+  path the user supplied. `WorkerProtocolValidator.ValidateRunParams` rejects any other scheme.
 - The manifest declares required hosts; a processor whose manifest says `networkRequired: false` runs
   with the network denied where the platform allows it, and the conformance suite proves the denial.
 - **stdout is protocol-only.** Diagnostics go to stderr and must be content-free (no user text, no
@@ -42,7 +44,13 @@ move or edit work (GP-06, GP-09, ADR-0065 §Decision 9).
 ## 3. Messages
 
 All messages are JSON-RPC 2.0 objects, one per line (LF-terminated, UTF-8, no BOM) on the stdio
-transport. Property names are camelCase; enumerations are kebab-case strings.
+transport. Property names are camelCase. Manifest enumerations (`execution`, `locality`, `gpu`,
+`costModel.type`) are kebab-case strings; the protocol's own `status`, `kind`, `phase`, `messageCode`
+and `errorCode` values are plain strings with the spellings shown below (`kind` is the
+`RepresentationKind` name, e.g. `Transcript`; `errorCode` is UPPER_SNAKE). Protocol messages tolerate
+unknown members (a newer sidecar may add fields); manifests do not. The host validates the response
+envelope (`WorkerProtocolValidator.ValidateResponseEnvelope`: `jsonrpc` is `"2.0"`, the `id` echoes
+the request, exactly one of `result`/`error` is present).
 
 ### 3.1 `processor.describe` (request → manifest)
 
@@ -100,8 +108,10 @@ not 64 hex characters; a non-positive byte size; non-positive limits or speaker 
 
 ### 3.4 `processor.cancel` (request, host → processor)
 
-`params: { "jobId": "job-7f41" }`. The processor must stop within its declared grace period and answer
-the original `processor.run` with `status: "cancelled"`; the host terminates the process if it does not.
+`params: { "jobId": "job-7f41" }`. The processor must stop within the host's cancellation grace
+period (a host setting, CF-04 — not a manifest field in v1) and answer the original `processor.run`
+with `status: "cancelled"`; the host terminates the process if it does not. The typed
+`ProcessorCancelParams` record lands with the supervisor in CF-04.
 
 ### 3.5 Result
 
@@ -166,17 +176,23 @@ are UTF-16 code units over `text` — the same unit the shipped transcript evide
 
 ## 5. Manifest (v1)
 
-See the JSON schema. Rules the schema cannot express, enforced by `ProcessorManifestValidator`:
+See the JSON schema — the published contract. It is **not** evaluated at runtime: `ProcessorManifest`
+parses with unknown members disallowed (the runtime form of `additionalProperties: false`) and
+`ProcessorManifestValidator` enforces the schema's bounds and enumerations in code, plus the rules a
+schema cannot express:
 
 - capabilities are drawn from `ProcessingCapability.All` and declared once;
 - a `local` processor cannot declare `networkRequired: true` and cannot `execute: remote`;
-- a `remote` processor must declare `networkRequired: true` **and** its `allowedHosts`;
-- a processor with `networkRequired: false` cannot declare `allowedHosts`;
-- `resources.gpu: none` cannot require VRAM; a `free-local` cost model cannot carry a unit price;
+- a `remote` processor must declare `networkRequired: true` **and** at least one `allowedHosts` entry;
+- a processor with `networkRequired: false` must not list any `allowedHosts` entry (an empty array is
+  fine, as in the example);
+- `resources.gpu: none` cannot require VRAM (`minVramMb` must be absent or 0); a `free-local` cost
+  model cannot carry a non-zero unit price;
 - data classes are `text | audio | image | document | metadata`; currency is a three-letter ISO code.
 
-Example: `docs/analysis/2026-08-30-context-fabric/whisperx-processor.example.json` (validated by
-`ProcessorManifestValidatorTests`).
+Example: `docs/analysis/2026-08-30-context-fabric/whisperx-processor.example.json`;
+`ProcessorManifestValidatorTests` validates a verbatim copy of it (embedded in the test), so a drift
+between the two files would be silent — CF-04 makes the test read the file.
 
 ## 6. Conformance tests (CF-04 — every processor must pass)
 
@@ -194,8 +210,9 @@ Example: `docs/analysis/2026-08-30-context-fabric/whisperx-processor.example.jso
 ## 7. Transport notes
 
 - **stdio (desktop):** one JSON object per line; the host writes requests, reads results and
-  notifications, and never interleaves two runs on one process unless the manifest declares
-  `features: ["concurrent-jobs"]`.
+  notifications, and never interleaves two runs on one process unless the manifest declares the
+  reserved feature name `concurrent-jobs` (`features` is free-form in v1; the host starts honouring
+  this name in CF-04).
 - **queue (hosted, later):** the same `params` object is the job payload, `result`/`error` the
   completion record, and `processor.progress` a progress event; `contentHandle` resolves to an object
   store URL through `IBlobStore` (ADR-0061 stage 3 only).

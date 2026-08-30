@@ -120,8 +120,9 @@ to a later release applies every intervening migration in one startup.
 through migration `20260830034447_AddCaptureAggregate`. The pre-migration snapshot runs as usual and
 the copy is small. Nothing reads or writes the table unless the new `ContextFabric:DualWriteCaptures`
 setting is set to `true` (default `false`); with the default, every capture, inbox, proposal and
-transcript behaviour is unchanged. Downgrading after this migration means dropping the empty table
-(the migration's `Down` does exactly that).
+transcript behaviour is unchanged. Downgrading after this migration means dropping the table (the
+migration's `Down` does exactly that) — lossless while the setting was never enabled; if you did enable
+it, export first, because the mirrored rows go with the table.
 
 ## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
 

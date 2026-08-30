@@ -45,7 +45,7 @@ public sealed class CaptureSourceMappingTests
     }
 
     [Fact]
-    public void RoundTrip_TranscriptFile_NeedsTheTranscriptHint()
+    public void RoundTrip_TranscriptFile_HoldsWithOrWithoutTheTranscriptHint()
     {
         var dimensions = CaptureSourceMapping.Resolve(CaptureSource.TranscriptFile);
 
