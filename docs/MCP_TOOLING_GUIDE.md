@@ -56,13 +56,13 @@ When you use MCP tools, include:
 | `context7` | PASS | Resolve library id -> query docs works |
 | `playwright` | PASS | End-to-end browser automation works |
 | `chromeDevTools` | PASS | Chrome DevTools protocol surface available via MCP |
-| `docker` | PASS | Docker gateway defaults to `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform` |
+| `docker` | PASS | Docker gateway defaults to `docker,docker-docs,time,jetbrains,filesystem,SQLite` |
 | `docker-docs` | PASS | Fast Docker docs retrieval via Docker MCP gateway |
-| `openapi` | PASS | OpenAPI/Swagger validation + snippet generation available via Docker MCP gateway |
+| `openapi` | OPT-IN | Available in the Docker catalog, but not in the default gateway profile |
 | `SQLite` | PASS | Local Docker volume-backed SQLite MCP server available via Docker MCP gateway |
 | `filesystem` | PASS | Restricted to `C:\Users\jekyt\source\Taskdeck` and `C:\Users\jekyt\source` |
 | `jetbrains` | PASS | Requires JetBrains MCP plugin and local IDE listener (port `8090`) |
-| `terraform` | PASS | Terraform docs/registry helpers available via Docker MCP gateway |
+| `terraform` | OPT-IN | Available in the Docker catalog, but not in the default gateway profile |
 | `time` | PASS | Timezone/time conversion helpers available via Docker MCP gateway |
 | `postman` | OPTIONAL | Enabled in Docker catalog but requires `POSTMAN_API_KEY` secret |
 | `dockerhub` | OPTIONAL | Enabled in Docker catalog but requires username + `HUB_PAT_TOKEN` secret |
@@ -114,6 +114,8 @@ For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the h
 2. Use shell `docker compose` commands for canonical repo workflows and script parity.
 3. `docker` MCP in this repo is backed by Docker Desktop's `docker mcp gateway run` path, so Docker Desktop must be running.
 4. The Docker MCP gateway is **not** a project server. It is declared once at user scope — `MCP_DOCKER` in `~/.claude.json` (Claude) and `[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml` (Codex) — serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`. Never re-declare it in `.codex/config.toml` or `.mcp.json`: a second declaration starts a second gateway process per session (agent-harness#87).
+5. Validate the configured profile with `scripts/mcp/Test-DockerMcpProfile.ps1`. The validator is intentionally non-starting: it parses the read-only profile inventory and proves the exact `docker-mcp=true` container ID set is unchanged before reporting `PASS`.
+6. Do not use `docker mcp gateway run --dry-run` as a validation probe. That mode starts a gateway without a listener, and the CLI provides no invocation identity that would make set-difference cleanup safe around concurrent sessions.
 
 ---
 
@@ -137,7 +139,7 @@ Enabled in Docker MCP registry:
 - `time`
 
 Default Docker MCP gateway servers (stable/no extra secrets required):
-- `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`
+- `docker,docker-docs,time,jetbrains,filesystem,SQLite`
 
 Optional-but-enabled servers requiring additional setup:
 - `postman`: set Docker MCP secret `postman.postman-api-key`

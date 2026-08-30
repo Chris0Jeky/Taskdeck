@@ -33,10 +33,15 @@ public class McpApplicationServiceRegistrationTests
     public void AddMcpApplicationServices_BindsContextFabricSettingsFromConfiguration()
     {
         // ADR-0065 scaffold review: the standalone MCP hosts never call AddTaskdeckSettings, so without
-        // this registration ContextFabric:DualWriteCaptures would be honoured by the web API and
-        // silently ignored by an MCP server writing the same database.
+        // this registration the ContextFabric switches would be honoured by the web API and silently
+        // ignored by an MCP server writing the same database. CF-01 (#2255) made every switch default
+        // on, so the interesting binding case is now an operator turning one OFF.
         var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?> { ["ContextFabric:DualWriteCaptures"] = "true" })
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ContextFabric:DualWriteCaptures"] = "false",
+                ["ContextFabric:ReadCapturesFromStore"] = "false"
+            })
             .Build();
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(configuration);
@@ -47,13 +52,19 @@ public class McpApplicationServiceRegistrationTests
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateOnBuild = true, ValidateScopes = true });
         using var scope = provider.CreateScope();
 
-        scope.ServiceProvider.GetRequiredService<ContextFabricSettings>().DualWriteCaptures.Should().BeTrue();
+        var settings = scope.ServiceProvider.GetRequiredService<ContextFabricSettings>();
+        settings.DualWriteCaptures.Should().BeFalse();
+        settings.ReadCapturesFromStore.Should().BeFalse();
+        settings.BackfillCaptures.Should().BeTrue("an unset key keeps its default");
         scope.ServiceProvider.GetRequiredService<ICaptureService>().Should().BeOfType<CaptureService>();
     }
 
     [Fact]
     public void AddMcpApplicationServices_DefaultsContextFabricSettingsWithoutConfiguration()
     {
+        // CF-01 (#2255) turned the Context Fabric on by default. An MCP host with no ContextFabric
+        // section must reach the same defaults as the web API, or a capture written through an MCP
+        // tool would skip the durable aggregate that the Inbox now reads from.
         var services = new ServiceCollection();
         services.AddScoped(_ => new Mock<IUnitOfWork>().Object);
         services.AddMcpApplicationServices();
@@ -61,7 +72,10 @@ public class McpApplicationServiceRegistrationTests
         using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
 
-        scope.ServiceProvider.GetRequiredService<ContextFabricSettings>().DualWriteCaptures.Should().BeFalse();
+        var settings = scope.ServiceProvider.GetRequiredService<ContextFabricSettings>();
+        settings.DualWriteCaptures.Should().BeTrue();
+        settings.BackfillCaptures.Should().BeTrue();
+        settings.ReadCapturesFromStore.Should().BeTrue();
         scope.ServiceProvider.GetRequiredService<ICaptureService>().Should().NotBeNull("the 2-arg constructor still resolves without a capture store");
     }
 }

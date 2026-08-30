@@ -285,7 +285,7 @@
   display: block; margin-top: 2px; line-height: 1;
 }
 .paper .stamp .stamp-num, .paper-night .stamp .stamp-num {
-  font-size: 8px; letter-spacing: .14em; color: currentColor; opacity: .7; margin-top: 4px;
+  font-size: 8px; letter-spacing: .14em; color: currentColor; opacity: 1; margin-top: 4px;
 }
 
 .paper .letterpress { text-shadow: 0 1px 0 #ffffffa0, 0 -.5px 0 #1a18141a; }

@@ -1,51 +1,50 @@
+using System.Text.Json;
 using FluentAssertions;
 using Taskdeck.Application.Processing;
+using Taskdeck.Application.Processing.Protocol;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Processing;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Processing;
 
 public sealed class ProcessorManifestValidatorTests
 {
-    /// <summary>The WhisperX example manifest shipped with the 2026-08-30 planning pack, verbatim.</summary>
-    private const string WhisperXManifest = """
-        {
-          "id": "taskdeck.whisperx",
-          "version": "1.0.0",
-          "displayName": "WhisperX Local",
-          "capabilities": ["audio.transcribe", "audio.align", "audio.diarize"],
-          "execution": "sidecar",
-          "locality": "local",
-          "accepts": ["audio/*", "video/mp4", "video/webm"],
-          "languages": ["*"],
-          "features": ["vad", "segment-timestamps", "word-timestamps", "speaker-labels", "cpu-fallback"],
-          "resources": {
-            "cpu": true,
-            "gpu": "optional",
-            "minVramMb": 0,
-            "estimatedRamMb": 4096
-          },
-          "privacy": {
-            "networkRequired": false,
-            "allowedHosts": [],
-            "dataClasses": ["audio", "metadata"],
-            "supportsRegionalRouting": false
-          },
-          "costModel": {
-            "type": "compute-time",
-            "currency": "USD",
-            "unitPrice": 0
-          },
-          "outputSchemas": [
-            "https://taskdeck.dev/schemas/transcript-representation.v1.json"
-          ]
-        }
-        """;
+    /// <summary>
+    /// The canonical WhisperX example is read from the assembly's embedded resource — the same bytes
+    /// the repository ships beside the schema — so drift between the example and the contract can
+    /// no longer be silent (CF-04 residual from PR #2280).
+    /// </summary>
+    private static readonly string WhisperXManifest = ProcessorManifestResources.ReadWhisperXExample();
 
     private static ProcessorManifest ParseExample()
     {
         ProcessorManifest.TryParse(WhisperXManifest, out var manifest, out var error).Should().BeTrue(error);
         return manifest!;
+    }
+
+    private static IReadOnlyDictionary<string, ProcessorCapabilityContract> ContractsFor(params string[] capabilities) =>
+        capabilities.ToDictionary(
+            capability => capability,
+            capability => new ProcessorCapabilityContract(
+                capability == ProcessingCapability.SemanticExtract
+                    ? new[] { WorkerProtocol.OutputCandidateBatch, WorkerProtocol.OutputDiagnostic }
+                    : new[] { WorkerProtocol.OutputRepresentation },
+                new[] { $"https://taskdeck.dev/schemas/{capability}.v1.json" },
+                null),
+            StringComparer.Ordinal);
+
+    [Fact]
+    public void EmbeddedSchema_ShouldBeReadableAndRequireCapabilityContracts()
+    {
+        using var schema = JsonDocument.Parse(ProcessorManifestResources.ReadSchema());
+
+        schema.RootElement.GetProperty("required").EnumerateArray().Select(element => element.GetString())
+            .Should().Contain("capabilityContracts");
+        schema.RootElement.GetProperty("properties").TryGetProperty("outputSchemas", out _)
+            .Should().BeFalse("output schemas are declared per capability, not globally");
+        schema.RootElement.GetProperty("properties").GetProperty("costModel").GetProperty("required")
+            .EnumerateArray().Select(element => element.GetString()).Should().Contain("type");
     }
 
     [Fact]
@@ -59,6 +58,8 @@ public sealed class ProcessorManifestValidatorTests
         manifest.Resources!.Gpu.Should().Be(ProcessorGpuRequirement.Optional);
         manifest.CostModel!.Type.Should().Be(ProcessorCostModelType.ComputeTime);
         manifest.Capabilities.Should().Equal("audio.transcribe", "audio.align", "audio.diarize");
+        manifest.CapabilityContracts.Should().ContainKeys("audio.transcribe", "audio.align", "audio.diarize");
+        manifest.CapabilityContracts!["audio.transcribe"].OptionsSchema.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -97,6 +98,83 @@ public sealed class ProcessorManifestValidatorTests
 
         errors.Should().Contain(error => error.Contains("'board.mutate' is not a known capability"));
         errors.Should().Contain(error => error.Contains("'audio.transcribe' is declared twice"));
+    }
+
+    [Fact]
+    public void Validate_ShouldKeepInProcessCapabilitiesOutOfSidecarsAndRemotes()
+    {
+        var sidecar = ParseExample() with
+        {
+            Capabilities = new[] { ProcessingCapability.ContextResolve, ProcessingCapability.ChangePlan },
+            CapabilityContracts = ContractsFor(ProcessingCapability.ContextResolve, ProcessingCapability.ChangePlan)
+        };
+        var inProcess = sidecar with
+        {
+            Execution = ProcessorExecutionMode.InProcess,
+            Accepts = new[] { "application/json" }
+        };
+
+        var sidecarErrors = ProcessorManifestValidator.Validate(sidecar).Errors;
+        sidecarErrors.Should().Contain(error => error.Contains("'context.resolve' stays in-process"));
+        sidecarErrors.Should().Contain(error => error.Contains("'change.plan' stays in-process"));
+
+        ProcessorManifestValidator.Validate(inProcess).Errors.Should().NotContain(error => error.Contains("stays in-process"));
+        ProcessingCapability.InProcessOnly.Should().BeEquivalentTo(new[] { "context.resolve", "change.plan", "change.verify" });
+        ProcessingCapability.Externalizable.Concat(ProcessingCapability.InProcessOnly).Should().BeEquivalentTo(ProcessingCapability.All);
+    }
+
+    [Fact]
+    public void Validate_ShouldRequireOneContractPerDeclaredCapability()
+    {
+        var missing = ParseExample() with { CapabilityContracts = ContractsFor("audio.transcribe", "audio.align") };
+        var extra = ParseExample() with { CapabilityContracts = ContractsFor("audio.transcribe", "audio.align", "audio.diarize", "image.ocr") };
+        var none = ParseExample() with { CapabilityContracts = null };
+
+        ProcessorManifestValidator.Validate(missing).Errors
+            .Should().Contain(error => error.Contains("'audio.diarize' is declared without a contract"));
+        ProcessorManifestValidator.Validate(extra).Errors
+            .Should().Contain(error => error.Contains("capabilityContracts['image.ocr']: not a declared capability"));
+        ProcessorManifestValidator.Validate(none).Errors
+            .Should().Contain("capabilityContracts: one contract per declared capability is required");
+    }
+
+    [Fact]
+    public void Validate_ShouldCheckContractOutputFamiliesAndSchemas()
+    {
+        var contracts = new Dictionary<string, ProcessorCapabilityContract>(StringComparer.Ordinal)
+        {
+            ["audio.transcribe"] = new(new[] { "diagnostic" }, Array.Empty<string>(), ""),
+            ["audio.align"] = new(new[] { "representation", "representation", "blob" }, new[] { "https://taskdeck.dev/schemas/a.json" }, null),
+            ["audio.diarize"] = new(new[] { WorkerProtocol.OutputCandidateBatch }, new[] { "https://taskdeck.dev/schemas/a.json" }, null)
+        };
+        var manifest = ParseExample() with { CapabilityContracts = contracts };
+
+        var errors = ProcessorManifestValidator.Validate(manifest).Errors;
+
+        errors.Should().Contain(error => error.Contains("['audio.transcribe'].outputs") && error.Contains("not diagnostics alone"));
+        errors.Should().Contain(error => error.Contains("['audio.transcribe'].outputSchemas"));
+        errors.Should().Contain(error => error.Contains("['audio.transcribe'].optionsSchema"));
+        errors.Should().Contain(error => error.Contains("['audio.align'].outputs") && error.Contains("'representation' is declared twice"));
+        errors.Should().Contain(error => error.Contains("['audio.align'].outputs") && error.Contains("'blob' is not one of"));
+        errors.Should().Contain(error => error.Contains("['audio.diarize'].outputs") && error.Contains("only semantic.extract emits candidate batches"));
+    }
+
+    [Fact]
+    public void Validate_ShouldRequireSemanticExtractToEmitCandidateBatches()
+    {
+        var manifest = ParseExample() with
+        {
+            Execution = ProcessorExecutionMode.InProcess,
+            Accepts = new[] { "text/plain" },
+            Capabilities = new[] { ProcessingCapability.SemanticExtract },
+            CapabilityContracts = new Dictionary<string, ProcessorCapabilityContract>(StringComparer.Ordinal)
+            {
+                [ProcessingCapability.SemanticExtract] = new(new[] { WorkerProtocol.OutputRepresentation }, new[] { "https://taskdeck.dev/schemas/c.json" }, null)
+            }
+        };
+
+        ProcessorManifestValidator.Validate(manifest).Errors
+            .Should().Contain(error => error.Contains("semantic.extract emits candidate batches"));
     }
 
     [Fact]
@@ -181,6 +259,15 @@ public sealed class ProcessorManifestValidatorTests
     }
 
     [Fact]
+    public void Validate_ShouldRequireACostModelType()
+    {
+        var manifest = ParseExample() with { CostModel = new ProcessorCostModel(null, "USD", 0) };
+
+        ProcessorManifestValidator.Validate(manifest).Errors
+            .Should().Contain(error => error.StartsWith("costModel.type: required when costModel is present"));
+    }
+
+    [Fact]
     public void Validate_ShouldRejectUnknownDataClasses()
     {
         var manifest = ParseExample() with
@@ -209,6 +296,7 @@ public sealed class ProcessorManifestValidatorTests
         // additionalProperties: false in processor-manifest.v1.schema.json — a typo'd or unknown
         // field must not parse clean.
         var json = WhisperXManifest.Replace("\"displayName\": \"WhisperX Local\",", "\"displayName\": \"WhisperX Local\", \"capabilites\": [],");
+        json.Should().NotBe(WhisperXManifest);
 
         ProcessorManifest.TryParse(json, out _, out var error).Should().BeFalse();
         error.Should().StartWith("Manifest JSON is malformed");
@@ -240,17 +328,47 @@ public sealed class ProcessorManifestValidatorTests
         errors.Should().Contain(error => error.Contains("'biometric' is not one of"));
     }
 
-    [Fact]
-    public void TryParse_ShouldRejectNumericEnumTokensAndMiscasedMemberNames()
+    [Theory]
+    [InlineData("\"execution\": 1")]
+    [InlineData("\"execution\": \"SIDECAR\"")]
+    [InlineData("\"execution\": \"Sidecar\"")]
+    [InlineData("\"execution\": \"mainframe\"")]
+    public void TryParse_ShouldAcceptOnlyTheExactKebabCaseEnumSpelling(string replacement)
     {
-        // The schema fixes kebab-case string enumerations and exact camelCase member names.
-        var numeric = WhisperXManifest.Replace("\"execution\": \"sidecar\"", "\"execution\": 1");
-        ProcessorManifest.TryParse(numeric, out _, out var numericError).Should().BeFalse();
-        numericError.Should().StartWith("Manifest JSON is malformed");
+        var json = WhisperXManifest.Replace("\"execution\": \"sidecar\"", replacement);
+        json.Should().NotBe(WhisperXManifest);
 
+        ProcessorManifest.TryParse(json, out _, out var error).Should().BeFalse(replacement);
+        error.Should().StartWith("Manifest JSON is malformed");
+    }
+
+    [Fact]
+    public void TryParse_ShouldRejectMiscasedMemberNames()
+    {
         var miscased = WhisperXManifest.Replace("\"id\": \"taskdeck.whisperx\"", "\"Id\": \"taskdeck.whisperx\"");
+
         ProcessorManifest.TryParse(miscased, out _, out var miscasedError).Should().BeFalse("'Id' is an unknown member under exact naming");
         miscasedError.Should().StartWith("Manifest JSON is malformed");
+    }
+
+    [Theory]
+    [InlineData("InProcess", "in-process")]
+    [InlineData("FreeLocal", "free-local")]
+    [InlineData("PerMinute", "per-minute")]
+    [InlineData("ComputeTime", "compute-time")]
+    [InlineData("Sidecar", "sidecar")]
+    public void StrictKebabCase_ShouldMatchTheSchemaSpellings(string name, string expected)
+    {
+        StrictKebabCaseEnumConverterFactory.ToKebabCase(name).Should().Be(expected);
+    }
+
+    [Fact]
+    public void ManifestJson_ShouldWriteKebabCaseEnumsBack()
+    {
+        var json = JsonSerializer.Serialize(ParseExample(), ProcessorManifestJson.Options);
+
+        json.Should().Contain("\"execution\":\"sidecar\"");
+        json.Should().Contain("\"type\":\"compute-time\"");
     }
 
     [Fact]
@@ -265,14 +383,5 @@ public sealed class ProcessorManifestValidatorTests
 
         ProcessorManifestValidator.Validate(manifest).Errors
             .Should().Contain(error => error.Contains("compute is remote must declare networkRequired=true"));
-    }
-
-    [Fact]
-    public void TryParse_ShouldRejectAnUnknownEnumValueAsMalformed()
-    {
-        var json = WhisperXManifest.Replace("\"sidecar\"", "\"mainframe\"");
-
-        ProcessorManifest.TryParse(json, out _, out var error).Should().BeFalse();
-        error.Should().StartWith("Manifest JSON is malformed");
     }
 }

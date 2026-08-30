@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Connectors;
 using Taskdeck.Application.Interfaces;
@@ -95,6 +96,14 @@ public static class DependencyInjection
         services.AddScoped<IArtefactExtractionRepository, ArtefactExtractionRepository>();
         services.AddScoped<ITranscriptRepository, TranscriptRepository>();
         services.AddScoped<ICaptureStore, EfCaptureStore>();
+        services.AddScoped<ICaptureBackfillStore, EfCaptureBackfillStore>();
+        // ADR-0065 / CF-01 (#2255): the Context Fabric switches and the ID-preserving backfill must
+        // reach EVERY host that applies migrations or writes a capture -- web API, standalone MCP
+        // (stdio and HTTP) and the CLI all share one database file. TryAdd keeps a host's own
+        // explicit registration (AddTaskdeckSettings) authoritative when both run.
+        services.TryAddSingleton(_ =>
+            configuration.GetSection("ContextFabric").Get<ContextFabricSettings>() ?? new ContextFabricSettings());
+        services.AddScoped<CaptureBackfillService>();
         services.AddScoped<IArtefactTextExtractor, PdfPigArtefactTextExtractor>();
 
         // Vector index is local; hash-based in-memory embeddings are development/test

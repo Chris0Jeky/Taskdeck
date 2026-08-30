@@ -51,9 +51,14 @@ const DEGRADED = metadata({
   promptVersion: 'triage.v1',
 })
 
-function render(over?: ProvenanceMetadata | null) {
+function render(over?: ProvenanceMetadata | null, suppressProducerFootnote = false) {
   return mount(ReviewProvenance, {
-    props: { rows, proposalId: 'proposal-001', metadata: over ?? null },
+    props: {
+      rows,
+      proposalId: 'proposal-001',
+      metadata: over ?? null,
+      suppressProducerFootnote,
+    },
   })
 }
 
@@ -70,6 +75,39 @@ function footnoteText(over?: ProvenanceMetadata | null): string {
 const OFFLINE_CLAIMS = ['offline', 'sin conexión', 'no ai provider', 'nessun provider ai', 'ningún proveedor de ia']
 
 describe('ReviewProvenance footnote', () => {
+  it.each([
+    ['recorded producer without an effective revision', LIVE_PROVIDER, false, true],
+    ['recorded producer with an effective revision', LIVE_PROVIDER, true, false],
+    ['no recorded producer without an effective revision', null, false, false],
+    ['no recorded producer with an effective revision', null, true, false],
+  ] as const)(
+    '%s',
+    (_case, recorded, suppressProducerFootnote, expected) => {
+      const wrapper = render(recorded, suppressProducerFootnote)
+      expect(wrapper.find('[data-testid="paper-review-provenance-footnote"]').exists()).toBe(
+        expected,
+      )
+      expect(wrapper.text()).toContain('View full read-set')
+    },
+  )
+
+  it('keeps original producer metadata in the drawer when the revised footnote is suppressed', async () => {
+    const wrapper = render(LIVE_PROVIDER, true)
+
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
+    expect(wrapper.find('[data-testid="paper-review-provenance-footnote"]').exists()).toBe(false)
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const metadataPanel = document.body.querySelector('.prov-drawer__meta')
+    expect(metadataPanel).not.toBeNull()
+    expect(metadataPanel?.textContent).toContain('OpenAI/gpt-4o-mini')
+    expect(metadataPanel?.textContent).toContain('llm-triage.v2')
+
+    wrapper.unmount()
+  })
+
   it('starts collapsed behind a linked native control and keeps focus when expanded', async () => {
     const wrapper = mount(ReviewProvenance, {
       attachTo: document.body,

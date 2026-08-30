@@ -10,6 +10,7 @@ using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
 using Xunit;
+using Capture = Taskdeck.Domain.Entities.Capture;
 
 namespace Taskdeck.Api.Tests;
 
@@ -104,7 +105,278 @@ public class MigrationBootstrapTests : IDisposable
         _context.Model.FindEntityType(typeof(Transcript)).Should().NotBeNull();
         GetUserTables().Should().Contain("Transcripts");
         GetUserTables().Should().Contain("Captures");
+        GetUserTables().Should().Contain("SourceAssets");
+        GetUserTables().Should().Contain("SourceAssetTextPayloads");
         _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReconcileContextFabricScaffold_DownAndUpRoundTripOnSqlite()
+    {
+        // The hand-written Down folds the three state axes back into the single legacy column and
+        // drops the asset tables; migrating back up must recreate the reconciled schema exactly.
+        _context.Database.Migrate();
+        var migrator = _context.GetService<IMigrator>();
+
+        migrator.Migrate("20260830034447_AddCaptureAggregate");
+
+        GetUserTables().Should().NotContain("SourceAssets");
+        GetUserTables().Should().NotContain("SourceAssetTextPayloads");
+        GetColumns("Captures").Should().Contain("Lifecycle");
+        GetColumns("Captures").Should().NotContain("Disposition");
+
+        migrator.Migrate();
+
+        GetUserTables().Should().Contain("SourceAssets");
+        GetUserTables().Should().Contain("SourceAssetTextPayloads");
+        GetColumns("Captures").Should().Contain(new[] { "Disposition", "ProcessingSummary", "ActionState", "ProducerKind", "RequestedIntent", "EffectiveIntent", "LegacySourceSnapshot", "ProducedByPrincipalId" });
+        GetColumns("Captures").Should().NotContain("Lifecycle");
+        _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    [Fact]
+    public void AddCaptureBackfillState_DownAndUpRoundTripOnSqlite()
+    {
+        // CF-01 (#2255). The migration is purely additive, so Down must remove exactly what Up added
+        // and re-applying must land on the same schema the model expects.
+        _context.Database.Migrate();
+        var migrator = _context.GetService<IMigrator>();
+
+        migrator.Migrate("20260830141427_ReconcileContextFabricScaffold");
+
+        GetUserTables().Should().NotContain("CaptureBackfillStates");
+        GetColumns("SourceAssets").Should().NotContain("SupersedesAssetId");
+        GetColumns("SourceAssets").Should().NotContain("SupersededByAssetId");
+
+        migrator.Migrate();
+
+        GetUserTables().Should().Contain("CaptureBackfillStates");
+        GetColumns("SourceAssets").Should().Contain(new[] { "SupersedesAssetId", "SupersededByAssetId" });
+        GetColumns("CaptureBackfillStates").Should().Contain(
+            new[] { "Id", "Key", "StartedAt", "CompletedAt", "MigratedCount", "SkippedCount", "LastSkipReason" });
+        _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CaptureBackfillMarker_RoundTripsThroughTheStoreOnTheMigratedSchema()
+    {
+        // The marker is what arms the CF-01 read switch, so it has to survive a real round trip and
+        // stay a singleton under its fixed id.
+        _context.Database.Migrate();
+        var store = new EfCaptureBackfillStore(_context);
+
+        (await store.GetStateAsync(CaptureBackfillState.LegacyQueueBackfillKey))
+            .Should().BeNull("a database that never ran the backfill has no marker, and reads stay on the queue row");
+
+        var state = CaptureBackfillState.ForLegacyQueue(DateTimeOffset.UtcNow);
+        state.RecordBatch(migrated: 7);
+        state.RecordSkipped(1, "DomainException: unmappable");
+        await store.SaveStateAsync(state);
+        await _context.SaveChangesAsync();
+
+        state.MarkComplete(DateTimeOffset.UtcNow);
+        await store.SaveStateAsync(state);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var reloaded = await store.GetStateAsync(CaptureBackfillState.LegacyQueueBackfillKey);
+        reloaded.Should().NotBeNull();
+        reloaded!.Id.Should().Be(CaptureBackfillState.LegacyQueueBackfillId);
+        reloaded.MigratedCount.Should().Be(7);
+        reloaded.SkippedCount.Should().Be(1);
+        reloaded.LastSkipReason.Should().Be("DomainException: unmappable");
+        reloaded.IsComplete.Should().BeTrue();
+        _context.CaptureBackfillStates.Count().Should().Be(1, "the marker is a singleton");
+    }
+
+    [Fact]
+    public async Task CaptureAggregate_CommitsAggregateMutationsThroughTheTrackedStoreRead()
+    {
+        // The residual the PR #2280 review left open: GetByIdForUserAsync was AsNoTracking and the
+        // store had no update, so Retitle / SetRequestedIntent / a superseding source could not be
+        // persisted at all.
+        _context.Database.Migrate();
+        var user = new User("fabric-tracked", "fabric-tracked@example.com", "hash");
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var requestId = Guid.NewGuid();
+        var capture = Capture.FromQueueRequest(
+            requestId, user.Id, CaptureSource.Typed, null, null, "Before",
+            sourceText: "original wording");
+        await store.AddAsync(capture);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var tracked = await store.GetByIdForUpdateAsync(requestId, user.Id);
+        tracked.Should().NotBeNull();
+        tracked!.Retitle("After");
+        tracked.SetRequestedIntent(CaptureIntentMode.Act);
+        tracked.SupersedeInlineTextSource("corrected wording");
+        await store.UpdateAsync(tracked);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var reloaded = await store.GetByIdForUserAsync(requestId, user.Id);
+        reloaded!.UserTitle.Should().Be("After");
+        reloaded.RequestedIntent.Should().Be(CaptureIntentMode.Act);
+        reloaded.SourceAssets.Should().HaveCount(2);
+        reloaded.SourceAssets[0].TextPayload!.Text.Should().Be("original wording", "sources are immutable");
+        reloaded.SourceAssets[0].SupersededByAssetId.Should().Be(reloaded.SourceAssets[1].Id);
+        reloaded.SourceAssets[1].SupersedesAssetId.Should().Be(reloaded.SourceAssets[0].Id);
+        reloaded.CurrentText.Should().Be("corrected wording");
+        (await store.GetByIdForUpdateAsync(requestId, Guid.NewGuid()))
+            .Should().BeNull("the tracked read is owner-scoped too");
+    }
+
+    [Fact]
+    public async Task CaptureAggregate_BatchReadIsOwnerScoped()
+    {
+        _context.Database.Migrate();
+        var owner = new User("fabric-owner", "fabric-owner@example.com", "hash");
+        var other = new User("fabric-other", "fabric-other@example.com", "hash");
+        _context.Users.AddRange(owner, other);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var mine = Capture.FromQueueRequest(
+            Guid.NewGuid(), owner.Id, CaptureSource.Typed, null, null, null, sourceText: "mine");
+        var theirs = Capture.FromQueueRequest(
+            Guid.NewGuid(), other.Id, CaptureSource.Typed, null, null, null, sourceText: "theirs");
+        await store.AddAsync(mine);
+        await store.AddAsync(theirs);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var batch = await store.GetByIdsForUserAsync(new[] { mine.Id, theirs.Id }, owner.Id);
+
+        batch.Should().ContainSingle().Which.Id.Should().Be(mine.Id, "no cross-user leak through the batch read");
+        batch[0].CurrentText.Should().Be("mine");
+    }
+
+    [Fact]
+    public async Task CaptureAggregate_SurvivesTheDatabaseFileExportImportRoundTrip()
+    {
+        // CF-01 (#2255) acceptance: portability covers the durable capture. The dev-sandbox
+        // export/import path (DatabaseFileExportImportService) checkpoints the WAL and copies the
+        // whole SQLite file, so the proof that Captures / SourceAssets / SourceAssetTextPayloads
+        // travel is that a copy taken exactly that way reads them back through the same store.
+        _context.Database.Migrate();
+        var user = new User("fabric-portable", "fabric-portable@example.com", "hash");
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var captureId = Guid.NewGuid();
+        var capture = Capture.FromQueueRequest(
+            captureId, user.Id, CaptureSource.WebClip, null, null, "Portable",
+            sourceText: "material that must survive export",
+            externalReference: "https://example.test/portable");
+        capture.SupersedeInlineTextSource("corrected material that must survive export");
+        await store.AddAsync(capture);
+        await _context.SaveChangesAsync();
+
+        // Same preparation the export service performs before copying the file.
+        _context.Database.ExecuteSqlRaw("PRAGMA wal_checkpoint(TRUNCATE);");
+        _context.Database.CloseConnection();
+
+        var exportedPath = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-portability-test-{Guid.NewGuid():N}.db");
+        try
+        {
+            File.Copy(_dbPath, exportedPath, overwrite: true);
+
+            var importedOptions = new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(TestSqlite.ConnectionString(exportedPath))
+                .Options;
+            await using var imported = new TaskdeckDbContext(importedOptions);
+            var importedStore = new EfCaptureStore(imported);
+
+            var restored = await importedStore.GetByIdForUserAsync(captureId, user.Id);
+
+            restored.Should().NotBeNull("the durable capture travels with the database file");
+            restored!.LegacySourceSnapshot.Should().Be(CaptureSource.WebClip);
+            restored.SourceAssets.Should().HaveCount(3, "every source asset travels, superseded ones included");
+            restored.SourceAssets[0].TextPayload!.Text.Should().Be("material that must survive export");
+            restored.SourceAssets[0].SupersededByAssetId.Should().Be(restored.SourceAssets[2].Id);
+            restored.SourceAssets[1].ExternalReference.Should().Be("https://example.test/portable");
+            restored.CurrentText.Should().Be("corrected material that must survive export");
+            (await importedStore.CountByUserAsync(user.Id)).Should().Be(1);
+        }
+        finally
+        {
+            foreach (var path in TestWebApplicationFactory.GetDatabaseCleanupTargets(exportedPath))
+            {
+                try
+                {
+                    if (File.Exists(path))
+                        File.Delete(path);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
+    }
+
+    private List<string> GetColumns(string table)
+    {
+        var connection = _context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info(\"{table}\");";
+        using var reader = command.ExecuteReader();
+        var columns = new List<string>();
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        return columns;
+    }
+
+    [Fact]
+    public async Task CaptureAggregate_RoundTripsThroughEfCaptureStoreOnTheMigratedSchema()
+    {
+        // ADR-0065 reconciliation: the scaffold's store was never exercised against a real database.
+        // A capture with an inline text asset must persist, reload with its payload, and erase as a
+        // unit through the same store account deletion uses.
+        _context.Database.Migrate();
+        var user = new User("fabric-user", "fabric-user@example.com", "hash");
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var requestId = Guid.NewGuid();
+        var capture = Capture.FromQueueRequest(
+            requestId, user.Id, CaptureSource.Paste, null, null, "Round trip",
+            requestedIntent: CaptureIntentMode.Act,
+            legacyDisposition: CaptureDisposition.ProposalRequested);
+        capture.AddInlineTextSource("book the venue\nand call Dana");
+        capture.RecordProcessingSummary(CaptureProcessingSummary.Ready);
+        await store.AddAsync(capture);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var reloaded = await store.GetByIdForUserAsync(requestId, user.Id);
+
+        reloaded.Should().NotBeNull();
+        reloaded!.LegacyRequestId.Should().Be(requestId);
+        reloaded.RequestedIntent.Should().Be(CaptureIntentMode.Act);
+        reloaded.EffectiveIntent.Should().Be(CaptureIntentMode.Act);
+        reloaded.Disposition.Should().Be(CaptureUserDisposition.Active);
+        reloaded.ProcessingSummary.Should().Be(CaptureProcessingSummary.Ready);
+        reloaded.Timeline.Should().Be(CaptureTimelineStep.Understood);
+        var asset = reloaded.SourceAssets.Should().ContainSingle().Subject;
+        asset.StorageKind.Should().Be(SourceAssetStorageKind.InlineText);
+        asset.TextPayload!.Text.Should().Be("book the venue\nand call Dana");
+        (await store.GetByIdForUserAsync(requestId, Guid.NewGuid())).Should().BeNull("reads are owner-scoped");
+
+        (await store.DeleteByUserAsync(user.Id)).Should().Be(1);
+        await _context.SaveChangesAsync();
+        _context.SourceAssets.Count().Should().Be(0, "assets go with their capture");
+        _context.SourceAssetTextPayloads.Count().Should().Be(0, "payloads go with their asset");
+        (await store.CountByUserAsync(user.Id)).Should().Be(0);
     }
 
     [Fact]

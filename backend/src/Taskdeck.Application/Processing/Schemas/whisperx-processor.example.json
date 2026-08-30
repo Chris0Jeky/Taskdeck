@@ -1,0 +1,44 @@
+{
+  "id": "taskdeck.whisperx",
+  "version": "1.0.0",
+  "displayName": "WhisperX Local",
+  "capabilities": ["audio.transcribe", "audio.align", "audio.diarize"],
+  "execution": "sidecar",
+  "locality": "local",
+  "accepts": ["audio/*", "video/mp4", "video/webm"],
+  "languages": ["*"],
+  "features": ["vad", "segment-timestamps", "word-timestamps", "speaker-labels", "cpu-fallback"],
+  "resources": {
+    "cpu": true,
+    "gpu": "optional",
+    "minVramMb": 0,
+    "estimatedRamMb": 4096
+  },
+  "privacy": {
+    "networkRequired": false,
+    "allowedHosts": [],
+    "dataClasses": ["audio", "metadata"],
+    "supportsRegionalRouting": false
+  },
+  "costModel": {
+    "type": "compute-time",
+    "currency": "USD",
+    "unitPrice": 0
+  },
+  "capabilityContracts": {
+    "audio.transcribe": {
+      "outputs": ["representation", "diagnostic"],
+      "outputSchemas": ["https://taskdeck.dev/schemas/transcript-representation.v1.json"],
+      "optionsSchema": "https://taskdeck.dev/schemas/options/audio-transcribe.v1.json"
+    },
+    "audio.align": {
+      "outputs": ["representation", "diagnostic"],
+      "outputSchemas": ["https://taskdeck.dev/schemas/transcript-representation.v1.json"]
+    },
+    "audio.diarize": {
+      "outputs": ["representation", "diagnostic"],
+      "outputSchemas": ["https://taskdeck.dev/schemas/transcript-representation.v1.json"],
+      "optionsSchema": "https://taskdeck.dev/schemas/options/audio-diarize.v1.json"
+    }
+  }
+}

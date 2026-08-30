@@ -50,7 +50,7 @@
  */
 export interface RecordedProvenance {
   provider: string
-  model: string
+  model: string | null
   promptVersion: string | null
 }
 

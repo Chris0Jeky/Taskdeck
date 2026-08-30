@@ -86,6 +86,11 @@ using (var host = builder.Build())
         SerializedMigrator.Migrate(dbContext, backupSettings);
     }
 
+    // ADR-0065 / CF-01 (#2255): the CLI shares the database with the API and MCP hosts, so it runs
+    // the same post-migration data step. No logger: CLI stdout stays clean JSON. Idempotent -- on a
+    // migrated database this is one marker read and one indexed count.
+    ContextFabricBootstrap.RunCaptureBackfill(host.Services);
+
     startupTrace.Record(CliStartupTrace.MigrationEndPhase);
     var dispatcher = new CommandDispatcher(host.Services);
     startupTrace.Record(CliStartupTrace.DispatchBeginPhase);
