@@ -7,8 +7,8 @@ namespace Taskdeck.Api.FirstRun;
 /// Packaged-desktop-only policy for retired provider configuration that arrives from the
 /// PROCESS ENVIRONMENT (#2233).
 /// <para>
-/// A Windows profile that once ran a Gemini-era Taskdeck keeps user-scope
-/// <c>Llm__Gemini__*</c> variables forever, and every later double-click inherits them. The
+/// A Windows profile that once ran a Gemini-era Taskdeck keeps its user-scope retired
+/// provider variables forever, and every later double-click inherits them. The
 /// packaged app must still start, so the retired names are dropped from the environment
 /// configuration source before anything reads them; selection then falls through to the
 /// packaged default (Mock / deterministic triage).

@@ -182,6 +182,23 @@ public class DesktopRuntimeTests
         Assert.All(output, line => Assert.DoesNotContain("synthetic-stack", line));
     }
 
+    [Fact]
+    public void FormatRetiredProviderConfigurationIgnored_IsBoundedValueBlindWarningOutput()
+    {
+        var output = DesktopRuntime.FormatRetiredProviderConfigurationIgnored();
+
+        Assert.Equal(
+            [
+                "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored",
+                "Taskdeck ignored retired Gemini provider settings left in this Windows profile's environment " +
+                "and started with its built-in offline provider. Remove the leftover Llm__Gemini__* variables " +
+                "(and any Llm__Provider=Gemini) to clear this warning, then choose OpenAI, OpenAICompatible, " +
+                "Ollama, or Mock in Taskdeck. No settings were printed."
+            ],
+            output);
+        Assert.All(output, line => Assert.DoesNotContain("TASKDECK_DESKTOP_FATAL", line));
+    }
+
     private static IConfiguration Configuration(string key, string value)
         => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { [key] = value })

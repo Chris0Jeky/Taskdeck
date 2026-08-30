@@ -125,6 +125,15 @@ public class RetiredGeminiProviderArchitectureTests
                    || marker.Equals("TASKDECK_LLM_GEMINI", StringComparison.OrdinalIgnoreCase);
         }
 
+        // #2233: the packaged desktop tells the user which leftover profile variables to delete.
+        // Naming the retired variable family in that guidance is migration help, not a
+        // reintroduced integration, and the file holds console text only.
+        if (marker.Equals("Llm__Gemini", StringComparison.OrdinalIgnoreCase)
+            && Path.GetFileName(path).Equals("DesktopRuntime.cs", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
         if (!marker.Equals("TASKDECK_LLM_GEMINI", StringComparison.OrdinalIgnoreCase))
         {
             return false;
