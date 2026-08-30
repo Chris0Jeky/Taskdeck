@@ -188,6 +188,13 @@ Explorer/SmartScreen acceptance remain unverified.
   Playwright journeys passed 3/3 against a fresh synthetic database, then the final hosted head,
   including full E2E, completed successfully. The browser checks prove the explicit receipt -> Apply
   transition; they do not close the progressive-disclosure, All/Mine, focus, or lifecycle residuals.
+- `#1940`/PR `#2323`: the saved Provenance-shortcut regression first failed red (1 failed / 134
+  skipped) on the obsolete toast-only behavior. The final controlled disclosure seam passed five
+  focused Review/keymap/provenance files (227/227), typecheck, production build, zero-warning scoped
+  ESLint, and diff hygiene. The hosted rollup completed 21 successes / 11 declared skips, including
+  Windows/Linux Frontend, Windows/Linux API, and E2E Smoke. No dedicated browser or screen-reader
+  journey targeted this shortcut; modal-drawer focus ownership and off-screen/live-announced state
+  feedback remain MEDIUM follow-ups on `#1940`.
 - **Prepared but unshipped checkpoints:** `origin/issue-1949/directive-attribute-tokenization`
   (`d89bd7cc3`) passed 13 guard tests, typecheck, scoped lint, and diff hygiene after rebasing onto
   `55dbf6e14`. `origin/issue-1967/applied-read-only-detail` (`010021a745`) passed 186 focused tests,
