@@ -51,13 +51,22 @@ export default defineConfig({
         // pathname while nginx location-matches the decoded URI (`/mcp/messages` — machine
         // surface), so without it the service worker would hand the app shell to a path the proxy
         // routes to the API. A double-encoded `%252F` stays SPA-side in both layers (nginx decodes
-        // once, leaving literal `%2F` text). Behaviour is pinned by
-        // src/tests/config/PwaMachinePathDenylist.spec.ts (#1992).
+        // once, leaving literal `%2F` text).
+        //
+        // The `i` flag is the fail-closed half (#1992 q-10 A, ADR-0064). A machine prefix is the
+        // exact lowercase literal, so `/API/boards` is not a machine path — but it is not a
+        // client-side route either: nginx and the API both answer it 404. Denying it here is what
+        // lets that 404 reach the user; without the flag the service worker would answer a
+        // navigation to `/API/boards` from the precache and show the app shell for a URL that does
+        // not exist at any layer. Denylisting is not the same as claiming the path is machine
+        // surface — it only means "this is not ours to answer from cache".
+        //
+        // Behaviour is pinned by src/tests/config/PwaMachinePathDenylist.spec.ts (#1992).
         navigateFallbackDenylist: [
-          /^\/api(?:[/?]|%2[fF]|$)/,
-          /^\/health(?:[/?]|%2[fF]|$)/,
-          /^\/hubs(?:[/?]|%2[fF]|$)/,
-          /^\/mcp(?:[/?]|%2[fF]|$)/,
+          /^\/api(?:[/?]|%2[fF]|$)/i,
+          /^\/health(?:[/?]|%2[fF]|$)/i,
+          /^\/hubs(?:[/?]|%2[fF]|$)/i,
+          /^\/mcp(?:[/?]|%2[fF]|$)/i,
         ],
         // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
         // retain cached responses. Fresh data is always preferred when online.

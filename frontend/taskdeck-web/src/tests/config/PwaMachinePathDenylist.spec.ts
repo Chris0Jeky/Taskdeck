@@ -77,6 +77,24 @@ describe('PWA navigation fallback denylist', () => {
     '/api%2Fboards',
     '/hubs%2fboards',
     '/health%2Fready',
+    // Case variants (#1992 q-10 A, ADR-0064). These are not machine paths — the prefixes are exact
+    // lowercase — but they are not client-side routes either: nginx and the API both answer them
+    // 404. The shell must not stand in front of that 404 from the precache.
+    '/API',
+    '/Api',
+    '/MCP',
+    '/Mcp',
+    '/HUBS',
+    '/Health',
+    '/API/boards',
+    '/Api/boards',
+    '/MCP/messages',
+    '/Hubs/boards',
+    '/HEALTH/ready',
+    '/API?probe=1',
+    // Both variants at once.
+    '/MCP%2Fmessages',
+    '/Api%2fboards',
   ])('keeps %s off the SPA fallback', (path) => {
     expect(isDenied(path)).toBe(true)
   })
@@ -93,6 +111,13 @@ describe('PWA navigation fallback denylist', () => {
     '/hubsy',
     '/healthy',
     '/mcpx',
+    // The same, in other casings: the fail-closed rule keys on the segment boundary, so widening
+    // the match to any case must not swallow a client-side route that merely starts with a
+    // machine prefix's letters.
+    '/Apidocs',
+    '/HubsY',
+    '/Healthy',
+    '/McpX',
     // Double-encoded: nginx decodes once, leaving literal `%2F` text after the prefix, so the
     // proxy does not treat it as machine surface either — the layers agree it is SPA-side.
     '/mcp%252Fmessages',
