@@ -69,6 +69,54 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Planning update (2026-08-30, engineering-review bundle reconciliation)
+
+- **Evidence, not authority.** The external security/quality/performance/payment-gating bundle at
+  source commit `221aa88c8` was validated and re-measured against live head `ca93903c8`, then
+  reconciled rather than imported. The dated evidence, patch caveats, all 20 brief dispositions, and
+  corrected entitlement boundary are in
+  `docs/analysis/2026-08-30-engineering-review/`; tracker `#2349` owns the primer.
+- **Release safety.** Confirmed PWA cross-session API replay is the sole new v0.3 blocker
+  (`#2350`, Priority I). Existing hosted-session owner `#1644` and cross-surface safe unexpected
+  errors `#2351` are v0.4 security work; standard HTTP 500 responses are already sanitized, so
+  the latter targets persisted, batch, MCP, CLI, and other non-standard surfaces.
+- **Existing owners win.** Database transfer maps to `#1166`/`#2238`, connector envelope rotation
+  to `#1134`, hotspot extraction to `#2236`, performance evidence to `#2237`, frontend test
+  typechecking to `#1607`, and impact-based CI to `#2324` plus its children. User-data export
+  already has a streaming path; no competing issue was seeded.
+- **Later horizons remain bounded.** Formatting and staged .NET analyzer ratchets are `#2352`
+  (v0.5); `#1607` also moves to v0.5. Entitlement architecture `#2353` remains unmilestoned and
+  blocked by `#2012`, retention evidence, the subject model, and rights review. No bundle-only
+  work was manufactured for v0.6/v0.7, and v0.4 hosted open beta remains non-commercial.
+- **Queue/governance.** The bounded owner-requested intake created exactly five `Pending` records
+  (`#2349`-`#2353`) and promoted none to `Now`/`Next`. A complete ProjectV2 Apply/post-audit
+  scanned 2,325/2,325 items, wrote 32 Priority corrections across the concurrently changing
+  project, and finished at zero drift.
+
+## Planning update (2026-08-30, v0.3/v0.4 acceleration-bundle reconciliation)
+
+- **The received bundle is an input, not a parallel backlog.** Its 220 files were grounded at
+  `221aa88c8`; live `main` was already 42 commits and 116 changed files ahead. The source, validation
+  receipt, component/workstream dispositions, and candidate-code admission contract are recorded in
+  `docs/analysis/2026-08-30-acceleration-bundle/RECONCILIATION.md` under tracker `#2348`.
+- **Stale starter lanes were removed before admission.** CF-01 `#2255` is merged/closed with residuals
+  `#2345`/`#2347`; OpenAI-compatible streaming `#2241` already satisfies AC2/AC4/AC6 and retains only
+  API-level/live proof; Smart CI depth consumes ADR-0066's landed control plane. Incorrect milestone-4
+  PR references and a Windows-specific backup-manifest validation defect are recorded rather than
+  copied into live tracker contracts.
+- **The bounded first wave stayed within Project WIP.** `#2348` and REF-0 `#2236` entered
+  `Now / Priority II` alongside `#2230`; the post-merge audit corrected `#1271` from `Now` to
+  `Pending` because it is a human-owned standing tracker, not queued release work. `#2348` is now
+  Done and `#2236` is in Review. REF-0 owns only repository-native size × churn × touching-commit
+  measurement tooling; its authoritative baseline waits for the exact final `v0.3.0` tag. `#2241`
+  remains Pending until its remaining API-level and live-smoke proof is admitted on its own merits,
+  not because the standing tracker consumes a delivery slot.
+- **Execution parks on the canonical checkout.** Both the fingerprint capture and the required issue-
+  worktree helper fail closed because the OneDrive roots carry `ReparsePoint`; `#1711` holds the exact
+  evidence. A write lane may resume only from a short, non-reparse clone through the required worktree
+  helper, its complete printed guard command, and the bounded initializer. If any step fails, the lane
+  parks. No guard is weakened and the coordinator preserves the received bundles.
+
 ## Governance update (2026-08-30, Smart CI Fabric — ADR-0066 accepted under delegation)
 
 The maintainer directed that the repository **goes private for the v0.3.0 release** and that CI must
