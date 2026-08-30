@@ -399,6 +399,72 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_ShouldSuppressProposalAttempt_WhenDegradedBoardTurnRequestsProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Degraded board session", boardId);
+        const string degradedReason = "Live provider request failed.";
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult(
+                "This is a degraded fallback response.",
+                10,
+                false,
+                Provider: "OpenAI",
+                Model: "gpt-4o-mini",
+                IsDegraded: true,
+                DegradedReason: degradedReason));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create card \"Release notes\"", RequestProposal: true),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("degraded");
+        result.Value.DegradedReason.Should().Be(degradedReason);
+        result.Value.Content.Should().Be("This is a degraded fallback response.");
+        result.Value.ProposalId.Should().BeNull();
+
+        var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
+        persisted.MessageType.Should().Be("degraded");
+        persisted.DegradedReason.Should().Be(degradedReason);
+        persisted.ProposalId.Should().BeNull();
+
+        _plannerMock.Verify(
+            p => p.ParseInstructionAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()),
+            Times.Never);
+        _plannerMock.Verify(
+            p => p.ParseBatchInstructionAsync(
+                It.IsAny<IReadOnlyList<string>>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()),
+            Times.Never);
+        _proposalServiceMock.Verify(
+            service => service.CreateProposalAsync(
+                It.IsAny<CreateProposalDto>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldKeepEmptyContentPlaceholder_WhenUnboundActionTurnHasNoText()
     {
         var userId = Guid.NewGuid();

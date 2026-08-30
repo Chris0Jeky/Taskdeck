@@ -489,7 +489,8 @@ public class ChatService : IChatService
                     }
                     else
                     {
-                        var shouldAttemptProposal = llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue);
+                        var shouldAttemptProposal = !llmResult.IsDegraded
+                            && (llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue));
 
                         if (shouldAttemptProposal)
                         {
