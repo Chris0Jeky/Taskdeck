@@ -25,6 +25,7 @@ import { useProposalRevisions } from '../../composables/useProposalRevisions'
 import { useWorkspaceCollaboration } from '../../composables/useWorkspaceCollaboration'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from '../../composables/useErrorMapper'
 import { automationApi } from '../../api/automationApi'
+import { boardsApi } from '../../api/boardsApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useToastStore } from '../../store/toastStore'
@@ -40,6 +41,7 @@ import {
 } from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
+import { logError } from '../../utils/errorReporting'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -407,6 +409,7 @@ let queueReplacedByPoll = false
 
 function onQueueReplacedByPoll() {
   queueReplacedByPoll = true
+  void refreshRetainedDecisionBoardAccess()
   void nextTick(() => {
     queueReplacedByPoll = false
   })
@@ -774,6 +777,13 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
 // a decision merely because its row was filed. Current server rows win by id so
 // a later refresh can still update the lifecycle fields we project.
 const filedAwayDecisionHistory = ref<ApiProposal[]>([])
+const readableFiledAwayBoardIds = ref<Set<string>>(new Set())
+let retainedBoardAccessGeneration = 0
+
+function boardIdentity(boardId: string | null | undefined): string | null {
+  const normalized = boardId?.trim().toLowerCase()
+  return normalized || null
+}
 
 // A trusted 403 means the current board payload is no longer authorised. The
 // computed guard suppresses retained metrics in the same reactive turn, while
@@ -782,7 +792,10 @@ const filedAwayDecisionHistory = ref<ApiProposal[]>([])
 watch(
   queueAccessRevoked,
   (revoked) => {
-    if (revoked) filedAwayDecisionHistory.value = []
+    if (!revoked) return
+    retainedBoardAccessGeneration += 1
+    filedAwayDecisionHistory.value = []
+    readableFiledAwayBoardIds.value = new Set()
   },
   { flush: 'sync' },
 )
@@ -794,17 +807,86 @@ function upsertProposalById(target: ApiProposal[], proposal: ApiProposal) {
 }
 
 function retainKnownDecisions(candidates: readonly ApiProposal[]) {
+  // The row came from the currently authorized queue. Preserve that proof when
+  // File away removes it locally, but invalidate any older board-list read that
+  // could otherwise overwrite this newer decision.
+  retainedBoardAccessGeneration += 1
   const retained = [...filedAwayDecisionHistory.value]
+  const readableBoards = new Set(readableFiledAwayBoardIds.value)
   for (const proposal of candidates) {
     if (!proposal.decidedAt || !proposal.decidedByUserId) continue
     upsertProposalById(retained, proposal)
+    const boardId = boardIdentity(proposal.boardId)
+    if (boardId) readableBoards.add(boardId)
   }
   filedAwayDecisionHistory.value = retained
+  readableFiledAwayBoardIds.value = readableBoards
+}
+
+/**
+ * Re-authorize every board represented only by mount-local filed-away history.
+ *
+ * An unscoped proposal-list read can succeed while omitting a board whose access
+ * was just revoked, so queue membership cannot prove that retained history is
+ * still readable. The paginated Boards API is the server-authoritative readable
+ * set. Suppress retained board rows before awaiting it; on a transient failure
+ * they remain cached for a later retry but never contribute a misleading metric.
+ */
+async function refreshRetainedDecisionBoardAccess() {
+  const requestedBoards = new Set<string>()
+  for (const proposal of filedAwayDecisionHistory.value) {
+    const boardId = boardIdentity(proposal.boardId)
+    if (boardId) requestedBoards.add(boardId)
+  }
+  if (requestedBoards.size === 0) {
+    readableFiledAwayBoardIds.value = new Set()
+    return
+  }
+
+  const generation = ++retainedBoardAccessGeneration
+  readableFiledAwayBoardIds.value = new Set()
+
+  try {
+    const readableBoards = new Set<string>()
+    let offset = 0
+    const limit = 200
+
+    while (readableBoards.size < requestedBoards.size) {
+      const page = await boardsApi.getBoardsPaginated(undefined, true, offset, limit)
+      if (generation !== retainedBoardAccessGeneration) return
+
+      for (const board of page.items) {
+        const boardId = boardIdentity(board.id)
+        if (boardId && requestedBoards.has(boardId)) readableBoards.add(boardId)
+      }
+
+      if (readableBoards.size === requestedBoards.size || !page.hasMore) break
+      const nextOffset = page.offset + page.items.length
+      if (nextOffset <= offset) {
+        logError('Review retained-decision board refresh made no pagination progress')
+        return
+      }
+      offset = nextOffset
+    }
+
+    if (generation !== retainedBoardAccessGeneration) return
+    readableFiledAwayBoardIds.value = readableBoards
+    filedAwayDecisionHistory.value = filedAwayDecisionHistory.value.filter((proposal) => {
+      const boardId = boardIdentity(proposal.boardId)
+      return boardId === null || readableBoards.has(boardId)
+    })
+  } catch (error: unknown) {
+    if (generation !== retainedBoardAccessGeneration) return
+    logError('Review retained-decision board refresh failed:', error)
+  }
 }
 
 const weeklyDecisionSource = computed<ApiProposal[]>(() => {
   if (queueAccessRevoked.value) return []
-  const merged = [...filedAwayDecisionHistory.value]
+  const merged = filedAwayDecisionHistory.value.filter((proposal) => {
+    const boardId = boardIdentity(proposal.boardId)
+    return boardId === null || readableFiledAwayBoardIds.value.has(boardId)
+  })
   for (const proposal of proposals.value) upsertProposalById(merged, proposal)
   return merged
 })
@@ -1826,6 +1908,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  retainedBoardAccessGeneration += 1
   clearBatchSelection()
   stopClock()
   stopQueueRefresh()

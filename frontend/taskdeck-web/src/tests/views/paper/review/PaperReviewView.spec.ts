@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   getSimilarPast: vi.fn(),
   getCaptureItem: vi.fn(),
   getBoards: vi.fn(),
+  getBoardsPaginated: vi.fn(),
   getColumns: vi.fn(),
   createRevision: vi.fn(),
   getRevisions: vi.fn(),
@@ -57,7 +58,10 @@ vi.mock('../../../../api/automationApi', () => ({
 }))
 
 vi.mock('../../../../api/boardsApi', () => ({
-  boardsApi: { getBoards: mocks.getBoards },
+  boardsApi: {
+    getBoards: mocks.getBoards,
+    getBoardsPaginated: mocks.getBoardsPaginated,
+  },
 }))
 
 vi.mock('../../../../api/columnsApi', () => ({
@@ -292,6 +296,13 @@ describe('PaperReviewView', () => {
     mocks.getHistory.mockResolvedValue([])
     mocks.getSimilarPast.mockResolvedValue({ decisions: [], applyRate: 0 })
     mocks.getCaptureItem.mockRejectedValue(new Error('capture metadata unavailable'))
+    mocks.getBoardsPaginated.mockResolvedValue({
+      items: [],
+      totalCount: 0,
+      hasMore: false,
+      offset: 0,
+      limit: 200,
+    })
     mocks.getColumns.mockResolvedValue([])
   })
   afterEach(() => {
@@ -3073,6 +3084,126 @@ describe('PaperReviewView', () => {
       // "Nothing waiting. Good." -- the exact false negative #2194 is about.
       expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
       expect(wrapper.text()).not.toContain('Nothing waiting')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps readable filed-away metrics, then drops them after a successful unscoped poll omits the revoked board', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const today = new Date()
+      today.setHours(12, 0, 0, 0)
+      const yesterday = new Date(today)
+      yesterday.setDate(yesterday.getDate() - 1)
+      const boardAApplied = makeProposal({
+        id: 'board-a-applied',
+        boardId: 'board-a',
+        status: 'Applied',
+        summary: 'Board A applied decision',
+        decidedAt: today.toISOString(),
+        decidedByUserId: 'u-1',
+        appliedAt: today.toISOString(),
+      })
+      const boardBRejected = makeProposal({
+        id: 'board-b-rejected',
+        boardId: 'board-b',
+        status: 'Rejected',
+        summary: 'Board B rejected decision',
+        decidedAt: yesterday.toISOString(),
+        decidedByUserId: 'u-1',
+        appliedAt: null,
+      })
+      mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+      const wrapper = await mountView(
+        [boardAApplied, boardBRejected],
+        '/workspace/review',
+        [
+          { id: 'board-a', name: 'Board A' },
+          { id: 'board-b', name: 'Board B' },
+        ],
+      )
+
+      expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+      expect(
+        (wrapper.findAll('.paper-review-cadence__bar')[6].element as HTMLElement).style.height,
+      ).toBe('100%')
+
+      const appliedRow = wrapper
+        .findAll('.paper-review-recent__row')
+        .find((button) => button.text().includes('Board A applied decision'))!
+      await appliedRow.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="decision-file-away"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+
+      // A filed row is absent from the queue even while its board remains readable.
+      // A transient catalogue failure must fail closed without discarding the
+      // cached row; the next complete paginated refresh restores it. A later
+      // complete refresh omits revoked board A and removes only its history.
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      mocks.getProposals.mockResolvedValue([boardBRejected])
+      mocks.getBoardsPaginated
+        .mockRejectedValueOnce(new Error('temporary board catalogue failure'))
+        .mockResolvedValueOnce({
+          items: [{ id: 'board-b', name: 'Board B' }],
+          totalCount: 2,
+          hasMore: true,
+          offset: 0,
+          limit: 200,
+        })
+        .mockResolvedValueOnce({
+          items: [{ id: 'board-a', name: 'Board A' }],
+          totalCount: 2,
+          hasMore: false,
+          offset: 1,
+          limit: 200,
+        })
+        .mockResolvedValueOnce({
+          items: [{ id: 'board-b', name: 'Board B' }],
+          totalCount: 1,
+          hasMore: false,
+          offset: 0,
+          limit: 200,
+        })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(false)
+      expect(mocks.getBoardsPaginated).toHaveBeenCalledWith(undefined, true, 0, 200)
+      expect(mocks.getBoardsPaginated).toHaveBeenCalledTimes(1)
+      expect(consoleError).toHaveBeenCalledWith(
+        'Review retained-decision board refresh failed:',
+        expect.any(Error),
+      )
+      expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('0%')
+
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(mocks.getBoardsPaginated).toHaveBeenCalledWith(undefined, true, 1, 200)
+      expect(mocks.getBoardsPaginated).toHaveBeenCalledTimes(3)
+      expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+      expect(
+        (wrapper.findAll('.paper-review-cadence__bar')[6].element as HTMLElement).style.height,
+      ).toBe('100%')
+
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(false)
+      expect(mocks.getBoardsPaginated).toHaveBeenCalledTimes(4)
+      expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('0%')
+      const bars = wrapper.findAll('.paper-review-cadence__bar')
+      expect((bars[5].element as HTMLElement).style.height).toBe('100%')
+      expect((bars[6].element as HTMLElement).style.height).toBe('0%')
+
       wrapper.unmount()
     } finally {
       vi.useRealTimers()
