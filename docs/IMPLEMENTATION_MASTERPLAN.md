@@ -104,10 +104,13 @@ behaviour.
   API-level/live proof; Smart CI depth consumes ADR-0066's landed control plane. Incorrect milestone-4
   PR references and a Windows-specific backup-manifest validation defect are recorded rather than
   copied into live tracker contracts.
-- **The bounded first wave fills, but does not exceed, Project WIP.** `#2348` and REF-0 `#2236` moved
-  to `Now / Priority II`, alongside existing `#1271` and `#2230`. REF-0 owns only repository-native
-  size × churn × touching-commit measurement tooling; its authoritative baseline waits for the exact
-  final `v0.3.0` tag. `#2241` remains Pending until a slot opens.
+- **The bounded first wave stayed within Project WIP.** `#2348` and REF-0 `#2236` entered
+  `Now / Priority II` alongside `#2230`; the post-merge audit corrected `#1271` from `Now` to
+  `Pending` because it is a human-owned standing tracker, not queued release work. `#2348` is now
+  Done and `#2236` is in Review. REF-0 owns only repository-native size × churn × touching-commit
+  measurement tooling; its authoritative baseline waits for the exact final `v0.3.0` tag. `#2241`
+  remains Pending until its remaining API-level and live-smoke proof is admitted on its own merits,
+  not because the standing tracker consumes a delivery slot.
 - **Execution parks on the canonical checkout.** Both the fingerprint capture and the required issue-
   worktree helper fail closed because the OneDrive roots carry `ReparsePoint`; `#1711` holds the exact
   evidence. A write lane may resume only from a short, non-reparse clone through the required worktree
