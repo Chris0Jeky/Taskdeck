@@ -18,6 +18,10 @@ const props = defineProps<{
   /** Optional board id to default the picker to. */
   defaultBoardId?: string | null
   submitting?: boolean
+  /** A composer capture failed and its inspectable receipt is mounted. */
+  invalid?: boolean
+  /** DOM id of the failure receipt to associate via `aria-describedby`. */
+  errorId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -191,6 +195,8 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
             aria-label="Capture body"
             placeholder="The thought, in plain language…"
             :disabled="inputsDisabled"
+            :aria-invalid="invalid ? 'true' : undefined"
+            :aria-describedby="errorId ?? undefined"
             @keydown="onBodyKeydown"
           />
         </label>

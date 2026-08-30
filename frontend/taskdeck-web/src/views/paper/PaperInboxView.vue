@@ -62,6 +62,9 @@ type CaptureFailure = { message: string; details: string | null }
 const captureErrors = ref<Record<Variant, CaptureFailure | null>>({ nib: null, composer: null })
 const activeCaptureError = computed(() => captureErrors.value[variant.value])
 const nibError = computed(() => (variant.value === 'nib' ? captureErrors.value.nib : null))
+const composerError = computed(() =>
+  variant.value === 'composer' ? captureErrors.value.composer : null,
+)
 const CAPTURE_ERROR_ID = 'paper-inbox-capture-error'
 
 const captureMetadataCompatibilityWarning = ref(false)
@@ -544,6 +547,8 @@ defineExpose({ variant, toggleVariant, setVariant })
         ref="composerRef"
         :default-board-id="activeBoardId"
         :submitting="captureSubmitting"
+        :invalid="!!composerError"
+        :error-id="composerError ? CAPTURE_ERROR_ID : null"
         @submit="onComposerSubmit"
       />
       <p
