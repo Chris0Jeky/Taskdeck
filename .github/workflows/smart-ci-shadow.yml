@@ -10,6 +10,9 @@
 #                         checked-out tooling come from the PR's BASE commit, so a PR
 #                         cannot loosen the policy that plans it; the changed-file list
 #                         comes from the API (metadata only).
+#   Precondition CI-03 must verify before registering the gate: the repository is private
+#                         (no forks), because any fork's `pull_request` run can name a job
+#                         `Smart CI / Required Gate` while the repository is public.
 #   Smart CI / Planner Self-Test lives in smart-ci-self-test.yml on `pull_request` — the
 #                         head's own planner/gate/pin tests (the R4 hosted-control lane). It is a
 #                         separate workflow on purpose: a job named like the gate must never be
@@ -69,29 +72,38 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           set -euo pipefail
           mkdir -p artifacts
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100" --paginate \
             --jq '.[] | [.status, .filename, (.previous_filename // "")] | @tsv' \
             > artifacts/changed-files.tsv
-          printf 'changed files: %s\n' "$(wc -l < artifacts/changed-files.tsv)"
+          listed="$(wc -l < artifacts/changed-files.tsv)"
+          printf 'changed files listed: %s (payload says %s)\n' "$listed" "$EXPECTED_CHANGED_FILES"
+          # The planner escalates when the listed count differs from the payload's changed_files
+          # (the files endpoint caps at 3,000 entries) — see --changed-files-expected below.
 
       - name: Resolve the merge tree (git objects only; nothing is executed)
         continue-on-error: true
         env:
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          if git fetch --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge"; then
+          # The checkout kept no credentials; authenticate this one read-only fetch with the job
+          # token so the merge ref still resolves once the repository is private.
+          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          if git -c "http.extraheader=${auth_header}" fetch --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge"; then
             git rev-parse 'FETCH_HEAD^{tree}' > artifacts/merge-tree-sha.txt
           else
-            echo "merge ref unavailable (conflict, or not computed yet)" >&2
+            echo "merge ref unavailable (conflict, or not computed yet) — the plan records merge-tree-unavailable" >&2
           fi
 
       - name: Plan
         env:
           CI_EXECUTION_MODE: ${{ vars.CI_EXECUTION_MODE || 'hosted' }}
+          EXPECTED_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
         run: |
           set -euo pipefail
           plan_args=()
@@ -103,6 +115,7 @@ jobs:
             --event "$GITHUB_EVENT_PATH" \
             --event-name "$GITHUB_EVENT_NAME" \
             --changed-files artifacts/changed-files.tsv \
+            --changed-files-expected "$EXPECTED_CHANGED_FILES" \
             --execution-mode "$CI_EXECUTION_MODE" \
             --out artifacts/ci-plan.json \
             --summary "$GITHUB_STEP_SUMMARY" \
@@ -143,7 +156,7 @@ jobs:
           name: smart-ci-plan-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
           path: artifacts
 
-      - name: Evaluate (shadow — red only for planner/plan defects)
+      - name: Evaluate (mode follows ci/policy.v1.json — shadow: red only for planner/plan defects)
         env:
           PLAN_RESULT: ${{ needs.plan.result }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -153,7 +166,8 @@ jobs:
           node scripts/ci/smart-ci/evaluate-gate.mjs \
             --plan artifacts/ci-plan.json \
             --policy ci/policy.v1.json \
-            --mode shadow \
+            --event "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME" \
             --expected-head "$EXPECTED_HEAD" \
             --expected-base "$EXPECTED_BASE" \
             --plan-job-result "$PLAN_RESULT" \

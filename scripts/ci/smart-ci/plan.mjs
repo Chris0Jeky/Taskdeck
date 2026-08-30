@@ -16,7 +16,7 @@ import { dirname } from 'node:path';
 import { buildPlan, errorPlan, policyDigest, renderPlanSummary } from './lib/plan.mjs';
 
 function parseArgs(argv) {
-  const args = { policy: 'ci/policy.v1.json', event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, changedFiles: null, executionMode: null, mergeTreeSha: null, out: 'artifacts/ci-plan.json', summary: null, overrides: {} };
+  const args = { policy: 'ci/policy.v1.json', event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, changedFiles: null, changedFilesExpected: null, notes: [], executionMode: null, mergeTreeSha: null, out: 'artifacts/ci-plan.json', summary: null, overrides: {} };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => argv[++index];
@@ -27,6 +27,8 @@ function parseArgs(argv) {
       case '--changed-files': args.changedFiles = next(); break;
       case '--execution-mode': args.executionMode = next(); break;
       case '--merge-tree-sha': args.mergeTreeSha = next(); break;
+      case '--changed-files-expected': args.changedFilesExpected = Number(next()); break;
+      case '--note': args.notes.push(next()); break;
       case '--out': args.out = next(); break;
       case '--summary': args.summary = next(); break;
       // Local what-if planning without an event payload (docs/ci/SMART_CI.md §10):
@@ -72,6 +74,8 @@ export function inputFromEvent(event, eventName, options = {}) {
     labels: [],
     changedFiles: options.changedFiles ?? [],
     changedFilesAvailable: options.changedFilesAvailable === true,
+    changedFilesExpected: Number.isInteger(options.changedFilesExpected) ? options.changedFilesExpected : (event && event.pull_request && Number.isInteger(event.pull_request.changed_files) ? event.pull_request.changed_files : null),
+    notes: Array.isArray(options.notes) ? options.notes : [],
     executionMode: options.executionMode ?? null,
   };
   const pr = event ? event.pull_request : null;
@@ -134,7 +138,9 @@ function main() {
       changedFiles = parseChangedFiles(readFileSync(args.changedFiles, 'utf8'));
       changedFilesAvailable = true;
     }
-    input = inputFromEvent(event, args.eventName ?? (event ? null : 'local'), { changedFiles, changedFilesAvailable, executionMode: args.executionMode, mergeTreeSha: args.mergeTreeSha });
+    const notes = [...args.notes];
+    if (!args.mergeTreeSha) notes.push('merge-tree-unavailable');
+    input = inputFromEvent(event, args.eventName ?? (event ? null : 'local'), { changedFiles, changedFilesAvailable, changedFilesExpected: args.changedFilesExpected, notes, executionMode: args.executionMode, mergeTreeSha: args.mergeTreeSha });
     if (!event) {
       // Local what-if: an explicit actor is the operator; default to a trusted owner preview.
       input.actorLogin = 'local';

@@ -21,8 +21,21 @@ export class PolicyError extends Error {
   }
 }
 
+/** Digest of the policy text with line endings normalised, so a CRLF checkout matches the git blob. */
 export function policyDigest(policyText) {
-  return `sha256:${createHash('sha256').update(policyText).digest('hex')}`;
+  return `sha256:${createHash('sha256').update(String(policyText).replace(/\r\n/g, '\n')).digest('hex')}`;
+}
+
+/** Markdown-safe rendering of an attacker-controlled path inside an inline code span. */
+export function renderPath(path) {
+  return `\`${String(path).replace(/[`|<>]/g, (char) => ({ '`': '\u02cb', '|': '\u2223', '<': '\u2039', '>': '\u203a' })[char])}\``;
+}
+
+/** A repository path is well-formed when it is relative and has no empty, `.` or `..` segments. */
+export function isWellFormedPath(path) {
+  const value = String(path);
+  if (value.length === 0 || value.startsWith('/') || value.includes('\\') || value !== value.trim()) return false;
+  return value.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
 }
 
 function isNonEmptyString(value) {
@@ -75,7 +88,7 @@ export function validatePolicy(policy) {
   const checkNames = lanes ? Object.values(lanes).map((lane) => lane && lane.checkName) : [];
   if (new Set(checkNames).size !== checkNames.length) errors.push('lane checkName values must be unique');
 
-  if (!isStringArray(policy.alwaysLanes)) errors.push('alwaysLanes must be a string array');
+  if (!isStringArray(policy.alwaysLanes) || policy.alwaysLanes.length === 0) errors.push('alwaysLanes must be a non-empty string array (the gate needs evidence on every change)');
   else for (const id of policy.alwaysLanes) if (!laneIds.includes(id)) errors.push(`alwaysLanes references unknown lane "${id}"`);
 
   const riskClasses = policy.riskClasses && typeof policy.riskClasses === 'object' ? policy.riskClasses : null;
@@ -159,6 +172,10 @@ export function matchGroups(changedFiles, policy) {
   const unmapped = [];
   const controlPathsChanged = [];
   for (const path of changedFiles) {
+    if (!isWellFormedPath(path)) {
+      unmapped.push(path);
+      continue;
+    }
     if (matchesAny(path, policy.controlPaths)) controlPathsChanged.push(path);
     let matched = false;
     for (const group of policy.pathGroups) {
@@ -202,6 +219,7 @@ export function buildPlan(input, policy, digest) {
 
   const escalationReasons = [];
   if (input.changedFilesAvailable !== true) escalationReasons.push('changed-files-unavailable');
+  if (Number.isInteger(input.changedFilesExpected) && input.changedFilesExpected >= 0 && input.changedFilesExpected !== (input.changedFiles ?? []).length) escalationReasons.push('changed-files-truncated');
   if (!isNonEmptyString(input.baseSha) || !isNonEmptyString(input.headSha)) escalationReasons.push('base-or-head-sha-missing');
   if (unmapped.length > 0) escalationReasons.push('unmapped-path');
   if (controlPathsChanged.length > 0) escalationReasons.push('control-path-change');
@@ -215,7 +233,7 @@ export function buildPlan(input, policy, digest) {
     if (action === 'windows-full') windowsFull = true;
   }
 
-  const groupEntries = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  const groupEntries = [...groups.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   const groupDefinitions = new Map(policy.pathGroups.map((group) => [group.id, group]));
   let risk = maxRisk(['R0', ...groupEntries.map(([id]) => groupDefinitions.get(id).riskFloor)]);
   if (controlPathsChanged.length > 0) risk = 'R4';
@@ -303,6 +321,7 @@ export function buildPlan(input, policy, digest) {
     controlPathsChanged: uniqueSorted(controlPathsChanged),
     selected,
     skipped,
+    notes: uniqueSorted((input.notes ?? []).map(String)),
     plannerError: null,
   };
 }
@@ -335,11 +354,13 @@ export function errorPlan(input, policy, digest, error) {
     controlPathsChanged: [],
     selected: allLaneIds.map((id) => {
       const lane = lanes[id];
-      const runnerClassId = lane.hostedFallback && runnerClasses[lane.hostedFallback] ? lane.hostedFallback : lane.runner;
-      const runnerClass = runnerClasses[runnerClassId] ?? { labels: ['ubuntu-latest'], hosted: true };
-      return { lane: id, checkName: lane.checkName, family: lane.family ?? null, runnerClass: runnerClassId ?? 'hostedLinux', runner: [...runnerClass.labels], hosted: runnerClass.hosted !== false, required: true, reasons: ['escalated:planner-error'] };
+      const candidates = [lane.hostedFallback, lane.runner, ...Object.keys(runnerClasses)];
+      const runnerClassId = candidates.find((candidate) => candidate && runnerClasses[candidate] && runnerClasses[candidate].hosted === true) ?? 'hostedLinux';
+      const runnerClass = runnerClasses[runnerClassId] && runnerClasses[runnerClassId].hosted === true ? runnerClasses[runnerClassId] : { labels: ['ubuntu-latest'], hosted: true };
+      return { lane: id, checkName: lane.checkName, family: lane.family ?? null, runnerClass: runnerClassId, runner: [...runnerClass.labels], hosted: true, required: true, reasons: ['escalated:planner-error'] };
     }),
     skipped: [],
+    notes: [],
     plannerError: { name: error && error.name ? error.name : 'Error', message: String(error && error.message ? error.message : error).slice(0, 2000) },
   };
 }
@@ -372,6 +393,11 @@ export function validatePlan(plan, policy = null) {
     if (!entry || !isNonEmptyString(entry.lane) || !isNonEmptyString(entry.checkName)) errors.push(`skipped[${index}] needs lane and checkName`);
     if (!entry || !isNonEmptyString(entry.reason)) errors.push(`skipped[${index}].reason is required`);
   });
+  if (Array.isArray(plan.selected) && plan.selected.length === 0) errors.push('a plan must select at least one lane');
+  if (policy && Array.isArray(policy.alwaysLanes) && Array.isArray(plan.selected)) {
+    const selectedIds = new Set(plan.selected.map((entry) => entry && entry.lane));
+    for (const id of policy.alwaysLanes) if (!selectedIds.has(id)) errors.push(`always-lane "${id}" is not selected`);
+  }
   if (policy && policy.lanes && typeof policy.lanes === 'object') {
     const expected = Object.keys(policy.lanes).sort();
     const seen = [...(Array.isArray(plan.selected) ? plan.selected : []), ...(Array.isArray(plan.skipped) ? plan.skipped : [])]
@@ -384,8 +410,6 @@ export function validatePlan(plan, policy = null) {
       const lane = entry && policy.lanes[entry.lane];
       if (lane && entry.checkName !== lane.checkName) errors.push(`selected lane ${entry.lane} names check "${entry.checkName}" but the policy says "${lane.checkName}"`);
     }
-  } else if (Array.isArray(plan.selected) && plan.selected.length === 0) {
-    errors.push('a plan must select at least one lane');
   }
   if (plan.trust !== 'T1' && plan.executionMode && plan.executionMode.effective !== 'hosted') errors.push('a non-T1 plan must execute hosted');
   if (plan.risk === 'R4' && plan.executionMode && plan.executionMode.effective !== 'hosted') errors.push('an R4 plan must execute hosted');
@@ -393,7 +417,7 @@ export function validatePlan(plan, policy = null) {
   return errors;
 }
 
-const PLANNER_FAILURE_CODES = new Set(['plan-missing', 'plan-invalid', 'planner-error', 'plan-job-failed', 'policy-digest-mismatch', 'head-sha-mismatch', 'base-sha-mismatch']);
+const PLANNER_FAILURE_CODES = new Set(['plan-missing', 'plan-invalid', 'planner-error', 'plan-job-failed', 'policy-digest-mismatch', 'head-sha-mismatch', 'base-sha-mismatch', 'trust-mismatch', 'labels-mismatch', 'mode-mismatch']);
 
 /**
  * Evaluate the gate.
@@ -401,9 +425,12 @@ const PLANNER_FAILURE_CODES = new Set(['plan-missing', 'plan-invalid', 'planner-
  * @param {{mode:'shadow'|'enforce', expectedHeadSha?:string, expectedBaseSha?:string, expectedPolicyDigest?:string, planJobResult?:string, results?:Record<string,{conclusion:string, headSha?:string}>|null}} context
  */
 export function evaluateGate(plan, context) {
-  const mode = context.mode === 'enforce' ? 'enforce' : 'shadow';
+  const planMode = plan && ['shadow', 'enforce'].includes(plan.mode) ? plan.mode : null;
+  const requestedMode = context.mode === 'enforce' || context.mode === 'shadow' ? context.mode : null;
+  const mode = requestedMode ?? planMode ?? 'shadow';
   const failures = [];
   const notes = [];
+  if (plan && requestedMode && planMode && requestedMode !== planMode) failures.push({ code: 'mode-mismatch', detail: `gate invoked in ${requestedMode} mode but the plan was produced under policy mode ${planMode}` });
   if (!plan) {
     failures.push({ code: 'plan-missing', detail: 'no plan receipt was produced' });
   } else {
@@ -414,6 +441,13 @@ export function evaluateGate(plan, context) {
     if (context.expectedHeadSha && plan.headSha !== context.expectedHeadSha) failures.push({ code: 'head-sha-mismatch', detail: `plan ${plan.headSha} vs event ${context.expectedHeadSha}` });
     if (context.expectedBaseSha && plan.baseSha !== context.expectedBaseSha) failures.push({ code: 'base-sha-mismatch', detail: `plan ${plan.baseSha} vs event ${context.expectedBaseSha}` });
     if (context.expectedPolicyDigest && plan.policyDigest !== context.expectedPolicyDigest) failures.push({ code: 'policy-digest-mismatch', detail: `plan ${plan.policyDigest} vs policy ${context.expectedPolicyDigest}` });
+    if (context.eventInput && context.policy) {
+      const expectedTrust = classifyTrust(context.eventInput, plan.controlPathsChanged ?? [], context.policy);
+      if (expectedTrust !== plan.trust) failures.push({ code: 'trust-mismatch', detail: `plan says ${plan.trust}, the event re-derives ${expectedTrust}` });
+      const expectedLabels = uniqueSorted((context.eventInput.labels ?? []).map(String));
+      if (JSON.stringify(expectedLabels) !== JSON.stringify(plan.labels ?? [])) failures.push({ code: 'labels-mismatch', detail: `plan labels ${JSON.stringify(plan.labels ?? [])} vs event ${JSON.stringify(expectedLabels)}` });
+      if (context.eventInput.headSha && plan.headSha !== context.eventInput.headSha) failures.push({ code: 'head-sha-mismatch', detail: `plan ${plan.headSha} vs event payload ${context.eventInput.headSha}` });
+    }
     if (context.results && typeof context.results === 'object') {
       for (const entry of plan.selected ?? []) {
         const result = context.results[entry.checkName];
@@ -447,8 +481,9 @@ export function renderPlanSummary(plan) {
     lines.push('');
   }
   lines.push(`changed files: ${plan.changedFiles.count} · groups: ${plan.groups.map((group) => `${group.id}(${group.riskFloor}×${group.paths})`).join(', ') || 'none'}`);
-  if (plan.controlPathsChanged.length) lines.push(`control paths changed: ${plan.controlPathsChanged.map((path) => `\`${path}\``).join(', ')}`);
-  if (plan.unmappedPaths.length) lines.push(`unmapped paths (escalate): ${plan.unmappedPaths.map((path) => `\`${path}\``).join(', ')}`);
+  if (plan.controlPathsChanged.length) lines.push(`control paths changed: ${plan.controlPathsChanged.map(renderPath).join(', ')}`);
+  if (plan.unmappedPaths.length) lines.push(`unmapped paths (escalate): ${plan.unmappedPaths.map(renderPath).join(', ')}`);
+  if (Array.isArray(plan.notes) && plan.notes.length) lines.push(`notes: ${plan.notes.join('; ')}`);
   lines.push('');
   lines.push('| Lane | Check | Runner | Reasons |');
   lines.push('| --- | --- | --- | --- |');

@@ -8,8 +8,10 @@ import {
   classifyTrust,
   errorPlan,
   evaluateGate,
+  isWellFormedPath,
   policyDigest,
   renderGateSummary,
+  renderPath,
   renderPlanSummary,
   validatePlan,
   validatePolicy,
@@ -234,24 +236,26 @@ test('the gate distinguishes shadow (report) from enforce (block) for job eviden
   assert.equal(noEvidence.wouldFail, false);
   assert.ok(noEvidence.notes.some((note) => note.includes('no job evidence')));
   const results = Object.fromEntries(plan.selected.map((entry) => [entry.checkName, { conclusion: 'success', headSha: HEAD }]));
-  assert.equal(evaluateGate(plan, { mode: 'enforce', results }).ok, true);
+  const enforcePlan = { ...plan, mode: 'enforce' };
+  assert.equal(evaluateGate(enforcePlan, { mode: 'enforce', results }).ok, true);
   results[plan.selected[0].checkName] = { conclusion: 'failure' };
   const shadow = evaluateGate(plan, { mode: 'shadow', results });
   assert.equal(shadow.ok, true);
   assert.equal(shadow.wouldFail, true);
-  const enforce = evaluateGate(plan, { mode: 'enforce', results });
+  const enforce = evaluateGate(enforcePlan, { mode: 'enforce', results });
   assert.equal(enforce.ok, false);
   assert.ok(enforce.failures.some((failure) => failure.code === 'selected-not-success'));
   delete results[plan.selected[1].checkName];
-  assert.ok(evaluateGate(plan, { mode: 'enforce', results }).failures.some((failure) => failure.code === 'selected-evidence-missing'));
+  assert.ok(evaluateGate(enforcePlan, { mode: 'enforce', results }).failures.some((failure) => failure.code === 'selected-evidence-missing'));
   const cancelled = { ...results, [plan.selected[0].checkName]: { conclusion: 'cancelled' } };
-  assert.ok(evaluateGate(plan, { mode: 'enforce', results: cancelled }).failures.some((failure) => failure.code === 'selected-not-success'));
+  assert.ok(evaluateGate(enforcePlan, { mode: 'enforce', results: cancelled }).failures.some((failure) => failure.code === 'selected-not-success'));
   const wrongSha = { ...Object.fromEntries(plan.selected.map((entry) => [entry.checkName, { conclusion: 'success', headSha: 'd'.repeat(40) }])) };
-  assert.ok(evaluateGate(plan, { mode: 'enforce', results: wrongSha }).failures.some((failure) => failure.code === 'evidence-wrong-sha'));
+  assert.ok(evaluateGate(enforcePlan, { mode: 'enforce', results: wrongSha }).failures.some((failure) => failure.code === 'evidence-wrong-sha'));
+  assert.ok(evaluateGate(plan, { mode: 'enforce', results }).failures.some((failure) => failure.code === 'mode-mismatch'), 'running enforce against a shadow plan is flagged');
 });
 
 test('evidence without a head SHA fails in enforce mode', () => {
-  const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+  const plan = { ...buildPlan(ownerInput(['docs/x.md']), policy, digest), mode: 'enforce' };
   const results = Object.fromEntries(plan.selected.map((entry) => [entry.checkName, { conclusion: 'success' }]));
   const verdict = evaluateGate(plan, { mode: 'enforce', results });
   assert.equal(verdict.ok, false);
@@ -297,6 +301,84 @@ test('auth, executor-pipeline and infrastructure MCP files are R3 (Codex P1 gaps
   const mcp = buildPlan(ownerInput(['backend/src/Taskdeck.Infrastructure/Mcp/StdioUserContextProvider.cs']), policy, digest);
   assert.equal(mcp.risk, 'R3');
   assert.ok(laneIds(mcp).includes('api-integration-windows'));
+});
+
+test('an emptied alwaysLanes policy is rejected and an empty selection is never a valid plan (HIGH-1)', () => {
+  const emptied = JSON.parse(policyText);
+  emptied.alwaysLanes = [];
+  assert.ok(validatePolicy(emptied).some((error) => error.includes('alwaysLanes must be a non-empty')));
+  assert.throws(() => buildPlan(ownerInput(['.gitignore']), emptied, digest), PolicyError);
+  const plan = buildPlan(ownerInput(['.gitignore']), policy, digest);
+  assert.ok(plan.selected.length >= policy.alwaysLanes.length);
+  const hollow = { ...plan, selected: [], skipped: [...plan.skipped, ...plan.selected.map((entry) => ({ lane: entry.lane, checkName: entry.checkName, family: entry.family, reason: 'x' }))] };
+  const errors = validatePlan(hollow, policy);
+  assert.ok(errors.some((error) => error.includes('at least one lane')));
+  assert.ok(errors.some((error) => error.includes('always-lane')));
+  assert.equal(evaluateGate(hollow, { mode: 'enforce', policy, results: {} }).ok, false);
+  assert.equal(evaluateGate(hollow, { mode: 'shadow', policy }).ok, false);
+});
+
+test('the gate re-derives trust and labels from the event payload (MEDIUM-2)', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+  const honest = evaluateGate(plan, { mode: 'shadow', policy, eventInput: ownerInput(['docs/x.md']) });
+  assert.equal(honest.ok, true);
+  const forgedTrust = { ...plan, trust: 'T1' };
+  const forkEvent = ownerInput(['docs/x.md'], { isFork: true });
+  const verdict = evaluateGate(forgedTrust, { mode: 'shadow', policy, eventInput: forkEvent });
+  assert.equal(verdict.ok, false);
+  assert.ok(verdict.failures.some((failure) => failure.code === 'trust-mismatch'));
+  const labelDrift = evaluateGate(plan, { mode: 'shadow', policy, eventInput: ownerInput(['docs/x.md'], { labels: ['ci:full'] }) });
+  assert.ok(labelDrift.failures.some((failure) => failure.code === 'labels-mismatch'));
+});
+
+test('a truncated changed-file list escalates (MEDIUM-3)', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md'], { changedFilesExpected: 2 }), policy, digest);
+  assert.ok(plan.escalationReasons.includes('changed-files-truncated'));
+  assert.equal(plan.selected.length, Object.keys(policy.lanes).length);
+  const exact = buildPlan(ownerInput(['docs/x.md'], { changedFilesExpected: 1 }), policy, digest);
+  assert.equal(exact.escalated, false);
+});
+
+test('errorPlan never emits a self-hosted runner even when the policy is broken (MEDIUM-4)', () => {
+  const broken = JSON.parse(policyText);
+  broken.lanes['backend-unit-linux'].hostedFallback = 'selfHostedLinuxHeavy';
+  const plan = errorPlan(ownerInput(['docs/x.md']), broken, digest, new Error('policy invalid'));
+  assert.ok(plan.selected.every((entry) => entry.hosted === true && !entry.runner.includes('self-hosted')));
+});
+
+test('the gate follows the plan mode unless told otherwise and flags a mismatch (MEDIUM-5)', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+  assert.equal(evaluateGate(plan, {}).mode, 'shadow');
+  const mismatch = evaluateGate({ ...plan, mode: 'enforce' }, { mode: 'shadow' });
+  assert.ok(mismatch.failures.some((failure) => failure.code === 'mode-mismatch'));
+  assert.equal(mismatch.ok, false);
+});
+
+test('control paths cover composite actions, CODEOWNERS, tool manifests and lockfiles (MEDIUM-7)', () => {
+  for (const path of ['.github/actions/foo/action.yml', '.github/CODEOWNERS', '.config/dotnet-tools.json', 'backend/Directory.Build.targets', 'frontend/taskdeck-web/.npmrc', 'frontend/package-lock.json', 'package.json']) {
+    const plan = buildPlan(ownerInput([path]), policy, digest);
+    assert.equal(plan.risk, 'R4', path);
+    assert.equal(plan.trust, 'T2', path);
+    assert.ok(plan.controlPathsChanged.includes(path), path);
+  }
+});
+
+test('malformed paths are unmapped and summaries escape attacker-controlled names (LOW-9/LOW-11)', () => {
+  assert.equal(isWellFormedPath('backend/src/Taskdeck.Domain/../../../.github/workflows/z.yml'), false);
+  assert.equal(isWellFormedPath('/abs.txt'), false);
+  assert.equal(isWellFormedPath('a//b.txt'), false);
+  assert.equal(isWellFormedPath('docs/ok.md'), true);
+  const plan = buildPlan(ownerInput(['backend/src/Taskdeck.Domain/../../../.github/workflows/z.yml']), policy, digest);
+  assert.ok(plan.escalationReasons.includes('unmapped-path'));
+  const hostile = buildPlan(ownerInput(['zz-`</details><img src=x onerror=1>`.txt']), policy, digest);
+  const summary = renderPlanSummary(hostile);
+  assert.ok(!summary.includes('<img'));
+  assert.ok(!summary.includes('</details><img'));
+  assert.equal(renderPath('a|b'), '`a\u2223b`');
+});
+
+test('the policy digest ignores line-ending differences (LOW-10)', () => {
+  assert.equal(policyDigest('a\nb\n'), policyDigest('a\r\nb\r\n'));
 });
 
 test('a plan that claims a self-hosted runner for a non-T1 or R4 change is invalid', () => {

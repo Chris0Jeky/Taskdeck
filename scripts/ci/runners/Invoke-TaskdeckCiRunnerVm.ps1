@@ -100,7 +100,12 @@ function Stop-RunnerVm {
         return
     }
     if ($PSCmdlet.ShouldProcess($Name, 'Request graceful shutdown of the isolated CI runner VM')) {
-        Stop-VM -Name $Name -Shutdown -Force:$false -ErrorAction SilentlyContinue
+        try {
+            Stop-VM -Name $Name -Shutdown -Force:$false -ErrorAction Stop
+        }
+        catch {
+            Write-Warning "Stop-VM '$Name' reported: $($_.Exception.Message). Waiting for the guest to shut down anyway."
+        }
         if (-not (Wait-ForRunnerVmState -Name $Name -Expected 'Off' -TimeoutSeconds $ShutdownTimeoutSeconds)) {
             Write-Warning "VM '$Name' did not stop gracefully within $ShutdownTimeoutSeconds seconds. A CI job may still be running — inspect the Actions queue before forcing it off; a forced stop loses the job, never the repository."
         }

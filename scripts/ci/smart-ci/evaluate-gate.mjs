@@ -12,9 +12,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { evaluateGate, policyDigest, renderGateSummary } from './lib/plan.mjs';
+import { inputFromEvent } from './plan.mjs';
 
 function parseArgs(argv) {
-  const args = { plan: 'artifacts/ci-plan.json', policy: null, mode: 'shadow', expectedHead: null, expectedBase: null, planJobResult: null, results: null, receipt: null, summary: null };
+  const args = { plan: 'artifacts/ci-plan.json', policy: null, mode: null, event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, expectedHead: null, expectedBase: null, planJobResult: null, results: null, receipt: null, summary: null };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => argv[++index];
@@ -22,6 +23,8 @@ function parseArgs(argv) {
       case '--plan': args.plan = next(); break;
       case '--policy': args.policy = next(); break;
       case '--mode': args.mode = next(); break;
+      case '--event': args.event = next(); break;
+      case '--event-name': args.eventName = next(); break;
       case '--expected-head': args.expectedHead = next(); break;
       case '--expected-base': args.expectedBase = next(); break;
       case '--plan-job-result': args.planJobResult = next(); break;
@@ -35,7 +38,7 @@ function parseArgs(argv) {
       default: throw new Error(`Unknown argument: ${arg}`);
     }
   }
-  if (!['shadow', 'enforce'].includes(args.mode)) throw new Error('--mode must be shadow or enforce');
+  if (args.mode !== null && !['shadow', 'enforce'].includes(args.mode)) throw new Error('--mode must be shadow or enforce (omit it to follow the plan/policy mode)');
   return args;
 }
 
@@ -61,8 +64,17 @@ function main() {
     }
   }
   const results = args.results && existsSync(args.results) ? JSON.parse(readFileSync(args.results, 'utf8')) : null;
+  let eventInput = null;
+  if (args.event && existsSync(args.event)) {
+    try {
+      eventInput = inputFromEvent(JSON.parse(readFileSync(args.event, 'utf8')), args.eventName, {});
+    } catch (error) {
+      console.error(`event payload unreadable: ${error}`);
+    }
+  }
   const verdict = evaluateGate(plan, {
-    mode: args.mode,
+    mode: args.mode ?? (policy && policy.mode) ?? null,
+    eventInput,
     expectedHeadSha: args.expectedHead || null,
     expectedBaseSha: args.expectedBase || null,
     expectedPolicyDigest,
