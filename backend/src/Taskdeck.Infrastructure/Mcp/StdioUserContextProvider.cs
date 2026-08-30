@@ -18,6 +18,7 @@ public class StdioUserContextProvider : IUserContextProvider
     private readonly Guid? _configuredUserId;
     private readonly TaskdeckDbContext _dbContext;
     private readonly ILogger<StdioUserContextProvider> _logger;
+    private readonly StdioIdentityResolutionWarning _identityResolutionWarning;
 
     /// <summary>Lazily resolved user ID (null = not yet resolved).</summary>
     private Guid? _resolvedUserId;
@@ -25,10 +26,12 @@ public class StdioUserContextProvider : IUserContextProvider
     public StdioUserContextProvider(
         IConfiguration configuration,
         TaskdeckDbContext dbContext,
-        ILogger<StdioUserContextProvider> logger)
+        ILogger<StdioUserContextProvider> logger,
+        StdioIdentityResolutionWarning identityResolutionWarning)
     {
         _dbContext = dbContext;
         _logger = logger;
+        _identityResolutionWarning = identityResolutionWarning;
 
         var configuredId = configuration["McpServer:DefaultUserId"];
         if (configuredId is null)
@@ -76,7 +79,7 @@ public class StdioUserContextProvider : IUserContextProvider
 
             if (!exists)
             {
-                throw new InvalidOperationException(
+                throw CreateActionableFailure(
                     "MCP stdio: McpServer:DefaultUserId does not identify an active local user. " +
                     "Set it to an existing active user ID before starting stdio MCP.");
             }
@@ -104,7 +107,7 @@ public class StdioUserContextProvider : IUserContextProvider
 
         if (activeUserIds.Count > 1)
         {
-            throw new InvalidOperationException(
+            throw CreateActionableFailure(
                 "MCP stdio: multiple active local users exist. " +
                 "Configure McpServer:DefaultUserId (environment variable McpServer__DefaultUserId) " +
                 "with the intended active user ID before starting stdio MCP.");
@@ -115,5 +118,45 @@ public class StdioUserContextProvider : IUserContextProvider
             "MCP stdio: resolved the only active local user {UserId}",
             _resolvedUserId.Value);
         return _resolvedUserId.Value;
+    }
+
+    private StdioIdentityResolutionException CreateActionableFailure(string remediation)
+    {
+        var exception = new StdioIdentityResolutionException(remediation);
+        _identityResolutionWarning.LogOnce(exception);
+        return exception;
+    }
+}
+
+/// <summary>
+/// A stdio identity-resolution failure whose message is safe to return to a local MCP client.
+/// </summary>
+public sealed class StdioIdentityResolutionException : InvalidOperationException
+{
+    internal StdioIdentityResolutionException(string message)
+        : base(message)
+    {
+    }
+}
+
+/// <summary>
+/// Emits the actionable stdio identity remediation once for the lifetime of the MCP host.
+/// </summary>
+public sealed class StdioIdentityResolutionWarning
+{
+    private readonly ILogger<StdioUserContextProvider> _logger;
+    private int _hasLogged;
+
+    public StdioIdentityResolutionWarning(ILogger<StdioUserContextProvider> logger)
+    {
+        _logger = logger;
+    }
+
+    internal void LogOnce(StdioIdentityResolutionException exception)
+    {
+        if (Interlocked.CompareExchange(ref _hasLogged, 1, 0) != 0)
+            return;
+
+        _logger.LogWarning("{Remediation}", exception.Message);
     }
 }

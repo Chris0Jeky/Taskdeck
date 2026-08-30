@@ -104,10 +104,12 @@ public class McpBoardResourcesTests : IDisposable
         IServiceScope scope,
         IConfiguration configuration)
     {
+        var logger = NullLogger<StdioUserContextProvider>.Instance;
         return new StdioUserContextProvider(
             configuration,
             scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>(),
-            NullLogger<StdioUserContextProvider>.Instance);
+            logger,
+            new StdioIdentityResolutionWarning(logger));
     }
 
     // ── StdioUserContextProvider tests ────────────────────────────────────────
