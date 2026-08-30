@@ -65,6 +65,7 @@
 | [0061](ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) | Trusted Shared Instance and Managed SaaS Boundary | Accepted as direction only, evidence pending (maintainer ruling 2026-08-29, q-3 A, recorded on #1772) | 2026-08-26 |
 | [0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md) | Custom Fields, Aggregates, and Threshold Rules | Accepted (maintainer ruling 2026-08-29, q-4 A, recorded on #2091) | 2026-08-26 |
 | [0063](ADR-0063-archived-board-card-write-protection.md) | Archived Boards Reject Card Writes Until Restored | Accepted (maintainer scope ruling on `#2080`, 2026-08-24) | 2026-08-26 |
+| [0064](ADR-0064-machine-paths-are-exact-lowercase.md) | Machine-Facing Paths Are Exact Lowercase; Case and Encoded-Slash Variants Are 404 at Every Layer | Accepted (maintainer ruling 2026-08-30, v0.3 RC deck q-10 A, recorded on `#1992`) | 2026-08-30 |
 
 > Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
 > archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,
