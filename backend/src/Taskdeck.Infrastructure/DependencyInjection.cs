@@ -56,6 +56,9 @@ public static class DependencyInjection
         services.AddScoped<IAuditLogRepository, AuditLogRepository>();
         services.AddScoped<ILlmQueueRepository, LlmQueueRepository>();
         services.AddScoped<IAutomationProposalRepository, AutomationProposalRepository>();
+        services.AddScoped<
+            IProposalExecutionAuthorizationSnapshotReader,
+            ProposalExecutionAuthorizationSnapshotReader>();
         services.AddScoped<IArchiveItemRepository, ArchiveItemRepository>();
         services.AddScoped<IChatSessionRepository, ChatSessionRepository>();
         services.AddScoped<IChatMessageRepository, ChatMessageRepository>();
