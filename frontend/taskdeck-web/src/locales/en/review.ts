@@ -566,14 +566,21 @@ export default {
       title: 'No matches in {filter}.',
       body: 'Switch filters to review proposals that are still waiting elsewhere in the queue.',
     },
-    // #2215 A: shown when a background queue poll takes the proposal the
+    // #2215 A: shown when a background queue poll drops the proposal the
     // reviewer is on. It exists so the surface can stop here rather than move
     // them onto a record they never chose.
+    //
+    // The wording states only what was OBSERVED — the row left the queue. A
+    // single poll answer is not proof it was decided: the list endpoint also
+    // omits a PendingReview proposal whose `deferredUntil` is in the future,
+    // and it is capped at 200 rows. Claiming a decision here would be a
+    // fabricated fact, so the copy enumerates the possibilities and offers a
+    // re-read instead (#2215 review round 1).
     settledElsewhere: {
       eyebrow: 'Selected proposal',
-      title: 'This proposal is no longer pending.',
-      body: 'It was decided or withdrawn somewhere else while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place.',
-      return: 'Back to the queue',
+      title: 'This proposal left the review queue.',
+      body: 'Someone else decided, withdrew, or deferred it while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
+      return: 'Reload the queue',
     },
     unavailable: {
       eyebrow: 'Requested proposal',

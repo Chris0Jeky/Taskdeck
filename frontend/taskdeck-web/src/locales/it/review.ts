@@ -485,9 +485,9 @@ export default {
     // Machine-translated (see ADR-0054).
     settledElsewhere: {
       eyebrow: 'Proposta selezionata',
-      title: 'Questa proposta non e piu in attesa.',
-      body: 'E stata decisa o ritirata altrove mentre la stavi rivedendo. Qui non e stato deciso niente e non e stata aperta nessuna altra proposta al suo posto.',
-      return: 'Torna alla coda',
+      title: 'Questa proposta ha lasciato la coda di revisione.',
+      body: 'Qualcun altro l ha decisa, ritirata o rinviata mentre la stavi rivedendo. Qui non e stato deciso niente e non e stata aperta nessuna altra proposta al suo posto. Ricarica la coda per verificare.',
+      return: 'Ricarica la coda',
     },
     unavailable: {
       eyebrow: 'Proposta richiesta',

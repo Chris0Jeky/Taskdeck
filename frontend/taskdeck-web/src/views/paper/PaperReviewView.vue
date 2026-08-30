@@ -286,7 +286,7 @@ function preferredActiveProposalId(proposals: readonly ApiProposal[]): string | 
 }
 
 /**
- * Set when a background queue poll took the proposal the reviewer was on
+ * Set when a background queue poll dropped the proposal the reviewer was on
  * (#2215 A).
  *
  * Another session settling or withdrawing the active proposal used to slide the
@@ -416,12 +416,20 @@ watch(activeProposalSettledElsewhere, (id) => {
 
 /**
  * Leave the notice deliberately: drop the pin AND the stale explicit selection
- * so the ordinary "first pending row" default resumes on the current queue.
+ * so the ordinary "first pending row" default resumes.
+ *
+ * It also re-reads the queue explicitly, because the notice states only that
+ * the row LEFT the queue — a single poll answer does not prove it was decided.
+ * The list endpoint omits a PendingReview proposal whose `deferredUntil` is in
+ * the future and is capped at 200 rows, so an authoritative read (which
+ * `loadProposals` is, and which also re-runs `openProposalFromHash`) is the
+ * honest way to find out what is actually there now (#2215 review round 1).
  */
 function dismissSettledElsewhereNotice() {
   activeProposalSettledElsewhere.value = null
   explicitActiveId.value = null
   decisionReceipt.value = null
+  void loadProposals()
 }
 
 watch(

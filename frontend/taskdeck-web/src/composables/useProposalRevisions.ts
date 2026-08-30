@@ -83,7 +83,19 @@ export function useProposalRevisions(
         // clearing `editing` here would close a composer mid-sentence over a
         // change that happened elsewhere.
         loadGeneration += 1
-        void loadRevisionState(id)
+        // The count is no longer authoritative until this load answers, and the
+        // load can FAIL — its catch zeroes `revisionCount` and nulls
+        // `latestRevision`. Leaving `revisionsLoaded` true would publish that
+        // failure as fact: `PaperReviewView` would short-circuit Apply with a
+        // false zero-op toast, and `editablePayload` would fall back to the raw
+        // pre-revision operations. False is the honest state — consumers then
+        // let the backend decide rather than short-circuiting.
+        revisionsLoaded.value = false
+        // Silent: this load is driven by a background poll the reviewer never
+        // asked for, and `refreshProposals` deliberately raises no toast for
+        // one. An error toast here would break that doctrine from the far side
+        // of the same tick.
+        void loadRevisionState(id, { silent: true })
         return
       }
       loadGeneration += 1

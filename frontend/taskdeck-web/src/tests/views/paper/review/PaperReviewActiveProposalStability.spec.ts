@@ -210,7 +210,11 @@ describe('PaperReviewView — active proposal stability under polling (#2215 A)'
       await pollWith(wrapper, [makeProposal({ id: 'next-2', summary: 'The one that must not be promoted' })])
 
       expect(wrapper.find('[data-testid="paper-review-settled-elsewhere"]').exists()).toBe(true)
-      expect(wrapper.text()).toContain('This proposal is no longer pending.')
+      expect(wrapper.text()).toContain('This proposal left the review queue.')
+      // One poll answer is not proof of a decision: the list endpoint also omits
+      // a PendingReview proposal whose `deferredUntil` is in the future, and it
+      // caps at 200 rows. The copy must not assert a decision it cannot know.
+      expect(wrapper.text()).not.toContain('no longer pending')
       // The decision column must NOT have swapped to the next queue item.
       expect(wrapper.find('[data-testid="paper-review-main"]').exists()).toBe(false)
     } finally {
@@ -267,9 +271,13 @@ describe('PaperReviewView — active proposal stability under polling (#2215 A)'
       expect(returnButton.exists()).toBe(true)
       expect(document.activeElement).toBe(returnButton.element)
 
+      // The action must RE-READ the queue, not merely dismiss the notice: what
+      // the poll observed is only that the row left the list page.
+      const readsBeforeReturn = mocks.getProposals.mock.calls.length
       await returnButton.trigger('click')
       await flushPromises()
 
+      expect(mocks.getProposals.mock.calls.length).toBeGreaterThan(readsBeforeReturn)
       expect(wrapper.find('[data-testid="paper-review-settled-elsewhere"]').exists()).toBe(false)
       expect(wrapper.text()).toContain('Now selectable')
     } finally {
