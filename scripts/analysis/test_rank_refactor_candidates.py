@@ -142,6 +142,27 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
         self.assertTrue(report["trackedTreeClean"])
         self.assertEqual(4, report["candidates"][0]["lines"])
 
+    def test_replacement_blob_cannot_change_exact_head_line_count(self) -> None:
+        original_blob = self.git("rev-parse", "HEAD:src/new.cs")
+        self.write("replacement.txt", "replacement\n" * 52)
+        replacement_blob = self.git("hash-object", "-w", "replacement.txt")
+        self.git("replace", original_blob, replacement_blob)
+        self.assertEqual(52, len(self.git("cat-file", "-p", original_blob).splitlines()))
+
+        report = self.report()
+
+        self.assertTrue(report["authoritative"])
+        self.assertEqual(4, report["candidates"][0]["lines"])
+        self.assertEqual("ignored", report["gitObjectPolicy"]["replacementObjects"])
+
+    def test_graft_metadata_is_rejected(self) -> None:
+        grafts_path = Path(self.git("rev-parse", "--path-format=absolute", "--git-path", "info/grafts"))
+        grafts_path.parent.mkdir(parents=True, exist_ok=True)
+        grafts_path.write_text(f"{self.git('rev-parse', 'HEAD')}\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(ranker.AnalysisError, "graft metadata"):
+            self.report()
+
     def test_merge_commit_does_not_recount_merged_branch_changes(self) -> None:
         self.git("switch", "-c", "feature")
         self.write("src/new.cs", "one\ntwo\nthree\nfour\nfive\n")

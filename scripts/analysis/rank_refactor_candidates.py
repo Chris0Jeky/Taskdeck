@@ -73,7 +73,7 @@ def _run_git(
 ) -> subprocess.CompletedProcess[bytes]:
     try:
         result = subprocess.run(
-            ["git", "-C", os.fspath(repo), *args],
+            ["git", "--no-replace-objects", "-C", os.fspath(repo), *args],
             check=False,
             input=input_data,
             stdout=subprocess.PIPE,
@@ -114,6 +114,18 @@ def resolve_repository(repo_argument: Path) -> Path:
     if reported != repo:
         raise AnalysisError(f"--repo must be the exact Git root (Git reported {reported})")
     return repo
+
+
+def require_no_grafts(repo: Path) -> None:
+    result = _run_git(repo, "rev-parse", "--path-format=absolute", "--git-path", "info/grafts")
+    try:
+        grafts_path = Path(result.stdout.decode("utf-8").strip())
+    except UnicodeDecodeError as error:
+        raise AnalysisError("Git graft path is not valid UTF-8") from error
+    if not grafts_path.is_absolute():
+        grafts_path = repo / grafts_path
+    if grafts_path.exists():
+        raise AnalysisError("Git graft metadata is present; remove info/grafts before ranking")
 
 
 def resolve_commit(repo: Path, ref: str) -> str:
@@ -348,6 +360,7 @@ def build_report(
     if top <= 0:
         raise AnalysisError("--top must be greater than zero")
     repo = resolve_repository(repo_argument)
+    require_no_grafts(repo)
     base_commit = resolve_commit(repo, base_ref)
     head_commit = resolve_commit(repo, "HEAD")
     require_ancestor(repo, base_commit, head_commit)
@@ -394,6 +407,10 @@ def build_report(
         "headCommit": head_commit,
         "revisionRange": f"{base_commit}..{head_commit}",
         "gitVersion": git_version,
+        "gitObjectPolicy": {
+            "replacementObjects": "ignored",
+            "grafts": "rejected",
+        },
         "lineSource": "Git blobs from headCommit",
         "trackedTreeClean": clean,
         "authoritative": clean,

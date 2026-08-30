@@ -21,6 +21,10 @@ Until the exact `v0.3.0` tag exists, runs against an RC, moving branch, or older
 
 By default the command refuses tracked changes. `--allow-dirty` is available for local exploration; when tracked changes exist, the report sets `authoritative: false`. Untracked files do not affect the tracked-source calculation and do not block a run.
 
+Every Git read ignores local replacement objects, and the command rejects legacy graft metadata.
+The report records that object policy so local `.git` metadata cannot silently rewrite the receipt's
+tree or history while retaining the original commit identifiers.
+
 The score is:
 
 ```text
