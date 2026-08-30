@@ -124,6 +124,13 @@ transcript behaviour is unchanged. Downgrading after this migration means droppi
 migration's `Down` does exactly that) — lossless while the setting was never enabled; if you did enable
 it, export first, because the mirrored rows go with the table.
 
+- **MCP stdio identity remediation is reported at the failing operation, not startup.** The stdio
+  host still initializes and advertises tools before it needs a caller identity. On the first
+  identity-scoped operation, multiple active users with no `McpServer__DefaultUserId`, or a
+  configured ID that does not name an active user, fail closed and now return the actionable
+  configuration guidance to the client while writing it once to stderr. This does not change HTTP
+  MCP identity or authorize fallback to another account.
+
 ## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
 
 *Tagged 2026-08-30 at `9d2ea3c7c`. This heading is kept verbatim because the quick start inside the
