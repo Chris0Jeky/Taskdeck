@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/ci-policy.v1.schema.json",
+  "title": "Taskdeck Smart CI policy v1 (ADR-0066)",
+  "description": "Documentation schema. Executable validation lives in scripts/ci/smart-ci/lib/plan.mjs validatePolicy().",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "policyId", "mode", "defaultExecutionMode", "failClosed", "trustedAssociations", "runnerClasses", "trustClasses", "riskClasses", "alwaysLanes", "lanes", "controlPaths", "pathGroups", "labels", "fullEscalationTriggers"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "policyId": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "mode": { "enum": ["shadow", "enforce"] },
+    "description": { "type": "string" },
+    "defaultExecutionMode": { "enum": ["hosted", "hybrid", "self-hosted"] },
+    "failClosed": { "const": true },
+    "trustedAssociations": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "enum": ["OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR"] } },
+    "runnerClasses": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["labels", "hosted"],
+        "properties": {
+          "labels": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "hosted": { "type": "boolean" }
+        }
+      }
+    },
+    "trustClasses": {
+      "type": "object",
+      "required": ["T0", "T1", "T2", "T3", "T4"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^T[0-4]$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "selfHostedAllowed"],
+          "properties": { "description": { "type": "string", "minLength": 1 }, "selfHostedAllowed": { "type": "boolean" } }
+        }
+      }
+    },
+    "riskClasses": {
+      "type": "object",
+      "required": ["R0", "R1", "R2", "R3", "R4"],
+      "additionalProperties": false,
+      "patternProperties": {
+        "^R[0-4]$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "requiredLanes", "fullPlan"],
+          "properties": {
+            "description": { "type": "string", "minLength": 1 },
+            "requiredLanes": { "type": "array", "items": { "type": "string" } },
+            "fullPlan": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "alwaysLanes": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "lanes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z0-9-]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checkName", "family", "runner", "trustedOnly"],
+        "properties": {
+          "checkName": { "type": "string", "minLength": 1 },
+          "family": { "type": "string", "minLength": 1 },
+          "runner": { "type": "string", "minLength": 1 },
+          "trustedOnly": { "type": "boolean" },
+          "hostedFallback": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" }
+        }
+      }
+    },
+    "controlPaths": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "pathGroups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "patterns", "riskFloor", "lanes"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9-]+$" },
+          "patterns": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "riskFloor": { "enum": ["R0", "R1", "R2", "R3", "R4"] },
+          "lanes": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "labels": { "type": "object", "additionalProperties": { "enum": ["escalate-full", "force-hosted", "windows-full"] } },
+    "fullEscalationTriggers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string" } }
+  }
+}
