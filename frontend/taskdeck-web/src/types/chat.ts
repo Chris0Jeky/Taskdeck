@@ -60,6 +60,9 @@ export interface ChatProviderHealth {
   isProbed: boolean
   verificationStatus: VerificationStatus
   probeLatencyMs?: number | null
+  // True when the packaged desktop start ignored retired provider configuration inherited from
+  // the machine's environment (#2233). Optional: older servers omit it.
+  retiredProviderConfigurationIgnored?: boolean
 }
 
 export interface CreateChatSessionRequest {

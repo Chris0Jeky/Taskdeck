@@ -123,6 +123,21 @@ const llmStatusCopy = computed(() => {
     : `${providerLabel} is not ready for live requests.`
 })
 
+// #2233: the packaged desktop drops retired provider variables left in the machine's
+// environment. Say so here rather than leaving the user to wonder why their old provider is
+// not in use. No key names or values are sent by the server, so none can be shown, and the
+// note claims nothing about WHICH provider is running: a stale retired child can sit beside a
+// valid live selector, in which case the provider named above is live.
+// Gated on a RESOLVED health state, matching llmStatusMeta below: while a re-verify is in
+// flight, or after a failed refresh that kept the previous health object, the bar hides the
+// provider label, and "the one named above" would then point at nothing (#2233 review round 2).
+const retiredProviderConfigurationIgnored = computed(
+  () =>
+    !props.loadingHealth
+    && !props.chatHealthLoadError
+    && props.chatHealth?.retiredProviderConfigurationIgnored === true,
+)
+
 const llmStatusMeta = computed(() => {
   if (!props.chatHealth || llmHealthState.value === 'loading' || llmHealthState.value === 'error') {
     return null
@@ -144,6 +159,15 @@ const llmStatusMeta = computed(() => {
     <div>
       <h2 class="td-chat-status__title">{{ llmStatusTitle }}</h2>
       <p class="td-chat-status__copy">{{ llmStatusCopy }}</p>
+      <p
+        v-if="retiredProviderConfigurationIgnored"
+        class="td-chat-status__note"
+        data-testid="llm-retired-configuration-ignored"
+      >
+        Taskdeck ignored retired Gemini provider settings left in this profile's environment; no
+        retired value was kept, logged, or printed. The provider actually in use is the one named
+        above. Remove those leftover variables to clear this notice.
+      </p>
     </div>
     <span v-if="llmStatusMeta" class="td-chat-status__meta">
       {{ llmStatusMeta }}
@@ -196,6 +220,13 @@ const llmStatusMeta = computed(() => {
   margin: 0;
   color: var(--td-text-secondary);
   line-height: 1.5;
+}
+
+.td-chat-status__note {
+  margin: var(--td-space-2) 0 0;
+  color: var(--td-text-secondary);
+  line-height: 1.5;
+  font-size: var(--td-font-xs);
 }
 
 .td-chat-status__meta {

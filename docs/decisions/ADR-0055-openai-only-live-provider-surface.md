@@ -43,6 +43,34 @@ and explicit execution.
 8. This decision supersedes only the Gemini-specific live-provider portions of ADR-0006,
    ADR-0018, ADR-0032, and ADR-0046. Their other decisions and historical bodies remain intact.
 
+### Amendment (2026-08-30, `#2233`)
+
+Decision 3 above is narrowed by exactly one exception, and only there. In the **packaged Windows
+desktop build** (`DesktopRuntime.IsPackagedDesktop`), retired provider configuration that arrives
+from the **process environment** — retired `Llm__Gemini__*` children and a retired `Llm__Provider`
+selector — is dropped from configuration before provider selection instead of failing startup. An
+upgraded Windows profile keeps those user-scope variables forever, so decision 3 as written made
+the double-click unusable on the machines the beta targets, including the case with no selector at
+all.
+
+The exception is bounded:
+
+- **Scope.** Packaged desktop only. Retired configuration in Taskdeck's own `appsettings.json` /
+  `appsettings.local.json`, in Docker Compose, and in every non-desktop host (container,
+  `dotnet run`, headless CI) keeps decision 3 unchanged: fatal, actionable, never a silent fallback.
+- **Announced, never silent.** Dropping is reported once on the console as
+  `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored` and as an additive flag on
+  the provider-status / `Verify LLM` surface. Both are value-blind, and neither claims which
+  provider was selected — the warning also fires when a stale retired child sits beside a valid
+  supported selector, where the app is running that live provider.
+- **No reinterpretation.** Retired configuration is ignored, never honoured. Selection continues to
+  resolve only among `OpenAi`, `OpenAiCompatible`, `Ollama`, and `Mock`, so "never silently falls
+  back to Mock" is preserved: the resulting selection is the documented default and is announced in
+  two places.
+
+Reintroducing any Gemini execution path still requires a new Accepted ADR under the Consequences
+section below.
+
 ## Alternatives Considered
 
 **Keep Gemini deprecated but runnable.** Rejected because every runnable provider retains the full

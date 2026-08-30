@@ -24,13 +24,23 @@ A corrective release must prove both paths separately:
 
 1. Keep the existing hermetic clean-install, persistence, migration, browser, and live OpenAI
    journey; never expose an operator credential to logs/evidence.
-2. Launch a self-contained marked package with synthetic `Llm__Provider=Gemini` and a synthetic
-   retired child setting. Require exit 1, exact
-   `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`, static migration guidance, no
-   ready marker/listener, and zero synthetic-value/raw-exception/stack/URL leakage.
-3. Launch with an explicit supported selector plus inert stale Gemini child names and require
+2. Launch a self-contained marked package with synthetic retired settings **inherited from the
+   process environment**, in both shapes: `Llm__Provider=Gemini` plus synthetic retired children,
+   and synthetic retired children with no selector at all (the upgraded-profile case). Since
+   `#2233` each must reach readiness on the packaged default, emit exactly one
+   `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored` with its static
+   guidance, emit no fatal marker, and leak none of the synthetic values — each injected setting
+   gets its own distinct sentinel, and every captured console line is scanned, not just the marker
+   lines. A stale ambient `Llm__OpenAi__*` pin must reach readiness with no warning at all.
+3. Launch a marked package whose retired settings live in Taskdeck's **own durable
+   `appsettings.local.json`** rather than the environment. That source is unchanged by `#2233`:
+   require exit 1, exact `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`, static
+   migration guidance, no ready marker/listener, and zero
+   synthetic-value/raw-exception/stack/URL leakage. Command-line and Docker Compose retired
+   selectors keep this same fail-closed contract.
+4. Launch with an explicit supported selector plus inert stale Gemini child names and require
    readiness. This behavior is shipped on current main through PR `#2016`, but not in the public v0.1.1 artifact.
-4. After publication, test the unchanged downloaded ZIP from the ordinary Desktop path with the
+5. After publication, test the unchanged downloaded ZIP from the ordinary Desktop path with the
    explicit user provider migration in place and without deleting credential-bearing variables.
 
 Implementation checkpoint: PR `#2016` merged as `909e33f9`. Application 56/56, API 89/89,

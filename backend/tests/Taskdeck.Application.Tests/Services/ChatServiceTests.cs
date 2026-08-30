@@ -1023,6 +1023,44 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task GetProviderHealthAsync_ShouldNotFlagRetiredConfiguration_WhenNoneWasIgnored()
+    {
+        _llmProviderMock
+            .Setup(p => p.GetHealthAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", Model: "mock-default", IsMock: true));
+
+        var result = await _service.GetProviderHealthAsync(probe: false, default);
+
+        result.RetiredProviderConfigurationIgnored.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetProviderHealthAsync_ShouldFlagRetiredConfiguration_WhenTheStartupIgnoredEnvironmentSettings()
+    {
+        // #2233: the packaged desktop start drops retired provider variables inherited from the
+        // Windows profile, and "Verify LLM" must say so instead of silently running on the default.
+        var notice = new RetiredLlmProviderConfigurationNotice();
+        notice.RecordIgnoredKey("Llm:Gemini:ApiKey");
+        var service = new ChatService(
+            _unitOfWorkMock.Object,
+            _llmProviderMock.Object,
+            _plannerMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
+            retiredProviderNotice: notice);
+        _llmProviderMock
+            .Setup(p => p.GetHealthAsync(default))
+            .ReturnsAsync(new LlmHealthStatus(true, "Mock", Model: "mock-default", IsMock: true));
+
+        var result = await service.GetProviderHealthAsync(probe: false, default);
+
+        result.RetiredProviderConfigurationIgnored.Should().BeTrue();
+        result.ProviderName.Should().Be("Mock");
+    }
+
+    [Fact]
     public async Task GetProviderHealthAsync_ShouldPropagateProbeFailure()
     {
         _llmProviderMock

@@ -182,6 +182,30 @@ public class DesktopRuntimeTests
         Assert.All(output, line => Assert.DoesNotContain("synthetic-stack", line));
     }
 
+    [Fact]
+    public void FormatRetiredProviderConfigurationIgnored_IsBoundedValueBlindWarningOutput()
+    {
+        var output = DesktopRuntime.FormatRetiredProviderConfigurationIgnored();
+
+        Assert.Equal(
+            [
+                "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored",
+                "Taskdeck ignored retired Gemini provider settings left in this profile's environment. " +
+                "No retired value was kept, logged, or printed. Remove the leftover Llm__Gemini__* " +
+                "variables (and any Llm__Provider=Gemini) to clear this warning. The provider actually " +
+                "in use is shown in Taskdeck's provider status."
+            ],
+            output);
+        Assert.All(output, line => Assert.DoesNotContain("TASKDECK_DESKTOP_FATAL", line));
+        // The notice fires for any dropped retired key, including one beside a valid live selector,
+        // so it must never claim which provider ended up selected (#2233 review H-1).
+        Assert.All(output, line => Assert.DoesNotContain("offline", line, StringComparison.OrdinalIgnoreCase));
+        Assert.All(output, line => Assert.DoesNotContain("started with", line, StringComparison.OrdinalIgnoreCase));
+        // The filter reads the Llm:Provider value to recognise the retired name, so the notice must
+        // not promise that nothing was read; the enforceable promise is about retention (#2233 R2).
+        Assert.All(output, line => Assert.DoesNotContain("were read", line, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static IConfiguration Configuration(string key, string value)
         => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { [key] = value })

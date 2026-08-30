@@ -55,6 +55,7 @@ public class ChatService : IChatService
     private readonly ToolCallingChatOrchestrator? _toolCallingOrchestrator;
     private readonly LlmToolCallingSettings _toolCallingSettings;
     private readonly ILogger<ChatService>? _logger;
+    private readonly RetiredLlmProviderConfigurationNotice? _retiredProviderNotice;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -69,7 +70,8 @@ public class ChatService : IChatService
         IBoardContextBuilder? boardContextBuilder = null,
         ToolCallingChatOrchestrator? toolCallingOrchestrator = null,
         LlmToolCallingSettings? toolCallingSettings = null,
-        ILogger<ChatService>? logger = null)
+        ILogger<ChatService>? logger = null,
+        RetiredLlmProviderConfigurationNotice? retiredProviderNotice = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -84,6 +86,7 @@ public class ChatService : IChatService
         _toolCallingOrchestrator = toolCallingOrchestrator;
         _toolCallingSettings = toolCallingSettings ?? new LlmToolCallingSettings();
         _logger = logger;
+        _retiredProviderNotice = retiredProviderNotice;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -150,7 +153,11 @@ public class ChatService : IChatService
             health.IsMock,
             health.IsProbed,
             verificationStatus,
-            probeLatencyMs);
+            probeLatencyMs,
+            // #2233: the packaged desktop start drops retired provider variables inherited from the
+            // Windows profile. Surface that here so "Verify LLM" says the settings were found and
+            // ignored rather than leaving the user to wonder why their old provider is not in use.
+            _retiredProviderNotice?.IgnoredEnvironmentConfiguration ?? false);
     }
 
     private static string DeriveVerificationStatus(LlmHealthStatus health)

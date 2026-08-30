@@ -34,7 +34,11 @@ public record ChatProviderHealthDto(
     bool IsMock,
     bool IsProbed = false,
     string VerificationStatus = "unverified",
-    long? ProbeLatencyMs = null
+    long? ProbeLatencyMs = null,
+    // True when retired provider configuration inherited from the process environment was
+    // ignored at startup (packaged desktop only, #2233). Value-blind: a flag, never the names
+    // or values of the leftover variables.
+    bool RetiredProviderConfigurationIgnored = false
 );
 
 public record CreateChatSessionDto(
