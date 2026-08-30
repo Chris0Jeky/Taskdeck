@@ -32,6 +32,10 @@ public sealed class CaptureConfiguration : IEntityTypeConfiguration<Capture>
         builder.Property(capture => capture.CreatedAt).IsRequired();
         builder.Property(capture => capture.UpdatedAt).IsRequired();
         builder.Ignore(capture => capture.Timeline);
+        // Projections over the loaded assets, not columns: EF would otherwise map CurrentText as a
+        // string column and ActiveSourceAssets as a second navigation over the same table.
+        builder.Ignore(capture => capture.ActiveSourceAssets);
+        builder.Ignore(capture => capture.CurrentText);
 
         builder.HasIndex(capture => new { capture.UserId, capture.CreatedAt });
         builder.HasIndex(capture => new { capture.UserId, capture.Disposition });

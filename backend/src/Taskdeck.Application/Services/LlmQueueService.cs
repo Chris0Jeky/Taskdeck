@@ -94,9 +94,10 @@ public class LlmQueueService : ILlmQueueService
             if (capturePayload is not null)
             {
                 // Same canonical intake as CaptureService.CreateAsync: a capture enqueued here is
-                // mirrored (with its inline text asset) while dual-write is on, in the same unit of
-                // work as the queue row. No-op while the flag is off.
-                await _captureIntake.MirrorLegacyCaptureAsync(request, capturePayload, userId, dto.BoardId);
+                // admitted to the durable aggregate (with its inline text and external-reference
+                // assets) while dual-write is on, in the same unit of work as the queue row. No-op
+                // while the flag is off.
+                await _captureIntake.IntakeAsync(request, capturePayload, userId, dto.BoardId);
             }
 
             await _unitOfWork.SaveChangesAsync();

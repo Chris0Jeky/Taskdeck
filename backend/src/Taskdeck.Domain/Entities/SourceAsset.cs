@@ -70,6 +70,24 @@ public sealed class SourceAsset : Entity
     /// <summary>The name the input arrived with (a file name, a page title); provenance only.</summary>
     public string? OriginalName { get; private set; }
 
+    /// <summary>
+    /// The asset this one replaces, when a post-intake edit produced a corrected source
+    /// (CF-01 <c>#2255</c>). Sources are immutable: an edit never rewrites the stored bytes, it
+    /// appends a <b>superseding</b> asset and leaves the original readable, so the record of what
+    /// the user originally gave Taskdeck survives every correction.
+    /// </summary>
+    public Guid? SupersedesAssetId { get; private set; }
+
+    /// <summary>
+    /// The asset that replaced this one; null while this asset is the current source. Readers that
+    /// want "the text as it stands now" take the assets with no successor
+    /// (<see cref="Capture.ActiveSourceAssets"/>); readers that want the intake record take them all.
+    /// </summary>
+    public Guid? SupersededByAssetId { get; private set; }
+
+    /// <summary>True while nothing has superseded this asset.</summary>
+    public bool IsActive => SupersededByAssetId is null;
+
     public SourceAssetTextPayload? TextPayload { get; private set; }
 
     private SourceAsset() : base()
@@ -211,6 +229,34 @@ public sealed class SourceAsset : Entity
         var asset = new SourceAsset(captureId, ordinal, modality, mediaType, sha256, byteSize, SourceAssetStorageKind.LegacyArtefact, originalName);
         asset.LegacyArtefactId = legacyArtefactId;
         return asset;
+    }
+
+    /// <summary>
+    /// Links this asset to the one it replaces. Internal to the aggregate: only
+    /// <see cref="Capture"/> may build a supersession chain, so no caller outside the domain can
+    /// point an asset at a source it does not own.
+    /// </summary>
+    internal void RecordSupersedes(Guid supersededAssetId)
+    {
+        if (supersededAssetId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Superseded asset ID cannot be empty");
+        if (supersededAssetId == Id)
+            throw new DomainException(ErrorCodes.ValidationError, "A source asset cannot supersede itself");
+
+        SupersedesAssetId = supersededAssetId;
+    }
+
+    /// <summary>Marks this asset as replaced. The bytes and the row stay exactly as they were.</summary>
+    internal void MarkSupersededBy(Guid successorAssetId)
+    {
+        if (successorAssetId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "Superseding asset ID cannot be empty");
+        if (successorAssetId == Id)
+            throw new DomainException(ErrorCodes.ValidationError, "A source asset cannot supersede itself");
+        if (SupersededByAssetId.HasValue && SupersededByAssetId.Value != successorAssetId)
+            throw new DomainException(ErrorCodes.ValidationError, "Source asset has already been superseded");
+
+        SupersededByAssetId = successorAssetId;
     }
 
     public static string HashOf(ReadOnlySpan<byte> bytes) =>

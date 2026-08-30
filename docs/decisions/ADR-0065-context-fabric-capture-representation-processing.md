@@ -498,6 +498,31 @@ still off; every new table empty on an unchanged install). What the amendments c
 Declined: renaming `UserId` to `OwnerPrincipalId` (every owned entity uses `UserId`;
 `ProducedByPrincipalId` carries the distinction); opening the umbrella children before admission.
 
+## In force (2026-08-30, CF-01 `#2255`)
+
+§Decision 1 is no longer a scaffold. `ContextFabric:DualWriteCaptures`, `BackfillCaptures` and
+`ReadCapturesFromStore` default on; every capture is admitted through `CaptureIntakeService` under the
+queue row's own id; an idempotent, resumable startup backfill brings every pre-existing
+`inbox.capture.%` row into the aggregate with its three state axes derived from what that row
+recorded (`CaptureLegacyStateMapping`), its text as an immutable inline `SourceAsset` and its
+`externalRef` as an `ExternalReference` asset; and Inbox list / get resolve a capture's own material
+through `ICaptureStore`. **ADR-0005 is superseded by this record.**
+
+Two clarifications this slice settles, and one it defers:
+
+- **The queue row survives as the job record, not as the capture.** Queue status, processed-at, retry
+  count and error message — and, until their own columns exist, triage provenance, suggestion
+  metadata and the disposition receipt's who/when/where — still come from `LlmRequest`. That split is
+  what keeps the Inbox DTOs byte-identical across the read switch, and CF-03 closes it.
+- **Sources are immutable, so corrections supersede.** A post-intake edit appends a new
+  `SourceAsset` carrying `SupersedesAssetId` and stamps `SupersededByAssetId` on the asset it
+  replaces; nothing rewrites stored bytes. The per-capture cap counts active assets, so correction
+  history never makes an editable capture fail.
+- **Deferred: `CapturedAtClient`.** Kept, unused. No shipped create path carries a client timestamp,
+  so today it is always null and `CapturedAtServer == CreatedAt`. It stays because CF-20's offline
+  intake is the reason the column was designed, and dropping and re-adding a nullable column costs
+  two migrations to save nothing.
+
 ## References
 
 - `docs/analysis/2026-08-30-context-fabric/EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md` and
