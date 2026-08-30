@@ -2846,6 +2846,71 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('clears filed-away weekly metrics on access revocation and does not restore them on recovery', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const decidedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+      mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+      const wrapper = await mountView(
+        [
+          makeProposal({
+            id: 'revoked-applied',
+            boardId: 'board-1',
+            status: 'Applied',
+            summary: 'Filed before access changed',
+            decidedAt,
+            decidedByUserId: 'u-1',
+            appliedAt: decidedAt,
+          }),
+          makeProposal({
+            id: 'revoked-rejected',
+            boardId: 'board-1',
+            status: 'Rejected',
+            summary: 'Rejected before access changed',
+            decidedAt,
+            decidedByUserId: 'u-1',
+            appliedAt: null,
+          }),
+        ],
+        '/workspace/review?boardId=board-1',
+        [{ id: 'board-1', name: 'Restricted board' }],
+      )
+
+      expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+      const appliedRow = wrapper
+        .findAll('.paper-review-recent__row')
+        .find((button) => button.text().includes('Filed before access changed'))!
+      await appliedRow.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="decision-file-away"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+
+      mocks.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="paper-review-apply-rate"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
+
+      // Leaving the revoked board scope performs an explicit authorized load.
+      // The old filed-away record must not reappear from the retained cache.
+      mocks.getProposals.mockResolvedValue([])
+      await wrapper.get('[data-testid="paper-scope-clear"]').trigger('click')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-review-apply-rate"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {

@@ -757,6 +757,18 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
 // a later refresh can still update the lifecycle fields we project.
 const filedAwayDecisionHistory = ref<ApiProposal[]>([])
 
+// A trusted 403 means the current board payload is no longer authorised. The
+// computed guard suppresses retained metrics in the same reactive turn, while
+// the synchronous clear prevents a later successful load from republishing the
+// old board's history after `queueAccessRevoked` returns to false.
+watch(
+  queueAccessRevoked,
+  (revoked) => {
+    if (revoked) filedAwayDecisionHistory.value = []
+  },
+  { flush: 'sync' },
+)
+
 function upsertProposalById(target: ApiProposal[], proposal: ApiProposal) {
   const index = target.findIndex((item) => proposalIdsEqual(item.id, proposal.id))
   if (index >= 0) target[index] = proposal
@@ -773,6 +785,7 @@ function retainKnownDecisions(candidates: readonly ApiProposal[]) {
 }
 
 const weeklyDecisionSource = computed<ApiProposal[]>(() => {
+  if (queueAccessRevoked.value) return []
   const merged = [...filedAwayDecisionHistory.value]
   for (const proposal of proposals.value) upsertProposalById(merged, proposal)
   return merged
