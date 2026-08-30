@@ -675,6 +675,66 @@ describe('PaperBoardView', () => {
     const lanes = wrapper.find('[data-testid="paper-board-lanes"]')
     expect(lanes.classes()).not.toContain('paper-board-view__lanes--snap')
   })
+
+  /*
+   * #2232 regression pin. At phone width the lanes rail stacks
+   * (`flex-direction: column` + `align-items: flex-start`), so the lane wrapper
+   * is a shrink-to-fit cross-axis flex item. `.paper-board-column` carries
+   * `container-type: inline-size`, and inline-size containment removes an
+   * element's intrinsic width contribution — a shrink-to-fit lane therefore
+   * collapsed to padding width and the absolutely positioned
+   * `.paper-board-card__open` button rendered 0px wide, so Playwright could not
+   * click it. jsdom has no layout engine, so these specs pin the DOM contract
+   * that produces the layout: at phone mode every ancestor between the lanes
+   * rail and the card carries a definite `width: 100%`, and no other viewport
+   * mode gets an inline lane width (the desktop lane is `display: contents`).
+   */
+  it('gives the phone-width lane wrapper and column a definite width', async () => {
+    mockViewportMode.value = 'phone'
+    const wrapper = mountView()
+    await nextTick()
+
+    const lane = wrapper.get('[data-column-dnd-id="col-backlog"]')
+    expect((lane.element as HTMLElement).style.width).toBe('100%')
+    expect((lane.get('.paper-board-column').element as HTMLElement).style.width).toBe('100%')
+    expect(lane.find('[data-card-id="card-1"] [data-action="open-card"]').exists()).toBe(true)
+
+    mockViewportMode.value = 'tablet'
+    await nextTick()
+    expect((lane.element as HTMLElement).style.width).toBe('')
+
+    mockViewportMode.value = 'desktop'
+    await nextTick()
+    expect((lane.element as HTMLElement).style.width).toBe('')
+  })
+
+  it('keeps the phone-width card opener sized once a collapsed lane is expanded again', async () => {
+    window.localStorage.setItem('td.paper.board-collapsed-columns.v1', JSON.stringify(['col-backlog']))
+    mockViewportMode.value = 'phone'
+    const wrapper = mountView()
+    await nextTick()
+
+    const lane = wrapper.get('[data-column-dnd-id="col-backlog"]')
+    const column = lane.get('[data-column-id="col-backlog"]')
+    const toggle = column.get('[data-testid="paper-column-collapse-col-backlog"]')
+
+    expect(column.attributes('data-collapsed')).toBe('true')
+    expect(lane.find('[data-card-id="card-1"] [data-action="open-card"]').exists()).toBe(false)
+    // A collapsed lane still owns a definite width, so expanding cannot land the
+    // opener inside a collapsed ancestor box.
+    expect((lane.element as HTMLElement).style.width).toBe('100%')
+    expect((column.element as HTMLElement).style.width).toBe('100%')
+
+    await toggle.trigger('click')
+    await nextTick()
+
+    expect(column.attributes('data-collapsed')).toBe('false')
+    expect((lane.element as HTMLElement).style.width).toBe('100%')
+    expect((column.element as HTMLElement).style.width).toBe('100%')
+    const opener = lane.get('[data-card-id="card-1"] [data-action="open-card"]')
+    expect(opener.attributes('hidden')).toBeUndefined()
+    expect(opener.element.closest('[hidden]')).toBeNull()
+  })
 })
 
 describe('PaperBoardView — empty board (#1765)', () => {
