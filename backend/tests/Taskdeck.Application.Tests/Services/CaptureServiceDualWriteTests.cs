@@ -1,3 +1,4 @@
+using System.Text;
 using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
@@ -13,8 +14,9 @@ namespace Taskdeck.Application.Tests.Services;
 
 /// <summary>
 /// ADR-0065 §Decision 1 / CF-01 (#2255): while <c>ContextFabric:DualWriteCaptures</c> is on, every
-/// new capture is mirrored into the durable aggregate under the queue row's own id; while it is off
-/// (the default), the service is byte-for-byte the pre-ADR-0065 service.
+/// new capture is mirrored into the durable aggregate under the queue row's own id, with its text as
+/// an immutable inline source asset, through the canonical <see cref="CaptureIntakeService"/>; while
+/// it is off (the default), the service is byte-for-byte the pre-ADR-0065 service.
 /// </summary>
 public sealed class CaptureServiceDualWriteTests
 {
@@ -63,20 +65,46 @@ public sealed class CaptureServiceDualWriteTests
         mirrored!.Id.Should().Be(result.Value!.Id, "the mirror is ID-preserving");
         mirrored.LegacyRequestId.Should().Be(result.Value.Id);
         mirrored.UserId.Should().Be(_userId);
-        mirrored.LegacySource.Should().Be(CaptureSource.Voice);
+        mirrored.LegacySourceSnapshot.Should().Be(CaptureSource.Voice);
         mirrored.PrimaryModality.Should().Be(CaptureModality.Audio);
         mirrored.OriginAdapter.Should().Be(CaptureOriginAdapter.WebComposer);
-        mirrored.Producer.Should().Be(CaptureProducerKind.Human);
-        mirrored.Intent.Should().Be(CaptureIntentMode.Organize);
-        mirrored.Lifecycle.Should().Be(CaptureLifecycleState.Received);
+        mirrored.ProducerKind.Should().Be(CaptureProducerKind.Human);
+        mirrored.ProducedByPrincipalId.Should().BeNull();
+        mirrored.RequestedIntent.Should().Be(CaptureIntentMode.Organize, "a fresh legacy row has no disposition yet");
+        mirrored.EffectiveIntent.Should().Be(CaptureIntentMode.Organize);
+        mirrored.Disposition.Should().Be(CaptureUserDisposition.Active);
+        mirrored.Timeline.Should().Be(CaptureTimelineStep.Received);
         mirrored.ContextBoardId.Should().BeNull();
         mirrored.UserTitle.Should().Be("Venue");
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once, "the mirror commits with the queue row");
     }
 
+    [Fact]
+    public async Task CreateAsync_WithDualWriteEnabled_ShouldStoreTheTextAsAnImmutableSourceAsset()
+    {
+        Capture? mirrored = null;
+        _captureStoreMock
+            .Setup(s => s.AddAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()))
+            .Callback<Capture, CancellationToken>((capture, _) => mirrored = capture)
+            .Returns(Task.CompletedTask);
+        var service = CreateService(dualWrite: true);
+        const string text = "remember to book the venue\nand call Dana";
+
+        var result = await service.CreateAsync(_userId, new CreateCaptureItemDto(null, text, "paste"));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        var asset = mirrored!.SourceAssets.Should().ContainSingle().Subject;
+        asset.StorageKind.Should().Be(SourceAssetStorageKind.InlineText);
+        asset.Modality.Should().Be(CaptureModality.Text);
+        asset.Ordinal.Should().Be(0);
+        asset.TextPayload!.Text.Should().Be(text, "the raw material is stored verbatim, no longer only on the processing job");
+        asset.ContentHash.Should().Be(SourceAsset.HashOf(Encoding.UTF8.GetBytes(text)));
+        asset.ByteSize.Should().Be(Encoding.UTF8.GetByteCount(text));
+    }
+
     [Theory]
-    [InlineData("markdownImport", CaptureProducerKind.Import, CaptureOriginAdapter.Import, CaptureModality.Document)]
-    [InlineData("import", CaptureProducerKind.Import, CaptureOriginAdapter.Import, CaptureModality.Document)]
+    [InlineData("markdownImport", CaptureProducerKind.Human, CaptureOriginAdapter.Import, CaptureModality.Document)]
+    [InlineData("import", CaptureProducerKind.Human, CaptureOriginAdapter.Import, CaptureModality.Document)]
     [InlineData("meetingIntegration", CaptureProducerKind.Integration, CaptureOriginAdapter.Integration, CaptureModality.Text)]
     [InlineData("vsCodeExtension", CaptureProducerKind.Human, CaptureOriginAdapter.VsCodeExtension, CaptureModality.Text)]
     public async Task CreateAsync_WithDualWriteEnabled_ShouldStampTheProducerFromTheMappingNotTheCaller(
@@ -97,7 +125,7 @@ public sealed class CaptureServiceDualWriteTests
         var result = await service.CreateAsync(_userId, new CreateCaptureItemDto(null, "imported text", source));
 
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
-        mirrored!.Producer.Should().Be(expectedProducer);
+        mirrored!.ProducerKind.Should().Be(expectedProducer);
         mirrored.OriginAdapter.Should().Be(expectedOrigin);
         mirrored.PrimaryModality.Should().Be(expectedModality);
     }

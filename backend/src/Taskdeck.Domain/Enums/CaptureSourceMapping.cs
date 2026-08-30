@@ -17,7 +17,11 @@ public readonly record struct CaptureDimensions(
 /// exhaustive (every legacy value maps); the reverse direction is a best effort for compatibility
 /// clients and is lossy where the legacy enum drew distinctions the dimensions do not
 /// (<see cref="IsAmbiguousLegacySource"/>). No new <see cref="CaptureSource"/> value may be added
-/// without a row here — the test suite enumerates the enum.
+/// without a row here — the test suite enumerates the enum. An import source maps to a
+/// <see cref="CaptureProducerKind.Human"/> producer over the <see cref="CaptureOriginAdapter.Import"/>
+/// origin: importing is a transport a person performs, not a principal kind (amended 2026-08-30);
+/// an integration-driven import stamps <see cref="CaptureProducerKind.Integration"/> through the
+/// caller's override.
 /// </summary>
 public static class CaptureSourceMapping
 {
@@ -27,11 +31,11 @@ public static class CaptureSourceMapping
             [CaptureSource.Typed] = new(CaptureModality.Text, CaptureOriginAdapter.WebComposer, CaptureProducerKind.Human),
             [CaptureSource.Paste] = new(CaptureModality.Text, CaptureOriginAdapter.WebComposer, CaptureProducerKind.Human),
             [CaptureSource.TranscriptPaste] = new(CaptureModality.Text, CaptureOriginAdapter.WebComposer, CaptureProducerKind.Human),
-            [CaptureSource.Import] = new(CaptureModality.Document, CaptureOriginAdapter.Import, CaptureProducerKind.Import),
+            [CaptureSource.Import] = new(CaptureModality.Document, CaptureOriginAdapter.Import, CaptureProducerKind.Human),
             [CaptureSource.Voice] = new(CaptureModality.Audio, CaptureOriginAdapter.WebComposer, CaptureProducerKind.Human),
             [CaptureSource.MeetingIntegration] = new(CaptureModality.Text, CaptureOriginAdapter.Integration, CaptureProducerKind.Integration),
             [CaptureSource.TranscriptFile] = new(CaptureModality.Document, CaptureOriginAdapter.FileUpload, CaptureProducerKind.Human),
-            [CaptureSource.MarkdownImport] = new(CaptureModality.Document, CaptureOriginAdapter.Import, CaptureProducerKind.Import),
+            [CaptureSource.MarkdownImport] = new(CaptureModality.Document, CaptureOriginAdapter.Import, CaptureProducerKind.Human),
             [CaptureSource.WebClip] = new(CaptureModality.Text, CaptureOriginAdapter.BrowserExtension, CaptureProducerKind.Human),
             [CaptureSource.ShareTarget] = new(CaptureModality.Text, CaptureOriginAdapter.ShareTarget, CaptureProducerKind.Human),
             [CaptureSource.BrowserExtension] = new(CaptureModality.Text, CaptureOriginAdapter.BrowserExtension, CaptureProducerKind.Human),
@@ -74,7 +78,7 @@ public static class CaptureSourceMapping
             return CaptureSource.MeetingIntegration;
         }
 
-        if (origin == CaptureOriginAdapter.Import || producer == CaptureProducerKind.Import)
+        if (origin == CaptureOriginAdapter.Import)
         {
             return CaptureSource.Import;
         }
