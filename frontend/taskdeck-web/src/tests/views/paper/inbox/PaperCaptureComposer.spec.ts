@@ -75,6 +75,21 @@ describe('PaperCaptureComposer', () => {
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
 
+  it('associates the body with an external error receipt only while invalid', async () => {
+    const wrapper = mount(PaperCaptureComposer, {
+      props: { invalid: true, errorId: 'paper-inbox-capture-error' },
+    })
+    const textarea = wrapper.get('textarea[aria-label="Capture body"]')
+
+    expect(textarea.attributes('aria-invalid')).toBe('true')
+    expect(textarea.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
+
+    await wrapper.setProps({ invalid: false, errorId: null })
+
+    expect(textarea.attributes('aria-invalid')).toBeUndefined()
+    expect(textarea.attributes('aria-describedby')).toBeUndefined()
+  })
+
   it('reflects the chosen board in the select binding', async () => {
     const wrapper = mount(PaperCaptureComposer)
     const select = wrapper.find('select')
