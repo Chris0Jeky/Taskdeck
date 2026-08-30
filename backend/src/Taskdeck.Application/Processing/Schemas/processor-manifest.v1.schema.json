@@ -1,10 +1,10 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://taskdeck.dev/schemas/processor-manifest.v1.json",
-  "title": "Taskdeck Processor Manifest v1",
+  "title": "Taskdeck Processor Manifest v1 (protocol v1-alpha)",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "version", "capabilities", "execution", "locality", "accepts", "resources", "privacy"],
+  "required": ["id", "version", "capabilities", "execution", "locality", "accepts", "resources", "privacy", "capabilityContracts"],
   "properties": {
     "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$", "maxLength": 120 },
     "version": { "type": "string", "maxLength": 40 },
@@ -78,15 +78,54 @@
     "costModel": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["type"],
       "properties": {
         "type": { "enum": ["free-local", "compute-time", "per-minute", "per-token", "per-page", "custom"] },
         "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
         "unitPrice": { "type": "number", "minimum": 0 }
       }
     },
-    "outputSchemas": {
-      "type": "array",
-      "items": { "type": "string", "maxLength": 200 }
+    "capabilityContracts": {
+      "description": "One entry per declared capability: the output families it emits, the schema identifiers of those outputs, and optionally the schema of its capability-specific run options.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "enum": [
+          "content.inspect",
+          "text.normalize",
+          "document.extract-text",
+          "image.ocr",
+          "image.describe",
+          "audio.preprocess",
+          "audio.transcribe",
+          "audio.align",
+          "audio.diarize",
+          "semantic.extract",
+          "context.resolve",
+          "change.plan",
+          "change.verify"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["outputs", "outputSchemas"],
+        "properties": {
+          "outputs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "enum": ["representation", "candidate-batch", "diagnostic"] }
+          },
+          "outputSchemas": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "type": "string", "maxLength": 200 }
+          },
+          "optionsSchema": { "type": "string", "minLength": 1, "maxLength": 200 }
+        }
+      }
     }
   }
 }

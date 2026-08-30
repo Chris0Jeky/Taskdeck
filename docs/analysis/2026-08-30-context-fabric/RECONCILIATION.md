@@ -90,6 +90,17 @@ manifest model + validator + schema, the worker-protocol envelopes + validator, 
 `ContextFabric:DualWriteCaptures` flag (default `false`). See `docs/architecture/CONTEXT_FABRIC.md` §2
 for the file map and §7 for the proving checks.
 
+## 7a. Same-day external audit and reconciliation pass
+
+After PR `#2280` merged, the maintainer had it audited externally and directed the audit's
+implementation. The audit as received is `EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md`; its disposition —
+what was accepted (the `SourceAsset` foundation, three capture state axes, producer principal and
+requested/effective intent, Worker Protocol v1-alpha, `IBlobStore` reference semantics,
+`IRepresentationStore` draft invariants, one canonical intake, the corrected first-vertical order, the
+CF-24A/B split, v0.4 gates A–D, the amended rulings 2/4/6/9), what was declined, and the proving checks —
+is `AUDIT_RECONCILIATION.md`. ADR-0065 carries the decision text in §*Amendments (2026-08-30)*. §4's
+release ladder and §5's issue map above are superseded where those records differ.
+
 ## 7. Not verified in this pass
 
 - The pack's cost numbers and provider claims (not re-measured; CF-15).

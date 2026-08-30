@@ -10,6 +10,7 @@ using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
 using Xunit;
+using Capture = Taskdeck.Domain.Entities.Capture;
 
 namespace Taskdeck.Api.Tests;
 
@@ -104,7 +105,91 @@ public class MigrationBootstrapTests : IDisposable
         _context.Model.FindEntityType(typeof(Transcript)).Should().NotBeNull();
         GetUserTables().Should().Contain("Transcripts");
         GetUserTables().Should().Contain("Captures");
+        GetUserTables().Should().Contain("SourceAssets");
+        GetUserTables().Should().Contain("SourceAssetTextPayloads");
         _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReconcileContextFabricScaffold_DownAndUpRoundTripOnSqlite()
+    {
+        // The hand-written Down folds the three state axes back into the single legacy column and
+        // drops the asset tables; migrating back up must recreate the reconciled schema exactly.
+        _context.Database.Migrate();
+        var migrator = _context.GetService<IMigrator>();
+
+        migrator.Migrate("20260830034447_AddCaptureAggregate");
+
+        GetUserTables().Should().NotContain("SourceAssets");
+        GetUserTables().Should().NotContain("SourceAssetTextPayloads");
+        GetColumns("Captures").Should().Contain("Lifecycle");
+        GetColumns("Captures").Should().NotContain("Disposition");
+
+        migrator.Migrate();
+
+        GetUserTables().Should().Contain("SourceAssets");
+        GetUserTables().Should().Contain("SourceAssetTextPayloads");
+        GetColumns("Captures").Should().Contain(new[] { "Disposition", "ProcessingSummary", "ActionState", "ProducerKind", "RequestedIntent", "EffectiveIntent", "LegacySourceSnapshot", "ProducedByPrincipalId" });
+        GetColumns("Captures").Should().NotContain("Lifecycle");
+        _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    private List<string> GetColumns(string table)
+    {
+        var connection = _context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info(\"{table}\");";
+        using var reader = command.ExecuteReader();
+        var columns = new List<string>();
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        return columns;
+    }
+
+    [Fact]
+    public async Task CaptureAggregate_RoundTripsThroughEfCaptureStoreOnTheMigratedSchema()
+    {
+        // ADR-0065 reconciliation: the scaffold's store was never exercised against a real database.
+        // A capture with an inline text asset must persist, reload with its payload, and erase as a
+        // unit through the same store account deletion uses.
+        _context.Database.Migrate();
+        var user = new User("fabric-user", "fabric-user@example.com", "hash");
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var requestId = Guid.NewGuid();
+        var capture = Capture.FromQueueRequest(
+            requestId, user.Id, CaptureSource.Paste, null, null, "Round trip",
+            requestedIntent: CaptureIntentMode.Act,
+            legacyDisposition: CaptureDisposition.ProposalRequested);
+        capture.AddInlineTextSource("book the venue\nand call Dana");
+        capture.RecordProcessingSummary(CaptureProcessingSummary.Ready);
+        await store.AddAsync(capture);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        var reloaded = await store.GetByIdForUserAsync(requestId, user.Id);
+
+        reloaded.Should().NotBeNull();
+        reloaded!.LegacyRequestId.Should().Be(requestId);
+        reloaded.RequestedIntent.Should().Be(CaptureIntentMode.Act);
+        reloaded.EffectiveIntent.Should().Be(CaptureIntentMode.Act);
+        reloaded.Disposition.Should().Be(CaptureUserDisposition.Active);
+        reloaded.ProcessingSummary.Should().Be(CaptureProcessingSummary.Ready);
+        reloaded.Timeline.Should().Be(CaptureTimelineStep.Understood);
+        var asset = reloaded.SourceAssets.Should().ContainSingle().Subject;
+        asset.StorageKind.Should().Be(SourceAssetStorageKind.InlineText);
+        asset.TextPayload!.Text.Should().Be("book the venue\nand call Dana");
+        (await store.GetByIdForUserAsync(requestId, Guid.NewGuid())).Should().BeNull("reads are owner-scoped");
+
+        (await store.DeleteByUserAsync(user.Id)).Should().Be(1);
+        await _context.SaveChangesAsync();
+        _context.SourceAssets.Count().Should().Be(0, "assets go with their capture");
+        _context.SourceAssetTextPayloads.Count().Should().Be(0, "payloads go with their asset");
+        (await store.CountByUserAsync(user.Id)).Should().Be(0);
     }
 
     [Fact]
