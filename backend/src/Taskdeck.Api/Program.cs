@@ -182,14 +182,6 @@ if (args.Contains("--mcp"))
             mcpHttpApp.UseForwardedHeaders(mcpForwardedHeadersOptions);
         }
 
-        // CORS middleware with no named policy: required so EndpointMiddleware will execute the MCP
-        // endpoint, which carries DisableCorsAttribute (ICorsMetadata) -- see AddCors above (#1602).
-        // Deny-by-default: no policy is registered, so this emits no Access-Control-* headers and
-        // grants no cross-origin access; it exists purely to satisfy the endpoint's metadata contract.
-        // Positioned to mirror the co-hosted pipeline (forwarded headers -> CORS -> correlation ID),
-        // and after the auto-inserted UseRouting so an endpoint is selected when it runs.
-        mcpHttpApp.UseCors();
-
         // Correlation ID propagation: honours client X-Request-Id header.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
 
@@ -202,7 +194,23 @@ if (args.Contains("--mcp"))
         //
         // Ahead of ApiKeyMiddleware so a variant is rejected before a key parse, the failure budget
         // or the per-key budget, and so the answer is 404 rather than "authenticate for this".
+        //
+        // Ahead of UseCors for the same reason it precedes CORS in the co-hosted pipeline: routing
+        // is case-insensitive, so OPTIONS /MCP carrying an Origin and Access-Control-Request-Method
+        // selects the REAL MCP endpoint, and .NET 8's CorsMiddleware short-circuits a preflight for
+        // a selected endpoint with 204 -- a success a browser reads as "this endpoint exists", on a
+        // spelling that answers 404 everywhere else. Nothing here needs CORS to have run first: the
+        // endpoint's DisableCorsAttribute is consulted by EndpointMiddleware when it executes the
+        // endpoint, which is further down the pipeline than both of these.
         Taskdeck.Api.Extensions.PipelineConfiguration.UseMachinePathCanonicalGuard(mcpHttpApp);
+
+        // CORS middleware with no named policy: required so EndpointMiddleware will execute the MCP
+        // endpoint, which carries DisableCorsAttribute (ICorsMetadata) -- see AddCors above (#1602).
+        // Deny-by-default: no policy is registered, so this emits no Access-Control-* headers and
+        // grants no cross-origin access; it exists purely to satisfy the endpoint's metadata contract.
+        // Positioned to mirror the co-hosted pipeline (correlation ID -> machine-path guard -> CORS),
+        // and after the auto-inserted UseRouting so an endpoint is selected when it runs.
+        mcpHttpApp.UseCors();
 
         // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
         // Runs before ApiKeyMiddleware so it captures all requests including those

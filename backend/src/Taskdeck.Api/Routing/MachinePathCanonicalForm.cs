@@ -48,16 +48,6 @@ namespace Taskdeck.Api.Routing;
 internal static class MachinePathCanonicalForm
 {
     /// <summary>
-    /// True when <paramref name="path"/> aliases one of <paramref name="canonicalPrefixes"/> under
-    /// some other layer's reading but is not its exact lowercase spelling — the fail-closed 404 set.
-    /// False for a canonical machine path and false for a genuine SPA path, both of which continue
-    /// down the pipeline untouched.
-    /// </summary>
-    /// <param name="path">The request path as ASP.NET Core parsed it (percent-decoded except
-    /// <c>%2F</c>).</param>
-    /// <param name="canonicalPrefixes">The exact lowercase machine prefixes, each starting with
-    /// <c>/</c>.</param>
-    /// <summary>
     /// The full fail-closed test: <see cref="IsRejectedVariant"/> plus the one variant class that is
     /// invisible in <see cref="HttpRequest.Path"/> — percent-encoded prefix <em>letters</em>.
     /// </summary>
@@ -128,6 +118,19 @@ internal static class MachinePathCanonicalForm
         return false;
     }
 
+    /// <summary>
+    /// True when <paramref name="path"/> aliases one of <paramref name="canonicalPrefixes"/> under
+    /// some other layer's reading but is not its exact lowercase spelling — the three variant
+    /// classes that are visible in the parsed path. False for a canonical machine path and false
+    /// for a genuine SPA path, both of which continue down the pipeline untouched.
+    ///
+    /// <see cref="IsRejectedSpelling"/> is the full test; this is the half that needs no raw
+    /// request target, and is what a caller without one can still enforce.
+    /// </summary>
+    /// <param name="path">The request path as ASP.NET Core parsed it (percent-decoded except
+    /// <c>%2F</c>).</param>
+    /// <param name="canonicalPrefixes">The exact lowercase machine prefixes, each starting with
+    /// <c>/</c>.</param>
     internal static bool IsRejectedVariant(PathString path, IReadOnlyList<string> canonicalPrefixes)
     {
         var value = path.Value;

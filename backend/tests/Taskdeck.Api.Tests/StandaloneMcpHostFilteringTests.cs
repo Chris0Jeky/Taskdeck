@@ -381,6 +381,43 @@ public class StandaloneMcpHostFilteringTests
             });
     }
 
+    // A CORS PREFLIGHT on a non-canonical spelling (#1992 round 2). Routing is case-insensitive,
+    // so OPTIONS /MCP with an Origin and Access-Control-Request-Method selects the REAL MCP
+    // endpoint, and .NET 8's CorsMiddleware short-circuits a preflight for a selected endpoint
+    // with 204 -- so while UseCors() ran before the guard, this answered a success a browser reads
+    // as "this endpoint exists" for a URL that is 404 at every other layer.
+    //
+    // Discriminating by construction: moving UseCors() back above the guard turns the first
+    // assertion into 204. The canonical case below is the other direction -- the reorder must not
+    // stop CORS from handling a legitimate preflight.
+    [Fact]
+    public async Task StandaloneMcpHttpHost_CorsPreflightOnANonCanonicalSpelling_Returns404()
+    {
+        await RunSeededApiKeyHostAsync(
+            "tdsk_standalone_preflight_0000000000000000",
+            perKeyPermitLimit: 1000,
+            async client =>
+            {
+                foreach (var path in new[] { "/MCP", "/Mcp" })
+                {
+                    using var preflight = await SendPreflightAsync(client, path);
+
+                    preflight.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                        $"a preflight for '{path}' must be answered by the fail-closed guard, not by " +
+                        "CorsMiddleware short-circuiting to a success");
+                    preflight.Headers.Contains("Access-Control-Allow-Origin").Should().BeFalse();
+                }
+
+                // Canonical spelling: CorsMiddleware still owns the preflight and short-circuits it
+                // with 204 (measured on .NET 8; the MCP endpoint's DisableCorsAttribute is why no
+                // Access-Control-* header comes back with it). The guard must not intercept this.
+                using var canonical = await SendPreflightAsync(client, "/mcp");
+
+                canonical.StatusCode.Should().Be(HttpStatusCode.NoContent,
+                    "moving the guard ahead of CORS must not take a legitimate preflight away from it");
+            });
+    }
+
     /// <summary>
     /// Boots the real standalone MCP HTTP entry point with a per-key budget of
     /// <paramref name="perKeyPermitLimit"/> permits / 300s, seeds <paramref name="plaintextKey"/>
@@ -742,6 +779,14 @@ public class StandaloneMcpHostFilteringTests
             request.Headers.Add("Origin", origin);
         }
 
+        return await client.SendAsync(request);
+    }
+
+    private static async Task<HttpResponseMessage> SendPreflightAsync(HttpClient client, string path)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, path);
+        request.Headers.Add("Origin", "https://evil.example");
+        request.Headers.Add("Access-Control-Request-Method", "POST");
         return await client.SendAsync(request);
     }
 
