@@ -51,6 +51,29 @@ describe('automationApi', () => {
     expect(vi.mocked(http.get).mock.calls[0]).toEqual(['/automation/proposals'])
   })
 
+  it('forwards the request config for a single proposal read', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 'p/1' } })
+    const controller = new AbortController()
+
+    await automationApi.getProposal('p/1', {
+      skipRetry: true,
+      signal: controller.signal,
+    })
+
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p%2F1', {
+      skipRetry: true,
+      signal: controller.signal,
+    })
+  })
+
+  it('omits the config argument for an ordinary single proposal read', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 'p1' } })
+
+    await automationApi.getProposal('p1')
+
+    expect(vi.mocked(http.get).mock.calls[0]).toEqual(['/automation/proposals/p1'])
+  })
+
   it('sends idempotency key when executing proposal', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'p1' } })
 
