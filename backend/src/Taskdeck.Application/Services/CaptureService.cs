@@ -889,8 +889,13 @@ public class CaptureService : ICaptureService
         catch (DomainException ex)
         {
             // The durable side must never be the reason an operation the queue row accepted fails.
-            // The aggregate is now behind its queue row, which the divergence guard on the read path
-            // detects immediately and the reconcile pass repairs on the next start.
+            // The aggregate is now behind its queue row. The divergence guard on the read path
+            // detects that and the reconcile pass repairs it on the next start -- PROVIDED no
+            // disposition change intervenes first. Keep, Archive and Reactivate all Touch the
+            // aggregate, which stamps it newer than the queue row that moved past it and defeats
+            // both the read guard and the divergence join, masking the divergence indefinitely.
+            // Tracked as #2347; until that lands, a divergence followed by a disposition write stays
+            // hidden.
             _logger?.LogWarning(
                 ex,
                 "Context Fabric: could not record a superseding source for capture {CaptureId}; " +
