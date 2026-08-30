@@ -329,6 +329,41 @@ describe('PaperReviewView — diff keyed on latestRevisionId (#2215 B)', () => {
     }
   })
 
+  it('keeps an open diff when the reviewer approves a revised proposal (#2215 round 2)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      mocks.getProposalDiff.mockResolvedValue('--- before\n+++ after\n+Add column "Done"')
+      const wrapper = await mountView([
+        makeProposal({ id: 'diff-1', status: 'PendingReview', latestRevisionId: 'rev-1' }),
+      ])
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+
+      // `AutomationProposalService.BuildEffectiveProposalDto` sets
+      // `LatestRevisionId = Status == PendingReview ? effectiveRevision?.Id : null`,
+      // so the read right after the reviewer's OWN approval reports rev-1 -> null
+      // while `approvedRevisionId` carries the pinned revision. Keying on
+      // `latestRevisionId` alone read that as a collaborator revision change and
+      // wiped the reviewer's own open diff mid-decision.
+      await pollWith(wrapper, [
+        makeProposal({
+          id: 'diff-1',
+          status: 'Approved',
+          latestRevisionId: null,
+          approvedRevisionId: 'rev-1',
+        }),
+      ])
+
+      const pre = wrapper.find('[data-testid="paper-review-diff-pre"]')
+      expect(pre.exists()).toBe(true)
+      expect(pre.text()).toContain('Add column "Done"')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps an open diff when a poll brings the same revision', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {

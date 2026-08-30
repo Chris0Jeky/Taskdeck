@@ -31,7 +31,11 @@ import {
   normalizeProposalStatus,
   sortProposalsByRisk,
 } from '../../utils/automation'
-import { proposalIdsEqual } from '../../utils/proposalIdentity'
+import {
+  proposalIdsEqual,
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
 import { useRoute } from 'vue-router'
@@ -530,13 +534,20 @@ function scrollDiffIntoView() {
 // Approve pins, and Apply executes, whatever the server holds latest. Dropping
 // the pane is the honest answer: re-opening it fetches the revision-aware diff.
 watch(
-  () => [activeProposal.value?.id ?? null, activeProposal.value?.latestRevisionId ?? null] as const,
+  () => [activeProposal.value?.id ?? null, proposalRevisionIdentity(activeProposal.value)] as const,
   (current, previous) => {
     if (!previewDiffProposalId.value) return
     const [id, revisionId] = current
     const [previousId, previousRevisionId] = previous ?? [null, null]
     const proposalChanged = !proposalIdsEqual(previewDiffProposalId.value, id)
-    const revisionChanged = proposalIdsEqual(previousId, id) && revisionId !== previousRevisionId
+    // Round 2: the key is the EFFECTIVE revision, and only a genuine move
+    // counts. `latestRevisionId` is nulled on the wire the moment a proposal
+    // leaves PendingReview, so approving a revised proposal used to read as a
+    // collaborator revision change and wiped the reviewer's own open diff —
+    // and, running before the read-only conversion watcher, it wiped the pane
+    // rather than letting it convert to the decision-time presentation.
+    const revisionChanged =
+      proposalIdsEqual(previousId, id) && proposalRevisionMoved(previousRevisionId, revisionId)
     if (!proposalChanged && !revisionChanged) return
     latestDiffRequestId += 1
     clearPreviewDiff()

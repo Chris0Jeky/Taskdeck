@@ -7,6 +7,10 @@ import {
 import { useToastStore } from '../store/toastStore'
 import { getErrorDisplay } from './useErrorMapper'
 import type { Proposal as ApiProposal } from '../types/automation'
+import {
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../utils/proposalIdentity'
 
 export function useProposalRevisions(
   activeProposal: Ref<ApiProposal | null>,
@@ -62,22 +66,25 @@ export function useProposalRevisions(
     }
   }
 
-  // Keyed on the proposal AND its latest revision (#2215 B). Watching the id
+  // Keyed on the proposal AND its effective revision (#2215 B). Watching the id
   // alone left this state stale whenever a background queue poll brought in a
   // revision another session had saved: `revisionCount` kept the count from
   // entry, and `editablePayload` kept preferring the cached earlier
   // `latestRevision`, so opening Edit and saving would build a newer revision
   // out of operations the server had already superseded.
   watch(
-    () => [activeProposal.value?.id, activeProposal.value?.latestRevisionId ?? null] as const,
+    () => [activeProposal.value?.id, proposalRevisionIdentity(activeProposal.value)] as const,
     ([id, revisionId], previous) => {
       const previousId = previous?.[0]
       // The getter builds a fresh tuple on every evaluation, so this watcher
       // also fires when a poll replaces the proposal OBJECT with an equivalent
-      // one. Only a real move of the key does any work — otherwise every 15 s
-      // tick would re-read the revision list for an unchanged proposal.
-      if (previous && id === previousId && revisionId === (previous[1] ?? null)) return
-      if (id && previousId && id === previousId) {
+      // one. Only a genuine move of the EFFECTIVE revision does any work —
+      // otherwise every 15 s tick would re-read the revision list for an
+      // unchanged proposal, and (round 2) every approval of a revised proposal
+      // would look like a collaborator edit, because `latestRevisionId` is
+      // nulled on the wire the moment the proposal leaves PendingReview.
+      if (previous && id === previousId) {
+        if (!proposalRevisionMoved(previous[1] ?? null, revisionId)) return
         // Same proposal, newer revision. Resync the authoritative state without
         // the full reset below: the reviewer may have the editor open, and
         // clearing `editing` here would close a composer mid-sentence over a
@@ -95,7 +102,7 @@ export function useProposalRevisions(
         // asked for, and `refreshProposals` deliberately raises no toast for
         // one. An error toast here would break that doctrine from the far side
         // of the same tick.
-        void loadRevisionState(id, { silent: true })
+        if (id) void loadRevisionState(id, { silent: true })
         return
       }
       loadGeneration += 1

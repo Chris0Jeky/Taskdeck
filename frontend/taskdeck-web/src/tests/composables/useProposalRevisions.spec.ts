@@ -364,6 +364,68 @@ describe('useProposalRevisions', () => {
     expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
   })
 
+  it('does not resync when a revised proposal is approved (#2215 round 2)', async () => {
+    const revision = makeRevision({ id: 'rev-1' })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([revision])
+    const proposal = ref<ApiProposal | null>(
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' }),
+    )
+    const { revisionCount, latestRevision, revisionsLoaded } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(revisionsLoaded.value).toBe(true)
+    })
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+
+    // rev-1 -> null with the revision pinned into approvedRevisionId. Nothing
+    // moved, so the state stays authoritative and no read is issued.
+    proposal.value = makeProposal({
+      status: 'Approved',
+      latestRevisionId: null,
+      approvedRevisionId: 'rev-1',
+    })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    expect(revisionsLoaded.value).toBe(true)
+    expect(revisionCount.value).toBe(1)
+    expect(latestRevision.value).toEqual(revision)
+  })
+
+  it('treats a stale pre-approval read as the same revision, not a new one (#2215 round 2)', async () => {
+    const revision = makeRevision({ id: 'rev-1' })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([revision])
+    const proposal = ref<ApiProposal | null>(
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' }),
+    )
+    const { revisionsLoaded } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(revisionsLoaded.value).toBe(true)
+    })
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+
+    proposal.value = makeProposal({
+      status: 'Approved',
+      latestRevisionId: null,
+      approvedRevisionId: 'rev-1',
+    })
+    await nextTick()
+    await flushMicrotasks()
+
+    // A queue read issued BEFORE the approval can land after it, restoring the
+    // pending shape with `latestRevisionId: rev-1`. That is the SAME revision
+    // the approval pinned, so it must not read as a collaborator edit. This is
+    // the case the `approvedRevisionId` half of the identity carries: without
+    // it the approved row's identity is null, and this read looks like
+    // null -> rev-1, which IS a genuine move.
+    proposal.value = makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    expect(revisionsLoaded.value).toBe(true)
+  })
+
   it('does not close an open editor when only the revision moves under it (#2215 B)', async () => {
     vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
     const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: null }))

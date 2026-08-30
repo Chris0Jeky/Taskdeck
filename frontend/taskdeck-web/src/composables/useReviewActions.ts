@@ -9,7 +9,11 @@ import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from './useErrorMapper'
 import { isProposalReadOnly } from './useReviewProposals'
 import { usePerformanceMark } from './usePerformanceMark'
-import { proposalIdsEqual } from '../utils/proposalIdentity'
+import {
+  proposalIdsEqual,
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../utils/proposalIdentity'
 
 /**
  * How the review diff pane presents its content (#1397):
@@ -203,11 +207,15 @@ export function useReviewActions(
         openDiffRevisionId = null
         return
       }
-      const revisionId = proposal.latestRevisionId ?? null
+      // The EFFECTIVE revision, and only a genuine move (round 2): a decision
+      // taken elsewhere nulls `latestRevisionId` on the wire, which must let
+      // the pane convert to the stored decision-time presentation rather than
+      // wiping it as a collaborator edit.
+      const revisionId = proposalRevisionIdentity(proposal)
       if (
         openDiffProposalId !== null &&
         proposalIdsEqual(openDiffProposalId, proposal.id) &&
-        revisionId !== openDiffRevisionId
+        proposalRevisionMoved(openDiffRevisionId, revisionId)
       ) {
         // Cancel any in-flight fetch so a late response cannot re-open the pane.
         latestDiffRequestId += 1
