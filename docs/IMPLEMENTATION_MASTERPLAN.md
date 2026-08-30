@@ -69,6 +69,11 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Delivery update (2026-08-30, batch-execute trust boundary)
+
+- **The frontend confirmation boundary is fail-closed (`#2283`, PR `#2286`, merge `c1945329b`).** Paper Review captures the exact capped proposal membership, approved-revision pins, receipt titles, and canonical board/history scope presented for confirmation; synchronous pre-click drift invalidation plus a click-boundary recheck prevent an unseen replacement from entering the request. Post-click refreshes cannot rewrite the captured payload or receipt labels. Exact-head focused/full frontend checks, typecheck, build, scoped lint, two fresh-context reviews, and hosted Required CI including E2E Smoke passed.
+- **The remaining batch-execute hardening is split by seam rather than folded into the consent repair.** `#2284` owns a fresh persisted per-turn status/idempotency read for the backend preload-to-concurrent-apply race, without a generic executor transaction refactor. `#2285` owns the receipt-phase focus handoff and one polite/atomic announcement in `BatchExecuteDialog`, without changing shared `TdDialog` unless its focused regression proves a shared defect. Each remains an independent v0.3 Priority II slice with its own proving checks.
+
 ## Planning update (2026-08-30, Context Fabric — ADR-0065 under delegation, release ladder to v1.0)
 
 - **Direction.** The maintainer's 2026-08-30 planning pack ("speak, type, paste, or drop") was reconciled against `main` (`docs/analysis/2026-08-30-context-fabric/RECONCILIATION.md`) and recorded as **ADR-0065 Context Fabric** — durable `Capture`, representations with typed evidence anchors, persisted semantic candidates, capability-based processing behind a processor registry and the Taskdeck Worker Protocol (`docs/architecture/WORKER_PROTOCOL_V1.md`). The maintainer widened the pass mid-session ("go as far as you can … I'll leave this to you … pave the way to (possibly even) v1.0"), so the ADR's nine acceptance conditions were ruled under that delegation and recorded, with reasons, on tracker **CF-00 `#2254`**; each ruling is revisable there.
