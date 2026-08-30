@@ -61,7 +61,7 @@ minor metadata drift.
 | Smart CI baseline/control plane is a future prerequisite | ADR-0066, baseline, shadow planner/gate, action-pin inventory, and artifact-retention work have landed | **Adapt.** CI-06/10/12/15 extend the existing control plane; no parallel planner, receipt, or required-check policy |
 | Milestone-4 archive fix is PR `#2222` | Correct archive fix is PR `#2216`; PR `#2222` is an unrelated frontend Enter-key fix | **Correct the reference before use** |
 | Milestone-4 partial-date fix is PR `#2214` | Correct primary fix is PR `#2206`; PR `#2214` does not exist in this repository | **Correct the reference before use** |
-| Four parallel producers can start immediately | Required checkout fingerprinting and the worktree helper both reject this canonical OneDrive checkout because the relevant roots carry `ReparsePoint` | **No bypass.** Work serially on scoped primary-checkout branches; portability evidence is on `#1711` |
+| Four parallel producers can start immediately | Required checkout fingerprinting and the worktree helper both reject this canonical OneDrive checkout because the relevant roots carry `ReparsePoint` | **No bypass.** Move execution to a short, non-reparse checkout where the repository helper, printed guard, and initializer all succeed; otherwise park the write lane. Portability evidence is on `#1711` |
 | Machine dependency graph is ready for orchestration | The rendered graph is useful, but the JSON repeats many ordered pairs as both `depends-on` and `unblocks` without documenting edge direction | **Advisory only.** Derive dependencies from live issue bodies/ADRs before admission |
 
 ## Component disposition
@@ -205,11 +205,26 @@ Bundle receipt claims, source review, or standalone compilation never substitute
 - No hosted deployment, registration, repository visibility, branch protection, runner, billing,
   artifact deletion, release/tag, signing, or account setting changed.
 - No telemetry decision was inferred.
-- No delegated agent or helper-created worktree was used after the reviewed guards failed closed on
-  OneDrive reparse-point roots.
+- No delegated agent was used. The canonical OneDrive checkout remains ineligible for issue-worker
+  writes; review-fix execution moved to a short, non-reparse checkout and passed the repository
+  helper, printed guard, and initializer without weakening them.
 
-Relevant open human actions remain in `OUTSTANDING_TASKS.md`: RT-1–RT-3, CL-1, BEN-1, DIST-1,
-CF-22, and SC-1–SC-8.
+All 42 open checkbox rows in [`OUTSTANDING_TASKS.md`](../../../OUTSTANDING_TASKS.md) remain open at
+this snapshot. This list surfaces them; the source file retains their full context, rulings, and
+completion conditions:
+
+- Release/private-instance decisions: RT-1, RT-2, RT-3, CL-1, BEN-1, and DIST-1.
+- Residual implementation: `#1133` rest, Cohort metrics stub (`#1142`), Ollama real streaming,
+  `#1134` remaining acceptance criteria, `#1131`, `#1166`, `#1138` rest, and
+  `#1135` / `#1140` / `#1141` / `#1139`.
+- Generative/revival checkpoints: GEN-00 (`#1327`), the GEN-12/GEN-11 maintainer checkpoint,
+  REVIVAL-00 (`#1311`), Phase 0 dogfooding, Phase 2 transcript engine, Phase 3 slim + launch, and the
+  re-anchored revival checkpoint.
+- Standing trackers and gates: `#1271`, `#1276`, `#1277`, `#1291`, `#1504`, `#1482`, `#1323`,
+  `#1770`, `#1821`, and `#2012`.
+- Device/secret actions: set the second-machine `Llm__OpenAi__ApiKey`; resolve the OneDrive
+  checkout's frontend-test environment blockers.
+- Delegated-authority and Smart CI gates: CF-22 and SC-1 through SC-8.
 
 ## Next safe slices
 
