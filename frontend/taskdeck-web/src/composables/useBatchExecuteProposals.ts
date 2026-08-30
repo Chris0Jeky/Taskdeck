@@ -257,21 +257,9 @@ export function useBatchExecuteProposals(
           t('review.batchExecute.unknownProposal'),
       }))
 
-      const applied = receipts.value.filter((item) => item.outcome === 'Applied').length
-      const skipped = receipts.value.filter((item) => item.outcome === 'Skipped').length
-      const failed = receipts.value.filter((item) => item.outcome === 'Failed').length
-      if (failed === 0 && applied === 0 && skipped > 0) {
-        // Every item was already applied. Saying "Applied 0 proposals" here would be both an
-        // eyesore and a small lie: nothing was applied by this call, and the reason is that the
-        // work was already done, not that the batch achieved nothing.
-        toast.info(t('review.batchExecute.allSkipped', { count: skipped }, skipped))
-      } else if (failed === 0) {
-        toast.success(t('review.batchExecute.allApplied', { count: applied }, applied))
-      } else if (applied === 0) {
-        toast.error(t('review.batchExecute.noneApplied', { count: failed }, failed))
-      } else {
-        toast.info(t('review.batchExecute.partial', { applied, failed }))
-      }
+      // The durable receipt dialog owns the full per-item outcome and its single live-region
+      // announcement. A completion toast would announce the same result again and can interleave
+      // with that authoritative summary. Whole-request failures still use the catch-path toast.
 
       await refreshProposalsBestEffort()
     } catch (error: unknown) {

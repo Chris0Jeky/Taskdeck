@@ -97,10 +97,20 @@ describe('BatchExecuteDialog', () => {
   it('moves focus to Done and keeps Tab contained when confirmation receives receipts', async () => {
     const wrapper = mountDialog({ count: 2 })
     const confirm = document.body.querySelector('[data-testid="batch-execute-confirm"]') as HTMLButtonElement
+    const preMountedSummary = document.body.querySelector(
+      '[data-testid="batch-execute-receipt-summary"]',
+    ) as HTMLElement
     const backgroundSentinel = document.createElement('button')
     backgroundSentinel.type = 'button'
     backgroundSentinel.dataset.testid = 'background-sentinel'
     document.body.append(backgroundSentinel)
+
+    expect(preMountedSummary.textContent).toBe('')
+    expect(preMountedSummary.getAttribute('role')).toBe('status')
+    expect(preMountedSummary.getAttribute('aria-live')).toBe('polite')
+    expect(preMountedSummary.getAttribute('aria-atomic')).toBe('true')
+    expect(preMountedSummary.classList).toContain('batch-execute-receipt-summary--empty')
+    expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
 
     confirm.focus()
     confirm.click()
@@ -114,9 +124,9 @@ describe('BatchExecuteDialog', () => {
     const done = document.body.querySelector('[data-testid="batch-execute-done"]') as HTMLButtonElement
     const summary = document.body.querySelector('[data-testid="batch-execute-receipt-summary"]') as HTMLElement
     expect(document.activeElement).toBe(done)
-    expect(summary.getAttribute('role')).toBe('status')
-    expect(summary.getAttribute('aria-live')).toBe('polite')
-    expect(summary.getAttribute('aria-atomic')).toBe('true')
+    expect(summary).toBe(preMountedSummary)
+    expect(summary.textContent).toContain('Applied 1')
+    expect(summary.classList).not.toContain('batch-execute-receipt-summary--empty')
     expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
 
     done.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
@@ -129,8 +139,11 @@ describe('BatchExecuteDialog', () => {
 
     const summaryText = summary.textContent
     await wrapper.setProps({ busy: true, count: 99 })
-    expect(document.body.querySelector('[data-testid="batch-execute-receipt-summary"]')?.textContent)
-      .toBe(summaryText)
+    const stableSummary = document.body.querySelector(
+      '[data-testid="batch-execute-receipt-summary"]',
+    ) as HTMLElement
+    expect(stableSummary).toBe(preMountedSummary)
+    expect(stableSummary.textContent).toBe(summaryText)
     expect(document.body.querySelectorAll('[role="status"][aria-live="polite"]').length).toBe(1)
   })
 

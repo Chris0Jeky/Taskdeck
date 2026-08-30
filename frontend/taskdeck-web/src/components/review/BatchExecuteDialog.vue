@@ -54,6 +54,21 @@ watch(
     :close-on-backdrop="false"
     @close="emit('close')"
   >
+    <p
+      class="tk-meta batch-execute-receipt-summary"
+      :class="{ 'batch-execute-receipt-summary--empty': !showingReceipts }"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="batch-execute-receipt-summary"
+    >{{ showingReceipts
+      ? $t('review.batchExecute.dialog.receiptSummary', {
+        applied: appliedCount,
+        skipped: skippedCount,
+        failed: failedCount,
+      })
+      : '' }}</p>
+
     <div v-if="!showingReceipts" data-testid="batch-execute-dialog">
       <p>{{ $t('review.batchExecute.dialog.body', { count }, count) }}</p>
       <p class="tk-meta" data-testid="batch-execute-partial-warning">
@@ -62,19 +77,6 @@ watch(
     </div>
 
     <div v-else data-testid="batch-execute-receipts">
-      <p
-        class="tk-meta"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-        data-testid="batch-execute-receipt-summary"
-      >
-        {{ $t('review.batchExecute.dialog.receiptSummary', {
-          applied: appliedCount,
-          skipped: skippedCount,
-          failed: failedCount,
-        }) }}
-      </p>
       <ul class="batch-execute-receipts__list">
         <li
           v-for="receipt in receipts"
@@ -132,6 +134,9 @@ watch(
 </template>
 
 <style scoped>
+.batch-execute-receipt-summary--empty {
+  margin: 0;
+}
 .batch-execute-receipts__list {
   list-style: none;
   margin: 10px 0 0;

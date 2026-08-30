@@ -217,7 +217,7 @@ describe('useBatchExecuteProposals', () => {
     expect(automationApi.executeProposals).not.toHaveBeenCalled()
   })
 
-  it('renders per-item receipts and reports a partial outcome honestly', async () => {
+  it('renders per-item receipts without duplicating their partial outcome in a toast', async () => {
     const h = harness([
       makeProposal({ id: 'p-1', summary: 'Card one' }),
       makeProposal({ id: 'p-2', summary: 'Card two' }),
@@ -238,20 +238,24 @@ describe('useBatchExecuteProposals', () => {
       ['Card three', 'Skipped'],
     ])
     expect(h.receipts.value[1].errorMessage).toBe('Board moved on')
-    // A partial outcome must never be reported as a success.
+    // The durable receipt dialog owns every item-level completion announcement.
     expect(toast.success).not.toHaveBeenCalled()
-    expect(toast.info).toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
     expect(h.loadProposals).toHaveBeenCalled()
   })
 
-  it('reports an all-applied batch as a success and an all-failed batch as an error', async () => {
+  it('keeps all-applied and all-failed outcomes in receipts without completion toasts', async () => {
     const applied = harness([makeProposal({ id: 'p-1' })])
     vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
       { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
     ]))
     applied.requestConfirmation()
     await applied.confirmExecute()
-    expect(toast.success).toHaveBeenCalled()
+    expect(applied.receipts.value.map((item) => item.outcome)).toEqual(['Applied'])
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
 
     vi.clearAllMocks()
     const failed = harness([makeProposal({ id: 'p-9' })])
@@ -260,8 +264,10 @@ describe('useBatchExecuteProposals', () => {
     ]))
     failed.requestConfirmation()
     await failed.confirmExecute()
-    expect(toast.error).toHaveBeenCalled()
+    expect(failed.receipts.value.map((item) => item.outcome)).toEqual(['Failed'])
     expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.info).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
   })
 
   it('leaves no receipts behind when the whole request is rejected', async () => {
@@ -404,7 +410,7 @@ describe('useBatchExecuteProposals receipts survive the post-apply refresh', () 
     expect(h.receipts.value).toHaveLength(0)
   })
 
-  it('reports an all-skipped batch as nothing-to-do, not as applying zero', async () => {
+  it('keeps an all-skipped outcome in receipts without a completion toast', async () => {
     const h = harness([makeProposal({ id: 'p-1' }), makeProposal({ id: 'p-2' })])
     vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
       { proposalId: 'p-1', outcome: 'Skipped', errorCode: null, errorMessage: null, appliedOperations: null },
@@ -414,11 +420,10 @@ describe('useBatchExecuteProposals receipts survive the post-apply refresh', () 
     h.requestConfirmation()
     await h.confirmExecute()
 
+    expect(h.receipts.value.map((item) => item.outcome)).toEqual(['Skipped', 'Skipped'])
     expect(toast.success).not.toHaveBeenCalled()
     expect(toast.error).not.toHaveBeenCalled()
-    const message = vi.mocked(toast.info).mock.calls.at(-1)?.[0] as string
-    expect(message).toContain('already applied')
-    expect(message).not.toContain('Applied 0')
+    expect(toast.info).not.toHaveBeenCalled()
   })
 })
 
