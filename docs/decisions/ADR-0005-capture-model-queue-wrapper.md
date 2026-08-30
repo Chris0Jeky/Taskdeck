@@ -1,10 +1,13 @@
 # ADR-0005: Capture Model — Queue-Wrapper MVP
 
-- **Status**: Accepted — **scheduled for supersession by ADR-0065** (Context Fabric, 2026-08-30): the
-  migration path this ADR named ("promote to a dedicated `CaptureArtifacts` table when capture-specific
-  queries, retention policies, or volume require it") is now triggered; the durable `Capture` aggregate
-  is scaffolded (empty `Captures` table, `ContextFabric:DualWriteCaptures` flag off) and CF-01 `#2255`
-  completes the ID-preserving backfill. Until that slice lands, the queue row remains the capture.
+- **Status**: **Superseded by ADR-0065** (Context Fabric) — CF-01 `#2255`, PR #2344, 2026-08-30.
+  The migration path this ADR named ("promote to a dedicated `CaptureArtifacts` table when
+  capture-specific queries, retention policies, or volume require it") has been taken: the durable
+  `Capture` aggregate holds every capture under the queue row's own id (ID-preserving backfill), the
+  raw material lives in immutable `SourceAsset`s rather than the queue payload, and Inbox reads
+  resolve a capture's own material through `ICaptureStore`. What survives of this decision is the
+  queue row as the **job** record — status, retries, error message, worker lanes — which CF-03
+  replaces in turn. Read ADR-0065 for the model in force.
 - **Date**: 2026-02-23
 - **Deciders**: Project maintainers
 
