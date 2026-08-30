@@ -67,12 +67,25 @@ function resetDraft() {
   text.value = ''
 }
 
+/**
+ * The draft as it stands, for the parent to persist across a 401 redirect
+ * (GH-2142). Untrimmed on purpose — the user gets back exactly what was there.
+ */
+function snapshotDraft() {
+  return { text: text.value }
+}
+
+/** Put a previously stashed draft back into the nib (GH-2142). */
+function restoreDraft(draft: { text: string }) {
+  text.value = draft.text
+}
+
 onMounted(async () => {
   await nextTick()
   inputRef.value?.focus()
 })
 
-defineExpose({ focus: () => inputRef.value?.focus(), resetDraft })
+defineExpose({ focus: () => inputRef.value?.focus(), resetDraft, snapshotDraft, restoreDraft })
 </script>
 
 <template>

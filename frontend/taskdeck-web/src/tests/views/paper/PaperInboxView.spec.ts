@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
 import { i18n } from '../../../i18n'
 import type { CaptureItem, CaptureItemSummary } from '../../../types/capture'
+import MockAdapter from 'axios-mock-adapter'
+import http from '../../../api/http'
+import { AUTH_EXPIRED_EVENT } from '../../../utils/authExpiry'
+import {
+  CAPTURE_DRAFT_STORAGE_KEY,
+  peekCaptureDraft,
+  stashCaptureDraft,
+} from '../../../utils/captureDraftStash'
 
 const mockCaptureStore = reactive({
   loadingList: false,
@@ -50,6 +58,15 @@ vi.mock('../../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
 }))
 
+// The signed-in account drives the capture-draft stash's identity gate
+// (GH-2142). Kept as a plain reactive stub so a spec can switch users the way
+// a /login round trip does.
+const mockSessionStore = reactive({ userId: 'user-a' as string | null })
+
+vi.mock('../../../store/sessionStore', () => ({
+  useSessionStore: () => mockSessionStore,
+}))
+
 function captureRow(id: string, status: CaptureItemSummary['status']): CaptureItemSummary {
   return {
     id,
@@ -62,6 +79,11 @@ function captureRow(id: string, status: CaptureItemSummary['status']): CaptureIt
     processedAt: null,
   }
 }
+
+// A mounted view keeps a window listener for the auth-expiry notice (GH-2142),
+// so a wrapper left mounted by one spec stashes a draft into the next one's
+// expectations. Tear every wrapper down between specs.
+enableAutoUnmount(afterEach)
 
 describe('PaperInboxView', () => {
   beforeEach(() => {
@@ -89,6 +111,7 @@ describe('PaperInboxView', () => {
     mockCaptureStore.triagePollingItemId = null
     mockBoardStore.boards = []
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
+    mockSessionStore.userId = 'user-a'
   })
 
   afterEach(() => {
@@ -909,6 +932,369 @@ describe('PaperInboxView', () => {
       // other catalogs a singular slot, so neither may drift.
       expect(eyebrowFor('en', 1)).toContain('1 captured')
       expect(eyebrowFor('en', 4)).toContain('4 captured')
+    })
+  })
+
+  // ── 401 draft survival (GH-2142) ───────────────────────────────────────
+  //
+  // The 401 handler in api/http.ts hard-navigates to /login, destroying the
+  // retained draft AND its failure receipt. These specs cover the stash-then-
+  // restore round trip that makes the capture survive that journey.
+  describe('capture draft across the 401 redirect', () => {
+    beforeEach(() => {
+      window.sessionStorage.clear()
+    })
+
+    afterEach(() => {
+      window.sessionStorage.clear()
+    })
+
+    function expireSession() {
+      window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))
+    }
+
+    it('stashes the composer draft with its metadata when the session expires', async () => {
+      mockBoardStore.boards = [{ id: 'board-9', name: 'Ops' }]
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Do not lose this')
+      await wrapper.find('select[aria-label="Board picker"]').setValue('board-9')
+      await wrapper.find('input[aria-label="Add label"]').setValue('ops')
+      await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
+      await wrapper.find('input[aria-label="Due date"]').setValue('2026-09-02')
+
+      expireSession()
+
+      const stashed = peekCaptureDraft(mockSessionStore.userId)
+      expect(stashed).toMatchObject({
+        variant: 'composer',
+        text: 'Do not lose this',
+        boardId: 'board-9',
+        labels: ['ops'],
+        dueAt: '2026-09-02',
+      })
+      // The redirect usually beats the request's own rejection, so the receipt
+      // is synthesised rather than left empty.
+      expect(stashed?.failure?.message).toBe('Your session expired before this capture was saved.')
+    })
+
+    it('carries an existing failure receipt into the stash instead of overwriting it', async () => {
+      mockCaptureStore.createItem.mockRejectedValueOnce({
+        response: { status: 401, data: { errorCode: 'AuthenticationFailed', message: 'Token expired' } },
+        config: { method: 'post', url: '/capture' },
+      })
+      const wrapper = mount(PaperInboxView)
+      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      await textarea.setValue('Receipt keeper')
+      await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+      await flushPromises()
+
+      expireSession()
+
+      const stashed = peekCaptureDraft(mockSessionStore.userId)
+      expect(stashed?.failure?.message).toBe('Token expired')
+      expect(stashed?.failure?.details).toContain('Status: 401')
+    })
+
+    it('stashes nothing when the draft is empty', async () => {
+      mount(PaperInboxView)
+      await flushPromises()
+
+      expireSession()
+
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('does not stash from archived history, which has no capture surface', async () => {
+      orchestratorState.isArchivedHistory.value = true
+      mount(PaperInboxView)
+      await flushPromises()
+
+      expireSession()
+
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('restores the stashed composer draft, its receipt, and an explicit affordance', async () => {
+      mockBoardStore.boards = [{ id: 'board-9', name: 'Ops' }]
+      stashCaptureDraft({
+        userId: 'user-a',
+        variant: 'composer',
+        text: 'Survived the redirect',
+        boardId: 'board-9',
+        labels: ['ops'],
+        dueAt: '2026-09-02',
+        failure: { message: 'Your session expired before this capture was saved.', details: null },
+      })
+
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      const textarea = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]')
+      expect(textarea.element.value).toBe('Survived the redirect')
+      expect(
+        wrapper.find<HTMLSelectElement>('select[aria-label="Board picker"]').element.value,
+      ).toBe('board-9')
+      expect(wrapper.find<HTMLInputElement>('input[aria-label="Due date"]').element.value).toBe(
+        '2026-09-02',
+      )
+      expect(wrapper.text()).toContain('ops')
+
+      const notice = wrapper.get('[data-testid="paper-inbox-capture-restored"]')
+      expect(notice.attributes('role')).toBe('status')
+      expect(notice.text()).toContain('Draft restored.')
+
+      expect(wrapper.get('[data-testid="paper-inbox-capture-error"]').text()).toContain(
+        'Your session expired before this capture was saved.',
+      )
+
+      // Single use: a later reload must not resurrect a second copy.
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('restores a nib stash onto the nib surface', async () => {
+      stashCaptureDraft({ userId: 'user-a', variant: 'nib', text: 'Quick note that survived' })
+
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      expect(wrapper.attributes('data-variant')).toBe('nib')
+      expect(
+        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Quick capture input"]').element.value,
+      ).toBe('Quick note that survived')
+    })
+
+    it('leaves the stash alone when the Inbox opens in archived history', async () => {
+      orchestratorState.isArchivedHistory.value = true
+      stashCaptureDraft({ userId: 'user-a', variant: 'composer', text: 'Wait for a live inbox' })
+
+      mount(PaperInboxView)
+      await flushPromises()
+
+      expect(peekCaptureDraft(mockSessionStore.userId)?.text).toBe('Wait for a live inbox')
+    })
+
+    it('discarding the restored draft empties the surface, the receipt, and the affordance', async () => {
+      stashCaptureDraft({
+        userId: 'user-a',
+        variant: 'composer',
+        text: 'Not wanted after all',
+        failure: { message: 'Your session expired before this capture was saved.', details: null },
+      })
+
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      // The session expired again before the restored draft was re-sent, so a
+      // fresh stash exists at discard time; discarding must take it with it.
+      expireSession()
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).not.toBeNull()
+
+      await wrapper.get('[data-testid="paper-inbox-capture-restored-discard"]').trigger('click')
+      await flushPromises()
+
+      expect(
+        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+      ).toBe('')
+      expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+
+    it('clears the stash once a capture is saved', async () => {
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      // A stash left behind by an earlier interrupted attempt in this tab.
+      stashCaptureDraft({ userId: 'user-a', variant: 'composer', text: 'Stale interrupted attempt' })
+
+      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      await textarea.setValue('Saved for real')
+      await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+      await flushPromises()
+
+      expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+      expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
+    })
+
+    it('survives a real 401 on capture submit: redirect, sign in again, draft back in the composer', async () => {
+      // The whole journey through the production 401 path (GH-2142 AC-1/AC-2):
+      // the capture POST 401s, api/http.ts clears the session and assigns
+      // location.href, and the draft has to come back on the other side.
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/workspace/inbox', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      const adapter = new MockAdapter(http)
+      adapter.onPost('/capture').reply(401, { message: 'Token expired' })
+      mockCaptureStore.createItem.mockImplementationOnce(async () => {
+        await http.post('/capture', { text: 'Survives a real 401' })
+        return { id: 'never' }
+      })
+      mockBoardStore.boards = [{ id: 'board-9', name: 'Ops' }]
+
+      const before = mount(PaperInboxView)
+      await flushPromises()
+      const textarea = before.find('textarea[aria-label="Capture body"]')
+      await textarea.setValue('Survives a real 401')
+      await before.find('select[aria-label="Board picker"]').setValue('board-9')
+      await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+      await flushPromises()
+
+      // The interceptor really did navigate...
+      expect(window.location.href).toBe(
+        '/login?redirect=' + encodeURIComponent('/workspace/inbox'),
+      )
+      // ...and the document teardown that navigation implies loses the view.
+      before.unmount()
+      adapter.restore()
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+        configurable: true,
+      })
+
+      // Back on the Inbox after signing in again.
+      const after = mount(PaperInboxView)
+      await flushPromises()
+
+      expect(
+        after.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+      ).toBe('Survives a real 401')
+      expect(
+        after.find<HTMLSelectElement>('select[aria-label="Board picker"]').element.value,
+      ).toBe('board-9')
+      expect(after.get('[data-testid="paper-inbox-capture-restored"]').text()).toContain(
+        'Draft restored.',
+      )
+      // The interceptor fires before the POST's own rejection reaches the
+      // view, so the receipt is the synthesised session-expiry reason rather
+      // than the server message - an explanation either way, never a blank.
+      expect(after.get('[data-testid="paper-inbox-capture-error"]').text()).toContain(
+        'Your session expired before this capture was saved.',
+      )
+
+    })
+
+    it('restores a stash only to the account that made it, and clears it otherwise', async () => {
+      // GH-2142 review M1: the same tab, a different sign-in. B must not
+      // receive A's draft -- dispatchCapture would post it under B's session.
+      stashCaptureDraft({ userId: 'user-a', variant: 'composer', text: "A's private thought" })
+      mockSessionStore.userId = 'user-b'
+
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      expect(
+        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+      ).toBe('')
+      expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+      wrapper.unmount()
+
+      // And the same record does reach its owner.
+      stashCaptureDraft({ userId: 'user-a', variant: 'composer', text: "A's private thought" })
+      mockSessionStore.userId = 'user-a'
+      const owner = mount(PaperInboxView)
+      await flushPromises()
+
+      expect(
+        owner.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+      ).toBe("A's private thought")
+      owner.unmount()
+    })
+
+    it('stashes nothing when no account is signed in', async () => {
+      mockSessionStore.userId = null
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Unowned draft')
+
+      expireSession()
+
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+      wrapper.unmount()
+    })
+
+    it('stashes a nib draft the user typed then toggled away from', async () => {
+      // Review M2: both surfaces stay mounted under v-show, so the variant on
+      // screen is not necessarily the one holding text.
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+      await wrapper.vm.$nextTick()
+      await wrapper.find('textarea[aria-label="Quick capture input"]').setValue('Typed in the nib')
+      ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant(
+        'composer',
+      )
+      await wrapper.vm.$nextTick()
+
+      expireSession()
+
+      expect(peekCaptureDraft(mockSessionStore.userId)).toMatchObject({
+        variant: 'nib',
+        text: 'Typed in the nib',
+      })
+      wrapper.unmount()
+    })
+
+    it('prefers the surface on screen when both hold text', async () => {
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+      await wrapper.vm.$nextTick()
+      await wrapper.find('textarea[aria-label="Quick capture input"]').setValue('Nib text')
+      ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant(
+        'composer',
+      )
+      await wrapper.vm.$nextTick()
+      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Composer text')
+
+      expireSession()
+
+      expect(peekCaptureDraft(mockSessionStore.userId)).toMatchObject({
+        variant: 'composer',
+        text: 'Composer text',
+      })
+      wrapper.unmount()
+    })
+
+    it('stashes nothing when the session expires during the post-save refresh', async () => {
+      // The capture IS saved; only the follow-up refresh 401s. Re-stashing the
+      // submitted text would invite a duplicate submit after signing in.
+      orchestratorState.loadInbox.mockImplementationOnce(async () => {
+        expireSession()
+        throw new Error('Unauthorized')
+      })
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      await textarea.setValue('Already saved once')
+      await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+      await flushPromises()
+
+      expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+      expect(
+        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+      ).toBe('')
+    })
+
+    it('leaves no auth-expiry listener behind when the view is unmounted', async () => {
+      const removeSpy = vi.spyOn(window, 'removeEventListener')
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Gone with the view')
+
+      wrapper.unmount()
+
+      expect(removeSpy).toHaveBeenCalledWith(AUTH_EXPIRED_EVENT, expect.any(Function))
+      removeSpy.mockRestore()
+
+      expireSession()
+      expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
     })
   })
 })
