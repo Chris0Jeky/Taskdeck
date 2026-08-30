@@ -667,7 +667,7 @@ Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
    - documented setup/credential expectations in `docs/MCP_TOOLING_GUIDE.md`
 38. MCP operations workflow integration:
    - added operator runbook (`docs/tooling/MCP_OPERATIONS_RUNBOOK.md`) covering credential setup, validation, troubleshooting, and recurring checklists
-   - added helper scripts to wire credential-gated Docker MCP servers and verify baseline/optional MCP dry-run paths
+   - added helper scripts to wire credential-gated Docker MCP servers and verify baseline/optional membership through a non-starting profile check with exact labeled-container identity snapshots; gateway startup and remote tool execution remain separate proof
    - integrated MCP operations checks into active testing guidance
 39. TST-07 MCP smoke/regression harness delivery:
    - enhanced MCP profile validation script with optional-server prerequisite diagnostics (missing secret/config classification)

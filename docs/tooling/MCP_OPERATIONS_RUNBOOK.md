@@ -1,6 +1,6 @@
 # MCP Operations Runbook
 
-Last Updated: 2026-02-21  
+Last Updated: 2026-08-30
 Scope: Local operator setup, credential wiring, verification, and routine usage for Taskdeck MCP integrations.
 
 ## Purpose
@@ -74,13 +74,25 @@ dockerhub:
 
 ## Verification
 
-### Baseline profile (always expected to pass)
+### Baseline profile
 
 ```powershell
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
 ```
 
-### Optional integrations (requires valid credentials)
+This is a **non-starting validation**. It parses `docker mcp profile server ls --format json`, requires
+every requested server name to be present, and compares the exact set of `docker-mcp=true` container
+IDs before and after the read-only checks. The script withholds `PASS` if either snapshot cannot be
+read or if any ID is added or removed. It never starts a gateway and never stops or removes a
+container. A changed set may belong to another concurrent gateway, so set difference alone is not
+safe ownership evidence.
+
+The check proves local profile membership, prerequisite presence, and container-state neutrality. It
+does not prove remote credential acceptance or MCP tool execution. Exercise those only through the
+already configured user-scope client session when runtime assurance is required; do not start a
+second gateway as a validation probe.
+
+### Optional integrations (checks credential entries and profile membership)
 
 ```powershell
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional
@@ -89,21 +101,26 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailO
 
 Pass/fail policy for optional integrations:
 - warning mode: `-IncludeOptional`
-  - missing prerequisites and optional runtime failures are reported as warnings
+  - missing prerequisites and absent optional profile members are reported as warnings
   - script exits success so baseline automation can continue
 - strict mode: `-IncludeOptional -FailOnOptionalErrors`
-  - missing prerequisites or optional runtime failures fail fast with non-zero exit
+  - missing prerequisites or absent optional profile members fail with non-zero exit
 - warning mode with prerequisite skip: `-IncludeOptional -SkipOptionalWhenMissingPrereqs`
-  - when prerequisite checks fail, optional dry-run is skipped and warning is emitted
+  - when prerequisite checks fail, optional membership validation is skipped and a warning is emitted
 
 ### Direct inspection commands
 
 ```powershell
-docker mcp server ls
+docker mcp profile server ls --format json
 docker mcp secret ls
-docker mcp gateway run --dry-run --servers docker,docker-docs,time,jetbrains,filesystem,SQLite
-docker mcp gateway run --dry-run --servers postman,dockerhub
+docker ps --all --quiet --no-trunc --filter "label=docker-mcp=true"
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -CiMode
 ```
+
+Do not use `docker mcp gateway run --dry-run` as a profile check. Docker documents that flag as
+starting the gateway without a listener, and affected versions can leave server containers running.
+The CLI exposes no invocation label or container-ID file, so a validator cannot safely claim or clean
+up containers merely because they appeared after a command began.
 
 ## Daily Workflow
 
@@ -139,33 +156,36 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailO
 ```
 
 `-CiMode` outputs deterministic status lines:
+- `MCP_PROFILE_PROBE=READ_ONLY_PROFILE`
 - `MCP_PROFILE_RESULT=PASS`
 - `MCP_PROFILE_RESULT=PASS_WITH_WARNINGS`
 - `MCP_PROFILE_RESULT=FAIL`
+- before/after container counts and SHA-256 identity-set fingerprints
+- added/removed identity counts (both zero for `PASS`)
 
 ## Weekly Workflow
 
-1. Confirm optional credentials are still valid (postman/dockerhub).
-2. Re-run optional MCP dry-run.
+1. Confirm optional credential entries are still present (postman/dockerhub).
+2. Re-run optional read-only profile validation.
 3. Reconcile docs if server set, config paths, or credential expectations changed.
 4. Seed/refresh hardening/testing issues for MCP + deployment reliability.
 
 ## Troubleshooting
 
-`postman` dry-run fails:
+`postman` profile validation fails:
 - Verify `postman.postman-api-key` exists in `docker mcp secret ls`.
 - Rotate API key and re-run setup script.
 
-`dockerhub` dry-run fails:
+`dockerhub` profile validation fails:
 - Verify both `dockerhub.pat_token` and `dockerhub.username`.
 - Confirm PAT scope is sufficient for Docker Hub API operations.
 
 `kubernetes` fails to initialize:
 - Verify `kubernetes.config_path` points to a real kubeconfig with a valid context.
 
-Docker MCP gateway slow start:
-- This is expected when many images are pulled the first time.
-- Re-run the same command; subsequent runs should be faster.
+Container-state drift is reported:
+- Do not remove the reported or pre-existing containers unless their ownership is independently proven.
+- Inspect concurrent user-scope MCP sessions, then rerun the read-only validator once the state is stable.
 
 ## Security Notes
 

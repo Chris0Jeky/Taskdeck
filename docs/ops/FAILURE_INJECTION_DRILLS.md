@@ -98,10 +98,10 @@ Artifacts (logs, captured output) are written to `drill-artifacts/` in the repo 
 | --- | --- |
 | Script | `scripts/drills/drill-mcp-invalid-credentials.sh` |
 | Category | MCP configuration / unknown-server handling |
-| Simulates | Missing MCP helper scripts, optional-server classification drift, an unknown (misconfigured) server name passed to the MCP gateway, and presence of placeholder credential strings in config files |
-| Expected behavior | Credential-management helpers exist, default servers remain unaffected, bogus server names fail clearly at dry-run time, and no placeholder secrets are left in config files |
-| Pass criteria | Credential management scripts exist with validation; profile test distinguishes optional servers; unknown-server dry-run fails; LLM provider has Mock fallback; no placeholder credential strings in known config files |
-| Failure signal | No credential management scripts; optional/required handling missing; bogus server dry-run unexpectedly succeeds; placeholder credential strings detected |
+| Simulates | Missing MCP helper scripts, optional-server classification drift, an unknown (misconfigured) server absent from the selected profile, and presence of placeholder credential strings in config files |
+| Expected behavior | Credential-management helpers exist, default servers remain unaffected, bogus server names fail the read-only profile check, and no placeholder secrets are left in config files |
+| Pass criteria | Credential management scripts exist with validation; profile test distinguishes optional servers; unknown-server profile validation fails without starting the gateway; LLM provider has Mock fallback; no placeholder credential strings in known config files |
+| Failure signal | No credential management scripts; optional/required handling missing; bogus server profile validation unexpectedly succeeds; labeled Docker MCP container identities drift during a validation window; placeholder credential strings detected |
 
 **Recovery path:**
 
@@ -114,7 +114,7 @@ Artifacts (logs, captured output) are written to `drill-artifacts/` in the repo 
 
 **Scope note:** This drill validates MCP config structure, unknown-server rejection, and static placeholder-credential detection. It does **not** inject a known-bad secret into a live MCP server — testing a configured server with wrong credentials requires a live MCP-enabled deployment and is out of scope for local drills.
 
-**CI compatibility:** Static analysis (including placeholder scan) always runs. Live Docker MCP tests run only when Docker Desktop MCP is available (skipped gracefully in CI).
+**CI compatibility:** Static analysis (including placeholder scan) always runs. Live read-only profile and container-identity checks run only when Docker Desktop MCP is available (skipped gracefully in CI); the drill never starts a gateway or claims remote tool execution.
 
 ---
 
