@@ -172,10 +172,14 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
   and wrongly suggests a port/data-folder problem. Follow the provider-migration workaround in
   [UPGRADING.md](../../UPGRADING.md#version-notes). v0.1.2 and later print the accurate
   diagnostic below instead.
-- `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored`: Taskdeck started normally on its built-in provider after ignoring retired Gemini settings inherited from this machine's environment; clear those leftover variables with the commands below when convenient, then pick a supported provider.
+- **From v0.3.0-rc.1 onward** — `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored`: Taskdeck started normally after ignoring retired Gemini settings inherited from this machine's environment; no values were read or printed, and the provider actually in use is the one shown in Taskdeck's provider status. Clear those leftover variables with the commands below when convenient. **The published v0.2.0 archive does not have this behaviour**: there the same leftover variables produce the fatal below, and the commands are a required workaround rather than optional tidying.
 - `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the
-  retired Gemini provider in its own `appsettings.json` / `appsettings.local.json` (or in Docker
-  Compose) and refused to switch providers silently. Close Taskdeck, then use a fresh
+  retired Gemini provider and refused to switch providers silently. **In v0.2.0 and earlier this
+  fires for retired Gemini settings from any source, including leftover `Llm__Gemini__*` variables
+  in your Windows profile — run the commands below before starting Taskdeck again. From
+  v0.3.0-rc.1 it fires only for retired settings in Taskdeck's own `appsettings.json` /
+  `appsettings.local.json` (or in Docker Compose);** environment variables are ignored with the
+  warning above instead. Close Taskdeck, then use a fresh
   PowerShell window to explicitly return **User**-scoped configuration to deterministic Mock and
   remove only the retired child-setting names; the commands do not read or print their values:
 

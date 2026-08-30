@@ -98,7 +98,8 @@ internal static class RetiredProviderEnvironmentConfiguration
         var sources = builder.Sources;
         for (var index = 0; index < sources.Count; index++)
         {
-            if (sources[index] is not EnvironmentVariablesConfigurationSource environmentSource)
+            if (sources[index] is FilteredEnvironmentVariablesConfigurationSource
+                || sources[index] is not EnvironmentVariablesConfigurationSource environmentSource)
             {
                 continue;
             }
@@ -114,11 +115,26 @@ internal static class RetiredProviderEnvironmentConfiguration
 
 /// <summary>
 /// An environment-variables source whose provider drops retired provider entries after load.
-/// It implements <see cref="IConfigurationSource"/> directly rather than deriving from
-/// <c>EnvironmentVariablesConfigurationSource</c>, whose Build is not virtual, and so is
-/// never mistaken for a framework source on a second pass.
+/// <para>
+/// It DERIVES from <c>EnvironmentVariablesConfigurationSource</c> on purpose: other startup code
+/// locates the environment slot by type — <c>FirstRunBootstrapper.AddLocalConfigFile</c> inserts
+/// the durable <c>appsettings.local.json</c> immediately before the first such source so the
+/// environment and command line keep winning over persisted values. A replacement of a different
+/// type would make that lookup miss and silently promote the persisted file above an explicit
+/// launch override.
+/// </para>
+/// <para>
+/// The base class's <c>Build</c> is neither virtual nor abstract, so the filtering build is
+/// supplied by re-implementing <see cref="IConfigurationSource"/>. Configuration builders always
+/// call <c>Build</c> through that interface (their <c>Sources</c> is an
+/// <c>IList&lt;IConfigurationSource&gt;</c>), so the filtering provider is what actually gets
+/// built; a caller that deliberately invoked the base method through a statically typed
+/// <c>EnvironmentVariablesConfigurationSource</c> reference would get an unfiltered provider, and
+/// there is no such caller.
+/// </para>
 /// </summary>
-internal sealed class FilteredEnvironmentVariablesConfigurationSource : IConfigurationSource
+internal sealed class FilteredEnvironmentVariablesConfigurationSource
+    : EnvironmentVariablesConfigurationSource, IConfigurationSource
 {
     private readonly RetiredLlmProviderConfigurationNotice _notice;
 
@@ -130,9 +146,7 @@ internal sealed class FilteredEnvironmentVariablesConfigurationSource : IConfigu
         _notice = notice ?? throw new ArgumentNullException(nameof(notice));
     }
 
-    internal string? Prefix { get; }
-
-    public IConfigurationProvider Build(IConfigurationBuilder builder)
+    IConfigurationProvider IConfigurationSource.Build(IConfigurationBuilder builder)
         => new FilteredEnvironmentVariablesConfigurationProvider(Prefix, _notice);
 }
 

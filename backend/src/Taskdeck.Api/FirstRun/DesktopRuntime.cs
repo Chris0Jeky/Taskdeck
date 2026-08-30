@@ -226,15 +226,21 @@ internal static class DesktopRuntime
     /// The value-blind console warning for retired provider configuration that a packaged start
     /// inherited from the process environment and ignored (#2233). Key names and values are both
     /// withheld; the guidance names the retired variable FAMILY so the user can clean the profile.
+    /// <para>
+    /// It deliberately makes NO claim about which provider was selected. The warning fires whenever
+    /// any retired key was dropped, including a stale retired child sitting beside a valid supported
+    /// selector and key — in which case Taskdeck is running on that LIVE provider, not on the
+    /// packaged default, and a "started offline" sentence here would be a false safety property.
+    /// </para>
     /// </summary>
     internal static IReadOnlyList<string> FormatRetiredProviderConfigurationIgnored()
         =>
         [
             "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored",
-            "Taskdeck ignored retired Gemini provider settings left in this Windows profile's environment " +
-            "and started with its built-in offline provider. Remove the leftover Llm__Gemini__* variables " +
-            "(and any Llm__Provider=Gemini) to clear this warning, then choose OpenAI, OpenAICompatible, " +
-            "Ollama, or Mock in Taskdeck. No settings were printed."
+            "Taskdeck ignored retired Gemini provider settings left in this profile's environment. " +
+            "No values were read or printed. Remove the leftover Llm__Gemini__* variables (and any " +
+            "Llm__Provider=Gemini) to clear this warning. The provider actually in use is shown in " +
+            "Taskdeck's provider status."
         ];
 
     internal static void WriteRetiredProviderConfigurationIgnored()

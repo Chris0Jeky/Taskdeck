@@ -49,6 +49,8 @@ RETIRED_PROVIDER_FATAL_GUIDANCE = (
 )
 SYNTHETIC_RETIRED_PROVIDER_VALUE = "synthetic-secret-never-print"
 LOOPBACK_URL_TEMPLATE = "http://127.0.0.1:{port}"
+MAX_MONITORED_OUTPUT_LINES = 400
+MAX_MONITORED_OUTPUT_BYTES = 65_536
 RETIRED_PROVIDER_IGNORED_WARNING_MARKER = (
     "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored"
 )
@@ -147,6 +149,11 @@ class ProcessMonitor:
         self.seen_markers: set[str] = set()
         self.bootstrap_identity_markers: list[str] = []
         self.warning_markers: list[str] = []
+        # Bounded capture of EVERY line, marker or not: a marker's human-readable companion line
+        # carries the guidance, and the value-blind assertion has to be able to read it.
+        self.output_lines: list[str] = []
+        self.output_truncated = False
+        self._output_bytes = 0
         self._thread = threading.Thread(target=self._drain, daemon=True)
         self._thread.start()
 
@@ -154,6 +161,14 @@ class ProcessMonitor:
         assert self.process.stdout is not None
         for raw_line in self.process.stdout:
             line = raw_line.rstrip("\r\n")
+            if (
+                len(self.output_lines) >= MAX_MONITORED_OUTPUT_LINES
+                or self._output_bytes + len(line) > MAX_MONITORED_OUTPUT_BYTES
+            ):
+                self.output_truncated = True
+            else:
+                self.output_lines.append(line)
+                self._output_bytes += len(line)
             if line.startswith("TASKDECK_DESKTOP_"):
                 marker_name = line.split(maxsplit=1)[0]
                 self.seen_markers.add(marker_name)
@@ -564,15 +579,30 @@ def validate_retired_provider_failure_output(output: str) -> None:
 
 def validate_retired_provider_ignored_warning(
     warning_markers: list[str],
+    observed_output: list[str],
     forbidden_value: str,
+    output_truncated: bool = False,
 ) -> None:
-    """The ignored-configuration warning is announced exactly once and stays value-blind."""
+    """The warning is announced exactly once, and NOTHING printed carries a configured value.
+
+    ``observed_output`` is the monitor's bounded capture of every line, not just the marker
+    lines, because the marker's human-readable companion line is where a value would leak.
+    """
     if warning_markers != [RETIRED_PROVIDER_IGNORED_WARNING_MARKER]:
         raise AcceptanceFailure(
             "The packaged process did not announce the ignored retired configuration exactly once."
         )
-    if forbidden_value and forbidden_value in "".join(warning_markers):
-        raise AcceptanceFailure("The ignored-configuration warning exposed a configured value.")
+    if output_truncated:
+        raise AcceptanceFailure(
+            "The packaged start exceeded its bounded console output, so it could not be scanned."
+        )
+    if not forbidden_value:
+        return
+    for line in observed_output:
+        if forbidden_value in line:
+            raise AcceptanceFailure(
+                "The packaged start printed a configured value alongside the ignored-configuration warning."
+            )
 
 
 def verify_inherited_retired_provider_configuration_starts(
@@ -622,7 +652,9 @@ def verify_inherited_retired_provider_configuration_starts(
             request_health_and_spa(url)
             validate_retired_provider_ignored_warning(
                 list(monitor.warning_markers),
+                list(monitor.output_lines),
                 SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                monitor.output_truncated,
             )
             if "TASKDECK_DESKTOP_FATAL" in monitor.seen_markers:
                 raise AcceptanceFailure(

@@ -888,7 +888,11 @@ class InheritedRetiredProviderConfigurationTests(unittest.TestCase):
     """#2233: inherited retired variables start; the same settings in a file stay fatal."""
 
     @staticmethod
-    def _ready_monitor(warning_markers: list[str]) -> mock.Mock:
+    def _ready_monitor(
+        warning_markers: list[str],
+        output_lines: list[str] | None = None,
+        output_truncated: bool = False,
+    ) -> mock.Mock:
         monitor = mock.Mock()
         monitor.wait_for_ready.return_value = (
             "http://127.0.0.1:5000",
@@ -896,31 +900,64 @@ class InheritedRetiredProviderConfigurationTests(unittest.TestCase):
             {"jwtCreated": True, "connectorCreated": True},
         )
         monitor.warning_markers = warning_markers
+        monitor.output_lines = (
+            output_lines if output_lines is not None else list(warning_markers)
+        )
+        monitor.output_truncated = output_truncated
         monitor.seen_markers = {"TASKDECK_DESKTOP_READY"}
         return monitor
 
     def test_ignored_warning_must_be_announced_exactly_once(self) -> None:
+        good_output = [
+            "TASKDECK_DESKTOP_STARTING",
+            harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER,
+            "Taskdeck ignored retired Gemini provider settings left in this profile's environment.",
+        ]
         harness.validate_retired_provider_ignored_warning(
             [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+            good_output,
             harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
         )
 
-        invalid_marker_sets = (
-            [],
-            [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER] * 2,
-            ["TASKDECK_DESKTOP_WARNING code=something_else"],
-            [
-                "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored "
-                + harness.SYNTHETIC_RETIRED_PROVIDER_VALUE
-            ],
+        invalid_cases = (
+            ([], good_output, False),
+            ([harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER] * 2, good_output, False),
+            (["TASKDECK_DESKTOP_WARNING code=something_else"], good_output, False),
+            # The value leaks on the guidance line, which carries no marker prefix at all —
+            # the case a markers-only scan cannot see.
+            (
+                [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+                good_output + [f"Ignored {harness.SYNTHETIC_RETIRED_PROVIDER_VALUE}"],
+                False,
+            ),
+            # Output past the bound cannot be scanned, so it is a failure, not a pass.
+            ([harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER], good_output, True),
         )
-        for markers in invalid_marker_sets:
-            with self.subTest(markers=markers):
+        for markers, observed, truncated in invalid_cases:
+            with self.subTest(markers=markers, observed=observed[-1:], truncated=truncated):
                 with self.assertRaises(harness.AcceptanceFailure):
                     harness.validate_retired_provider_ignored_warning(
                         markers,
+                        observed,
                         harness.SYNTHETIC_RETIRED_PROVIDER_VALUE,
+                        truncated,
                     )
+
+    def test_process_monitor_captures_non_marker_lines_for_the_value_blind_scan(self) -> None:
+        monitor = WindowsDesktopArchiveTests._process_monitor(
+            "TASKDECK_DESKTOP_STARTING",
+            "Taskdeck is starting. Keep this window open while you use Taskdeck.",
+            harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER,
+            "guidance line with no marker prefix",
+        )
+        monitor.wait_for_output_completion()
+
+        self.assertIn("guidance line with no marker prefix", monitor.output_lines)
+        self.assertFalse(monitor.output_truncated)
+        self.assertEqual(
+            [harness.RETIRED_PROVIDER_IGNORED_WARNING_MARKER],
+            monitor.warning_markers,
+        )
 
     def test_inherited_retired_variables_start_with_and_without_a_selector(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

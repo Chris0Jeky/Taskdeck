@@ -125,7 +125,9 @@ const llmStatusCopy = computed(() => {
 
 // #2233: the packaged desktop drops retired provider variables left in the machine's
 // environment. Say so here rather than leaving the user to wonder why their old provider is
-// not in use. No key names or values are sent by the server, so none can be shown.
+// not in use. No key names or values are sent by the server, so none can be shown, and the
+// note claims nothing about WHICH provider is running: a stale retired child can sit beside a
+// valid live selector, in which case the provider named above is live.
 const retiredProviderConfigurationIgnored = computed(
   () => props.chatHealth?.retiredProviderConfigurationIgnored === true,
 )
@@ -156,9 +158,9 @@ const llmStatusMeta = computed(() => {
         class="td-chat-status__note"
         data-testid="llm-retired-configuration-ignored"
       >
-        Taskdeck found retired Gemini provider settings in this machine's environment and ignored
-        them, so it started on its built-in provider. Remove those leftover variables, then choose
-        a supported provider to go live.
+        Taskdeck ignored retired Gemini provider settings left in this profile's environment; no
+        values were read or printed. The provider actually in use is the one named above. Remove
+        those leftover variables to clear this notice.
       </p>
     </div>
     <span v-if="llmStatusMeta" class="td-chat-status__meta">

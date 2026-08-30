@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Extensions;
@@ -138,6 +139,116 @@ public class RetiredProviderEnvironmentConfigurationTests
         Assert.Equal(new[] { "Llm:Gemini:ApiKey", "Llm:Provider" }, notice.IgnoredKeys);
     }
 
+    /// <summary>
+    /// #2233 review P1: <c>FirstRunBootstrapper.AddLocalConfigFile</c> finds its insertion point by
+    /// looking for the first <c>EnvironmentVariablesConfigurationSource</c> and puts the durable
+    /// <c>appsettings.local.json</c> BELOW it, so an explicit launch override always beats a
+    /// persisted value. The filtering source must therefore still be one of those by type; a
+    /// replacement of an unrelated type makes the lookup miss and the file is appended last, where
+    /// a persisted database path, JWT secret, connector key, or provider setting would silently
+    /// outrank the environment and the command line.
+    /// </summary>
+    [Theory]
+    [InlineData(false, "from-environment")]
+    [InlineData(true, "from-command-line")]
+    public void IgnoreInheritedRetiredProviderConfiguration_KeepsTheDurableLocalFileBelowEnvironmentAndCommandLine(
+        bool useCommandLine,
+        string expected)
+    {
+        var probeKey = $"Taskdeck2233Probe{Guid.NewGuid():N}";
+        var directory = Path.Combine(Path.GetTempPath(), $"taskdeck-2233-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        var localConfigPath = Path.Combine(directory, "appsettings.local.json");
+        File.WriteAllText(
+            localConfigPath,
+            JsonSerializer.Serialize(new Dictionary<string, object?>
+            {
+                [probeKey] = new Dictionary<string, string?> { ["Value"] = "from-file" }
+            }));
+
+        var notice = new RetiredLlmProviderConfigurationNotice();
+        var configuration = WithEnvironment(
+            new Dictionary<string, string?>
+            {
+                [$"{probeKey}__Value"] = "from-environment",
+                ["Llm__Gemini__ApiKey"] = SyntheticRetiredValue
+            },
+            () =>
+            {
+                var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+                {
+                    Args = useCommandLine
+                        ? [$"--{probeKey}:Value=from-command-line"]
+                        : [],
+                    EnvironmentName = "Development",
+                    ContentRootPath = directory
+                });
+                RetiredProviderEnvironmentConfiguration.IgnoreInheritedRetiredProviderConfiguration(
+                    builder.Configuration,
+                    notice);
+                builder.AddLocalConfigFile(localConfigPath, isBootstrapHeadless: true);
+                return (IConfiguration)builder.Configuration;
+            });
+
+        // The persisted file is registered and readable, but never wins over an explicit override.
+        Assert.Equal(expected, configuration[$"{probeKey}:Value"]);
+        // The retired key is still dropped on this same path.
+        Assert.Null(configuration["Llm:Gemini:ApiKey"]);
+        // Contains, not equals: this case reads the REAL process environment, and a developer box
+        // carrying its own leftover retired variables legitimately contributes more dropped keys.
+        Assert.Contains("Llm:Gemini:ApiKey", notice.IgnoredKeys);
+    }
+
+    [Fact]
+    public void IgnoreInheritedRetiredProviderConfiguration_FiltersTheShippedConfigurationManagerPath()
+    {
+        // Production calls this on WebApplicationBuilder.Configuration, a ConfigurationManager whose
+        // Sources indexer rebuilds every provider through ReloadSources(). Drive that exact type,
+        // and add another source afterwards so the reload replays the filtering provider's Load.
+        var prefix = NewPrefix();
+        var notice = new RetiredLlmProviderConfigurationNotice();
+        var settingsPath = WriteSettingsFile(new Dictionary<string, object?>
+        {
+            ["Llm"] = new Dictionary<string, object?> { ["Provider"] = "Mock" }
+        });
+
+        var configuration = WithEnvironment(
+            new Dictionary<string, string?>
+            {
+                [$"{prefix}Llm__Provider"] = "OpenAI",
+                [$"{prefix}Llm__Gemini__ApiKey"] = SyntheticRetiredValue,
+                [$"{prefix}Llm__Gemini__Model"] = "gemini-1.5",
+                [$"{prefix}Llm__OpenAi__Model"] = "gpt-5.6-luna"
+            },
+            () =>
+            {
+                var manager = new ConfigurationManager();
+                manager.AddJsonFile(settingsPath, optional: false, reloadOnChange: false);
+                manager.AddEnvironmentVariables(prefix);
+                RetiredProviderEnvironmentConfiguration.IgnoreInheritedRetiredProviderConfiguration(
+                    manager,
+                    notice);
+                // A later source triggers ReloadSources() on the manager, rebuilding every provider.
+                manager.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Llm:EnableLiveProviders"] = "false"
+                });
+                return manager;
+            });
+
+        Assert.Contains(
+            ((IConfigurationBuilder)configuration).Sources,
+            source => source is FilteredEnvironmentVariablesConfigurationSource);
+        Assert.Null(configuration["Llm:Gemini:ApiKey"]);
+        Assert.Null(configuration["Llm:Gemini:Model"]);
+        Assert.Empty(configuration.GetSection("Llm:Gemini").GetChildren());
+        // A supported selector from the same environment is untouched: it is not retired.
+        Assert.Equal("OpenAI", configuration["Llm:Provider"]);
+        Assert.Equal("gpt-5.6-luna", configuration["Llm:OpenAi:Model"]);
+        Assert.Equal("false", configuration["Llm:EnableLiveProviders"]);
+        Assert.Equal(new[] { "Llm:Gemini:ApiKey", "Llm:Gemini:Model" }, notice.IgnoredKeys);
+    }
+
     [Theory]
     [InlineData("Gemini")]
     [InlineData(null)]
@@ -260,9 +371,9 @@ public class RetiredProviderEnvironmentConfigurationTests
 
     private static string NewPrefix() => $"TASKDECK_TEST_{Guid.NewGuid():N}_";
 
-    private static IConfigurationRoot WithEnvironment(
+    private static TConfiguration WithEnvironment<TConfiguration>(
         IReadOnlyDictionary<string, string?> variables,
-        Func<IConfigurationRoot> build)
+        Func<TConfiguration> build)
     {
         try
         {
