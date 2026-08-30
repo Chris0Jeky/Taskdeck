@@ -2,13 +2,33 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-29
+Last Updated: 2026-08-30
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## 2026-08-30 Smart CI Fabric checks (ADR-0066, shadow phase)
+
+The CI redesign that lets the repository go private for v0.3.0 on a personal GitHub Pro account
+(`docs/ci/SMART_CI.md`, tracker CI-00 `#2324`). Everything in this section is behaviour-preserving:
+nothing changes which `ci-required.yml` jobs run until the recall report and the maintainer's gate
+registration (CI-02 `#2326`, CI-03 `#2327`).
+
+| Purpose | Command | Expected |
+| --- | --- | --- |
+| Measurement helpers (pure aggregation over API payload shapes) | `node --test scripts/ci/smart-ci/measure-ci-estate.test.mjs` | 9 passed |
+| Measure the estate (read-only; `gh auth token` or `GH_TOKEN`) | `node scripts/ci/smart-ci/measure-ci-estate.mjs --since 2026-07-31 --until 2026-08-30 --sample 30 --out-dir docs/ci/baselines` | writes `ci-estate-<until>.json` + `.md`; ~4 min (the artifact listing is ~320 pages) |
+| Planner / gate fixtures (CI-02 scaffold) | `node --test scripts/ci/smart-ci/*.test.mjs` | all green; an unmapped path or planner error must escalate to the full plan |
+
+Baseline recorded 2026-08-30 (`docs/ci/CI_BASELINE.md`): a green required run has 17 jobs, a
+**24.7-minute p50 critical path** and costs **~126 allowance minutes** under private-repository
+accounting (Windows carries 88 of them); **370.7 GB of unexpired artifacts** sit on the repository
+(357 GB exported container images at the default 90-day retention) against a 1 GB Pro allowance;
+the Actions cache is at its 10 GB cap. Run the measurement again after every topology change and
+append, never overwrite, the ledger.
 
 ## 2026-08-22 correction: ordinary inherited Windows profile
 

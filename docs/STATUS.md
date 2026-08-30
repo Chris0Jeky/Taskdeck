@@ -719,6 +719,20 @@ Result:
 
 ## CI Status
 
+**Smart CI Fabric programme (ADR-0066, 2026-08-30 — shadow phase, behaviour-preserving).** The
+repository goes private for the v0.3.0 release on the maintainer's personal GitHub Pro account, so CI
+is being re-planned as a policy-driven verification engine (`docs/ci/SMART_CI.md`, tracker CI-00
+`#2324`, children `#2325`–`#2339`). Shipped so far: the measured baseline (`docs/ci/CI_BASELINE.md` —
+17-job required runs, 24.7-min p50 critical path, ~126 allowance minutes per run under private
+accounting with Windows at 70%, 370.7 GB of unexpired artifacts against a 1 GB allowance, cache at
+the 10 GB cap), the measurement tool (`scripts/ci/smart-ci/measure-ci-estate.mjs`), and the
+decision/threat-model/cutover docs. The shadow planner and the observation-mode
+`Smart CI / Required Gate` (`smart-ci-shadow.yml`) change **no** `ci-required.yml` job selection;
+branch protection is unchanged (three security contexts, `strict: false`) until the maintainer
+registers the gate after >=20 PRs of observation (CI-03 `#2327`). No self-hosted runner exists and
+none is attached while the repository is public (CI-04 `#2328`). The cutover itself is the CI-13
+`#2337` human gate.
+
 Required workflow: `.github/workflows/ci-required.yml`
 
 - `docs-governance` reusable call: active-doc/agentic governance (Ubuntu) plus the 28-case

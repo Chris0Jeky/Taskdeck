@@ -16,7 +16,11 @@ autonomous-admission lane for acceptance-ready tracked backlog while keeping new
 inside the plan/ADR boundary. The 2026-06-13 archive pivot is superseded (archive remains only the
 checkpoint fallback). Shipped trust model stays review-first (ADR-0003/GP-06/ADR-0056); the
 delegated-autonomy future is ADR-0057, **Accepted as direction only (2026-08-24, openness
-caveat) — no implementation is in force or buildable without its own separate gate**.
+caveat) — no implementation is in force or buildable without its own separate gate**. The repository
+**goes private for the v0.3.0 release** on the maintainer's personal GitHub Pro account (directive
+2026-08-30; ADR-0066 Smart CI Fabric, tracker CI-00 `#2324`): CI-control changes (`.github/**`, `ci/**`,
+`scripts/ci/**`) are R4 and qualify hosted-only; the Smart CI lane is shadow-only until the maintainer
+registers `Smart CI / Required Gate` — `docs/ci/SMART_CI.md`.
 
 ## Orient (do NOT bulk-read the big docs)
 
@@ -35,6 +39,7 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 | Root/agent docs, `docs/**` | `node scripts/check-docs-governance.mjs` | ~1s, green |
 | `docs/GOLDEN_PRINCIPLES.md`, invariants | `node scripts/check-golden-principles.mjs` | ~1s, green |
 | `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` | ~1s, green |
+| `ci/**`, `scripts/ci/smart-ci/**`, `.github/workflows/smart-ci-shadow.yml` | `node --test scripts/ci/smart-ci/*.test.mjs` | ~1s, green |
 | Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` | ~1s, 11 passed |
 | One backend layer | `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1` | Domain: ~30s cold, 1636 passed |
 | Backend, cross-layer | `dotnet test backend/Taskdeck.sln -c Release -m:1` | minutes — last resort |
@@ -45,7 +50,8 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 
 `ci-required.yml` is the required CI gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
 `deploy/`, `scripts/`, or `*.csproj` also trigger CI Extended — an optional, non-blocking lane (several
-jobs are label-gated). Read its results, but it does not gate the merge.
+jobs are label-gated). Read its results, but it does not gate the merge. `smart-ci-shadow.yml` (ADR-0066) is observation-only: red
+means a planner/schema defect, never a product verdict, until CI-03 registers the gate.
 
 ## Run it
 

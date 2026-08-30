@@ -65,6 +65,25 @@ behaviour.
 
 ## Dated delivery and governance updates (newest first)
 
+## Governance update (2026-08-30, Smart CI Fabric — ADR-0066 accepted under delegation)
+
+The maintainer directed that the repository **goes private for the v0.3.0 release** and that CI must
+work on a **personal GitHub Pro account** first (no Team/Enterprise). The 2026-08-30 Smart CI pack
+was archived as received (`docs/analysis/2026-08-30-smart-ci/`), reconciled against the live estate
+(`RECONCILIATION.md`), and turned into ADR-0066 plus the CI-NN wave: tracker CI-00 `#2324` with nine
+delegated rulings (personal-account mode; base-ref `pull_request_target` control plane; one stable
+`Smart CI / Required Gate` + branch-current; hosted-by-default execution mode; Linux semantic baseline +
+Windows compatibility contract; tree-SHA landed verifier; shadow-first selection; change-driven nightly;
+storage first) and children CI-01..CI-15 `#2325`–`#2339`. **Measured baseline** (`docs/ci/CI_BASELINE.md`):
+17-job required runs with a 24.7-minute p50 critical path costing ~126 allowance minutes each under
+private accounting (Windows = 70%), a projected ~99,000 allowance minutes/month against the 3,000
+allowance (340 of the 1,198 required runs in the window were full `push: main` re-runs), **370.7 GB of unexpired artifacts** (357 GB exported container images) against 1 GB, and a
+cache at its 10 GB cap. Roadmap impact: CI-01/02/03/04/05/07/08/09/11/13 join **v0.3** (the cutover
+CI-13 is a maintainer human gate and a v0.3.0 release condition), CI-06/10/12/15 join v0.4, CI-14 (the
+organization control plane) is a deferred decision. Scaffolding is behaviour-preserving: shadow planner,
+observation-mode gate, measurement tool, action-pin inventory, runner broker skeleton — no job selection,
+visibility, billing, branch-protection, runner or secret changes. Human actions: `OUTSTANDING_TASKS.md` §J.
+
 > These are the delivery, governance, and correction records, newest first. They were hoisted below
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.

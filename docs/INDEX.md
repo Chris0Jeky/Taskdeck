@@ -77,6 +77,8 @@ Stable reference material belongs in topical subfolders.
   - Provider, import-adapter, and starter-pack platform or reference docs.
 - `security/`
   - Active security and abuse-protection policies or baselines.
+- `ci/`
+  - The Smart CI Fabric programme (ADR-0066, 2026-08-30): architecture and operating model (`ci/SMART_CI.md`), the self-hosted runner threat model, the private-repository cutover checklist, and the measured CI baseline (`ci/CI_BASELINE.md`) with its generated ledgers under `ci/baselines/`.
 - `codex-tasks/`
   - Codex-friendly task catalog: self-contained, token-efficient task prompts for lightweight agents. Organized by tier (frontend-api, frontend-composables, frontend-stores, backend-domain, backend-services). Each `.md` is a standalone prompt with source paths, pattern files, test cases, and verify commands. Tracked as `TST-CODEX-*` issues (`#415`-`#429`).
 - `tooling/`
@@ -93,6 +95,7 @@ Stable reference material belongs in topical subfolders.
   - includes `analysis/2026-02-23_outreach-crm-synthesis.md` for outreach CRM deferred-wave reconciliation (`#262` to `#268`).
   - includes `analysis/2026-07-10_revival_assessment.md` — the revive-vs-archive evidence base (7 code-review dimensions with adversarially verified claims + market research) behind ADR-0044 and `REVIVAL_PLAN.md`.
   - includes `analysis/2026-08-30-context-fabric/` — the maintainer's Context Fabric planning pack as received (blueprint, worker-protocol proof of concept, manifest schema and example, issue seeds, diagram) plus `RECONCILIATION.md`, the pack-versus-repository verification and re-think behind ADR-0065, the CF-NN wave and the release ladder to v1.0, and, from the same day, `EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md` (the external audit of PR #2280 as received) with `AUDIT_RECONCILIATION.md` (its disposition — what was accepted, amended, or declined, and where each landed).
+  - includes `analysis/2026-08-30-smart-ci/` — the maintainer's Smart CI and private-repository readiness pack as received (blueprint, audit, draft ADR, issue seeds, execution prompt, cutover checklist, runner threat model, example policy/plan/metrics schemas and workflows, broker skeleton, diagram, dashboard) plus `RECONCILIATION.md`, the pack-versus-repository corrections and the personal-account rulings behind ADR-0066 and the CI-NN wave.
 - `InReview/`
   - Human or in-review source packs awaiting extraction into canonical docs or issue waves.
 - `archive/`
