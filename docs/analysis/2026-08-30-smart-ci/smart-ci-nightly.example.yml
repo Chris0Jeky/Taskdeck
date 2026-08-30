@@ -1,0 +1,73 @@
+# REFERENCE ONLY. One coordinator owns change-driven deep qualification.
+name: Smart CI Deep (example)
+
+on:
+  schedule:
+    - cron: '25 3 * * *'
+  workflow_dispatch:
+    inputs:
+      full:
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: smart-ci-deep-main
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Deep / Plan
+    runs-on: ubuntu-24.04
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+      full: ${{ steps.plan.outputs.full }}
+      linux_runner: ${{ steps.plan.outputs.linux_runner }}
+      windows_runner: ${{ steps.plan.outputs.windows_runner }}
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: plan
+        run: node tools/ci/plan-deep.mjs --full '${{ inputs.full || false }}' --github-output "$GITHUB_OUTPUT" --out artifacts/deep-plan.json
+
+  no-change-receipt:
+    name: Deep / No Relevant Change
+    needs: plan
+    if: ${{ needs.plan.outputs.has_changes != 'true' && needs.plan.outputs.full != 'true' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo 'No relevant main changes since the last successful deep qualification.' >> "$GITHUB_STEP_SUMMARY"
+
+  linux-full:
+    needs: plan
+    if: ${{ needs.plan.outputs.has_changes == 'true' || needs.plan.outputs.full == 'true' }}
+    runs-on: ${{ fromJSON(needs.plan.outputs.linux_runner) }}
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          persist-credentials: false
+      - run: ./scripts/ci/run-deep.sh --platform linux
+
+  windows-full:
+    needs: plan
+    if: ${{ needs.plan.outputs.full == 'true' }}
+    runs-on: ${{ fromJSON(needs.plan.outputs.windows_runner) }}
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          persist-credentials: false
+      - shell: pwsh
+        run: ./scripts/ci/Run-Deep.ps1 -Platform windows
+
+  report:
+    name: Deep / Receipt
+    if: always()
+    needs: [plan, no-change-receipt, linux-full, windows-full]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: node tools/ci/write-deep-receipt.mjs --results-env

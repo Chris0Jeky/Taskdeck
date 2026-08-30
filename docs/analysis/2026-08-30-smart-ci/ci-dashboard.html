@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Taskdeck Smart CI Simulator</title>
+<style>
+:root{--bg:#0b1020;--panel:#131a2c;--panel2:#182237;--text:#edf2ff;--muted:#9eabc8;--line:#2d3956;--accent:#8ca3ff;--ok:#55d49b;--warn:#ffbf69;--bad:#ff7b8d}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 10% 0,#1a2547 0,transparent 34%),var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:1450px;margin:auto;padding:34px}.hero{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;margin-bottom:24px}.hero h1{font-size:38px;margin:0 0 6px}.hero p{color:var(--muted);margin:0}.tag{border:1px solid var(--line);border-radius:999px;padding:7px 12px;color:var(--accent);white-space:nowrap}
+.grid{display:grid;grid-template-columns:380px 1fr;gap:20px}.panel{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:0 16px 50px #0005}.panel h2{margin:0 0 14px;font-size:20px}.inputs{display:grid;grid-template-columns:1fr 110px;gap:10px;align-items:center}.inputs label{color:var(--muted)}input,select{width:100%;background:#0c1426;border:1px solid var(--line);border-radius:9px;color:var(--text);padding:9px}input[type=range]{padding:0}.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.card{background:#0c1426;border:1px solid var(--line);border-radius:14px;padding:16px}.card h3{margin:0 0 7px;font-size:16px}.num{font-size:30px;font-weight:750}.small{color:var(--muted);font-size:13px}.bar{height:10px;background:#09101e;border-radius:999px;overflow:hidden;margin-top:9px}.bar span{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--ok));width:0}.table{width:100%;border-collapse:collapse;margin-top:12px}.table th,.table td{text-align:left;border-bottom:1px solid var(--line);padding:9px}.table th{color:var(--muted);font-weight:600}.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.arch{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;align-items:stretch}.node{border:1px solid var(--line);border-radius:12px;padding:13px;background:#0c1426;min-height:108px}.node b{display:block;margin-bottom:5px}.node span{color:var(--muted);font-size:13px}.arrow{text-align:center;color:var(--accent);font-size:26px;align-self:center}.wide{grid-column:1/-1}.notes{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.note{background:#0c1426;border-left:3px solid var(--accent);border-radius:8px;padding:12px}.note b{display:block}.note span{color:var(--muted)}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}.cards{grid-template-columns:1fr}.arch{grid-template-columns:1fr}.arrow{transform:rotate(90deg)}.notes{grid-template-columns:1fr}.hero{align-items:flex-start;flex-direction:column}}
+</style>
+</head>
+<body><main>
+<div class="hero"><div><h1>Taskdeck Smart CI Simulator</h1><p>Compare the current hosted-heavy shape with an optimized hosted and hybrid policy-driven topology.</p></div><div class="tag">planning model · edit every assumption</div></div>
+<div class="grid">
+<section class="panel"><h2>Monthly assumptions</h2><div class="inputs">
+<label>Required CI executions</label><input id="runs" type="number" min="0" value="100">
+<label>Current aggregate min/run</label><input id="currentMin" type="number" step="0.1" value="75">
+<label>Optimized hosted min/run</label><input id="optMin" type="number" step="0.1" value="24">
+<label>Hybrid hosted min/run</label><input id="hybridHosted" type="number" step="0.1" value="5">
+<label>Hybrid self-hosted min/run</label><input id="hybridSelf" type="number" step="0.1" value="20">
+<label>Linux share of hosted time</label><input id="linuxShare" type="number" min="0" max="1" step="0.05" value="0.7">
+<label>Windows share of hosted time</label><input id="winShare" type="number" min="0" max="1" step="0.05" value="0.3">
+<label>Included hosted minutes</label><input id="allowance" type="number" value="3000">
+<label>Linux rate, USD/min</label><input id="linuxRate" type="number" step="0.001" value="0.006">
+<label>Windows rate, USD/min</label><input id="winRate" type="number" step="0.001" value="0.010">
+<label>Nightly deep runs/month</label><input id="nightlies" type="number" value="12">
+<label>Deep hosted minutes/run</label><input id="deepHosted" type="number" step="0.1" value="4">
+<label>Deep self-hosted min/run</label><input id="deepSelf" type="number" step="0.1" value="60">
+</div></section>
+<section class="panel"><h2>Computed monthly shape</h2><div class="cards">
+<div class="card"><h3>Current hosted-heavy</h3><div id="curMinutes" class="num"></div><div class="small">hosted runner-minutes</div><div class="bar"><span id="curBar"></span></div><div id="curCost" class="small"></div></div>
+<div class="card"><h3>Optimized hosted</h3><div id="optMinutes" class="num"></div><div class="small">hosted runner-minutes</div><div class="bar"><span id="optBar"></span></div><div id="optCost" class="small"></div></div>
+<div class="card"><h3>Hybrid Smart CI</h3><div id="hybMinutes" class="num"></div><div class="small">hosted runner-minutes</div><div class="bar"><span id="hybBar"></span></div><div id="hybCost" class="small"></div><div id="selfMinutes" class="small"></div></div>
+</div>
+<table class="table"><thead><tr><th>Topology</th><th>Hosted minutes</th><th>Estimated overage</th><th>Self-hosted</th><th>Interpretation</th></tr></thead><tbody id="rows"></tbody></table></section>
+<section class="panel wide"><h2>Target architecture</h2><div class="arch">
+<div class="node"><b>1. Hosted planner</b><span>Inventory, trust, risk, impact, policy version, fail-closed escalation.</span></div><div class="arrow">→</div>
+<div class="node"><b>2. Verification graph</b><span>Select suites, OS, runner class, reasons and budget.</span></div><div class="arrow">→</div>
+<div class="node"><b>3. Hybrid execution</b><span>Hosted clean control plus isolated local heavy Linux/Windows.</span></div>
+<div class="node"><b>4. Evidence</b><span>Exact SHA, selected results, allowed skips, time, cost and flakes.</span></div><div class="arrow">→</div>
+<div class="node"><b>5. Stable gate</b><span>One branch-protection context: Smart CI / Required Gate.</span></div><div class="arrow">→</div>
+<div class="node"><b>6. Lifecycle</b><span>PR qualification, tiny main verifier, change-driven deep, clean release.</span></div>
+</div></section>
+<section class="panel wide"><h2>Design rules</h2><div class="notes">
+<div class="note"><b>Linux is semantic</b><span>Run domain, application, API shards, frontend and primary E2E once.</span></div>
+<div class="note"><b>Windows is compatibility</b><span>Target launchers, paths, process, desktop, MCP and SQLite behavior; full weekly/release.</span></div>
+<div class="note"><b>Self-hosted is not privileged</b><span>Use isolated VMs, no ordinary secrets, no host shares, one job per machine.</span></div>
+<div class="note"><b>Protect the control plane</b><span>Prefer an organization runner group restricted to one trusted reusable workflow and a ruleset-required workflow outside the product PR write boundary.</span></div>
+<div class="note"><b>Unknown means full</b><span>Unmapped paths, planner errors and CI-control changes escalate to clean hosted qualification.</span></div>
+<div class="note"><b>Do not pay twice</b><span>PR carries the proof; normal main push checks provenance and starts briefly.</span></div>
+<div class="note"><b>Measure utility</b><span>Track failure yield, flakes, slow tests, critical path, cost, cache utility and duplicate runs.</span></div>
+</div></section>
+</div>
+</main>
+<script>
+const ids=['runs','currentMin','optMin','hybridHosted','hybridSelf','linuxShare','winShare','allowance','linuxRate','winRate','nightlies','deepHosted','deepSelf'];
+const val=id=>Number(document.getElementById(id).value||0); const fmt=n=>Math.round(n).toLocaleString(); const usd=n=>'$'+n.toFixed(2);
+function cost(minutes){const allow=val('allowance');const over=Math.max(0,minutes-allow);const ls=val('linuxShare'),ws=val('winShare'),sum=ls+ws||1;return over*((ls/sum)*val('linuxRate')+(ws/sum)*val('winRate'));}
+function update(){const runs=val('runs'),night=val('nightlies');const cur=runs*val('currentMin');const opt=runs*val('optMin');const hyb=runs*val('hybridHosted')+night*val('deepHosted');const self=runs*val('hybridSelf')+night*val('deepSelf');const max=Math.max(cur,opt,hyb,1);
+for(const [p,m] of [['cur',cur],['opt',opt],['hyb',hyb]]){document.getElementById(p+'Minutes').textContent=fmt(m);document.getElementById(p+'Bar').style.width=(m/max*100)+'%';document.getElementById(p+'Cost').textContent='Estimated overage: '+usd(cost(m));}
+document.getElementById('selfMinutes').textContent='Self-hosted wall-minutes: '+fmt(self);
+const cls=m=>m<=val('allowance')?'ok':m<=val('allowance')*1.25?'warn':'bad';
+document.getElementById('rows').innerHTML=`<tr><td>Current</td><td>${fmt(cur)}</td><td class="${cls(cur)}">${usd(cost(cur))}</td><td>0</td><td>Broad duplicate matrices/events</td></tr><tr><td>Optimized hosted</td><td>${fmt(opt)}</td><td class="${cls(opt)}">${usd(cost(opt))}</td><td>0</td><td>Good fallback or low-volume option</td></tr><tr><td>Hybrid</td><td>${fmt(hyb)}</td><td class="${cls(hyb)}">${usd(cost(hyb))}</td><td>${fmt(self)}</td><td>Hosted trust/control, local heavy compute</td></tr>`;}
+ids.forEach(id=>document.getElementById(id).addEventListener('input',update));update();
+</script></body></html>
