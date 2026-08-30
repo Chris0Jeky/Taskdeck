@@ -438,6 +438,9 @@ test('argument and pagination parsers reject ambiguous inputs', () => {
   ]);
   assert.equal(args.since, '2026-08-30T20:18:21.000Z');
   assert.equal(args.minimumObservations, 20);
+  assert.throws(() => buildRecallReport([], policy, { ...window, repository: null }), /repository must be owner\/name/);
+  assert.throws(() => buildRecallReport([], policy, { ...window, policyDigest: null }), /policyDigest/);
+  assert.throws(() => buildRecallReport([], policy, { ...window, since: window.until, until: window.since }), /since must not be after until/);
   assert.throws(() => parseArgs(['--since', 'invalid', '--until', '2026-08-31']), /ISO-8601/);
   assert.throws(() => parseArgs(['--since', '2026-09-01', '--until', '2026-08-31']), /must not be after/);
   assert.throws(() => parseArgs(['--since', '2026-08-30', '--until', '2026-08-31', '--min-observations', '19']), />= 20/);
