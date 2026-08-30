@@ -653,6 +653,24 @@ const revisionBadge = computed(() =>
   t('review.revisionEditor.badge', { count: revisionCount.value }, revisionCount.value),
 )
 
+/**
+ * The producer metadata names the engine that created the original proposal,
+ * not the author of a later effective operation set. Suppress only its inline
+ * attribution sentence until revision state is authoritative, and keep it
+ * suppressed whenever that state or the proposal wire identity records a
+ * saved revision. The full drawer continues to show the original metadata.
+ *
+ * Treating an in-flight or failed revision read as unknown (and therefore
+ * silent) prevents a revised proposal from briefly showing the original
+ * engine as its effective author while the revision list is loading.
+ */
+const suppressProducerFootnote = computed(
+  () =>
+    !revisionsLoaded.value ||
+    revisionCount.value > 0 ||
+    proposalRevisionIdentity(activeProposal.value) !== null,
+)
+
 const editablePayload = computed(() => {
   const p = activeProposal.value
   if (!p) return '{}'
@@ -1862,6 +1880,7 @@ async function onClearBoardScope() {
         :change-sub-title="changeSubTitle"
         :provenance="selectors.provenance.value"
         :metadata="selectors.provenanceMetadata.value"
+        :suppress-producer-footnote="suppressProducerFootnote"
         :evidence-links="selectors.evidenceLinks.value"
         :proposal-id="activeProposal?.id ?? ''"
         :side-effects="selectors.sideEffects.value"
