@@ -2226,9 +2226,12 @@ Notes:
 ## MCP Operations Validation
 
 ```powershell
-docker mcp server ls
+docker mcp profile server ls --format json
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
+powershell -File ./scripts/mcp/Test-DockerMcpProfile.Tests.ps1
 ```
+
+The validator is deliberately non-starting: it reads the user-scope profile and requires the exact sorted set of running `docker-mcp=true` container IDs to match before and after the check. Normal output exposes only counts and SHA-256 fingerprints, never profile JSON or container IDs. Any inventory error or identity-set drift fails closed, and the validator never stops or removes containers because the shared Docker daemon provides no invocation identity that proves ownership. This proves profile membership and zero container churn during the validation window; it does not prove live gateway startup.
 
 Optional servers (`postman`, `dockerhub`) warning mode:
 
@@ -2236,7 +2239,7 @@ Optional servers (`postman`, `dockerhub`) warning mode:
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional
 ```
 
-Optional servers strict mode (fail-fast on missing prereqs/runtime failures):
+Optional servers strict mode (fail-fast on missing profile entries or prerequisites):
 
 ```powershell
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1 -IncludeOptional -FailOnOptionalErrors
