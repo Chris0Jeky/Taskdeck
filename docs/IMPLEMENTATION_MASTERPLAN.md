@@ -42,7 +42,7 @@ Goals, in order:
 **Direction ownership and the trust model (2026-08-23).** Product identity and direction — the three-layer
 framing (adaptive work OS destination · context-to-action engine · transcripts/notes/captures wedge) and the
 release-theme ladder (v0.1.x Honest Windows Beta → v0.2 Coherent Context-to-Action Loop → v0.3 Accountable
-Agents + Downloadable Beta → v0.4 Hosted Open Beta + Work Model + Every Artefact; renamed 2026-08-30) — are owned by **`docs/strategy/PRODUCT_DIRECTION.md`**, which is now
+Agents + Downloadable Beta → v0.4 Hosted Open Beta + Work Model + Fabric Foundation → v0.5 Speak, Type, Paste, or Drop → v0.6 Under Your Rules → v0.7–v1.0 epic-level themes; renamed and extended 2026-08-30 under ADR-0065) — are owned by **`docs/strategy/PRODUCT_DIRECTION.md`**, which is now
 the canonical strategy spine. ADR-0044 and `docs/REVIVAL_PLAN.md` remain the execution authority described
 above; `docs/STATUS.md` remains shipped reality. **ADR-0057 (user-sovereign delegated authority) is `Accepted`
 as direction (2026-08-24, with an explicit openness caveat) and NOT in force as implementation** — the shipped
