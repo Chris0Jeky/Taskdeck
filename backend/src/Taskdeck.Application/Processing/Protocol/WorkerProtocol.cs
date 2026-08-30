@@ -1,0 +1,395 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Processing;
+
+namespace Taskdeck.Application.Processing.Protocol;
+
+/// <summary>
+/// Taskdeck Worker Protocol v1 (ADR-0065 §Decision 10; spec in
+/// <c>docs/architecture/WORKER_PROTOCOL_V1.md</c>): JSON-RPC 2.0 envelopes exchanged between the
+/// API and a supervised sidecar over stdio, or mapped onto a queue for hosted workers. This file is
+/// the typed contract; the host, supervisor and conformance suite are CF-04 <c>#2258</c>.
+/// </summary>
+public static class WorkerProtocol
+{
+    public const int Version = 1;
+    public const string JsonRpcVersion = "2.0";
+
+    public const string RunMethod = "processor.run";
+    public const string ProgressMethod = "processor.progress";
+    public const string CancelMethod = "processor.cancel";
+    public const string DescribeMethod = "processor.describe";
+
+    public const string StatusCompleted = "completed";
+    public const string StatusFailed = "failed";
+    public const string StatusCancelled = "cancelled";
+
+    /// <summary>Content-handle schemes the host issues; anything else is rejected before a run starts.</summary>
+    public const string SpoolHandleScheme = "spool://";
+    public const string ContentHandleScheme = "content://";
+
+    /// <summary>
+    /// Wire settings: camelCase, kebab-case enums, nulls omitted. Unlike manifests, protocol messages
+    /// tolerate unknown members so a newer sidecar can add fields without breaking an older host.
+    /// </summary>
+    public static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower) }
+    };
+
+    public static string Serialize<T>(T value) => JsonSerializer.Serialize(value, JsonOptions);
+
+    public static T? Deserialize<T>(string json) => JsonSerializer.Deserialize<T>(json, JsonOptions);
+}
+
+/// <summary>JSON-RPC error codes reserved by the protocol (-32000..-32099 is the server-defined range).</summary>
+public static class WorkerProtocolErrorCodes
+{
+    public const int ProcessorFailure = -32000;
+    public const int UnsupportedCapability = -32010;
+    public const int UnsupportedMediaType = -32011;
+    public const int ResourceExhausted = -32020;
+    public const int DeadlineExceeded = -32021;
+    public const int OutputTooLarge = -32022;
+    public const int Cancelled = -32030;
+    public const int ProtocolVersionMismatch = -32040;
+}
+
+public sealed record JsonRpcRequest<TParams>(
+    [property: JsonPropertyName("jsonrpc")] string JsonRpc,
+    string Id,
+    string Method,
+    TParams Params)
+{
+    public static JsonRpcRequest<TParams> Create(string id, string method, TParams parameters) =>
+        new(WorkerProtocol.JsonRpcVersion, id, method, parameters);
+}
+
+public sealed record JsonRpcNotification<TParams>(
+    [property: JsonPropertyName("jsonrpc")] string JsonRpc,
+    string Method,
+    TParams Params)
+{
+    public static JsonRpcNotification<TParams> Create(string method, TParams parameters) =>
+        new(WorkerProtocol.JsonRpcVersion, method, parameters);
+}
+
+public sealed record JsonRpcResponse<TResult>(
+    [property: JsonPropertyName("jsonrpc")] string JsonRpc,
+    string Id,
+    TResult? Result,
+    JsonRpcError? Error)
+{
+    public bool IsError => Error is not null;
+
+    /// <summary>
+    /// True only for a well-formed success: a result and no error. A response with neither member is
+    /// neither a success nor an error — <see cref="WorkerProtocolValidator.ValidateResponseEnvelope{TResult}"/>
+    /// rejects it before a host may act on it.
+    /// </summary>
+    public bool IsSuccess => Result is not null && Error is null;
+}
+
+public sealed record JsonRpcError(int Code, string Message, ProcessorErrorData? Data);
+
+/// <summary>
+/// Machine-readable failure detail. <c>SafeDetail</c> must be content-free: it may name a model or a
+/// resource, never a fragment of the user's material.
+/// </summary>
+public sealed record ProcessorErrorData(string ErrorCode, bool Retryable, string? SafeDetail);
+
+public sealed record ProcessorRunParams(
+    int ProtocolVersion,
+    string Capability,
+    ProcessorRunInput? Input,
+    ProcessorRunOptions? Options,
+    ProcessorRunLimits? Limits);
+
+/// <summary>
+/// The input handle. Content reaches a sidecar only through a Taskdeck-managed spool handle
+/// (<c>spool://…</c>) or a short-lived authenticated content handle — never an arbitrary path the
+/// user supplied.
+/// </summary>
+public sealed record ProcessorRunInput(
+    Guid AssetId,
+    string MediaType,
+    string ContentHandle,
+    string Sha256,
+    long ByteSize);
+
+public sealed record ProcessorRunOptions(
+    string? Language,
+    string? QualityTier,
+    bool? WordTimestamps,
+    bool? Diarization,
+    int? MaxSpeakers);
+
+public sealed record ProcessorRunLimits(
+    DateTimeOffset? DeadlineUtc,
+    int? MaxWallTimeMs,
+    long? MaxOutputBytes);
+
+public sealed record ProcessorProgressParams(
+    string JobId,
+    string Phase,
+    double? Fraction,
+    string? MessageCode);
+
+public sealed record ProcessorRunResult(
+    string Status,
+    ProcessorIdentity? Processor,
+    IReadOnlyList<ProcessorRepresentationOutput>? Representations,
+    IReadOnlyList<string>? Warnings,
+    ProcessorUsage? Usage);
+
+public sealed record ProcessorIdentity(
+    string Id,
+    string Version,
+    string? Model,
+    string? ConfigurationHash);
+
+public sealed record ProcessorRepresentationOutput(
+    string Kind,
+    int SchemaVersion,
+    string? Language,
+    string Text,
+    IReadOnlyList<ProcessorSegmentOutput>? Segments);
+
+public sealed record ProcessorSegmentOutput(
+    int CharStart,
+    int CharEnd,
+    long? StartMs,
+    long? EndMs,
+    string? SpeakerLabel,
+    double? Confidence);
+
+public sealed record ProcessorUsage(
+    long? WallTimeMs,
+    long? AudioDurationMs,
+    int? PeakRamMb,
+    int? PeakVramMb);
+
+/// <summary>
+/// Structural validation of protocol messages: the JSON-RPC envelope, run parameters and results.
+/// Host-side enforcement of deadlines, output caps, cancellation grace and network denial belongs to
+/// the supervisor (CF-04); this validator only rejects malformed messages before any work starts or
+/// any result is persisted.
+/// </summary>
+public static class WorkerProtocolValidator
+{
+    private static readonly HashSet<string> Statuses = new(StringComparer.Ordinal)
+    {
+        WorkerProtocol.StatusCompleted, WorkerProtocol.StatusFailed, WorkerProtocol.StatusCancelled
+    };
+
+    /// <summary>
+    /// JSON-RPC 2.0 response rules: the version string, a non-empty id (the host matches it to the
+    /// request), and exactly one of <c>result</c> / <c>error</c>.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateResponseEnvelope<TResult>(JsonRpcResponse<TResult>? response, string? expectedId = null)
+    {
+        var errors = new List<string>();
+
+        if (response is null)
+        {
+            errors.Add("response: missing");
+            return errors;
+        }
+
+        if (!string.Equals(response.JsonRpc, WorkerProtocol.JsonRpcVersion, StringComparison.Ordinal))
+            errors.Add($"response.jsonrpc: must be \"{WorkerProtocol.JsonRpcVersion}\"");
+
+        if (string.IsNullOrWhiteSpace(response.Id))
+            errors.Add("response.id: required");
+        else if (expectedId is not null && !string.Equals(response.Id, expectedId, StringComparison.Ordinal))
+            errors.Add($"response.id: expected '{expectedId}'");
+
+        var hasResult = response.Result is not null;
+        var hasError = response.Error is not null;
+        if (hasResult == hasError)
+            errors.Add("response: exactly one of result or error must be present");
+
+        if (hasError && string.IsNullOrWhiteSpace(response.Error!.Message))
+            errors.Add("response.error.message: required");
+
+        return errors;
+    }
+
+    /// <summary>Progress notifications must be correlatable and bounded before any state consumes them.</summary>
+    public static IReadOnlyList<string> ValidateProgress(ProcessorProgressParams? progress)
+    {
+        var errors = new List<string>();
+
+        if (progress is null)
+        {
+            errors.Add("progress: missing");
+            return errors;
+        }
+
+        if (string.IsNullOrWhiteSpace(progress.JobId))
+            errors.Add("progress.jobId: required");
+        if (string.IsNullOrWhiteSpace(progress.Phase))
+            errors.Add("progress.phase: required");
+        if (progress.Fraction is < 0 or > 1)
+            errors.Add("progress.fraction: must be within [0, 1]");
+        if (progress.Fraction is double fraction && double.IsNaN(fraction))
+            errors.Add("progress.fraction: must be a number");
+
+        return errors;
+    }
+
+    public static IReadOnlyList<string> ValidateRunParams(ProcessorRunParams? parameters)
+    {
+        var errors = new List<string>();
+
+        if (parameters is null)
+        {
+            errors.Add("params: missing");
+            return errors;
+        }
+
+        if (parameters.ProtocolVersion != WorkerProtocol.Version)
+            errors.Add($"params.protocolVersion: must be {WorkerProtocol.Version}");
+
+        if (!ProcessingCapability.IsKnown(parameters.Capability))
+            errors.Add($"params.capability: '{parameters.Capability}' is not a known capability");
+
+        if (parameters.Input is null)
+        {
+            errors.Add("params.input: required");
+        }
+        else
+        {
+            var input = parameters.Input;
+            if (input.AssetId == Guid.Empty)
+                errors.Add("params.input.assetId: required");
+            if (string.IsNullOrWhiteSpace(input.MediaType))
+                errors.Add("params.input.mediaType: required");
+            if (string.IsNullOrWhiteSpace(input.ContentHandle))
+                errors.Add("params.input.contentHandle: required");
+            else if (!input.ContentHandle.StartsWith(WorkerProtocol.SpoolHandleScheme, StringComparison.Ordinal)
+                     && !input.ContentHandle.StartsWith(WorkerProtocol.ContentHandleScheme, StringComparison.Ordinal))
+                errors.Add($"params.input.contentHandle: must be a host-issued {WorkerProtocol.SpoolHandleScheme} or {WorkerProtocol.ContentHandleScheme} handle, never a path");
+            if (input.Sha256 is null || input.Sha256.Length != 64 || input.Sha256.Any(character => !Uri.IsHexDigit(character)))
+                errors.Add("params.input.sha256: must be a 64-character hexadecimal digest");
+            if (input.ByteSize <= 0)
+                errors.Add("params.input.byteSize: must be greater than zero");
+        }
+
+        if (parameters.Limits is { MaxWallTimeMs: <= 0 })
+            errors.Add("params.limits.maxWallTimeMs: must be greater than zero");
+
+        if (parameters.Limits is { MaxOutputBytes: <= 0 })
+            errors.Add("params.limits.maxOutputBytes: must be greater than zero");
+
+        if (parameters.Options is { MaxSpeakers: <= 0 })
+            errors.Add("params.options.maxSpeakers: must be greater than zero");
+
+        return errors;
+    }
+
+    public static IReadOnlyList<string> ValidateResult(ProcessorRunResult? result)
+    {
+        var errors = new List<string>();
+
+        if (result is null)
+        {
+            errors.Add("result: missing");
+            return errors;
+        }
+
+        if (result.Status is null || !Statuses.Contains(result.Status))
+            errors.Add("result.status: one of completed | failed | cancelled");
+
+        if (result.Processor is null)
+        {
+            errors.Add("result.processor: required");
+        }
+        else
+        {
+            if (string.IsNullOrWhiteSpace(result.Processor.Id))
+                errors.Add("result.processor.id: required");
+            if (string.IsNullOrWhiteSpace(result.Processor.Version))
+                errors.Add("result.processor.version: required");
+            if (result.Status == WorkerProtocol.StatusCompleted && string.IsNullOrWhiteSpace(result.Processor.ConfigurationHash))
+                errors.Add("result.processor.configurationHash: required on a completed run (provenance and cache identity)");
+        }
+
+        if (result.Usage is not null)
+        {
+            if (result.Usage.WallTimeMs is < 0)
+                errors.Add("result.usage.wallTimeMs: cannot be negative");
+            if (result.Usage.AudioDurationMs is < 0)
+                errors.Add("result.usage.audioDurationMs: cannot be negative");
+            if (result.Usage.PeakRamMb is < 0)
+                errors.Add("result.usage.peakRamMb: cannot be negative");
+            if (result.Usage.PeakVramMb is < 0)
+                errors.Add("result.usage.peakVramMb: cannot be negative");
+        }
+
+        if (result.Status == WorkerProtocol.StatusCompleted && (result.Representations is null || result.Representations.Count == 0))
+            errors.Add("result.representations: a completed run must emit at least one representation");
+
+        if (result.Representations is null)
+            return errors;
+
+        for (var index = 0; index < result.Representations.Count; index++)
+        {
+            var representation = result.Representations[index];
+            var prefix = $"result.representations[{index}]";
+
+            if (representation is null)
+            {
+                // System.Text.Json admits a null array element regardless of the annotation; an
+                // untrusted sidecar must not be able to turn that into a host exception.
+                errors.Add($"{prefix}: must not be null");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(representation.Kind))
+                errors.Add($"{prefix}.kind: required");
+            else if (!Enum.TryParse<RepresentationKind>(representation.Kind, ignoreCase: false, out _))
+                errors.Add($"{prefix}.kind: '{representation.Kind}' is not a RepresentationKind");
+            if (representation.SchemaVersion < 1)
+                errors.Add($"{prefix}.schemaVersion: must be at least 1");
+            if (representation.Text is null)
+                errors.Add($"{prefix}.text: required (may be empty, never absent)");
+
+            if (representation.Segments is null)
+                continue;
+
+            var textLength = representation.Text?.Length ?? 0;
+            var previousEnd = 0;
+            for (var segmentIndex = 0; segmentIndex < representation.Segments.Count; segmentIndex++)
+            {
+                var segment = representation.Segments[segmentIndex];
+                var segmentPrefix = $"{prefix}.segments[{segmentIndex}]";
+
+                if (segment is null)
+                {
+                    errors.Add($"{segmentPrefix}: must not be null");
+                    continue;
+                }
+
+                if (segment.CharStart < 0 || segment.CharEnd < segment.CharStart || segment.CharEnd > textLength)
+                    errors.Add($"{segmentPrefix}: char range must satisfy 0 <= charStart <= charEnd <= text.length");
+                if (segment.CharStart < previousEnd)
+                    errors.Add($"{segmentPrefix}: segments must not overlap and must be ordered by charStart");
+                if (segment.StartMs is < 0 || segment.EndMs is < 0)
+                    errors.Add($"{segmentPrefix}: timestamps cannot be negative");
+                if (segment is { StartMs: not null, EndMs: not null } && segment.EndMs < segment.StartMs)
+                    errors.Add($"{segmentPrefix}: endMs cannot precede startMs");
+                if (segment.Confidence is < 0 or > 1)
+                    errors.Add($"{segmentPrefix}.confidence: must be within [0, 1]");
+
+                previousEnd = Math.Max(previousEnd, segment.CharEnd);
+            }
+        }
+
+        return errors;
+    }
+}

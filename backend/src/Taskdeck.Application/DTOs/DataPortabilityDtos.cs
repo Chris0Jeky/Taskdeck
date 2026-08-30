@@ -145,4 +145,5 @@ public record AccountDeletionResultDto(
     int ExternalLoginsDeleted,
     int PreferencesDeleted,
     int ArtefactsDeleted = 0,
-    int TranscriptsDeleted = 0);
+    int TranscriptsDeleted = 0,
+    int DurableCapturesDeleted = 0);

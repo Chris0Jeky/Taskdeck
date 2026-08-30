@@ -668,6 +668,72 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("BoardAccesses", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Capture", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("CapturedAtClient")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CapturedAtServer")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("ContextBoardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Intent")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("LegacyRequestId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("LegacySource")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Lifecycle")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("OriginAdapter")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("PrimaryModality")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Producer")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserTitle")
+                        .HasMaxLength(240)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContextBoardId");
+
+                    b.HasIndex("LegacyRequestId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "CreatedAt");
+
+                    b.HasIndex("UserId", "Lifecycle");
+
+                    b.ToTable("Captures", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.Card", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2444,6 +2510,20 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Board");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.Capture", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.Board", null)
+                        .WithMany()
+                        .HasForeignKey("ContextBoardId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Card", b =>

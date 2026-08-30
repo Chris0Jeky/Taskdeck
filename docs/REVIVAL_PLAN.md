@@ -1,6 +1,6 @@
 # Taskdeck Revival Plan — Free Open Beta → Commercial Horizon
 
-Last Updated: 2026-08-29
+Last Updated: 2026-08-30
 
 **Status:** Active execution plan (maintainer-decided 2026-07-10, **ADR-0044**; supersedes the archive pivot). Product identity, direction, and the release-theme ladder are owned by `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23); this plan owns wave sequencing, the issue map, and ship gates.
 **Authority:** the ratified REVIVAL/GEN waves and ADR-0051's bounded autonomous-admission lane are the only intake paths. Existing tracked backlog may be promoted under §5 without another owner decision; new product surface remains allowed only where §7 or a later Accepted ADR/plan amendment grants it.
@@ -8,6 +8,7 @@ Last Updated: 2026-08-29
 **Issue wave:** `REVIVAL-*` issues on GitHub (label `revival`); tracker REVIVAL-00 = `#1311` (amends `#1278`).
 **Issue numbers:** REVIVAL-00 `#1311` · 01 `#1297` · 02 `#1298` · 03 `#1299` · 04 `#1300` · 05 `#1301` · 06 `#1302` · 07 `#1303` · 08 `#1304` · 09 `#1305` · 10 `#1306` · 11 `#1307` · 12 `#1308` · 13 `#1309` · 14 `#1310`.
 **Phase-4 wave (ADR-0046, 2026-07-13, label `generalist`):** tracker GEN-00 = `#1327`; children GEN-01..12 = `#1315`–`#1326` (see §4 Phase 4).
+**Phase-5 wave (ADR-0065, 2026-08-30, label `context-fabric`):** tracker CF-00 = `#2254`; children CF-01..CF-24 = `#2255`–`#2277` (CF-19 = GEN-03 `#1317`); map in `docs/architecture/CONTEXT_FABRIC.md` (see §4 Phase 5).
 
 ---
 
@@ -46,7 +47,10 @@ The beta is **free and wide open** — its job is adoption, feedback, and exposu
 | **v0.1.2** | **SHIPPED 2026-08-25 (tag at `9766edbb5`).** Honest-Windows-Beta correction: the `#1876` double-click/startup fix plus the Priority I tranche | q-3 gate satisfied: maintainer accepted the release deck in-session 2026-08-24 (`#1947`); milestone groomed to zero open and closed, residuals re-milestoned to v0.2 |
 | **v0.2 "Coherent Context-to-Action Loop"** | **SHIPPED 2026-08-29 (tag at `48c05e1dc`).** Milestone 0 open / 15 closed; the transcript loop acceptance is recorded in `docs/STATUS.md`; the maintainer accepted the release deck in-session (q-1 B, `#1947`) and the agent cut the tag under that ruling | a real 45-min transcript → reviewable, evidence-linked, typed action items; capture fields never silently dropped; release checks green |
 | **v0.3 "Accountable Agents + Downloadable Beta"** | **`v0.3.0-rc.1` SHIPPED 2026-08-30 (prerelease, tag at `9d2ea3c7c`)**; final **when ready — no dates** (maintainer ruling 2026-08-30, RC deck q-6). Phase 3 packages MCP with scoped keys, Review liveness, honest degradation, the double-click start, the trusted private-instance proof (#1772 Stage 1) and the maintainer-pulled fix queue; the **hosted, install-free open beta moved to v0.4** (deck note 3) | RC checks green on the exact head; milestone closed or explicitly re-ruled; launch kit drafted (#2242); `main` green |
-| **v0.4 "Hosted Open Beta + Work Model + Every Artefact"** | The install-free hosted open beta (#2243: ADR-0061 stages → open registration under the beta threat model), the work-model slices #2087/#2089/#2092/#2093 (q-3 B), opt-in analytics (#1308 Option B), Phase 4 ADR-0046 artefact intake (screenshots/PDFs/files, project dossiers, generalist legibility, friends-family channel), refactoring (#2236) and performance (#2237) passes | a screenshot → reviewable typed proposals on a real board; a non-technical invitee reaches first-approved-proposal unassisted |
+| **v0.4 "Hosted Open Beta + Work Model + Fabric Foundation"** | The install-free hosted open beta (#2243: ADR-0061 stages → open registration under the beta threat model), the work-model slices #2087/#2089/#2092/#2093 (q-3 B), opt-in analytics (#1308 Option B), refactoring (#2236) and performance (#2237) passes, the behaviour-preserving Context Fabric foundation (Phase 5 slices 1–3 + storage seam: CF-01/02/03/05/06/07, CF-23), and the Worker Protocol host CF-04 (slice 5, not behaviour-preserving — it launches supervised sidecars) because the ADR-0048 worker #1429 is its first sidecar. The former "Every Artefact" content (GEN-03/04/06) moved into Phase 5; GEN-07/08/11/12 stay with #1327 | a stranger registers and runs the loop; every legacy capture reads back byte-identically through `ICaptureStore`; the transcript golden path is unchanged behind the capability runner |
+| **v0.5 "Speak, Type, Paste, or Drop"** | Phase 5 payoff: candidates (CF-08), context resolver (CF-09), the voice vertical (CF-12/13/14/16), Universal Capture (CF-20), capture-centred review + presentation profiles (CF-21), GEN-03 #1317 as a registered vision processor | a voice note → time-anchored transcript → reviewable proposal → approve → apply → the audio range plays from Review; no board required to capture or understand |
+| **v0.6 "Under Your Rules"** | Phase 5 policy families: processing profiles + router v1 + receipts (CF-10), cache (CF-11), cloud STT + benchmark (CF-15), OCR sidecar (CF-18), meeting bundle (CF-17), evaluation corpus (CF-24), first delegated-authority class (CF-22, own gate) | a *Private* profile never egresses; a route receipt explains every processor choice; CF-22 ships only after its evidence bar |
+| **v0.7–v1.0** | Project Companion → Teams and Trust → Scale and Steadiness → General Availability (`PRODUCT_DIRECTION.md` §5; milestones 8–11) | seeded issue by issue from v0.5/v0.6 evidence; v1.0 gate = frozen contracts + accepted release deck |
 | **Checkpoint (floor 2026-09-01, walkthrough q-8; re-scoped 2026-08-27)** | Traction + dogfooding review (≥10 days from the 2026-08-22 sprint start is a floor, not eligibility; ADR-0044's conditions still control). **2026-08-27 maintainer ruling (recorded on #1271): dogfooding is a standing tracker, not a release gate** — the maintainer tried daily use and found v0.1.2 short of his real workflow; the recorded assessment is *keep building features/polish first*, explicitly not an archive trigger, and no release waits on accumulated usage days | fall back only if traction and dogfooding are both absent; mixed outcomes require an explicit maintainer plan amendment — the 2026-08-27 ruling IS such an assessment for the current window |
 
 ### v0.1.2 dogfooding follow-up allocation
@@ -92,7 +96,7 @@ Dogfooding (`#1271`) runs through everything from day one — including WhisperX
 | Durable `Transcript` entity + evidence spans (`ProvenanceEvidenceLink` char-offset spans into the transcript) → every proposed card deep-links to its transcript span | REVIVAL-09 | persistence/export/deletion foundation shipped in PR `#1556`; `#1305` **closed 2026-08-27** (PR `#2144`: orphan vocabulary removed, INV-12 rewired onto `ProvenanceEvidenceLink`, cap/retention documented; spans live-verified in the acceptance walkthrough) — shipped in v0.2.0; residuals `#1987`/`#1284` (provenance footnote wiring) |
 | `OpenAICompatible` named provider + true SSE streaming | REVIVAL-10 | formalizes OpenRouter/Groq/DeepSeek; fixes fake streaming |
 | Risk-tiered review prioritization + batch-confirm ergonomics + model-derived confidence (replace hardcoded 0.8/0.75) | REVIVAL-11 | reduces rubber-stamping without bypassing ADR-0003: every proposed board write still requires explicit approve, then explicit execute; no standing policy or confidence threshold may auto-apply it |
-| Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | **gated on transcript-paste proving value in dogfooding** |
+| Audio upload + local WhisperX sidecar | REVIVAL-08 phase 2b | Gate met by the 2026-08-27 acceptance walkthrough (transcript paste proved value); **re-seeded 2026-08-30 as the Context Fabric voice vertical** — CF-12 `#2266` audio source, CF-14 `#2268` WhisperX sidecar through the worker protocol, CF-16 `#2270` voice-note UX (Phase 5, v0.5) |
 
 ### Phase 3 — slim + launch (v0.3)
 | Item | Issue | Notes |
@@ -122,6 +126,53 @@ Accepted 2026-07-13 after the maintainer's twin-app evaluation (decision: extend
 | Generalist legibility: mode-scoped nav, plain-language pass, guided-first default | GEN-10 `#1324` | G-A |
 | Friends & family beta channel (runbook, invite path, feedback loop, metrics) | GEN-11 `#1325` | G-C |
 | Twin-app decision gate (strategy; default **no**) | GEN-12 `#1326` | checkpoint |
+
+### Phase 5 — the Context Fabric (v0.4 foundation → v0.5 payoff → v0.6 rules; ADR-0065, tracker `#2254`)
+
+Accepted under the maintainer's explicit 2026-08-30 delegation (rulings recorded on `#2254`, revisable
+there). One architecture for text, voice, images, documents, connectors and agents: a durable `Capture`
+aggregate, immutable representations with typed evidence anchors, persisted semantic candidates, and
+capability-based processing behind a processor registry and the Taskdeck Worker Protocol. The wave is
+seeded complete; children carry the `context-fabric` label, the CF-NN prefix, and the milestone they
+belong to. The foundation slices (1–3 + the storage seam) are behaviour-preserving and join v0.4, as
+does the Worker Protocol host CF-04 (slice 5 — not behaviour-preserving; scheduled early because the
+ADR-0048 worker `#1429` is its first sidecar); the visible payoff is v0.5; the policy families are v0.6.
+Scaffolding (PR `#2280`, 2026-08-30): the `Capture` entity + empty `Captures` table, `ICaptureStore`,
+the `ContextFabric:DualWriteCaptures` flag (off), the manifest/protocol contracts and validators — see
+`docs/architecture/CONTEXT_FABRIC.md` §2.
+
+| Item | Issue | Milestone | Depends on |
+|---|---|---|---|
+| CF-01 durable Capture aggregate (ID-preserving backfill, dual-write, `ICaptureStore` reads) | `#2255` | v0.4 | scaffold |
+| CF-02 capture dimensions (modality, origin, producer, intent); `CaptureSource` derived | `#2256` | v0.4 | CF-01 |
+| CF-03 `ProcessingJob`/`ProcessingRun` + capability runner | `#2257` | v0.4 | CF-01 |
+| CF-04 Worker Protocol v1 host + manifest registry + conformance suite (`#1429` first sidecar) | `#2258` | v0.4 | CF-03 |
+| CF-05 transcript lane adapted to `semantic.extract` (no new lane predicates) | `#2259` | v0.4 | CF-03, CF-06 |
+| CF-06 `IRepresentationStore` façade + additive segment timing | `#2260` | v0.4 | CF-01, CF-03 |
+| CF-07 `EvidenceAnchor` + transcript span migration | `#2261` | v0.4 | CF-06 |
+| CF-23 `IBlobStore` / `SqliteBlobStore` | `#2276` | v0.4 | CF-01 |
+| CF-08 `SemanticCandidate` v1 (byte-parity gate) | `#2262` | v0.5 | CF-05, CF-07 |
+| CF-09 context resolver + boardless triage (shared with chat `#2004`) | `#2263` | v0.5 | CF-08 |
+| CF-12 voice-source foundation | `#2266` | v0.5 | CF-01, CF-02, CF-23 |
+| CF-13 lightweight local STT spike | `#2267` | v0.5 | CF-04, CF-12 |
+| CF-14 WhisperX sidecar processor | `#2268` | v0.5 | CF-04, CF-06, CF-07, CF-12 |
+| CF-16 voice-note capture UX + audio evidence playback | `#2270` | v0.5 | CF-12, CF-14/13, CF-07 |
+| CF-20 Universal Capture composer (absorbs GEN-06 `#1320`) | `#2273` | v0.5 | CF-02, CF-09, CF-12, CF-16 |
+| CF-21 capture-centred review, receipts, Flow/Guided/Control | `#2274` | v0.5 | CF-08, CF-09, CF-07 |
+| CF-19 = GEN-03 cloud vision as one registered processor | `#1317` | v0.5 | CF-04 |
+| CF-10 processing profiles + router v1 + route receipts | `#2264` | v0.6 | CF-03, CF-04 |
+| CF-11 processing cache + selective escalation | `#2265` | v0.6 | CF-03, CF-06, CF-10 |
+| CF-15 cloud speech adapter + benchmark harness | `#2269` | v0.6 | CF-04, CF-10, CF-12, CF-24 |
+| CF-17 meeting understanding bundle | `#2271` | v0.6 | CF-08, CF-09, CF-14, CF-21 |
+| CF-18 local OCR sidecar (amends ADR-0046 d5) | `#2272` | v0.6 | CF-04, CF-06, CF-07, CF-10 |
+| CF-22 authority-policy evaluation v1 (ADR-0057 first slice, own gate) | `#2275` | v0.6 | CF-08, CF-09, CF-21, CF-24 |
+| CF-24 evaluation corpus + metrics | `#2277` | v0.6 | CF-03, CF-08 |
+
+First credible vertical: **CF-01 → CF-12 → CF-14 → CF-06/07 → existing triage → existing proposal
+compiler → CF-16**. Not to be combined with the canonical WorkItem migration, delegated autonomy, every
+image/document processor, microservice decomposition, adaptive provider learning, or team approval
+chains. v0.7–v1.0 themes are epic-level milestone descriptions (`PRODUCT_DIRECTION.md` §5) and are seeded
+issue by issue only as the v0.5/v0.6 evidence lands.
 
 ## 5. What agents need to know (execution contract)
 
@@ -178,7 +229,9 @@ Authorized: REVIVAL-01 (registration gate), REVIVAL-08/-09/-10/-11 (transcript e
 
 GEN-06 (`#1320`) is wave-authorized as the Paper UX over that approved intake pipeline, not as a separate backend-surface exception: it adds no second mutation path or standalone view. It remains lane G-B and therefore waits on its transcript/artefact-routing dependencies.
 
-Not authorized without a plan amendment: the twin generalist application (GEN-12 `#1326` is the evidence gate), other new views/dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens).
+**Phase-5 additions (ADR-0065, accepted under delegation 2026-08-30; tracker CF-00 `#2254`):** the durable `Capture` aggregate and its ID-preserving backfill (CF-01/02), `ProcessingJob`/`ProcessingRun` and the capability runner (CF-03), the Worker Protocol host, processor registry and sidecar supervisor (CF-04 — one supervisor shared with the ADR-0048 worker `#1429`), representation and evidence-anchor tables (CF-06/07), `IBlobStore` (CF-23), persisted semantic candidates (CF-08), the context resolver (CF-09), audio source assets with a playback endpoint and retention jobs (CF-12), the transcription sidecars and one cloud speech adapter (CF-13/14/15), processing profiles and route receipts (CF-10/11), the local OCR sidecar (CF-18), Universal Capture and capture-centred review (CF-20/21), the meeting bundle (CF-17), and the evaluation read model (CF-24). **CF-22** (the first delegated-authority operation class) is authorised in shape only and keeps ADR-0057's own separate evidence gate. New processors beyond those named enter as manifests behind the registry, not as new lanes; new `CaptureSource` values and new request-type lane predicates are explicitly not authorised.
+
+Not authorized without a plan amendment: the twin generalist application (GEN-12 `#1326` is the evidence gate), other new views/dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens), object-store blob storage before ADR-0061 stage 3, and utility-scored routing before the CF-24 corpus exists.
 
 ## 8. Metrics and the checkpoint
 
