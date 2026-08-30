@@ -511,6 +511,18 @@ export function useReviewProposals() {
   let refreshInFlight = false
   let shouldRefreshNow: (() => boolean) | null = null
   let refreshAbort: AbortController | null = null
+  /**
+   * Called synchronously immediately AFTER a background poll's answer has
+   * replaced the queue (#2215 A). It is the only signal a surface has that the
+   * queue moved without the reviewer asking: every reviewer-driven path (rail
+   * click, filter change, deep link, decision) runs through the surface's own
+   * handlers, while this one lands on its own.
+   *
+   * Deliberately fired AFTER the assignment rather than before it, so a surface
+   * whose selection is a computed over `proposals` can compare the selection
+   * Vue is about to render against the one its watcher reports as previous.
+   */
+  let onQueueReplacedByPoll: (() => void) | null = null
   // Bumped by any out-of-band write that a queue read started earlier would
   // clobber. The array-identity guard cannot catch every such write: saving a
   // proposal revision updates `useProposalRevisions` state and never touches
@@ -631,6 +643,11 @@ export function useReviewProposals() {
         }
       }
       proposals.value = next
+      // The queue moved under a reviewer who did not ask for it. Surfaces use
+      // this to notice that the row they were rendering has just been dropped
+      // or reordered away, instead of silently sliding onto another one
+      // (#2215 A).
+      onQueueReplacedByPoll?.()
     } catch (e: unknown) {
       // An abort is this surface's own teardown, not a failure.
       if (controller.signal.aborted) return
@@ -674,12 +691,20 @@ export function useReviewProposals() {
    * owning surface hold a tick while the reviewer is mid-decision (a confirm
    * dialog open, an action in flight) so the record under the cursor cannot
    * change underneath the decision being made.
+   *
+   * `hooks.onQueueReplaced` fires once per landed poll, right after the queue
+   * has been replaced, so a surface can tell a poll-driven selection change
+   * apart from one the reviewer made (#2215 A).
    */
-  function startQueueRefresh(shouldRefresh?: () => boolean) {
+  function startQueueRefresh(
+    shouldRefresh?: () => boolean,
+    hooks?: { onQueueReplaced?: () => void },
+  ) {
     // Guard against double-start exactly as startClock does: a second call
     // would overwrite the handle and leak the first interval forever.
     if (refreshInterval !== null) return
     shouldRefreshNow = shouldRefresh ?? null
+    onQueueReplacedByPoll = hooks?.onQueueReplaced ?? null
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', onRefreshVisibilityChange)
     }
@@ -703,6 +728,7 @@ export function useReviewProposals() {
       refreshAbort = null
     }
     shouldRefreshNow = null
+    onQueueReplacedByPoll = null
   }
 
   onScopeDispose(stopQueueRefresh)

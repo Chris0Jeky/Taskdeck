@@ -7,6 +7,10 @@ import {
 import { useToastStore } from '../store/toastStore'
 import { getErrorDisplay } from './useErrorMapper'
 import type { Proposal as ApiProposal } from '../types/automation'
+import {
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../utils/proposalIdentity'
 
 export function useProposalRevisions(
   activeProposal: Ref<ApiProposal | null>,
@@ -62,9 +66,45 @@ export function useProposalRevisions(
     }
   }
 
+  // Keyed on the proposal AND its effective revision (#2215 B). Watching the id
+  // alone left this state stale whenever a background queue poll brought in a
+  // revision another session had saved: `revisionCount` kept the count from
+  // entry, and `editablePayload` kept preferring the cached earlier
+  // `latestRevision`, so opening Edit and saving would build a newer revision
+  // out of operations the server had already superseded.
   watch(
-    () => activeProposal.value?.id,
-    (id) => {
+    () => [activeProposal.value?.id, proposalRevisionIdentity(activeProposal.value)] as const,
+    ([id, revisionId], previous) => {
+      const previousId = previous?.[0]
+      // The getter builds a fresh tuple on every evaluation, so this watcher
+      // also fires when a poll replaces the proposal OBJECT with an equivalent
+      // one. Only a genuine move of the EFFECTIVE revision does any work —
+      // otherwise every 15 s tick would re-read the revision list for an
+      // unchanged proposal, and (round 2) every approval of a revised proposal
+      // would look like a collaborator edit, because `latestRevisionId` is
+      // nulled on the wire the moment the proposal leaves PendingReview.
+      if (previous && id === previousId) {
+        if (!proposalRevisionMoved(previous[1] ?? null, revisionId)) return
+        // Same proposal, newer revision. Resync the authoritative state without
+        // the full reset below: the reviewer may have the editor open, and
+        // clearing `editing` here would close a composer mid-sentence over a
+        // change that happened elsewhere.
+        loadGeneration += 1
+        // The count is no longer authoritative until this load answers, and the
+        // load can FAIL — its catch zeroes `revisionCount` and nulls
+        // `latestRevision`. Leaving `revisionsLoaded` true would publish that
+        // failure as fact: `PaperReviewView` would short-circuit Apply with a
+        // false zero-op toast, and `editablePayload` would fall back to the raw
+        // pre-revision operations. False is the honest state — consumers then
+        // let the backend decide rather than short-circuiting.
+        revisionsLoaded.value = false
+        // Silent: this load is driven by a background poll the reviewer never
+        // asked for, and `refreshProposals` deliberately raises no toast for
+        // one. An error toast here would break that doctrine from the far side
+        // of the same tick.
+        if (id) void loadRevisionState(id, { silent: true })
+        return
+      }
       loadGeneration += 1
       saveGeneration += 1
       editing.value = false

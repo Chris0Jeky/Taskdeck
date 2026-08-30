@@ -9,7 +9,11 @@ import type { Proposal as ApiProposal } from '../types/automation'
 import { getErrorDisplay, getValidationReason, isAccessDeniedError, isValidationError } from './useErrorMapper'
 import { isProposalReadOnly } from './useReviewProposals'
 import { usePerformanceMark } from './usePerformanceMark'
-import { proposalIdsEqual } from '../utils/proposalIdentity'
+import {
+  proposalIdsEqual,
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../utils/proposalIdentity'
 
 /**
  * How the review diff pane presents its content (#1397):
@@ -177,6 +181,51 @@ export function useReviewActions(
       // the read-only presentation.
       const requestId = ++latestDiffRequestId
       presentStoredPreview(proposal, requestId)
+    },
+  )
+
+  // #2215 B: the open pane is keyed on the proposal id alone, so a queue refresh
+  // that brings in a revision another reviewer saved leaves a diff on screen that
+  // was computed for the previous revision — while Approve pins, and Apply
+  // executes, the server's latest. Track the (proposal, revision) pair the pane
+  // was rendered for and close it when the revision moves under it.
+  //
+  // The pair is remembered in closure state rather than read from the watcher's
+  // `oldValue`, because opening a pane also changes this getter (null → row) and
+  // must NOT be mistaken for a revision landing under an already-open pane.
+  let openDiffProposalId: string | null = null
+  let openDiffRevisionId: string | null = null
+  watch(
+    () => {
+      const id = selectedDiffProposalId.value
+      if (!id) return null
+      return proposals.value.find((p) => proposalIdsEqual(p.id, id)) ?? null
+    },
+    (proposal) => {
+      if (!proposal) {
+        openDiffProposalId = null
+        openDiffRevisionId = null
+        return
+      }
+      // The EFFECTIVE revision, and only a genuine move (round 2): a decision
+      // taken elsewhere nulls `latestRevisionId` on the wire, which must let
+      // the pane convert to the stored decision-time presentation rather than
+      // wiping it as a collaborator edit.
+      const revisionId = proposalRevisionIdentity(proposal)
+      if (
+        openDiffProposalId !== null &&
+        proposalIdsEqual(openDiffProposalId, proposal.id) &&
+        proposalRevisionMoved(openDiffRevisionId, revisionId)
+      ) {
+        // Cancel any in-flight fetch so a late response cannot re-open the pane.
+        latestDiffRequestId += 1
+        resetDiffState()
+        openDiffProposalId = null
+        openDiffRevisionId = null
+        return
+      }
+      openDiffProposalId = proposal.id
+      openDiffRevisionId = revisionId
     },
   )
 
