@@ -1124,7 +1124,10 @@ describe('useReviewProposals', () => {
         // The list succeeded, so a refused pin does not revoke the readable
         // queue or suspend its interval.
         expect(rp.queueAccessRevoked.value).toBe(false)
-        expect(onQueueReplaced).toHaveBeenCalledTimes(1)
+        // The explicit unavailable state owns this transition. Signalling an
+        // ordinary queue replacement would make Paper render its settled-row
+        // notice first and strand the unavailable hash behind that notice.
+        expect(onQueueReplaced).not.toHaveBeenCalled()
         expect(mockToast.error).not.toHaveBeenCalled()
 
         const recoveredTarget = {
@@ -1136,7 +1139,7 @@ describe('useReviewProposals', () => {
 
         expect(rp.proposals.value).toEqual([recoveredTarget])
         expect(rp.unavailableProposalId.value).toBeNull()
-        expect(onQueueReplaced).toHaveBeenCalledTimes(2)
+        expect(onQueueReplaced).toHaveBeenCalledTimes(1)
         rp.stopQueueRefresh()
       },
     )

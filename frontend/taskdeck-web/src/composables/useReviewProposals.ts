@@ -697,7 +697,10 @@ export function useReviewProposals() {
       // this to notice that the row they were rendering has just been dropped
       // or reordered away, instead of silently sliding onto another one
       // (#2215 A).
-      onQueueReplacedByPoll?.()
+      // A refused or invalid deep-link target has its own explicit unavailable
+      // state. Arming the settled-row notice as well would let that notice win
+      // the render branch and hide the authoritative pin-level outcome.
+      if (!pinUnavailable) onQueueReplacedByPoll?.()
     } catch (e: unknown) {
       // An abort is this surface's own teardown, not a failure.
       if (controller.signal.aborted) return
