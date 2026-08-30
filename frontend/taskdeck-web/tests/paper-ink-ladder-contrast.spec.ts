@@ -76,8 +76,22 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+function blend(foreground: string, background: string, opacity: number): string {
+  const fg = hexToRgb(foreground)
+  const bg = hexToRgb(background)
+  const channels = fg.map((channel, index) =>
+    Math.round(channel * opacity + bg[index]! * (1 - opacity)),
+  )
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`
+}
+
 const THEMES: Theme[] = ['.paper', '.paper-night']
 const TEXT_GROUNDS = ['--paper', '--paper-2', '--paper-card'] as const
+
+const stampMetadataRule = css.match(
+  /\.paper \.stamp \.stamp-num,\s*\.paper-night \.stamp \.stamp-num\s*\{([^}]*)\}/,
+)?.[1]
+const stampMetadataOpacity = Number(stampMetadataRule?.match(/\bopacity:\s*(\d*\.?\d+)\s*;/)?.[1] ?? 1)
 
 describe.each(THEMES)('Paper ink ladder — %s', (theme) => {
   const block = extractBlock(theme)
@@ -117,6 +131,26 @@ describe.each(THEMES)('Paper status foregrounds — %s', (theme) => {
   it('--ember-ink clears 4.5:1 on --ember-tint (the .td-alert--error pairing)', () => {
     expect(contrast(readToken(block, '--ember-ink'), readToken(block, '--ember-tint')))
       .toBeGreaterThanOrEqual(4.5)
+  })
+})
+
+describe.each(THEMES)('Paper stamp metadata — %s', (theme) => {
+  const block = extractBlock(theme)
+
+  it.each(['--ink-deep', '--ember', '--applied', '--overdue'] as const)(
+    '%s clears 4.5:1 after the shared metadata opacity is applied',
+    (foreground) => {
+      const background = readToken(block, '--paper-card')
+      const renderedForeground = blend(readToken(block, foreground), background, stampMetadataOpacity)
+      expect(contrast(renderedForeground, background))
+        .toBeGreaterThanOrEqual(4.5)
+    },
+  )
+
+  it('keeps the shared metadata opacity measurable', () => {
+    expect(stampMetadataRule, 'shared .stamp-num rule').toBeDefined()
+    expect(stampMetadataOpacity).toBeGreaterThanOrEqual(0)
+    expect(stampMetadataOpacity).toBeLessThanOrEqual(1)
   })
 })
 
