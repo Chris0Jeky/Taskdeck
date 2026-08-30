@@ -25,6 +25,7 @@ import {
   extractUpgradingSection,
   parseChecksum,
   parseArgs,
+  MAX_RELEASE_BODY_LENGTH,
 } from './compose-release-notes.mjs'
 
 const composerPath = fileURLToPath(new URL('./compose-release-notes.mjs', import.meta.url))
@@ -359,6 +360,23 @@ test('a missing tag, repo or asset name fails before anything is rendered', () =
     assert.equal(body, '')
     assert.ok(errors.some((e) => e.includes(`${missing} is required`)), `${missing}: ${JSON.stringify(errors)}`)
   }
+})
+
+test('a body over the GitHub release-body limit fails, naming the overflow', () => {
+  const huge = `# Taskdeck\n\n${'x'.repeat(MAX_RELEASE_BODY_LENGTH + 500)}\n`
+  const { errors } = compose({ notesText: huge })
+  const overflow = errors.find((e) => e.includes('over the'))
+  assert.ok(overflow, `expected a length error, got: ${JSON.stringify(errors)}`)
+  assert.match(overflow, new RegExp(`over the ${MAX_RELEASE_BODY_LENGTH} limit`))
+  assert.match(overflow, /composed body is \d+ characters/)
+  assert.ok(MAX_RELEASE_BODY_LENGTH < 125000, "the guard must sit under GitHub's own 125,000 cap")
+})
+
+test('a body just under the limit still renders', () => {
+  const nearly = `# Taskdeck\n\n${'x'.repeat(MAX_RELEASE_BODY_LENGTH - 12000)}\n`
+  const { body, errors } = compose({ notesText: nearly })
+  assert.deepEqual(errors, [])
+  assert.ok(body.length <= MAX_RELEASE_BODY_LENGTH)
 })
 
 test('parseArgs accepts both --name value and --name=value', () => {

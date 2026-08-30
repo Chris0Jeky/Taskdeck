@@ -21,6 +21,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+// `matchesGlob` is the same minimatch-shaped matcher `actions/download-artifact`
+// applies to its `pattern:` input, so the artifact-name check below is a real
+// glob evaluation rather than a string comparison that cannot see the bug.
+import { matchesGlob } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -674,23 +678,79 @@ test('the composer is fed the checksum, UPGRADING.md and the curated notes for t
 
 test('generate-notes is attempted only when a tag actually exists', () => {
   const job = jobBlock('compose-notes')
-  assert.match(
-    job,
-    /if \[ "\$\{RELEASE_PUBLISH\}" = "true" \]; then\n\s+gh api --method POST "repos\/\$\{GITHUB_REPOSITORY\}\/releases\/generate-notes"/,
-    'a rehearsal has no tag for generate-notes to read',
+  const guardAt = job.indexOf('if [ "${RELEASE_PUBLISH}" = "true" ]; then')
+  const callAt = job.indexOf('gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes"')
+  const elseAt = job.indexOf('\n          else\n', guardAt)
+  assert.ok(guardAt !== -1 && callAt !== -1 && elseAt !== -1)
+  assert.ok(
+    guardAt < callAt && callAt < elseAt,
+    'the call sits inside the publish branch — a rehearsal has no tag for generate-notes to read',
   )
-  assert.match(job, /-f "tag_name=\$\{RELEASE_TAG\}"/)
+  assert.match(job, /generate_args=\(-f "tag_name=\$\{RELEASE_TAG\}"\)/)
+  assert.match(job, /Rehearsal dispatch: no release tag exists/, 'the rehearsal branch says so in the log')
 })
 
-test('the rendered notes upload as a run artifact outside the release-* asset pattern', () => {
+test('the changelog base is the newest published stable release, with bounded retries', () => {
   const job = jobBlock('compose-notes')
-  assert.match(job, /name: release-page-notes/, 'the rehearsal preview artifact')
-  assert.match(job, /path: release-notes\.md/)
-  assert.doesNotMatch(
+  assert.match(
     job,
-    /name: release-notes\b/,
-    'a `release-*` name would be swept into create-release\'s merge-multiple asset download',
+    /gh release list --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--exclude-pre-releases --exclude-drafts --limit 1/,
+    'a prerelease must never become the base of the next stable page',
   )
+  assert.match(
+    job,
+    /generate_args\+=\(-f "previous_tag_name=\$\{previous_tag\}"\)/,
+    'the base is stated explicitly rather than inferred by GitHub',
+  )
+  assert.match(
+    job,
+    /if \[ -n "\$\{previous_tag\}" \] && \[ "\$\{previous_tag\}" != "\$\{RELEASE_TAG\}" \]; then/,
+    'a first release, and a re-run of an already-published stable tag, omit the field',
+  )
+  assert.match(job, /letting GitHub infer the changelog base/, 'the omission is logged, not silent')
+  assert.match(job, /for attempt in 1 2 3; do/, 'the API call retries a bounded number of times')
+  assert.match(job, /sleep "\$\(\(attempt \* 10\)\)"/, 'the same 10/20s backoff as the asset upload')
+  assert.match(job, /generate-notes failed after 3 attempts[\s\S]{0,120}?exit 1/, 'exhausted retries fail closed')
+})
+
+// The bug this replaces a decorative assertion for: `actions/download-artifact`
+// matches `pattern:` with MINIMATCH, so `release-*` swallows every name that
+// begins `release-` — the original `release-page-notes` included. With
+// merge-multiple the Markdown would have landed in release-assets/ and been
+// published as a stray asset beside the ZIP. A string comparison cannot see
+// that; a real glob match can, so the workflow's OWN values are parsed out and
+// matched here.
+test('the composed-body artifact name cannot be swept into the release asset download', () => {
+  const uploadName = /uses: actions\/upload-artifact@[^\n]*\n\s+with:\n\s+name: ([^\n]+)/.exec(
+    jobBlock('compose-notes'),
+  )
+  assert.ok(uploadName, 'compose-notes must upload the rendered body as a named artifact')
+  const artifactName = uploadName[1].trim()
+
+  const createRelease = jobBlock('create-release')
+  const assetPattern = /uses: actions\/download-artifact@[^\n]*\n\s+with:\n\s+pattern: ([^\n]+)/.exec(createRelease)
+  assert.ok(assetPattern, 'create-release must download the built assets by pattern')
+  const pattern = assetPattern[1].trim()
+
+  // Self-check: prove the matcher really does what the bug depended on, so a
+  // broken helper cannot make this test pass by always returning false.
+  assert.equal(matchesGlob('release-win-x64', pattern), true, 'the asset artifacts do match the pattern')
+  assert.equal(
+    matchesGlob('release-page-notes', pattern),
+    true,
+    'the original name DID match — this is the defect being pinned',
+  )
+
+  assert.equal(
+    matchesGlob(artifactName, pattern),
+    false,
+    `artifact "${artifactName}" matches the asset download pattern "${pattern}" and would be published as a stray release asset`,
+  )
+
+  // …and it is fetched by exact name, never by a pattern that could widen.
+  const byName = /uses: actions\/download-artifact@[^\n]*\n\s+with:\n\s+name: ([^\n]+)/.exec(createRelease)
+  assert.ok(byName, 'create-release must download the composed body by exact name')
+  assert.equal(byName[1].trim(), artifactName, 'upload and download must name the same artifact')
 })
 
 test('the release body is the composed file on create AND re-asserted on publish', () => {
@@ -698,7 +758,7 @@ test('the release body is the composed file on create AND re-asserted on publish
   assert.match(job, /needs: \[resolve-source, build-backend, compose-notes\]/)
   assert.match(
     job,
-    /name: release-page-notes\n\s+path: release-notes\//,
+    /name: composed-page-body\n\s+path: release-notes\//,
     'create-release downloads the composed body by its exact artifact name',
   )
   assert.match(

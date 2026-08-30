@@ -40,6 +40,13 @@ import { pathToFileURL } from 'node:url'
 export const QUICK_START_SOURCE_PATH = 'docs/releases/WINDOWS_QUICK_START.md'
 
 /**
+ * GitHub rejects a release body over 125,000 characters. Failing here names the
+ * overflow and the file to trim, instead of letting `gh release create` reject
+ * the publish with an opaque 422 after the assets are already built.
+ */
+export const MAX_RELEASE_BODY_LENGTH = 120000
+
+/**
  * shields.io encodes its own separators inside a path segment: a literal dash
  * is `--`, a literal underscore `__`, and a space `_`. Skipping this turns
  * `v0.3.0-rc.1` into a badge that reads `v0.3.0` with `rc.1` as its colour.
@@ -252,7 +259,16 @@ export function composeReleaseNotes({
     )
   }
 
-  return { body: `${sections.join('\n\n')}\n`, warnings, errors }
+  const body = `${sections.join('\n\n')}\n`
+  if (body.length > MAX_RELEASE_BODY_LENGTH) {
+    errors.push(
+      `compose-release-notes: composed body is ${body.length} characters, ` +
+        `${body.length - MAX_RELEASE_BODY_LENGTH} over the ${MAX_RELEASE_BODY_LENGTH} limit — ` +
+        'trim docs/releases/notes/<tag>.md or the UPGRADING section',
+    )
+  }
+
+  return { body, warnings, errors }
 }
 
 // -----------------------------------------------------------------------------

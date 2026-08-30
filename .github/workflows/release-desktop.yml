@@ -25,7 +25,7 @@
 # (#2234) — download button, checksum and quick start first, then breaking
 # changes, curated highlights and the grouped changelog — and passed to
 # `--notes-file` on create and re-asserted on publish. A rehearsal dispatch
-# renders it too and uploads it as the `release-page-notes` artifact.
+# renders it too and uploads it as the `composed-page-body` artifact.
 #
 # Tracked by: #535 (PKG-03), #1795, #1806, #1878, #2217, #2234
 # =============================================================================
@@ -630,8 +630,46 @@ jobs:
           # so the changelog renders as a documented placeholder rather than
           # failing the very dispatch whose job is to preview the page.
           if [ "${RELEASE_PUBLISH}" = "true" ]; then
-            gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
-              -f "tag_name=${RELEASE_TAG}" > "${generated}"
+            # The changelog BASE is stated explicitly. Left to infer, GitHub
+            # picks the previous release of ANY kind: once v0.3.0-rc.1 exists,
+            # the stable v0.3.0 page would cover only rc.1 -> final and hide
+            # everything since v0.2.0 from the people the stable page is for.
+            # The base is therefore the newest published, non-draft,
+            # NON-prerelease release, so both a stable page and an RC page span
+            # the whole gap since the last stable release. `gh release list`
+            # returns newest-first.
+            previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" \
+              --exclude-pre-releases --exclude-drafts --limit 1 \
+              --json tagName --jq '.[0].tagName // empty')"
+            generate_args=(-f "tag_name=${RELEASE_TAG}")
+            # The inequality guard covers a RE-RUN after this very tag was
+            # already published as a stable release: it would then be its own
+            # newest stable release, and a self-comparison is empty.
+            if [ -n "${previous_tag}" ] && [ "${previous_tag}" != "${RELEASE_TAG}" ]; then
+              generate_args+=(-f "previous_tag_name=${previous_tag}")
+              printf 'Changelog base: %s (newest published stable release).\n' "${previous_tag}"
+            else
+              printf 'No earlier stable release found; letting GitHub infer the changelog base.\n'
+            fi
+
+            # Bounded retries, matching the asset-upload loop below: a transient
+            # API failure must not cost the whole publish.
+            generated_ok=0
+            for attempt in 1 2 3; do
+              if gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+                "${generate_args[@]}" > "${generated}"; then
+                generated_ok=1
+                break
+              fi
+              printf '::warning::generate-notes failed (attempt %s/3).\n' "${attempt}"
+              if [ "${attempt}" -lt 3 ]; then
+                sleep "$((attempt * 10))"
+              fi
+            done
+            if [ "${generated_ok}" -ne 1 ]; then
+              printf '::error::generate-notes failed after 3 attempts; refusing to publish a changelog-less page.\n'
+              exit 1
+            fi
           else
             printf 'Rehearsal dispatch: no release tag exists, so the changelog section is a placeholder.\n'
             : > "${generated}"
@@ -656,13 +694,17 @@ jobs:
             cat release-notes.md
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      # Named OUTSIDE the `release-*` pattern on purpose: create-release
-      # downloads `release-*` with merge-multiple into the asset set, so a
-      # matching name would publish this Markdown as a release asset.
+      # The name must NOT match create-release's `pattern: release-*` asset
+      # download. That download uses minimatch, so `release-*` swallows any
+      # name beginning `release-` — `release-page-notes` included — and
+      # merge-multiple would drop this Markdown into release-assets/, where the
+      # upload loop would publish it as a stray asset beside the ZIP. The
+      # release-desktop-dispatch suite pins this with a real glob match rather
+      # than a string comparison, so a future rename cannot silently re-break it.
       - name: Upload the rendered release notes
         uses: actions/upload-artifact@v7
         with:
-          name: release-page-notes
+          name: composed-page-body
           path: release-notes.md
           retention-days: 7
 
@@ -721,7 +763,7 @@ jobs:
       - name: Download the composed release notes
         uses: actions/download-artifact@v8
         with:
-          name: release-page-notes
+          name: composed-page-body
           path: release-notes/
 
       - name: Verify the composed release notes are usable

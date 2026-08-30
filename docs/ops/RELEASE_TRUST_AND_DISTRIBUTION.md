@@ -83,9 +83,14 @@ is treated differently by tag class: for a **stable** tag either one missing fai
 for a **release candidate** both degrade to a workflow warning — highlights are omitted and breaking changes fall back to a
 pointer at `UPGRADING.md`. A missing or mismatched checksum fails either way.
 
-The `compose-notes` job runs on the rehearsal path too and uploads what it rendered as the **`release-page-notes`**
+The `compose-notes` job runs on the rehearsal path too and uploads what it rendered as the **`composed-page-body`**
 artifact, so a `no-publish` dispatch previews the exact page before a tag is cut (the changelog section is a placeholder
-there, because `generate-notes` needs a tag that already exists). `create-release` downloads that artifact, refuses an empty
+there, because `generate-notes` needs a tag that already exists). That artifact name must not match the `release-*` pattern
+`create-release` uses to collect the built assets — `download-artifact` matches it with minimatch, and a matching name would
+have the rendered Markdown published as a stray asset beside the ZIP; the dispatch suite asserts it with a real glob match.
+On the publish path the changelog base is stated explicitly as the newest published **stable** release, so a stable page
+always spans the whole gap since the last stable release rather than only the last release candidate.
+`create-release` downloads that artifact by name, refuses an empty
 or button-less body, passes it to `gh release create --notes-file`, and re-asserts it in the same `gh release edit` that
 clears the draft flag — which is what keeps the resumable adopt path ([#1806](https://github.com/Chris0Jeky/Taskdeck/issues/1806))
 idempotent. The composer is unit-tested by `scripts/ci/compose-release-notes.test.mjs` and its wiring by
