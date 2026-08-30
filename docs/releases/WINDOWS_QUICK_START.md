@@ -4,10 +4,11 @@ Taskdeck 0.3.x supports **Windows 10/11 x64**. Download the Windows ZIP and its
 `.sha256` file from the [official Taskdeck Releases page](https://github.com/Chris0Jeky/Taskdeck/releases).
 
 > **Release candidate.** `v0.3.0-rc.1` is a *pre-release*: it is listed on the Releases page but is
-> not the one marked **Latest** (that stays v0.2.0 until v0.3.0 final). On its first start it runs
-> the two v0.3 schema migrations after taking an automatic pre-migration snapshot; read the
-> `v0.3.0-rc.1` section of [UPGRADING.md](../../UPGRADING.md) first if you have an existing
-> workspace.
+> not the one marked **Latest** (that stays v0.2.0 until v0.3.0 final). If you already have a
+> workspace, its first start runs the two v0.3 schema migrations after taking an automatic
+> pre-migration snapshot (a fresh install has nothing to snapshot); read the `v0.3.0-rc.1` section of
+> [UPGRADING.md](https://github.com/Chris0Jeky/Taskdeck/blob/main/UPGRADING.md#v030-rc1--release-candidate-prerelease-date-stamped-at-the-tag)
+> first — this guide is also shipped inside the ZIP, where a relative link would not resolve.
 The other archives attached to v0.1.0 are preserved historical artifacts, not a continuing support
 promise.
 

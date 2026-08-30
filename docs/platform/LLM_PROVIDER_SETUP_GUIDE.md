@@ -26,7 +26,11 @@ Provider keys are supplied through configuration — `appsettings.local.json` or
 variables — and checked with the **Verify LLM** probe; there is no in-app OpenAI-key entry, rotation
 or removal screen in v0.x (maintainer ruling 2026-08-30 on `#1879`, RC deck q-11 A; ADR-0055). The
 **Settings → API Keys** page manages *Taskdeck's own* scoped keys for MCP/HTTP clients, not provider
-keys. Leftover retired-provider variables must never stop the packaged app from starting (`#2233`).
+keys. **Known defect, fix pending (`#2233`):** today a leftover retired-provider variable
+(`Llm__Provider=Gemini` or any `Llm__Gemini__*`) in the Windows user environment is a fatal packaged
+start, exactly as the retired-provider rules below describe; the accepted direction is that a packaged
+start ignores such *inherited* variables with a value-blind warning while retired settings written in
+Taskdeck's own files stay fail-loud.
 
 The OpenAI adapter sends `max_completion_tokens` (never the legacy `max_tokens`) and omits
 `temperature` for reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`), which reject
