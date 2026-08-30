@@ -1,6 +1,10 @@
 # ADR-0005: Capture Model — Queue-Wrapper MVP
 
-- **Status**: Accepted
+- **Status**: Accepted — **scheduled for supersession by ADR-0065** (Context Fabric, 2026-08-30): the
+  migration path this ADR named ("promote to a dedicated `CaptureArtifacts` table when capture-specific
+  queries, retention policies, or volume require it") is now triggered; the durable `Capture` aggregate
+  is scaffolded (empty `Captures` table, `ContextFabric:DualWriteCaptures` flag off) and CF-01 `#2255`
+  completes the ID-preserving backfill. Until that slice lands, the queue row remains the capture.
 - **Date**: 2026-02-23
 - **Deciders**: Project maintainers
 

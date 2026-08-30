@@ -34,6 +34,8 @@ Source files used to build this reference:
   - [`LlmKillSwitch`](#llmkillswitch)
   - [`CaptureTriageLlm`](#capturetriagellm)
   - [`AbuseDetection`](#abusedetection)
+- [Context Fabric](#context-fabric)
+  - [`ContextFabric`](#contextfabric)
 - [Workers](#workers)
   - [`Workers`](#workers-1)
   - [`OutboundWebhooks:Security`](#outboundwebhookssecurity)
@@ -409,6 +411,19 @@ Bound to `AbuseDetectionSettings`.
 | `AbuseDetection:RestrictedSignalThreshold` | `int` | `6` | Signal count to escalate from Suspicious to Restricted. | No |
 | `AbuseDetection:BlockedSignalThreshold` | `int` | `10` | Signal count to escalate from Restricted to Blocked. | No |
 | `AbuseDetection:EvaluationWindowMinutes` | `int` | `60` | Sliding window, in minutes, for signal accumulation. | No |
+
+## Context Fabric
+
+### `ContextFabric`
+
+Bound to `ContextFabricSettings` (registered in `SettingsRegistration` as a singleton and validated
+through `OptionsValidationRegistration`). Migration switches for the Context Fabric slices
+(ADR-0065, `docs/architecture/CONTEXT_FABRIC.md`). Every key defaults to the shipped behaviour; the
+section is absent from `appsettings.json`.
+
+| Key | Type | Default | Description | Required? |
+| --- | --- | --- | --- | --- |
+| `ContextFabric:DualWriteCaptures` | `bool` | `false` | When true, `CaptureService.CreateAsync` mirrors every new capture into the durable `Captures` table under the queue row's own id (ID-preserving dual-write, CF-01 `#2255`), staged in the same unit of work as the queue row. Inbox reads keep using the queue row until CF-01 completes the backfill and flips the read path. When false the table stays empty. | No |
 
 ## Workers
 

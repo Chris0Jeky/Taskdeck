@@ -103,6 +103,7 @@ public class MigrationBootstrapTests : IDisposable
 
         _context.Model.FindEntityType(typeof(Transcript)).Should().NotBeNull();
         GetUserTables().Should().Contain("Transcripts");
+        GetUserTables().Should().Contain("Captures");
         _context.Database.HasPendingModelChanges().Should().BeFalse();
     }
 
