@@ -1349,6 +1349,83 @@ describe('captureStore', () => {
   const DEGRADED_NOTICE =
     'LLM triage unavailable (ProviderDegraded); using deterministic extractor.'
 
+  it.each([401, 403])(
+    'does not return queued ids when the post-write refresh loses access (%s)',
+    async (status) => {
+      const store = useCaptureStore()
+      const accessError = { response: { status } }
+      vi.mocked(captureApi.batchTriage).mockResolvedValue({
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        results: [{ itemId: 'c-deg', success: true }],
+      })
+      vi.mocked(captureApi.listItems).mockRejectedValue(accessError)
+
+      await expect(store.batchTriage(['c-deg'], 'triage')).rejects.toBe(accessError)
+
+      // fetchItems preserves the shared HTTP auth/session handling and owns
+      // the read error; the completed POST is not relabelled as a write error.
+      expect(store.batchError).toBeNull()
+      expect(toastMocks.error).toHaveBeenCalledWith('Failed to load inbox items')
+      expect(toastMocks.error).not.toHaveBeenCalledWith('Failed to process batch triage')
+    },
+  )
+
+  it('returns queued ids after an exhausted post-write refresh so polling reconciles later', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useCaptureStore()
+      vi.mocked(captureApi.getItem)
+        .mockResolvedValueOnce(degradedDetail('Triaging', null))
+        .mockResolvedValueOnce(degradedDetail('ProposalCreated', DEGRADED_NOTICE))
+      await store.fetchDetail('c-deg')
+
+      vi.mocked(captureApi.batchTriage).mockResolvedValue({
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        results: [{ itemId: 'c-deg', success: true }],
+      })
+      // captureApi.listItems rejects only after the shared HTTP retry policy is
+      // exhausted. The next read is the orchestrator-owned poll tick.
+      vi.mocked(captureApi.listItems)
+        .mockRejectedValueOnce(new Error('post-write-refresh-exhausted'))
+        .mockResolvedValueOnce([
+          { id: 'c-deg', userId: 'u1', boardId: null, status: 'ProposalCreated',
+            source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+            createdAt: new Date().toISOString(), processedAt: new Date().toISOString(),
+            errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+        ])
+
+      const result = await store.batchTriage(['c-deg'], 'triage')
+
+      // This is the result boundary consumed by useInboxOrchestrator. A
+      // successful POST must still supply the ids that start its bounded poll.
+      const queuedIds = result.results
+        .filter((item) => item.success)
+        .map((item) => item.itemId)
+      expect(queuedIds).toEqual(['c-deg'])
+      expect(store.batchError).toBeNull()
+      expect(toastMocks.error).toHaveBeenCalledWith('Failed to load inbox items')
+      expect(toastMocks.error).not.toHaveBeenCalledWith('Failed to process batch triage')
+
+      store.pollBatchTriageCompletion(queuedIds, { limit: 200 })
+      await vi.advanceTimersByTimeAsync(3_000)
+
+      expect(store.detailById['c-deg']).toMatchObject({
+        status: 'ProposalCreated',
+        errorMessage: DEGRADED_NOTICE,
+      })
+      expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+
+      await vi.advanceTimersByTimeAsync(9_000)
+      expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('refetches a cached detail whose list row reached a terminal status', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))

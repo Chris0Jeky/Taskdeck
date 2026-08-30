@@ -617,13 +617,20 @@ export const useCaptureStore = defineStore('capture', () => {
 
   async function batchTriage(itemIds: string[], action: BatchTriageAction): Promise<BatchTriageResult> {
     guardDemoMutation()
+    batchBusy.value = true
+    batchError.value = null
+    actionError.value = null
     try {
-      batchBusy.value = true
-      batchError.value = null
-      actionError.value = null
-
       const batchItems = itemIds.map((id) => ({ itemId: id, action }))
-      const result = await captureApi.batchTriage(batchItems)
+      let result: BatchTriageResult
+      try {
+        result = await captureApi.batchTriage(batchItems)
+      } catch (e: unknown) {
+        const message = getErrorDisplay(e, 'Failed to process batch triage').message
+        batchError.value = message
+        toast.error(message)
+        throw e
+      }
 
       if (result.succeeded > 0) {
         toast.success(`${result.succeeded} of ${result.total} items processed`)
@@ -637,17 +644,23 @@ export const useCaptureStore = defineStore('capture', () => {
         toast.error(`${result.failed} item(s) failed: ${failedMessages}`)
       }
 
-      // Refresh list to pick up status changes
-      await fetchItems()
-      await refreshTerminalDetails(itemIds)
+      // The POST result is authoritative. Reconciliation still uses the
+      // ordinary read path so retry, list-error reporting, and 401/session
+      // interception remain intact, but an exhausted follow-up read must not
+      // reclassify a successfully queued batch as a failed write or prevent
+      // the caller from starting its bounded completion poll.
+      try {
+        await fetchItems()
+        await refreshTerminalDetails(itemIds)
+      } catch (e: unknown) {
+        const status = (e as { response?: { status?: number } } | null)?.response?.status
+        if (status === 401 || status === 403) throw e
+        // fetchItems already records and surfaces the read failure. The poll
+        // can retry the same list/detail reconciliation on its next tick.
+      }
       notifyTriageCountChanged()
 
       return result
-    } catch (e: unknown) {
-      const message = getErrorDisplay(e, 'Failed to process batch triage').message
-      batchError.value = message
-      toast.error(message)
-      throw e
     } finally {
       batchBusy.value = false
     }
