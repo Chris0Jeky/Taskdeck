@@ -69,11 +69,13 @@ def _run_git(
     *args: str,
     check: bool = True,
     timeout: int = GIT_TIMEOUT_SECONDS,
+    input_data: bytes | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     try:
         result = subprocess.run(
             ["git", "-C", os.fspath(repo), *args],
             check=False,
+            input=input_data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
@@ -138,9 +140,36 @@ def tracked_tree_is_clean(repo: Path) -> bool:
     return not result.stdout
 
 
-def tracked_files(repo: Path) -> list[str]:
-    result = _run_git(repo, "ls-files", "-z")
-    return [_decode_git_path(raw) for raw in result.stdout.split(b"\0") if raw]
+def tracked_tree_entries(repo: Path, commit: str) -> list[tuple[str, str, str, str, int | None]]:
+    result = _run_git(repo, "ls-tree", "-r", "-z", "--long", "--full-tree", commit, "--")
+    entries: list[tuple[str, str, str, str, int | None]] = []
+    for record in result.stdout.split(b"\0"):
+        if not record:
+            continue
+        try:
+            metadata, path_raw = record.split(b"\t", 1)
+        except ValueError as error:
+            raise AnalysisError("Git tree output was malformed") from error
+        parts = metadata.split()
+        if len(parts) != 4:
+            raise AnalysisError("Git tree metadata was malformed")
+        mode_raw, object_type_raw, object_id_raw, size_raw = parts
+        try:
+            mode = mode_raw.decode("ascii")
+            object_type = object_type_raw.decode("ascii")
+            object_id = object_id_raw.decode("ascii").lower()
+        except UnicodeDecodeError as error:
+            raise AnalysisError("Git tree metadata was not ASCII") from error
+        if not re.fullmatch(r"[0-9a-f]{40,64}", object_id):
+            raise AnalysisError("Git tree output contained an invalid object identifier")
+        if size_raw == b"-":
+            size = None
+        elif size_raw.isdigit():
+            size = int(size_raw)
+        else:
+            raise AnalysisError("Git tree output contained an invalid object size")
+        entries.append((_decode_git_path(path_raw), mode, object_type, object_id, size))
+    return entries
 
 
 def parse_extensions(raw: str) -> frozenset[str]:
@@ -171,17 +200,40 @@ def is_candidate(path: str, extensions: frozenset[str]) -> bool:
     return PurePosixPath(name).suffix.lower() in extensions
 
 
-def count_physical_lines(path: Path) -> int | None:
-    try:
-        if path.is_symlink():
-            return None
-        if not path.is_file():
-            raise AnalysisError(f"Tracked source path is not a regular file: {path}")
-        if path.stat().st_size > MAX_SOURCE_BYTES:
-            return None
-        data = path.read_bytes()
-    except OSError as error:
-        raise AnalysisError(f"Tracked source file could not be read: {path}") from error
+def read_blobs(repo: Path, object_ids: Iterable[str]) -> dict[str, bytes]:
+    unique_ids = list(dict.fromkeys(object_ids))
+    if not unique_ids:
+        return {}
+    request = b"".join(f"{object_id}\n".encode("ascii") for object_id in unique_ids)
+    result = _run_git(repo, "cat-file", "--batch", input_data=request)
+    output = result.stdout
+    cursor = 0
+    blobs: dict[str, bytes] = {}
+    for expected_id in unique_ids:
+        header_end = output.find(b"\n", cursor)
+        if header_end < 0:
+            raise AnalysisError("Git blob batch output was incomplete")
+        header = output[cursor:header_end].split()
+        cursor = header_end + 1
+        if len(header) != 3:
+            raise AnalysisError("Git blob batch header was malformed")
+        object_id_raw, object_type_raw, size_raw = header
+        if object_id_raw.decode("ascii", errors="replace").lower() != expected_id:
+            raise AnalysisError("Git blob batch returned an unexpected object")
+        if object_type_raw != b"blob" or not size_raw.isdigit():
+            raise AnalysisError("Git blob batch returned a non-blob object")
+        size = int(size_raw)
+        content_end = cursor + size
+        if content_end >= len(output) or output[content_end : content_end + 1] != b"\n":
+            raise AnalysisError("Git blob batch content was incomplete")
+        blobs[expected_id] = output[cursor:content_end]
+        cursor = content_end + 1
+    if cursor != len(output):
+        raise AnalysisError("Git blob batch returned trailing data")
+    return blobs
+
+
+def count_physical_lines(data: bytes) -> int | None:
     if b"\x00" in data:
         return None
     return data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
@@ -224,7 +276,7 @@ def parse_numstat_z(raw: bytes) -> list[tuple[int | None, int | None, str, str |
 
 def collect_churn(repo: Path, base_commit: str, head_commit: str) -> tuple[dict[str, int], dict[str, int]]:
     revision_range = f"{base_commit}..{head_commit}"
-    commits_raw = _run_git(repo, "rev-list", revision_range).stdout
+    commits_raw = _run_git(repo, "rev-list", "--no-merges", revision_range).stdout
     try:
         commits = [item for item in commits_raw.decode("ascii").splitlines() if item]
     except UnicodeDecodeError as error:
@@ -309,11 +361,19 @@ def build_report(
     rows: list[dict[str, int | str]] = []
     excluded_unreadable = 0
     candidate_files = 0
-    for relative in tracked_files(repo):
+    eligible_entries: list[tuple[str, str]] = []
+    for relative, mode, object_type, object_id, size in tracked_tree_entries(repo, head_commit):
         if not is_candidate(relative, extensions):
             continue
         candidate_files += 1
-        lines = count_physical_lines(repo / Path(*PurePosixPath(relative).parts))
+        if object_type != "blob" or not mode.startswith("100") or size is None or size > MAX_SOURCE_BYTES:
+            excluded_unreadable += 1
+            continue
+        eligible_entries.append((relative, object_id))
+
+    blobs = read_blobs(repo, (object_id for _, object_id in eligible_entries))
+    for relative, object_id in eligible_entries:
+        lines = count_physical_lines(blobs[object_id])
         if lines is None:
             excluded_unreadable += 1
             continue
@@ -334,6 +394,7 @@ def build_report(
         "headCommit": head_commit,
         "revisionRange": f"{base_commit}..{head_commit}",
         "gitVersion": git_version,
+        "lineSource": "Git blobs from headCommit",
         "trackedTreeClean": clean,
         "authoritative": clean,
         "formula": FORMULA,

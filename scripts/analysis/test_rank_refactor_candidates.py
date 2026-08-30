@@ -133,6 +133,29 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
         report = self.report(allow_dirty=True)
         self.assertFalse(report["trackedTreeClean"])
         self.assertFalse(report["authoritative"])
+        self.assertEqual(4, report["candidates"][0]["lines"])
+
+    def test_assume_unchanged_worktree_content_cannot_change_head_line_count(self) -> None:
+        self.git("update-index", "--assume-unchanged", "src/new.cs")
+        self.write("src/new.cs", "dirty\n" * 52)
+        report = self.report()
+        self.assertTrue(report["trackedTreeClean"])
+        self.assertEqual(4, report["candidates"][0]["lines"])
+
+    def test_merge_commit_does_not_recount_merged_branch_changes(self) -> None:
+        self.git("switch", "-c", "feature")
+        self.write("src/new.cs", "one\ntwo\nthree\nfour\nfive\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "feature edit")
+        self.git("switch", "main")
+        self.write("README.md", "force a non-fast-forward merge\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "main edit")
+        self.git("merge", "--no-ff", "feature", "-m", "merge feature")
+
+        candidate = self.report()["candidates"][0]
+        self.assertEqual(3, candidate["churn"])
+        self.assertEqual(4, candidate["touchingCommits"])
 
     def test_unresolved_base_is_rejected(self) -> None:
         with self.assertRaises(ranker.AnalysisError):

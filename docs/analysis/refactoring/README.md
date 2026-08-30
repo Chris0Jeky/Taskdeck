@@ -27,7 +27,8 @@ The score is:
 ln(1 + lines) * ln(1 + churn) * sqrt(max(1, touchingCommits))
 ```
 
-- `lines` is the current physical line count.
+- `lines` is the physical line count read from the exact `headCommit` Git blob. Working-tree
+  content is never mixed into an exact-SHA receipt, including with `--allow-dirty`.
 - `churn` is additions plus deletions in `BASE..HEAD`.
 - `touchingCommits` is the number of distinct commits in that range that touched the path.
 - Rename history is followed backwards from each current path using Git's rename detection.
@@ -38,7 +39,11 @@ Ties sort by churn, lines, then repository-relative path, so the same repository
 
 The ranker includes common Taskdeck source extensions and excludes dependency, build, coverage, migration, generated, lock, minified, binary, symlink, unreadable, and oversized files. The JSON report records the exact extension and exclusion policy used.
 
-Git rename detection is heuristic. Copy history is intentionally not followed. Merge-only conflict resolutions may not appear as a separate per-parent delta. A large or frequently edited file can also be cohesive and healthy. These limits are why the score cannot establish a refactoring requirement by itself.
+Git rename detection is heuristic. Copy history is intentionally not followed. Merge commits are
+excluded from churn aggregation so their first-parent delta does not recount merged branch commits;
+conflict resolution authored only in the merge may therefore be absent. A large or frequently
+edited file can also be cohesive and healthy. These limits are why the score cannot establish a
+refactoring requirement by itself.
 
 After the final `v0.3.0` tag:
 
