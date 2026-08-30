@@ -10,11 +10,28 @@ using Xunit;
 namespace Taskdeck.Api.Tests.FirstRun;
 
 /// <summary>
+/// Serializes every test that mutates PROCESS-WIDE environment variables against the rest of the
+/// assembly. Most #2233 cases isolate themselves with a per-test random prefix, but the shipped-path
+/// cases must set the real unprefixed names, and a concurrent <c>WebApplicationFactory</c> boot in a
+/// NON-packaged host would load them and fail closed on the retired child section by design — a
+/// timing-dependent failure in unrelated integration tests. Disabling parallelization keeps that
+/// window from ever overlapping another collection.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class ProcessEnvironmentCollection
+{
+    public const string Name = "ProcessEnvironment";
+}
+
+/// <summary>
 /// #2233: the packaged desktop start must survive retired provider configuration inherited from a
 /// Windows profile, while retired configuration written into Taskdeck's own files keeps failing
-/// closed. Every case here drives the real environment-variables provider through a per-test
-/// random prefix, so the assertions never depend on (or disturb) the developer's own profile.
+/// closed. Most cases drive the real environment-variables provider through a per-test random
+/// prefix, so they never depend on (or disturb) the developer's own profile; the two shipped-path
+/// cases must use the real unprefixed names, which is why the whole class runs in the
+/// non-parallelized <see cref="ProcessEnvironmentCollection"/> and restores every prior value.
 /// </summary>
+[Collection(ProcessEnvironmentCollection.Name)]
 public class RetiredProviderEnvironmentConfigurationTests
 {
     private const string SyntheticRetiredValue = "synthetic-retired-gemini-value-2233";
@@ -371,10 +388,21 @@ public class RetiredProviderEnvironmentConfigurationTests
 
     private static string NewPrefix() => $"TASKDECK_TEST_{Guid.NewGuid():N}_";
 
+    /// <summary>
+    /// Sets the given process environment variables for the duration of <paramref name="build"/>
+    /// and RESTORES each prior value afterwards. Restoring rather than clearing matters because the
+    /// shipped-path cases use real unprefixed names: a developer box legitimately carries its own
+    /// leftover retired variables, and clearing them would silently change the environment every
+    /// later test in this process observes.
+    /// </summary>
     private static TConfiguration WithEnvironment<TConfiguration>(
         IReadOnlyDictionary<string, string?> variables,
         Func<TConfiguration> build)
     {
+        var previous = variables.Keys.ToDictionary(
+            name => name,
+            Environment.GetEnvironmentVariable,
+            StringComparer.Ordinal);
         try
         {
             foreach (var (name, value) in variables)
@@ -386,9 +414,9 @@ public class RetiredProviderEnvironmentConfigurationTests
         }
         finally
         {
-            foreach (var name in variables.Keys)
+            foreach (var (name, value) in previous)
             {
-                Environment.SetEnvironmentVariable(name, null);
+                Environment.SetEnvironmentVariable(name, value);
             }
         }
     }
