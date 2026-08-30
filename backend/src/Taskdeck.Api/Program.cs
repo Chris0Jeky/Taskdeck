@@ -303,6 +303,7 @@ if (args.Contains("--mcp"))
             services.AddMcpApplicationServices();
 
             // Stdio identity: maps the OS process owner to the local default user.
+            services.AddSingleton<StdioIdentityResolutionWarning>();
             services.AddScoped<IUserContextProvider, StdioUserContextProvider>();
 
             // MCP telemetry (operation logger, etc.).
