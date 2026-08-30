@@ -63,7 +63,10 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 continue;
             }
 
-            var proposal = await _snapshotReader.FindAsync(selection.ProposalId, cancellationToken);
+            var proposal = await _snapshotReader.FindAsync(
+                selection.ProposalId,
+                callerUserId,
+                cancellationToken);
             if (proposal is not null)
                 proposals[selection.ProposalId] = proposal;
             else
@@ -166,13 +169,12 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
         // Which failure row depends on what the caller may already SEE, because a batch is an
         // efficient oracle otherwise: 500 guessed ids in one request would separate "exists but is
         // not yours" from "does not exist" in a single round trip, enumerating other people's
-        // proposals. So an item on a board the caller cannot even read is reported exactly as a
-        // missing one - same code, same message, and neither reaches the executor. Response TIMING
-        // was not measured: the two paths do differ in work done (a resolved proposal has been read
-        // from the store, an unknown id has not), so a timing side channel is not ruled out here.
-        // Forbidden is reserved for a board the caller CAN read: they already
-        // know that proposal exists, so naming the real reason discloses nothing and telling them
-        // "not found" about a row on a board in front of them would be a lie.
+        // proposals. The snapshot reader filters unreadable proposals in the same database command
+        // used for a missing id. The NotFound branch here remains a defence for access revoked
+        // between that read and the batched ACL checks. Forbidden is reserved for a board the
+        // caller CAN read: they already know that proposal exists, so naming the real reason
+        // discloses nothing and telling them "not found" about a row on a board in front of them
+        // would be a lie.
         if (proposal.BoardId is Guid boardId)
         {
             if (!writableBoardIds.Contains(boardId))

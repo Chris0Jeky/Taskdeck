@@ -1,9 +1,14 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Contracts;
@@ -16,6 +21,7 @@ using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Taskdeck.Api.Tests;
 
@@ -28,8 +34,15 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
     private readonly TestWebApplicationFactory _factory;
+    private readonly ITestOutputHelper _output;
 
-    public BatchExecuteProposalsApiTests(TestWebApplicationFactory factory) => _factory = factory;
+    public BatchExecuteProposalsApiTests(
+        TestWebApplicationFactory factory,
+        ITestOutputHelper output)
+    {
+        _factory = factory;
+        _output = output;
+    }
 
     [Fact]
     public async Task ExecuteProposals_AppliesEveryApprovedItemAndReportsItsOwnOutcome()
@@ -241,6 +254,40 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
     }
 
     [Fact]
+    public async Task ExecuteProposals_DevelopmentSandboxPreservesFinalExecutorPermissionBar()
+    {
+        using var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<DevelopmentSandboxSettings>();
+                services.AddSingleton(new DevelopmentSandboxSettings { Enabled = true });
+            }));
+        var ownerClient = factory.CreateClient();
+        var sandboxClient = factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "batch-exec-sandbox-owner");
+        await ApiTestHarness.AuthenticateAsync(sandboxClient, "batch-exec-sandbox-caller");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, "batch-exec-sandbox-board");
+        var proposal = await CreateApprovedProposalAsync(
+            ownerClient,
+            owner.UserId,
+            boardId,
+            "Sandbox cross-user card",
+            factory.Services);
+
+        var response = await sandboxClient.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest { Proposals = [Select(proposal)] });
+
+        // The development sandbox still exposes the proposal to phase one and its ACL preload, so
+        // this reaches the executor's independent fail-closed policy bar and answers Forbidden.
+        // A NotFound response would mean the new snapshot filter changed existing sandbox routing.
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.Cards.CountAsync(card => card.BoardId == boardId)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task ExecuteProposals_WhenNothingIsVisible_CollapsesToNotFoundNotForbidden()
     {
         var ownerClient = _factory.CreateClient();
@@ -276,6 +323,79 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
                 ]
             });
         invented.StatusCode.Should().Be(real.StatusCode, "a real foreign id and an invented one must answer alike");
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_MissingAndUnreadableIds_HaveMatchingWarmedCommandShapes()
+    {
+        const int warmupPairs = 2;
+        const int measuredPairs = 10;
+        var interceptor = new NormalizedCommandShapeInterceptor();
+        using var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<DbContextOptions<TaskdeckDbContext>>();
+                services.AddDbContext<TaskdeckDbContext>((serviceProvider, options) =>
+                {
+                    var configuration = serviceProvider.GetRequiredService<IConfiguration>();
+                    var databaseSettings = configuration.GetSection("Database").Get<DatabaseSettings>()
+                        ?? new DatabaseSettings();
+                    options
+                        .UseTaskdeckSqlite(
+                            configuration.GetConnectionString("DefaultConnection")!,
+                            databaseSettings)
+                        .AddInterceptors(interceptor);
+                });
+            }));
+        var client = factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(client, "batch-timing-owner");
+        var foreignBoardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-timing-foreign-board");
+        var foreignProposal = await CreateApprovedProposalAsync(
+            client,
+            owner.UserId,
+            foreignBoardId,
+            "Batch timing foreign proposal",
+            factory.Services);
+        await ApiTestHarness.AuthenticateAsync(client, "batch-timing-caller");
+        var missingId = Guid.NewGuid();
+
+        for (var index = 0; index < warmupPairs; index++)
+        {
+            await ProbeAsync(client, interceptor, missingId, approvedRevisionId: null);
+            await ProbeAsync(client, interceptor, foreignProposal.Id, foreignProposal.ApprovedRevisionId);
+        }
+
+        var missingSamples = new List<TimingProbe>(measuredPairs);
+        var foreignSamples = new List<TimingProbe>(measuredPairs);
+        for (var index = 0; index < measuredPairs; index++)
+        {
+            if (index % 2 == 0)
+            {
+                missingSamples.Add(await ProbeAsync(client, interceptor, missingId, approvedRevisionId: null));
+                foreignSamples.Add(await ProbeAsync(client, interceptor, foreignProposal.Id, foreignProposal.ApprovedRevisionId));
+            }
+            else
+            {
+                foreignSamples.Add(await ProbeAsync(client, interceptor, foreignProposal.Id, foreignProposal.ApprovedRevisionId));
+                missingSamples.Add(await ProbeAsync(client, interceptor, missingId, approvedRevisionId: null));
+            }
+        }
+
+        WriteTimingAggregate("missing", missingSamples);
+        WriteTimingAggregate("unreadable", foreignSamples);
+
+        var expectedResponse = (
+            missingSamples[0].StatusCode,
+            missingSamples[0].ErrorCode,
+            missingSamples[0].ErrorMessage);
+        missingSamples.Concat(foreignSamples).Should().OnlyContain(sample =>
+            sample.StatusCode == expectedResponse.StatusCode &&
+            sample.ErrorCode == expectedResponse.ErrorCode &&
+            sample.ErrorMessage == expectedResponse.ErrorMessage);
+        missingSamples.Should().OnlyContain(sample =>
+            sample.CommandShapes.SequenceEqual(new[] { "proposal-snapshot" }));
+        foreignSamples.Should().OnlyContain(sample =>
+            sample.CommandShapes.SequenceEqual(new[] { "proposal-snapshot" }));
     }
 
     [Fact]
@@ -569,6 +689,71 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
         return receipt!;
     }
 
+    private static async Task<TimingProbe> ProbeAsync(
+        HttpClient client,
+        NormalizedCommandShapeInterceptor interceptor,
+        Guid proposalId,
+        Guid? approvedRevisionId)
+    {
+        interceptor.Clear();
+        var startedAt = Stopwatch.GetTimestamp();
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest
+            {
+                Proposals =
+                [
+                    new ExecuteProposalSelectionRequest
+                    {
+                        ProposalId = proposalId,
+                        ApprovedRevisionId = approvedRevisionId,
+                        IdempotencyKey = Guid.NewGuid().ToString("N")
+                    }
+                ]
+            });
+        var body = await response.Content.ReadAsStringAsync();
+        var elapsedMicroseconds = Stopwatch.GetElapsedTime(startedAt).TotalMicroseconds;
+        var error = JsonSerializer.Deserialize<ApiErrorResponse>(body, Web);
+        error.Should().NotBeNull(body);
+
+        return new TimingProbe(
+            response.StatusCode,
+            error!.ErrorCode,
+            error.Message,
+            elapsedMicroseconds,
+            interceptor.Snapshot());
+    }
+
+    private void WriteTimingAggregate(string path, IReadOnlyList<TimingProbe> samples)
+    {
+        var ordered = samples.Select(sample => sample.ElapsedMicroseconds).OrderBy(value => value).ToArray();
+        var median = ordered[ordered.Length / 2];
+        var p95 = ordered[(int)Math.Ceiling(ordered.Length * 0.95) - 1];
+        var commandCounts = string.Join(
+            ",",
+            samples
+                .GroupBy(sample => sample.CommandShapes.Count)
+                .OrderBy(group => group.Key)
+                .Select(group => $"{group.Key}:{group.Count()}"));
+        var shapes = string.Join(
+            ",",
+            samples
+                .Select(sample => string.Join(">", sample.CommandShapes))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(shape => shape, StringComparer.Ordinal));
+
+        _output.WriteLine(
+            "{0} samples={1} elapsed-us min={2:F1} median={3:F1} p95={4:F1} max={5:F1} command-counts={6} shapes={7}",
+            path,
+            samples.Count,
+            ordered[0],
+            median,
+            p95,
+            ordered[^1],
+            commandCounts,
+            shapes);
+    }
+
     private static async Task<string> ReadDiffAsync(HttpClient client, Guid proposalId)
     {
         var response = await client.GetAsync($"/api/automation/proposals/{proposalId}/diff");
@@ -664,6 +849,52 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
         private Task<Result<ProposalExecutionReceipt>> UnexpectedReceiptAsync() =>
             Task.FromResult(Result.Failure<ProposalExecutionReceipt>(ErrorCodes.UnexpectedError, _message));
     }
+
+    private sealed class NormalizedCommandShapeInterceptor : DbCommandInterceptor
+    {
+        private readonly ConcurrentQueue<string> _shapes = new();
+
+        public void Clear() => _shapes.Clear();
+
+        public IReadOnlyList<string> Snapshot() => _shapes.ToArray();
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            Capture(command);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            Capture(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void Capture(DbCommand command)
+        {
+            var text = command.CommandText;
+            if (text.Contains("AutomationProposals", StringComparison.Ordinal))
+                _shapes.Enqueue("proposal-snapshot");
+            else if (text.Contains("BoardAccesses", StringComparison.Ordinal))
+                _shapes.Enqueue("board-access-scope");
+            else if (text.Contains("Boards", StringComparison.Ordinal))
+                _shapes.Enqueue("board-owner-scope");
+        }
+    }
+
+    private sealed record TimingProbe(
+        HttpStatusCode StatusCode,
+        string ErrorCode,
+        string ErrorMessage,
+        double ElapsedMicroseconds,
+        IReadOnlyList<string> CommandShapes);
 
     private async Task<ProposalDto> CreateRevisedApprovedProposalAsync(
         HttpClient client,

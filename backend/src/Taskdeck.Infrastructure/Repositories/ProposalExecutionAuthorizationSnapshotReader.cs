@@ -13,19 +13,39 @@ public sealed class ProposalExecutionAuthorizationSnapshotReader
     : IProposalExecutionAuthorizationSnapshotReader
 {
     private readonly TaskdeckDbContext _context;
+    private readonly DevelopmentSandboxSettings _sandboxSettings;
 
-    public ProposalExecutionAuthorizationSnapshotReader(TaskdeckDbContext context)
+    public ProposalExecutionAuthorizationSnapshotReader(
+        TaskdeckDbContext context,
+        DevelopmentSandboxSettings? sandboxSettings = null)
     {
         _context = context;
+        _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
     public async Task<ProposalExecutionAuthorizationSnapshot?> FindAsync(
         Guid proposalId,
+        Guid callerUserId,
         CancellationToken cancellationToken = default)
     {
-        return await _context.AutomationProposals
+        var proposals = _context.AutomationProposals
             .AsNoTracking()
-            .Where(proposal => proposal.Id == proposalId)
+            .Where(proposal => proposal.Id == proposalId);
+
+        if (!_sandboxSettings.Enabled)
+        {
+            proposals = proposals.Where(proposal =>
+                (!proposal.BoardId.HasValue && proposal.RequestedByUserId == callerUserId) ||
+                (proposal.BoardId.HasValue &&
+                    (_context.Boards.Any(board =>
+                        board.Id == proposal.BoardId.Value &&
+                        board.OwnerId == callerUserId) ||
+                     _context.BoardAccesses.Any(access =>
+                        access.BoardId == proposal.BoardId.Value &&
+                        access.UserId == callerUserId))));
+        }
+
+        return await proposals
             .Select(proposal => new ProposalExecutionAuthorizationSnapshot(
                 proposal.Id,
                 proposal.BoardId,

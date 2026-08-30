@@ -191,7 +191,7 @@ public class BatchProposalExecutionServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Results.Should().ContainSingle().Which.Outcome.Should().Be(BatchExecuteOutcome.Skipped);
         _snapshotReader.Verify(
-            reader => reader.FindAsync(proposal, It.IsAny<CancellationToken>()),
+            reader => reader.FindAsync(proposal, _callerId, It.IsAny<CancellationToken>()),
             Times.Once);
         _executorService.Verify(
             executor => executor.ExecuteProposalWithReceiptAsync(
@@ -352,7 +352,7 @@ public class BatchProposalExecutionServiceTests
     {
         var missing = Guid.NewGuid();
         _snapshotReader
-            .Setup(reader => reader.FindAsync(missing, It.IsAny<CancellationToken>()))
+            .Setup(reader => reader.FindAsync(missing, _callerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProposalExecutionAuthorizationSnapshot?)null);
         var present = ArrangeProposal();
         ArrangeExecute(present, new ProposalExecutionReceipt(false, 1));
@@ -420,7 +420,7 @@ public class BatchProposalExecutionServiceTests
         var foreign = ArrangeProposal(boardId: foreignBoardId);
         var missing = Guid.NewGuid();
         _snapshotReader
-            .Setup(reader => reader.FindAsync(missing, It.IsAny<CancellationToken>()))
+            .Setup(reader => reader.FindAsync(missing, _callerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProposalExecutionAuthorizationSnapshot?)null);
 
         // Neither writable nor readable: the caller has no access to that board at all.
@@ -534,7 +534,7 @@ public class BatchProposalExecutionServiceTests
 
         _pins[proposalId] = approvedRevisionId;
         _snapshotReader
-            .Setup(reader => reader.FindAsync(proposalId, It.IsAny<CancellationToken>()))
+            .Setup(reader => reader.FindAsync(proposalId, _callerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
         return proposalId;
     }
