@@ -254,6 +254,72 @@ public class MigrationBootstrapTests : IDisposable
         batch[0].CurrentText.Should().Be("mine");
     }
 
+    [Fact]
+    public async Task CaptureAggregate_SurvivesTheDatabaseFileExportImportRoundTrip()
+    {
+        // CF-01 (#2255) acceptance: portability covers the durable capture. The dev-sandbox
+        // export/import path (DatabaseFileExportImportService) checkpoints the WAL and copies the
+        // whole SQLite file, so the proof that Captures / SourceAssets / SourceAssetTextPayloads
+        // travel is that a copy taken exactly that way reads them back through the same store.
+        _context.Database.Migrate();
+        var user = new User("fabric-portable", "fabric-portable@example.com", "hash");
+        _context.Users.Add(user);
+        await _context.SaveChangesAsync();
+
+        var store = new EfCaptureStore(_context);
+        var captureId = Guid.NewGuid();
+        var capture = Capture.FromQueueRequest(
+            captureId, user.Id, CaptureSource.WebClip, null, null, "Portable",
+            sourceText: "material that must survive export",
+            externalReference: "https://example.test/portable");
+        capture.SupersedeInlineTextSource("corrected material that must survive export");
+        await store.AddAsync(capture);
+        await _context.SaveChangesAsync();
+
+        // Same preparation the export service performs before copying the file.
+        _context.Database.ExecuteSqlRaw("PRAGMA wal_checkpoint(TRUNCATE);");
+        _context.Database.CloseConnection();
+
+        var exportedPath = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-portability-test-{Guid.NewGuid():N}.db");
+        try
+        {
+            File.Copy(_dbPath, exportedPath, overwrite: true);
+
+            var importedOptions = new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(TestSqlite.ConnectionString(exportedPath))
+                .Options;
+            await using var imported = new TaskdeckDbContext(importedOptions);
+            var importedStore = new EfCaptureStore(imported);
+
+            var restored = await importedStore.GetByIdForUserAsync(captureId, user.Id);
+
+            restored.Should().NotBeNull("the durable capture travels with the database file");
+            restored!.LegacySourceSnapshot.Should().Be(CaptureSource.WebClip);
+            restored.SourceAssets.Should().HaveCount(3, "every source asset travels, superseded ones included");
+            restored.SourceAssets[0].TextPayload!.Text.Should().Be("material that must survive export");
+            restored.SourceAssets[0].SupersededByAssetId.Should().Be(restored.SourceAssets[2].Id);
+            restored.SourceAssets[1].ExternalReference.Should().Be("https://example.test/portable");
+            restored.CurrentText.Should().Be("corrected material that must survive export");
+            (await importedStore.CountByUserAsync(user.Id)).Should().Be(1);
+        }
+        finally
+        {
+            foreach (var path in TestWebApplicationFactory.GetDatabaseCleanupTargets(exportedPath))
+            {
+                try
+                {
+                    if (File.Exists(path))
+                        File.Delete(path);
+                }
+                catch (IOException)
+                {
+                }
+            }
+        }
+    }
+
     private List<string> GetColumns(string table)
     {
         var connection = _context.Database.GetDbConnection();
