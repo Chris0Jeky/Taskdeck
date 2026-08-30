@@ -364,9 +364,8 @@ public class ChatServiceTests
     }
 
     [Fact]
-    // Scope note: this covers a degraded reply the provider did NOT flag actionable. A degraded
-    // fallback that IS flagged actionable takes the pre-existing status branch and is relabelled
-    // "status" — that flip predates this change and is not asserted here.
+    // Scope note: this result has no proposal intent under the exact proposal-attempt predicate.
+    // Its generic degraded content must remain untouched by proposal-suppression messaging.
     public async Task SendMessageAsync_ShouldKeepDegradedClassification_WhenUnboundNonActionableTurnRequestsAction()
     {
         var userId = Guid.NewGuid();
@@ -405,6 +404,8 @@ public class ChatServiceTests
         var boardId = Guid.NewGuid();
         var session = new ChatSession(userId, "Degraded board session", boardId);
         const string degradedReason = "Live provider request failed.";
+        const string misleadingFallback = "I'll create a proposal for the release notes.";
+        const string expectedContent = "The provider response was degraded. No proposal was created, and nothing changed.";
 
         _chatSessionRepoMock
             .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
@@ -412,13 +413,15 @@ public class ChatServiceTests
         _llmProviderMock
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
             .ReturnsAsync(new LlmCompletionResult(
-                "This is a degraded fallback response.",
+                misleadingFallback,
                 10,
-                false,
+                true,
+                "card.create",
                 Provider: "OpenAI",
                 Model: "gpt-4o-mini",
                 IsDegraded: true,
-                DegradedReason: degradedReason));
+                DegradedReason: degradedReason,
+                Instructions: new List<string> { "create card 'Release notes'" }));
 
         var result = await _service.SendMessageAsync(
             session.Id,
@@ -429,12 +432,15 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("degraded");
         result.Value.DegradedReason.Should().Be(degradedReason);
-        result.Value.Content.Should().Be("This is a degraded fallback response.");
+        result.Value.Content.Should().Be(expectedContent);
+        result.Value.Content.Should().NotContain(misleadingFallback);
         result.Value.ProposalId.Should().BeNull();
 
         var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
         persisted.MessageType.Should().Be("degraded");
         persisted.DegradedReason.Should().Be(degradedReason);
+        persisted.Content.Should().Be(expectedContent);
+        persisted.Content.Should().NotContain(misleadingFallback);
         persisted.ProposalId.Should().BeNull();
 
         _plannerMock.Verify(

@@ -489,10 +489,15 @@ public class ChatService : IChatService
                     }
                     else
                     {
-                        var shouldAttemptProposal = !llmResult.IsDegraded
-                            && (llmResult.IsActionable || (dto.RequestProposal && session.BoardId.HasValue));
+                        var hasProposalIntent = llmResult.IsActionable
+                            || (dto.RequestProposal && session.BoardId.HasValue);
+                        var shouldAttemptProposal = !llmResult.IsDegraded && hasProposalIntent;
 
-                        if (shouldAttemptProposal)
+                        if (llmResult.IsDegraded && hasProposalIntent)
+                        {
+                            assistantContent = "The provider response was degraded. No proposal was created, and nothing changed.";
+                        }
+                        else if (shouldAttemptProposal)
                         {
                             if (!session.BoardId.HasValue)
                             {
