@@ -216,10 +216,7 @@ public sealed class Capture : Entity
         return capture;
     }
 
-    /// <summary>
-    /// Appends typed or pasted text as the next immutable asset. The first asset also sets
-    /// <see cref="PrimaryModality"/> when the capture was created without one that matches.
-    /// </summary>
+    /// <summary>Appends typed or pasted text as the next immutable asset.</summary>
     public SourceAsset AddInlineTextSource(string text, string mediaType = SourceAsset.PlainTextMediaType, string? originalName = null)
     {
         var asset = SourceAsset.FromInlineText(Id, _sourceAssets.Count, text, mediaType, originalName);
@@ -227,6 +224,11 @@ public sealed class Capture : Entity
         return asset;
     }
 
+    /// <summary>
+    /// Appends the next immutable asset. The first asset stored decides <see cref="PrimaryModality"/>
+    /// (a summary for lists — the constructor's value is only the mapping's guess until an asset
+    /// exists); later assets never change it, and routing reads each asset's own modality.
+    /// </summary>
     public void AddSourceAsset(SourceAsset asset)
     {
         ArgumentNullException.ThrowIfNull(asset);
@@ -238,6 +240,11 @@ public sealed class Capture : Entity
             throw new DomainException(ErrorCodes.ValidationError, $"Source asset ordinal must be {_sourceAssets.Count}");
         if (_sourceAssets.Count >= MaxSourceAssets)
             throw new DomainException(ErrorCodes.ValidationError, $"A capture cannot hold more than {MaxSourceAssets} source assets");
+
+        if (_sourceAssets.Count == 0)
+        {
+            PrimaryModality = asset.Modality;
+        }
 
         _sourceAssets.Add(asset);
         Touch();
@@ -343,6 +350,7 @@ public sealed class Capture : Entity
     {
         if (boardId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "Board ID cannot be empty");
+        EnsureNotArchived("re-target");
 
         if (ContextBoardId == boardId)
             return;
@@ -354,6 +362,7 @@ public sealed class Capture : Entity
     public void Retitle(string? userTitle)
     {
         var normalized = NormalizeBounded(userTitle, MaxUserTitleLength, "Capture title", singleLine: true);
+        EnsureNotArchived("retitle");
         if (string.Equals(UserTitle, normalized, StringComparison.Ordinal))
             return;
 

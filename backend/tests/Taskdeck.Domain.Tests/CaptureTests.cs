@@ -78,6 +78,10 @@ public sealed class CaptureTests
         capture.CapturedAtClient.Should().Be(clientAt);
         capture.UserTitle.Should().Be("Standup notes");
         capture.Disposition.Should().Be(CaptureUserDisposition.Active);
+
+        capture.AddInlineTextSource("transcript pasted from the voice tool");
+        capture.PrimaryModality.Should().Be(CaptureModality.Text, "the summary follows the first stored asset; the snapshot keeps the legacy Voice source");
+        capture.LegacySourceSnapshot.Should().Be(CaptureSource.Voice);
     }
 
     [Fact]
@@ -189,10 +193,10 @@ public sealed class CaptureTests
         // The legacy capture contract accepts CR/CRLF/NUL/ESC in a title hint, so the mirror must too:
         // a dual-written row may never fail where the queue row succeeds. A title is single-line, so
         // LF and TAB flatten as well; a note keeps them.
-        NewCapture(title: "bad title").UserTitle.Should().Be("bad title");
+        NewCapture(title: "bad\u0000title").UserTitle.Should().Be("bad title");
         NewCapture(title: "line one\r\nline two").UserTitle.Should().Be("line one  line two");
         NewCapture(title: "tab\tflattened").UserTitle.Should().Be("tab flattened");
-        NewCapture(title: "").UserTitle.Should().BeNull("a title made only of control characters collapses to nothing");
+        NewCapture(title: "\u001b\u0007").UserTitle.Should().BeNull("a title made only of control characters collapses to nothing");
 
         var note = new Capture(
             Guid.NewGuid(), Guid.NewGuid(), CaptureModality.Text, CaptureOriginAdapter.WebComposer,
@@ -222,6 +226,7 @@ public sealed class CaptureTests
         var second = capture.AddInlineTextSource("https://example.org/venue", SourceAsset.UriListMediaType, "Venue page");
 
         capture.SourceAssets.Should().Equal(first, second);
+        capture.PrimaryModality.Should().Be(CaptureModality.Text, "the first asset decides the summary");
         first.Ordinal.Should().Be(0);
         second.Ordinal.Should().Be(1);
         first.CaptureId.Should().Be(capture.Id);
@@ -273,6 +278,9 @@ public sealed class CaptureTests
         capture.Disposition.Should().Be(CaptureUserDisposition.Kept);
         capture.ProcessingSummary.Should().Be(CaptureProcessingSummary.Ready, "keeping does not erase what was derived");
         capture.Timeline.Should().Be(CaptureTimelineStep.Kept);
+        capture.RecordActionState(CaptureActionState.Acted);
+        capture.Timeline.Should().Be(CaptureTimelineStep.Kept, "the user's own disposition outranks the outcome on the one-line timeline");
+        capture.RecordActionState(CaptureActionState.Unplanned);
 
         capture.Reactivate();
         capture.Disposition.Should().Be(CaptureUserDisposition.Active);
@@ -299,8 +307,12 @@ public sealed class CaptureTests
         var plan = () => capture.RecordActionState(CaptureActionState.NeedsReview);
         var addSource = () => capture.AddInlineTextSource("late text");
         var reintend = () => capture.SetRequestedIntent(CaptureIntentMode.Act);
+        var retitle = () => capture.Retitle("new title");
+        var recontext = () => capture.SetContextBoard(Guid.NewGuid());
 
         keep.Should().Throw<DomainException>().WithMessage("*archived*");
+        retitle.Should().Throw<DomainException>().WithMessage("*archived*");
+        recontext.Should().Throw<DomainException>().WithMessage("*archived*");
         reactivate.Should().Throw<DomainException>().WithMessage("*archived*");
         process.Should().Throw<DomainException>().WithMessage("*archived*");
         plan.Should().Throw<DomainException>().WithMessage("*archived*");

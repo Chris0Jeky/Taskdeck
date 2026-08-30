@@ -66,7 +66,7 @@ public sealed class CaptureServiceDualWriteTests
         mirrored.LegacyRequestId.Should().Be(result.Value.Id);
         mirrored.UserId.Should().Be(_userId);
         mirrored.LegacySourceSnapshot.Should().Be(CaptureSource.Voice);
-        mirrored.PrimaryModality.Should().Be(CaptureModality.Audio);
+        mirrored.PrimaryModality.Should().Be(CaptureModality.Text, "the legacy contract carries text only, and the summary follows the first stored asset");
         mirrored.OriginAdapter.Should().Be(CaptureOriginAdapter.WebComposer);
         mirrored.ProducerKind.Should().Be(CaptureProducerKind.Human);
         mirrored.ProducedByPrincipalId.Should().BeNull();
@@ -127,7 +127,8 @@ public sealed class CaptureServiceDualWriteTests
         result.IsSuccess.Should().BeTrue(result.ErrorMessage);
         mirrored!.ProducerKind.Should().Be(expectedProducer);
         mirrored.OriginAdapter.Should().Be(expectedOrigin);
-        mirrored.PrimaryModality.Should().Be(expectedModality);
+        mirrored.PrimaryModality.Should().Be(CaptureModality.Text, "every legacy mirror stores its text as the first asset");
+        CaptureSourceMapping.Resolve(mirrored.LegacySourceSnapshot).Modality.Should().Be(expectedModality, "the mapping's modality survives on the snapshot");
     }
 
     [Fact]

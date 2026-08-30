@@ -18,10 +18,10 @@ public sealed class CaptureTimelineTests
     [InlineData(CaptureUserDisposition.Active, CaptureProcessingSummary.Ready, CaptureActionState.Acted, CaptureTimelineStep.Acted)]
     [InlineData(CaptureUserDisposition.Kept, CaptureProcessingSummary.Idle, CaptureActionState.Unplanned, CaptureTimelineStep.Kept)]
     [InlineData(CaptureUserDisposition.Kept, CaptureProcessingSummary.Processing, CaptureActionState.NeedsReview, CaptureTimelineStep.Kept)]
-    [InlineData(CaptureUserDisposition.Kept, CaptureProcessingSummary.Ready, CaptureActionState.Acted, CaptureTimelineStep.Acted)]
+    [InlineData(CaptureUserDisposition.Kept, CaptureProcessingSummary.Ready, CaptureActionState.Acted, CaptureTimelineStep.Kept)]
     [InlineData(CaptureUserDisposition.Archived, CaptureProcessingSummary.Ready, CaptureActionState.Acted, CaptureTimelineStep.Archived)]
     [InlineData(CaptureUserDisposition.Archived, CaptureProcessingSummary.Failed, CaptureActionState.Unplanned, CaptureTimelineStep.Archived)]
-    public void Project_ShouldApplyThePrecedenceDispositionThenActionThenProcessing(
+    public void Project_ShouldApplyThePrecedenceArchivedThenKeptThenActionThenProcessing(
         CaptureUserDisposition disposition,
         CaptureProcessingSummary processing,
         CaptureActionState action,

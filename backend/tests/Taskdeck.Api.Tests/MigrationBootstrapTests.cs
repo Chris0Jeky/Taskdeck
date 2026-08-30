@@ -111,6 +111,44 @@ public class MigrationBootstrapTests : IDisposable
     }
 
     [Fact]
+    public void ReconcileContextFabricScaffold_DownAndUpRoundTripOnSqlite()
+    {
+        // The hand-written Down folds the three state axes back into the single legacy column and
+        // drops the asset tables; migrating back up must recreate the reconciled schema exactly.
+        _context.Database.Migrate();
+        var migrator = _context.GetService<IMigrator>();
+
+        migrator.Migrate("20260830034447_AddCaptureAggregate");
+
+        GetUserTables().Should().NotContain("SourceAssets");
+        GetUserTables().Should().NotContain("SourceAssetTextPayloads");
+        GetColumns("Captures").Should().Contain("Lifecycle");
+        GetColumns("Captures").Should().NotContain("Disposition");
+
+        migrator.Migrate();
+
+        GetUserTables().Should().Contain("SourceAssets");
+        GetUserTables().Should().Contain("SourceAssetTextPayloads");
+        GetColumns("Captures").Should().Contain(new[] { "Disposition", "ProcessingSummary", "ActionState", "ProducerKind", "RequestedIntent", "EffectiveIntent", "LegacySourceSnapshot", "ProducedByPrincipalId" });
+        GetColumns("Captures").Should().NotContain("Lifecycle");
+        _context.Database.HasPendingModelChanges().Should().BeFalse();
+    }
+
+    private List<string> GetColumns(string table)
+    {
+        var connection = _context.Database.GetDbConnection();
+        if (connection.State != System.Data.ConnectionState.Open)
+            connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info(\"{table}\");";
+        using var reader = command.ExecuteReader();
+        var columns = new List<string>();
+        while (reader.Read())
+            columns.Add(reader.GetString(1));
+        return columns;
+    }
+
+    [Fact]
     public async Task CaptureAggregate_RoundTripsThroughEfCaptureStoreOnTheMigratedSchema()
     {
         // ADR-0065 reconciliation: the scaffold's store was never exercised against a real database.

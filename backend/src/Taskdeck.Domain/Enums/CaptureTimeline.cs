@@ -23,9 +23,10 @@ public enum CaptureTimelineStep
 /// <summary>
 /// Pure projection from (<see cref="CaptureUserDisposition"/>, <see cref="CaptureProcessingSummary"/>,
 /// <see cref="CaptureActionState"/>) to the timeline step. Precedence, highest first: the user's
-/// disposition (archived / kept), then what was done (acted), then what the user must do (input /
-/// review), then processing (failed / preparing), then whether anything is ready to understand.
-/// <see cref="CaptureProcessingSummary.Partial"/> is deliberately shown as
+/// own disposition (archived, then kept — a person's decision outranks every machine outcome on the
+/// one-line view; the outcome stays visible on the axes), then what was done (acted), then what the
+/// user must do (input / review), then processing (failed / preparing), then whether anything is
+/// ready to understand. <see cref="CaptureProcessingSummary.Partial"/> is deliberately shown as
 /// <see cref="CaptureTimelineStep.Understood"/> rather than <see cref="CaptureTimelineStep.Failed"/>:
 /// something usable exists, and the failed leg is a per-asset detail the UI lists beneath the step.
 /// </summary>
@@ -36,23 +37,18 @@ public static class CaptureTimeline
         CaptureProcessingSummary processing,
         CaptureActionState action)
     {
-        if (disposition == CaptureUserDisposition.Archived)
+        switch (disposition)
         {
-            return CaptureTimelineStep.Archived;
-        }
-
-        if (action == CaptureActionState.Acted)
-        {
-            return CaptureTimelineStep.Acted;
-        }
-
-        if (disposition == CaptureUserDisposition.Kept)
-        {
-            return CaptureTimelineStep.Kept;
+            case CaptureUserDisposition.Archived:
+                return CaptureTimelineStep.Archived;
+            case CaptureUserDisposition.Kept:
+                return CaptureTimelineStep.Kept;
         }
 
         switch (action)
         {
+            case CaptureActionState.Acted:
+                return CaptureTimelineStep.Acted;
             case CaptureActionState.NeedsInput:
                 return CaptureTimelineStep.NeedsInput;
             case CaptureActionState.NeedsReview:

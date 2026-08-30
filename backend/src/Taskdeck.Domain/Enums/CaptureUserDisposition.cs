@@ -1,3 +1,6 @@
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
+
 namespace Taskdeck.Domain.Enums;
 
 /// <summary>
@@ -22,7 +25,9 @@ public enum CaptureUserDisposition
 
 /// <summary>
 /// Bridges the shipped queue-row disposition vocabulary to the durable axis. Total over
-/// <see cref="CaptureDisposition"/>; the test suite enumerates the enum.
+/// <see cref="CaptureDisposition"/>; the test suite enumerates the enum. An unmapped value is a
+/// <see cref="DomainException"/> like every other failure on the mirror path, so it surfaces as a
+/// validation error rather than an unhandled exception.
 /// </summary>
 public static class CaptureUserDispositionMapping
 {
@@ -31,6 +36,6 @@ public static class CaptureUserDispositionMapping
         CaptureDisposition.Kept => CaptureUserDisposition.Kept,
         CaptureDisposition.Archived => CaptureUserDisposition.Archived,
         CaptureDisposition.ProposalRequested => CaptureUserDisposition.Active,
-        _ => throw new ArgumentOutOfRangeException(nameof(legacy), legacy, "Legacy capture disposition has no durable mapping")
+        _ => throw new DomainException(ErrorCodes.ValidationError, $"Legacy capture disposition '{legacy}' has no durable mapping")
     };
 }
