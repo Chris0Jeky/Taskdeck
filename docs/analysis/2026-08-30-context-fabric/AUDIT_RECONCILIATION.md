@@ -5,8 +5,8 @@ Last Updated: 2026-08-30
 **What this is.** The maintainer handed the agent pass an external LLM audit of the Context Fabric
 scaffold (`EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md`) with the instruction to implement it. This
 record is the disposition: every finding, what was done with it, and where it landed. Decision
-text lives in ADR-0065 §*Amendments (2026-08-30)*; the code is on branch
-`issue-2254/context-fabric-reconciliation`; the tracker changes are on CF-00 `#2254` and the
+text lives in ADR-0065 §*Amendments (2026-08-30)*; the code is PR `#2320`
+(branch `issue-2254/context-fabric-reconciliation`); the tracker changes are on CF-00 `#2254` and the
 child issues. The pass was **behaviour-preserving**: `ContextFabric:DualWriteCaptures` stays off
 by default and every new table is empty on an unchanged install.
 

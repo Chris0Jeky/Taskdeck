@@ -446,8 +446,8 @@ as originally posed:
 The maintainer had the scaffold (PR `#2280`) audited externally the day it merged and directed the
 audit's implementation. The audit as received and its disposition are in
 `docs/analysis/2026-08-30-context-fabric/EXTERNAL_AUDIT_2026-08-30_AS_RECEIVED.md` and
-`AUDIT_RECONCILIATION.md`; the code landed as the reconciliation pass on
-`issue-2254/context-fabric-reconciliation`, behaviour-preserving (`ContextFabric:DualWriteCaptures`
+`AUDIT_RECONCILIATION.md`; the code landed as the reconciliation pass in PR `#2320`
+(branch `issue-2254/context-fabric-reconciliation`), behaviour-preserving (`ContextFabric:DualWriteCaptures`
 still off; every new table empty on an unchanged install). What the amendments change in this record:
 
 1. **`SourceAsset` is real before `Representation`** (§Decision 1). The general source model between
