@@ -1,5 +1,5 @@
 param(
-    [string]$DefaultServers = 'docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform',
+    [string]$DefaultServers = 'docker,docker-docs,time,jetbrains,filesystem,SQLite',
     [string]$OptionalServers = 'postman,dockerhub',
     [switch]$IncludeOptional,
     [switch]$FailOnOptionalErrors,
