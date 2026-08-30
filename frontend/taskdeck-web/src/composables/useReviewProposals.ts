@@ -600,26 +600,22 @@ export function useReviewProposals() {
     // inserting or marking unavailable whichever proposal is selected next.
     const requestedHash = route.hash
     const hashTargetId = getProposalIdFromHash(requestedHash)
-    const pinnedProposal = hashTargetId
-      ? observedProposals.find((proposal) => proposalIdsEqual(proposal.id, hashTargetId))
-      : undefined
     const controller = new AbortController()
-    // True when this answer is about a different question than the one the
-    // surface is now asking: a newer explicit load started, or the board scope
-    // or hash target moved. Applies to the 403 branch too, which is the whole
-    // point: a refusal from a question the reviewer has already left says
-    // nothing about the queue they are on now.
-    const isSupersededRead = () =>
+    // A list refusal is scoped to the queue query, not to whichever proposal is
+    // selected. Hash navigation must not erase authority from a current-board
+    // 403, while a load or board change still supersedes it.
+    const isSupersededQueueRead = () =>
       observedLoadId !== latestProposalLoadRequestId ||
       proposalsLoading.value ||
-      (activeBoardFilter.value || null) !== requestedBoardId ||
-      route.hash !== requestedHash
+      (activeBoardFilter.value || null) !== requestedBoardId
+    const isSupersededCompositeRead = () =>
+      isSupersededQueueRead() || route.hash !== requestedHash
     // The list and optional by-id request form one composite read. Every guard
     // is deliberately re-run after BOTH awaits so the second response cannot
     // bypass the protections already required for the list response.
     const isCurrentRead = () =>
       !controller.signal.aborted &&
-      !isSupersededRead() &&
+      !isSupersededCompositeRead() &&
       proposals.value === observedProposals &&
       observedWriteGeneration === queueWriteGeneration &&
       (!shouldRefreshNow || shouldRefreshNow())
@@ -642,7 +638,6 @@ export function useReviewProposals() {
       let pinUnavailable = false
       if (
         hashTargetId &&
-        pinnedProposal &&
         !next.some((proposal) => proposalIdsEqual(proposal.id, hashTargetId))
       ) {
         try {
@@ -710,7 +705,7 @@ export function useReviewProposals() {
         // Only trust a 403 that answers the question currently being asked.
         // Without this, a late refusal from a board the reviewer just left would
         // wipe the board they moved to and stop polling a scope that is fine.
-        if (isSupersededRead()) return
+        if (isSupersededQueueRead()) return
         // Board access was revoked. Stop polling rather than hammering an
         // endpoint that will keep refusing, drop rows the server no longer
         // authorises, and let the surface say so.

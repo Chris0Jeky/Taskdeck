@@ -156,6 +156,11 @@ function makeProposal(overrides: Partial<{
 describe('useReviewProposals', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // `clearAllMocks` retains queued `mockResolvedValueOnce` entries. A red
+    // regression that proves a request was never issued must not leak that
+    // unused answer into the next concurrency case.
+    mockAutomationApi.getProposals.mockReset().mockResolvedValue([])
+    mockAutomationApi.getProposal.mockReset()
     watchers.length = 0
     mockRoute.hash = ''
     mockRoute.query = {}
@@ -1079,7 +1084,7 @@ describe('useReviewProposals', () => {
       })
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      await rp.refreshProposals()
 
       expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-newer', 'p-open', 'p-older'])
       expect(rp.proposals.value[1]).toEqual(expect.objectContaining({
@@ -1112,7 +1117,7 @@ describe('useReviewProposals', () => {
         mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
         const onQueueReplaced = vi.fn()
         rp.startQueueRefresh(undefined, { onQueueReplaced })
-        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+        await rp.refreshProposals()
 
         expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-survivor'])
         expect(rp.unavailableProposalId.value).toBe('p-open')
@@ -1127,7 +1132,7 @@ describe('useReviewProposals', () => {
           summary: 'readable again',
         }
         mockAutomationApi.getProposals.mockResolvedValueOnce([recoveredTarget])
-        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+        await rp.refreshProposals()
 
         expect(rp.proposals.value).toEqual([recoveredTarget])
         expect(rp.unavailableProposalId.value).toBeNull()
@@ -1135,6 +1140,40 @@ describe('useReviewProposals', () => {
         rp.stopQueueRefresh()
       },
     )
+
+    it('rechecks an unavailable deep-link and restores it when it becomes readable outside the list page', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-open'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-existing', createdAt: '2026-01-01T00:00:00Z' }),
+      ])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.unavailableProposalId.value).toBe('p-open')
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-newer', createdAt: '2026-01-03T00:00:00Z' }),
+        makeProposal({ id: 'p-older', createdAt: '2026-01-01T00:00:00Z' }),
+      ])
+      const recoveredTarget = {
+        ...makeProposal({ id: 'p-open', createdAt: '2026-01-02T00:00:00Z' }),
+        summary: 'readable outside the capped queue',
+      }
+      mockAutomationApi.getProposal.mockResolvedValueOnce(recoveredTarget)
+      rp.startQueueRefresh()
+      await rp.refreshProposals()
+
+      expect(mockAutomationApi.getProposal).toHaveBeenCalledTimes(2)
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual([
+        'p-newer',
+        'p-open',
+        'p-older',
+      ])
+      expect(rp.proposals.value[1]).toEqual(recoveredTarget)
+      expect(rp.unavailableProposalId.value).toBeNull()
+      rp.stopQueueRefresh()
+    })
 
     it('preserves the exact prior queue and availability when an omitted deep-link read fails transiently', async () => {
       vi.useFakeTimers()
@@ -1153,7 +1192,7 @@ describe('useReviewProposals', () => {
       mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 503 } })
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      await rp.refreshProposals()
 
       expect(rp.proposals.value).toBe(queueBeforePoll)
       expect(rp.unavailableProposalId.value).toBeNull()
@@ -1186,7 +1225,7 @@ describe('useReviewProposals', () => {
       ])
       mockAutomationApi.getProposal.mockResolvedValueOnce(proposal)
       rp.startQueueRefresh()
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      await rp.refreshProposals()
 
       expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-survivor'])
       expect(rp.unavailableProposalId.value).toBe('p-open')
@@ -1269,12 +1308,13 @@ describe('useReviewProposals', () => {
       const detail = deferredProposal()
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      const refresh = rp.refreshProposals()
+      await vi.advanceTimersByTimeAsync(0)
       expect(mockAutomationApi.getProposal).toHaveBeenCalledOnce()
 
       mockRoute.query = { boardId: 'board-b' }
       detail.release({ ...pinned, summary: 'late board-a detail' })
-      await vi.advanceTimersByTimeAsync(0)
+      await refresh
 
       expect(rp.proposals.value).toBe(queueBeforePoll)
       expect(rp.unavailableProposalId.value).toBeNull()
@@ -1294,14 +1334,15 @@ describe('useReviewProposals', () => {
       const detail = deferredProposal()
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      const refresh = rp.refreshProposals()
+      await vi.advanceTimersByTimeAsync(0)
 
       const explicitlyLoaded = { ...pinned, summary: 'newer explicit load' }
       mockAutomationApi.getProposals.mockResolvedValueOnce([explicitlyLoaded])
       await rp.loadProposals()
       const queueAfterLoad = rp.proposals.value
       detail.release({ ...pinned, summary: 'late poll detail' })
-      await vi.advanceTimersByTimeAsync(0)
+      await refresh
 
       expect(rp.proposals.value).toBe(queueAfterLoad)
       expect(rp.proposals.value[0]).toEqual(expect.objectContaining({ summary: 'newer explicit load' }))
@@ -1322,7 +1363,8 @@ describe('useReviewProposals', () => {
       const detail = deferredProposal()
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      const refresh = rp.refreshProposals()
+      await vi.advanceTimersByTimeAsync(0)
 
       rp.proposals.value = rp.proposals.value.map((proposal: any) => ({
         ...proposal,
@@ -1330,7 +1372,7 @@ describe('useReviewProposals', () => {
       }))
       const queueAfterDecision = rp.proposals.value
       detail.release(pending)
-      await vi.advanceTimersByTimeAsync(0)
+      await refresh
 
       expect(rp.proposals.value).toBe(queueAfterDecision)
       expect(rp.proposals.value[0]?.status).toBe('Approved')
@@ -1351,11 +1393,12 @@ describe('useReviewProposals', () => {
       const detail = deferredProposal()
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      const refresh = rp.refreshProposals()
+      await vi.advanceTimersByTimeAsync(0)
 
       rp.invalidateQueueReads()
       detail.release({ ...pinned, summary: 'pre-write detail' })
-      await vi.advanceTimersByTimeAsync(0)
+      await refresh
 
       expect(rp.proposals.value).toBe(queueBeforeWrite)
       expect(onQueueReplaced).not.toHaveBeenCalled()
@@ -1375,11 +1418,12 @@ describe('useReviewProposals', () => {
       const detail = deferredProposal()
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      const refresh = rp.refreshProposals()
+      await vi.advanceTimersByTimeAsync(0)
 
       mockRoute.hash = '#proposal-p-new'
       detail.release({ ...pinned, summary: 'late old-target detail' })
-      await vi.advanceTimersByTimeAsync(0)
+      await refresh
 
       expect(rp.proposals.value).toBe(queueBeforeHashChange)
       expect(rp.unavailableProposalId.value).toBeNull()
@@ -1400,7 +1444,8 @@ describe('useReviewProposals', () => {
       const detail = deferredProposal()
       const onQueueReplaced = vi.fn()
       rp.startQueueRefresh(undefined, { onQueueReplaced })
-      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      const refresh = rp.refreshProposals()
+      await vi.advanceTimersByTimeAsync(0)
       const detailOptions = mockAutomationApi.getProposal.mock.calls.at(-1)?.[1] as {
         signal?: AbortSignal
       }
@@ -1409,7 +1454,7 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
       expect(detailOptions.signal?.aborted).toBe(true)
       detail.release({ ...pinned, summary: 'late after stop' })
-      await vi.advanceTimersByTimeAsync(0)
+      await refresh
 
       expect(rp.proposals.value).toBe(queueBeforeStop)
       expect(rp.unavailableProposalId.value).toBeNull()
@@ -1530,6 +1575,33 @@ describe('useReviewProposals', () => {
       await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
       expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['b-2'])
       rp.stopQueueRefresh()
+    })
+
+    it('still accepts a current-scope list 403 when only the hash target changed', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-1'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-1' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      let rejectList: (reason: unknown) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectList = reject
+        }),
+      )
+      rp.startQueueRefresh()
+      const refresh = rp.refreshProposals()
+      await vi.advanceTimersByTimeAsync(0)
+
+      // Hash navigation changes only the selected proposal. The list refusal
+      // still answers the same readable-queue scope and remains authoritative.
+      mockRoute.hash = '#proposal-p-2'
+      rejectList({ response: { status: 403 } })
+      await refresh
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.proposals.value).toEqual([])
     })
 
     it('stops polling and reports revoked access when a read is refused with 403', async () => {
