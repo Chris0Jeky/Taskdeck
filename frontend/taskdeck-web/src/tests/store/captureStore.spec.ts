@@ -1422,4 +1422,130 @@ describe('captureStore', () => {
     expect(toastMocks.error).not.toHaveBeenCalled()
   })
 
+  describe('pollBatchTriageCompletion', () => {
+    it('reconciles a cached degraded detail when a later list read becomes terminal', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+      vi.mocked(captureApi.getItem).mockResolvedValueOnce(degradedDetail('Triaging', null))
+      await store.fetchDetail('c-deg')
+
+      vi.mocked(captureApi.batchTriage).mockResolvedValue({
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        results: [{ itemId: 'c-deg', success: true }],
+      })
+      vi.mocked(captureApi.listItems)
+        .mockResolvedValueOnce([
+          { id: 'c-deg', userId: 'u1', boardId: null, status: 'Triaging',
+            source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+            createdAt: new Date().toISOString(), processedAt: null,
+            errorMessage: null, disposition: null } as never,
+        ])
+        .mockResolvedValueOnce([
+          { id: 'c-deg', userId: 'u1', boardId: null, status: 'ProposalCreated',
+            source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+            createdAt: new Date().toISOString(), processedAt: new Date().toISOString(),
+            errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+        ])
+      vi.mocked(captureApi.getItem).mockResolvedValueOnce(
+        degradedDetail('ProposalCreated', DEGRADED_NOTICE),
+      )
+
+      await store.batchTriage(['c-deg'], 'triage')
+      expect(store.detailById['c-deg']).toMatchObject({ status: 'Triaging', errorMessage: null })
+
+      store.pollBatchTriageCompletion(['c-deg'], { limit: 200 })
+      await vi.advanceTimersByTimeAsync(3_000)
+
+      expect(store.items[0]).toMatchObject({
+        id: 'c-deg',
+        status: 'ProposalCreated',
+        errorMessage: DEGRADED_NOTICE,
+      })
+      expect(store.detailById['c-deg']).toMatchObject({
+        status: 'ProposalCreated',
+        errorMessage: DEGRADED_NOTICE,
+      })
+      expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+
+      await vi.advanceTimersByTimeAsync(9_000)
+      expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+    })
+
+    it('retries a terminal detail reconciliation after a transient detail failure', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+      vi.mocked(captureApi.getItem).mockResolvedValueOnce(degradedDetail('Triaging', null))
+      await store.fetchDetail('c-deg')
+      vi.mocked(captureApi.listItems).mockResolvedValue([
+        { id: 'c-deg', userId: 'u1', boardId: null, status: 'ProposalCreated',
+          source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+          createdAt: new Date().toISOString(), processedAt: new Date().toISOString(),
+          errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+      ])
+      vi.mocked(captureApi.getItem)
+        .mockRejectedValueOnce(new Error('detail unavailable'))
+        .mockResolvedValueOnce(degradedDetail('ProposalCreated', DEGRADED_NOTICE))
+
+      store.pollBatchTriageCompletion(['c-deg'])
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(store.detailById['c-deg'].status).toBe('Triaging')
+
+      await vi.advanceTimersByTimeAsync(3_000)
+      expect(store.detailById['c-deg']).toMatchObject({
+        status: 'ProposalCreated',
+        errorMessage: DEGRADED_NOTICE,
+      })
+      expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+    })
+
+    it('aborts an in-flight read and discards its late response after cleanup', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+      store.items = [{
+        id: 'kept', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+        textExcerpt: 'keep me', createdAt: new Date().toISOString(), processedAt: null,
+      }]
+      let release!: (value: never[]) => void
+      vi.mocked(captureApi.listItems).mockReturnValueOnce(
+        new Promise((resolve) => { release = resolve }) as never,
+      )
+
+      const stop = store.pollBatchTriageCompletion(['c-deg'])
+      await vi.advanceTimersByTimeAsync(3_000)
+      const options = vi.mocked(captureApi.listItems).mock.calls[0][1]
+      expect(options).toMatchObject({ skipRetry: true })
+      expect(options?.signal?.aborted).toBe(false)
+
+      stop()
+      expect(options?.signal?.aborted).toBe(true)
+      release([])
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(store.items.map((item) => item.id)).toEqual(['kept'])
+      await vi.advanceTimersByTimeAsync(9_000)
+      expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+    })
+
+    it('aborts and stops at the 60-second deadline', async () => {
+      vi.useFakeTimers()
+      const store = useCaptureStore()
+      vi.mocked(captureApi.listItems).mockResolvedValue([
+        { id: 'c-live', userId: 'u1', boardId: null, status: 'Triaging', source: 'Typed',
+          textExcerpt: 'still working', createdAt: new Date().toISOString(), processedAt: null } as never,
+      ])
+
+      store.pollBatchTriageCompletion(['c-live'])
+      await vi.advanceTimersByTimeAsync(60_000)
+      const callsAtDeadline = vi.mocked(captureApi.listItems).mock.calls.length
+
+      expect(callsAtDeadline).toBeGreaterThan(0)
+      expect(callsAtDeadline).toBeLessThanOrEqual(20)
+      await vi.advanceTimersByTimeAsync(9_000)
+      expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtDeadline)
+    })
+  })
+
 })

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { captureApi } from '../api/captureApi'
+import { captureApi, type CaptureReadOptions } from '../api/captureApi'
 import { isTriageTerminalStatus } from '../types/capture'
 import type { BatchTriageAction, BatchTriageResult, CaptureItem, CaptureItemSummary, CaptureListQuery, CreateCaptureItemDto, UpdateCaptureSuggestionDto } from '../types/capture'
 import { useToastStore } from './toastStore'
@@ -29,7 +29,12 @@ type DetailLoadOptions = {
   recordError?: boolean
   showToast?: boolean
   syncSummary?: boolean
+  requestOptions?: CaptureReadOptions
+  shouldCache?: () => boolean
 }
+
+export const BATCH_TRIAGE_POLL_INTERVAL_MS = 3_000
+export const BATCH_TRIAGE_POLL_MAX_DURATION_MS = 60_000
 
 type CreateItemOptions = {
   /**
@@ -156,6 +161,8 @@ export const useCaptureStore = defineStore('capture', () => {
       recordError = true,
       showToast = true,
       syncSummary = true,
+      requestOptions,
+      shouldCache = () => true,
     } = options
 
     if (!forceRefresh && detailById.value[itemId]) {
@@ -176,7 +183,10 @@ export const useCaptureStore = defineStore('capture', () => {
       if (recordError) {
         detailError.value = null
       }
-      const detail = await captureApi.getItem(itemId)
+      const detail = requestOptions
+        ? await captureApi.getItem(itemId, requestOptions)
+        : await captureApi.getItem(itemId)
+      if (!shouldCache()) return detail
       cacheDetail(detail, syncSummary)
       return detail
     } catch (e: unknown) {
@@ -326,6 +336,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
   const triagePollingItemId = ref<string | null>(null)
   let activeTriagePollStop: (() => void) | null = null
+  let activeBatchTriagePollStop: (() => void) | null = null
 
   function pollTriageCompletion(itemId: string): () => void {
     const POLL_INTERVAL_MS = 2_000
@@ -448,28 +459,157 @@ export const useCaptureStore = defineStore('capture', () => {
    * with it, no `errorMessage`, so the degradation notice was absent on the
    * open Legacy panel until the user refreshed by hand.
    *
-   * Deliberately NOT a poll: this reconciles only against the snapshot in
-   * hand, so an item that reaches a terminal status AFTER that list fetch is
-   * still served by the existing refresh paths. A failing follow-up GET is
+   * Both the immediate post-write snapshot and the bounded batch completion
+   * poll use this reconciliation. A failing follow-up GET is
    * swallowed for the same reason the single-item path swallows its own — the
    * batch write already succeeded and must not be reported as failed.
    */
-  async function refreshTerminalDetails(itemIds: string[]): Promise<void> {
+  async function refreshTerminalDetails(
+    itemIds: string[],
+    options: {
+      requestOptions?: CaptureReadOptions
+      isCurrent?: () => boolean
+    } = {},
+  ): Promise<void> {
+    const isCurrent = options.isCurrent ?? (() => true)
     const stale = itemIds.filter((id) => {
       const detail = detailById.value[id]
       if (!detail) return false
       const summary = items.value.find((item) => item.id === id)
       if (!summary || !isTriageTerminalStatus(summary.status)) return false
-      return summary.status !== detail.status
+      return (
+        summary.status !== detail.status ||
+        (summary.errorMessage ?? null) !== (detail.errorMessage ?? null)
+      )
     })
 
     await Promise.all(
       stale.map((id) =>
-        fetchDetail(id, { forceRefresh: true, showToast: false, recordError: false }).catch(
-          () => undefined,
-        ),
+        fetchDetail(id, {
+          forceRefresh: true,
+          showToast: false,
+          recordError: false,
+          // The list snapshot remains the summary authority. If the detail
+          // endpoint lags it briefly, do not regress the row back to Triaging.
+          syncSummary: false,
+          requestOptions: options.requestOptions,
+          shouldCache: isCurrent,
+        }).catch(() => undefined),
       ),
     )
+  }
+
+  function pollBatchTriageCompletion(
+    itemIds: string[],
+    query?: CaptureListQuery,
+  ): () => void {
+    const trackedIds = [...new Set(itemIds)]
+    let stopped = false
+    let timerId: ReturnType<typeof setTimeout> | null = null
+    let deadlineTimerId: ReturnType<typeof setTimeout> | null = null
+    let activeRequest: AbortController | null = null
+
+    if (activeBatchTriagePollStop) {
+      activeBatchTriagePollStop()
+    }
+
+    function stop() {
+      if (stopped) return
+      stopped = true
+      if (timerId !== null) {
+        clearTimeout(timerId)
+        timerId = null
+      }
+      if (deadlineTimerId !== null) {
+        clearTimeout(deadlineTimerId)
+        deadlineTimerId = null
+      }
+      if (activeRequest) {
+        activeRequest.abort()
+        activeRequest = null
+      }
+      if (activeBatchTriagePollStop === stop) {
+        activeBatchTriagePollStop = null
+      }
+    }
+
+    function isComplete(): boolean {
+      return trackedIds.every((id) => {
+        const summary = items.value.find((item) => item.id === id)
+        if (!summary || !isTriageTerminalStatus(summary.status)) return false
+        const detail = detailById.value[id]
+        if (!detail) return true
+        return (
+          detail.status === summary.status &&
+          (detail.errorMessage ?? null) === (summary.errorMessage ?? null)
+        )
+      })
+    }
+
+    function scheduleNext() {
+      if (stopped) return
+      timerId = setTimeout(() => {
+        timerId = null
+        void tick()
+      }, BATCH_TRIAGE_POLL_INTERVAL_MS)
+    }
+
+    async function tick() {
+      if (stopped) return
+      // An explicit list load owns the visible loading state and is fresher
+      // user intent. Let it finish before the quiet background poll tries.
+      if (loadingList.value) {
+        scheduleNext()
+        return
+      }
+
+      const observedListLoadRequestId = latestListLoadRequestId
+      const controller = new AbortController()
+      activeRequest = controller
+      const requestOptions = { signal: controller.signal, skipRetry: true }
+      const isCurrent = () =>
+        !stopped &&
+        !controller.signal.aborted &&
+        activeRequest === controller &&
+        observedListLoadRequestId === latestListLoadRequestId
+
+      try {
+        const loadedItems = await captureApi.listItems(query, requestOptions)
+        if (!isCurrent()) return
+        items.value = loadedItems
+        await refreshTerminalDetails(trackedIds, { requestOptions, isCurrent })
+        if (!isCurrent()) return
+        if (isComplete()) {
+          notifyTriageCountChanged()
+          stop()
+          return
+        }
+      } catch (error: unknown) {
+        if (stopped || controller.signal.aborted) return
+        const status = (error as { response?: { status?: number } } | null)?.response?.status
+        // 401 keeps the shared auth-expiry redirect; 403 means this scope is no
+        // longer readable. Neither should be hammered by a background timer.
+        if (status === 401 || status === 403) {
+          stop()
+          return
+        }
+        // Other background-read failures stay silent and retry on the next tick.
+      } finally {
+        if (activeRequest === controller) activeRequest = null
+        scheduleNext()
+      }
+    }
+
+    activeBatchTriagePollStop = stop
+    if (trackedIds.length === 0 || isComplete()) {
+      stop()
+      return stop
+    }
+    // A separate deadline timer aborts an in-flight request at the boundary;
+    // counting ticks alone would let one slow HTTP request exceed 60 seconds.
+    deadlineTimerId = setTimeout(stop, BATCH_TRIAGE_POLL_MAX_DURATION_MS)
+    scheduleNext()
+    return stop
   }
 
   const batchBusy = ref(false)
@@ -560,6 +700,7 @@ export const useCaptureStore = defineStore('capture', () => {
     triageItem,
     triagePollingItemId,
     pollTriageCompletion,
+    pollBatchTriageCompletion,
     batchTriage,
     updateSuggestion,
   }

@@ -21,6 +21,8 @@ export function useInboxOrchestrator(options: {
   const activeItemIndex = ref(0)
   const showCaptureModal = ref(false)
   let stopTriagePolling: (() => void) | null = null
+  let stopBatchTriagePolling: (() => void) | null = null
+  let batchActionGeneration = 0
   let scopedBoardLoadGeneration = 0
 
   // Batch selection state
@@ -104,13 +106,34 @@ export function useInboxOrchestrator(options: {
     selectedIds.value = new Set()
   }
 
+  function cancelBatchTriagePolling() {
+    batchActionGeneration += 1
+    if (stopBatchTriagePolling) {
+      stopBatchTriagePolling()
+      stopBatchTriagePolling = null
+    }
+  }
+
   async function batchAction(action: 'triage' | 'ignore' | 'cancel') {
     if (isArchivedHistory.value) return
     if (selectedIds.value.size === 0) return
     const ids = Array.from(selectedIds.value)
+    const actionGeneration = ++batchActionGeneration
     try {
-      await captureStore.batchTriage(ids, action)
+      const result = await captureStore.batchTriage(ids, action)
+      // A board/history scope change invalidates both the selection and the
+      // question this response answers. Never start an old scope's poll late.
+      if (actionGeneration !== batchActionGeneration) return
       clearSelection()
+      if (action !== 'triage') return
+      const queuedIds = result.results
+        .filter((item) => item.success)
+        .map((item) => item.itemId)
+      if (queuedIds.length === 0) return
+      stopBatchTriagePolling = captureStore.pollBatchTriageCompletion(queuedIds, {
+        limit: 200,
+        ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
+      })
     } catch {
       // Store handles toast
     }
@@ -499,6 +522,7 @@ export function useInboxOrchestrator(options: {
   })
 
   function resetScopedState() {
+    cancelBatchTriagePolling()
     selectedItemId.value = null
     selectedIds.value = new Set()
     showCaptureModal.value = false
@@ -555,6 +579,7 @@ export function useInboxOrchestrator(options: {
   })
 
   onUnmounted(() => {
+    cancelBatchTriagePolling()
     if (stopTriagePolling) {
       stopTriagePolling()
       stopTriagePolling = null

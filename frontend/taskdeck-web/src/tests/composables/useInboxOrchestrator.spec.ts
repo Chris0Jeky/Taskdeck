@@ -42,6 +42,7 @@ const mockCaptureStore = {
   cancelItem: vi.fn(),
   triageItem: vi.fn(),
   pollTriageCompletion: vi.fn(() => vi.fn()),
+  pollBatchTriageCompletion: vi.fn(() => vi.fn()),
   cacheDetail: vi.fn(),
   peekDetail: vi.fn(),
   updateSuggestion: vi.fn(),
@@ -145,6 +146,16 @@ describe('useInboxOrchestrator', () => {
     mockRouter.push.mockReset()
     mockRouter.replace.mockReset()
     mockBoardsApi.getBoard.mockReset()
+    mockCaptureStore.batchTriage.mockReset().mockResolvedValue({
+      total: 2,
+      succeeded: 2,
+      failed: 0,
+      results: [
+        { itemId: 'a', success: true },
+        { itemId: 'b', success: true },
+      ],
+    })
+    mockCaptureStore.pollBatchTriageCompletion.mockReset().mockReturnValue(vi.fn())
   })
 
   describe('batch selection', () => {
@@ -178,7 +189,97 @@ describe('useInboxOrchestrator', () => {
       orch.toggleItemSelection('b')
       await orch.batchAction('triage')
       expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage')
+      expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
+        ['a', 'b'],
+        { limit: 200 },
+      )
       expect(orch.selectedIds.value.size).toBe(0)
+    })
+
+    it('polls only successfully queued triage ids in the active board scope', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      mockCaptureStore.batchTriage.mockResolvedValueOnce({
+        total: 2,
+        succeeded: 1,
+        failed: 1,
+        results: [
+          { itemId: 'accepted', success: true },
+          { itemId: 'rejected', success: false, errorCode: 'NotFound' },
+        ],
+      })
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('accepted')
+      orch.toggleItemSelection('rejected')
+
+      await orch.batchAction('triage')
+
+      expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
+        ['accepted'],
+        { limit: 200, boardId: 'board-7' },
+      )
+    })
+
+    it('does not poll ignore or cancel batch actions', async () => {
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('ignore')
+
+      expect(mockCaptureStore.pollBatchTriageCompletion).not.toHaveBeenCalled()
+    })
+
+    it('stops an active batch poll when the Inbox scope changes', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      const stopBatchPoll = vi.fn()
+      mockCaptureStore.pollBatchTriageCompletion.mockReturnValueOnce(stopBatchPoll)
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      await orch.batchAction('triage')
+
+      mockRoute.query = { boardId: 'board-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+
+      expect(stopBatchPoll).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not start a batch poll when the Inbox scope changes before the action resolves', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      const batch = deferred<{
+        total: number
+        succeeded: number
+        failed: number
+        results: Array<{ itemId: string; success: boolean }>
+      }>()
+      mockCaptureStore.batchTriage.mockReturnValueOnce(batch.promise)
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      const action = orch.batchAction('triage')
+
+      mockRoute.query = { boardId: 'board-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
+      batch.resolve({
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        results: [{ itemId: 'a', success: true }],
+      })
+      await action
+
+      expect(mockCaptureStore.pollBatchTriageCompletion).not.toHaveBeenCalled()
+    })
+
+    it('keeps batch polling when the open Legacy detail changes', async () => {
+      const stopBatchPoll = vi.fn()
+      mockCaptureStore.pollBatchTriageCompletion.mockReturnValueOnce(stopBatchPoll)
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      await orch.batchAction('triage')
+
+      const selectionWatcher = watcherForSource(orch.selectedItemId)
+      orch.selectedItemId.value = 'other'
+      selectionWatcher[1]('other', null, () => {})
+
+      expect(stopBatchPoll).not.toHaveBeenCalled()
     })
 
     it('batchAction does nothing when selection is empty', async () => {
@@ -560,6 +661,18 @@ describe('useInboxOrchestrator', () => {
       expect(stopPoll).not.toHaveBeenCalled()
       unmountedCallback!()
       expect(stopPoll).toHaveBeenCalled()
+    })
+
+    it('onUnmounted stops active batch triage polling independently', async () => {
+      const stopBatchPoll = vi.fn()
+      mockCaptureStore.pollBatchTriageCompletion.mockReturnValueOnce(stopBatchPoll)
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      await orch.batchAction('triage')
+
+      unmountedCallback!()
+
+      expect(stopBatchPoll).toHaveBeenCalledTimes(1)
     })
   })
 
