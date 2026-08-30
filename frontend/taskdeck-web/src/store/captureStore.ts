@@ -336,7 +336,6 @@ export const useCaptureStore = defineStore('capture', () => {
 
   const triagePollingItemId = ref<string | null>(null)
   let activeTriagePollStop: (() => void) | null = null
-  let activeBatchTriagePollStop: (() => void) | null = null
 
   function pollTriageCompletion(itemId: string): () => void {
     const POLL_INTERVAL_MS = 2_000
@@ -469,6 +468,7 @@ export const useCaptureStore = defineStore('capture', () => {
     options: {
       requestOptions?: CaptureReadOptions
       isCurrent?: () => boolean
+      onRefreshed?: (itemId: string) => void
     } = {},
   ): Promise<void> {
     const isCurrent = options.isCurrent ?? (() => true)
@@ -476,7 +476,11 @@ export const useCaptureStore = defineStore('capture', () => {
       const detail = detailById.value[id]
       if (!detail) return false
       const summary = items.value.find((item) => item.id === id)
-      if (!summary || !isTriageTerminalStatus(summary.status)) return false
+      // A tracked item can fall beyond the newest-first list cap. Its cached
+      // detail is then the only user-visible surface, so refresh it directly
+      // instead of waiting for a summary row that cannot reappear in this page.
+      if (!summary) return true
+      if (!isTriageTerminalStatus(summary.status)) return false
       return (
         summary.status !== detail.status ||
         (summary.errorMessage ?? null) !== (detail.errorMessage ?? null)
@@ -484,18 +488,24 @@ export const useCaptureStore = defineStore('capture', () => {
     })
 
     await Promise.all(
-      stale.map((id) =>
-        fetchDetail(id, {
-          forceRefresh: true,
-          showToast: false,
-          recordError: false,
-          // The list snapshot remains the summary authority. If the detail
-          // endpoint lags it briefly, do not regress the row back to Triaging.
-          syncSummary: false,
-          requestOptions: options.requestOptions,
-          shouldCache: isCurrent,
-        }).catch(() => undefined),
-      ),
+      stale.map(async (id) => {
+        try {
+          await fetchDetail(id, {
+            forceRefresh: true,
+            showToast: false,
+            recordError: false,
+            // The list snapshot remains the summary authority. If the detail
+            // endpoint lags it briefly, do not regress the row back to Triaging
+            // or reinsert an item that fell beyond the visible list cap.
+            syncSummary: false,
+            requestOptions: options.requestOptions,
+            shouldCache: isCurrent,
+          })
+          if (isCurrent()) options.onRefreshed?.(id)
+        } catch {
+          // A later poll tick retries transient detail failures.
+        }
+      }),
     )
   }
 
@@ -508,10 +518,7 @@ export const useCaptureStore = defineStore('capture', () => {
     let timerId: ReturnType<typeof setTimeout> | null = null
     let deadlineTimerId: ReturnType<typeof setTimeout> | null = null
     let activeRequest: AbortController | null = null
-
-    if (activeBatchTriagePollStop) {
-      activeBatchTriagePollStop()
-    }
+    const refreshedDetailIds = new Set<string>()
 
     function stop() {
       if (stopped) return
@@ -528,16 +535,20 @@ export const useCaptureStore = defineStore('capture', () => {
         activeRequest.abort()
         activeRequest = null
       }
-      if (activeBatchTriagePollStop === stop) {
-        activeBatchTriagePollStop = null
-      }
     }
 
     function isComplete(): boolean {
       return trackedIds.every((id) => {
         const summary = items.value.find((item) => item.id === id)
-        if (!summary || !isTriageTerminalStatus(summary.status)) return false
         const detail = detailById.value[id]
+        if (!summary) {
+          return Boolean(
+            detail &&
+            refreshedDetailIds.has(id) &&
+            isTriageTerminalStatus(detail.status),
+          )
+        }
+        if (!isTriageTerminalStatus(summary.status)) return false
         if (!detail) return true
         return (
           detail.status === summary.status &&
@@ -577,7 +588,11 @@ export const useCaptureStore = defineStore('capture', () => {
         const loadedItems = await captureApi.listItems(query, requestOptions)
         if (!isCurrent()) return
         items.value = loadedItems
-        await refreshTerminalDetails(trackedIds, { requestOptions, isCurrent })
+        await refreshTerminalDetails(trackedIds, {
+          requestOptions,
+          isCurrent,
+          onRefreshed: (id) => refreshedDetailIds.add(id),
+        })
         if (!isCurrent()) return
         if (isComplete()) {
           notifyTriageCountChanged()
@@ -600,7 +615,6 @@ export const useCaptureStore = defineStore('capture', () => {
       }
     }
 
-    activeBatchTriagePollStop = stop
     if (trackedIds.length === 0 || isComplete()) {
       stop()
       return stop

@@ -21,7 +21,7 @@ export function useInboxOrchestrator(options: {
   const activeItemIndex = ref(0)
   const showCaptureModal = ref(false)
   let stopTriagePolling: (() => void) | null = null
-  let stopBatchTriagePolling: (() => void) | null = null
+  const activeBatchTriagePollStops = new Set<() => void>()
   let batchActionGeneration = 0
   let scopedBoardLoadGeneration = 0
 
@@ -108,10 +108,10 @@ export function useInboxOrchestrator(options: {
 
   function cancelBatchTriagePolling() {
     batchActionGeneration += 1
-    if (stopBatchTriagePolling) {
-      stopBatchTriagePolling()
-      stopBatchTriagePolling = null
+    for (const stop of activeBatchTriagePollStops) {
+      stop()
     }
+    activeBatchTriagePollStops.clear()
   }
 
   async function batchAction(action: 'triage' | 'ignore' | 'cancel') {
@@ -130,10 +130,12 @@ export function useInboxOrchestrator(options: {
         .filter((item) => item.success)
         .map((item) => item.itemId)
       if (queuedIds.length === 0) return
-      stopBatchTriagePolling = captureStore.pollBatchTriageCompletion(queuedIds, {
-        limit: 200,
-        ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
-      })
+      activeBatchTriagePollStops.add(
+        captureStore.pollBatchTriageCompletion(queuedIds, {
+          limit: 200,
+          ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
+        }),
+      )
     } catch {
       // Store handles toast
     }

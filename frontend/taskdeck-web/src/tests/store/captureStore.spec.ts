@@ -1577,6 +1577,117 @@ describe('captureStore', () => {
       expect(captureApi.listItems).toHaveBeenCalledTimes(2)
     })
 
+    it('keeps batch A tracking active when batch B starts', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        store.detailById['batch-a'] = {
+          ...degradedDetail('Triaging', null),
+          id: 'batch-a',
+        }
+        store.detailById['batch-b'] = {
+          ...degradedDetail('Triaging', null),
+          id: 'batch-b',
+        }
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          { id: 'batch-a', userId: 'u1', boardId: null, status: 'ProposalCreated',
+            source: 'TranscriptPaste', textExcerpt: 'batch A',
+            createdAt: new Date().toISOString(), processedAt: new Date().toISOString(),
+            errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+          { id: 'batch-b', userId: 'u1', boardId: null, status: 'Triaging',
+            source: 'TranscriptPaste', textExcerpt: 'batch B',
+            createdAt: new Date().toISOString(), processedAt: null,
+            errorMessage: null, disposition: null } as never,
+        ])
+        vi.mocked(captureApi.getItem).mockResolvedValue({
+          ...degradedDetail('ProposalCreated', DEGRADED_NOTICE),
+          id: 'batch-a',
+        })
+
+        const stopA = store.pollBatchTriageCompletion(['batch-a'], { limit: 200 })
+        const stopB = store.pollBatchTriageCompletion(['batch-b'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        expect(store.detailById['batch-a']).toMatchObject({
+          status: 'ProposalCreated',
+          errorMessage: DEGRADED_NOTICE,
+        })
+        expect(captureApi.getItem).toHaveBeenCalledWith(
+          'batch-a',
+          expect.objectContaining({ skipRetry: true }),
+        )
+
+        stopA()
+        stopB()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('reconciles a tracked detail evicted beyond the newest 200 rows', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const trackedIds = Array.from({ length: 200 }, (_, index) => `tracked-${index}`)
+        store.detailById['tracked-0'] = {
+          ...degradedDetail('Triaging', null),
+          id: 'tracked-0',
+        }
+        const terminalRows = trackedIds.slice(1).map((id) => ({
+          id,
+          userId: 'u1',
+          boardId: null,
+          status: 'ProposalCreated',
+          source: 'TranscriptPaste',
+          textExcerpt: id,
+          createdAt: new Date().toISOString(),
+          processedAt: new Date().toISOString(),
+          errorMessage: null,
+          disposition: null,
+        }))
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          {
+            id: 'newer-capture',
+            userId: 'u1',
+            boardId: null,
+            status: 'New',
+            source: 'Typed',
+            textExcerpt: 'newer capture',
+            createdAt: new Date().toISOString(),
+            processedAt: null,
+            errorMessage: null,
+            disposition: null,
+          },
+          ...terminalRows,
+        ] as never)
+        vi.mocked(captureApi.getItem).mockResolvedValue({
+          ...degradedDetail('Failed', DEGRADED_NOTICE),
+          id: 'tracked-0',
+        })
+
+        store.pollBatchTriageCompletion(trackedIds, { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        expect(captureApi.getItem).toHaveBeenCalledWith(
+          'tracked-0',
+          expect.objectContaining({ skipRetry: true }),
+        )
+        expect(store.detailById['tracked-0']).toMatchObject({
+          status: 'Failed',
+          errorMessage: DEGRADED_NOTICE,
+        })
+        expect(store.items).toHaveLength(200)
+        expect(store.items.some((item) => item.id === 'newer-capture')).toBe(true)
+        expect(store.items.some((item) => item.id === 'tracked-0')).toBe(false)
+
+        const callsAtCompletion = vi.mocked(captureApi.listItems).mock.calls.length
+        await vi.advanceTimersByTimeAsync(6_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtCompletion)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('aborts an in-flight read and discards its late response after cleanup', async () => {
       vi.useFakeTimers()
       const store = useCaptureStore()

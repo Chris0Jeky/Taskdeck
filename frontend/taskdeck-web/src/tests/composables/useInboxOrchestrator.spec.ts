@@ -228,18 +228,24 @@ describe('useInboxOrchestrator', () => {
       expect(mockCaptureStore.pollBatchTriageCompletion).not.toHaveBeenCalled()
     })
 
-    it('stops an active batch poll when the Inbox scope changes', async () => {
+    it('stops every active batch poll when the Inbox scope changes', async () => {
       mockRoute.query = { boardId: 'board-a' }
-      const stopBatchPoll = vi.fn()
-      mockCaptureStore.pollBatchTriageCompletion.mockReturnValueOnce(stopBatchPoll)
+      const stopBatchPollA = vi.fn()
+      const stopBatchPollB = vi.fn()
+      mockCaptureStore.pollBatchTriageCompletion
+        .mockReturnValueOnce(stopBatchPollA)
+        .mockReturnValueOnce(stopBatchPollB)
       const orch = createOrchestrator()
       orch.toggleItemSelection('a')
+      await orch.batchAction('triage')
+      orch.toggleItemSelection('b')
       await orch.batchAction('triage')
 
       mockRoute.query = { boardId: 'board-b' }
       watcherForSource(orch.activeBoardId)[1]('board-b', 'board-a', () => {})
 
-      expect(stopBatchPoll).toHaveBeenCalledTimes(1)
+      expect(stopBatchPollA).toHaveBeenCalledTimes(1)
+      expect(stopBatchPollB).toHaveBeenCalledTimes(1)
     })
 
     it('does not start a batch poll when the Inbox scope changes before the action resolves', async () => {
