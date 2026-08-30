@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Processing;
 
 namespace Taskdeck.Application.Processing.Protocol;
@@ -84,6 +85,13 @@ public sealed record JsonRpcResponse<TResult>(
     JsonRpcError? Error)
 {
     public bool IsError => Error is not null;
+
+    /// <summary>
+    /// True only for a well-formed success: a result and no error. A response with neither member is
+    /// neither a success nor an error — <see cref="WorkerProtocolValidator.ValidateResponseEnvelope{TResult}"/>
+    /// rejects it before a host may act on it.
+    /// </summary>
+    public bool IsSuccess => Result is not null && Error is null;
 }
 
 public sealed record JsonRpcError(int Code, string Message, ProcessorErrorData? Data);
@@ -211,6 +219,29 @@ public static class WorkerProtocolValidator
         return errors;
     }
 
+    /// <summary>Progress notifications must be correlatable and bounded before any state consumes them.</summary>
+    public static IReadOnlyList<string> ValidateProgress(ProcessorProgressParams? progress)
+    {
+        var errors = new List<string>();
+
+        if (progress is null)
+        {
+            errors.Add("progress: missing");
+            return errors;
+        }
+
+        if (string.IsNullOrWhiteSpace(progress.JobId))
+            errors.Add("progress.jobId: required");
+        if (string.IsNullOrWhiteSpace(progress.Phase))
+            errors.Add("progress.phase: required");
+        if (progress.Fraction is < 0 or > 1)
+            errors.Add("progress.fraction: must be within [0, 1]");
+        if (progress.Fraction is double fraction && double.IsNaN(fraction))
+            errors.Add("progress.fraction: must be a number");
+
+        return errors;
+    }
+
     public static IReadOnlyList<string> ValidateRunParams(ProcessorRunParams? parameters)
     {
         var errors = new List<string>();
@@ -284,6 +315,20 @@ public static class WorkerProtocolValidator
                 errors.Add("result.processor.id: required");
             if (string.IsNullOrWhiteSpace(result.Processor.Version))
                 errors.Add("result.processor.version: required");
+            if (result.Status == WorkerProtocol.StatusCompleted && string.IsNullOrWhiteSpace(result.Processor.ConfigurationHash))
+                errors.Add("result.processor.configurationHash: required on a completed run (provenance and cache identity)");
+        }
+
+        if (result.Usage is not null)
+        {
+            if (result.Usage.WallTimeMs is < 0)
+                errors.Add("result.usage.wallTimeMs: cannot be negative");
+            if (result.Usage.AudioDurationMs is < 0)
+                errors.Add("result.usage.audioDurationMs: cannot be negative");
+            if (result.Usage.PeakRamMb is < 0)
+                errors.Add("result.usage.peakRamMb: cannot be negative");
+            if (result.Usage.PeakVramMb is < 0)
+                errors.Add("result.usage.peakVramMb: cannot be negative");
         }
 
         if (result.Status == WorkerProtocol.StatusCompleted && (result.Representations is null || result.Representations.Count == 0))
@@ -297,8 +342,18 @@ public static class WorkerProtocolValidator
             var representation = result.Representations[index];
             var prefix = $"result.representations[{index}]";
 
+            if (representation is null)
+            {
+                // System.Text.Json admits a null array element regardless of the annotation; an
+                // untrusted sidecar must not be able to turn that into a host exception.
+                errors.Add($"{prefix}: must not be null");
+                continue;
+            }
+
             if (string.IsNullOrWhiteSpace(representation.Kind))
                 errors.Add($"{prefix}.kind: required");
+            else if (!Enum.TryParse<RepresentationKind>(representation.Kind, ignoreCase: false, out _))
+                errors.Add($"{prefix}.kind: '{representation.Kind}' is not a RepresentationKind");
             if (representation.SchemaVersion < 1)
                 errors.Add($"{prefix}.schemaVersion: must be at least 1");
             if (representation.Text is null)
@@ -313,6 +368,12 @@ public static class WorkerProtocolValidator
             {
                 var segment = representation.Segments[segmentIndex];
                 var segmentPrefix = $"{prefix}.segments[{segmentIndex}]";
+
+                if (segment is null)
+                {
+                    errors.Add($"{segmentPrefix}: must not be null");
+                    continue;
+                }
 
                 if (segment.CharStart < 0 || segment.CharEnd < segment.CharStart || segment.CharEnd > textLength)
                     errors.Add($"{segmentPrefix}: char range must satisfy 0 <= charStart <= charEnd <= text.length");

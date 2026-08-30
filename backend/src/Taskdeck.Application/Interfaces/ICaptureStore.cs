@@ -18,4 +18,10 @@ public interface ICaptureStore
     Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default);
 
     Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes every capture owned by <paramref name="userId"/> (account erasure). Set-based and
+    /// executed inside the caller's ambient transaction; returns the number of rows removed.
+    /// </summary>
+    Task<int> DeleteByUserAsync(Guid userId, CancellationToken cancellationToken = default);
 }

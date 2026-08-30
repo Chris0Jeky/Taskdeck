@@ -66,7 +66,8 @@ public sealed class Capture : Entity
         DateTimeOffset? capturedAtClient = null,
         string? userTitle = null,
         string? userNote = null,
-        Guid? legacyRequestId = null)
+        Guid? legacyRequestId = null,
+        DateTimeOffset? capturedAtServer = null)
         : base(id)
     {
         if (id == Guid.Empty)
@@ -89,6 +90,14 @@ public sealed class Capture : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Legacy request ID cannot be empty");
 
         UserId = userId;
+        if (capturedAtServer.HasValue)
+        {
+            // A mirror or backfill of an existing queue row keeps that row's intake time as its own
+            // creation time, so chronological Inbox order survives the read switch.
+            CreatedAt = capturedAtServer.Value;
+            UpdatedAt = capturedAtServer.Value;
+        }
+
         CapturedAtServer = CreatedAt;
         CapturedAtClient = capturedAtClient;
         PrimaryModality = primaryModality;
@@ -98,8 +107,8 @@ public sealed class Capture : Entity
         Lifecycle = CaptureLifecycleState.Received;
         LegacySource = legacySource;
         ContextBoardId = contextBoardId;
-        UserTitle = NormalizeBounded(userTitle, MaxUserTitleLength, "Capture title");
-        UserNote = NormalizeBounded(userNote, MaxUserNoteLength, "Capture note");
+        UserTitle = NormalizeBounded(userTitle, MaxUserTitleLength, "Capture title", singleLine: true);
+        UserNote = NormalizeBounded(userNote, MaxUserNoteLength, "Capture note", singleLine: false);
         LegacyRequestId = legacyRequestId;
     }
 
@@ -118,7 +127,8 @@ public sealed class Capture : Entity
         DateTimeOffset? capturedAtClient,
         string? userTitle,
         CaptureIntentMode intent = CaptureIntentMode.Organize,
-        CaptureProducerKind? producerOverride = null)
+        CaptureProducerKind? producerOverride = null,
+        DateTimeOffset? capturedAtServer = null)
     {
         var dimensions = CaptureSourceMapping.Resolve(source);
 
@@ -134,7 +144,8 @@ public sealed class Capture : Entity
             capturedAtClient,
             userTitle,
             userNote: null,
-            legacyRequestId: requestId);
+            legacyRequestId: requestId,
+            capturedAtServer: capturedAtServer);
     }
 
     public void TransitionTo(CaptureLifecycleState next)
@@ -186,7 +197,7 @@ public sealed class Capture : Entity
 
     public void Retitle(string? userTitle)
     {
-        var normalized = NormalizeBounded(userTitle, MaxUserTitleLength, "Capture title");
+        var normalized = NormalizeBounded(userTitle, MaxUserTitleLength, "Capture title", singleLine: true);
         if (string.Equals(UserTitle, normalized, StringComparison.Ordinal))
             return;
 
@@ -195,24 +206,25 @@ public sealed class Capture : Entity
     }
 
     /// <summary>
-    /// Trims, bounds and sanitises free text. Control characters other than LF and TAB are replaced
-    /// by spaces rather than rejected: the legacy capture contract accepts them in a title hint, so a
-    /// mirrored row must never fail where the queue row succeeds (the dual-write must be
-    /// behaviour-preserving in both flag states). Length is still enforced, matching the legacy cap.
+    /// Trims, bounds and sanitises free text. Control characters are replaced by spaces rather than
+    /// rejected: the legacy capture contract accepts them in a title hint, so a mirrored row must
+    /// never fail where the queue row succeeds (the dual-write must be behaviour-preserving in both
+    /// flag states). A single-line field (the title) also flattens LF and TAB; a note keeps them.
+    /// Length is still enforced, matching the legacy cap.
     /// </summary>
-    private static string? NormalizeBounded(string? value, int maxLength, string label)
+    private static string? NormalizeBounded(string? value, int maxLength, string label, bool singleLine)
     {
         if (string.IsNullOrWhiteSpace(value))
             return null;
 
-        var sanitized = string.Create(value.Length, value, static (span, source) =>
+        var sanitized = string.Create(value.Length, (value, singleLine), static (span, state) =>
         {
+            var (source, flatten) = state;
             for (var index = 0; index < source.Length; index++)
             {
                 var character = source[index];
-                span[index] = char.IsControl(character) && character != '\n' && character != '\t'
-                    ? ' '
-                    : character;
+                var keep = !char.IsControl(character) || (!flatten && (character == '\n' || character == '\t'));
+                span[index] = keep ? character : ' ';
             }
         });
 

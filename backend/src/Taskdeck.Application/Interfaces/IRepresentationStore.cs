@@ -16,6 +16,8 @@ public sealed record RepresentationDescriptor(
     Guid? ProcessingRunId,
     string ProcessorId,
     string ProcessorVersion,
+    string? ProcessorModel,
+    string ConfigurationHash,
     int SchemaVersion,
     string ContentHash,
     string? Language,

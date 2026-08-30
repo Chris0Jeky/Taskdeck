@@ -34,4 +34,7 @@ public sealed class EfCaptureStore : ICaptureStore
 
     public Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default)
         => _context.Captures.AsNoTracking().CountAsync(capture => capture.UserId == userId, cancellationToken);
+
+    public Task<int> DeleteByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+        => _context.Captures.Where(capture => capture.UserId == userId).ExecuteDeleteAsync(cancellationToken);
 }

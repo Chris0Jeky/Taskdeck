@@ -318,11 +318,11 @@ public sealed class WorkerProtocolSerializationTests
     }
 
     [Fact]
-    public void ValidateResult_ShouldRequireARepresentationOnCompletion()
+    public void ValidateResult_ShouldRequireARepresentationAndAConfigurationHashOnCompletion()
     {
         var result = new ProcessorRunResult(
             WorkerProtocol.StatusCompleted,
-            new ProcessorIdentity("taskdeck.mock", "1.0.0", null, null),
+            new ProcessorIdentity("taskdeck.mock", "1.0.0", null, "sha256:mock"),
             Array.Empty<ProcessorRepresentationOutput>(),
             null,
             null);
@@ -330,8 +330,58 @@ public sealed class WorkerProtocolSerializationTests
         WorkerProtocolValidator.ValidateResult(result)
             .Should().ContainSingle(error => error.Contains("must emit at least one representation"));
 
-        var cancelled = result with { Status = WorkerProtocol.StatusCancelled };
-        WorkerProtocolValidator.ValidateResult(cancelled).Should().BeEmpty();
+        var noHash = result with { Processor = new ProcessorIdentity("taskdeck.mock", "1.0.0", null, null) };
+        WorkerProtocolValidator.ValidateResult(noHash)
+            .Should().Contain(error => error.Contains("configurationHash: required on a completed run"));
+
+        var cancelled = result with { Status = WorkerProtocol.StatusCancelled, Processor = noHash.Processor };
+        WorkerProtocolValidator.ValidateResult(cancelled).Should().BeEmpty("a cancelled run carries no output to identify");
+    }
+
+    [Fact]
+    public void ValidateResult_ShouldRejectNullEntriesUnknownKindsAndNegativeUsageWithoutThrowing()
+    {
+        var json = PocResult
+            .Replace("\"kind\": \"Transcript\"", "\"kind\": \"transcrpit\"")
+            .Replace("\"peakVramMb\": 5740", "\"peakVramMb\": -1")
+            .Replace("\"representations\": [", "\"representations\": [ null,")
+            .Replace("\"segments\": [", "\"segments\": [ null,");
+        var response = WorkerProtocol.Deserialize<JsonRpcResponse<ProcessorRunResult>>(json);
+
+        var act = () => WorkerProtocolValidator.ValidateResult(response!.Result);
+
+        var errors = act.Should().NotThrow("untrusted sidecar output must never abort the host").Subject;
+        errors.Should().Contain("result.representations[0]: must not be null");
+        errors.Should().Contain(error => error.Contains("representations[1].kind") && error.Contains("not a RepresentationKind"));
+        errors.Should().Contain("result.representations[1].segments[0]: must not be null");
+        errors.Should().Contain("result.usage.peakVramMb: cannot be negative");
+    }
+
+    [Fact]
+    public void ValidateProgress_ShouldRequireCorrelationAndABoundedFraction()
+    {
+        WorkerProtocolValidator.ValidateProgress(new ProcessorProgressParams("job-1", "transcribing", 0.5, null)).Should().BeEmpty();
+        WorkerProtocolValidator.ValidateProgress(new ProcessorProgressParams("job-1", "transcribing", null, null)).Should().BeEmpty();
+
+        var errors = WorkerProtocolValidator.ValidateProgress(new ProcessorProgressParams("", " ", 1.5, null));
+
+        errors.Should().Contain("progress.jobId: required");
+        errors.Should().Contain("progress.phase: required");
+        errors.Should().Contain("progress.fraction: must be within [0, 1]");
+        WorkerProtocolValidator.ValidateProgress(null).Should().ContainSingle(error => error == "progress: missing");
+    }
+
+    [Fact]
+    public void JsonRpcResponse_IsSuccess_ShouldRequireAResultAndNoError()
+    {
+        var ok = WorkerProtocol.Deserialize<JsonRpcResponse<ProcessorRunResult>>(PocResult)!;
+        var failure = WorkerProtocol.Deserialize<JsonRpcResponse<ProcessorRunResult>>(PocFailure)!;
+        var empty = new JsonRpcResponse<ProcessorRunResult>(WorkerProtocol.JsonRpcVersion, "job-1", null, null);
+
+        ok.IsSuccess.Should().BeTrue();
+        failure.IsSuccess.Should().BeFalse();
+        empty.IsSuccess.Should().BeFalse();
+        empty.IsError.Should().BeFalse("neither member present is malformed, not an error result");
     }
 
     [Fact]

@@ -241,6 +241,33 @@ public sealed class ProcessorManifestValidatorTests
     }
 
     [Fact]
+    public void TryParse_ShouldRejectNumericEnumTokensAndMiscasedMemberNames()
+    {
+        // The schema fixes kebab-case string enumerations and exact camelCase member names.
+        var numeric = WhisperXManifest.Replace("\"execution\": \"sidecar\"", "\"execution\": 1");
+        ProcessorManifest.TryParse(numeric, out _, out var numericError).Should().BeFalse();
+        numericError.Should().StartWith("Manifest JSON is malformed");
+
+        var miscased = WhisperXManifest.Replace("\"id\": \"taskdeck.whisperx\"", "\"Id\": \"taskdeck.whisperx\"");
+        ProcessorManifest.TryParse(miscased, out _, out var miscasedError).Should().BeFalse("'Id' is an unknown member under exact naming");
+        miscasedError.Should().StartWith("Manifest JSON is malformed");
+    }
+
+    [Fact]
+    public void Validate_ShouldRequireNetworkForRemoteLocalityRegardlessOfExecution()
+    {
+        var manifest = ParseExample() with
+        {
+            Execution = ProcessorExecutionMode.Sidecar,
+            Locality = ProcessorLocality.Remote,
+            Privacy = new ProcessorPrivacyDeclaration(false, null, null, null)
+        };
+
+        ProcessorManifestValidator.Validate(manifest).Errors
+            .Should().Contain(error => error.Contains("compute is remote must declare networkRequired=true"));
+    }
+
+    [Fact]
     public void TryParse_ShouldRejectAnUnknownEnumValueAsMalformed()
     {
         var json = WhisperXManifest.Replace("\"sidecar\"", "\"mainframe\"");

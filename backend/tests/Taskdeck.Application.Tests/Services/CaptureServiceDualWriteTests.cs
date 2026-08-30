@@ -117,7 +117,28 @@ public sealed class CaptureServiceDualWriteTests
             new CreateCaptureItemDto(null, "typed note", "typed", TitleHint: "clipped\r\npage title"));
 
         result.IsSuccess.Should().BeTrue("a capture the legacy contract accepts must not be rejected by the mirror");
-        mirrored!.UserTitle.Should().Be("clipped \npage title");
+        mirrored!.UserTitle.Should().Be("clipped  page title", "titles are single-line; control characters become spaces");
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithDualWriteEnabled_ShouldStampTheQueueRowsIntakeTime()
+    {
+        LlmRequest? persisted = null;
+        Capture? mirrored = null;
+        _llmQueueRepositoryMock
+            .Setup(r => r.AddAsync(It.IsAny<LlmRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<LlmRequest, CancellationToken>((request, _) => persisted = request)
+            .ReturnsAsync((LlmRequest request, CancellationToken _) => request);
+        _captureStoreMock
+            .Setup(s => s.AddAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()))
+            .Callback<Capture, CancellationToken>((capture, _) => mirrored = capture)
+            .Returns(Task.CompletedTask);
+        var service = CreateService(dualWrite: true);
+
+        await service.CreateAsync(_userId, new CreateCaptureItemDto(null, "typed note", "typed"));
+
+        mirrored!.CapturedAtServer.Should().Be(persisted!.CreatedAt);
+        mirrored.CreatedAt.Should().Be(persisted.CreatedAt);
     }
 
     [Fact]

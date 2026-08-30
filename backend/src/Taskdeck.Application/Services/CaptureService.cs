@@ -114,7 +114,8 @@ public class CaptureService : ICaptureService
                     dto.BoardId,
                     payload.ClientCreatedAt,
                     dto.TitleHint,
-                    intent: CaptureIntentMode.Organize);
+                    intent: CaptureIntentMode.Organize,
+                    capturedAtServer: request.CreatedAt);
                 await _captureStore.AddAsync(mirror, cancellationToken);
             }
 

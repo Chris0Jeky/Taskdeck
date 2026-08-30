@@ -193,6 +193,9 @@ public static class ProcessorManifestValidator
         if (manifest.Execution == ProcessorExecutionMode.Remote && !networkRequired)
             errors.Add("privacy: a remote processor must declare networkRequired=true");
 
+        if (manifest.Locality == ProcessorLocality.Remote && !networkRequired)
+            errors.Add("privacy: a processor whose compute is remote must declare networkRequired=true");
+
         if (manifest.Locality == ProcessorLocality.Local && networkRequired)
             errors.Add("privacy: a local processor cannot declare networkRequired=true (use hybrid or remote)");
 

@@ -783,8 +783,8 @@ candidate tables (CF-03, CF-06, CF-07, CF-08) hang off this row and are not yet 
 | Lifecycle | `CaptureLifecycleState` | Yes | Received … Archived (see `CaptureLifecyclePolicy`) | User-legible timeline, independent of job state |
 | LegacySource | `CaptureSource` | Yes | Defined enum value | Derived compatibility field (`CaptureSourceMapping`) |
 | ContextBoardId | `Guid?` | No | FK to Board (SetNull) | Optional explicit context hint; never required |
-| UserTitle | `string?` | No | Max 240 chars, trimmed, no control chars | |
-| UserNote | `string?` | No | Max 2000 chars | |
+| UserTitle | `string?` | No | Max 240 chars, trimmed; single-line — every control character (LF/TAB included) becomes a space, never a rejection (legacy-contract parity) | |
+| UserNote | `string?` | No | Max 2000 chars, trimmed; LF/TAB kept, other control characters become spaces | |
 | LegacyRequestId | `Guid?` | No | Unique | The queue row this capture mirrors; null for native captures after the read switch |
 | CreatedAt / UpdatedAt | `DateTimeOffset` | Yes | | |
 

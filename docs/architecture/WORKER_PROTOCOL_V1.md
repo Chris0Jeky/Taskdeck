@@ -105,6 +105,8 @@ not 64 hex characters; a non-positive byte size; non-positive limits or speaker 
 ```
 
 `messageCode` is a stable, translatable code — never free text derived from content.
+`WorkerProtocolValidator.ValidateProgress` requires a non-blank `jobId` and `phase` and a `fraction`
+within `[0, 1]` when present; anything else is dropped before it can touch progress state.
 
 ### 3.4 `processor.cancel` (request, host → processor)
 
@@ -140,7 +142,11 @@ with `status: "cancelled"`; the host terminates the process if it does not. The 
 ```
 
 `status` is one of `completed | failed | cancelled`. A `completed` run emits at least one
-representation. Segments are ordered by `charStart`, do not overlap, satisfy
+representation and carries a non-empty `processor.configurationHash` (provenance and cache
+identity). `kind` must be a `RepresentationKind` name; `usage` values are non-negative; a `null`
+entry in `representations` or `segments` is a validation error, never a host exception (an untrusted
+sidecar must not be able to abort result processing). Segments are ordered by `charStart`, do not
+overlap, satisfy
 `0 ≤ charStart ≤ charEnd ≤ text.length`, carry non-negative timestamps with `startMs ≤ endMs`, and a
 confidence in `[0, 1]` when present (`WorkerProtocolValidator.ValidateResult`). Segment char offsets
 are UTF-16 code units over `text` — the same unit the shipped transcript evidence spans use.

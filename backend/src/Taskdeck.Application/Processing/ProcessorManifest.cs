@@ -87,9 +87,11 @@ public static class ProcessorManifestJson
     public static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true,
+        // Exact names, exact spellings: the schema requires camelCase members and forbids extras,
+        // and enumerations are kebab-case strings, never integers.
+        PropertyNameCaseInsensitive = false,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower) }
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.KebabCaseLower, allowIntegerValues: false) }
     };
 }
