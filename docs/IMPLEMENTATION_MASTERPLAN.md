@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-29
+Last Updated: 2026-08-30
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -68,6 +68,11 @@ behaviour.
 > These are the delivery, governance, and correction records, newest first. They were hoisted below
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
+
+## Delivery update (2026-08-30, batch-execute trust boundary)
+
+- **The frontend confirmation boundary is fail-closed (`#2283`, PR `#2286`, merge `c1945329b`).** Paper Review captures the exact capped proposal membership, approved-revision pins, receipt titles, and canonical board/history scope presented for confirmation; synchronous pre-click drift invalidation plus a click-boundary recheck prevent an unseen replacement from entering the request. Post-click refreshes cannot rewrite the captured payload or receipt labels. Exact-head focused/full frontend checks, typecheck, build, scoped lint, two fresh-context reviews, and hosted Required CI including E2E Smoke passed.
+- **The remaining batch-execute hardening is split by seam rather than folded into the consent repair.** `#2284` owns a fresh persisted per-turn status/idempotency read for the backend preload-to-concurrent-apply race, without a generic executor transaction refactor. `#2285` owns the receipt-phase focus handoff and one polite/atomic announcement in `BatchExecuteDialog`, without changing shared `TdDialog` unless its focused regression proves a shared defect. Each remains an independent v0.3 Priority II slice with its own proving checks.
 
 ## Closeout checkpoint (2026-08-28, v0.3 integration wave)
 
