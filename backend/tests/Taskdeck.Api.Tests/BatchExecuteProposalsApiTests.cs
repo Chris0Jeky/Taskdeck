@@ -2,13 +2,18 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -93,6 +98,43 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
             .Should().Be(1);
         (await db.Cards.CountAsync(card => card.BoardId == boardId && card.Title == "Not approved card"))
             .Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_WhenExecutorReturnsUnexpectedError_SanitizesHttp200Receipt()
+    {
+        const string canary = @"SqlException SELECT secret; constraint FK_private at C:\tenant\provider.cs STACK_CANARY";
+        using var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IAutomationExecutorService>();
+                services.AddSingleton<IAutomationExecutorService>(new UnexpectedFailureExecutor(canary));
+            }));
+        var client = factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "batch-exec-unexpected");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-exec-unexpected-board");
+        var proposal = await CreateApprovedProposalAsync(
+            client,
+            user.UserId,
+            boardId,
+            "Unexpected failure card",
+            factory.Services);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest { Proposals = [Select(proposal)] });
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        body.Should().NotContain(canary);
+        body.Should().NotContain("SqlException");
+        body.Should().NotContain("SELECT secret");
+        body.Should().NotContain(@"C:\tenant");
+        body.Should().NotContain("constraint FK_private");
+        body.Should().NotContain("STACK_CANARY");
+        var item = Deserialize(body).Results.Single();
+        item.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        item.ErrorMessage.Should().Be("An unexpected error occurred.");
     }
 
     [Fact]
@@ -535,9 +577,11 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
         return payload.GetProperty("diff").GetString()!;
     }
 
-    private async Task<Guid> GetColumnIdAsync(Guid boardId)
+    private Task<Guid> GetColumnIdAsync(Guid boardId) => GetColumnIdAsync(_factory.Services, boardId);
+
+    private static async Task<Guid> GetColumnIdAsync(IServiceProvider services, Guid boardId)
     {
-        using var scope = _factory.Services.CreateScope();
+        using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         return await db.Columns
             .Where(column => column.BoardId == boardId)
@@ -549,9 +593,10 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
         HttpClient client,
         Guid userId,
         Guid boardId,
-        string title)
+        string title,
+        IServiceProvider? services = null)
     {
-        var columnId = await GetColumnIdAsync(boardId);
+        var columnId = await GetColumnIdAsync(services ?? _factory.Services, boardId);
         var createRequest = new CreateProposalDto(
             ProposalSourceType.Queue,
             userId,
@@ -579,13 +624,45 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
         HttpClient client,
         Guid userId,
         Guid boardId,
-        string title)
+        string title,
+        IServiceProvider? services = null)
     {
-        var proposal = await CreatePendingProposalAsync(client, userId, boardId, title);
+        var proposal = await CreatePendingProposalAsync(client, userId, boardId, title, services);
         var approveResponse = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
         var body = await approveResponse.Content.ReadAsStringAsync();
         approveResponse.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return (await approveResponse.Content.ReadFromJsonAsync<ProposalDto>())!;
+    }
+
+    private sealed class UnexpectedFailureExecutor : IAutomationExecutorService
+    {
+        private readonly string _message;
+
+        public UnexpectedFailureExecutor(string message) => _message = message;
+
+        public Task<Result> ExecuteProposalAsync(
+            Guid proposalId,
+            string idempotencyKey,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Result.Failure(ErrorCodes.UnexpectedError, _message));
+
+        public Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
+            Guid proposalId,
+            string idempotencyKey,
+            Guid? callerUserId = null,
+            CancellationToken cancellationToken = default) =>
+            UnexpectedReceiptAsync();
+
+        public Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
+            Guid proposalId,
+            string idempotencyKey,
+            Guid? callerUserId,
+            ProposalExecutionRevisionExpectation revisionExpectation,
+            CancellationToken cancellationToken = default) =>
+            UnexpectedReceiptAsync();
+
+        private Task<Result<ProposalExecutionReceipt>> UnexpectedReceiptAsync() =>
+            Task.FromResult(Result.Failure<ProposalExecutionReceipt>(ErrorCodes.UnexpectedError, _message));
     }
 
     private async Task<ProposalDto> CreateRevisedApprovedProposalAsync(

@@ -8,6 +8,8 @@ namespace Taskdeck.Application.Services;
 /// <inheritdoc cref="IBatchProposalExecutionService"/>
 public sealed class BatchProposalExecutionService : IBatchProposalExecutionService
 {
+    private const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+
     private readonly IProposalExecutionAuthorizationSnapshotReader _snapshotReader;
     private readonly IAutomationExecutorService _executorService;
     private readonly IAuthorizationService _authorizationService;
@@ -93,7 +95,9 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 // would report a definite Forbidden the server never established.
                 return Result.Failure<BatchExecuteProposalsResultDto>(
                     writableResult.ErrorCode,
-                    writableResult.ErrorMessage);
+                    SanitizeUnexpectedErrorMessage(
+                        writableResult.ErrorCode,
+                        writableResult.ErrorMessage));
             }
 
             writableBoardIds = writableResult.Value;
@@ -109,7 +113,9 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             {
                 return Result.Failure<BatchExecuteProposalsResultDto>(
                     readableResult.ErrorCode,
-                    readableResult.ErrorMessage);
+                    SanitizeUnexpectedErrorMessage(
+                        readableResult.ErrorCode,
+                        readableResult.ErrorMessage));
             }
 
             readableBoardIds = readableResult.Value;
@@ -209,12 +215,15 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             cancellationToken);
         if (!receipt.IsSuccess)
         {
+            var errorMessage = SanitizeUnexpectedErrorMessage(
+                receipt.ErrorCode,
+                receipt.ErrorMessage);
             _logger?.LogWarning(
                 "Batch execute item failed for proposal {ProposalId}: {ErrorCode} {ErrorMessage}",
                 selection.ProposalId,
                 receipt.ErrorCode,
-                receipt.ErrorMessage);
-            return Failed(selection.ProposalId, receipt.ErrorCode, receipt.ErrorMessage);
+                errorMessage);
+            return Failed(selection.ProposalId, receipt.ErrorCode, errorMessage);
         }
 
         return receipt.Value.AlreadyApplied
@@ -233,7 +242,17 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
     }
 
     private static BatchExecuteProposalResultDto Failed(Guid proposalId, string errorCode, string errorMessage) =>
-        new(proposalId, BatchExecuteOutcome.Failed, errorCode, errorMessage, AppliedOperations: null);
+        new(
+            proposalId,
+            BatchExecuteOutcome.Failed,
+            errorCode,
+            SanitizeUnexpectedErrorMessage(errorCode, errorMessage),
+            AppliedOperations: null);
+
+    private static string SanitizeUnexpectedErrorMessage(string errorCode, string errorMessage) =>
+        errorCode == ErrorCodes.UnexpectedError
+            ? GenericUnexpectedErrorMessage
+            : errorMessage;
 
     /// <summary>
     /// The single not-found shape, used for a proposal that does not exist AND for one the caller
