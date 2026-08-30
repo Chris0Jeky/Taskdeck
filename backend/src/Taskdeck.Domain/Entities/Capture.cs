@@ -100,6 +100,14 @@ public sealed class Capture : Entity
     /// <summary>The immutable inputs, in <see cref="SourceAsset.Ordinal"/> order.</summary>
     public IReadOnlyList<SourceAsset> SourceAssets => _sourceAssets;
 
+    /// <summary>
+    /// The inputs as they stand now: every asset that nothing has superseded. A post-intake edit
+    /// appends a corrected asset rather than rewriting one, so the intake record stays in
+    /// <see cref="SourceAssets"/> while readers of "the current text" use this view.
+    /// </summary>
+    public IReadOnlyList<SourceAsset> ActiveSourceAssets =>
+        _sourceAssets.Where(asset => asset.IsActive).ToList();
+
     private Capture() : base()
     {
     }
@@ -188,7 +196,12 @@ public sealed class Capture : Entity
         CaptureProducerKind? producerOverride = null,
         DateTimeOffset? capturedAtServer = null,
         CaptureDisposition? legacyDisposition = null,
-        Guid? producedByPrincipalId = null)
+        Guid? producedByPrincipalId = null,
+        string? sourceText = null,
+        string? externalReference = null,
+        CaptureProcessingSummary? processingSummary = null,
+        CaptureActionState? actionState = null,
+        CaptureUserDisposition? userDisposition = null)
     {
         var dimensions = CaptureSourceMapping.Resolve(source);
 
@@ -208,7 +221,40 @@ public sealed class Capture : Entity
             capturedAtServer: capturedAtServer,
             producedByPrincipalId: producedByPrincipalId);
 
-        if (legacyDisposition.HasValue)
+        // Assets and the machine-derived axes are seeded BEFORE the user's disposition, because an
+        // archived capture rejects both (archived is terminal). A legacy row that was cancelled or
+        // put away still has to arrive with its source material and its outcomes intact -- archiving
+        // is a decision about the Inbox, never an erasure of what was captured or produced (#2255).
+        if (!string.IsNullOrWhiteSpace(sourceText))
+        {
+            capture.AddInlineTextSource(sourceText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalReference))
+        {
+            capture.AddExternalReferenceSource(externalReference);
+        }
+
+        if (processingSummary.HasValue)
+        {
+            capture.RecordProcessingSummary(processingSummary.Value);
+        }
+
+        if (actionState.HasValue)
+        {
+            capture.RecordActionState(actionState.Value);
+        }
+
+        // The explicit axis wins when the caller resolved one (the backfill derives it from the queue
+        // row's status as well as its recorded disposition); otherwise the recorded disposition maps.
+        if (userDisposition.HasValue)
+        {
+            if (!Enum.IsDefined(userDisposition.Value))
+                throw new DomainException(ErrorCodes.ValidationError, "Capture disposition is invalid");
+
+            capture.Disposition = userDisposition.Value;
+        }
+        else if (legacyDisposition.HasValue)
         {
             capture.Disposition = CaptureUserDispositionMapping.FromLegacy(legacyDisposition.Value);
         }
@@ -224,6 +270,55 @@ public sealed class Capture : Entity
         return asset;
     }
 
+    /// <summary>Appends a locator the user supplied (a URL, a share-target reference) as the next immutable asset.</summary>
+    public SourceAsset AddExternalReferenceSource(string reference, string? originalName = null)
+    {
+        var asset = SourceAsset.FromExternalReference(Id, _sourceAssets.Count, reference, originalName);
+        AddSourceAsset(asset);
+        return asset;
+    }
+
+    /// <summary>
+    /// Records a post-intake correction of the capture's text (CF-01 <c>#2255</c>, late review
+    /// finding on <c>#2320</c>). Sources are immutable, so the edit is a <b>new</b> inline text
+    /// asset that supersedes the current one — never an in-place rewrite: what the user originally
+    /// typed, pasted or dictated stays readable, and every derived representation can still name the
+    /// exact asset it was built from. When the capture carries no active text asset yet the
+    /// correction is simply the first one.
+    /// </summary>
+    public SourceAsset SupersedeInlineTextSource(
+        string text,
+        string mediaType = SourceAsset.PlainTextMediaType,
+        string? originalName = null)
+    {
+        EnsureNotArchived("edit the source of");
+
+        var current = _sourceAssets
+            .LastOrDefault(asset => asset.IsActive && asset.StorageKind == SourceAssetStorageKind.InlineText);
+
+        // Constructed first: a rejected correction (blank, over the cap) throws here, before the
+        // capture is touched at all, so a failed edit never leaves it without a current source.
+        var replacement = SourceAsset.FromInlineText(Id, _sourceAssets.Count, text, mediaType, originalName);
+        if (current is not null)
+        {
+            replacement.RecordSupersedes(current.Id);
+            current.MarkSupersededBy(replacement.Id);
+        }
+
+        AddSourceAsset(replacement);
+        return replacement;
+    }
+
+    /// <summary>
+    /// The text of the capture as it stands now: the newest inline text asset nothing has
+    /// superseded. Null when the capture holds no inline text (a voice note before transcription,
+    /// a bare external reference).
+    /// </summary>
+    public string? CurrentText =>
+        _sourceAssets
+            .LastOrDefault(asset => asset.IsActive && asset.StorageKind == SourceAssetStorageKind.InlineText)
+            ?.TextPayload?.Text;
+
     /// <summary>
     /// Appends the next immutable asset. The first asset stored decides <see cref="PrimaryModality"/>
     /// (a summary for lists — the constructor's value is only the mapping's guess until an asset
@@ -238,8 +333,11 @@ public sealed class Capture : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Source asset belongs to a different capture");
         if (asset.Ordinal != _sourceAssets.Count)
             throw new DomainException(ErrorCodes.ValidationError, $"Source asset ordinal must be {_sourceAssets.Count}");
-        if (_sourceAssets.Count >= MaxSourceAssets)
-            throw new DomainException(ErrorCodes.ValidationError, $"A capture cannot hold more than {MaxSourceAssets} source assets");
+        // The cap bounds how many inputs a capture HAS, not how long its correction history is: a
+        // superseded asset is history, so an edit is net-zero against the limit and a capture the
+        // shipped contract lets a user edit can never be rejected here.
+        if (_sourceAssets.Count(existing => existing.IsActive) >= MaxSourceAssets)
+            throw new DomainException(ErrorCodes.ValidationError, $"A capture cannot hold more than {MaxSourceAssets} active source assets");
 
         if (_sourceAssets.Count == 0)
         {

@@ -34,6 +34,45 @@ public sealed class EfCaptureStore : ICaptureStore
             .ThenInclude(asset => asset.TextPayload)
             .FirstOrDefaultAsync(capture => capture.Id == id && capture.UserId == userId, cancellationToken);
 
+    public Task<Capture?> GetByIdForUpdateAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+        => _context.Captures
+            .Include(capture => capture.SourceAssets)
+            .ThenInclude(asset => asset.TextPayload)
+            .FirstOrDefaultAsync(capture => capture.Id == id && capture.UserId == userId, cancellationToken);
+
+    public Task UpdateAsync(Capture capture, CancellationToken cancellationToken = default)
+    {
+        // A tracked aggregate is already staged by the change tracker; Update() re-attaches one that
+        // was read detached (or arrived from another scope) so either read path commits the same way.
+        // The write itself belongs to IUnitOfWork.SaveChangesAsync, exactly like AddAsync.
+        var entry = _context.Entry(capture);
+        if (entry.State == EntityState.Detached)
+        {
+            _context.Captures.Update(capture);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public async Task<IReadOnlyList<Capture>> GetByIdsForUserAsync(
+        IReadOnlyCollection<Guid> ids,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+        {
+            return Array.Empty<Capture>();
+        }
+
+        var distinctIds = ids.Distinct().ToArray();
+        return await _context.Captures
+            .AsNoTracking()
+            .Include(capture => capture.SourceAssets)
+            .ThenInclude(asset => asset.TextPayload)
+            .Where(capture => capture.UserId == userId && distinctIds.Contains(capture.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
         => _context.Captures.AsNoTracking().AnyAsync(capture => capture.Id == id, cancellationToken);
 
