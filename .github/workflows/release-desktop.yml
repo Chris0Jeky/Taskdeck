@@ -21,7 +21,13 @@
 # GitHub PRERELEASE (#2217), so a release candidate never takes the Latest badge
 # that README and the packaged quick start point users at.
 #
-# Tracked by: #535 (PKG-03), #1795, #1806, #1878, #2217
+# The release PAGE body is composed by `scripts/ci/compose-release-notes.mjs`
+# (#2234) — download button, checksum and quick start first, then breaking
+# changes, curated highlights and the grouped changelog — and passed to
+# `--notes-file` on create and re-asserted on publish. A rehearsal dispatch
+# renders it too and uploads it as the `composed-page-body` artifact.
+#
+# Tracked by: #535 (PKG-03), #1795, #1806, #1878, #2217, #2234
 # =============================================================================
 
 name: Release Desktop
@@ -548,11 +554,166 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
+  # Render the release page body (#2234)
+  #
+  # `--generate-notes` opened the page with GitHub's flat PR list and left the
+  # download at the bottom, behind the asset table. `scripts/ci/compose-release-notes.mjs`
+  # renders the body instead: download button, checksum and quick start first,
+  # then Breaking changes (from this tag's UPGRADING.md section), Highlights
+  # (from docs/releases/notes/<tag>.md) and the grouped changelog.
+  #
+  # This job runs on the REHEARSAL path too, and uploads what it rendered, so a
+  # `no-publish` dispatch previews the page before any tag is cut. The composer
+  # needs the built checksum, so it cannot live in resolve-source; it is kept
+  # out of create-release so the rehearsal reaches it at all.
+  # ---------------------------------------------------------------------------
+  compose-notes:
+    name: Compose Release Notes
+    needs: [resolve-source, build-backend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # `releases/generate-notes` is a POST and is refused to a read-only token
+      # even though it creates nothing. This job performs no writes of its own:
+      # it renders a file and uploads it as a run artifact.
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-source.outputs.sha }}
+          persist-credentials: false
+
+      - name: Verify checkout matches the resolved release commit
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [ "${actual_sha}" != "${EXPECTED_SHA}" ]; then
+            printf '::error::Checkout HEAD %s does not match the resolved release commit %s.\n' \
+              "${actual_sha}" "${EXPECTED_SHA}"
+            exit 1
+          fi
+          printf 'Release source commit verified: %s\n' "${actual_sha}"
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download built release assets
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets/
+
+      # Every untrusted or resolved value reaches Bash through `env:`; nothing
+      # is interpolated into shell source (#1795). The tag arrives already
+      # grammar-checked by resolve-source.
+      - name: Render the release page body
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
+          RELEASE_PRERELEASE: ${{ needs.resolve-source.outputs.prerelease }}
+          RELEASE_PUBLISH: ${{ needs.resolve-source.outputs.publish }}
+        run: |
+          set -euo pipefail
+          asset="taskdeck-${RELEASE_TAG}-win-x64.zip"
+          generated="generated-notes.json"
+
+          # generate-notes reads a tag that must already EXIST server-side, and
+          # groups the PRs through .github/release.yml. A rehearsal has no tag,
+          # so the changelog renders as a documented placeholder rather than
+          # failing the very dispatch whose job is to preview the page.
+          if [ "${RELEASE_PUBLISH}" = "true" ]; then
+            # The changelog BASE is stated explicitly. Left to infer, GitHub
+            # picks the previous release of ANY kind: once v0.3.0-rc.1 exists,
+            # the stable v0.3.0 page would cover only rc.1 -> final and hide
+            # everything since v0.2.0 from the people the stable page is for.
+            # The base is therefore the newest published, non-draft,
+            # NON-prerelease release, so both a stable page and an RC page span
+            # the whole gap since the last stable release. `gh release list`
+            # returns newest-first.
+            previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" \
+              --exclude-pre-releases --exclude-drafts --limit 1 \
+              --json tagName --jq '.[0].tagName // empty')"
+            generate_args=(-f "tag_name=${RELEASE_TAG}")
+            # The inequality guard covers a RE-RUN after this very tag was
+            # already published as a stable release: it would then be its own
+            # newest stable release, and a self-comparison is empty.
+            if [ -n "${previous_tag}" ] && [ "${previous_tag}" != "${RELEASE_TAG}" ]; then
+              generate_args+=(-f "previous_tag_name=${previous_tag}")
+              printf 'Changelog base: %s (newest published stable release).\n' "${previous_tag}"
+            else
+              printf 'No earlier stable release found; letting GitHub infer the changelog base.\n'
+            fi
+
+            # Bounded retries, matching the asset-upload loop below: a transient
+            # API failure must not cost the whole publish.
+            generated_ok=0
+            for attempt in 1 2 3; do
+              if gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+                "${generate_args[@]}" > "${generated}"; then
+                generated_ok=1
+                break
+              fi
+              printf '::warning::generate-notes failed (attempt %s/3).\n' "${attempt}"
+              if [ "${attempt}" -lt 3 ]; then
+                sleep "$((attempt * 10))"
+              fi
+            done
+            if [ "${generated_ok}" -ne 1 ]; then
+              printf '::error::generate-notes failed after 3 attempts; refusing to publish a changelog-less page.\n'
+              exit 1
+            fi
+          else
+            printf 'Rehearsal dispatch: no release tag exists, so the changelog section is a placeholder.\n'
+            : > "${generated}"
+          fi
+
+          # Exits non-zero for a STABLE tag whose UPGRADING section or curated
+          # highlights are missing, before anything is published; a release
+          # candidate warns and falls back.
+          node scripts/ci/compose-release-notes.mjs \
+            --tag "${RELEASE_TAG}" \
+            --prerelease "${RELEASE_PRERELEASE}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --asset "${asset}" \
+            --checksum-file "release-assets/${asset}.sha256" \
+            --upgrading UPGRADING.md \
+            --notes "docs/releases/notes/${RELEASE_TAG}.md" \
+            --generated-notes "${generated}" \
+            --out release-notes.md
+
+          {
+            printf '### Release page body\n\n'
+            cat release-notes.md
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # The name must NOT match create-release's `pattern: release-*` asset
+      # download. That download uses minimatch, so `release-*` swallows any
+      # name beginning `release-` — `release-page-notes` included — and
+      # merge-multiple would drop this Markdown into release-assets/, where the
+      # upload loop would publish it as a stray asset beside the ZIP. The
+      # release-desktop-dispatch suite pins this with a real glob match rather
+      # than a string comparison, so a future rename cannot silently re-break it.
+      - name: Upload the rendered release notes
+        uses: actions/upload-artifact@v7
+        with:
+          name: composed-page-body
+          path: release-notes.md
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
   # Create GitHub Release with the Windows x64 artifact
   # ---------------------------------------------------------------------------
   create-release:
     name: Create GitHub Release
-    needs: [resolve-source, build-backend]
+    needs: [resolve-source, build-backend, compose-notes]
     # Publish ONLY for a real release: a tag push, or a dispatch that names an existing tag.
     # A bare dispatch is a rehearsal and must stop after artifacts — without this guard it
     # reached `gh release create` and failed there, which is not a safe place to rely on.
@@ -596,6 +757,30 @@ jobs:
           pattern: release-*
           merge-multiple: true
           path: release-assets/
+
+      # The composed page body (#2234), rendered by compose-notes from this same
+      # commit. Kept out of release-assets/ so it is never uploaded as an asset.
+      - name: Download the composed release notes
+        uses: actions/download-artifact@v8
+        with:
+          name: composed-page-body
+          path: release-notes/
+
+      - name: Verify the composed release notes are usable
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="release-notes/release-notes.md"
+          if [ ! -s "${notes}" ]; then
+            printf '::error::Composed release notes %s are missing or empty; refusing to publish a bare page.\n' \
+              "${notes}"
+            exit 1
+          fi
+          if ! head -n 1 "${notes}" | grep -q 'releases/download/'; then
+            printf '::error::The first line of %s is not the download button; refusing to publish.\n' "${notes}"
+            exit 1
+          fi
+          printf 'Composed release notes verified (%s bytes).\n' "$(wc -c < "${notes}")"
 
       - name: Verify checksums
         shell: bash
@@ -691,6 +876,12 @@ jobs:
             # the draft is never briefly a full release. The array is EMPTY for a
             # stable tag, where it expands to zero words and this call stays
             # byte-identical to the pre-#2217 one.
+            #
+            # The body is the composed page from compose-notes (#2234), passed
+            # as a notes FILE — GitHub's own flat auto-changelog, which buried
+            # the download under the asset table, is gone. The publish step
+            # re-asserts the same file, so the adopt branch above reaches the
+            # same body without a second code path here.
             prerelease_flag=()
             if [ "${RELEASE_PRERELEASE}" = "true" ]; then
               prerelease_flag=(--prerelease)
@@ -699,7 +890,7 @@ jobs:
               --draft \
               "${prerelease_flag[@]}" \
               --title "Taskdeck ${RELEASE_TAG}" \
-              --generate-notes \
+              --notes-file "release-notes/release-notes.md" \
               --verify-tag
             printf 'Draft release %s created (prerelease=%s).\n' "${RELEASE_TAG}" "${RELEASE_PRERELEASE}"
           fi
@@ -763,9 +954,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # `--notes-file` travels in the SAME edit (#2234). Re-asserting the
+          # body here is what makes the resumable adopt path (#1806) idempotent:
+          # a draft left behind by an earlier attempt — possibly created before
+          # this composer existed, or from a stale render — is brought to the
+          # body composed for THIS run rather than keeping whatever it had.
           prerelease_flag=()
           if [ "${RELEASE_PRERELEASE}" = "true" ]; then
             prerelease_flag=(--prerelease)
           fi
-          gh release edit "${RELEASE_TAG}" --draft=false "${prerelease_flag[@]}"
-          printf 'Published release %s (prerelease=%s).\n' "${RELEASE_TAG}" "${RELEASE_PRERELEASE}"
+          gh release edit "${RELEASE_TAG}" --draft=false "${prerelease_flag[@]}" \
+            --notes-file "release-notes/release-notes.md"
+          printf 'Published release %s (prerelease=%s) with the composed page body.\n' \
+            "${RELEASE_TAG}" "${RELEASE_PRERELEASE}"

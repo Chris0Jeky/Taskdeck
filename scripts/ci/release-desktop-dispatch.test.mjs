@@ -1,5 +1,5 @@
 // =============================================================================
-// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035/#1309/#2217
+// release-desktop-dispatch.test.mjs — release workflow regressions for #1795/#1806/#1877/#1878/#2035/#1309/#2217/#2234
 // =============================================================================
 //
 // Two classes of check:
@@ -21,6 +21,10 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+// `matchesGlob` is the same minimatch-shaped matcher `actions/download-artifact`
+// applies to its `pattern:` input, so the artifact-name check below is a real
+// glob evaluation rather than a string comparison that cannot see the bug.
+import { matchesGlob } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -32,6 +36,7 @@ const mcpGuidePath = fileURLToPath(new URL('../../docs/MCP_SERVER.md', import.me
 const mcpDesktopExamplePath = fileURLToPath(new URL('../../mcp.example.json', import.meta.url))
 const mcpDockerExamplePath = fileURLToPath(new URL('../../mcp-docker.example.json', import.meta.url))
 const archiveHarnessPath = fileURLToPath(new URL('./Test-WindowsDesktopArchive.ps1', import.meta.url))
+const releaseConfigPath = fileURLToPath(new URL('../../.github/release.yml', import.meta.url))
 const materialSymbolsLicensePath = fileURLToPath(
   new URL('../../LICENSES/Apache-2.0-material-symbols-font-200.txt', import.meta.url),
 )
@@ -227,7 +232,7 @@ test('resolve-source dereferences annotated tags and refuses anything else', () 
   assert.match(job, /\^\[0-9a-f\]\{40\}\$/, 'the resolved commit is checked to be a clean 40-hex SHA')
 })
 
-for (const job of ['build-frontend', 'build-backend', 'create-release']) {
+for (const job of ['build-frontend', 'build-backend', 'compose-notes', 'create-release']) {
   test(`${job} builds from the resolved commit and fails closed on a mismatch`, () => {
     const block = jobBlock(job)
     assert.match(
@@ -255,7 +260,11 @@ for (const job of ['build-frontend', 'build-backend', 'create-release']) {
 
 test('every checkout refuses to persist Git credentials', () => {
   const checkouts = workflow.match(/uses: actions\/checkout@[^\n]*\n(?: +[^\n]*\n)*/g) ?? []
-  assert.equal(checkouts.length, 4, 'resolve-source, build-frontend, build-backend, create-release')
+  assert.equal(
+    checkouts.length,
+    5,
+    'resolve-source, build-frontend, build-backend, compose-notes, create-release',
+  )
   for (const block of checkouts) {
     assert.match(block, /persist-credentials: false/, `checkout without persist-credentials: false:\n${block}`)
   }
@@ -623,6 +632,175 @@ test('the draft is created with the prerelease flag when the tag carries one', (
     /prerelease_flag=\(\)\n\s+if \[ "\$\{RELEASE_PRERELEASE\}" = "true" \]; then\n\s+prerelease_flag=\(--prerelease\)\n\s+fi\n\s+gh release create/,
     'the branch is set immediately before the call it guards',
   )
+})
+
+// -----------------------------------------------------------------------------
+// 9. Workflow structure — the composed release page (#2234)
+//
+// The page body is rendered by `scripts/ci/compose-release-notes.mjs` (unit
+// tested in `compose-release-notes.test.mjs`) and must reach BOTH the create
+// and the publish call, or the resumable adopt path (#1806) would publish a
+// draft that never received the composed body.
+// -----------------------------------------------------------------------------
+
+test('a dedicated job composes the page body and runs on the rehearsal path too', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(job, /needs: \[resolve-source, build-backend\]/, 'the composer needs the built checksum')
+  assert.doesNotMatch(
+    job,
+    /^\s+if: needs\.resolve-source\.outputs\.publish == 'true'$/m,
+    'a rehearsal dispatch must reach the composer — previewing the page is its whole point',
+  )
+  assert.match(job, /node scripts\/ci\/compose-release-notes\.mjs/, 'the bash calls the tested script')
+})
+
+test('the composer receives the resolved tag, prerelease decision and repo through env', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(job, /RELEASE_TAG: \$\{\{ needs\.resolve-source\.outputs\.tag \}\}/)
+  assert.match(job, /RELEASE_PRERELEASE: \$\{\{ needs\.resolve-source\.outputs\.prerelease \}\}/)
+  assert.match(job, /RELEASE_PUBLISH: \$\{\{ needs\.resolve-source\.outputs\.publish \}\}/)
+  assert.match(job, /--repo "\$\{GITHUB_REPOSITORY\}"/, 'the repo is read from the runner, not hard-coded')
+  assert.doesNotMatch(job, /\$\{\{ *inputs\./, 'the untrusted dispatch input never reaches this job')
+})
+
+test('the composer is fed the checksum, UPGRADING.md and the curated notes for the tag', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(job, /--checksum-file "release-assets\/\$\{asset\}\.sha256"/)
+  assert.match(job, /--upgrading UPGRADING\.md/)
+  assert.match(job, /--notes "docs\/releases\/notes\/\$\{RELEASE_TAG\}\.md"/)
+  assert.match(job, /--out release-notes\.md/)
+  assert.match(
+    job,
+    /asset="taskdeck-\$\{RELEASE_TAG\}-win-x64\.zip"/,
+    'the linked asset name must match the one build-backend packages',
+  )
+})
+
+test('generate-notes is attempted only when a tag actually exists', () => {
+  const job = jobBlock('compose-notes')
+  const guardAt = job.indexOf('if [ "${RELEASE_PUBLISH}" = "true" ]; then')
+  const callAt = job.indexOf('gh api --method POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes"')
+  const elseAt = job.indexOf('\n          else\n', guardAt)
+  assert.ok(guardAt !== -1 && callAt !== -1 && elseAt !== -1)
+  assert.ok(
+    guardAt < callAt && callAt < elseAt,
+    'the call sits inside the publish branch — a rehearsal has no tag for generate-notes to read',
+  )
+  assert.match(job, /generate_args=\(-f "tag_name=\$\{RELEASE_TAG\}"\)/)
+  assert.match(job, /Rehearsal dispatch: no release tag exists/, 'the rehearsal branch says so in the log')
+})
+
+test('the changelog base is the newest published stable release, with bounded retries', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(
+    job,
+    /gh release list --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--exclude-pre-releases --exclude-drafts --limit 1/,
+    'a prerelease must never become the base of the next stable page',
+  )
+  assert.match(
+    job,
+    /generate_args\+=\(-f "previous_tag_name=\$\{previous_tag\}"\)/,
+    'the base is stated explicitly rather than inferred by GitHub',
+  )
+  assert.match(
+    job,
+    /if \[ -n "\$\{previous_tag\}" \] && \[ "\$\{previous_tag\}" != "\$\{RELEASE_TAG\}" \]; then/,
+    'a first release, and a re-run of an already-published stable tag, omit the field',
+  )
+  assert.match(job, /letting GitHub infer the changelog base/, 'the omission is logged, not silent')
+  assert.match(job, /for attempt in 1 2 3; do/, 'the API call retries a bounded number of times')
+  assert.match(job, /sleep "\$\(\(attempt \* 10\)\)"/, 'the same 10/20s backoff as the asset upload')
+  assert.match(job, /generate-notes failed after 3 attempts[\s\S]{0,120}?exit 1/, 'exhausted retries fail closed')
+})
+
+// The bug this replaces a decorative assertion for: `actions/download-artifact`
+// matches `pattern:` with MINIMATCH, so `release-*` swallows every name that
+// begins `release-` — the original `release-page-notes` included. With
+// merge-multiple the Markdown would have landed in release-assets/ and been
+// published as a stray asset beside the ZIP. A string comparison cannot see
+// that; a real glob match can, so the workflow's OWN values are parsed out and
+// matched here.
+test('the composed-body artifact name cannot be swept into the release asset download', () => {
+  const uploadName = /uses: actions\/upload-artifact@[^\n]*\n\s+with:\n\s+name: ([^\n]+)/.exec(
+    jobBlock('compose-notes'),
+  )
+  assert.ok(uploadName, 'compose-notes must upload the rendered body as a named artifact')
+  const artifactName = uploadName[1].trim()
+
+  const createRelease = jobBlock('create-release')
+  const assetPattern = /uses: actions\/download-artifact@[^\n]*\n\s+with:\n\s+pattern: ([^\n]+)/.exec(createRelease)
+  assert.ok(assetPattern, 'create-release must download the built assets by pattern')
+  const pattern = assetPattern[1].trim()
+
+  // Self-check: prove the matcher really does what the bug depended on, so a
+  // broken helper cannot make this test pass by always returning false.
+  assert.equal(matchesGlob('release-win-x64', pattern), true, 'the asset artifacts do match the pattern')
+  assert.equal(
+    matchesGlob('release-page-notes', pattern),
+    true,
+    'the original name DID match — this is the defect being pinned',
+  )
+
+  assert.equal(
+    matchesGlob(artifactName, pattern),
+    false,
+    `artifact "${artifactName}" matches the asset download pattern "${pattern}" and would be published as a stray release asset`,
+  )
+
+  // …and it is fetched by exact name, never by a pattern that could widen.
+  const byName = /uses: actions\/download-artifact@[^\n]*\n\s+with:\n\s+name: ([^\n]+)/.exec(createRelease)
+  assert.ok(byName, 'create-release must download the composed body by exact name')
+  assert.equal(byName[1].trim(), artifactName, 'upload and download must name the same artifact')
+})
+
+test('the release body is the composed file on create AND re-asserted on publish', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /needs: \[resolve-source, build-backend, compose-notes\]/)
+  assert.match(
+    job,
+    /name: composed-page-body\n\s+path: release-notes\//,
+    'create-release downloads the composed body by its exact artifact name',
+  )
+  assert.match(
+    job,
+    /--notes-file "release-notes\/release-notes\.md" \\\n\s+--verify-tag/,
+    'the draft is created with the composed body',
+  )
+  assert.match(
+    job,
+    /gh release edit "\$\{RELEASE_TAG\}" --draft=false "\$\{prerelease_flag\[@\]\}" \\\n\s+--notes-file "release-notes\/release-notes\.md"/,
+    'publish re-asserts the body, which is what makes the #1806 adopt path idempotent',
+  )
+  assert.doesNotMatch(
+    job,
+    /--generate-notes/,
+    'the bare GitHub changelog page, with the download buried at the bottom, must not come back',
+  )
+})
+
+test('an empty or button-less composed body fails before publishing', () => {
+  const job = jobBlock('create-release')
+  assert.match(job, /if \[ ! -s "\$\{notes\}" \]; then/, 'an empty notes file is refused')
+  assert.match(job, /refusing to publish a bare page/)
+  assert.match(
+    job,
+    /head -n 1 "\$\{notes\}" \| grep -q 'releases\/download\/'/,
+    'the download button must still be the first line of what actually gets published',
+  )
+  const verifyAt = job.indexOf('Verify the composed release notes are usable')
+  const createAt = job.indexOf('gh release create "${RELEASE_TAG}"')
+  assert.ok(verifyAt !== -1 && createAt !== -1)
+  assert.ok(verifyAt < createAt, 'the body is checked before the release is created')
+})
+
+test('the changelog grouping configuration exists and is a catch-all', () => {
+  const config = readFileSync(releaseConfigPath, 'utf8').replace(/\r\n/g, '\n')
+  assert.match(config, /^changelog:$/m)
+  assert.match(config, /^\s+categories:$/m)
+  for (const title of ['Bug fixes', 'Features', 'Documentation', 'Build, CI and packaging', 'Dependencies']) {
+    assert.ok(config.includes(`- title: ${title}`), `.github/release.yml has no "${title}" category`)
+  }
+  assert.match(config, /- "\*"/, 'an unlabelled PR must still appear somewhere')
 })
 
 test('the publish flip carries the prerelease flag in the same edit', () => {

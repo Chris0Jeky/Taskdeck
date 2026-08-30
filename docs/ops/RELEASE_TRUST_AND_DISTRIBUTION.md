@@ -2,7 +2,7 @@
 
 Status: **Active**
 
-Last reconciled: **2026-08-29**
+Last reconciled: **2026-08-30**
 
 Tracker: [#1167](https://github.com/Chris0Jeky/Taskdeck/issues/1167)
 
@@ -60,6 +60,41 @@ and from a version-less `docker pull` alone, not only from its release notes. Th
 ("otherwise unsigned RC explicitly labelled as such"). It is enforced in `.github/workflows/release-desktop.yml` and
 `.github/workflows/release-container.yml`; the desktop half is pinned by the Release Workflow Contract job
 (`scripts/ci/release-desktop-dispatch.test.mjs`). [#2217](https://github.com/Chris0Jeky/Taskdeck/issues/2217)
+
+### Release page layout
+
+The release body is **composed**, not auto-generated. `gh release create --generate-notes` opened every page with GitHub's
+flat "What's Changed" PR list and left the download beneath the asset table, which is why the v0.2.0 body was hand-edited
+after publish. `scripts/ci/compose-release-notes.mjs` renders the body instead, in this order:
+
+1. **The download button** — a shields.io `for-the-badge` image linked to the deterministic asset URL
+   (`https://github.com/<repo>/releases/download/<tag>/taskdeck-<tag>-win-x64.zip`, which is known before the upload
+   happens), then the SHA-256 read out of the generated checksum file, a tag-pinned link to the same `QUICK_START.md`
+   that ships inside the ZIP, and the `Get-FileHash` line for checking the download. For a prerelease this block also
+   carries a one-line release-candidate banner. The button is always the first line of the page.
+2. **`## Breaking changes`** — lifted from the tag's own section in **`UPGRADING.md`** (`## <tag> …`), so the section
+   cannot be forgotten at tag time.
+3. **`## Highlights`** — the curated **`docs/releases/notes/<tag>.md`**, written by the pre-tag docs PR.
+4. **`## What's changed`** — the `releases/generate-notes` body, grouped through `.github/release.yml` and carrying its
+   full-changelog compare link.
+
+The two source files a release must supply are therefore `UPGRADING.md` and `docs/releases/notes/<tag>.md`. Their absence
+is treated differently by tag class: for a **stable** tag either one missing fails the run before anything is published;
+for a **release candidate** both degrade to a workflow warning — highlights are omitted and breaking changes fall back to a
+pointer at `UPGRADING.md`. A missing or mismatched checksum fails either way.
+
+The `compose-notes` job runs on the rehearsal path too and uploads what it rendered as the **`composed-page-body`**
+artifact, so a `no-publish` dispatch previews the exact page before a tag is cut (the changelog section is a placeholder
+there, because `generate-notes` needs a tag that already exists). That artifact name must not match the `release-*` pattern
+`create-release` uses to collect the built assets — `download-artifact` matches it with minimatch, and a matching name would
+have the rendered Markdown published as a stray asset beside the ZIP; the dispatch suite asserts it with a real glob match.
+On the publish path the changelog base is stated explicitly as the newest published **stable** release, so a stable page
+always spans the whole gap since the last stable release rather than only the last release candidate.
+`create-release` downloads that artifact by name, refuses an empty
+or button-less body, passes it to `gh release create --notes-file`, and re-asserts it in the same `gh release edit` that
+clears the draft flag — which is what keeps the resumable adopt path ([#1806](https://github.com/Chris0Jeky/Taskdeck/issues/1806))
+idempotent. The composer is unit-tested by `scripts/ci/compose-release-notes.test.mjs` and its wiring by
+`scripts/ci/release-desktop-dispatch.test.mjs`. [#2234](https://github.com/Chris0Jeky/Taskdeck/issues/2234)
 
 The signing job must be unreachable from pull requests, forks, untrusted branches, and ordinary CI. Provider-held or
 hardware-protected key custody is preferred; no signing key, PFX file/password, token, private account evidence, or recovery
