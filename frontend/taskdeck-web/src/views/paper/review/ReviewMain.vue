@@ -98,6 +98,7 @@ const props = withDefaults(
 const { t } = useI18n()
 const reviewMainEl = ref<HTMLElement | null>(null)
 const decisionReceiptEl = ref<HTMLElement | null>(null)
+const provenanceExpanded = ref(false)
 
 const isAppliedRecord = computed(
   () =>
@@ -125,6 +126,12 @@ const emit = defineEmits<{
   (event: 'cancel-edit'): void
   (event: 'report', proposalId: string): void
 }>()
+
+function toggleProvenance() {
+  provenanceExpanded.value = !provenanceExpanded.value
+}
+
+defineExpose({ toggleProvenance })
 
 const hasNumericConfidence = computed(
   () =>
@@ -333,6 +340,8 @@ watch(
       :evidence-links="evidenceLinks"
       :proposal-id="proposalId"
       :read-only="readOnly"
+      :details-expanded="provenanceExpanded"
+      @update:details-expanded="provenanceExpanded = $event"
       @report="emit('report', $event)"
     />
     <ReviewSideEffects :data="sideEffects" />
