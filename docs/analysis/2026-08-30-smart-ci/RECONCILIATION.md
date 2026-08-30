@@ -23,13 +23,14 @@ repository disagree, and what was done with each. Decision text is ADR-0066; the
 | 7 | Self-hosted runners assumed absent | Confirmed: 0 runners | CI-04 prepares; registration only after CI-13 |
 | 8 | `ci-release.yml` may qualify the same commit twice (tag push + release published) | Confirmed triggers: `push: tags: v*`, `release: published`, `workflow_dispatch` | Measured and collapsed under CI-10 `#2334` |
 | 9 | Deep-quality ownership fragmented | Confirmed; live symptoms `#2180` (nightly mobile-safari red since 2026-08-24) and `#1210` (`ci-extended` `startup_failure`) | CI-10 owns both |
-| 10 | Merge queue unavailable on personal private repos | Correct (Enterprise Cloud only); `merge_group` in `ci-required.yml` is inert for this repository | Ruling 3: branch-current (`strict`) replaces merge queue; the trigger stays harmless |
+| 10 | Merge queue unavailable on personal private repos | Correct — merge queue is an organization-plan feature and this is a personal account; `merge_group` in `ci-required.yml` is inert for this repository | Ruling 3: branch-current (`strict`) replaces merge queue; the trigger stays harmless |
 | 11 | Copilot code review consumes Actions minutes in private repos | Repository has the Copilot review workflows active (`dynamic/copilot-pull-request-reviewer`) and the Codex GitHub App | CI-13 A: verify private-mode billing of both before cutover; adjust review cadence to after-CI-stabilises |
 | 12 | Not in the pack | CodeQL default setup was disabled 2026-08-19 (`#1819`); on a **private** repository CodeQL and `actions/dependency-review-action` require GitHub Advanced Security, which a personal Pro plan does not include | CI-11 records Semgrep as the SAST gate and the in-repo dependency signals (`reusable-dependency-security-signals.yml`) as the dependency gate; `ci-extended`'s `dependency-review` job must be removed or gated before cutover (CI-13 A) |
 | 13 | Not in the pack | GitHub Pages (`pages-frontend.yml`) keeps working from a private repository on Pro, but the published site stays public | CI-13 A public-asset review |
 | 14 | Pack's CI-15 seed titled "CI-14:" | Typo | Seeded as CI-15 `#2339` |
 | 15 | Example workflows reference `ORGANIZATION/taskdeck-ci-policy` | Not applicable in personal mode | Archived as received; the personal-mode shadow workflow is written fresh (CI-02 scaffold) |
 | 16 | Example policy lanes (`linux-semantic`, `affected-integration`, …) | The repository's real lanes are its reusable workflows and their jobs | The checked-in policy maps lanes to the actual reusable workflow jobs so the gate can verify real check names |
+| 17 | — | Archive naming | Two pack files were renamed beyond the `_AS_RECEIVED` suffix for the folder's conventions: `DRAFT_ADR_SMART_CI_AND_PRIVATE_RUNNER_TRUST.md` → `PACK_ADR_DRAFT_AS_RECEIVED.md`, `CI_ISSUE_SEEDS.md` → `ISSUE_SEEDS_AS_RECEIVED.md`; contents unchanged |
 
 ## 2. Rulings taken under delegation
 

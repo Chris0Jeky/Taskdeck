@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generatedAtUtc": "2026-08-30T17:20:35.675Z",
+  "generatedAtUtc": "2026-08-30T17:55:50.771Z",
   "repository": "Chris0Jeky/Taskdeck",
   "window": {
     "since": "2026-07-31",
@@ -12,67 +12,91 @@
     "runListingTruncated": false,
     "dayWindowsAtTheApiCap": [],
     "sampleSize": 30,
+    "requiredWorkflowPath": ".github/workflows/ci-required.yml",
     "assumptions": [
-      "Runs listed with the Actions API `created=<day>..<day>` filter for every UTC day in 2026-07-31..2026-08-30 (the API returns at most 1000 runs per filter, so the window is chunked per day; a day at the cap is reported); a run counts once per attempt listing, re-run attempts are flagged by `run_attempt > 1`.",
+      "Runs listed with the Actions API `created=<day>..<day>` filter for every UTC day in 2026-07-31..2026-08-30 (the API returns at most 1000 runs per filter, so the window is chunked per day; a day at the cap is reported). Workflows are grouped by their workflow file path (GitHub-managed workflows such as Copilot, Dependabot and CodeQL use per-run display names, so those group by their `dynamic/...` path).",
+      "The listing exposes one entry per run carrying its LATEST attempt: \"runs re-run\" counts runs with run_attempt > 1, \"extra attempts\" sums run_attempt - 1, and the sampled jobs are those of the latest attempt only (earlier failed attempts consumed minutes this ledger does not see).",
       "Job duration = completed_at - started_at (queue time excluded); critical path = last job completion - first job start within one run.",
       "Allowance minutes follow GitHub billing: every job rounds up to a whole minute, Windows counts x2, macOS x10; the GitHub Pro private-repository allowance is 3000 minutes/month and 1 GB storage (prices as of 2026-08-30: Linux $0.006, Windows $0.01, macOS $0.062 per minute beyond the allowance).",
       "The public repository reports 0 billable minutes; the estimate applies private-repository accounting to measured durations.",
-      "Projections scale the window's CI run counts to 30 days and multiply by the sample's mean allowance minutes per run; cancelled runs consumed minutes until cancellation, so the \"including cancelled\" line is an upper bound.",
+      "Prices, rounding and the Pro allowances were verified on docs.github.com on 2026-08-30; the Windows x2 / macOS x10 allowance multipliers are GitHub's long-standing rule and were NOT re-verified on the pages read that day (allowanceMultiplierVerified=false) - re-read before the cutover. Shared artifact/Packages storage beyond the allowance is $0.25 per GB-month; Actions cache $0.07 per GB-month.",
+      "Projections scale the required workflow's run counts in the window to 30 days and multiply by the sample's mean allowance minutes per run: \"completed\" counts success + failure conclusions (per event where stated); cancelled runs consumed minutes until cancellation, so the \"including cancelled\" line is an upper bound.",
       "Artifacts: unexpired bytes only; expired artifacts no longer occupy storage. Sizes are the API-reported size_in_bytes.",
-      "The ledger records names, ids, timestamps and sizes only — no log content, no user content."
+      "The ledger records names, ids, timestamps and sizes only - no log content, no user content."
     ]
   },
   "runs": {
-    "total": 2707,
-    "reruns": 57,
-    "cancelled": 502,
-    "cancelledRate": 0.1854,
-    "rerunRate": 0.0211,
+    "total": 2721,
+    "reruns": 58,
+    "rerunAttempts": 62,
+    "cancelled": 504,
+    "cancelledRate": 0.1852,
+    "rerunRate": 0.0213,
     "byWorkflow": {
-      "CI Extended": {
-        "total": 811,
+      ".github/workflows/ci-required.yml": {
+        "label": "CI",
+        "total": 1205,
         "byEvent": {
-          "pull_request": 810,
+          "pull_request": 864,
+          "push": 341
+        },
+        "byConclusion": {
+          "in_progress": 4,
+          "cancelled": 386,
+          "success": 735,
+          "failure": 79,
+          "startup_failure": 1
+        },
+        "reruns": 55,
+        "rerunAttempts": 59,
+        "cancelled": 386
+      },
+      ".github/workflows/ci-extended.yml": {
+        "label": "CI Extended",
+        "total": 816,
+        "byEvent": {
+          "pull_request": 815,
           "workflow_dispatch": 1
         },
         "byConclusion": {
-          "success": 703,
+          "success": 708,
           "cancelled": 106,
           "failure": 2
         },
         "reruns": 3,
+        "rerunAttempts": 3,
         "cancelled": 106
       },
-      "CI": {
-        "total": 1198,
+      ".github/workflows/smart-ci-shadow.yml": {
+        "label": "Smart CI",
+        "total": 1,
         "byEvent": {
-          "pull_request": 858,
-          "push": 340
+          "pull_request": 1
         },
         "byConclusion": {
-          "in_progress": 1,
-          "success": 733,
-          "cancelled": 384,
-          "failure": 79,
-          "startup_failure": 1
+          "success": 1
         },
-        "reruns": 54,
-        "cancelled": 384
+        "reruns": 0,
+        "rerunAttempts": 0,
+        "cancelled": 0
       },
-      "Deploy Frontend to GitHub Pages": {
-        "total": 138,
+      ".github/workflows/pages-frontend.yml": {
+        "label": "Deploy Frontend to GitHub Pages",
+        "total": 139,
         "byEvent": {
-          "push": 138
+          "push": 139
         },
         "byConclusion": {
-          "success": 126,
+          "success": 127,
           "cancelled": 11,
           "startup_failure": 1
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 11
       },
-      "Nightly Quality Signals": {
+      ".github/workflows/nightly-quality.yml": {
+        "label": "Nightly Quality Signals",
         "total": 31,
         "byEvent": {
           "schedule": 31
@@ -81,9 +105,11 @@
           "success": 31
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "CI Nightly": {
+      ".github/workflows/ci-nightly.yml": {
+        "label": "CI Nightly",
         "total": 31,
         "byEvent": {
           "schedule": 31
@@ -93,9 +119,11 @@
           "success": 24
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "Release Security": {
+      ".github/workflows/release-security.yml": {
+        "label": "Release Security",
         "total": 6,
         "byEvent": {
           "push": 5,
@@ -105,9 +133,11 @@
           "success": 6
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "CI Release": {
+      ".github/workflows/ci-release.yml": {
+        "label": "CI Release",
         "total": 8,
         "byEvent": {
           "push": 5,
@@ -120,9 +150,11 @@
           "startup_failure": 2
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "Release Desktop": {
+      ".github/workflows/release-desktop.yml": {
+        "label": "Release Desktop",
         "total": 32,
         "byEvent": {
           "push": 5,
@@ -134,9 +166,11 @@
           "cancelled": 1
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 1
       },
-      "Release Container": {
+      ".github/workflows/release-container.yml": {
+        "label": "Release Container",
         "total": 6,
         "byEvent": {
           "push": 5,
@@ -146,1078 +180,52 @@
           "success": 6
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "github_actions in / for actions/checkout, docker/setup-buildx-action, docker/login-action, docker/metadata-action, docker/build-push-action - Update #1542072220": {
-        "total": 1,
+      "dynamic/dependabot/dependabot-updates": {
+        "label": "dynamic/dependabot/dependabot-updates",
+        "total": 28,
         "byEvent": {
-          "dynamic": 1
+          "dynamic": 28
         },
         "byConclusion": {
-          "success": 1
+          "success": 28
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "npm_and_yarn in /frontend/taskdeck-web for @stryker-mutator/core - Update #1542072243": {
-        "total": 1,
+      "dynamic/github-code-scanning/codeql": {
+        "label": "dynamic/github-code-scanning/codeql",
+        "total": 391,
         "byEvent": {
-          "dynamic": 1
+          "dynamic": 391
         },
         "byConclusion": {
-          "success": 1
+          "success": 390,
+          "queued": 1
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "npm_and_yarn in /frontend/taskdeck-web for @stryker-mutator/vitest-runner - Update #1542072240": {
-        "total": 1,
+      "dynamic/agents/github-advanced-security": {
+        "label": "dynamic/agents/github-advanced-security",
+        "total": 22,
         "byEvent": {
-          "dynamic": 1
+          "dynamic": 22
         },
         "byConclusion": {
-          "success": 1
+          "success": 14,
+          "failure": 8
         },
         "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       },
-      "npm_and_yarn in /frontend/taskdeck-web for @tanstack/vue-virtual, dompurify, marked, @storybook/vue3-vite, @vitest/coverage-v8, @vitest/ui, baseline-browser-mapping, happy-dom, storybook, vite, vitest, vue-tsc - Update #1542072236": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend for FsCheck, FsCheck.Xunit, OpenTelemetry.Exporter.Console, OpenTelemetry.Exporter.OpenTelemetryProtocol, OpenTelemetry.Extensions.Hosting, OpenTelemetry.Instrumentation.AspNetCore, OpenTelemetry.Instrumentation.Http, PdfPig - Update #1542049818": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "github_actions in / for actions/checkout, docker/setup-buildx-action, docker/login-action, docker/metadata-action, docker/build-push-action - Update #1538454618": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web - Update #1538377703": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend - Update #1538377671": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "github_actions in /. - Update #1538377689": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web for @axe-core/playwright, @storybook/vue3-vite, @typescript-eslint/eslint-plugin, @typescript-eslint/parser, baseline-browser-mapping, eslint, eslint-plugin-vuejs-accessibility, globals, happy-dom, storybook, vue-tsc - Update #1532577931": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend for xunit.runner.visualstudio - Update #1532577923": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend for Microsoft.AspNetCore.Authentication.JwtBearer, Microsoft.AspNetCore.Authentication.OpenIdConnect, Microsoft.AspNetCore.Mvc.Testing, Microsoft.AspNetCore.SignalR.Client, Microsoft.AspNetCore.SignalR.StackExchangeRedis, Microsoft.EntityFrameworkCore, Microsoft.EntityFrameworkCore.Design, Microsoft.EntityFrameworkCore.Sqlite, Microsoft.EntityFrameworkCore.Tools, Microsoft.Extensions.Http.Polly, Microsoft.NET.Test.Sdk, ModelContextProtocol, ModelContextProtocol.AspNetCore, Sentry.AspNet...": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web for ws, @axe-core/playwright, @storybook/vue3-vite, @typescript-eslint/eslint-plugin, @typescript-eslint/parser, baseline-browser-mapping, eslint, eslint-plugin-vuejs-accessibility, globals, happy-dom, storybook - Update #1532521256": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web for pinia - Update #1532521269": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Push on main": {
-        "total": 116,
-        "byEvent": {
-          "dynamic": 116
-        },
-        "byConclusion": {
-          "success": 116
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1808": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1808": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "queued": 1,
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1810": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1810": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1809": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "failure": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1809": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1801": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "failure": 3,
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1801": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1811": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1811": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1807": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1807": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1805": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "failure": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1805": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1799": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1799": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1800": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1800": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1798": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1798": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1797": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1797": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1796": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1796": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web for @babel/core, brace-expansion, brace-expansion, esbuild, fast-uri, fast-uri, fast-uri, fast-uri, fast-uri, js-cookie, minimatch, qs, ws - Update #1531859426": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web for @babel/core, brace-expansion, esbuild, js-cookie, minimatch, qs, ws - Update #1531859414": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Code scanning AI findings on PR #1787": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "failure": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1787": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1786": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1784": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1785": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1783": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1775": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1774": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1773": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1762": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1741": {
-        "total": 5,
-        "byEvent": {
-          "dynamic": 5
-        },
-        "byConclusion": {
-          "success": 5
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1745": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1744": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1760": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1750": {
-        "total": 5,
-        "byEvent": {
-          "dynamic": 5
-        },
-        "byConclusion": {
-          "success": 5
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Scheduled": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1743": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1759": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1757": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1758": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1756": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1751": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1752": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1732": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1748": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1712": {
-        "total": 5,
-        "byEvent": {
-          "dynamic": 5
-        },
-        "byConclusion": {
-          "success": 5
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1738": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1730": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1735": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1728": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1685": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1716": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1720": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1719": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1715": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1713": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1692": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1705": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1694": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1708": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1695": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1693": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1703": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1701": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1699": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1697": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1696": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1689": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "github_actions in /. - Update #1528818795": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend - Update #1528818799": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web - Update #1528818774": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1681": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1683": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1680": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1679": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1678": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "Mutation Testing": {
+      ".github/workflows/mutation-testing.yml": {
+        "label": "Mutation Testing",
         "total": 5,
         "byEvent": {
           "schedule": 3,
@@ -1228,880 +236,12 @@
           "failure": 2
         },
         "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1677": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1675": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1673": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1674": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1503": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1514": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1502": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1672": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1649": {
-        "total": 7,
-        "byEvent": {
-          "dynamic": 7
-        },
-        "byConclusion": {
-          "success": 7
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1659": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1648": {
-        "total": 5,
-        "byEvent": {
-          "dynamic": 5
-        },
-        "byConclusion": {
-          "success": 5
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1669": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1668": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1667": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1655": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1663": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1650": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1646": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1643": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1638": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1629": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1630": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1631": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1627": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1551": {
-        "total": 7,
-        "byEvent": {
-          "dynamic": 7
-        },
-        "byConclusion": {
-          "success": 7
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1634": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1624": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web - Update #1517303319": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "github_actions in /. - Update #1517303353": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend - Update #1517303352": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1621": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1509": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1537": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1620": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1557": {
-        "total": 8,
-        "byEvent": {
-          "dynamic": 8
-        },
-        "byConclusion": {
-          "success": 8
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1528": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1526": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1511": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1616": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1615": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1613": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1614": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1612": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1610": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1608": {
-        "total": 4,
-        "byEvent": {
-          "dynamic": 4
-        },
-        "byConclusion": {
-          "success": 4
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1601": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1604": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1603": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1599": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend for ModelContextProtocol, ModelContextProtocol.AspNetCore - Update #1512941218": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web for @tanstack/vue-virtual, marked, @playwright/test, @storybook/vue3-vite, @typescript-eslint/eslint-plugin, @typescript-eslint/parser, baseline-browser-mapping, eslint, globals, happy-dom, postcss, storybook, vue-tsc - Update #1502289596": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "github_actions in / for KineticCafe/actions-dco - Update #1502289585": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "nuget in /backend - Update #1502289485": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "github_actions in /. - Update #1502289493": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "npm_and_yarn in /frontend/taskdeck-web - Update #1502289465": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1593": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1592": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1591": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1588": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1586": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1584": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1583": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1582": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1581": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1579": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1578": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1571": {
-        "total": 5,
-        "byEvent": {
-          "dynamic": 5
-        },
-        "byConclusion": {
-          "success": 5
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1569": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1566": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1565": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1560": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1559": {
-        "total": 3,
-        "byEvent": {
-          "dynamic": 3
-        },
-        "byConclusion": {
-          "success": 3
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1558": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1556": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1555": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1554": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1550": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1499": {
-        "total": 1,
-        "byEvent": {
-          "dynamic": 1
-        },
-        "byConclusion": {
-          "success": 1
-        },
-        "reruns": 0,
-        "cancelled": 0
-      },
-      "PR #1549": {
-        "total": 2,
-        "byEvent": {
-          "dynamic": 2
-        },
-        "byConclusion": {
-          "success": 2
-        },
-        "reruns": 0,
+        "rerunAttempts": 0,
         "cancelled": 0
       }
     },
     "perDay": {
-      "2026-08-30": 211,
+      "2026-08-30": 225,
       "2026-08-29": 136,
       "2026-08-28": 83,
       "2026-08-27": 24,
@@ -2137,6 +277,7 @@
   },
   "sample": {
     "workflowName": "CI",
+    "workflowPath": ".github/workflows/ci-required.yml",
     "sampleSize": 30,
     "criticalPathSeconds": {
       "p50": 1481,
@@ -2144,13 +285,13 @@
       "max": 2431
     },
     "billableMinutesPerRun": {
-      "p50": 126,
+      "p50": 125,
       "p95": 133,
-      "mean": 126.4
+      "mean": 126.1
     },
     "aggregateRunnerMinutesPerRun": {
-      "p50": 72.3,
-      "mean": 72.6
+      "p50": 71.7,
+      "mean": 72.4
     },
     "byOs": {
       "linux": {
@@ -2158,8 +299,8 @@
         "meanBillableMinutesPerRun": 38.2
       },
       "windows": {
-        "meanRunnerMinutesPerRun": 41.9,
-        "meanBillableMinutesPerRun": 88.2
+        "meanRunnerMinutesPerRun": 41.8,
+        "meanBillableMinutesPerRun": 87.9
       }
     },
     "jobs": [
@@ -2167,25 +308,25 @@
         "name": "API Integration / API Integration (windows-latest)",
         "os": "windows",
         "samples": 30,
-        "meanSeconds": 1038,
+        "meanSeconds": 1035,
         "maxSeconds": 1750,
-        "meanBillableMinutes": 35.73
+        "meanBillableMinutes": 35.6
       },
       {
         "name": "Frontend Unit / Frontend Unit (windows-latest)",
         "os": "windows",
         "samples": 30,
-        "meanSeconds": 733,
-        "maxSeconds": 784,
-        "meanBillableMinutes": 25.4
+        "meanSeconds": 730,
+        "maxSeconds": 781,
+        "meanBillableMinutes": 25.27
       },
       {
         "name": "API Integration / API Integration (ubuntu-latest)",
         "os": "linux",
         "samples": 30,
-        "meanSeconds": 429,
+        "meanSeconds": 430,
         "maxSeconds": 554,
-        "meanBillableMinutes": 7.7
+        "meanBillableMinutes": 7.73
       },
       {
         "name": "E2E Smoke / E2E Smoke",
@@ -2193,15 +334,15 @@
         "samples": 30,
         "meanSeconds": 419,
         "maxSeconds": 452,
-        "meanBillableMinutes": 7.6
+        "meanBillableMinutes": 7.63
       },
       {
         "name": "Backend Unit / Backend Unit (windows-latest)",
         "os": "windows",
         "samples": 30,
-        "meanSeconds": 374,
+        "meanSeconds": 373,
         "maxSeconds": 481,
-        "meanBillableMinutes": 13.67
+        "meanBillableMinutes": 13.6
       },
       {
         "name": "Docs Governance / Worktree Helper (Windows PowerShell)",
@@ -2209,15 +350,15 @@
         "samples": 30,
         "meanSeconds": 369,
         "maxSeconds": 470,
-        "meanBillableMinutes": 13.4
+        "meanBillableMinutes": 13.47
       },
       {
         "name": "Backend Unit / Backend Unit (ubuntu-latest)",
         "os": "linux",
         "samples": 30,
-        "meanSeconds": 307,
+        "meanSeconds": 304,
         "maxSeconds": 352,
-        "meanBillableMinutes": 5.63
+        "meanBillableMinutes": 5.6
       },
       {
         "name": "Frontend Unit / Frontend Unit (ubuntu-latest)",
@@ -2239,7 +380,7 @@
         "name": "Migration Validation / Migration Validation",
         "os": "linux",
         "samples": 30,
-        "meanSeconds": 105,
+        "meanSeconds": 104,
         "maxSeconds": 118,
         "meanBillableMinutes": 2
       },
@@ -2247,15 +388,15 @@
         "name": "SAST Scan / SAST Scan (Semgrep)",
         "os": "linux",
         "samples": 30,
-        "meanSeconds": 60,
+        "meanSeconds": 59,
         "maxSeconds": 68,
-        "meanBillableMinutes": 1.47
+        "meanBillableMinutes": 1.43
       },
       {
         "name": "Dependency Security / Dependency Security Signals",
         "os": "linux",
         "samples": 30,
-        "meanSeconds": 53,
+        "meanSeconds": 54,
         "maxSeconds": 74,
         "meanBillableMinutes": 1.07
       },
@@ -2302,9 +443,35 @@
     ],
     "runs": [
       {
+        "runId": 33323844571,
+        "headSha": "8de28476fbde2c0949b34f89e1b033e265fab01f",
+        "createdAt": "2026-08-30T16:56:28Z",
+        "runAttempt": 1,
+        "jobCount": 17,
+        "criticalPathSeconds": 1387,
+        "aggregateRunnerSeconds": 4111,
+        "billableMinutes": 119,
+        "costUsdIfBeyondAllowance": 0.632,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1743,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2368,
+            "billableMinutes": 82,
+            "costUsdIfBeyondAllowance": 0.41
+          }
+        }
+      },
+      {
         "runId": 33321684303,
         "headSha": "5a26d10d2b03da360a39d03412dfd718f531170f",
         "createdAt": "2026-08-30T16:10:00Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1390,
         "aggregateRunnerSeconds": 4231,
@@ -2329,6 +496,7 @@
         "runId": 33320118897,
         "headSha": "f68ebbcded7a4da8dbf7be59fef0f9068130b526",
         "createdAt": "2026-08-30T15:36:28Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1514,
         "aggregateRunnerSeconds": 4618,
@@ -2353,6 +521,7 @@
         "runId": 33318723808,
         "headSha": "f5dd09126ed5e5e586b6e06c7fc6aa016e2b7466",
         "createdAt": "2026-08-30T15:06:54Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1417,
         "aggregateRunnerSeconds": 4304,
@@ -2377,6 +546,7 @@
         "runId": 33318617175,
         "headSha": "82f92ba9abdabe0828474c04c8d3f20983187247",
         "createdAt": "2026-08-30T15:04:42Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1344,
         "aggregateRunnerSeconds": 4302,
@@ -2401,6 +571,7 @@
         "runId": 33317466590,
         "headSha": "6a5bb3b712088940baa98ad332f7f9b814488d98",
         "createdAt": "2026-08-30T14:39:29Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1264,
         "aggregateRunnerSeconds": 4199,
@@ -2425,6 +596,7 @@
         "runId": 33316088003,
         "headSha": "35df8eb1b6fad450b8dc7d45c23efe7a6b114142",
         "createdAt": "2026-08-30T14:09:21Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1547,
         "aggregateRunnerSeconds": 4529,
@@ -2449,6 +621,7 @@
         "runId": 33314981692,
         "headSha": "fc9c233224486ebf258c9a1a0e6c769f98d68a60",
         "createdAt": "2026-08-30T13:44:23Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1217,
         "aggregateRunnerSeconds": 4091,
@@ -2473,6 +646,7 @@
         "runId": 33314894623,
         "headSha": "c3805249a46fb0ddfde606a245235e50b4b05d69",
         "createdAt": "2026-08-30T13:42:19Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1309,
         "aggregateRunnerSeconds": 4122,
@@ -2497,6 +671,7 @@
         "runId": 33313572382,
         "headSha": "6d03bde4379d597c4de016c8a10c7c7a504123ff",
         "createdAt": "2026-08-30T13:13:06Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1333,
         "aggregateRunnerSeconds": 4160,
@@ -2521,6 +696,7 @@
         "runId": 33312011624,
         "headSha": "c5256e8c9e937ef640c218da9e569b8819647cbd",
         "createdAt": "2026-08-30T12:38:08Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1481,
         "aggregateRunnerSeconds": 4555,
@@ -2545,6 +721,7 @@
         "runId": 33310926120,
         "headSha": "1a617f71031b3879b0a4879131877ebeb9d19a4c",
         "createdAt": "2026-08-30T12:13:54Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1290,
         "aggregateRunnerSeconds": 4127,
@@ -2569,6 +746,7 @@
         "runId": 33308472040,
         "headSha": "f31aaf4967fd92989500e7d10a25c380cfcb189a",
         "createdAt": "2026-08-30T11:15:32Z",
+        "runAttempt": 2,
         "jobCount": 17,
         "criticalPathSeconds": 2030,
         "aggregateRunnerSeconds": 4091,
@@ -2593,6 +771,7 @@
         "runId": 33307268911,
         "headSha": "f3f13ee2a65b2dcfe1aecb3453e1242ba4414178",
         "createdAt": "2026-08-30T10:46:01Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1579,
         "aggregateRunnerSeconds": 4417,
@@ -2617,6 +796,7 @@
         "runId": 33305829948,
         "headSha": "92bb8206435b19a91dde08639e65ce5360f0984f",
         "createdAt": "2026-08-30T10:10:32Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1440,
         "aggregateRunnerSeconds": 4294,
@@ -2641,6 +821,7 @@
         "runId": 33303630408,
         "headSha": "fbd648eaa08a6e2c405e42c6b0ed07046b0d6fb1",
         "createdAt": "2026-08-30T09:16:10Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1458,
         "aggregateRunnerSeconds": 4382,
@@ -2665,6 +846,7 @@
         "runId": 33303614333,
         "headSha": "a6acdc931edbe53768af80c4262bf13cea448158",
         "createdAt": "2026-08-30T09:15:48Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1532,
         "aggregateRunnerSeconds": 4421,
@@ -2689,6 +871,7 @@
         "runId": 33302347086,
         "headSha": "d9f1bcd2a8fc205abff0c2fd721f87cdd1c1acd2",
         "createdAt": "2026-08-30T08:44:57Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1570,
         "aggregateRunnerSeconds": 4489,
@@ -2713,6 +896,7 @@
         "runId": 33301532492,
         "headSha": "67a4e82d08617cbcc5bd0db2bfe86ef4d0b9e016",
         "createdAt": "2026-08-30T08:25:07Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1529,
         "aggregateRunnerSeconds": 4341,
@@ -2737,6 +921,7 @@
         "runId": 33300443606,
         "headSha": "ca8d5a024f18c6187bfea87e29f06dedefe8d69a",
         "createdAt": "2026-08-30T07:58:32Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1292,
         "aggregateRunnerSeconds": 4279,
@@ -2761,6 +946,7 @@
         "runId": 33299344665,
         "headSha": "f3fc2ca9be766f045ffc889d1cb2ce947491d684",
         "createdAt": "2026-08-30T07:29:57Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1314,
         "aggregateRunnerSeconds": 4410,
@@ -2785,6 +971,7 @@
         "runId": 33297762178,
         "headSha": "d1688ea5b6d85dfd6df0335c667b1c9cbb3a03c7",
         "createdAt": "2026-08-30T06:48:54Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1606,
         "aggregateRunnerSeconds": 4356,
@@ -2809,6 +996,7 @@
         "runId": 33297686555,
         "headSha": "24fb41b88b6326710d4ec728595be244e68a9b01",
         "createdAt": "2026-08-30T06:46:52Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 2175,
         "aggregateRunnerSeconds": 5050,
@@ -2833,6 +1021,7 @@
         "runId": 33296790115,
         "headSha": "2e9746afc87478f8d6e93dd54bf13e9277f44b56",
         "createdAt": "2026-08-30T06:23:44Z",
+        "runAttempt": 2,
         "jobCount": 17,
         "criticalPathSeconds": 2273,
         "aggregateRunnerSeconds": 4254,
@@ -2857,6 +1046,7 @@
         "runId": 33296625983,
         "headSha": "0cbe25eb41e27722e8d8ce79db4ca6117183a903",
         "createdAt": "2026-08-30T06:19:18Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1510,
         "aggregateRunnerSeconds": 4487,
@@ -2881,6 +1071,7 @@
         "runId": 33296499752,
         "headSha": "af96fc8d3c87751c9c1820f684bc569b161a8bc6",
         "createdAt": "2026-08-30T06:15:49Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1595,
         "aggregateRunnerSeconds": 4546,
@@ -2905,6 +1096,7 @@
         "runId": 33295882109,
         "headSha": "2b426ac80aeaccb97fefd3b4c155054e99ecfa16",
         "createdAt": "2026-08-30T05:59:47Z",
+        "runAttempt": 2,
         "jobCount": 17,
         "criticalPathSeconds": 2431,
         "aggregateRunnerSeconds": 4398,
@@ -2929,6 +1121,7 @@
         "runId": 33295595069,
         "headSha": "9239c8a8397fd2fca7f95e4c8dd4cc5af937af3f",
         "createdAt": "2026-08-30T05:51:15Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1285,
         "aggregateRunnerSeconds": 4132,
@@ -2953,6 +1146,7 @@
         "runId": 33294800098,
         "headSha": "6101255e04c5c4833afb8f7e7f1b5ec0e3e055fd",
         "createdAt": "2026-08-30T05:29:17Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1624,
         "aggregateRunnerSeconds": 4290,
@@ -2977,6 +1171,7 @@
         "runId": 33294396999,
         "headSha": "8569d7aab0579db7485499fc115491a5108973b6",
         "createdAt": "2026-08-30T05:18:21Z",
+        "runAttempt": 1,
         "jobCount": 17,
         "criticalPathSeconds": 1509,
         "aggregateRunnerSeconds": 4421,
@@ -2996,81 +1191,57 @@
             "costUsdIfBeyondAllowance": 0.46
           }
         }
-      },
-      {
-        "runId": 33293170483,
-        "headSha": "0c1197bc091a47d52ecb089aeb31e693d893718f",
-        "createdAt": "2026-08-30T04:44:47Z",
-        "jobCount": 17,
-        "criticalPathSeconds": 1466,
-        "aggregateRunnerSeconds": 4371,
-        "billableMinutes": 127,
-        "costUsdIfBeyondAllowance": 0.672,
-        "byOs": {
-          "linux": {
-            "jobs": 13,
-            "runnerSeconds": 1802,
-            "billableMinutes": 37,
-            "costUsdIfBeyondAllowance": 0.222
-          },
-          "windows": {
-            "jobs": 4,
-            "runnerSeconds": 2569,
-            "billableMinutes": 90,
-            "costUsdIfBeyondAllowance": 0.45
-          }
-        }
       }
     ]
   },
   "projections": [
     {
       "label": "current topology, completed required runs (success + failure, every event)",
-      "fullRunsPerMonth": 786,
-      "meanBillableMinutesPerRun": 126.4,
-      "projectedBillableMinutes": 99350,
+      "fullRunsPerMonth": 788,
+      "meanBillableMinutesPerRun": 126.1,
+      "projectedBillableMinutes": 99367,
       "includedMinutes": 3000,
-      "overageMinutes": 96350
+      "overageMinutes": 96367
     },
     {
       "label": "current topology, all required runs including cancelled (upper bound)",
-      "fullRunsPerMonth": 1159,
-      "meanBillableMinutesPerRun": 126.4,
-      "projectedBillableMinutes": 146498,
+      "fullRunsPerMonth": 1166,
+      "meanBillableMinutesPerRun": 126.1,
+      "projectedBillableMinutes": 147033,
       "includedMinutes": 3000,
-      "overageMinutes": 143498
+      "overageMinutes": 144033
     },
     {
-      "label": "pull_request-only qualification (no push/main re-run), completed",
-      "fullRunsPerMonth": 457,
-      "meanBillableMinutesPerRun": 126.4,
-      "projectedBillableMinutes": 57765,
+      "label": "pull_request-only qualification (no push/main re-run), completed pull_request runs",
+      "fullRunsPerMonth": 583,
+      "meanBillableMinutesPerRun": 126.1,
+      "projectedBillableMinutes": 73516,
       "includedMinutes": 3000,
-      "overageMinutes": 54765
+      "overageMinutes": 70516
     }
   ],
   "storage": {
     "cache": {
-      "activeCachesSizeInBytes": 10739776743,
-      "activeCachesCount": 180
+      "activeCachesSizeInBytes": 10480600448,
+      "activeCachesCount": 183
     },
     "artifacts": {
-      "listed": 31958,
-      "expiredCount": 13700,
-      "unexpiredCount": 18258,
-      "unexpiredBytes": 370745884995,
-      "unexpiredGb": 370.746,
+      "listed": 32051,
+      "expiredCount": 13717,
+      "unexpiredCount": 18334,
+      "unexpiredBytes": 372128790429,
+      "unexpiredGb": 372.129,
       "oldestUnexpiredCreatedAt": "2026-06-02T08:11:24Z",
       "topByBytes": [
         {
           "name": "container-image-artifacts",
-          "count": 2060,
-          "bytes": 357375048487
+          "count": 2067,
+          "bytes": 358729336289
         },
         {
           "name": "frontend-unit-artifacts",
-          "count": 3718,
-          "bytes": 8026217947
+          "count": 3728,
+          "bytes": 8051276175
         },
         {
           "name": "performance-regression-gate-results",
@@ -3099,8 +1270,8 @@
         },
         {
           "name": "api-integration-timing",
-          "count": 1584,
-          "bytes": 130386178
+          "count": 1587,
+          "bytes": 130746122
         },
         {
           "name": "demo-director-smoke-artifacts",
@@ -3109,8 +1280,8 @@
         },
         {
           "name": "openapi-guardrail-artifact",
-          "count": 1121,
-          "bytes": 43111972
+          "count": 1126,
+          "bytes": 43331673
         },
         {
           "name": "nightly-quality-frontend-coverage",
@@ -3128,18 +1299,18 @@
           "bytes": 28746024
         },
         {
-          "name": "sast-scanning",
-          "count": 917,
-          "bytes": 25199155
+          "name": "github-pages",
+          "count": 20,
+          "bytes": 26215382
         },
         {
-          "name": "github-pages",
-          "count": 19,
-          "bytes": 24901387
+          "name": "sast-scanning",
+          "count": 921,
+          "bytes": 25328130
         }
       ],
       "truncated": false,
-      "pagesRead": 320
+      "pagesRead": 321
     }
   }
 }

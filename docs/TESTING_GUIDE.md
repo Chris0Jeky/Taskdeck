@@ -25,9 +25,9 @@ registration (CI-02 `#2326`, CI-03 `#2327`).
 
 Baseline recorded 2026-08-30 (`docs/ci/CI_BASELINE.md`): a green required run has 17 jobs, a
 **24.7-minute p50 critical path** and costs **~126 allowance minutes** under private-repository
-accounting (Windows carries 88 of them); **370.7 GB of unexpired artifacts** sit on the repository
-(357 GB exported container images at the default 90-day retention) against a 1 GB Pro allowance;
-the Actions cache is at its 10 GB cap. Run the measurement again after every topology change and
+accounting (Windows carries 88 of them); **372.1 GB of unexpired artifacts** sit on the repository
+(359 GB exported container images at the default 90-day retention) against a 1 GB Pro allowance;
+the Actions cache is at its 10 GiB cap. Run the measurement again after every topology change and
 append, never overwrite, the ledger.
 
 ## 2026-08-22 correction: ordinary inherited Windows profile

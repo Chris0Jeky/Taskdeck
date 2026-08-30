@@ -4,15 +4,39 @@ import {
   PRICING,
   billableMinutesForJob,
   classifyRunnerOs,
+  completedRuns,
   costUsdForJob,
   percentile,
   projectMonthlyAllowance,
   renderMarkdown,
+  secondsBetween,
   summarizeArtifacts,
   summarizeRunJobs,
   summarizeRuns,
   summarizeSample,
+  validateWindow,
+  workflowKey,
 } from './lib/estate.mjs';
+
+test('secondsBetween tolerates missing, unparsable and inverted timestamps', () => {
+  assert.equal(secondsBetween('2026-08-30T10:00:00Z', '2026-08-30T10:01:30Z'), 90);
+  assert.equal(secondsBetween(null, '2026-08-30T10:01:30Z'), 0);
+  assert.equal(secondsBetween('nope', '2026-08-30T10:01:30Z'), 0);
+  assert.equal(secondsBetween('2026-08-30T10:01:30Z', '2026-08-30T10:00:00Z'), 0);
+});
+
+test('an unknown runner OS is priced as Linux with a x1 allowance multiplier', () => {
+  assert.equal(billableMinutesForJob(61, 'unknown'), 2);
+  assert.equal(costUsdForJob(61, 'unknown'), Number((2 * PRICING.perMinuteUsd.linux).toFixed(4)));
+});
+
+test('run and job summaries carry only ids, names, timestamps, sizes and counts', () => {
+  const jobSummary = summarizeRunJobs([{ name: 'J', labels: ['ubuntu-latest'], started_at: '2026-08-30T10:00:00Z', completed_at: '2026-08-30T10:02:00Z', conclusion: 'success', steps: [{ name: 'secret step log' }], html_url: 'x' }]);
+  assert.deepEqual(Object.keys(jobSummary.jobs[0]).sort(), ['billableMinutes', 'completedAt', 'conclusion', 'costUsdIfBeyondAllowance', 'durationSeconds', 'name', 'os', 'startedAt']);
+  const runSummary = summarizeRuns([{ name: 'CI', path: '.github/workflows/ci-required.yml', event: 'pull_request', conclusion: 'success', run_attempt: 1, head_sha: 'a', created_at: '2026-08-01T00:00:00Z', display_title: 'PR title must not be copied', head_branch: 'feature/x' }]);
+  assert.ok(!JSON.stringify(runSummary).includes('PR title'));
+  assert.ok(!JSON.stringify(runSummary).includes('feature/x'));
+});
 
 test('classifyRunnerOs reads hosted labels and self-hosted first', () => {
   assert.equal(classifyRunnerOs(['ubuntu-latest']), 'linux');
@@ -54,22 +78,42 @@ test('summarizeRunJobs computes critical path across parallel jobs and per-OS ro
   assert.equal(summary.byOs.linux.billableMinutes, 9);
 });
 
-test('summarizeRuns counts reruns, cancellations and exact-SHA multi-event qualification', () => {
-  const summary = summarizeRuns([
-    { name: 'CI', event: 'pull_request', conclusion: 'success', run_attempt: 1, head_sha: 'aaa', created_at: '2026-08-01T00:00:00Z' },
-    { name: 'CI', event: 'push', conclusion: 'success', run_attempt: 1, head_sha: 'aaa', created_at: '2026-08-01T01:00:00Z' },
-    { name: 'CI', event: 'pull_request', conclusion: 'cancelled', run_attempt: 1, head_sha: 'bbb', created_at: '2026-08-02T00:00:00Z' },
-    { name: 'CI', event: 'pull_request', conclusion: 'failure', run_attempt: 2, head_sha: 'bbb', created_at: '2026-08-02T00:10:00Z' },
-    { name: 'CI Nightly', event: 'schedule', conclusion: 'success', run_attempt: 1, head_sha: 'ccc', created_at: '2026-08-02T03:00:00Z' },
-  ]);
-  assert.equal(summary.total, 5);
+test('summarizeRuns groups by workflow path, counts re-run attempts, cancellations and exact-SHA multi-event qualification', () => {
+  const ci = '.github/workflows/ci-required.yml';
+  const runs = [
+    { name: 'CI', path: ci, event: 'pull_request', conclusion: 'success', run_attempt: 1, head_sha: 'aaa', created_at: '2026-08-01T00:00:00Z' },
+    { name: 'CI', path: ci, event: 'push', conclusion: 'success', run_attempt: 1, head_sha: 'aaa', created_at: '2026-08-01T01:00:00Z' },
+    { name: 'CI', path: ci, event: 'pull_request', conclusion: 'cancelled', run_attempt: 1, head_sha: 'bbb', created_at: '2026-08-02T00:00:00Z' },
+    { name: 'CI', path: ci, event: 'pull_request', conclusion: 'failure', run_attempt: 3, head_sha: 'bbb', created_at: '2026-08-02T00:10:00Z' },
+    { name: 'CI', path: ci, event: 'push', conclusion: 'cancelled', run_attempt: 1, head_sha: 'ddd', created_at: '2026-08-02T00:20:00Z' },
+    { name: 'CI Nightly', path: '.github/workflows/ci-nightly.yml', event: 'schedule', conclusion: 'success', run_attempt: 1, head_sha: 'ccc', created_at: '2026-08-02T03:00:00Z' },
+    { name: 'PR #1', path: 'dynamic/copilot-pull-request-reviewer/copilot-pull-request-reviewer', event: 'dynamic', conclusion: 'success', run_attempt: 1, head_sha: 'eee', created_at: '2026-08-02T04:00:00Z' },
+    { name: 'PR #2', path: 'dynamic/copilot-pull-request-reviewer/copilot-pull-request-reviewer', event: 'dynamic', conclusion: 'success', run_attempt: 1, head_sha: 'fff', created_at: '2026-08-02T05:00:00Z' },
+  ];
+  const summary = summarizeRuns(runs);
+  assert.equal(summary.total, 8);
   assert.equal(summary.reruns, 1);
-  assert.equal(summary.cancelled, 1);
+  assert.equal(summary.rerunAttempts, 2);
+  assert.equal(summary.cancelled, 2);
   assert.equal(summary.exactShaQualifiedOnMoreThanOneEvent, 1);
-  assert.equal(summary.byWorkflow.CI.byEvent.pull_request, 3);
-  assert.equal(summary.byWorkflow.CI.byEvent.push, 1);
-  assert.equal(summary.byWorkflow['CI Nightly'].byEvent.schedule, 1);
-  assert.deepEqual(summary.perDay, { '2026-08-01': 2, '2026-08-02': 3 });
+  assert.equal(summary.byWorkflow[ci].label, 'CI');
+  assert.equal(summary.byWorkflow[ci].byEvent.pull_request, 3);
+  assert.equal(summary.byWorkflow[ci].byEvent.push, 2);
+  assert.equal(summary.byWorkflow[ci].rerunAttempts, 2);
+  assert.equal(summary.byWorkflow['.github/workflows/ci-nightly.yml'].byEvent.schedule, 1);
+  assert.equal(summary.byWorkflow['dynamic/copilot-pull-request-reviewer/copilot-pull-request-reviewer'].total, 2, 'per-run display names collapse into one workflow');
+  assert.deepEqual(summary.perDay, { '2026-08-01': 2, '2026-08-02': 6 });
+  const required = runs.filter((run) => workflowKey(run) === ci);
+  assert.equal(completedRuns(required), 3, 'success + failure across events');
+  assert.equal(completedRuns(required, 'pull_request'), 2, 'cancelled pushes never reduce the completed PR count');
+});
+
+test('validateWindow rejects impossible or reversed dates', () => {
+  assert.deepEqual(validateWindow('2026-07-31', '2026-08-30'), []);
+  assert.ok(validateWindow('2026-13-01', '2026-08-30').some((error) => error.includes('real calendar date')));
+  assert.ok(validateWindow('2026-02-30', '2026-08-30').some((error) => error.includes('real calendar date')));
+  assert.ok(validateWindow('2026-08-30', '2026-07-31').some((error) => error.includes('after')));
+  assert.ok(validateWindow(undefined, '2026-08-30').some((error) => error.includes('YYYY-MM-DD')));
 });
 
 test('summarizeSample rolls up job means and OS totals', () => {
@@ -112,7 +156,7 @@ test('renderMarkdown produces the ledger sections', () => {
     repository: 'o/r',
     window: { since: '2026-07-31', until: '2026-08-30', days: 31 },
     method: { assumptions: ['a1'] },
-    runs: summarizeRuns([{ name: 'CI', event: 'pull_request', conclusion: 'success', run_attempt: 1, head_sha: 'a', created_at: '2026-08-01T00:00:00Z' }]),
+    runs: summarizeRuns([{ name: 'CI', path: '.github/workflows/ci-required.yml', event: 'pull_request', conclusion: 'success', run_attempt: 1, head_sha: 'a', created_at: '2026-08-01T00:00:00Z' }]),
     sample: { workflowName: 'CI', ...summarizeSample([summarizeRunJobs([{ name: 'J', labels: ['ubuntu-latest'], started_at: '2026-08-30T10:00:00Z', completed_at: '2026-08-30T10:02:00Z', conclusion: 'success' }])]) },
     projections: [{ label: 'x', fullRunsPerMonth: 10, meanBillableMinutesPerRun: 2, ...projectMonthlyAllowance(2, 10) }],
     storage: { cache: { activeCachesSizeInBytes: 1e9, activeCachesCount: 3 }, artifacts: { ...summarizeArtifacts([]), truncated: false } },
@@ -123,5 +167,5 @@ test('renderMarkdown produces the ledger sections', () => {
   assert.match(markdown, /\| CI \| 1 \| 1 \|/);
   assert.match(markdown, /## Projection against the GitHub Pro allowance/);
   assert.match(markdown, /## Storage/);
-  assert.match(markdown, /1\.00 GB/);
+  assert.match(markdown, /0\.93 GiB\*\* \(1\.00 GB decimal\)/);
 });

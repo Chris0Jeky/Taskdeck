@@ -34,24 +34,24 @@ new dated ledger — never overwrite this window.
 
 | Measure | Value |
 | --- | --- |
-| Workflow runs in the window | **2,707** (cancelled 502 = 18.5%; re-run attempts 57) |
-| `CI` (required) runs | **1,198** — 858 `pull_request` + **340 `push` to main**; 733 success, 79 failure, **384 cancelled (32%)**, 54 re-runs |
-| `CI Extended` runs | 811 (703 success, 106 cancelled) |
-| `Deploy Frontend to GitHub Pages` | 138 pushes |
+| Workflow runs in the window | **2,721** (cancelled 504 = 18.5%; 58 runs re-run, 62 extra attempts) |
+| `CI` (required) runs | **1,205** — 864 `pull_request` + **341 `push` to main**; 735 success, 79 failure, **386 cancelled (32%)**, 55 re-run |
+| `CI Extended` runs | 816 (708 success, 106 cancelled) |
+| `Deploy Frontend to GitHub Pages` | 139 pushes |
 | `CI Nightly` | 31 (24 success, **7 failure** — the mobile-safari lane, `#2180`) |
 | Green required run: jobs | 17 |
 | Green required run: critical path | **p50 24.7 min**, p95 37.9, max 40.5 |
-| Green required run: aggregate runner minutes | p50 72.3 (Linux 30.7 + Windows 41.9) |
-| Green required run: **allowance minutes** | **p50 126** (Linux 38.2 + Windows 88.2), p95 133 |
-| Projection, current topology, completed runs | 786 runs/month × 126.4 = **~99,400 allowance min/month** vs 3,000 included |
-| Projection, `pull_request`-only (no main re-run) | 457 runs/month × 126.4 = ~57,800 |
-| Projection, everything incl. cancelled (upper bound) | ~146,500 |
-| Actions cache | **10.74 GB / 180 caches** (cap 10 GB) |
-| Artifacts on record | 31,958 (13,700 expired) |
-| **Unexpired artifact storage** | **370.7 GB** (18,258 artifacts; oldest 2026-06-02) vs 1 GB allowance |
-| ↳ `container-image-artifacts` | 2,060 artifacts = **357.4 GB** (exported image tars, default 90-day retention) |
-| ↳ `frontend-unit-artifacts` | 3,718 = 8.0 GB |
-| ↳ k6 / performance / Playwright results | ~4.7 GB |
+| Green required run: aggregate runner minutes | p50 71.7, mean 72.4 (means: Linux 30.7 + Windows 41.8) |
+| Green required run: **allowance minutes** | **p50 125**, mean 126.1 (means: Linux 38.2 + Windows 87.9), p95 133 |
+| Projection, current topology, completed runs | 788 runs/month × 126.1 = **~99,000 allowance min/month** (99,367) vs 3,000 included |
+| Projection, `pull_request`-only (no main re-run) | 583 completed `pull_request` runs/month × 126.1 = ~73,500 |
+| Projection, everything incl. cancelled (upper bound) | ~147,000 |
+| Actions cache | **9.76 GiB (10.48 GB decimal) / 183 caches** — at the 10 GiB cap (it read exactly 10.0 GiB two hours earlier; eviction in action) |
+| Artifacts on record | 32,051 (13,717 expired) |
+| **Unexpired artifact storage** | **372.1 GB** (18,334 artifacts; oldest 2026-06-02) vs 1 GB allowance |
+| ↳ `container-image-artifacts` | 2,067 artifacts = **358.7 GB** (exported image tars, default 90-day retention) |
+| ↳ `frontend-unit-artifacts` | 3,728 = 8.1 GB |
+| ↳ `performance-regression-gate-results` + `load-harness-k6-results` | 1.7 + 1.3 GB |
 
 Per-job means over the sample (Windows jobs in bold carry 70% of the allowance cost):
 
@@ -66,37 +66,37 @@ Per-job means over the sample (Windows jobs in bold carry 70% of the allowance c
 | Backend Unit (ubuntu-latest) | linux | 5.1 min | 5.6 |
 | Frontend Unit (ubuntu-latest) | linux | 4.1 min | 4.7 |
 | Container Images | linux | 2.2 min | 3.0 |
-| Migration Validation | linux | 1.8 min | 2.0 |
+| Migration Validation | linux | 1.7 min | 2.0 |
 | SAST, Dependency Security, Architecture, Docs Governance, Release Workflow Contract, Gitleaks, Paper Color Audit | linux | ≤1 min each | 1 each (rounding) |
 
 ## Findings
 
 1. **The current topology cannot run on the Pro allowance.** ~99,000 allowance minutes/month is 33× the
-   3,000 included; at the cited prices a completed required run costs ≈ $0.67 beyond the allowance
+   3,000 included; at the verified prices a completed required run costs ≈ $0.67 beyond the allowance
    (38 Linux min × $0.006 + 44 Windows min × $0.010), i.e. **≈ $500/month at the August run rate**
-   before nightly, extended and release lanes. Dropping the `push: main` re-run alone removes ~42%
-   of required runs (340 of 1,198 in the window) — ADR-0066 §3, CI-03 `#2327`.
+   before nightly, extended and release lanes. Dropping the `push: main` re-run alone removes 42%
+   of the *completed* required runs (341 of 814; 341 of all 1,205 runs including cancelled) — ADR-0066 §3, CI-03 `#2327`.
 2. **Windows is the cost centre, not the semantics centre.** Windows is 42 of 72 runner minutes but
-   88 of 126 allowance minutes per run; the API suite is 2.4× slower on Windows (17.3 vs 7.2 min)
+   88 of 126 allowance minutes per run (70%); the API suite is 2.4× slower on Windows (17.3 vs 7.2 min)
    and the frontend leg 3× (12.2 vs 4.1) — the Linux baseline + Windows compatibility contract
    (CI-07 `#2331`) and the harness repair (CI-06 `#2330`) are where the minutes are.
-3. **One third of required runs are cancelled** (384 of 1,198): superseded by the next push under
+3. **One third of required runs are cancelled** (386 of 1,205): superseded by the next push under
    `cancel-in-progress`. Each still consumed minutes until cancellation. Draft-mode light plans and
    local preflight (CI-03 topology) are the fix; cancellation is not an economy measure.
-4. **Storage is 370× the allowance before a single minute is spent.** 357 GB of exported container
+4. **Storage is 370× the allowance before a single minute is spent.** 359 GB of exported container
    image tars from `reusable-container-images.yml` (no `retention-days`, so the 90-day default;
-   nothing consumes them) plus 8 GB of frontend artifacts. At GitHub's published storage rate this
-   (370 GB × $0.25 per GB-month ≈ **$93/month**, plus the 10.7 GB cache at $0.07 ≈ $0.75) it is
+   nothing consumes them) plus 8 GB of frontend artifacts. At GitHub's published storage rate
+   (372 GB × $0.25 per GB-month ≈ **$93/month**) it is
    smaller than the minutes but billed from day one of being private and the cheapest thing to fix:
    retention classes and a one-time maintainer-authorized cleanup (CI-09 `#2333`,
    `OUTSTANDING_TASKS.md` §J SC-2).
-5. **The cache is at its cap** (10.74 GB / 180 caches) and therefore already evicting — cache keys
+5. **The cache is at its cap** (9.76 GiB / 183 caches after evicting from exactly 10.0 GiB earlier the same day) and therefore already evicting — cache keys
    need owners and bounds (CI-09).
 6. **Duplicate qualification is by event, not by SHA.** Zero head SHAs were qualified twice (merge
-   commits get new SHAs), yet 340 `push` runs re-ran the full suite on trees the PR had just
+   commits get new SHAs), yet 341 `push` runs re-ran the full suite on trees the PR had just
    qualified — the tree-SHA landed verifier (ADR-0066 §3) is the correct binding.
-7. **Nightly is red 7 of 31 nights** (`#2180`) and `CI Extended` runs on 810 of 858 PRs (its path
-   filter covers almost every change) — deep ownership consolidates under CI-10 `#2334`.
+7. **Nightly is red 7 of 31 nights** (`#2180`) and `CI Extended` fired on 815 `pull_request` runs against the
+   required lane's 864 (its path filter covers almost every change) — deep ownership consolidates under CI-10 `#2334`.
 8. **The pack's PR #2280 sample was representative**: its Windows API 15.5 min / Ubuntu 6.0 min
    test-step figures sit inside this window's job-level distribution (17.3 / 7.2 min job means).
 
@@ -106,6 +106,10 @@ Per-job means over the sample (Windows jobs in bold carry 70% of the allowance c
   their run counts are in the ledger and their per-job costs follow in the CI-12 receipts.
 - Artifact families are grouped by name prefix (OS/run suffixes stripped) — a heuristic for ranking,
   not an accounting unit.
+- The listing exposes each run's latest attempt only: 62 extra attempts consumed minutes this ledger
+  does not see, and the sampled jobs are those of the latest attempt.
+- The ledger was regenerated once on 2026-08-30 after the tool's per-event projection and
+  workflow-grouping fixes (review of PR #2341); the committed figures are the regenerated run.
 - Prices and allowances are as cited on 2026-08-30 and must be re-read before the cutover.
 
 ## Re-measure

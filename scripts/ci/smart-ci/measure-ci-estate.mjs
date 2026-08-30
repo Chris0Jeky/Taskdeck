@@ -4,22 +4,27 @@
 //
 //   node scripts/ci/smart-ci/measure-ci-estate.mjs \
 //     --repo Chris0Jeky/Taskdeck --since 2026-07-31 --until 2026-08-30 \
-//     --sample 30 --workflow CI --out-dir docs/ci/baselines
+//     --sample 30 --workflow-path .github/workflows/ci-required.yml --out-dir docs/ci/baselines
 //
 // Token: GH_TOKEN or GITHUB_TOKEN, else `gh auth token`. Read scope only
-// (`actions: read` in CI). Nothing here writes to GitHub.
+// (`actions: read` in CI). Nothing here writes to GitHub. The ledger for a given
+// --until date is never overwritten unless --overwrite is passed (append rule in
+// docs/ci/CI_BASELINE.md).
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   PRICING,
+  completedRuns,
   projectMonthlyAllowance,
   renderMarkdown,
   summarizeArtifacts,
   summarizeRunJobs,
   summarizeRuns,
   summarizeSample,
+  validateWindow,
+  workflowKey,
 } from './lib/estate.mjs';
 
 const API = 'https://api.github.com';
@@ -30,8 +35,9 @@ function parseArgs(argv) {
     since: null,
     until: null,
     sample: 30,
-    workflow: 'CI',
+    workflowPath: '.github/workflows/ci-required.yml',
     outDir: 'docs/ci/baselines',
+    overwrite: false,
     maxRunPages: 80,
     maxArtifactPages: 400,
   };
@@ -43,22 +49,23 @@ function parseArgs(argv) {
       case '--since': args.since = next(); break;
       case '--until': args.until = next(); break;
       case '--sample': args.sample = Number(next()); break;
-      case '--workflow': args.workflow = next(); break;
+      case '--workflow-path': args.workflowPath = next(); break;
       case '--out-dir': args.outDir = next(); break;
+      case '--overwrite': args.overwrite = true; break;
       case '--max-run-pages': args.maxRunPages = Number(next()); break;
       case '--max-artifact-pages': args.maxArtifactPages = Number(next()); break;
       case '--help':
-        console.log('usage: measure-ci-estate.mjs --since YYYY-MM-DD --until YYYY-MM-DD [--repo owner/name] [--sample N] [--workflow NAME] [--out-dir DIR]');
+        console.log('usage: measure-ci-estate.mjs --since YYYY-MM-DD --until YYYY-MM-DD [--repo owner/name] [--sample N] [--workflow-path .github/workflows/x.yml] [--out-dir DIR] [--overwrite]');
         process.exit(0);
         break;
       default:
         throw new Error(`Unknown argument: ${arg}`);
     }
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(args.since ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(args.until ?? '')) {
-    throw new Error('--since and --until are required as YYYY-MM-DD');
-  }
+  const windowErrors = validateWindow(args.since, args.until);
+  if (windowErrors.length > 0) throw new Error(windowErrors.join('; '));
   if (!/^[\w.-]+\/[\w.-]+$/.test(args.repo)) throw new Error('--repo must be owner/name');
+  if (!Number.isInteger(args.sample) || args.sample < 1) throw new Error('--sample must be a positive integer');
   return args;
 }
 
@@ -140,6 +147,10 @@ async function paginate(token, url, itemsKey, maxPages, onPage) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+  const stem = join(args.outDir, `ci-estate-${args.until}`);
+  if (!args.overwrite && (existsSync(`${stem}.json`) || existsSync(`${stem}.md`))) {
+    throw new Error(`${stem}.json/.md already exist; ledgers are appended per --until date, never overwritten (pass --overwrite to regenerate this one deliberately)`);
+  }
   const token = resolveToken();
   const base = `${API}/repos/${args.repo}`;
 
@@ -157,6 +168,7 @@ async function main() {
     id: run.id,
     name: run.name,
     path: run.path,
+    workflow_id: run.workflow_id,
     event: run.event,
     status: run.status,
     conclusion: run.conclusion,
@@ -170,10 +182,13 @@ async function main() {
   runs.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   const runSummary = summarizeRuns(runs);
 
-  const sampleRuns = runs
-    .filter((run) => run.name === args.workflow && run.event === 'pull_request' && run.conclusion === 'success')
+  const requiredKey = workflowKey({ path: args.workflowPath, name: args.workflowPath });
+  const requiredRuns = runs.filter((run) => workflowKey(run) === requiredKey);
+  const sampleRuns = requiredRuns
+    .filter((run) => run.event === 'pull_request' && run.conclusion === 'success')
     .slice(0, args.sample);
-  console.error(`sampling jobs of ${sampleRuns.length} green ${args.workflow} pull_request runs`);
+  const workflowLabel = requiredRuns[0] ? requiredRuns[0].name : args.workflowPath;
+  console.error(`sampling jobs of ${sampleRuns.length} green ${workflowLabel} pull_request runs (latest attempt of each)`);
   const sampledSummaries = [];
   for (const run of sampleRuns) {
     const jobs = await paginate(token, `${base}/actions/runs/${run.id}/jobs?per_page=100`, 'jobs', 3);
@@ -185,9 +200,9 @@ async function main() {
       completed_at: job.completed_at,
       conclusion: job.conclusion,
     })));
-    sampledSummaries.push({ runId: run.id, headSha: run.head_sha, createdAt: run.created_at, ...summary });
+    sampledSummaries.push({ runId: run.id, headSha: run.head_sha, createdAt: run.created_at, runAttempt: run.run_attempt, ...summary });
   }
-  const sample = { workflowName: args.workflow, ...summarizeSample(sampledSummaries), runs: sampledSummaries.map(({ jobs, ...rest }) => rest) };
+  const sample = { workflowName: workflowLabel, workflowPath: args.workflowPath, ...summarizeSample(sampledSummaries), runs: sampledSummaries.map(({ jobs, ...rest }) => rest) };
 
   console.error('reading cache usage and artifacts');
   const cache = (await ghFetch(token, `${base}/actions/cache/usage`)).json;
@@ -201,13 +216,13 @@ async function main() {
   const artifacts = { ...summarizeArtifacts(artifactsListing.items), truncated: artifactsListing.truncated, pagesRead: artifactsListing.pages };
 
   const windowDays = Math.max(1, Math.round((Date.parse(args.until) - Date.parse(args.since)) / 86400000) + 1);
-  const requiredStats = runSummary.byWorkflow[args.workflow] ?? { total: 0, byEvent: {}, byConclusion: {} };
-  const completedRequired = (requiredStats.byConclusion.success ?? 0) + (requiredStats.byConclusion.failure ?? 0);
+  const completedAllEvents = completedRuns(requiredRuns);
+  const completedPullRequest = completedRuns(requiredRuns, 'pull_request');
   const perMonth = (count) => Math.round((count / windowDays) * 30);
   const projections = [
-    { label: 'current topology, completed required runs (success + failure, every event)', fullRunsPerMonth: perMonth(completedRequired) },
-    { label: 'current topology, all required runs including cancelled (upper bound)', fullRunsPerMonth: perMonth(requiredStats.total) },
-    { label: 'pull_request-only qualification (no push/main re-run), completed', fullRunsPerMonth: perMonth(completedRequired - Math.min(completedRequired, requiredStats.byEvent.push ?? 0)) },
+    { label: 'current topology, completed required runs (success + failure, every event)', fullRunsPerMonth: perMonth(completedAllEvents) },
+    { label: 'current topology, all required runs including cancelled (upper bound)', fullRunsPerMonth: perMonth(requiredRuns.length) },
+    { label: 'pull_request-only qualification (no push/main re-run), completed pull_request runs', fullRunsPerMonth: perMonth(completedPullRequest) },
   ].map((projection) => ({
     ...projection,
     meanBillableMinutesPerRun: sample.billableMinutesPerRun.mean,
@@ -224,15 +239,17 @@ async function main() {
       runListingTruncated: runsListing.truncated,
       dayWindowsAtTheApiCap: runsListing.dayWindowsOver1000,
       sampleSize: sampledSummaries.length,
+      requiredWorkflowPath: args.workflowPath,
       assumptions: [
-        `Runs listed with the Actions API \`created=<day>..<day>\` filter for every UTC day in ${args.since}..${args.until} (the API returns at most 1000 runs per filter, so the window is chunked per day; a day at the cap is reported); a run counts once per attempt listing, re-run attempts are flagged by \`run_attempt > 1\`.`,
+        `Runs listed with the Actions API \`created=<day>..<day>\` filter for every UTC day in ${args.since}..${args.until} (the API returns at most 1000 runs per filter, so the window is chunked per day; a day at the cap is reported). Workflows are grouped by their workflow file path (GitHub-managed workflows such as Copilot, Dependabot and CodeQL use per-run display names, so those group by their \`dynamic/...\` path).`,
+        'The listing exposes one entry per run carrying its LATEST attempt: "runs re-run" counts runs with run_attempt > 1, "extra attempts" sums run_attempt - 1, and the sampled jobs are those of the latest attempt only (earlier failed attempts consumed minutes this ledger does not see).',
         'Job duration = completed_at - started_at (queue time excluded); critical path = last job completion - first job start within one run.',
         `Allowance minutes follow GitHub billing: every job rounds up to a whole minute, Windows counts x${PRICING.allowanceMultiplier.windows}, macOS x${PRICING.allowanceMultiplier.macos}; the GitHub Pro private-repository allowance is ${PRICING.includedMinutesPro} minutes/month and ${PRICING.includedStorageGbPro} GB storage (prices as of ${PRICING.asOf}: Linux $${PRICING.perMinuteUsd.linux}, Windows $${PRICING.perMinuteUsd.windows}, macOS $${PRICING.perMinuteUsd.macos} per minute beyond the allowance).`,
         'The public repository reports 0 billable minutes; the estimate applies private-repository accounting to measured durations.',
         `Prices, rounding and the Pro allowances were verified on docs.github.com on ${PRICING.asOf}; the Windows x${PRICING.allowanceMultiplier.windows} / macOS x${PRICING.allowanceMultiplier.macos} allowance multipliers are GitHub's long-standing rule and were NOT re-verified on the pages read that day (allowanceMultiplierVerified=false) - re-read before the cutover. Shared artifact/Packages storage beyond the allowance is $${PRICING.sharedStoragePerGbMonthUsd} per GB-month; Actions cache $${PRICING.cachePerGbMonthUsd} per GB-month.`,
-        `Projections scale the window's ${args.workflow} run counts to 30 days and multiply by the sample's mean allowance minutes per run; cancelled runs consumed minutes until cancellation, so the "including cancelled" line is an upper bound.`,
+        'Projections scale the required workflow\'s run counts in the window to 30 days and multiply by the sample\'s mean allowance minutes per run: "completed" counts success + failure conclusions (per event where stated); cancelled runs consumed minutes until cancellation, so the "including cancelled" line is an upper bound.',
         'Artifacts: unexpired bytes only; expired artifacts no longer occupy storage. Sizes are the API-reported size_in_bytes.',
-        'The ledger records names, ids, timestamps and sizes only — no log content, no user content.',
+        'The ledger records names, ids, timestamps and sizes only - no log content, no user content.',
       ],
     },
     runs: runSummary,
@@ -245,12 +262,13 @@ async function main() {
   };
 
   mkdirSync(args.outDir, { recursive: true });
-  const stem = join(args.outDir, `ci-estate-${args.until}`);
   writeFileSync(`${stem}.json`, `${JSON.stringify(report, null, 2)}\n`);
   writeFileSync(`${stem}.md`, renderMarkdown(report));
   console.error(`wrote ${stem}.json and ${stem}.md`);
   console.log(JSON.stringify({
     runs: report.runs.total,
+    requiredRuns: requiredRuns.length,
+    completedPullRequestRuns: completedPullRequest,
     sample: report.sample.sampleSize,
     criticalPathP50Min: Number((report.sample.criticalPathSeconds.p50 / 60).toFixed(1)),
     allowanceMinutesPerRunMean: report.sample.billableMinutesPerRun.mean,

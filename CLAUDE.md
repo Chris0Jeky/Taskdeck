@@ -19,7 +19,7 @@ delegated-autonomy future is ADR-0057, **Accepted as direction only (2026-08-24,
 caveat) — no implementation is in force or buildable without its own separate gate**. The repository
 **goes private for the v0.3.0 release** on the maintainer's personal GitHub Pro account (directive
 2026-08-30; ADR-0066 Smart CI Fabric, tracker CI-00 `#2324`): CI-control changes (`.github/**`, `ci/**`,
-`scripts/ci/**`) are R4 and qualify hosted-only; the Smart CI lane is shadow-only until the maintainer
+`scripts/ci/**`) are R4 and qualify hosted-only; the Smart CI lane (CI-02 `#2326`) is shadow-only until the maintainer
 registers `Smart CI / Required Gate` — `docs/ci/SMART_CI.md`.
 
 ## Orient (do NOT bulk-read the big docs)
@@ -50,8 +50,9 @@ Run only what your change touches. Timings measured 2026-07-27 on this box (warm
 
 `ci-required.yml` is the required CI gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
 `deploy/`, `scripts/`, or `*.csproj` also trigger CI Extended — an optional, non-blocking lane (several
-jobs are label-gated). Read its results, but it does not gate the merge. `smart-ci-shadow.yml` (ADR-0066) is observation-only: red
-means a planner/schema defect, never a product verdict, until CI-03 registers the gate.
+jobs are label-gated). Read its results, but it does not gate the merge. `smart-ci-shadow.yml` (ADR-0066; lands with CI-02 `#2326`) is observation-only and not a required
+check: a red `Smart CI / Required Gate` is a planner/policy defect to fix under R4, not a product verdict — never
+ignore it, never treat it as flaky.
 
 ## Run it
 
