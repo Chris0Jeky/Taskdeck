@@ -70,8 +70,13 @@ export function useProposalRevisions(
   // out of operations the server had already superseded.
   watch(
     () => [activeProposal.value?.id, activeProposal.value?.latestRevisionId ?? null] as const,
-    ([id], previous) => {
+    ([id, revisionId], previous) => {
       const previousId = previous?.[0]
+      // The getter builds a fresh tuple on every evaluation, so this watcher
+      // also fires when a poll replaces the proposal OBJECT with an equivalent
+      // one. Only a real move of the key does any work — otherwise every 15 s
+      // tick would re-read the revision list for an unchanged proposal.
+      if (previous && id === previousId && revisionId === (previous[1] ?? null)) return
       if (id && previousId && id === previousId) {
         // Same proposal, newer revision. Resync the authoritative state without
         // the full reset below: the reviewer may have the editor open, and

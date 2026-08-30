@@ -74,6 +74,12 @@ function makeRevision(overrides: Partial<ProposalRevision> = {}): ProposalRevisi
   }
 }
 
+async function flushMicrotasks() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await nextTick()
+}
+
 describe('useProposalRevisions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -285,5 +291,70 @@ describe('useProposalRevisions', () => {
 
     expect(revisionCount.value).toBe(2)
     expect(latestRevision.value?.proposalId).toBe('p-2')
+  })
+  // #2215 B -----------------------------------------------------------------
+
+  it('resyncs revision state when a poll brings a newer latestRevisionId for the same proposal (#2215 B)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: null }))
+    const { revisionCount, latestRevision } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    })
+    expect(revisionCount.value).toBe(0)
+
+    // Another reviewer saves a revision; the queue poll replaces the row with a
+    // new `latestRevisionId` and the SAME proposal id. Watching the id alone
+    // left revisionCount at 0 and latestRevision null, so `editablePayload`
+    // kept offering the pre-revision operations.
+    const collaboratorRevision = makeRevision({ id: 'rev-9', revisionNumber: 1 })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([collaboratorRevision])
+    proposal.value = makeProposal({ latestRevisionId: 'rev-9' })
+    await nextTick()
+
+    await vi.waitFor(() => {
+      expect(revisionCount.value).toBe(1)
+    })
+    expect(latestRevision.value).toEqual(collaboratorRevision)
+  })
+
+  it('does not close an open editor when only the revision moves under it (#2215 B)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: null }))
+    const { editing, startEditing } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    })
+
+    startEditing()
+    expect(editing.value).toBe(true)
+
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([makeRevision({ id: 'rev-9' })])
+    proposal.value = makeProposal({ latestRevisionId: 'rev-9' })
+    await nextTick()
+    await flushMicrotasks()
+
+    // The resync is a read, not a reset: closing the composer would discard a
+    // half-written edit over a change that happened somewhere else.
+    expect(editing.value).toBe(true)
+  })
+
+  it('still fully resets when the proposal itself changes (#2215 B guard)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([makeRevision()])
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { editing, revisionCount, startEditing } = useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(revisionCount.value).toBe(1)
+    })
+    startEditing()
+    expect(editing.value).toBe(true)
+
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+    proposal.value = makeProposal({ id: 'p-2', latestRevisionId: 'rev-other' })
+    await nextTick()
+    await flushMicrotasks()
+
+    expect(editing.value).toBe(false)
+    expect(revisionCount.value).toBe(0)
   })
 })

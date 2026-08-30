@@ -630,4 +630,41 @@ describe('useReviewActions', () => {
 
     expect(loadProposals).toHaveBeenCalled()
   })
+  // #2215 B — the open diff pane is keyed on the proposal AND its revision.
+
+  it('closes an open diff when a queue refresh brings a newer revision (#2215 B)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // Another reviewer saves a revision; the queue read brings the new
+    // latestRevisionId. The pane on screen was computed for the previous one,
+    // while Approve pins and Apply executes the server's latest.
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-2' } as Partial<ApiProposal>)]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(actions.selectedDiff.value).toBeNull()
+    expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
+  it('keeps an open diff when a queue refresh brings the same revision (#2215 B)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-1' } as Partial<ApiProposal>)]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+
+    // An ordinary poll that changes nothing must not blink the pane away.
+    proposals.value = [makeProposal({ latestRevisionId: 'rev-1' } as Partial<ApiProposal>)]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
+  })
 })
