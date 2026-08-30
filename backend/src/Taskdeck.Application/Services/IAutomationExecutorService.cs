@@ -3,6 +3,14 @@ using Taskdeck.Domain.Common;
 
 namespace Taskdeck.Application.Services;
 
+/// <summary>
+/// The approved-revision pin a batch caller explicitly consented to. The record's presence is
+/// load-bearing: an instance whose <see cref="ApprovedRevisionId"/> is null means "the fresh
+/// proposal must still be unpinned", while no expectation at all preserves the single-execute
+/// contract.
+/// </summary>
+public sealed record ProposalExecutionRevisionExpectation(Guid? ApprovedRevisionId);
+
 public interface IAutomationExecutorService
 {
     Task<Result> ExecuteProposalAsync(Guid proposalId, string idempotencyKey, CancellationToken cancellationToken = default);
@@ -29,5 +37,18 @@ public interface IAutomationExecutorService
         Guid proposalId,
         string idempotencyKey,
         Guid? callerUserId = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Batch execution overload. The revision expectation is checked against the same fresh
+    /// proposal materialization that owns status/idempotency, before any operation or linked-capture
+    /// synchronization. Keeping this separate from the overload above means single execute has no
+    /// accidental implicit null-pin expectation.
+    /// </summary>
+    Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
+        Guid proposalId,
+        string idempotencyKey,
+        Guid? callerUserId,
+        ProposalExecutionRevisionExpectation revisionExpectation,
         CancellationToken cancellationToken = default);
 }
