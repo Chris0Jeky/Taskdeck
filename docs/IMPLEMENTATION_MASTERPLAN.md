@@ -69,6 +69,25 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Planning update (2026-08-30, v0.3/v0.4 acceleration-bundle reconciliation)
+
+- **The received bundle is an input, not a parallel backlog.** Its 220 files were grounded at
+  `221aa88c8`; live `main` was already 42 commits and 116 changed files ahead. The source, validation
+  receipt, component/workstream dispositions, and candidate-code admission contract are recorded in
+  `docs/analysis/2026-08-30-acceleration-bundle/RECONCILIATION.md` under tracker `#2348`.
+- **Stale starter lanes were removed before admission.** CF-01 `#2255` is merged/closed with residuals
+  `#2345`/`#2347`; OpenAI-compatible streaming `#2241` already satisfies AC2/AC4/AC6 and retains only
+  API-level/live proof; Smart CI depth consumes ADR-0066's landed control plane. Incorrect milestone-4
+  PR references and a Windows-specific backup-manifest validation defect are recorded rather than
+  copied into live tracker contracts.
+- **The bounded first wave fills, but does not exceed, Project WIP.** `#2348` and REF-0 `#2236` moved
+  to `Now / Priority II`, alongside existing `#1271` and `#2230`. REF-0 owns only repository-native
+  size × churn × touching-commit measurement tooling; its authoritative baseline waits for the exact
+  final `v0.3.0` tag. `#2241` remains Pending until a slot opens.
+- **Execution is serial on this checkout.** Both the fingerprint capture and the required issue-
+  worktree helper fail closed because the canonical OneDrive roots carry `ReparsePoint`; `#1711`
+  holds the exact evidence. No guard is weakened and the coordinator preserves the received bundles.
+
 ## Governance update (2026-08-30, Smart CI Fabric — ADR-0066 accepted under delegation)
 
 The maintainer directed that the repository **goes private for the v0.3.0 release** and that CI must
