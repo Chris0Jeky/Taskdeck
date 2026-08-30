@@ -462,8 +462,8 @@ test('inputFromEvent reads pull_request payloads without content and detects for
 });
 
 test('parseChangedFiles accepts plain lists and status/path/previous TSV', () => {
-  assert.deepEqual(parseChangedFiles('a.txt\n\nb/c.md\n'), ['a.txt', 'b/c.md']);
-  assert.deepEqual(parseChangedFiles('modified\tdocs/a.md\t\nrenamed\tdocs/new.md\tdocs/old.md\n'), ['docs/a.md', 'docs/new.md', 'docs/old.md']);
+  assert.deepEqual([...parseChangedFiles('a.txt\n\nb/c.md\n')], ['a.txt', 'b/c.md']);
+  assert.deepEqual([...parseChangedFiles('modified\tdocs/a.md\t\nrenamed\tdocs/new.md\tdocs/old.md\n')], ['docs/a.md', 'docs/new.md', 'docs/old.md']);
 });
 
 test('summaries render without throwing and stay content-free', () => {
