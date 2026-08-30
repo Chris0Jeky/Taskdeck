@@ -65,7 +65,7 @@ export default {
     draftRestoredLead: 'Bozza ripristinata.',
     draftRestoredDetail:
       'Il nuovo accesso ha interrotto questa cattura, quindi nulla è arrivato nell’Inbox. Inviala quando vuoi.',
-    draftRestoredTruncated: 'Il testo era molto lungo, quindi la parte finale non è stata conservata.',
+    draftRestoredTruncated: 'Una parte di questa bozza era troppo lunga, quindi non è stata ripristinata per intero.',
     draftRestoredDiscard: 'Elimina questa bozza',
     errorDiagnosticsLabel: 'Diagnostica della richiesta',
     errorFallback: 'Riprova quando la connessione è disponibile.',

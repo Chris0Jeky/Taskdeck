@@ -67,7 +67,7 @@ export default {
     draftRestoredLead: 'Borrador restaurado.',
     draftRestoredDetail:
       'Volver a iniciar sesión interrumpió esta captura, así que nada llegó al Inbox. Envíala cuando quieras.',
-    draftRestoredTruncated: 'El texto era muy largo, así que no se pudo conservar el final.',
+    draftRestoredTruncated: 'Parte de este borrador era demasiado largo, así que no se restauró por completo.',
     draftRestoredDiscard: 'Descartar este borrador',
     errorDiagnosticsLabel: 'Diagnóstico de la solicitud',
     errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',

@@ -11,6 +11,11 @@
  *
  * Rules this module enforces, so no caller has to remember them:
  *
+ * - **Bound to one account.** `sessionStorage` outlives the /login round trip
+ *   and nothing forces the SAME account to sign back in, so an unstamped
+ *   record would restore user A's draft into user B's composer and send it
+ *   under B's session. Every record carries the `userId` it was stashed for;
+ *   a read by anyone else drops it. No signed-in user, no stash.
  * - **Never a secret.** The stored record is assembled field by field from an
  *   allowlist (text, board target, labels, due date, and the failure receipt's
  *   already-safe human message plus request diagnostics). Nothing is spread in
@@ -31,9 +36,18 @@ const STORAGE_KEY = 'taskdeck.capture.draft.v1'
 
 /** Longest capture body kept. Beyond this the tail is dropped (`truncated`). */
 export const MAX_TEXT_CHARS = 20_000
-/** Most labels kept; the rest are dropped. */
-export const MAX_LABELS = 50
-/** Longest single label kept; longer ones are dropped, not truncated. */
+/**
+ * Most labels kept. This is the server's own `CaptureRequestContract
+ * .MaxLabelCount`, so a draft the API would accept is never trimmed here; a
+ * draft beyond it loses its tail, and `labelsDropped` says so.
+ */
+export const MAX_LABELS = 100
+/**
+ * Longest single label kept; longer ones are dropped whole rather than
+ * truncated (a silently shortened label is a different label). Deliberately
+ * looser than the server's `MaxLabelNameLength` of 30 — the stash preserves
+ * what was typed and lets the server be the authority on what is valid.
+ */
 export const MAX_LABEL_CHARS = 100
 /** Longest failure-receipt message / diagnostics blob kept. */
 export const MAX_MESSAGE_CHARS = 500
@@ -54,6 +68,8 @@ export interface CaptureDraftFailure {
 
 /** What a capture surface hands in. */
 export interface CaptureDraftInput {
+  /** The signed-in user this draft belongs to. Without it nothing is stored. */
+  userId: string | null | undefined
   variant: CaptureDraftVariant
   text: string
   boardId?: string | null
@@ -64,6 +80,8 @@ export interface CaptureDraftInput {
 
 /** What comes back out, with the bounds already applied. */
 export interface StashedCaptureDraft {
+  /** The account the draft was stashed for; a read by any other drops it. */
+  userId: string
   variant: CaptureDraftVariant
   text: string
   boardId: string | null
@@ -72,6 +90,8 @@ export interface StashedCaptureDraft {
   failure: CaptureDraftFailure | null
   /** True when the body was longer than `MAX_TEXT_CHARS` and lost its tail. */
   truncated: boolean
+  /** True when any label was dropped, by count or by length. */
+  labelsDropped: boolean
   /** Epoch ms the stash was written; drives the `MAX_AGE_MS` expiry. */
   stashedAt: number
 }
@@ -99,11 +119,16 @@ function isVariant(value: unknown): value is CaptureDraftVariant {
  *
  * Returns true when a record was written. A blank body writes nothing and
  * clears any earlier stash — there is no draft left worth restoring, and a
- * stale one must not outlive it.
+ * stale one must not outlive it. An unidentified session writes nothing and
+ * leaves any earlier record alone: with no account to stamp, a stored draft
+ * could be restored by whoever signs in next.
  */
 export function stashCaptureDraft(input: CaptureDraftInput): boolean {
   const store = storage()
   if (!store) return false
+
+  const userId = typeof input.userId === 'string' ? input.userId.trim() : ''
+  if (userId.length === 0) return false
 
   const rawText = typeof input.text === 'string' ? input.text : ''
   if (rawText.trim().length === 0) {
@@ -111,13 +136,17 @@ export function stashCaptureDraft(input: CaptureDraftInput): boolean {
     return false
   }
 
-  const labels = Array.isArray(input.labels)
+  const requestedLabels = Array.isArray(input.labels)
     ? input.labels
         .filter((label): label is string => typeof label === 'string')
         .map((label) => label.trim())
-        .filter((label) => label.length > 0 && label.length <= MAX_LABEL_CHARS)
-        .slice(0, MAX_LABELS)
+        .filter((label) => label.length > 0)
     : []
+  const keepableLabels = requestedLabels.filter((label) => label.length <= MAX_LABEL_CHARS)
+  const labels = keepableLabels.slice(0, MAX_LABELS)
+  // Losing part of a draft is allowed; losing it silently is not. The restore
+  // affordance reads this flag and tells the user something was left behind.
+  const labelsDropped = labels.length < requestedLabels.length
 
   const failure = input.failure
     ? {
@@ -130,6 +159,7 @@ export function stashCaptureDraft(input: CaptureDraftInput): boolean {
     : null
 
   const record: StashedCaptureDraft = {
+    userId,
     variant: isVariant(input.variant) ? input.variant : 'composer',
     text: clampText(rawText, MAX_TEXT_CHARS),
     boardId: typeof input.boardId === 'string' ? input.boardId : null,
@@ -137,6 +167,7 @@ export function stashCaptureDraft(input: CaptureDraftInput): boolean {
     dueAt: typeof input.dueAt === 'string' && input.dueAt.length > 0 ? input.dueAt : null,
     failure,
     truncated: rawText.length > MAX_TEXT_CHARS,
+    labelsDropped,
     stashedAt: Date.now(),
   }
 
@@ -163,13 +194,23 @@ export function stashCaptureDraft(input: CaptureDraftInput): boolean {
 }
 
 /**
- * Read the stash WITHOUT clearing it. Used by callers that cannot restore yet
- * (e.g. the Inbox opened in archived-history mode, which has no composer).
- * Expired or malformed records are cleared and reported as absent.
+ * Read the stash WITHOUT clearing it, for `currentUserId`. Used by callers
+ * that cannot restore yet (e.g. the Inbox opened in archived-history mode,
+ * which has no composer). Expired, malformed, and other-account records are
+ * cleared and reported as absent.
+ *
+ * A caller with no signed-in user gets nothing AND leaves the record in place:
+ * it is not this session's to read, and not this session's to destroy either.
  */
-export function peekCaptureDraft(now: number = Date.now()): StashedCaptureDraft | null {
+export function peekCaptureDraft(
+  currentUserId: string | null | undefined,
+  now: number = Date.now(),
+): StashedCaptureDraft | null {
   const store = storage()
   if (!store) return null
+
+  const reader = typeof currentUserId === 'string' ? currentUserId.trim() : ''
+  if (reader.length === 0) return null
 
   let raw: string | null
   try {
@@ -196,6 +237,13 @@ export function peekCaptureDraft(now: number = Date.now()): StashedCaptureDraft 
     clearCaptureDraft()
     return null
   }
+  // The identity gate. An unstamped record predates this rule (or was not
+  // written by us) and is as untrustworthy as one belonging to someone else:
+  // both are dropped rather than handed to the account reading now.
+  if (typeof candidate.userId !== 'string' || candidate.userId !== reader) {
+    clearCaptureDraft()
+    return null
+  }
   if (typeof candidate.stashedAt !== 'number' || !Number.isFinite(candidate.stashedAt)) {
     clearCaptureDraft()
     return null
@@ -214,6 +262,7 @@ export function peekCaptureDraft(now: number = Date.now()): StashedCaptureDraft 
       : null
 
   return {
+    userId: candidate.userId,
     variant: candidate.variant,
     text: clampText(candidate.text, MAX_TEXT_CHARS),
     boardId: typeof candidate.boardId === 'string' ? candidate.boardId : null,
@@ -225,6 +274,7 @@ export function peekCaptureDraft(now: number = Date.now()): StashedCaptureDraft 
     dueAt: typeof candidate.dueAt === 'string' ? candidate.dueAt : null,
     failure: failure && failure.message.length > 0 ? failure : null,
     truncated: candidate.truncated === true,
+    labelsDropped: candidate.labelsDropped === true,
     stashedAt: candidate.stashedAt,
   }
 }
@@ -234,8 +284,14 @@ export function peekCaptureDraft(now: number = Date.now()): StashedCaptureDraft 
  * use on purpose: once the draft is back in the composer it lives there, and a
  * later reload must not resurrect a copy the user already discarded or sent.
  */
-export function takeCaptureDraft(now: number = Date.now()): StashedCaptureDraft | null {
-  const draft = peekCaptureDraft(now)
+export function takeCaptureDraft(
+  currentUserId: string | null | undefined,
+  now: number = Date.now(),
+): StashedCaptureDraft | null {
+  // No signed-in reader: nothing to restore, and nothing of ours to destroy.
+  const reader = typeof currentUserId === 'string' ? currentUserId.trim() : ''
+  if (reader.length === 0) return null
+  const draft = peekCaptureDraft(reader, now)
   clearCaptureDraft()
   return draft
 }

@@ -5,11 +5,13 @@ import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapp
 import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
 import { isTriageTerminalStatus } from '../../types/capture'
+import { useSessionStore } from '../../store/sessionStore'
 import { onAuthExpired } from '../../utils/authExpiry'
 import {
   clearCaptureDraft,
   stashCaptureDraft,
   takeCaptureDraft,
+  type CaptureDraftVariant,
   type StashedCaptureDraft,
 } from '../../utils/captureDraftStash'
 import type { CaptureItem } from '../../types/capture'
@@ -42,6 +44,9 @@ type Variant = 'nib' | 'composer'
 
 const variant = ref<Variant>('composer')
 const { t } = useI18n()
+// The signed-in account, for the draft stash's identity gate (GH-2142). Still
+// in memory when the 401 fires: `http.ts` clears `tokenStorage`, not this.
+const sessionStore = useSessionStore()
 const composerRef = ref<InstanceType<typeof PaperCaptureComposer> | null>(null)
 const nibRef = ref<InstanceType<typeof PaperCaptureNib> | null>(null)
 const nibBleeding = ref(false)
@@ -174,8 +179,14 @@ async function dispatchCapture(
       // that would create a duplicate capture.
       captureMetadataCompatibilityWarning.value = true
     }
-    // The draft is saved; nothing is left to restore, so the stash and its
-    // "draft restored" affordance go (GH-2142).
+    // The draft is saved. Empty the surface HERE, before the follow-up refresh:
+    // if that refresh 401s, the expiry handler would otherwise re-stash text
+    // that is already in Inbox and invite a duplicate submit after sign-in.
+    if (sourceVariant === 'nib') {
+      nibRef.value?.resetDraft()
+    } else {
+      composerRef.value?.resetDraft()
+    }
     restoredDraft.value = null
     clearCaptureDraft()
     await loadInbox().catch(() => {
@@ -205,7 +216,7 @@ async function onNibSubmit(text: string) {
     return
   }
 
-  nibRef.value?.resetDraft()
+  // The draft was already emptied by `dispatchCapture`, before the refresh.
   // Show the static ember placeholder (TODO: ink bleed) for ~1.4s after a
   // confirmed create; the placeholder is purely motion stand-in.
   nibBleeding.value = true
@@ -232,13 +243,12 @@ async function onComposerSubmit(payload: {
   const metadata = payload.dueAt || payload.labels.length > 0
     ? { dueDate: payload.dueAt, labels: payload.labels }
     : {}
-  const created = await dispatchCapture('composer', payload.text, {
+  // No reset here: `dispatchCapture` empties the surface on success, before
+  // the inbox refresh that could 401 (GH-2142).
+  await dispatchCapture('composer', payload.text, {
     boardId: payload.boardId,
     ...metadata,
   })
-  if (created) {
-    composerRef.value?.resetDraft()
-  }
 }
 
 async function onTriageAccept(itemId: string, boardId?: string | null) {
@@ -348,28 +358,38 @@ watch([isArchivedHistory, activeBoardId], () => {
  */
 function handleAuthExpired() {
   if (isArchivedHistory.value) return
-  const active = variant.value
-  const snapshot =
-    active === 'nib' ? nibRef.value?.snapshotDraft() : composerRef.value?.snapshotDraft()
-  if (!snapshot) return
-  const draft = snapshot as {
-    text: string
-    boardId?: string | null
-    labels?: string[]
-    dueAt?: string | null
+  // Both surfaces stay mounted under `v-show`, so the variant on screen is not
+  // necessarily the one holding text: someone can type in the nib, toggle to
+  // the composer, and expire there. Prefer the active surface, then fall back
+  // to the other non-empty one, so a toggled-away draft is not lost either.
+  const candidates: CaptureDraftVariant[] =
+    variant.value === 'nib' ? ['nib', 'composer'] : ['composer', 'nib']
+  for (const surface of candidates) {
+    const snapshot =
+      surface === 'nib' ? nibRef.value?.snapshotDraft() : composerRef.value?.snapshotDraft()
+    if (!snapshot) continue
+    const draft = snapshot as {
+      text: string
+      boardId?: string | null
+      labels?: string[]
+      dueAt?: string | null
+    }
+    if (draft.text.trim().length === 0) continue
+    stashCaptureDraft({
+      userId: sessionStore.userId,
+      variant: surface,
+      text: draft.text,
+      boardId: draft.boardId ?? null,
+      labels: draft.labels ?? [],
+      dueAt: draft.dueAt ?? null,
+      failure:
+        captureErrors.value[surface] ?? {
+          message: t('inbox.capture.sessionExpiredReason'),
+          details: null,
+        },
+    })
+    return
   }
-  stashCaptureDraft({
-    variant: active,
-    text: draft.text,
-    boardId: draft.boardId ?? null,
-    labels: draft.labels ?? [],
-    dueAt: draft.dueAt ?? null,
-    failure:
-      captureErrors.value[active] ?? {
-        message: t('inbox.capture.sessionExpiredReason'),
-        details: null,
-      },
-  })
 }
 
 /**
@@ -381,7 +401,9 @@ function handleAuthExpired() {
  */
 function restoreStashedDraft() {
   if (isArchivedHistory.value) return
-  const stashed = takeCaptureDraft()
+  // The identity gate lives in the stash: a record stamped for another account
+  // is dropped there rather than handed to whoever signed in this time.
+  const stashed = takeCaptureDraft(sessionStore.userId)
   if (!stashed) return
   restoredDraft.value = stashed
   variant.value = stashed.variant
@@ -532,7 +554,10 @@ defineExpose({ variant, toggleVariant, setVariant })
       >
         <strong>{{ $t('inbox.capture.draftRestoredLead') }}</strong>
         <span>{{ $t('inbox.capture.draftRestoredDetail') }}</span>
-        <span v-if="restoredDraft.truncated" data-testid="paper-inbox-capture-restored-truncated">
+        <span
+          v-if="restoredDraft.truncated || restoredDraft.labelsDropped"
+          data-testid="paper-inbox-capture-restored-truncated"
+        >
           {{ $t('inbox.capture.draftRestoredTruncated') }}
         </span>
         <button

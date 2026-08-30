@@ -94,7 +94,7 @@ export default {
     draftRestoredLead: 'Draft restored.',
     draftRestoredDetail:
       'Signing in again interrupted this capture, so nothing reached Inbox. Send it when you are ready.',
-    draftRestoredTruncated: 'The text was very long, so the end of it could not be kept.',
+    draftRestoredTruncated: 'Part of this draft was too long to keep, so some of it was not restored.',
     draftRestoredDiscard: 'Discard this draft',
     errorDiagnosticsLabel: 'Request diagnostics',
     errorFallback: 'Please try again when the connection is available.',
