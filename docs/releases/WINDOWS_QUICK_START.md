@@ -172,8 +172,10 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
   and wrongly suggests a port/data-folder problem. Follow the provider-migration workaround in
   [UPGRADING.md](../../UPGRADING.md#version-notes). v0.1.2 and later print the accurate
   diagnostic below instead.
+- `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored`: Taskdeck started normally on its built-in provider after ignoring retired Gemini settings inherited from this machine's environment; clear those leftover variables with the commands below when convenient, then pick a supported provider.
 - `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the
-  retired Gemini provider and refused to switch providers silently. Close Taskdeck, then use a fresh
+  retired Gemini provider in its own `appsettings.json` / `appsettings.local.json` (or in Docker
+  Compose) and refused to switch providers silently. Close Taskdeck, then use a fresh
   PowerShell window to explicitly return **User**-scoped configuration to deterministic Mock and
   remove only the retired child-setting names; the commands do not read or print their values:
 
