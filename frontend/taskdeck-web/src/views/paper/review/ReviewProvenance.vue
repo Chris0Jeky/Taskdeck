@@ -11,7 +11,13 @@ const props = withDefaults(defineProps<{
   evidenceLinks?: EvidenceLink[]
   proposalId: string
   readOnly?: boolean
-}>(), { readOnly: false })
+  /**
+   * Hide the inline producer sentence when it could be mistaken for authorship
+   * of the effective revised operation set. The drawer still receives and
+   * displays the original, server-recorded producer metadata.
+   */
+  suppressProducerFootnote?: boolean
+}>(), { readOnly: false, suppressProducerFootnote: false })
 
 const emit = defineEmits<{
   report: [proposalId: string]
@@ -35,6 +41,7 @@ const disclosureId = 'paper-review-provenance-disclosure'
  * (ADR-0054); `label` is backend wire text and is interpolated verbatim, never translated.
  */
 const footnote = computed<{ key: string; params: Record<string, string> } | null>(() => {
+  if (props.suppressProducerFootnote) return null
   const actor = classifyProvenanceActor(props.metadata)
   if (actor.kind === 'unknown') return null
   return {

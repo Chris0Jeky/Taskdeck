@@ -1874,6 +1874,96 @@ describe('PaperReviewView', () => {
     },
   )
 
+  it('suppresses revised producer attribution, preserves drawer metadata, and resets for an unrevised selection', async () => {
+    mocks.getRevisions.mockImplementation(async (proposalId: string) =>
+      proposalId === 'proposal-revised'
+        ? [
+            {
+              id: 'revision-001',
+              proposalId,
+              revisionNumber: 1,
+              editorUserId: 'u-1',
+              revisedPayload: '{"operations":[{"actionType":"CreateCard"}]}',
+              revisedAt: '2026-08-30T09:01:00Z',
+              reason: 'Clarify the effective operation',
+              createdAt: '2026-08-30T09:01:00Z',
+            },
+          ]
+        : [],
+    )
+    mocks.getCaptureItem.mockImplementation(async (captureId: string) => {
+      const proposalId = captureId === 'capture-revised' ? 'proposal-revised' : 'proposal-original'
+      return makeCaptureItem(
+        { id: captureId },
+        {
+          captureItemId: captureId,
+          proposalId,
+          provider: 'OpenAI',
+          model: 'gpt-4o-mini',
+          promptVersion: 'llm-triage.v2',
+        },
+      )
+    })
+
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          id: 'proposal-revised',
+          sourceType: 'Queue',
+          sourceReferenceId: 'capture-revised',
+          latestRevisionId: 'revision-001',
+          summary: 'Revised capture proposal',
+        }),
+        makeProposal({
+          id: 'proposal-original',
+          sourceType: 'Queue',
+          sourceReferenceId: 'capture-original',
+          summary: 'Original capture proposal',
+        }),
+      ],
+      '/workspace/review#proposal-proposal-revised',
+      [],
+      [],
+      { attachTo: true },
+    )
+
+    await vi.waitFor(() => {
+      expect(mocks.getRevisions).toHaveBeenCalledWith('proposal-revised')
+      expect(mocks.getCaptureItem).toHaveBeenCalledWith(
+        'capture-revised',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+    })
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
+    expect(wrapper.find('[data-testid="paper-review-provenance-footnote"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="revision-badge"]').text()).toContain('1 revision')
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('.prov-drawer__meta')?.textContent).toContain(
+      'OpenAI/gpt-4o-mini',
+    )
+
+    const originalRow = wrapper
+      .findAll('.paper-review-q')
+      .find((row) => row.text().includes('Original capture proposal'))
+    expect(originalRow).toBeDefined()
+    await originalRow!.trigger('click')
+    await vi.waitFor(() => {
+      expect(mocks.getRevisions).toHaveBeenCalledWith('proposal-original')
+      expect(mocks.getCaptureItem).toHaveBeenCalledWith(
+        'capture-original',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+    })
+
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
+    expect(wrapper.get('[data-testid="paper-review-provenance-footnote"]').text()).toContain(
+      'OpenAI/gpt-4o-mini',
+    )
+    expect(wrapper.find('[data-testid="revision-badge"]').exists()).toBe(false)
+  })
+
   it('omits producer claims when capture metadata is absent or stale', async () => {
     mocks.getCaptureItem.mockResolvedValue(
       makeCaptureItem(
