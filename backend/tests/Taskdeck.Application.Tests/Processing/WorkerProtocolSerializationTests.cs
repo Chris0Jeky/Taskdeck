@@ -642,6 +642,53 @@ public sealed class WorkerProtocolSerializationTests
     }
 
     [Fact]
+    public void ValidateResult_WithTheRunRequest_ShouldRejectCandidatesOutsideSemanticExtract()
+    {
+        // Codex review of PR #2320: a processor invoked for audio.transcribe must not be able to inject
+        // semantic candidates; only a semantic.extract run may answer with a candidate batch.
+        var batch = new ProcessorCandidateBatchOutput(1, new[]
+        {
+            new ProcessorCandidateOutput(nameof(SemanticCandidateKind.Action), "Book the venue", null, null, WorkerProtocol.DerivationInferred, null)
+        });
+        var result = new ProcessorRunResult(
+            WorkerProtocol.StatusCompleted, CompletedIdentity(), new ProcessorOutput[] { TextOutput(), batch }, null, null);
+        var transcribe = new ProcessorRunParams(WorkerProtocol.Version, ProcessingCapability.AudioTranscribe, new[] { SourceAssetInput("spool://a", "audio/webm") }, null, null);
+        var extract = transcribe with { Capability = ProcessingCapability.SemanticExtract };
+
+        WorkerProtocolValidator.ValidateResult(result, transcribe)
+            .Should().ContainSingle(error => error.Contains("outputs[1]") && error.Contains("candidate batch may only be emitted by semantic.extract"));
+        WorkerProtocolValidator.ValidateResult(result, extract).Should().BeEmpty();
+        WorkerProtocolValidator.ValidateResult(result).Should().BeEmpty("without the request the structural check alone applies");
+    }
+
+    [Fact]
+    public void ValidateResult_WithTheRunRequest_ShouldBindEvidenceToTheRunsRepresentationInputs()
+    {
+        // Codex review of PR #2320: a representationId in candidate evidence must be one of the
+        // representations this run was given — never an arbitrary (possibly foreign) id.
+        var given = Guid.NewGuid();
+        var foreign = Guid.NewGuid();
+        ProcessorCandidateOutput Candidate(Guid representationId) => new(
+            nameof(SemanticCandidateKind.Action), "Ship on Friday", null,
+            new[] { new ProcessorEvidenceReference(representationId, null, nameof(EvidenceAnchorKind.TextSpan), null, 0, 4, null, null, null, null, null) },
+            WorkerProtocol.DerivationExtractive, null);
+        var request = new ProcessorRunParams(
+            WorkerProtocol.Version, ProcessingCapability.SemanticExtract,
+            new[] { new ProcessorRunInput(WorkerProtocol.InputRepresentation, given, "text/plain", "content://rep", ValidSha, 42, "transcript") },
+            null, null);
+
+        var honest = new ProcessorRunResult(WorkerProtocol.StatusCompleted, CompletedIdentity(),
+            new ProcessorOutput[] { new ProcessorCandidateBatchOutput(1, new[] { Candidate(given) }) }, null, null);
+        var forged = new ProcessorRunResult(WorkerProtocol.StatusCompleted, CompletedIdentity(),
+            new ProcessorOutput[] { new ProcessorCandidateBatchOutput(1, new[] { Candidate(foreign) }) }, null, null);
+
+        WorkerProtocolValidator.ValidateResult(honest, request).Should().BeEmpty();
+        WorkerProtocolValidator.ValidateResult(forged, request)
+            .Should().ContainSingle(error => error.Contains("evidence[0].representationId") && error.Contains("this run's representation inputs"));
+        WorkerProtocolValidator.ValidateResult(forged).Should().BeEmpty("without the request the id cannot be checked — the host must pass the request");
+    }
+
+    [Fact]
     public void Stability_ShouldBeMarkedAlphaUntilConformance()
     {
         WorkerProtocol.Stability.Should().Be("v1-alpha");

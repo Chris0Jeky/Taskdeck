@@ -90,11 +90,15 @@ public interface IBlobStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Drops one reference. Returns true when it was the last one and the object's bytes were
-    /// removed in the same transaction; false when other references keep the object alive.
+    /// Drops one reference. Owner-scoped like every other operation: the reference must belong to
+    /// <paramref name="ownerUserId"/> or the call fails without mutating anything, so a leaked or
+    /// mistaken foreign reference id can never decrement another user's count or delete their
+    /// bytes. Returns true when it was the last reference and the object's bytes were removed in the
+    /// same transaction; false when other references keep the object alive.
     /// </summary>
     Task<bool> ReleaseAsync(
         Guid referenceId,
+        Guid ownerUserId,
         CancellationToken cancellationToken = default);
 
     /// <summary>Opens the bytes for an owner-scoped read; null when the object does not exist for that owner.</summary>

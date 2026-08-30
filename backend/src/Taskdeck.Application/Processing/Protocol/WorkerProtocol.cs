@@ -577,7 +577,23 @@ public static class WorkerProtocolValidator
             errors.Add($"{prefix}.byteSize: must be greater than zero");
     }
 
-    public static IReadOnlyList<string> ValidateResult(ProcessorRunResult? result)
+    /// <summary>
+    /// Structural validation of a result on its own. Prefer the overload that takes the run request:
+    /// only with the request can the host reject a candidate batch from a capability that may not
+    /// emit one, or an evidence reference to a representation that was not an input of this run.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateResult(ProcessorRunResult? result) => ValidateResult(result, request: null);
+
+    /// <summary>
+    /// Validates a result <b>against the run that produced it</b>. With <paramref name="request"/>
+    /// present, a <c>candidate-batch</c> output is accepted only from a <c>semantic.extract</c> run,
+    /// and a candidate's <c>representationId</c> must name one of the run's <c>representation</c>
+    /// inputs — a processor can neither inject candidates outside the capability it was authorised
+    /// for nor claim lineage to a representation it was never given (Codex review of PR #2320).
+    /// Ownership of those inputs is the host's (they were issued by it); the manifest contract check
+    /// (which output families the capability declared) is applied by the CF-04 host with the manifest.
+    /// </summary>
+    public static IReadOnlyList<string> ValidateResult(ProcessorRunResult? result, ProcessorRunParams? request)
     {
         var errors = new List<string>();
 
@@ -586,6 +602,8 @@ public static class WorkerProtocolValidator
             errors.Add("result: missing");
             return errors;
         }
+
+        var runContext = request is null ? null : new RunContext(request);
 
         if (result.Status is null || !Statuses.Contains(result.Status))
             errors.Add("result.status: one of completed | failed | cancelled");
@@ -638,7 +656,9 @@ public static class WorkerProtocolValidator
                     ValidateRepresentation(representation, prefix, errors);
                     break;
                 case ProcessorCandidateBatchOutput batch:
-                    ValidateCandidateBatch(batch, prefix, result.Outputs, errors);
+                    if (runContext is not null && runContext.Capability != ProcessingCapability.SemanticExtract)
+                        errors.Add($"{prefix}: a candidate batch may only be emitted by {ProcessingCapability.SemanticExtract}; this run is '{runContext.Capability}'");
+                    ValidateCandidateBatch(batch, prefix, result.Outputs, runContext, errors);
                     break;
                 case ProcessorDiagnosticOutput diagnostic:
                     if (string.IsNullOrWhiteSpace(diagnostic.Code))
@@ -787,10 +807,27 @@ public static class WorkerProtocolValidator
             errors.Add($"{prefix}.confidence: must be within [0, 1]");
     }
 
+    /// <summary>What the host knows about the run a result claims to answer: its capability and the representation inputs it was issued.</summary>
+    private sealed class RunContext
+    {
+        public RunContext(ProcessorRunParams request)
+        {
+            Capability = request.Capability ?? string.Empty;
+            RepresentationInputIds = new HashSet<Guid>(
+                (request.Inputs ?? Array.Empty<ProcessorRunInput>())
+                    .Where(input => input is { Kind: WorkerProtocol.InputRepresentation } && input.Id != Guid.Empty)
+                    .Select(input => input.Id));
+        }
+
+        public string Capability { get; }
+        public HashSet<Guid> RepresentationInputIds { get; }
+    }
+
     private static void ValidateCandidateBatch(
         ProcessorCandidateBatchOutput batch,
         string prefix,
         IReadOnlyList<ProcessorOutput> outputs,
+        RunContext? runContext,
         List<string> errors)
     {
         if (batch.SchemaVersion < 1)
@@ -847,7 +884,7 @@ public static class WorkerProtocolValidator
                     continue;
                 }
 
-                ValidateEvidence(evidence, evidencePrefix, outputs, errors);
+                ValidateEvidence(evidence, evidencePrefix, outputs, runContext, errors);
             }
         }
     }
@@ -856,12 +893,16 @@ public static class WorkerProtocolValidator
         ProcessorEvidenceReference evidence,
         string prefix,
         IReadOnlyList<ProcessorOutput> outputs,
+        RunContext? runContext,
         List<string> errors)
     {
         var hasRepresentation = evidence.RepresentationId is { } representationId && representationId != Guid.Empty;
         var hasOutputIndex = evidence.OutputIndex is not null;
         if (hasRepresentation == hasOutputIndex)
             errors.Add($"{prefix}: exactly one of representationId or outputIndex must be present");
+
+        if (hasRepresentation && runContext is not null && !runContext.RepresentationInputIds.Contains(evidence.RepresentationId!.Value))
+            errors.Add($"{prefix}.representationId: must reference one of this run's representation inputs");
 
         string? anchoredText = null;
         if (hasOutputIndex)
