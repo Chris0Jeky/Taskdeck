@@ -9,6 +9,12 @@ import type {
 } from '../types/automation'
 import { getErrorDisplay } from './useErrorMapper'
 import { proposalIdsEqual } from '../utils/proposalIdentity'
+import {
+  isBoundedCreateCardOnly,
+  isExactLowRisk,
+  isLiveAndNotDeferred,
+  isOwnBatchProposal,
+} from './batchProposalEligibility'
 
 /** The server's own bound, mirrored so the client never posts a request it knows will 400. */
 const MAX_BATCH_EXECUTE_COUNT = 500
@@ -23,32 +29,38 @@ function isExactApproved(status: Proposal['status']): boolean {
 }
 
 /**
- * Paper's fail-closed batch-execute boundary. Deliberately narrower than what single Apply accepts:
- * an unknown wire status is never read as Approved, and only the reviewer's own approved, live,
- * non-deferred proposals with at least one operation are offered for a bulk apply. Eligibility is
- * presentation-only — the server repeats board access, status, policy, and the approved-revision
- * pin authoritatively for every item.
+ * Paper's fail-closed batch-execute boundary, and deliberately much narrower than what single Apply
+ * accepts.
+ *
+ * It admits exactly the class of work its sibling batch approve admits - the SHARED gates in
+ * `batchProposalEligibility`: the reviewer's own proposal, exactly Low risk, live and not deferred,
+ * and a bounded set of card creations only. #1307 AC3 scopes both halves to "eligible low-risk,
+ * create-card-only proposals", and without the risk and operation-shape gates a single click on
+ * *Apply approved* would reach approved High/Critical archive or bulk-move proposals - the exact
+ * decisions a bulk action is unsuited to make. The zero-operation case falls out of the same gate:
+ * offering a proposal with nothing to apply would manufacture a receipt for a write that never
+ * existed (#1423 precedent).
+ *
+ * The one axis that differs from approve is the status, which is the whole point of this surface:
+ * exactly Approved, never a normalized guess - an unknown wire status is not read as Approved.
+ *
+ * Widening this - bulk-applying higher-risk or non-create proposals - is a product decision for the
+ * maintainer, not an implementation detail; it is flagged on #1307 rather than assumed here.
+ *
+ * Eligibility is presentation-only: the server repeats board access, status, policy, and the
+ * approved-revision pin authoritatively for every item, and it does NOT impose this narrowing, so
+ * single Apply is unaffected.
  */
 export function isBatchExecuteEligible(
   proposal: Proposal,
   currentUserId: string | null,
   nowMs: number,
 ): boolean {
-  if (!currentUserId || !proposalIdsEqual(proposal.requestedByUserId, currentUserId)) return false
-  if (!isExactApproved(proposal.status)) return false
-  if (proposal.isExpired === true) return false
+  if (!isOwnBatchProposal(proposal, currentUserId)) return false
+  if (!isExactApproved(proposal.status) || !isExactLowRisk(proposal.riskLevel)) return false
+  if (!isLiveAndNotDeferred(proposal, nowMs)) return false
 
-  const expiresAt = new Date(proposal.expiresAt).getTime()
-  if (!Number.isFinite(expiresAt) || expiresAt <= nowMs) return false
-
-  if (proposal.deferredUntil) {
-    const deferredUntil = new Date(proposal.deferredUntil).getTime()
-    if (!Number.isFinite(deferredUntil) || deferredUntil > nowMs) return false
-  }
-
-  // A zero-operation approved proposal has nothing to apply; offering it in a bulk action would
-  // manufacture a receipt for a write that never existed (#1423 precedent).
-  return Array.isArray(proposal.operations) && proposal.operations.length > 0
+  return isBoundedCreateCardOnly(proposal.operations)
 }
 
 /**
@@ -97,16 +109,48 @@ export function useBatchExecuteProposals(
     confirmationOpen.value = true
   }
 
+  /**
+   * The dialog's close action, for both of its phases.
+   *
+   * Receipts record writes that ALREADY happened, so dismissing them is always allowed - including
+   * during the best-effort queue refresh that follows a batch, which keeps `busy` true for a while
+   * after the applies have landed. Blocking close there left the reviewer looking at an enabled
+   * Done button that did nothing. Only the pre-apply confirmation is locked while a request is in
+   * flight, because closing it mid-POST would misrepresent what was decided.
+   */
   function cancelConfirmation() {
+    if (receipts.value.length > 0) {
+      confirmationOpen.value = false
+      clearReceipts()
+      return
+    }
     if (busy.value) return
+    confirmationOpen.value = false
+  }
+
+  /**
+   * Unconditional close, for a context change that invalidates the whole surface rather than a
+   * reviewer decision - entering archived history, where no apply may be offered at all. It ignores
+   * `busy` on purpose: an in-flight response can still land, but it will land into a closed dialog
+   * and its receipts are cleared by the next `requestConfirmation`.
+   */
+  function forceClose() {
     confirmationOpen.value = false
     clearReceipts()
   }
 
   watch([proposals, currentUserId, nowMs], () => {
     // The confirmation belongs to a set the reviewer saw. If the queue moved under it and there is
-    // nothing left to apply, close it rather than confirm an empty batch. Receipts survive: they
-    // describe what already happened and are the only record of a partial outcome.
+    // nothing left to apply, close it rather than confirm an empty batch.
+    //
+    // The receipts guard is load-bearing, not defensive. Once results arrive this dialog is no
+    // longer a confirmation: it IS the receipt surface, and the only place a per-item outcome is
+    // ever shown. `confirmExecute` sets `receipts` and then awaits the queue refresh, which removes
+    // the just-applied proposals from eligibility and drives `executableCount` to 0 - so without
+    // this guard a fully successful batch closed its own receipts before the reviewer could read
+    // them, and the better the batch went the more certain the receipts were to vanish. Once
+    // receipts exist the dialog stays open until the reviewer dismisses it.
+    if (receipts.value.length > 0) return
     if (confirmationOpen.value && executableCount.value === 0) confirmationOpen.value = false
   }, { deep: true })
 
@@ -149,8 +193,14 @@ export function useBatchExecuteProposals(
       }))
 
       const applied = receipts.value.filter((item) => item.outcome === 'Applied').length
+      const skipped = receipts.value.filter((item) => item.outcome === 'Skipped').length
       const failed = receipts.value.filter((item) => item.outcome === 'Failed').length
-      if (failed === 0) {
+      if (failed === 0 && applied === 0 && skipped > 0) {
+        // Every item was already applied. Saying "Applied 0 proposals" here would be both an
+        // eyesore and a small lie: nothing was applied by this call, and the reason is that the
+        // work was already done, not that the batch achieved nothing.
+        toast.info(t('review.batchExecute.allSkipped', { count: skipped }, skipped))
+      } else if (failed === 0) {
         toast.success(t('review.batchExecute.allApplied', { count: applied }, applied))
       } else if (applied === 0) {
         toast.error(t('review.batchExecute.noneApplied', { count: failed }, failed))
@@ -179,15 +229,26 @@ export function useBatchExecuteProposals(
     receipts,
     requestConfirmation,
     cancelConfirmation,
+    forceClose,
     confirmExecute,
     clearReceipts,
   }
 }
 
 /**
- * One key per proposal per attempt. `crypto.randomUUID` is not available on every target the app
- * builds for (older Safari, non-secure contexts), and a batch that silently reused one key across
- * items would let the server's already-applied short circuit swallow real applies.
+ * One key per proposal per attempt, mirroring exactly what N separate single-execute calls would
+ * send.
+ *
+ * It is worth being precise about what this key does and does not do, because the obvious guess is
+ * wrong: the server never stores or compares the execute-level key. `AutomationExecutorService`
+ * only rejects a blank one, and the replay guard that makes a second apply a no-op is the
+ * proposal's own `Applied` STATUS, not the key. So a reused key would not currently corrupt
+ * anything. Distinct keys are still generated per item because that is the honest shape of the
+ * request - one idempotent identity per apply - and because the endpoint rejects a batch that
+ * claims one identity for two proposals.
+ *
+ * `crypto.randomUUID` is not available on every target the app builds for (older Safari,
+ * non-secure contexts), hence the fallback.
  */
 function newIdempotencyKey(): string {
   const cryptoRef = globalThis.crypto as Crypto | undefined

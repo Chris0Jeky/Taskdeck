@@ -6,6 +6,12 @@ import type { BatchApproveProposalSelection, Proposal } from '../types/automatio
 import { getErrorDisplay } from './useErrorMapper'
 import { STALE_PROPOSAL_MS } from './useReviewProposals'
 import { proposalIdsEqual } from '../utils/proposalIdentity'
+import {
+  isBoundedCreateCardOnly,
+  isExactLowRisk,
+  isLiveAndNotDeferred,
+  isOwnBatchProposal,
+} from './batchProposalEligibility'
 
 const MAX_BATCH_APPROVAL_COUNT = 500
 
@@ -42,48 +48,30 @@ function isExactPendingReview(status: Proposal['status']): boolean {
   )
 }
 
-function isExactLowRisk(risk: Proposal['riskLevel']): boolean {
-  return risk === 0 || (
-    typeof risk === 'string' && risk.toLowerCase() === 'low'
-  )
-}
-
 /**
- * Paper's fail-closed batch boundary. Unlike the general display normalizers, unknown wire values
- * are never treated as PendingReview/Low. Eligibility is presentation-only; the server repeats
- * every gate authoritatively at confirmation time.
+ * Paper's fail-closed batch-approve boundary. Unlike the general display normalizers, unknown wire
+ * values are never treated as PendingReview/Low. Eligibility is presentation-only; the server
+ * repeats every gate authoritatively at confirmation time.
+ *
+ * The risk, liveness, and operation-shape gates are the SHARED ones in `batchProposalEligibility`,
+ * so batch approve and batch execute cannot drift apart on the class of work they admit (#1307
+ * AC3). Two gates stay local on purpose: the exact PendingReview status, which is this surface's
+ * whole point, and the freshness window below, which guards an undecided proposal going stale in
+ * front of the reviewer and has no counterpart once a proposal has been approved.
  */
 export function isBatchApproveEligible(
   proposal: Proposal,
   currentUserId: string | null,
   nowMs: number,
 ): boolean {
-  if (!currentUserId || !proposalIdsEqual(proposal.requestedByUserId, currentUserId)) return false
+  if (!isOwnBatchProposal(proposal, currentUserId)) return false
   if (!isExactPendingReview(proposal.status) || !isExactLowRisk(proposal.riskLevel)) return false
-  if (proposal.isExpired === true) return false
-
-  const expiresAt = new Date(proposal.expiresAt).getTime()
-  if (!Number.isFinite(expiresAt) || expiresAt <= nowMs) return false
+  if (!isLiveAndNotDeferred(proposal, nowMs)) return false
 
   const createdAt = new Date(proposal.createdAt).getTime()
   if (!Number.isFinite(createdAt) || nowMs - createdAt >= STALE_PROPOSAL_MS) return false
 
-  if (proposal.deferredUntil) {
-    const deferredUntil = new Date(proposal.deferredUntil).getTime()
-    if (!Number.isFinite(deferredUntil) || deferredUntil > nowMs) return false
-  }
-
-  const operations = proposal.operations
-  return Array.isArray(operations) &&
-    operations.length > 0 &&
-    operations.length <= 5 &&
-    operations.every(
-      (operation) =>
-        typeof operation.actionType === 'string' &&
-        typeof operation.targetType === 'string' &&
-        operation.actionType.toLowerCase() === 'create' &&
-        operation.targetType.toLowerCase() === 'card',
-    )
+  return isBoundedCreateCardOnly(proposal.operations)
 }
 
 export function useBatchApproveProposals(

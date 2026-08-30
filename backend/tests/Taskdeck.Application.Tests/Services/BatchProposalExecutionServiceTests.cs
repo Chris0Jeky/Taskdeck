@@ -34,6 +34,13 @@ public class BatchProposalExecutionServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync((Guid _, IEnumerable<Guid> boardIds, CancellationToken _) =>
                 Result.Success<IReadOnlySet<Guid>>(boardIds.ToHashSet()));
+        _authorizationService
+            .Setup(a => a.GetReadableBoardIdsAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<IEnumerable<Guid>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid _, IEnumerable<Guid> boardIds, CancellationToken _) =>
+                Result.Success<IReadOnlySet<Guid>>(boardIds.ToHashSet()));
 
         _service = new BatchProposalExecutionService(
             _proposalService.Object,
@@ -59,7 +66,7 @@ public class BatchProposalExecutionServiceTests
 
         ArrangeExecute(first, new ProposalExecutionReceipt(AlreadyApplied: false, AppliedOperationCount: 2));
         _executorService
-            .Setup(e => e.ExecuteProposalWithReceiptAsync(failing, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(failing, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<ProposalExecutionReceipt>(ErrorCodes.WipLimitExceeded, "WIP limit reached"));
         ArrangeExecute(third, new ProposalExecutionReceipt(AlreadyApplied: false, AppliedOperationCount: 1));
 
@@ -81,7 +88,7 @@ public class BatchProposalExecutionServiceTests
         // The failing item must not have short-circuited the ones after it: each proposal is its
         // own transaction, so the executor is still asked for every selected proposal.
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(third, It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(third, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -118,10 +125,10 @@ public class BatchProposalExecutionServiceTests
             _callerId);
 
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(first, "key-first", It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(first, "key-first", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(second, "key-second", It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(second, "key-second", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -132,6 +139,8 @@ public class BatchProposalExecutionServiceTests
         var allowed = ArrangeProposal();
         var forbidden = ArrangeProposal(boardId: forbiddenBoardId);
         ArrangeExecute(allowed, new ProposalExecutionReceipt(false, 1));
+        // Writable: only the caller's own board. Readable: BOTH - so the forbidden item is on a
+        // board the caller can see, which is the case where naming the real reason discloses nothing.
         _authorizationService
             .Setup(a => a.GetWritableBoardIdsAsync(
                 _callerId,
@@ -151,21 +160,23 @@ public class BatchProposalExecutionServiceTests
         // The unauthorized item must never reach the executor: a 403-class outcome is decided
         // before any board write is attempted.
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(forbidden, It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(forbidden, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
     [Fact]
-    public async Task ExecuteProposals_WhenBoardlessProposalBelongsToAnotherUser_FailsThatItemForbidden()
+    public async Task ExecuteProposals_WhenBoardlessProposalBelongsToAnotherUser_FailsThatItemAsNotFound()
     {
         var foreign = ArrangeProposal(requestedByUserId: Guid.NewGuid(), useDefaultBoard: false);
 
         var result = await _service.ExecuteProposalsAsync(new[] { Select(foreign) }, _callerId);
 
+        // NotFound, not Forbidden: a board-less proposal has no ACL that could make it visible, so
+        // to anyone but its author it must be indistinguishable from one that does not exist.
         result.Value.Results.Single().Outcome.Should().Be(BatchExecuteOutcome.Failed);
-        result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.NotFound);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -182,7 +193,7 @@ public class BatchProposalExecutionServiceTests
         result.Value.Results.Single().Outcome.Should().Be(BatchExecuteOutcome.Failed);
         result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.Conflict);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -250,7 +261,7 @@ public class BatchProposalExecutionServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -270,6 +281,99 @@ public class BatchProposalExecutionServiceTests
                 It.IsAny<IEnumerable<Guid>>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_OnAnUnreadableBoard_IsIndistinguishableFromAMissingProposal()
+    {
+        // The enumeration guard. A caller who probes ids they have no access to must not be able to
+        // tell a real foreign proposal from a made-up id, or a 500-item batch becomes a one-request
+        // oracle over other people's proposals.
+        var foreignBoardId = Guid.NewGuid();
+        var foreign = ArrangeProposal(boardId: foreignBoardId);
+        var missing = Guid.NewGuid();
+        _proposalService
+            .Setup(s => s.GetProposalByIdAsync(missing, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.NotFound, "Proposal with ID x not found"));
+
+        // Neither writable nor readable: the caller has no access to that board at all.
+        _authorizationService
+            .Setup(a => a.GetWritableBoardIdsAsync(_callerId, It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>()));
+        _authorizationService
+            .Setup(a => a.GetReadableBoardIdsAsync(_callerId, It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>()));
+
+        var result = await _service.ExecuteProposalsAsync(
+            new[] { Select(foreign), new BatchExecuteProposalSelectionDto(missing, null, "key") },
+            _callerId);
+
+        var existingRow = result.Value.Results[0];
+        var missingRow = result.Value.Results[1];
+        existingRow.Outcome.Should().Be(BatchExecuteOutcome.Failed);
+        existingRow.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        // Byte-identical: code AND message. A different wording would leak the distinction the
+        // code hides.
+        existingRow.ErrorCode.Should().Be(missingRow.ErrorCode);
+        existingRow.ErrorMessage.Should().Be(missingRow.ErrorMessage);
+        existingRow.ErrorMessage.Should().NotContain(foreign.ToString());
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_OnAReadableButNotWritableBoard_StillReportsForbidden()
+    {
+        // The other half of the rule: the caller can already SEE this board, so its proposals'
+        // existence is not news and the honest reason is the useful one.
+        var readOnlyBoardId = Guid.NewGuid();
+        var proposal = ArrangeProposal(boardId: readOnlyBoardId);
+        _authorizationService
+            .Setup(a => a.GetWritableBoardIdsAsync(_callerId, It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>()));
+        _authorizationService
+            .Setup(a => a.GetReadableBoardIdsAsync(_callerId, It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid> { readOnlyBoardId }));
+
+        var result = await _service.ExecuteProposalsAsync(new[] { Select(proposal) }, _callerId);
+
+        result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.Forbidden);
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_CarriesTheCallerIntoEveryExecutorCall()
+    {
+        // Without this the executor can only recheck the proposal's original REQUESTER, and the
+        // pre-loop authorization snapshot becomes the only thing standing between a revoked
+        // collaborator and the rest of the batch.
+        var first = ArrangeProposal();
+        var second = ArrangeProposal();
+        ArrangeExecute(first, new ProposalExecutionReceipt(false, 1));
+        ArrangeExecute(second, new ProposalExecutionReceipt(false, 1));
+
+        await _service.ExecuteProposalsAsync(new[] { Select(first), Select(second) }, _callerId);
+
+        _executorService.Verify(
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                _callerId,
+                It.IsAny<CancellationToken>()),
+            Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_WhenReadableAclLookupFails_ReturnsWholeRequestFailure()
+    {
+        var proposal = ArrangeProposal();
+        _authorizationService
+            .Setup(a => a.GetReadableBoardIdsAsync(It.IsAny<Guid>(), It.IsAny<IEnumerable<Guid>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<IReadOnlySet<Guid>>(ErrorCodes.UnexpectedError, "ACL read failed"));
+
+        var result = await _service.ExecuteProposalsAsync(new[] { Select(proposal) }, _callerId);
+
+        result.IsSuccess.Should().BeFalse();
+        _executorService.Verify(
+            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 
     private BatchExecuteProposalSelectionDto Select(Guid proposalId) =>
@@ -321,6 +425,6 @@ public class BatchProposalExecutionServiceTests
 
     private void ArrangeExecute(Guid proposalId, ProposalExecutionReceipt receipt) =>
         _executorService
-            .Setup(e => e.ExecuteProposalWithReceiptAsync(proposalId, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(proposalId, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(receipt));
 }

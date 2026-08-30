@@ -49,13 +49,18 @@ public class AutomationExecutorService : IAutomationExecutorService
     {
         // Thin projection of the receipt call: one execution path, one materialization, one set of
         // guards. Callers that only need success/failure keep their existing signature.
-        var receipt = await ExecuteProposalWithReceiptAsync(proposalId, idempotencyKey, cancellationToken);
+        var receipt = await ExecuteProposalWithReceiptAsync(
+            proposalId,
+            idempotencyKey,
+            callerUserId: null,
+            cancellationToken);
         return receipt.IsSuccess ? Result.Success() : Result.Failure(receipt.ErrorCode, receipt.ErrorMessage);
     }
 
     public async Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
         Guid proposalId,
         string idempotencyKey,
+        Guid? callerUserId = null,
         CancellationToken cancellationToken = default)
     {
         var startedAt = DateTimeOffset.UtcNow;
@@ -176,6 +181,42 @@ public class AutomationExecutorService : IAutomationExecutorService
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
                 return Result.Failure<ProposalExecutionReceipt>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+            }
+
+            // The caller's own bar, rechecked HERE - inside this item's transaction, after the
+            // archive guard and before the first operation - not at the top of a batch. The
+            // permission check above validates the proposal's original REQUESTER, which is a
+            // different person from the submitter whenever a collaborator applies someone else's
+            // proposal; and a batch reads authorization once before its loop, so a revocation that
+            // lands mid-batch would otherwise be invisible to every remaining item.
+            if (callerUserId is Guid callerId)
+            {
+                var callerPermission = effectiveProposal.BoardId.HasValue
+                    ? await _policyEngine.ValidatePermissionsAsync(
+                        callerId,
+                        effectiveProposal.BoardId,
+                        effectiveProposal.Operations,
+                        BoardAccessBar.Write,
+                        cancellationToken)
+                    // A board-less proposal has no ACL to consult, so ownership is the only bar
+                    // there is - the same rule the single-execute endpoint applies.
+                    : effectiveProposal.RequestedByUserId == callerId
+                        ? Result.Success()
+                        : Result.Failure(
+                            ErrorCodes.Forbidden,
+                            "You do not have permission to access this proposal.");
+
+                if (!callerPermission.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    _logger?.LogWarning(
+                        "Automation proposal execution refused for proposal {ProposalId}: caller {CallerUserId} lost board write access before execution",
+                        proposalId,
+                        callerId);
+                    return Result.Failure<ProposalExecutionReceipt>(
+                        callerPermission.ErrorCode,
+                        callerPermission.ErrorMessage);
+                }
             }
 
             // Execute operations in sequence order

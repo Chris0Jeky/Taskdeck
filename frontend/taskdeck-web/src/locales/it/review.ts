@@ -52,6 +52,7 @@ export default {
     unknownProposal: 'Proposta sconosciuta',
     unknownReason: 'Nessun motivo riportato.',
     allApplied: 'Applicata {count} proposta. | Applicate {count} proposte.',
+    allSkipped: 'Nulla da fare: {count} proposta era già stata applicata. | Nulla da fare: {count} proposte erano già state applicate.',
     noneApplied: 'Non è stato applicato nulla. {count} proposta non riuscita. | Non è stato applicato nulla. {count} proposte non riuscite.',
     partial: 'Applicate {applied}; {failed} non riuscite. Controlla le ricevute.',
     failed: 'Non è stato possibile applicare le proposte approvate.',

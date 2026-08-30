@@ -482,6 +482,23 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 "Proposal IDs must be unique"));
         }
 
+        // Distinct keys per item, mirroring what N separate single-execute calls would send. The
+        // executor does not store or compare this key - its replay guard is the proposal's own
+        // Applied status - so a repeated key changes no server behaviour today. It is rejected
+        // because it is a malformed request: the caller has said two different proposals share one
+        // idempotent identity, and accepting it would license a future keyed dedupe to collapse
+        // them. Ordinal, not ordinal-ignore-case: the key is an opaque token, so only an exact
+        // repeat is a contradiction.
+        if (request.Proposals
+                .Select(proposal => proposal.IdempotencyKey!)
+                .Distinct(StringComparer.Ordinal)
+                .Count() != request.Proposals.Count)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Idempotency keys must be unique within a batch"));
+        }
+
         var result = await _batchExecutionService.ExecuteProposalsAsync(
             request.Proposals.Select(proposal => new BatchExecuteProposalSelectionDto(
                 proposal.ProposalId,
@@ -492,15 +509,34 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!result.IsSuccess)
             return result.ToErrorActionResult();
 
-        // Every item forbidden is not a partial success worth 200: no proposal in the request was
-        // the caller's to execute, which is a forbidden request in substance.
+        // A request in which NOTHING was executable is not a partial success worth 200. It collapses
+        // to the status single execute would have returned for the same one proposal, which keeps
+        // the batch from becoming a status oracle its single-proposal sibling is not:
+        //
+        //   every item NotFound  -> 404. Covers missing proposals AND ones the caller cannot see,
+        //                           which the service has already made indistinguishable; answering
+        //                           403 here would re-leak exactly what it hid, by confirming the
+        //                           ids exist.
+        //   every item Forbidden -> 403. Only reachable for boards the caller CAN read, so their
+        //                           existence is not news.
+        //
+        // Anything mixed stays 200 with per-item rows: some work was attempted.
         var results = result.Value.Results;
-        if (results.Count > 0 && results.All(item =>
-                item.Outcome == BatchExecuteOutcome.Failed && item.ErrorCode == ErrorCodes.Forbidden))
+        if (results.Count > 0 && results.All(item => item.Outcome == BatchExecuteOutcome.Failed))
         {
-            return Result.Failure(
-                ErrorCodes.Forbidden,
-                "You do not have permission to execute any proposal in this batch").ToErrorActionResult();
+            if (results.All(item => item.ErrorCode == ErrorCodes.NotFound))
+            {
+                return Result.Failure(
+                    ErrorCodes.NotFound,
+                    "No proposal in this batch was found.").ToErrorActionResult();
+            }
+
+            if (results.All(item => item.ErrorCode == ErrorCodes.Forbidden))
+            {
+                return Result.Failure(
+                    ErrorCodes.Forbidden,
+                    "You do not have permission to execute any proposal in this batch").ToErrorActionResult();
+            }
         }
 
         return Ok(result.Value);

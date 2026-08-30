@@ -83,6 +83,7 @@ export default {
     unknownProposal: 'Unknown proposal',
     unknownReason: 'No reason reported.',
     allApplied: 'Applied {count} proposal. | Applied {count} proposals.',
+    allSkipped: 'Nothing to do - {count} proposal was already applied. | Nothing to do - {count} proposals were already applied.',
     noneApplied: 'Nothing was applied. {count} proposal failed. | Nothing was applied. {count} proposals failed.',
     partial: 'Applied {applied}; {failed} failed. Check the receipts.',
     failed: 'The approved proposals could not be applied.',

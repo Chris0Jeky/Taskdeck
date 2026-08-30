@@ -202,6 +202,7 @@ const {
   receipts: batchExecuteReceipts,
   requestConfirmation: requestBatchExecute,
   cancelConfirmation: cancelBatchExecute,
+  forceClose: forceCloseBatchExecute,
   confirmExecute: confirmBatchExecute,
 } = useBatchExecuteProposals(
   proposals,
@@ -629,6 +630,11 @@ watch(isArchivedHistory, (readOnly) => {
   cancelExecuteProposal()
   cancelRejectProposal()
   cancelRevisionEditing()
+  // Archived history is read-only: every mutation affordance is withdrawn, and a batch-apply
+  // confirmation left open across the switch would offer a board write this mode forbids. Forced
+  // rather than the ordinary cancel because the switch is a context change, not a reviewer
+  // decision, and it must win even mid-request.
+  forceCloseBatchExecute()
 })
 
 watch(activeBoardFilter, () => {
@@ -1813,7 +1819,7 @@ async function onClearBoardScope() {
       :scope-clear-label="$t('review.scope.clear')"
       :dismissable-count="bulkDismissableCount"
       :batch-selected-count="batchSelectedCount"
-      :batch-executable-count="batchExecutableCount"
+      :batch-executable-count="isArchivedHistory ? 0 : batchExecutableCount"
       :busy="busy"
       :recently-applied="recentlyApplied"
       :cadence="cadence"

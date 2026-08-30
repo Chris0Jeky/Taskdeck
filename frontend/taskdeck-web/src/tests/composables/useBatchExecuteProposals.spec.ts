@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import { automationApi } from '../../api/automationApi'
 import {
   isBatchExecuteEligible,
   useBatchExecuteProposals,
 } from '../../composables/useBatchExecuteProposals'
+import { isBatchApproveEligible } from '../../composables/useBatchApproveProposals'
 import type { BatchExecuteProposalsResult, Proposal } from '../../types/automation'
 
 const toast = vi.hoisted(() => ({
@@ -64,9 +65,17 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
   } as Proposal
 }
 
-function harness(proposals: Proposal[]) {
+/**
+ * `emptiesQueueOnRefresh` models what the REAL refresh does after a successful batch: the applied
+ * proposals stop being eligible, so the queue the composable watches shrinks. The original harness
+ * always resolved without touching `rows`, which is precisely why the receipt-destroying auto-close
+ * went unnoticed - the condition that triggers it could never arise in a test.
+ */
+function harness(proposals: Proposal[], options: { emptiesQueueOnRefresh?: boolean } = {}) {
   const rows = ref<Proposal[]>(proposals)
-  const loadProposals = vi.fn(async () => {})
+  const loadProposals = vi.fn(async () => {
+    if (options.emptiesQueueOnRefresh) rows.value = []
+  })
   const composable = useBatchExecuteProposals(
     rows,
     ref<string | null>('u-1'),
@@ -228,5 +237,160 @@ describe('useBatchExecuteProposals', () => {
     h.requestConfirmation()
     await h.confirmExecute()
     expect(h.busy.value).toBe(false)
+  })
+})
+
+describe('useBatchExecuteProposals receipts survive the post-apply refresh', () => {
+  it('keeps the dialog open with receipts after the queue empties', async () => {
+    // The regression this exists for: `confirmExecute` sets receipts, then awaits the refresh; the
+    // refresh removes every applied proposal; `executableCount` hits 0; and the watcher used to
+    // close the very dialog the receipts are rendered in. The better the batch went, the more
+    // certain the reviewer was to see nothing.
+    const h = harness(
+      [makeProposal({ id: 'p-1' }), makeProposal({ id: 'p-2' })],
+      { emptiesQueueOnRefresh: true },
+    )
+    vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
+      { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
+      { proposalId: 'p-2', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
+    ]))
+
+    h.requestConfirmation()
+    await h.confirmExecute()
+    await nextTick()
+
+    expect(h.loadProposals).toHaveBeenCalled()
+    expect(h.rows.value).toHaveLength(0)
+    expect(h.executableCount.value).toBe(0)
+    expect(h.confirmationOpen.value).toBe(true)
+    expect(h.receipts.value).toHaveLength(2)
+  })
+
+  it('still closes an unconfirmed dialog when the queue empties under it', async () => {
+    // The auto-close itself must survive: with no receipts there is nothing to protect, and an
+    // empty confirmation must not linger.
+    const h = harness([makeProposal({ id: 'p-1' })])
+    h.requestConfirmation()
+    expect(h.confirmationOpen.value).toBe(true)
+
+    h.rows.value = []
+    await nextTick()
+
+    expect(h.confirmationOpen.value).toBe(false)
+  })
+
+  it('lets the reviewer dismiss receipts while the follow-up refresh is still running', async () => {
+    // The Done button is enabled during the secondary refresh, so close must work then. Receipts
+    // record writes that already happened; withholding them behind a spinner is pointless.
+    const h = harness([makeProposal({ id: 'p-1' })])
+    vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
+      { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
+    ]))
+    h.requestConfirmation()
+    await h.confirmExecute()
+
+    h.busy.value = true
+    h.cancelConfirmation()
+
+    expect(h.confirmationOpen.value).toBe(false)
+    expect(h.receipts.value).toHaveLength(0)
+  })
+
+  it('still refuses to close an in-flight confirmation that has no receipts', () => {
+    const h = harness([makeProposal({ id: 'p-1' })])
+    h.requestConfirmation()
+    h.busy.value = true
+
+    h.cancelConfirmation()
+
+    expect(h.confirmationOpen.value).toBe(true)
+  })
+
+  it('forceClose drops the dialog and its receipts unconditionally', async () => {
+    const h = harness([makeProposal({ id: 'p-1' })])
+    vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
+      { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
+    ]))
+    h.requestConfirmation()
+    await h.confirmExecute()
+    expect(h.receipts.value).toHaveLength(1)
+
+    h.busy.value = true
+    h.forceClose()
+
+    expect(h.confirmationOpen.value).toBe(false)
+    expect(h.receipts.value).toHaveLength(0)
+  })
+
+  it('reports an all-skipped batch as nothing-to-do, not as applying zero', async () => {
+    const h = harness([makeProposal({ id: 'p-1' }), makeProposal({ id: 'p-2' })])
+    vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
+      { proposalId: 'p-1', outcome: 'Skipped', errorCode: null, errorMessage: null, appliedOperations: null },
+      { proposalId: 'p-2', outcome: 'Skipped', errorCode: null, errorMessage: null, appliedOperations: null },
+    ]))
+
+    h.requestConfirmation()
+    await h.confirmExecute()
+
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+    const message = vi.mocked(toast.info).mock.calls.at(-1)?.[0] as string
+    expect(message).toContain('already applied')
+    expect(message).not.toContain('Applied 0')
+  })
+})
+
+describe('isBatchExecuteEligible matches its batch-approve sibling', () => {
+  it('refuses anything above Low risk', () => {
+    for (const riskLevel of ['Medium', 'High', 'Critical'] as const) {
+      expect(isBatchExecuteEligible(makeProposal({ riskLevel }), 'u-1', NOW)).toBe(false)
+    }
+    // Fail closed on an unrecognised risk value, exactly as batch approve does.
+    expect(isBatchExecuteEligible(makeProposal({ riskLevel: 'Unknown' as never }), 'u-1', NOW)).toBe(false)
+    expect(isBatchExecuteEligible(makeProposal({ riskLevel: 0 }), 'u-1', NOW)).toBe(true)
+  })
+
+  it('refuses any operation that is not a card creation', () => {
+    const archive = makeProposal({
+      operations: [{ ...makeProposal().operations[0], actionType: 'archive' }],
+    })
+    const moveTarget = makeProposal({
+      operations: [{ ...makeProposal().operations[0], targetType: 'board' }],
+    })
+    expect(isBatchExecuteEligible(archive, 'u-1', NOW)).toBe(false)
+    expect(isBatchExecuteEligible(moveTarget, 'u-1', NOW)).toBe(false)
+  })
+
+  it('refuses a proposal carrying more than five operations', () => {
+    const base = makeProposal().operations[0]
+    const five = makeProposal({
+      operations: Array.from({ length: 5 }, (_, i) => ({ ...base, id: `op-${i}`, sequence: i })),
+    })
+    const six = makeProposal({
+      operations: Array.from({ length: 6 }, (_, i) => ({ ...base, id: `op-${i}`, sequence: i })),
+    })
+    expect(isBatchExecuteEligible(five, 'u-1', NOW)).toBe(true)
+    expect(isBatchExecuteEligible(six, 'u-1', NOW)).toBe(false)
+  })
+
+  it('admits exactly what batch approve admits, once status is set aside', () => {
+    // The drift guard. Everything below differs only in status, so both predicates must agree.
+    const shared = { riskLevel: 'Low' as const, requestedByUserId: 'u-1' }
+    const approvable = makeProposal({ ...shared, status: 'PendingReview' })
+    const executable = makeProposal({ ...shared, status: 'Approved' })
+    expect(isBatchApproveEligible(approvable, 'u-1', NOW)).toBe(true)
+    expect(isBatchExecuteEligible(executable, 'u-1', NOW)).toBe(true)
+
+    for (const overrides of [
+      { riskLevel: 'High' as const },
+      { operations: [{ ...makeProposal().operations[0], actionType: 'archive' }] },
+      { isExpired: true },
+      { requestedByUserId: 'someone-else' },
+    ]) {
+      expect(isBatchApproveEligible(
+        makeProposal({ ...shared, status: 'PendingReview', ...overrides }), 'u-1', NOW)).toBe(false)
+      expect(isBatchExecuteEligible(
+        makeProposal({ ...shared, status: 'Approved', ...overrides }), 'u-1', NOW)).toBe(false)
+    }
   })
 })

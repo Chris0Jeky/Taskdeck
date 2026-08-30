@@ -74,6 +74,7 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             .ToHashSet();
 
         IReadOnlySet<Guid> writableBoardIds = new HashSet<Guid>();
+        IReadOnlySet<Guid> readableBoardIds = new HashSet<Guid>();
         if (boardIds.Count > 0)
         {
             var writableResult = await _authorizationService.GetWritableBoardIdsAsync(
@@ -91,6 +92,22 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             }
 
             writableBoardIds = writableResult.Value;
+
+            // The readable set exists only to decide which of two failure SHAPES an inaccessible
+            // item gets - see ExecuteOneAsync. This is authorization for disclosure, not for the
+            // write; nothing below ever executes on the strength of readability.
+            var readableResult = await _authorizationService.GetReadableBoardIdsAsync(
+                callerUserId,
+                boardIds,
+                cancellationToken);
+            if (!readableResult.IsSuccess)
+            {
+                return Result.Failure<BatchExecuteProposalsResultDto>(
+                    readableResult.ErrorCode,
+                    readableResult.ErrorMessage);
+            }
+
+            readableBoardIds = readableResult.Value;
         }
 
         // Phase 3 - execute sequentially, each item in its own transaction inside the executor.
@@ -103,6 +120,7 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 proposals,
                 resolutionFailures,
                 writableBoardIds,
+                readableBoardIds,
                 cancellationToken));
         }
 
@@ -115,38 +133,50 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
         IReadOnlyDictionary<Guid, ProposalDto> proposals,
         IReadOnlyDictionary<Guid, (string ErrorCode, string ErrorMessage)> resolutionFailures,
         IReadOnlySet<Guid> writableBoardIds,
+        IReadOnlySet<Guid> readableBoardIds,
         CancellationToken cancellationToken)
     {
         if (resolutionFailures.TryGetValue(selection.ProposalId, out var resolutionFailure))
-            return Failed(selection.ProposalId, resolutionFailure.ErrorCode, resolutionFailure.ErrorMessage);
-
-        if (!proposals.TryGetValue(selection.ProposalId, out var proposal))
         {
-            return Failed(
-                selection.ProposalId,
-                ErrorCodes.NotFound,
-                $"Proposal with ID {selection.ProposalId} not found");
+            // Normalize the lookup's own NotFound to the shared wording, so a genuinely missing
+            // proposal is byte-identical to one the caller may not see.
+            return resolutionFailure.ErrorCode == ErrorCodes.NotFound
+                ? NotFound(selection.ProposalId)
+                : Failed(selection.ProposalId, resolutionFailure.ErrorCode, resolutionFailure.ErrorMessage);
         }
 
-        // Same board-access bar as single execute: write access on the target board, or ownership
-        // for a board-less proposal. A caller who cannot execute one item gets that item's own
-        // 403-class outcome, not a whole-request rejection.
+        if (!proposals.TryGetValue(selection.ProposalId, out var proposal))
+            return NotFound(selection.ProposalId);
+
+        // Same board-access bar as single execute - write access on the target board, or ownership
+        // for a board-less proposal - applied per item, so a caller who cannot execute one item gets
+        // that item's own failure row rather than a whole-request rejection.
+        //
+        // Which failure row depends on what the caller may already SEE, because a batch is an
+        // efficient oracle otherwise: 500 guessed ids in one request would separate "exists but is
+        // not yours" from "does not exist" in a single round trip, enumerating other people's
+        // proposals. So an item on a board the caller cannot even read is reported exactly as a
+        // missing one - same code, same message, no timing difference worth the name, since neither
+        // reaches the executor. Forbidden is reserved for a board the caller CAN read: they already
+        // know that proposal exists, so naming the real reason discloses nothing and telling them
+        // "not found" about a row on a board in front of them would be a lie.
         if (proposal.BoardId is Guid boardId)
         {
             if (!writableBoardIds.Contains(boardId))
             {
-                return Failed(
-                    selection.ProposalId,
-                    ErrorCodes.Forbidden,
-                    "You do not have permission to modify this board");
+                return readableBoardIds.Contains(boardId)
+                    ? Failed(
+                        selection.ProposalId,
+                        ErrorCodes.Forbidden,
+                        "You do not have permission to modify this board")
+                    : NotFound(selection.ProposalId);
             }
         }
         else if (proposal.RequestedByUserId != callerUserId)
         {
-            return Failed(
-                selection.ProposalId,
-                ErrorCodes.Forbidden,
-                "You do not have permission to access this proposal.");
+            // A board-less proposal has no ACL that could make it visible, so there is no
+            // "readable" middle ground: to anyone but its author it does not exist.
+            return NotFound(selection.ProposalId);
         }
 
         // Fail closed on approved-content drift. The reviewer consented to the pin the queue showed
@@ -160,9 +190,14 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 "The approved revision changed since this proposal was selected. Review it again.");
         }
 
+        // callerUserId travels with the call so the executor can recheck THIS caller's board-write
+        // bar inside the item's own transaction. The snapshot above was taken before the loop; a
+        // revocation landing mid-batch must stop every remaining item, and only a transactional
+        // recheck can see it.
         var receipt = await _executorService.ExecuteProposalWithReceiptAsync(
             selection.ProposalId,
             selection.IdempotencyKey,
+            callerUserId,
             cancellationToken);
         if (!receipt.IsSuccess)
         {
@@ -191,4 +226,13 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
 
     private static BatchExecuteProposalResultDto Failed(Guid proposalId, string errorCode, string errorMessage) =>
         new(proposalId, BatchExecuteOutcome.Failed, errorCode, errorMessage, AppliedOperations: null);
+
+    /// <summary>
+    /// The single not-found shape, used for a proposal that does not exist AND for one the caller
+    /// has no read access to. The message deliberately carries no detail that would distinguish the
+    /// two - not even the id's existence - because telling them apart is the whole enumeration
+    /// attack a 500-item batch would otherwise automate.
+    /// </summary>
+    private static BatchExecuteProposalResultDto NotFound(Guid proposalId) =>
+        Failed(proposalId, ErrorCodes.NotFound, "Proposal not found.");
 }

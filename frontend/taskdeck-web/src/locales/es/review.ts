@@ -51,6 +51,7 @@ export default {
     unknownProposal: 'Propuesta desconocida',
     unknownReason: 'No se indicó ningún motivo.',
     allApplied: 'Se aplicó {count} propuesta. | Se aplicaron {count} propuestas.',
+    allSkipped: 'Nada que hacer: {count} propuesta ya estaba aplicada. | Nada que hacer: {count} propuestas ya estaban aplicadas.',
     noneApplied: 'No se aplicó nada. {count} propuesta falló. | No se aplicó nada. {count} propuestas fallaron.',
     partial: 'Se aplicaron {applied}; {failed} fallaron. Revisa los recibos.',
     failed: 'No se pudieron aplicar las propuestas aprobadas.',

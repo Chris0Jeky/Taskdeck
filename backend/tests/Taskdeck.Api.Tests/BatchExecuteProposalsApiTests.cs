@@ -8,6 +8,7 @@ using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -146,16 +147,59 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
 
         receipt.Results[0].Outcome.Should().Be(BatchExecuteOutcome.Applied);
         receipt.Results[1].Outcome.Should().Be(BatchExecuteOutcome.Failed);
-        receipt.Results[1].ErrorCode.Should().Be("Forbidden");
+        // NotFound, not Forbidden: the stranger cannot read that board at all, so the receipt must
+        // not confirm that the proposal exists. A made-up id in the same slot answers identically.
+        receipt.Results[1].ErrorCode.Should().Be("NotFound");
+
+        var probe = await PostBatchAsync(
+            strangerClient,
+            HttpStatusCode.OK,
+            Select(strangersProposal),
+            new ExecuteProposalSelectionRequest
+            {
+                ProposalId = Guid.NewGuid(),
+                ApprovedRevisionId = null,
+                IdempotencyKey = Guid.NewGuid().ToString("N")
+            });
+        probe.Results[1].ErrorCode.Should().Be(receipt.Results[1].ErrorCode);
+        probe.Results[1].ErrorMessage.Should().Be(receipt.Results[1].ErrorMessage);
 
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         (await db.Cards.CountAsync(card => card.BoardId == ownerBoardId))
-            .Should().Be(0, "a forbidden item must never write to the board it targets");
+            .Should().Be(0, "an unauthorized item must never write to the board it targets");
     }
 
     [Fact]
-    public async Task ExecuteProposals_WhenEveryItemIsForbidden_ReturnsWholeRequestForbidden()
+    public async Task ExecuteProposals_OnABoardTheCallerCanReadButNotWrite_ReportsForbidden()
+    {
+        var ownerClient = _factory.CreateClient();
+        var viewerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "batch-exec-viewer-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "batch-exec-viewer");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, "batch-exec-viewer-board");
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{boardId}/access",
+            new GrantAccessDto(boardId, viewer.UserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var proposal = await CreateApprovedProposalAsync(ownerClient, owner.UserId, boardId, "Viewer visible card");
+
+        // The viewer can SEE this board, so its proposals' existence is not news. Hiding behind
+        // NotFound here would be a lie about a row they are looking at.
+        var response = await viewerClient.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest { Proposals = [Select(proposal)] });
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.Cards.CountAsync(card => card.BoardId == boardId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_WhenNothingIsVisible_CollapsesToNotFoundNotForbidden()
     {
         var ownerClient = _factory.CreateClient();
         var strangerClient = _factory.CreateClient();
@@ -164,9 +208,53 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
         var ownerBoardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, "batch-exec-forbidden-board");
         var ownersProposal = await CreateApprovedProposalAsync(ownerClient, owner.UserId, ownerBoardId, "Owner only card");
 
-        var response = await strangerClient.PostAsJsonAsync(
+        var real = await strangerClient.PostAsJsonAsync(
             "/api/automation/proposals/execute",
             new ExecuteProposalsRequest { Proposals = [Select(ownersProposal)] });
+
+        // 404, matching what single execute answers for an id the caller cannot see. Answering 403
+        // would re-leak precisely what the per-item rows were changed to hide: that the id is real.
+        real.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var invented = await strangerClient.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest
+            {
+                Proposals =
+                [
+                    new ExecuteProposalSelectionRequest
+                    {
+                        ProposalId = Guid.NewGuid(),
+                        ApprovedRevisionId = null,
+                        IdempotencyKey = Guid.NewGuid().ToString("N")
+                    }
+                ]
+            });
+        invented.StatusCode.Should().Be(real.StatusCode, "a real foreign id and an invented one must answer alike");
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_WhenEveryItemIsForbidden_ReturnsWholeRequestForbidden()
+    {
+        var ownerClient = _factory.CreateClient();
+        var viewerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "batch-exec-403-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "batch-exec-403-viewer");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, "batch-exec-403-board");
+
+        // Read access makes the rows visible, so Forbidden is the honest answer and the whole
+        // request still collapses to 403 - the other half of the collapse rule.
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{boardId}/access",
+            new GrantAccessDto(boardId, viewer.UserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var first = await CreateApprovedProposalAsync(ownerClient, owner.UserId, boardId, "403 card one");
+        var second = await CreateApprovedProposalAsync(ownerClient, owner.UserId, boardId, "403 card two");
+
+        var response = await viewerClient.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest { Proposals = [Select(first), Select(second)] });
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
@@ -322,13 +410,15 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
     }
 
     [Fact]
-    public async Task ExecuteProposals_DuplicateAndMissingKeyRequests_AreRejectedWith400()
+    public async Task ExecuteProposals_DuplicateIdsDuplicateKeysAndMissingKeys_AreRejectedWith400()
     {
         var client = _factory.CreateClient();
         await ApiTestHarness.AuthenticateAsync(client, "batch-exec-shape");
         var id = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
 
-        var duplicate = await client.PostAsJsonAsync(
+        // The same proposal listed twice: two outcome rows for one proposal is a contradiction.
+        var duplicateIds = await client.PostAsJsonAsync(
             "/api/automation/proposals/execute",
             new ExecuteProposalsRequest
             {
@@ -338,7 +428,39 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
                     new ExecuteProposalSelectionRequest { ProposalId = id, ApprovedRevisionId = null, IdempotencyKey = "b" }
                 ]
             });
-        duplicate.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        duplicateIds.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await duplicateIds.Content.ReadAsStringAsync()).Should().Contain("Proposal IDs must be unique");
+
+        // Two DIFFERENT proposals sharing one key: the caller has claimed one idempotent identity
+        // for two distinct applies. Rejected as malformed rather than silently accepted.
+        var duplicateKeys = await client.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest
+            {
+                Proposals =
+                [
+                    new ExecuteProposalSelectionRequest { ProposalId = id, ApprovedRevisionId = null, IdempotencyKey = "shared" },
+                    new ExecuteProposalSelectionRequest { ProposalId = otherId, ApprovedRevisionId = null, IdempotencyKey = "shared" }
+                ]
+            });
+        duplicateKeys.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await duplicateKeys.Content.ReadAsStringAsync()).Should().Contain("Idempotency keys must be unique");
+
+        // Keys differing only by case are distinct: the key is an opaque token, not a name.
+        var caseDistinctKeys = await client.PostAsJsonAsync(
+            "/api/automation/proposals/execute",
+            new ExecuteProposalsRequest
+            {
+                Proposals =
+                [
+                    new ExecuteProposalSelectionRequest { ProposalId = id, ApprovedRevisionId = null, IdempotencyKey = "Key" },
+                    new ExecuteProposalSelectionRequest { ProposalId = otherId, ApprovedRevisionId = null, IdempotencyKey = "key" }
+                ]
+            });
+        // Both proposals are unknown, so this passes request validation, reaches the service, and
+        // collapses to 404 on the all-not-found rule. The point is the 404: it is NOT the 400 a
+        // duplicate-key request earns, so keys differing only by case were treated as distinct.
+        caseDistinctKeys.StatusCode.Should().Be(HttpStatusCode.NotFound);
 
         var missingIdempotencyKey = await client.PostAsJsonAsync(
             "/api/automation/proposals/execute",
