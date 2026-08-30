@@ -668,6 +668,31 @@ describe('useReviewProposals', () => {
       expect(rp.proposals.value).toEqual(fakeProposals)
     })
 
+    it('notifies only the accepted explicit replacement when an older load resolves late', async () => {
+      vi.useFakeTimers()
+      let releaseOlder: (value: unknown[]) => void = () => {}
+      mockAutomationApi.getProposals
+        .mockReturnValueOnce(
+          new Promise((resolve) => {
+            releaseOlder = resolve as (value: unknown[]) => void
+          }),
+        )
+        .mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      const onAuthoritativeQueueReplaced = vi.fn()
+      rp.startQueueRefresh(undefined, { onAuthoritativeQueueReplaced })
+
+      const olderLoad = rp.loadProposals()
+      const currentLoad = rp.loadProposals()
+      await currentLoad
+      releaseOlder([makeProposal({ id: 'superseded' })])
+      await olderLoad
+
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['current'])
+      expect(onAuthoritativeQueueReplaced).toHaveBeenCalledTimes(1)
+      rp.stopQueueRefresh()
+    })
+
     it('shows toast on error', async () => {
       mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('network'))
       const rp = useReviewProposals()
@@ -1271,7 +1296,11 @@ describe('useReviewProposals', () => {
 
       let decisionInProgress = false
       const onQueueReplaced = vi.fn()
-      rp.startQueueRefresh(() => !decisionInProgress, { onQueueReplaced })
+      const onAuthoritativeQueueReplaced = vi.fn()
+      rp.startQueueRefresh(() => !decisionInProgress, {
+        onQueueReplaced,
+        onAuthoritativeQueueReplaced,
+      })
       expect(intervalSpy).toHaveBeenCalledTimes(1)
 
       mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
@@ -1287,6 +1316,7 @@ describe('useReviewProposals', () => {
       // poll-driven queue replacement and must not fire the hook itself.
       expect(intervalSpy).toHaveBeenCalledTimes(2)
       expect(onQueueReplaced).not.toHaveBeenCalled()
+      expect(onAuthoritativeQueueReplaced).toHaveBeenCalledTimes(1)
 
       mockAutomationApi.getProposals.mockClear()
       decisionInProgress = true
@@ -1300,6 +1330,7 @@ describe('useReviewProposals', () => {
       expect(mockAutomationApi.getProposals).toHaveBeenCalledTimes(1)
       expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-after-recovery'])
       expect(onQueueReplaced).toHaveBeenCalledTimes(1)
+      expect(onAuthoritativeQueueReplaced).toHaveBeenCalledTimes(2)
       rp.stopQueueRefresh()
     })
 
@@ -1366,7 +1397,8 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
 
       const inFlight = deferredProposals()
-      rp.startQueueRefresh()
+      const onAuthoritativeQueueReplaced = vi.fn()
+      rp.startQueueRefresh(undefined, { onAuthoritativeQueueReplaced })
       await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
 
       const lastCall = mockAutomationApi.getProposals.mock.calls.at(-1) as [
@@ -1386,6 +1418,7 @@ describe('useReviewProposals', () => {
       inFlight.release([makeProposal({ id: 'ghost' })])
       await vi.advanceTimersByTimeAsync(0)
       expect(rp.proposals.value).toEqual([])
+      expect(onAuthoritativeQueueReplaced).not.toHaveBeenCalled()
     })
 
     it('startQueueRefresh is idempotent so a double call cannot leak an interval', async () => {

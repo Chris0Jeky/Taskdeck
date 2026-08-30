@@ -3210,6 +3210,91 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('reconciles filed-away metrics after clearing board scope lands an explicit unscoped load', async () => {
+    const today = new Date()
+    today.setHours(12, 0, 0, 0)
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const boardAApplied = makeProposal({
+      id: 'route-board-a-applied',
+      boardId: 'board-a',
+      status: 'Applied',
+      summary: 'Route board A applied decision',
+      decidedAt: today.toISOString(),
+      decidedByUserId: 'u-1',
+      appliedAt: today.toISOString(),
+    })
+    const boardBRejected = makeProposal({
+      id: 'route-board-b-rejected',
+      boardId: 'board-b',
+      status: 'Rejected',
+      summary: 'Route board B rejected decision',
+      decidedAt: yesterday.toISOString(),
+      decidedByUserId: 'u-1',
+      appliedAt: null,
+    })
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView(
+      [boardAApplied, boardBRejected],
+      '/workspace/review',
+      [
+        { id: 'board-a', name: 'Board A' },
+        { id: 'board-b', name: 'Board B' },
+      ],
+    )
+
+    const appliedRow = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Route board A applied decision'))!
+    await appliedRow.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="decision-file-away"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+
+    // Navigating to board B performs an explicit scoped load. Board A is still
+    // readable at this point, so the retained decision must survive.
+    mocks.getProposals.mockResolvedValueOnce([boardBRejected])
+    mocks.getBoardsPaginated.mockResolvedValueOnce({
+      items: [
+        { id: 'board-a', name: 'Board A' },
+        { id: 'board-b', name: 'Board B' },
+      ],
+      totalCount: 2,
+      hasMore: false,
+      offset: 0,
+      limit: 200,
+    })
+    await wrapper.vm.$router.push('/workspace/review?boardId=board-b')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('0%')
+
+    // Access to board A is now revoked. Clearing the scope lands another
+    // explicit load whose successful unscoped response contains only board B.
+    mocks.getProposals.mockResolvedValueOnce([boardBRejected])
+    mocks.getBoardsPaginated.mockResolvedValueOnce({
+      items: [{ id: 'board-b', name: 'Board B' }],
+      totalCount: 1,
+      hasMore: false,
+      offset: 0,
+      limit: 200,
+    })
+    await wrapper.get('[data-testid="paper-scope-clear"]').trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.$route.query.boardId).toBeUndefined()
+    expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(false)
+    expect(mocks.getBoardsPaginated).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('0%')
+    const bars = wrapper.findAll('.paper-review-cadence__bar')
+    expect((bars[5].element as HTMLElement).style.height).toBe('100%')
+    expect((bars[6].element as HTMLElement).style.height).toBe('0%')
+
+    wrapper.unmount()
+  })
+
   it('clears filed-away weekly metrics on access revocation and does not restore them on recovery', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {

@@ -490,6 +490,7 @@ export function useReviewProposals() {
       })
       if (requestId !== latestProposalLoadRequestId) return
       proposals.value = loadedProposals
+      onAuthoritativeQueueReplaced?.()
       // An explicit load that succeeded is proof access is back.
       const accessWasRevoked = queueAccessRevoked.value
       queueAccessRevoked.value = false
@@ -530,6 +531,10 @@ export function useReviewProposals() {
    * Vue is about to render against the one its watcher reports as previous.
    */
   let onQueueReplacedByPoll: (() => void) | null = null
+  // Unlike the poll-only selection hook above, this fires after EVERY accepted
+  // server-authoritative list replacement. Paper uses it to re-authorize
+  // mount-local decision history after both background and explicit route loads.
+  let onAuthoritativeQueueReplaced: (() => void) | null = null
   // Bumped by any out-of-band write that a queue read started earlier would
   // clobber. The array-identity guard cannot catch every such write: saving a
   // proposal revision updates `useProposalRevisions` state and never touches
@@ -655,6 +660,7 @@ export function useReviewProposals() {
       // or reordered away, instead of silently sliding onto another one
       // (#2215 A).
       onQueueReplacedByPoll?.()
+      onAuthoritativeQueueReplaced?.()
     } catch (e: unknown) {
       // An abort is this surface's own teardown, not a failure.
       if (controller.signal.aborted) return
@@ -736,13 +742,18 @@ export function useReviewProposals() {
    * dialog open, an action in flight) so the record under the cursor cannot
    * change underneath the decision being made.
    *
-   * `hooks.onQueueReplaced` fires once per landed poll, right after the queue
-   * has been replaced, so a surface can tell a poll-driven selection change
-   * apart from one the reviewer made (#2215 A).
+   * `hooks.onQueueReplaced` fires only for a landed poll, so a surface can tell
+   * a poll-driven selection change apart from one the reviewer made (#2215 A).
+   * `hooks.onAuthoritativeQueueReplaced` fires after either a landed poll or an
+   * accepted explicit `loadProposals()` replacement. Superseded/aborted reads
+   * never reach either hook.
    */
   function startQueueRefresh(
     shouldRefresh?: () => boolean,
-    hooks?: { onQueueReplaced?: () => void },
+    hooks?: {
+      onQueueReplaced?: () => void
+      onAuthoritativeQueueReplaced?: () => void
+    },
   ) {
     // Guard against double-start exactly as startClock does. Configuration can
     // outlive the interval while a 403 suspension is active, so key this guard
@@ -751,6 +762,7 @@ export function useReviewProposals() {
     queueRefreshConfigured = true
     shouldRefreshNow = shouldRefresh ?? null
     onQueueReplacedByPoll = hooks?.onQueueReplaced ?? null
+    onAuthoritativeQueueReplaced = hooks?.onAuthoritativeQueueReplaced ?? null
     if (queueAccessRevoked.value) {
       queueRefreshSuspendedForPermission = true
       return
@@ -764,6 +776,7 @@ export function useReviewProposals() {
     queueRefreshSuspendedForPermission = false
     shouldRefreshNow = null
     onQueueReplacedByPoll = null
+    onAuthoritativeQueueReplaced = null
   }
 
   onScopeDispose(stopQueueRefresh)

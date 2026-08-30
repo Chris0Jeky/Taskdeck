@@ -409,7 +409,6 @@ let queueReplacedByPoll = false
 
 function onQueueReplacedByPoll() {
   queueReplacedByPoll = true
-  void refreshRetainedDecisionBoardAccess()
   void nextTick(() => {
     queueReplacedByPoll = false
   })
@@ -1900,7 +1899,12 @@ onMounted(() => {
   // per-board and silent on proposals -- so a bounded, visibility-aware poll is
   // what keeps an open Review page from showing "Nothing waiting" while a
   // proposal sits pending server-side (#2194).
-  startQueueRefresh(canRefreshQueue, { onQueueReplaced: onQueueReplacedByPoll })
+  startQueueRefresh(canRefreshQueue, {
+    onQueueReplaced: onQueueReplacedByPoll,
+    onAuthoritativeQueueReplaced: () => {
+      void refreshRetainedDecisionBoardAccess()
+    },
+  })
   // Membership has no realtime event to subscribe to (the only hub is
   // per-board and silent on access grants), so the composable reads it once
   // here and refreshes on tab re-entry. See useWorkspaceCollaboration.
