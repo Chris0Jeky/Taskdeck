@@ -21,6 +21,7 @@ import type {
   ConflictRow,
   EvidenceLink,
   HistoryRow,
+  ProvenanceMetadata,
   ProvenanceRow,
   SideEffects,
 } from '../../../composables/usePaperReviewSelectors'
@@ -54,6 +55,8 @@ const props = withDefaults(
     fields: FieldDiff[]
     changeSubTitle: string
     provenance: ProvenanceRow[]
+    /** Server-recorded producer metadata for this capture-linked proposal. */
+    metadata?: ProvenanceMetadata | null
     /** Evidence links behind the provenance rows; drives the drawer's transcript deep link. */
     evidenceLinks?: EvidenceLink[]
     proposalId: string
@@ -85,6 +88,7 @@ const props = withDefaults(
     readOnly: false,
     decisionReceipt: null,
     appliedProposal: null,
+    metadata: null,
   },
 )
 
@@ -321,6 +325,7 @@ watch(
 
     <ReviewProvenance
       :rows="provenance"
+      :metadata="metadata"
       :evidence-links="evidenceLinks"
       :proposal-id="proposalId"
       :read-only="readOnly"

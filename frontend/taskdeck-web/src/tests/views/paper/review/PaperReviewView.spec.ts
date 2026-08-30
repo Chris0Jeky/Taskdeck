@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { mount, flushPromises, enableAutoUnmount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
+import type { CaptureItem } from '../../../../types/capture'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
 import { REVIEW_QUEUE_REFRESH_MS } from '../../../../composables/useReviewProposals'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   getConflicts: vi.fn(),
   getHistory: vi.fn(),
   getSimilarPast: vi.fn(),
+  getCaptureItem: vi.fn(),
   getBoards: vi.fn(),
   getColumns: vi.fn(),
   createRevision: vi.fn(),
@@ -83,6 +85,12 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
   },
 }))
 
+vi.mock('../../../../api/captureApi', () => ({
+  captureApi: {
+    getItem: mocks.getCaptureItem,
+  },
+}))
+
 vi.mock('../../../../store/toastStore', () => ({
   useToastStore: () => ({
     success: mocks.successToast,
@@ -104,31 +112,6 @@ vi.mock('../../../../api/proposalRevisionsApi', () => ({
     createRevision: mocks.createRevision,
     getRevisions: mocks.getRevisions,
     getLatestRevision: mocks.getLatestRevision,
-  },
-}))
-
-vi.mock('../../../../api/proposalDeepReviewApi', () => ({
-  proposalDeepReviewApi: {
-    getProvenance: vi.fn().mockResolvedValue([]),
-    getConfidence: vi.fn().mockResolvedValue({
-      overall: 0.8,
-      components: [],
-      note: null,
-      threshold: null,
-      source: 'model-reported',
-      meetsThreshold: null,
-    }),
-    getSideEffects: vi.fn().mockResolvedValue({
-      rows: [],
-      reversibility: {
-        summary: 'Low risk · confirm before apply',
-        description: 'Confirm affected items.',
-        windowMs: 6 * 60 * 60 * 1000,
-      },
-    }),
-    getConflicts: vi.fn().mockResolvedValue([]),
-    getHistory: vi.fn().mockResolvedValue([]),
-    getSimilarPast: vi.fn().mockResolvedValue({ decisions: [], applyRate: 0 }),
   },
 }))
 
@@ -168,6 +151,32 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
     ],
     approvedRevisionId: null,
     latestRevisionId: null,
+    ...overrides,
+  }
+}
+
+function makeCaptureItem(
+  overrides: Partial<CaptureItem> = {},
+  provenance: Partial<NonNullable<CaptureItem['provenance']>> = {},
+): CaptureItem {
+  return {
+    id: 'capture-001',
+    userId: 'u-1',
+    boardId: 'board-1',
+    status: 'ProposalCreated',
+    source: 'TranscriptPaste',
+    textExcerpt: 'Captured transcript',
+    rawText: 'Captured transcript',
+    createdAt: '2026-08-30T09:00:00Z',
+    processedAt: '2026-08-30T09:00:01Z',
+    retryCount: 0,
+    provenance: {
+      captureItemId: 'capture-001',
+      triageRunId: 'triage-001',
+      proposalId: 'proposal-001',
+      promptVersion: 'triage.v1',
+      ...provenance,
+    },
     ...overrides,
   }
 }
@@ -282,6 +291,7 @@ describe('PaperReviewView', () => {
     mocks.getConflicts.mockResolvedValue([])
     mocks.getHistory.mockResolvedValue([])
     mocks.getSimilarPast.mockResolvedValue({ decisions: [], applyRate: 0 })
+    mocks.getCaptureItem.mockRejectedValue(new Error('capture metadata unavailable'))
     mocks.getColumns.mockResolvedValue([])
   })
   afterEach(() => {
@@ -1776,6 +1786,128 @@ describe('PaperReviewView', () => {
     )
 
     wrapper.unmount()
+  })
+
+  it.each([
+    {
+      label: 'deterministic capture triage',
+      provider: 'deterministic-extractor',
+      model: 'capture-triage-v1',
+      promptVersion: 'triage.v1',
+      confidence: {
+        overall: null,
+        components: [],
+        note: 'Deterministic extraction does not report model confidence.',
+        threshold: null,
+        source: 'deterministic' as const,
+        meetsThreshold: null,
+      },
+      expectedConfidence: null,
+    },
+    {
+      label: 'live provider capture triage',
+      provider: 'OpenAI',
+      model: 'gpt-4o-mini',
+      promptVersion: 'llm-triage.v2',
+      confidence: {
+        overall: 0.84,
+        components: [],
+        note: null,
+        threshold: null,
+        source: 'model-reported' as const,
+        meetsThreshold: null,
+      },
+      expectedConfidence: '84%',
+    },
+  ])(
+    'surfaces $label metadata from the active capture in Review',
+    async ({ provider, model, promptVersion, confidence, expectedConfidence }) => {
+      mocks.getConfidence.mockResolvedValue(confidence)
+      mocks.getCaptureItem.mockResolvedValue(
+        makeCaptureItem({}, { provider, model, promptVersion }),
+      )
+      const wrapper = await mountView(
+        [
+          makeProposal({
+            sourceType: 'Queue',
+            sourceReferenceId: 'capture-001',
+          }),
+          makeProposal({
+            id: 'proposal-002',
+            sourceType: 'Queue',
+            sourceReferenceId: 'capture-002',
+            summary: 'Inactive capture proposal',
+          }),
+        ],
+        '/workspace/review#proposal-proposal-001',
+        [],
+        [],
+        { attachTo: true },
+      )
+
+      await vi.waitFor(() => {
+        expect(mocks.getCaptureItem).toHaveBeenCalledOnce()
+      })
+      expect(mocks.getCaptureItem).toHaveBeenCalledWith(
+        'capture-001',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+
+      await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
+      await flushPromises()
+      const footnote = wrapper.get('[data-testid="paper-review-provenance-footnote"]')
+      expect(footnote.text()).toContain(`${provider}/${model}`)
+
+      await wrapper.get('.paper-review-prov__more').trigger('click')
+      await flushPromises()
+      const metadata = document.body.querySelector('.prov-drawer__meta')
+      expect(metadata).not.toBeNull()
+      const metadataText = metadata?.textContent ?? ''
+      expect(metadataText).toContain(`${provider}/${model}`)
+      expect(metadataText).toContain(promptVersion)
+      expect(metadataText).not.toContain('Latency')
+      if (expectedConfidence === null) {
+        expect(metadataText).not.toContain('Confidence')
+      } else {
+        expect(metadataText).toContain(expectedConfidence)
+      }
+    },
+  )
+
+  it('omits producer claims when capture metadata is absent or stale', async () => {
+    mocks.getCaptureItem.mockResolvedValue(
+      makeCaptureItem(
+        {},
+        {
+          proposalId: 'stale-proposal',
+          provider: 'OpenAI',
+          model: 'gpt-4o-mini',
+        },
+      ),
+    )
+    const wrapper = await mountView(
+      [
+        makeProposal({
+          sourceType: 'Queue',
+          sourceReferenceId: 'capture-001',
+        }),
+      ],
+      '/workspace/review',
+      [],
+      [],
+      { attachTo: true },
+    )
+
+    await vi.waitFor(() => {
+      expect(mocks.getCaptureItem).toHaveBeenCalledOnce()
+    })
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-provenance-footnote"]').exists()).toBe(false)
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('.prov-drawer__meta')).toBeNull()
   })
 
   it('records feedback and keeps the proposal in the queue when report is clicked', async () => {
