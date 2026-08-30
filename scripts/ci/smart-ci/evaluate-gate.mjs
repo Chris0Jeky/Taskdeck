@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+// Smart CI / Required Gate evaluator (ADR-0066, CI-03 #2327).
+//
+//   node scripts/ci/smart-ci/evaluate-gate.mjs --plan artifacts/ci-plan.json --policy ci/policy.v1.json \
+//     --mode shadow|enforce --expected-head <sha> --expected-base <sha> --plan-job-result success \
+//     [--results results.json] [--receipt artifacts/ci-run.json] [--summary "$GITHUB_STEP_SUMMARY"]
+//
+// Exit 1 when the verdict is not ok. In shadow mode only planner/plan defects are red
+// (missing or invalid plan, planner error, plan job failure, SHA or policy-digest mismatch);
+// missing job evidence is reported as "would fail" and left green.
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { evaluateGate, policyDigest, renderGateSummary } from './lib/plan.mjs';
+
+function parseArgs(argv) {
+  const args = { plan: 'artifacts/ci-plan.json', policy: null, mode: 'shadow', expectedHead: null, expectedBase: null, planJobResult: null, results: null, receipt: null, summary: null };
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    const next = () => argv[++index];
+    switch (arg) {
+      case '--plan': args.plan = next(); break;
+      case '--policy': args.policy = next(); break;
+      case '--mode': args.mode = next(); break;
+      case '--expected-head': args.expectedHead = next(); break;
+      case '--expected-base': args.expectedBase = next(); break;
+      case '--plan-job-result': args.planJobResult = next(); break;
+      case '--results': args.results = next(); break;
+      case '--receipt': args.receipt = next(); break;
+      case '--summary': args.summary = next(); break;
+      case '--help':
+        console.log('usage: evaluate-gate.mjs --plan <file> [--policy <file>] --mode shadow|enforce [--expected-head S] [--expected-base S] [--plan-job-result R] [--results <json>] [--receipt <file>] [--summary <file>]');
+        process.exit(0);
+        break;
+      default: throw new Error(`Unknown argument: ${arg}`);
+    }
+  }
+  if (!['shadow', 'enforce'].includes(args.mode)) throw new Error('--mode must be shadow or enforce');
+  return args;
+}
+
+function main() {
+  const args = parseArgs(process.argv.slice(2));
+  let plan = null;
+  if (existsSync(args.plan)) {
+    try {
+      plan = JSON.parse(readFileSync(args.plan, 'utf8'));
+    } catch (error) {
+      console.error(`plan unreadable: ${error}`);
+      plan = null;
+    }
+  }
+  const expectedPolicyDigest = args.policy && existsSync(args.policy) ? policyDigest(readFileSync(args.policy, 'utf8')) : null;
+  const results = args.results && existsSync(args.results) ? JSON.parse(readFileSync(args.results, 'utf8')) : null;
+  const verdict = evaluateGate(plan, {
+    mode: args.mode,
+    expectedHeadSha: args.expectedHead || null,
+    expectedBaseSha: args.expectedBase || null,
+    expectedPolicyDigest,
+    planJobResult: args.planJobResult || null,
+    results,
+  });
+  const summary = renderGateSummary(verdict, plan);
+  if (args.summary) appendFileSync(args.summary, summary);
+  process.stdout.write(summary);
+  if (args.receipt) {
+    mkdirSync(dirname(args.receipt), { recursive: true });
+    const receipt = {
+      schemaVersion: 1,
+      kind: 'smart-ci-gate-receipt',
+      mode: verdict.mode,
+      ok: verdict.ok,
+      wouldFail: verdict.wouldFail,
+      failures: verdict.failures,
+      notes: verdict.notes,
+      policyId: plan ? plan.policyId : null,
+      policyDigest: plan ? plan.policyDigest : null,
+      event: plan ? plan.event : null,
+      baseSha: plan ? plan.baseSha : null,
+      headSha: plan ? plan.headSha : null,
+      mergeSha: plan ? plan.mergeSha : null,
+      mergeTreeSha: plan ? plan.mergeTreeSha : null,
+      risk: plan ? plan.risk : null,
+      trust: plan ? plan.trust : null,
+      escalated: plan ? plan.escalated : null,
+      selected: plan ? plan.selected.map((entry) => ({ lane: entry.lane, checkName: entry.checkName, runnerClass: entry.runnerClass, hosted: entry.hosted })) : [],
+      skipped: plan ? plan.skipped.map((entry) => ({ lane: entry.lane, checkName: entry.checkName, reason: entry.reason })) : [],
+      generatedAtUtc: new Date().toISOString(),
+    };
+    writeFileSync(args.receipt, `${JSON.stringify(receipt, null, 2)}\n`);
+  }
+  process.exit(verdict.ok ? 0 : 1);
+}
+
+main();
