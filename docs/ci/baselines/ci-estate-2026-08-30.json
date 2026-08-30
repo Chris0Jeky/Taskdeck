@@ -1,0 +1,3145 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-08-30T17:20:35.675Z",
+  "repository": "Chris0Jeky/Taskdeck",
+  "window": {
+    "since": "2026-07-31",
+    "until": "2026-08-30",
+    "days": 31
+  },
+  "method": {
+    "runPagesRead": 48,
+    "runListingTruncated": false,
+    "dayWindowsAtTheApiCap": [],
+    "sampleSize": 30,
+    "assumptions": [
+      "Runs listed with the Actions API `created=<day>..<day>` filter for every UTC day in 2026-07-31..2026-08-30 (the API returns at most 1000 runs per filter, so the window is chunked per day; a day at the cap is reported); a run counts once per attempt listing, re-run attempts are flagged by `run_attempt > 1`.",
+      "Job duration = completed_at - started_at (queue time excluded); critical path = last job completion - first job start within one run.",
+      "Allowance minutes follow GitHub billing: every job rounds up to a whole minute, Windows counts x2, macOS x10; the GitHub Pro private-repository allowance is 3000 minutes/month and 1 GB storage (prices as of 2026-08-30: Linux $0.006, Windows $0.01, macOS $0.062 per minute beyond the allowance).",
+      "The public repository reports 0 billable minutes; the estimate applies private-repository accounting to measured durations.",
+      "Projections scale the window's CI run counts to 30 days and multiply by the sample's mean allowance minutes per run; cancelled runs consumed minutes until cancellation, so the \"including cancelled\" line is an upper bound.",
+      "Artifacts: unexpired bytes only; expired artifacts no longer occupy storage. Sizes are the API-reported size_in_bytes.",
+      "The ledger records names, ids, timestamps and sizes only — no log content, no user content."
+    ]
+  },
+  "runs": {
+    "total": 2707,
+    "reruns": 57,
+    "cancelled": 502,
+    "cancelledRate": 0.1854,
+    "rerunRate": 0.0211,
+    "byWorkflow": {
+      "CI Extended": {
+        "total": 811,
+        "byEvent": {
+          "pull_request": 810,
+          "workflow_dispatch": 1
+        },
+        "byConclusion": {
+          "success": 703,
+          "cancelled": 106,
+          "failure": 2
+        },
+        "reruns": 3,
+        "cancelled": 106
+      },
+      "CI": {
+        "total": 1198,
+        "byEvent": {
+          "pull_request": 858,
+          "push": 340
+        },
+        "byConclusion": {
+          "in_progress": 1,
+          "success": 733,
+          "cancelled": 384,
+          "failure": 79,
+          "startup_failure": 1
+        },
+        "reruns": 54,
+        "cancelled": 384
+      },
+      "Deploy Frontend to GitHub Pages": {
+        "total": 138,
+        "byEvent": {
+          "push": 138
+        },
+        "byConclusion": {
+          "success": 126,
+          "cancelled": 11,
+          "startup_failure": 1
+        },
+        "reruns": 0,
+        "cancelled": 11
+      },
+      "Nightly Quality Signals": {
+        "total": 31,
+        "byEvent": {
+          "schedule": 31
+        },
+        "byConclusion": {
+          "success": 31
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "CI Nightly": {
+        "total": 31,
+        "byEvent": {
+          "schedule": 31
+        },
+        "byConclusion": {
+          "failure": 7,
+          "success": 24
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Release Security": {
+        "total": 6,
+        "byEvent": {
+          "push": 5,
+          "release": 1
+        },
+        "byConclusion": {
+          "success": 6
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "CI Release": {
+        "total": 8,
+        "byEvent": {
+          "push": 5,
+          "workflow_dispatch": 2,
+          "release": 1
+        },
+        "byConclusion": {
+          "success": 5,
+          "failure": 1,
+          "startup_failure": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Release Desktop": {
+        "total": 32,
+        "byEvent": {
+          "push": 5,
+          "workflow_dispatch": 27
+        },
+        "byConclusion": {
+          "success": 27,
+          "failure": 4,
+          "cancelled": 1
+        },
+        "reruns": 0,
+        "cancelled": 1
+      },
+      "Release Container": {
+        "total": 6,
+        "byEvent": {
+          "push": 5,
+          "workflow_dispatch": 1
+        },
+        "byConclusion": {
+          "success": 6
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "github_actions in / for actions/checkout, docker/setup-buildx-action, docker/login-action, docker/metadata-action, docker/build-push-action - Update #1542072220": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for @stryker-mutator/core - Update #1542072243": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for @stryker-mutator/vitest-runner - Update #1542072240": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for @tanstack/vue-virtual, dompurify, marked, @storybook/vue3-vite, @vitest/coverage-v8, @vitest/ui, baseline-browser-mapping, happy-dom, storybook, vite, vitest, vue-tsc - Update #1542072236": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend for FsCheck, FsCheck.Xunit, OpenTelemetry.Exporter.Console, OpenTelemetry.Exporter.OpenTelemetryProtocol, OpenTelemetry.Extensions.Hosting, OpenTelemetry.Instrumentation.AspNetCore, OpenTelemetry.Instrumentation.Http, PdfPig - Update #1542049818": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "github_actions in / for actions/checkout, docker/setup-buildx-action, docker/login-action, docker/metadata-action, docker/build-push-action - Update #1538454618": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web - Update #1538377703": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend - Update #1538377671": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "github_actions in /. - Update #1538377689": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for @axe-core/playwright, @storybook/vue3-vite, @typescript-eslint/eslint-plugin, @typescript-eslint/parser, baseline-browser-mapping, eslint, eslint-plugin-vuejs-accessibility, globals, happy-dom, storybook, vue-tsc - Update #1532577931": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend for xunit.runner.visualstudio - Update #1532577923": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend for Microsoft.AspNetCore.Authentication.JwtBearer, Microsoft.AspNetCore.Authentication.OpenIdConnect, Microsoft.AspNetCore.Mvc.Testing, Microsoft.AspNetCore.SignalR.Client, Microsoft.AspNetCore.SignalR.StackExchangeRedis, Microsoft.EntityFrameworkCore, Microsoft.EntityFrameworkCore.Design, Microsoft.EntityFrameworkCore.Sqlite, Microsoft.EntityFrameworkCore.Tools, Microsoft.Extensions.Http.Polly, Microsoft.NET.Test.Sdk, ModelContextProtocol, ModelContextProtocol.AspNetCore, Sentry.AspNet...": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for ws, @axe-core/playwright, @storybook/vue3-vite, @typescript-eslint/eslint-plugin, @typescript-eslint/parser, baseline-browser-mapping, eslint, eslint-plugin-vuejs-accessibility, globals, happy-dom, storybook - Update #1532521256": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for pinia - Update #1532521269": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Push on main": {
+        "total": 116,
+        "byEvent": {
+          "dynamic": 116
+        },
+        "byConclusion": {
+          "success": 116
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1808": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1808": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "queued": 1,
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1810": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1810": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1809": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "failure": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1809": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1801": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "failure": 3,
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1801": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1811": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1811": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1807": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1807": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1805": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "failure": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1805": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1799": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1799": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1800": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1800": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1798": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1798": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1797": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1797": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1796": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1796": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for @babel/core, brace-expansion, brace-expansion, esbuild, fast-uri, fast-uri, fast-uri, fast-uri, fast-uri, js-cookie, minimatch, qs, ws - Update #1531859426": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for @babel/core, brace-expansion, esbuild, js-cookie, minimatch, qs, ws - Update #1531859414": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Code scanning AI findings on PR #1787": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "failure": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1787": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1786": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1784": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1785": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1783": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1775": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1774": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1773": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1762": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1741": {
+        "total": 5,
+        "byEvent": {
+          "dynamic": 5
+        },
+        "byConclusion": {
+          "success": 5
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1745": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1744": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1760": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1750": {
+        "total": 5,
+        "byEvent": {
+          "dynamic": 5
+        },
+        "byConclusion": {
+          "success": 5
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Scheduled": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1743": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1759": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1757": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1758": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1756": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1751": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1752": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1732": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1748": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1712": {
+        "total": 5,
+        "byEvent": {
+          "dynamic": 5
+        },
+        "byConclusion": {
+          "success": 5
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1738": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1730": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1735": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1728": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1685": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1716": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1720": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1719": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1715": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1713": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1692": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1705": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1694": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1708": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1695": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1693": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1703": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1701": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1699": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1697": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1696": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1689": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "github_actions in /. - Update #1528818795": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend - Update #1528818799": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web - Update #1528818774": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1681": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1683": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1680": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1679": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1678": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "Mutation Testing": {
+        "total": 5,
+        "byEvent": {
+          "schedule": 3,
+          "workflow_dispatch": 2
+        },
+        "byConclusion": {
+          "success": 3,
+          "failure": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1677": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1675": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1673": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1674": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1503": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1514": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1502": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1672": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1649": {
+        "total": 7,
+        "byEvent": {
+          "dynamic": 7
+        },
+        "byConclusion": {
+          "success": 7
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1659": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1648": {
+        "total": 5,
+        "byEvent": {
+          "dynamic": 5
+        },
+        "byConclusion": {
+          "success": 5
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1669": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1668": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1667": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1655": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1663": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1650": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1646": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1643": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1638": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1629": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1630": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1631": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1627": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1551": {
+        "total": 7,
+        "byEvent": {
+          "dynamic": 7
+        },
+        "byConclusion": {
+          "success": 7
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1634": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1624": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web - Update #1517303319": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "github_actions in /. - Update #1517303353": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend - Update #1517303352": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1621": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1509": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1537": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1620": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1557": {
+        "total": 8,
+        "byEvent": {
+          "dynamic": 8
+        },
+        "byConclusion": {
+          "success": 8
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1528": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1526": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1511": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1616": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1615": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1613": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1614": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1612": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1610": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1608": {
+        "total": 4,
+        "byEvent": {
+          "dynamic": 4
+        },
+        "byConclusion": {
+          "success": 4
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1601": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1604": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1603": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1599": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend for ModelContextProtocol, ModelContextProtocol.AspNetCore - Update #1512941218": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web for @tanstack/vue-virtual, marked, @playwright/test, @storybook/vue3-vite, @typescript-eslint/eslint-plugin, @typescript-eslint/parser, baseline-browser-mapping, eslint, globals, happy-dom, postcss, storybook, vue-tsc - Update #1502289596": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "github_actions in / for KineticCafe/actions-dco - Update #1502289585": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "nuget in /backend - Update #1502289485": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "github_actions in /. - Update #1502289493": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "npm_and_yarn in /frontend/taskdeck-web - Update #1502289465": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1593": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1592": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1591": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1588": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1586": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1584": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1583": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1582": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1581": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1579": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1578": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1571": {
+        "total": 5,
+        "byEvent": {
+          "dynamic": 5
+        },
+        "byConclusion": {
+          "success": 5
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1569": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1566": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1565": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1560": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1559": {
+        "total": 3,
+        "byEvent": {
+          "dynamic": 3
+        },
+        "byConclusion": {
+          "success": 3
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1558": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1556": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1555": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1554": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1550": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1499": {
+        "total": 1,
+        "byEvent": {
+          "dynamic": 1
+        },
+        "byConclusion": {
+          "success": 1
+        },
+        "reruns": 0,
+        "cancelled": 0
+      },
+      "PR #1549": {
+        "total": 2,
+        "byEvent": {
+          "dynamic": 2
+        },
+        "byConclusion": {
+          "success": 2
+        },
+        "reruns": 0,
+        "cancelled": 0
+      }
+    },
+    "perDay": {
+      "2026-08-30": 211,
+      "2026-08-29": 136,
+      "2026-08-28": 83,
+      "2026-08-27": 24,
+      "2026-08-26": 151,
+      "2026-08-25": 7,
+      "2026-08-24": 234,
+      "2026-08-23": 97,
+      "2026-08-22": 142,
+      "2026-08-21": 97,
+      "2026-08-20": 86,
+      "2026-08-19": 419,
+      "2026-08-18": 303,
+      "2026-08-17": 27,
+      "2026-08-16": 38,
+      "2026-08-15": 44,
+      "2026-08-14": 2,
+      "2026-08-13": 51,
+      "2026-08-12": 138,
+      "2026-08-11": 3,
+      "2026-08-10": 16,
+      "2026-08-09": 107,
+      "2026-08-08": 13,
+      "2026-08-07": 45,
+      "2026-08-06": 2,
+      "2026-08-05": 2,
+      "2026-08-04": 5,
+      "2026-08-03": 32,
+      "2026-08-02": 111,
+      "2026-08-01": 50,
+      "2026-07-31": 31
+    },
+    "exactShaQualifiedOnMoreThanOneEvent": 0
+  },
+  "sample": {
+    "workflowName": "CI",
+    "sampleSize": 30,
+    "criticalPathSeconds": {
+      "p50": 1481,
+      "p95": 2273,
+      "max": 2431
+    },
+    "billableMinutesPerRun": {
+      "p50": 126,
+      "p95": 133,
+      "mean": 126.4
+    },
+    "aggregateRunnerMinutesPerRun": {
+      "p50": 72.3,
+      "mean": 72.6
+    },
+    "byOs": {
+      "linux": {
+        "meanRunnerMinutesPerRun": 30.7,
+        "meanBillableMinutesPerRun": 38.2
+      },
+      "windows": {
+        "meanRunnerMinutesPerRun": 41.9,
+        "meanBillableMinutesPerRun": 88.2
+      }
+    },
+    "jobs": [
+      {
+        "name": "API Integration / API Integration (windows-latest)",
+        "os": "windows",
+        "samples": 30,
+        "meanSeconds": 1038,
+        "maxSeconds": 1750,
+        "meanBillableMinutes": 35.73
+      },
+      {
+        "name": "Frontend Unit / Frontend Unit (windows-latest)",
+        "os": "windows",
+        "samples": 30,
+        "meanSeconds": 733,
+        "maxSeconds": 784,
+        "meanBillableMinutes": 25.4
+      },
+      {
+        "name": "API Integration / API Integration (ubuntu-latest)",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 429,
+        "maxSeconds": 554,
+        "meanBillableMinutes": 7.7
+      },
+      {
+        "name": "E2E Smoke / E2E Smoke",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 419,
+        "maxSeconds": 452,
+        "meanBillableMinutes": 7.6
+      },
+      {
+        "name": "Backend Unit / Backend Unit (windows-latest)",
+        "os": "windows",
+        "samples": 30,
+        "meanSeconds": 374,
+        "maxSeconds": 481,
+        "meanBillableMinutes": 13.67
+      },
+      {
+        "name": "Docs Governance / Worktree Helper (Windows PowerShell)",
+        "os": "windows",
+        "samples": 30,
+        "meanSeconds": 369,
+        "maxSeconds": 470,
+        "meanBillableMinutes": 13.4
+      },
+      {
+        "name": "Backend Unit / Backend Unit (ubuntu-latest)",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 307,
+        "maxSeconds": 352,
+        "meanBillableMinutes": 5.63
+      },
+      {
+        "name": "Frontend Unit / Frontend Unit (ubuntu-latest)",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 244,
+        "maxSeconds": 277,
+        "meanBillableMinutes": 4.7
+      },
+      {
+        "name": "Container Images / Container Images",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 131,
+        "maxSeconds": 146,
+        "meanBillableMinutes": 3
+      },
+      {
+        "name": "Migration Validation / Migration Validation",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 105,
+        "maxSeconds": 118,
+        "meanBillableMinutes": 2
+      },
+      {
+        "name": "SAST Scan / SAST Scan (Semgrep)",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 60,
+        "maxSeconds": 68,
+        "meanBillableMinutes": 1.47
+      },
+      {
+        "name": "Dependency Security / Dependency Security Signals",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 53,
+        "maxSeconds": 74,
+        "meanBillableMinutes": 1.07
+      },
+      {
+        "name": "Backend Architecture / Backend Architecture",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 40,
+        "maxSeconds": 49,
+        "meanBillableMinutes": 1
+      },
+      {
+        "name": "Docs Governance / Docs Governance",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 22,
+        "maxSeconds": 37,
+        "meanBillableMinutes": 1
+      },
+      {
+        "name": "Release Workflow Contract",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 12,
+        "maxSeconds": 16,
+        "meanBillableMinutes": 1
+      },
+      {
+        "name": "Secret Scan / Gitleaks Scan",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 12,
+        "maxSeconds": 16,
+        "meanBillableMinutes": 1
+      },
+      {
+        "name": "Paper Color Audit / Paper Color Audit",
+        "os": "linux",
+        "samples": 30,
+        "meanSeconds": 6,
+        "maxSeconds": 8,
+        "meanBillableMinutes": 1
+      }
+    ],
+    "runs": [
+      {
+        "runId": 33321684303,
+        "headSha": "5a26d10d2b03da360a39d03412dfd718f531170f",
+        "createdAt": "2026-08-30T16:10:00Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1390,
+        "aggregateRunnerSeconds": 4231,
+        "billableMinutes": 120,
+        "costUsdIfBeyondAllowance": 0.638,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1868,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2363,
+            "billableMinutes": 82,
+            "costUsdIfBeyondAllowance": 0.41
+          }
+        }
+      },
+      {
+        "runId": 33320118897,
+        "headSha": "f68ebbcded7a4da8dbf7be59fef0f9068130b526",
+        "createdAt": "2026-08-30T15:36:28Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1514,
+        "aggregateRunnerSeconds": 4618,
+        "billableMinutes": 133,
+        "costUsdIfBeyondAllowance": 0.704,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1905,
+            "billableMinutes": 39,
+            "costUsdIfBeyondAllowance": 0.234
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2713,
+            "billableMinutes": 94,
+            "costUsdIfBeyondAllowance": 0.47
+          }
+        }
+      },
+      {
+        "runId": 33318723808,
+        "headSha": "f5dd09126ed5e5e586b6e06c7fc6aa016e2b7466",
+        "createdAt": "2026-08-30T15:06:54Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1417,
+        "aggregateRunnerSeconds": 4304,
+        "billableMinutes": 127,
+        "costUsdIfBeyondAllowance": 0.674,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1837,
+            "billableMinutes": 39,
+            "costUsdIfBeyondAllowance": 0.234
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2467,
+            "billableMinutes": 88,
+            "costUsdIfBeyondAllowance": 0.44
+          }
+        }
+      },
+      {
+        "runId": 33318617175,
+        "headSha": "82f92ba9abdabe0828474c04c8d3f20983187247",
+        "createdAt": "2026-08-30T15:04:42Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1344,
+        "aggregateRunnerSeconds": 4302,
+        "billableMinutes": 123,
+        "costUsdIfBeyondAllowance": 0.652,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1835,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2467,
+            "billableMinutes": 86,
+            "costUsdIfBeyondAllowance": 0.43
+          }
+        }
+      },
+      {
+        "runId": 33317466590,
+        "headSha": "6a5bb3b712088940baa98ad332f7f9b814488d98",
+        "createdAt": "2026-08-30T14:39:29Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1264,
+        "aggregateRunnerSeconds": 4199,
+        "billableMinutes": 120,
+        "costUsdIfBeyondAllowance": 0.638,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1851,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2348,
+            "billableMinutes": 82,
+            "costUsdIfBeyondAllowance": 0.41
+          }
+        }
+      },
+      {
+        "runId": 33316088003,
+        "headSha": "35df8eb1b6fad450b8dc7d45c23efe7a6b114142",
+        "createdAt": "2026-08-30T14:09:21Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1547,
+        "aggregateRunnerSeconds": 4529,
+        "billableMinutes": 130,
+        "costUsdIfBeyondAllowance": 0.688,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1888,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2641,
+            "billableMinutes": 92,
+            "costUsdIfBeyondAllowance": 0.46
+          }
+        }
+      },
+      {
+        "runId": 33314981692,
+        "headSha": "fc9c233224486ebf258c9a1a0e6c769f98d68a60",
+        "createdAt": "2026-08-30T13:44:23Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1217,
+        "aggregateRunnerSeconds": 4091,
+        "billableMinutes": 120,
+        "costUsdIfBeyondAllowance": 0.638,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1808,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2283,
+            "billableMinutes": 82,
+            "costUsdIfBeyondAllowance": 0.41
+          }
+        }
+      },
+      {
+        "runId": 33314894623,
+        "headSha": "c3805249a46fb0ddfde606a245235e50b4b05d69",
+        "createdAt": "2026-08-30T13:42:19Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1309,
+        "aggregateRunnerSeconds": 4122,
+        "billableMinutes": 117,
+        "costUsdIfBeyondAllowance": 0.62,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1763,
+            "billableMinutes": 35,
+            "costUsdIfBeyondAllowance": 0.21
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2359,
+            "billableMinutes": 82,
+            "costUsdIfBeyondAllowance": 0.41
+          }
+        }
+      },
+      {
+        "runId": 33313572382,
+        "headSha": "6d03bde4379d597c4de016c8a10c7c7a504123ff",
+        "createdAt": "2026-08-30T13:13:06Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1333,
+        "aggregateRunnerSeconds": 4160,
+        "billableMinutes": 120,
+        "costUsdIfBeyondAllowance": 0.638,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1817,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2343,
+            "billableMinutes": 82,
+            "costUsdIfBeyondAllowance": 0.41
+          }
+        }
+      },
+      {
+        "runId": 33312011624,
+        "headSha": "c5256e8c9e937ef640c218da9e569b8819647cbd",
+        "createdAt": "2026-08-30T12:38:08Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1481,
+        "aggregateRunnerSeconds": 4555,
+        "billableMinutes": 131,
+        "costUsdIfBeyondAllowance": 0.696,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 2008,
+            "billableMinutes": 41,
+            "costUsdIfBeyondAllowance": 0.246
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2547,
+            "billableMinutes": 90,
+            "costUsdIfBeyondAllowance": 0.45
+          }
+        }
+      },
+      {
+        "runId": 33310926120,
+        "headSha": "1a617f71031b3879b0a4879131877ebeb9d19a4c",
+        "createdAt": "2026-08-30T12:13:54Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1290,
+        "aggregateRunnerSeconds": 4127,
+        "billableMinutes": 118,
+        "costUsdIfBeyondAllowance": 0.628,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1834,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2293,
+            "billableMinutes": 80,
+            "costUsdIfBeyondAllowance": 0.4
+          }
+        }
+      },
+      {
+        "runId": 33308472040,
+        "headSha": "f31aaf4967fd92989500e7d10a25c380cfcb189a",
+        "createdAt": "2026-08-30T11:15:32Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 2030,
+        "aggregateRunnerSeconds": 4091,
+        "billableMinutes": 121,
+        "costUsdIfBeyondAllowance": 0.642,
+        "byOs": {
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2341,
+            "billableMinutes": 84,
+            "costUsdIfBeyondAllowance": 0.42
+          },
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1750,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          }
+        }
+      },
+      {
+        "runId": 33307268911,
+        "headSha": "f3f13ee2a65b2dcfe1aecb3453e1242ba4414178",
+        "createdAt": "2026-08-30T10:46:01Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1579,
+        "aggregateRunnerSeconds": 4417,
+        "billableMinutes": 131,
+        "costUsdIfBeyondAllowance": 0.692,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1726,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2691,
+            "billableMinutes": 94,
+            "costUsdIfBeyondAllowance": 0.47
+          }
+        }
+      },
+      {
+        "runId": 33305829948,
+        "headSha": "92bb8206435b19a91dde08639e65ce5360f0984f",
+        "createdAt": "2026-08-30T10:10:32Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1440,
+        "aggregateRunnerSeconds": 4294,
+        "billableMinutes": 125,
+        "costUsdIfBeyondAllowance": 0.662,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1780,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2514,
+            "billableMinutes": 88,
+            "costUsdIfBeyondAllowance": 0.44
+          }
+        }
+      },
+      {
+        "runId": 33303630408,
+        "headSha": "fbd648eaa08a6e2c405e42c6b0ed07046b0d6fb1",
+        "createdAt": "2026-08-30T09:16:10Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1458,
+        "aggregateRunnerSeconds": 4382,
+        "billableMinutes": 126,
+        "costUsdIfBeyondAllowance": 0.668,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1892,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2490,
+            "billableMinutes": 88,
+            "costUsdIfBeyondAllowance": 0.44
+          }
+        }
+      },
+      {
+        "runId": 33303614333,
+        "headSha": "a6acdc931edbe53768af80c4262bf13cea448158",
+        "createdAt": "2026-08-30T09:15:48Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1532,
+        "aggregateRunnerSeconds": 4421,
+        "billableMinutes": 125,
+        "costUsdIfBeyondAllowance": 0.664,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1925,
+            "billableMinutes": 39,
+            "costUsdIfBeyondAllowance": 0.234
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2496,
+            "billableMinutes": 86,
+            "costUsdIfBeyondAllowance": 0.43
+          }
+        }
+      },
+      {
+        "runId": 33302347086,
+        "headSha": "d9f1bcd2a8fc205abff0c2fd721f87cdd1c1acd2",
+        "createdAt": "2026-08-30T08:44:57Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1570,
+        "aggregateRunnerSeconds": 4489,
+        "billableMinutes": 129,
+        "costUsdIfBeyondAllowance": 0.686,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1984,
+            "billableMinutes": 41,
+            "costUsdIfBeyondAllowance": 0.246
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2505,
+            "billableMinutes": 88,
+            "costUsdIfBeyondAllowance": 0.44
+          }
+        }
+      },
+      {
+        "runId": 33301532492,
+        "headSha": "67a4e82d08617cbcc5bd0db2bfe86ef4d0b9e016",
+        "createdAt": "2026-08-30T08:25:07Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1529,
+        "aggregateRunnerSeconds": 4341,
+        "billableMinutes": 127,
+        "costUsdIfBeyondAllowance": 0.672,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1730,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2611,
+            "billableMinutes": 90,
+            "costUsdIfBeyondAllowance": 0.45
+          }
+        }
+      },
+      {
+        "runId": 33300443606,
+        "headSha": "ca8d5a024f18c6187bfea87e29f06dedefe8d69a",
+        "createdAt": "2026-08-30T07:58:32Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1292,
+        "aggregateRunnerSeconds": 4279,
+        "billableMinutes": 123,
+        "costUsdIfBeyondAllowance": 0.654,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1931,
+            "billableMinutes": 39,
+            "costUsdIfBeyondAllowance": 0.234
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2348,
+            "billableMinutes": 84,
+            "costUsdIfBeyondAllowance": 0.42
+          }
+        }
+      },
+      {
+        "runId": 33299344665,
+        "headSha": "f3fc2ca9be766f045ffc889d1cb2ce947491d684",
+        "createdAt": "2026-08-30T07:29:57Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1314,
+        "aggregateRunnerSeconds": 4410,
+        "billableMinutes": 125,
+        "costUsdIfBeyondAllowance": 0.664,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1964,
+            "billableMinutes": 39,
+            "costUsdIfBeyondAllowance": 0.234
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2446,
+            "billableMinutes": 86,
+            "costUsdIfBeyondAllowance": 0.43
+          }
+        }
+      },
+      {
+        "runId": 33297762178,
+        "headSha": "d1688ea5b6d85dfd6df0335c667b1c9cbb3a03c7",
+        "createdAt": "2026-08-30T06:48:54Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1606,
+        "aggregateRunnerSeconds": 4356,
+        "billableMinutes": 126,
+        "costUsdIfBeyondAllowance": 0.666,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1749,
+            "billableMinutes": 36,
+            "costUsdIfBeyondAllowance": 0.216
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2607,
+            "billableMinutes": 90,
+            "costUsdIfBeyondAllowance": 0.45
+          }
+        }
+      },
+      {
+        "runId": 33297686555,
+        "headSha": "24fb41b88b6326710d4ec728595be244e68a9b01",
+        "createdAt": "2026-08-30T06:46:52Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 2175,
+        "aggregateRunnerSeconds": 5050,
+        "billableMinutes": 152,
+        "costUsdIfBeyondAllowance": 0.8,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1823,
+            "billableMinutes": 40,
+            "costUsdIfBeyondAllowance": 0.24
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 3227,
+            "billableMinutes": 112,
+            "costUsdIfBeyondAllowance": 0.56
+          }
+        }
+      },
+      {
+        "runId": 33296790115,
+        "headSha": "2e9746afc87478f8d6e93dd54bf13e9277f44b56",
+        "createdAt": "2026-08-30T06:23:44Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 2273,
+        "aggregateRunnerSeconds": 4254,
+        "billableMinutes": 121,
+        "costUsdIfBeyondAllowance": 0.642,
+        "byOs": {
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2462,
+            "billableMinutes": 84,
+            "costUsdIfBeyondAllowance": 0.42
+          },
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1792,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          }
+        }
+      },
+      {
+        "runId": 33296625983,
+        "headSha": "0cbe25eb41e27722e8d8ce79db4ca6117183a903",
+        "createdAt": "2026-08-30T06:19:18Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1510,
+        "aggregateRunnerSeconds": 4487,
+        "billableMinutes": 132,
+        "costUsdIfBeyondAllowance": 0.7,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1911,
+            "billableMinutes": 40,
+            "costUsdIfBeyondAllowance": 0.24
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2576,
+            "billableMinutes": 92,
+            "costUsdIfBeyondAllowance": 0.46
+          }
+        }
+      },
+      {
+        "runId": 33296499752,
+        "headSha": "af96fc8d3c87751c9c1820f684bc569b161a8bc6",
+        "createdAt": "2026-08-30T06:15:49Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1595,
+        "aggregateRunnerSeconds": 4546,
+        "billableMinutes": 132,
+        "costUsdIfBeyondAllowance": 0.698,
+        "byOs": {
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2692,
+            "billableMinutes": 94,
+            "costUsdIfBeyondAllowance": 0.47
+          },
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1854,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          }
+        }
+      },
+      {
+        "runId": 33295882109,
+        "headSha": "2b426ac80aeaccb97fefd3b4c155054e99ecfa16",
+        "createdAt": "2026-08-30T05:59:47Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 2431,
+        "aggregateRunnerSeconds": 4398,
+        "billableMinutes": 130,
+        "costUsdIfBeyondAllowance": 0.69,
+        "byOs": {
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2529,
+            "billableMinutes": 90,
+            "costUsdIfBeyondAllowance": 0.45
+          },
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1869,
+            "billableMinutes": 40,
+            "costUsdIfBeyondAllowance": 0.24
+          }
+        }
+      },
+      {
+        "runId": 33295595069,
+        "headSha": "9239c8a8397fd2fca7f95e4c8dd4cc5af937af3f",
+        "createdAt": "2026-08-30T05:51:15Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1285,
+        "aggregateRunnerSeconds": 4132,
+        "billableMinutes": 121,
+        "costUsdIfBeyondAllowance": 0.644,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1811,
+            "billableMinutes": 39,
+            "costUsdIfBeyondAllowance": 0.234
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2321,
+            "billableMinutes": 82,
+            "costUsdIfBeyondAllowance": 0.41
+          }
+        }
+      },
+      {
+        "runId": 33294800098,
+        "headSha": "6101255e04c5c4833afb8f7e7f1b5ec0e3e055fd",
+        "createdAt": "2026-08-30T05:29:17Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1624,
+        "aggregateRunnerSeconds": 4290,
+        "billableMinutes": 129,
+        "costUsdIfBeyondAllowance": 0.682,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1702,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2588,
+            "billableMinutes": 92,
+            "costUsdIfBeyondAllowance": 0.46
+          }
+        }
+      },
+      {
+        "runId": 33294396999,
+        "headSha": "8569d7aab0579db7485499fc115491a5108973b6",
+        "createdAt": "2026-08-30T05:18:21Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1509,
+        "aggregateRunnerSeconds": 4421,
+        "billableMinutes": 130,
+        "costUsdIfBeyondAllowance": 0.688,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1829,
+            "billableMinutes": 38,
+            "costUsdIfBeyondAllowance": 0.228
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2592,
+            "billableMinutes": 92,
+            "costUsdIfBeyondAllowance": 0.46
+          }
+        }
+      },
+      {
+        "runId": 33293170483,
+        "headSha": "0c1197bc091a47d52ecb089aeb31e693d893718f",
+        "createdAt": "2026-08-30T04:44:47Z",
+        "jobCount": 17,
+        "criticalPathSeconds": 1466,
+        "aggregateRunnerSeconds": 4371,
+        "billableMinutes": 127,
+        "costUsdIfBeyondAllowance": 0.672,
+        "byOs": {
+          "linux": {
+            "jobs": 13,
+            "runnerSeconds": 1802,
+            "billableMinutes": 37,
+            "costUsdIfBeyondAllowance": 0.222
+          },
+          "windows": {
+            "jobs": 4,
+            "runnerSeconds": 2569,
+            "billableMinutes": 90,
+            "costUsdIfBeyondAllowance": 0.45
+          }
+        }
+      }
+    ]
+  },
+  "projections": [
+    {
+      "label": "current topology, completed required runs (success + failure, every event)",
+      "fullRunsPerMonth": 786,
+      "meanBillableMinutesPerRun": 126.4,
+      "projectedBillableMinutes": 99350,
+      "includedMinutes": 3000,
+      "overageMinutes": 96350
+    },
+    {
+      "label": "current topology, all required runs including cancelled (upper bound)",
+      "fullRunsPerMonth": 1159,
+      "meanBillableMinutesPerRun": 126.4,
+      "projectedBillableMinutes": 146498,
+      "includedMinutes": 3000,
+      "overageMinutes": 143498
+    },
+    {
+      "label": "pull_request-only qualification (no push/main re-run), completed",
+      "fullRunsPerMonth": 457,
+      "meanBillableMinutesPerRun": 126.4,
+      "projectedBillableMinutes": 57765,
+      "includedMinutes": 3000,
+      "overageMinutes": 54765
+    }
+  ],
+  "storage": {
+    "cache": {
+      "activeCachesSizeInBytes": 10739776743,
+      "activeCachesCount": 180
+    },
+    "artifacts": {
+      "listed": 31958,
+      "expiredCount": 13700,
+      "unexpiredCount": 18258,
+      "unexpiredBytes": 370745884995,
+      "unexpiredGb": 370.746,
+      "oldestUnexpiredCreatedAt": "2026-06-02T08:11:24Z",
+      "topByBytes": [
+        {
+          "name": "container-image-artifacts",
+          "count": 2060,
+          "bytes": 357375048487
+        },
+        {
+          "name": "frontend-unit-artifacts",
+          "count": 3718,
+          "bytes": 8026217947
+        },
+        {
+          "name": "performance-regression-gate-results",
+          "count": 35,
+          "bytes": 1736298984
+        },
+        {
+          "name": "load-harness-k6-results",
+          "count": 55,
+          "bytes": 1330903448
+        },
+        {
+          "name": "load-harness-playwright-results",
+          "count": 54,
+          "bytes": 1326331869
+        },
+        {
+          "name": "playwright-test-results",
+          "count": 35,
+          "bytes": 281050573
+        },
+        {
+          "name": "release-win-x64",
+          "count": 3,
+          "bytes": 161256904
+        },
+        {
+          "name": "api-integration-timing",
+          "count": 1584,
+          "bytes": 130386178
+        },
+        {
+          "name": "demo-director-smoke-artifacts",
+          "count": 7,
+          "bytes": 81376808
+        },
+        {
+          "name": "openapi-guardrail-artifact",
+          "count": 1121,
+          "bytes": 43111972
+        },
+        {
+          "name": "nightly-quality-frontend-coverage",
+          "count": 14,
+          "bytes": 34668562
+        },
+        {
+          "name": "api-integration-trx",
+          "count": 57,
+          "bytes": 32647789
+        },
+        {
+          "name": "playwright-test-results-mobile-safari",
+          "count": 7,
+          "bytes": 28746024
+        },
+        {
+          "name": "sast-scanning",
+          "count": 917,
+          "bytes": 25199155
+        },
+        {
+          "name": "github-pages",
+          "count": 19,
+          "bytes": 24901387
+        }
+      ],
+      "truncated": false,
+      "pagesRead": 320
+    }
+  }
+}
