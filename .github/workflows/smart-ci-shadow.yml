@@ -156,7 +156,7 @@ jobs:
           name: smart-ci-plan-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
           path: artifacts
 
-      - name: Evaluate (mode follows ci/policy.v1.json — shadow: red only for planner/plan defects)
+      - name: Evaluate (mode follows ci/policy.v1.json; in shadow only planner/plan defects are red)
         env:
           PLAN_RESULT: ${{ needs.plan.result }}
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
