@@ -78,14 +78,15 @@ function Get-FailClosedRules([string]$content, [string]$sourceName) {
         throw "$sourceName declares the case-insensitive 404 location after the SPA catch-all, which would never be reached."
     }
 
-    # Percent-encoded prefix letters need both views of the request at once (raw first segment, and
-    # what the path decoded to), which one `if` cannot express, so the config states it as a
-    # conjunction of two maps feeding a third. All three are read out and executed below.
+    # Percent-encoded prefix letters need both views of the request at once (the first non-empty raw
+    # segment after the leading separator run, and what the path decoded to), which one `if` cannot
+    # express, so the config states it as a conjunction of two maps feeding a third. All three are
+    # read out and executed below.
     $encodedSegmentMap = [regex]::Match(
         $content,
         '(?m)^map \$request_uri \$td_encoded_first_segment \{\r?\n[ \t]*default 0;\r?\n[ \t]*"(?<re>[^"]+)" 1;\r?\n\}')
     if (-not $encodedSegmentMap.Success) {
-        throw "$sourceName must classify a percent escape in the first raw path segment; the map is missing."
+        throw "$sourceName must classify a percent escape in the first non-empty raw path segment after the leading separator run; the map is missing."
     }
 
     $machineUriMap = [regex]::Match(
@@ -295,6 +296,10 @@ $expectedDispositions = @(
     @{ Path = '/hub%73/board'; Expected = '404' },
     @{ Path = '/%68ealth/live'; Expected = '404' },
     @{ Path = '/%41PI/boards'; Expected = '404' },
+    # Combined duplicate leading separators plus encoded prefix letters must still be rejected.
+    # nginx merges the separators before matching $uri, so the raw map is the only remaining witness.
+    @{ Path = '//%61pi/boards'; Expected = '404' },
+    @{ Path = '///%6Dcp/messages'; Expected = '404' },
     # SPA paths, including prefix-shaped ones in any casing: the boundary is a segment, so these
     # are not machine surface at any layer and must still reach the web container.
     @{ Path = '/'; Expected = 'web' },
@@ -315,6 +320,8 @@ $expectedDispositions = @(
     @{ Path = '/caf%C3%A9'; Expected = 'web' },
     @{ Path = '/a%20b'; Expected = 'web' },
     @{ Path = '/%61pidocs'; Expected = 'web' },
+    @{ Path = '//%61pidocs'; Expected = 'web' },
+    @{ Path = '///caf%C3%A9'; Expected = 'web' },
     # An escape deeper in a machine path is route data, not a spelling of the prefix, so it still
     # reaches the API.
     @{ Path = '/api/board%20s'; Expected = 'api' },

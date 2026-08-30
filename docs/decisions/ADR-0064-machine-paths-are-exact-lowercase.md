@@ -80,8 +80,11 @@ required container CI before compose validation), `SpaFallbackRoutingApiTests` p
    and the request is on the real controller; `proxy_pass` carries no URI, so the raw form is what
    the API receives. The rule needs the raw request *and* the decoded path at once, which one nginx
    `if` cannot express, so the proxy states it as a conjunction of three `map`s: a percent escape
-   anywhere in the **first raw path segment** (`~^/[^/?]*%`) **and** a decoded path that is
-   machine-facing. The API applies the same conjunction against `IHttpRequestFeature.RawTarget`. The
+   anywhere in the **first non-empty raw path segment after the leading separator run**
+   (`~^/+[^/?]*%`) **and** a decoded path that is machine-facing. This includes the combined
+   `//%61pi/boards` class after nginx merges the leading separators. The API applies the
+   single-separator form of the conjunction against `IHttpRequestFeature.RawTarget`; its existing
+   leading-separator guard rejects the combined form after Kestrel decodes the prefix letters. The
    service worker cannot decode, so its denylist spells each prefix letter as itself or its escape
    (`(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)`), which matches every spelling that decodes to the
    prefix and nothing else. Scoping to machine-facing decoded paths is what keeps `/caf%C3%A9`
