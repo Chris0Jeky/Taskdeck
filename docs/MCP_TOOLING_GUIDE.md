@@ -114,6 +114,8 @@ For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the h
 2. Use shell `docker compose` commands for canonical repo workflows and script parity.
 3. `docker` MCP in this repo is backed by Docker Desktop's `docker mcp gateway run` path, so Docker Desktop must be running.
 4. The Docker MCP gateway is **not** a project server. It is declared once at user scope — `MCP_DOCKER` in `~/.claude.json` (Claude) and `[mcp_servers.MCP_DOCKER]` in `~/.codex/config.toml` (Codex) — serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`. Never re-declare it in `.codex/config.toml` or `.mcp.json`: a second declaration starts a second gateway process per session (agent-harness#87).
+5. Validate the configured profile with `scripts/mcp/Test-DockerMcpProfile.ps1`. The validator is intentionally non-starting: it parses the read-only profile inventory and proves the exact `docker-mcp=true` container ID set is unchanged before reporting `PASS`.
+6. Do not use `docker mcp gateway run --dry-run` as a validation probe. That mode starts a gateway without a listener, and the CLI provides no invocation identity that would make set-difference cleanup safe around concurrent sessions.
 
 ---
 
