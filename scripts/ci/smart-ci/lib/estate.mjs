@@ -1,0 +1,350 @@
+// Pure aggregation helpers for the Smart CI estate measurement (CI-01, ADR-0066).
+// No I/O here: everything is a function of GitHub API payload shapes so the
+// accounting can be unit-tested and the CLI stays thin.
+
+/**
+ * GitHub-hosted runner prices and allowances used by the ledger.
+ *
+ * Verified 2026-08-30 against docs.github.com ("Actions runner pricing",
+ * "GitHub Actions billing"): Linux 2-core $0.006/min, Windows 2-core $0.010/min,
+ * macOS $0.062/min, Linux 1-core $0.002/min; "GitHub rounds the minutes and
+ * partial minutes each job uses up to the nearest whole minute"; GitHub Pro
+ * private repositories include 3,000 minutes/month and 1 GB of shared
+ * artifact/Packages storage; shared storage beyond that is $0.25 per GB-month
+ * and Actions cache $0.07 per GB-month.
+ *
+ * ASSUMPTION (not re-verified on the pages read 2026-08-30): GitHub's long-standing
+ * rule that Windows and macOS jobs consume included minutes at 2x and 10x the Linux
+ * rate. If that rule no longer applies, Windows allowance consumption halves; the
+ * ranking of Windows as the dominant cost does not change (it is also the slowest
+ * and the highest per-minute price). Re-read before the private cutover (CI-13 A).
+ */
+export const PRICING = Object.freeze({
+  asOf: '2026-08-30',
+  perMinuteUsd: Object.freeze({ linux: 0.006, windows: 0.01, macos: 0.062, 'self-hosted': 0, unknown: 0.006 }),
+  allowanceMultiplier: Object.freeze({ linux: 1, windows: 2, macos: 10, 'self-hosted': 0, unknown: 1 }),
+  allowanceMultiplierVerified: false,
+  includedMinutesPro: 3000,
+  includedStorageGbPro: 1,
+  sharedStoragePerGbMonthUsd: 0.25,
+  cachePerGbMonthUsd: 0.07,
+});
+
+/** Classify a job's runner OS from its `labels` array (runner labels) or `runner_name`. */
+export function classifyRunnerOs(labels = [], runnerName = '') {
+  const haystack = [...labels, runnerName].map((value) => String(value ?? '').toLowerCase());
+  if (haystack.some((value) => value.includes('self-hosted'))) return 'self-hosted';
+  if (haystack.some((value) => value.startsWith('windows'))) return 'windows';
+  if (haystack.some((value) => value.startsWith('macos'))) return 'macos';
+  if (haystack.some((value) => value.startsWith('ubuntu'))) return 'linux';
+  return 'unknown';
+}
+
+/** Seconds between two ISO timestamps; 0 when either is missing or the order is inverted. */
+export function secondsBetween(startIso, endIso) {
+  if (!startIso || !endIso) return 0;
+  const start = Date.parse(startIso);
+  const end = Date.parse(endIso);
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 0;
+  return Math.round((end - start) / 1000);
+}
+
+/**
+ * GitHub rounds every job (including partial minutes) UP to a whole minute and
+ * multiplies Windows/macOS minutes when charging them against the allowance.
+ */
+export function billableMinutesForJob(durationSeconds, os) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 0;
+  const rounded = Math.ceil(durationSeconds / 60);
+  return rounded * (PRICING.allowanceMultiplier[os] ?? 1);
+}
+
+export function costUsdForJob(durationSeconds, os) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return 0;
+  const rounded = Math.ceil(durationSeconds / 60);
+  return Number((rounded * (PRICING.perMinuteUsd[os] ?? PRICING.perMinuteUsd.unknown)).toFixed(4));
+}
+
+/** Percentile over a numeric array (nearest-rank); 0 for an empty array. */
+export function percentile(values, p) {
+  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (sorted.length === 0) return 0;
+  const rank = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+  return sorted[rank];
+}
+
+/**
+ * Aggregate the jobs of one workflow run.
+ * @param {Array<{name:string,labels?:string[],runner_name?:string,started_at?:string,completed_at?:string,conclusion?:string}>} jobs
+ */
+export function summarizeRunJobs(jobs) {
+  const perJob = jobs.map((job) => {
+    const os = classifyRunnerOs(job.labels ?? [], job.runner_name ?? '');
+    const durationSeconds = secondsBetween(job.started_at, job.completed_at);
+    return {
+      name: job.name,
+      os,
+      conclusion: job.conclusion ?? null,
+      startedAt: job.started_at ?? null,
+      completedAt: job.completed_at ?? null,
+      durationSeconds,
+      billableMinutes: billableMinutesForJob(durationSeconds, os),
+      costUsdIfBeyondAllowance: costUsdForJob(durationSeconds, os),
+    };
+  });
+  const starts = perJob.map((job) => Date.parse(job.startedAt)).filter((value) => !Number.isNaN(value));
+  const ends = perJob.map((job) => Date.parse(job.completedAt)).filter((value) => !Number.isNaN(value));
+  const criticalPathSeconds = starts.length && ends.length ? Math.round((Math.max(...ends) - Math.min(...starts)) / 1000) : 0;
+  const byOs = {};
+  for (const job of perJob) {
+    byOs[job.os] ??= { jobs: 0, runnerSeconds: 0, billableMinutes: 0, costUsdIfBeyondAllowance: 0 };
+    byOs[job.os].jobs += 1;
+    byOs[job.os].runnerSeconds += job.durationSeconds;
+    byOs[job.os].billableMinutes += job.billableMinutes;
+    byOs[job.os].costUsdIfBeyondAllowance = Number((byOs[job.os].costUsdIfBeyondAllowance + job.costUsdIfBeyondAllowance).toFixed(4));
+  }
+  return {
+    jobs: perJob,
+    jobCount: perJob.length,
+    criticalPathSeconds,
+    aggregateRunnerSeconds: perJob.reduce((sum, job) => sum + job.durationSeconds, 0),
+    billableMinutes: perJob.reduce((sum, job) => sum + job.billableMinutes, 0),
+    costUsdIfBeyondAllowance: Number(perJob.reduce((sum, job) => sum + job.costUsdIfBeyondAllowance, 0).toFixed(4)),
+    byOs,
+  };
+}
+
+/**
+ * Stable identity of a workflow: its file path. GitHub-managed workflows (Copilot review,
+ * Dependabot, CodeQL, Pages) carry per-run display names, so `name` fragments them.
+ */
+export function workflowKey(run) {
+  return String(run.path ?? run.name ?? 'unknown');
+}
+
+/** Display label for a workflow key: the file's `name:` for repository workflows, the path otherwise. */
+export function workflowLabel(run) {
+  const key = workflowKey(run);
+  return key.startsWith('.github/') && run.name ? String(run.name) : key;
+}
+
+/** Validate a YYYY-MM-DD window: real calendar dates, since <= until. Returns error strings. */
+export function validateWindow(since, until) {
+  const errors = [];
+  const check = (label, value) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return errors.push(`${label} must be YYYY-MM-DD`), null;
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return errors.push(`${label} is not a real calendar date: ${value}`), null;
+    return parsed.getTime();
+  };
+  const start = check('--since', since);
+  const end = check('--until', until);
+  if (start !== null && end !== null && start > end) errors.push(`--since ${since} is after --until ${until}`);
+  return errors;
+}
+
+/** Number of runs that completed with a real verdict (success or failure), optionally for one event. */
+export function completedRuns(runs, event = null) {
+  return runs.filter((run) => (run.conclusion === 'success' || run.conclusion === 'failure') && (event === null || run.event === event)).length;
+}
+
+/**
+ * Aggregate a list of workflow runs (the `workflow_runs` items of the runs API).
+ * The listing exposes each run once with its LATEST attempt, so `reruns` counts runs that
+ * were re-run and `rerunAttempts` sums the extra attempts (run_attempt - 1).
+ */
+export function summarizeRuns(runs) {
+  const byWorkflow = {};
+  const perDay = {};
+  const shaEvents = new Map();
+  let reruns = 0;
+  let rerunAttempts = 0;
+  for (const run of runs) {
+    const key = workflowKey(run);
+    const entry = (byWorkflow[key] ??= { label: workflowLabel(run), total: 0, byEvent: {}, byConclusion: {}, reruns: 0, rerunAttempts: 0, cancelled: 0 });
+    entry.total += 1;
+    entry.byEvent[run.event] = (entry.byEvent[run.event] ?? 0) + 1;
+    const conclusion = run.conclusion ?? run.status ?? 'unknown';
+    entry.byConclusion[conclusion] = (entry.byConclusion[conclusion] ?? 0) + 1;
+    const extraAttempts = Math.max(0, (run.run_attempt ?? 1) - 1);
+    if (extraAttempts > 0) {
+      entry.reruns += 1;
+      entry.rerunAttempts += extraAttempts;
+      reruns += 1;
+      rerunAttempts += extraAttempts;
+    }
+    if (conclusion === 'cancelled') entry.cancelled += 1;
+    const day = String(run.created_at ?? '').slice(0, 10);
+    if (day) perDay[day] = (perDay[day] ?? 0) + 1;
+    if (run.head_sha) {
+      const events = shaEvents.get(`${key} ${run.head_sha}`) ?? new Set();
+      events.add(run.event);
+      shaEvents.set(`${key} ${run.head_sha}`, events);
+    }
+  }
+  let exactShaMultiEvent = 0;
+  for (const events of shaEvents.values()) {
+    if (events.has('pull_request') && (events.has('push') || events.has('merge_group'))) exactShaMultiEvent += 1;
+  }
+  const total = runs.length;
+  const cancelled = runs.filter((run) => run.conclusion === 'cancelled').length;
+  return {
+    total,
+    reruns,
+    rerunAttempts,
+    cancelled,
+    cancelledRate: total ? Number((cancelled / total).toFixed(4)) : 0,
+    rerunRate: total ? Number((reruns / total).toFixed(4)) : 0,
+    byWorkflow,
+    perDay,
+    exactShaQualifiedOnMoreThanOneEvent: exactShaMultiEvent,
+  };
+}
+
+/** Roll up a set of sampled run summaries (output of summarizeRunJobs) into distribution stats. */
+export function summarizeSample(runSummaries) {
+  const criticalPaths = runSummaries.map((run) => run.criticalPathSeconds);
+  const billable = runSummaries.map((run) => run.billableMinutes);
+  const aggregate = runSummaries.map((run) => run.aggregateRunnerSeconds);
+  const jobStats = {};
+  for (const run of runSummaries) {
+    for (const job of run.jobs) {
+      const stat = (jobStats[job.name] ??= { os: job.os, samples: 0, totalSeconds: 0, maxSeconds: 0, billableMinutes: 0 });
+      stat.samples += 1;
+      stat.totalSeconds += job.durationSeconds;
+      stat.maxSeconds = Math.max(stat.maxSeconds, job.durationSeconds);
+      stat.billableMinutes += job.billableMinutes;
+    }
+  }
+  const jobs = Object.entries(jobStats)
+    .map(([name, stat]) => ({
+      name,
+      os: stat.os,
+      samples: stat.samples,
+      meanSeconds: Math.round(stat.totalSeconds / stat.samples),
+      maxSeconds: stat.maxSeconds,
+      meanBillableMinutes: Number((stat.billableMinutes / stat.samples).toFixed(2)),
+    }))
+    .sort((a, b) => b.meanSeconds - a.meanSeconds);
+  const byOs = {};
+  for (const run of runSummaries) {
+    for (const [os, stat] of Object.entries(run.byOs)) {
+      byOs[os] ??= { runnerSeconds: 0, billableMinutes: 0 };
+      byOs[os].runnerSeconds += stat.runnerSeconds;
+      byOs[os].billableMinutes += stat.billableMinutes;
+    }
+  }
+  const sampleSize = runSummaries.length;
+  return {
+    sampleSize,
+    criticalPathSeconds: { p50: percentile(criticalPaths, 50), p95: percentile(criticalPaths, 95), max: Math.max(0, ...criticalPaths) },
+    billableMinutesPerRun: {
+      p50: percentile(billable, 50),
+      p95: percentile(billable, 95),
+      mean: sampleSize ? Number((billable.reduce((a, b) => a + b, 0) / sampleSize).toFixed(1)) : 0,
+    },
+    aggregateRunnerMinutesPerRun: {
+      p50: Number((percentile(aggregate, 50) / 60).toFixed(1)),
+      mean: sampleSize ? Number((aggregate.reduce((a, b) => a + b, 0) / sampleSize / 60).toFixed(1)) : 0,
+    },
+    byOs: Object.fromEntries(
+      Object.entries(byOs).map(([os, stat]) => [
+        os,
+        { meanRunnerMinutesPerRun: Number((stat.runnerSeconds / 60 / Math.max(1, sampleSize)).toFixed(1)), meanBillableMinutesPerRun: Number((stat.billableMinutes / Math.max(1, sampleSize)).toFixed(1)) },
+      ]),
+    ),
+    jobs,
+  };
+}
+
+/** Summarize the artifacts listing (items of `artifacts`). Sizes are bytes. */
+export function summarizeArtifacts(artifacts) {
+  let unexpiredBytes = 0;
+  let expiredCount = 0;
+  let unexpiredCount = 0;
+  let oldestUnexpired = null;
+  const byName = {};
+  for (const artifact of artifacts) {
+    if (artifact.expired) {
+      expiredCount += 1;
+      continue;
+    }
+    unexpiredCount += 1;
+    unexpiredBytes += artifact.size_in_bytes ?? 0;
+    if (!oldestUnexpired || (artifact.created_at && artifact.created_at < oldestUnexpired)) oldestUnexpired = artifact.created_at ?? oldestUnexpired;
+    // Group by the artifact name with trailing run/OS suffixes stripped to see which lanes dominate.
+    const key = String(artifact.name ?? 'unnamed').replace(/-(ubuntu|windows|macos)[-\w.]*$/i, '').replace(/-\d+$/, '');
+    byName[key] ??= { count: 0, bytes: 0 };
+    byName[key].count += 1;
+    byName[key].bytes += artifact.size_in_bytes ?? 0;
+  }
+  const topByBytes = Object.entries(byName)
+    .map(([name, stat]) => ({ name, count: stat.count, bytes: stat.bytes }))
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 15);
+  return { listed: artifacts.length, expiredCount, unexpiredCount, unexpiredBytes, unexpiredGb: Number((unexpiredBytes / 1e9).toFixed(3)), oldestUnexpiredCreatedAt: oldestUnexpired, topByBytes };
+}
+
+/** Project a monthly Pro-allowance usage from a sample and a run count. */
+export function projectMonthlyAllowance(meanBillableMinutesPerRun, fullRunsPerMonth) {
+  const minutes = Math.round(meanBillableMinutesPerRun * fullRunsPerMonth);
+  const overage = Math.max(0, minutes - PRICING.includedMinutesPro);
+  return { projectedBillableMinutes: minutes, includedMinutes: PRICING.includedMinutesPro, overageMinutes: overage };
+}
+
+export function renderMarkdown(report) {
+  const lines = [];
+  const fmtMin = (seconds) => `${(seconds / 60).toFixed(1)} min`;
+  lines.push(`# CI estate measurement — ${report.repository} — ${report.window.since} .. ${report.window.until}`);
+  lines.push('');
+  lines.push(`Generated ${report.generatedAtUtc} by \`scripts/ci/smart-ci/measure-ci-estate.mjs\` (schema ${report.schemaVersion}).`);
+  lines.push('');
+  lines.push('## Method and assumptions');
+  lines.push('');
+  for (const item of report.method.assumptions) lines.push(`- ${item}`);
+  lines.push('');
+  lines.push('## Workflow runs in the window');
+  lines.push('');
+  lines.push(`Total runs: **${report.runs.total}** · cancelled: ${report.runs.cancelled} (${(report.runs.cancelledRate * 100).toFixed(1)}%) · runs re-run: ${report.runs.reruns} (${(report.runs.rerunRate * 100).toFixed(1)}%), extra attempts ${report.runs.rerunAttempts ?? report.runs.reruns} · exact head SHA qualified on more than one event: ${report.runs.exactShaQualifiedOnMoreThanOneEvent}`);
+  lines.push('');
+  lines.push('| Workflow | Runs | pull_request | push | schedule | other | success | failure | cancelled | runs re-run |');
+  lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+  for (const [key, stat] of Object.entries(report.runs.byWorkflow).sort((a, b) => b[1].total - a[1].total)) {
+    const pr = stat.byEvent.pull_request ?? 0;
+    const push = stat.byEvent.push ?? 0;
+    const schedule = stat.byEvent.schedule ?? 0;
+    const other = stat.total - pr - push - schedule;
+    lines.push(`| ${stat.label ?? key} | ${stat.total} | ${pr} | ${push} | ${schedule} | ${other} | ${stat.byConclusion.success ?? 0} | ${stat.byConclusion.failure ?? 0} | ${stat.byConclusion.cancelled ?? 0} | ${stat.reruns} |`);
+  }
+  lines.push('');
+  lines.push(`## Required-workflow sample (${report.sample.sampleSize} most recent green \`${report.sample.workflowName}\` runs on \`pull_request\`)`);
+  lines.push('');
+  lines.push(`Critical path: p50 **${fmtMin(report.sample.criticalPathSeconds.p50)}**, p95 ${fmtMin(report.sample.criticalPathSeconds.p95)}, max ${fmtMin(report.sample.criticalPathSeconds.max)}.`);
+  lines.push(`Aggregate runner minutes per run: p50 ${report.sample.aggregateRunnerMinutesPerRun.p50}, mean ${report.sample.aggregateRunnerMinutesPerRun.mean}.`);
+  lines.push(`Allowance minutes per run (rounded per job, Windows x2, macOS x10): p50 **${report.sample.billableMinutesPerRun.p50}**, p95 ${report.sample.billableMinutesPerRun.p95}, mean ${report.sample.billableMinutesPerRun.mean}.`);
+  lines.push('');
+  lines.push('| OS | mean runner min / run | mean allowance min / run |');
+  lines.push('| --- | ---: | ---: |');
+  for (const [os, stat] of Object.entries(report.sample.byOs)) lines.push(`| ${os} | ${stat.meanRunnerMinutesPerRun} | ${stat.meanBillableMinutesPerRun} |`);
+  lines.push('');
+  lines.push('| Job | OS | samples | mean | max | mean allowance min |');
+  lines.push('| --- | --- | ---: | ---: | ---: | ---: |');
+  for (const job of report.sample.jobs) lines.push(`| ${job.name} | ${job.os} | ${job.samples} | ${fmtMin(job.meanSeconds)} | ${fmtMin(job.maxSeconds)} | ${job.meanBillableMinutes} |`);
+  lines.push('');
+  lines.push('## Projection against the GitHub Pro allowance');
+  lines.push('');
+  for (const projection of report.projections) {
+    lines.push(`- ${projection.label}: ${projection.fullRunsPerMonth} full required runs/month x ${projection.meanBillableMinutesPerRun} allowance min = **${projection.projectedBillableMinutes} min** (${projection.includedMinutes} included -> ${projection.overageMinutes} min overage)`);
+  }
+  lines.push('');
+  lines.push('## Storage');
+  lines.push('');
+  lines.push(`Actions cache: **${(report.storage.cache.activeCachesSizeInBytes / 2 ** 30).toFixed(2)} GiB** (${(report.storage.cache.activeCachesSizeInBytes / 1e9).toFixed(2)} GB decimal) across ${report.storage.cache.activeCachesCount} caches (repository cap 10 GiB).`);
+  lines.push(`Artifacts listed: ${report.storage.artifacts.listed} (${report.storage.artifacts.expiredCount} expired) · unexpired: ${report.storage.artifacts.unexpiredCount} = **${report.storage.artifacts.unexpiredGb} GB** (Pro private allowance ${PRICING.includedStorageGbPro} GB, shared with Packages) · oldest unexpired: ${report.storage.artifacts.oldestUnexpiredCreatedAt ?? 'n/a'}${report.storage.artifacts.truncated ? ' · **listing truncated at the page cap — totals are a lower bound**' : ''}.`);
+  lines.push('');
+  lines.push('| Artifact family | count | GB |');
+  lines.push('| --- | ---: | ---: |');
+  for (const family of report.storage.artifacts.topByBytes) lines.push(`| ${family.name} | ${family.count} | ${(family.bytes / 1e9).toFixed(3)} |`);
+  lines.push('');
+  return `${lines.join('\n')}\n`;
+}

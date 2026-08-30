@@ -1,0 +1,113 @@
+{
+  "$schema": "./ci-plan.schema.json",
+  "schemaVersion": 1,
+  "policyId": "taskdeck.smart-ci.v1-example",
+  "policyDigest": "sha256:EXAMPLE",
+  "event": "pull_request",
+  "pullRequest": 2310,
+  "baseSha": "f2e71ca87adf1dfe58a0ef578f343299b90867be",
+  "headSha": "fc9c233224486ebf258c9a1a0e6c769f98d68a60",
+  "mergeSha": "refs/pull/2310/merge-resolved-sha",
+  "risk": "R3",
+  "trust": "T1",
+  "executionMode": "hybrid",
+  "changedGroups": [
+    "capture-proposal",
+    "frontend"
+  ],
+  "reasons": [
+    "capture/provenance boundary changed",
+    "Paper Review consumer changed",
+    "core-loop E2E required"
+  ],
+  "selected": [
+    {
+      "lane": "control",
+      "runner": [
+        "ubuntu-24.04"
+      ],
+      "required": true,
+      "reason": "always"
+    },
+    {
+      "lane": "linux-full",
+      "runner": [
+        "self-hosted",
+        "taskdeck",
+        "trusted",
+        "linux",
+        "x64",
+        "heavy"
+      ],
+      "required": true,
+      "reason": "R3 semantic qualification"
+    },
+    {
+      "lane": "capture-proposal-executor",
+      "runner": [
+        "self-hosted",
+        "taskdeck",
+        "trusted",
+        "linux",
+        "x64",
+        "heavy"
+      ],
+      "required": true,
+      "reason": "changed boundary"
+    },
+    {
+      "lane": "windows-compat",
+      "runner": [
+        "self-hosted",
+        "taskdeck",
+        "trusted",
+        "windows",
+        "x64",
+        "compatibility"
+      ],
+      "required": true,
+      "reason": "provenance UI/process contract"
+    },
+    {
+      "lane": "e2e-core-loop",
+      "runner": [
+        "self-hosted",
+        "taskdeck",
+        "trusted",
+        "linux",
+        "x64",
+        "heavy"
+      ],
+      "required": true,
+      "reason": "capture-to-apply journey"
+    },
+    {
+      "lane": "secret-diff",
+      "runner": [
+        "ubuntu-24.04"
+      ],
+      "required": true,
+      "reason": "every PR"
+    }
+  ],
+  "skipped": [
+    {
+      "lane": "container-build",
+      "reason": "no container/deploy/runtime boundary changed"
+    },
+    {
+      "lane": "migration",
+      "reason": "no EF model/migration file changed"
+    },
+    {
+      "lane": "macos",
+      "reason": "not selected outside weekly/release"
+    }
+  ],
+  "budgetForecast": {
+    "hostedMinutes": 4.0,
+    "selfHostedWallMinutes": 12.0,
+    "criticalPathMinutes": 12.0
+  },
+  "generatedAtUtc": "2026-08-30T15:00:00Z"
+}

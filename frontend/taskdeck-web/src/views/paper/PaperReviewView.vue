@@ -653,6 +653,24 @@ const revisionBadge = computed(() =>
   t('review.revisionEditor.badge', { count: revisionCount.value }, revisionCount.value),
 )
 
+/**
+ * The producer metadata names the engine that created the original proposal,
+ * not the author of a later effective operation set. Suppress only its inline
+ * attribution sentence until revision state is authoritative, and keep it
+ * suppressed whenever that state or the proposal wire identity records a
+ * saved revision. The full drawer continues to show the original metadata.
+ *
+ * Treating an in-flight or failed revision read as unknown (and therefore
+ * silent) prevents a revised proposal from briefly showing the original
+ * engine as its effective author while the revision list is loading.
+ */
+const suppressProducerFootnote = computed(
+  () =>
+    !revisionsLoaded.value ||
+    revisionCount.value > 0 ||
+    proposalRevisionIdentity(activeProposal.value) !== null,
+)
+
 const editablePayload = computed(() => {
   const p = activeProposal.value
   if (!p) return '{}'
@@ -1167,6 +1185,7 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 // is a shared primitive with no return-focus target prop and is deliberately
 // not touched here.
 const mainColRef = ref<HTMLElement | null>(null)
+const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
 
 // The rail's primary control, whichever it currently is: the decision button,
@@ -1485,7 +1504,7 @@ async function onConfirmReject(reason: string) {
 }
 
 function onToggleProvenance() {
-  toast.info(t('review.toast.provenanceToggleUnwired'))
+  reviewMainRef.value?.toggleProvenance()
 }
 
 // #1414 P2: revealing the stored `diffPreview` locally skips the `/diff` call
@@ -1904,6 +1923,7 @@ async function onClearBoardScope() {
         {{ revisionBadge }}
       </div>
       <ReviewMain
+        ref="reviewMainRef"
         :key="activeProposal.id"
         :serial="headerSerial"
         :meta="headerMeta"
@@ -1917,6 +1937,8 @@ async function onClearBoardScope() {
         :fields="fields"
         :change-sub-title="changeSubTitle"
         :provenance="selectors.provenance.value"
+        :metadata="selectors.provenanceMetadata.value"
+        :suppress-producer-footnote="suppressProducerFootnote"
         :evidence-links="selectors.evidenceLinks.value"
         :proposal-id="activeProposal?.id ?? ''"
         :side-effects="selectors.sideEffects.value"

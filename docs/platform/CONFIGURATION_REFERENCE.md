@@ -416,14 +416,18 @@ Bound to `AbuseDetectionSettings`.
 
 ### `ContextFabric`
 
-Bound to `ContextFabricSettings` (registered in `SettingsRegistration` as a singleton and validated
-through `OptionsValidationRegistration`). Migration switches for the Context Fabric slices
-(ADR-0065, `docs/architecture/CONTEXT_FABRIC.md`). Every key defaults to the shipped behaviour; the
-section is absent from `appsettings.json`.
+Bound to `ContextFabricSettings` (registered in `SettingsRegistration` as a singleton, mirrored to
+every host that applies migrations through `AddInfrastructure`, and validated through
+`OptionsValidationRegistration`). Migration switches for the Context Fabric slices (ADR-0065,
+`docs/architecture/CONTEXT_FABRIC.md`). The section is absent from `appsettings.json`; since CF-01
+`#2255` every key **defaults to on**, and turning one off falls back to reading the legacy queue row
+rather than changing what a user sees.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `ContextFabric:DualWriteCaptures` | `bool` | `false` | When true, `CaptureService.CreateAsync` mirrors every new capture into the durable `Captures` table under the queue row's own id (ID-preserving dual-write, CF-01 `#2255`), staged in the same unit of work as the queue row. Inbox reads keep using the queue row until CF-01 completes the backfill and flips the read path. When false the table stays empty. | No |
+| `ContextFabric:DualWriteCaptures` | `bool` | `true` | When true, every capture admitted through the canonical `CaptureIntakeService` is written to the durable `Captures` aggregate under the queue row's own id (ID-preserving), staged in the same unit of work as the queue row. `CaptureIntakeService` is the single writer of the aggregate, and it serves **both** creation paths — `CaptureService.CreateAsync` and the `POST /api/llm-queue` enqueue path (`LlmQueueService.AddToQueueAsync`). The typed or pasted text becomes an immutable inline `SourceAsset` (verbatim, hashed over UTF-8) and a payload `externalRef` becomes an `ExternalReference` asset. **Turning this off is not consequence-free.** Captures created while it is off never reach the aggregate; captures that already have one are still kept in step (an edit, a keep or an archive still writes the aggregate — a flag about *new* rows never licenses an existing row to rot). Re-enabling does not simply resume: the next backfill pass must bring the window's captures in and reconcile anything that drifted. Nothing a user sees goes backwards at any point — the read path defers to whichever writer moved last (see `ReadCapturesFromStore`) — **provided no disposition change (keep, archive, reactivate) intervenes before the next reconcile pass**: such a write stamps the aggregate newer than the queue row that moved past it, defeating both the read guard and the divergence join and masking the divergence until `#2347` lands. The durable table is behind until that pass runs. | No |
+| `ContextFabric:BackfillCaptures` | `bool` | `true` | When true, the ID-preserving backfill **and reconcile pass** runs after migrations at startup, on every host that applies them: the web API, the standalone MCP stdio and HTTP hosts, and the CLI. The backlog is a **divergence join**, not an anti-join: a capture-shaped queue row (`inbox.capture.%`) qualifies when it has no `Captures` row *or* when the queue row has been written since its capture last was. That second half is what repairs drift after a `DualWriteCaptures` window. It is idempotent and resumable — a row leaves the backlog the moment its capture agrees with it, so re-running creates nothing twice and a crash mid-way resumes at the next outstanding row — and it costs one marker read plus one indexed count on a database whose captures all agree. Progress, the distinct skip count and completion are recorded in `CaptureBackfillStates`. A row that cannot be mapped is logged by id, excluded for the rest of the run so the healthy rows behind it are still reached, and left readable through its queue row; while any row is outstanding the marker does not complete. A failure never blocks startup. Turning this off leaves an unfinished marker unfinished (Inbox reads stay on the queue row) and leaves drift unrepaired. | No |
+| `ContextFabric:ReadCapturesFromStore` | `bool` | `true` | When true, Inbox list / get resolve a capture's own material — its immutable source text, its capture source snapshot and its server intake time — from the durable aggregate through `ICaptureStore` instead of parsing the queue row's payload JSON. Mutation responses (keep, archive, cancel, edit) obey the same gate, so turning this off never leaks aggregate material through a write. Job state (queue status, processed-at, retry count, error message) and the fields that have no column yet (triage provenance, suggestion metadata, the disposition receipt's who/when/where) keep their shipped source, so the DTOs are byte-identical across the switch. **Three guards:** the switch arms only once the backfill marker records completion; it degrades per item, so a capture with no durable row is still read from its queue row; and it defers to the queue row for any capture whose text disagrees with an aggregate the queue row has been written past. A capture can neither disappear from the Inbox nor go backwards in it. Set to false to force every read onto the queue row without touching the dual-write. | No |
 
 ## Workers
 
@@ -862,6 +866,14 @@ key → user mapping via `HttpUserContextProvider` and does not read these keys.
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `McpServer:DefaultUserId` | `string` (non-empty GUID) | unset | User ID used to identify the MCP stdio caller. When configured, it must name an existing active local user; an empty, zero, malformed, missing, or inactive value fails closed without trying another account. When truly unset, the provider selects the only active local user. Zero or multiple active users are errors, and inactive users do not count toward that fallback. | Required for MCP stdio when more than one active local user exists |
+
+Stdio caller identity is not resolved during `initialize`; it is first resolved by an identity-gated
+request. `tools/list`, `resources/list`, `resources/templates/list`, and `resources/read` are
+identity-gated, so normal tool discovery may be the first request to detect an ambiguous or inactive
+identity. In the two cases above, the host fails closed and writes the actionable guidance once to
+stderr. A known `tools/call` also returns that guidance in an `isError: true` tool result; discovery
+and resource requests return generic access-denied JSON-RPC errors. HTTP MCP keeps its separate
+API-key identity path.
 
 ## Logging
 

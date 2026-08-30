@@ -1,6 +1,6 @@
 # Container Deployment Baseline
 
-Last Updated: 2026-07-13
+Last Updated: 2026-08-30
 Issue: `#69` OPS-07 containerized deployment baseline
 
 This runbook defines the minimal production-oriented container baseline for Taskdeck:
@@ -200,4 +200,4 @@ Health endpoint routing:
 CI workflow `.github/workflows/ci-required.yml` includes `container-images` job that:
 - validates compose rendering
 - builds backend and frontend images from repo root
-- exports compressed image artifacts and checksums
+- exports compressed image artifacts and checksums for the nightly and release callers only (the required PR lane builds and validates without exporting — CI-09 `#2333`)

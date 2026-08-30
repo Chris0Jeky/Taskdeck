@@ -6,7 +6,7 @@
 | [0002](ADR-0002-claims-first-identity.md) | Claims-First Identity Model | Accepted | 2026-01 |
 | [0003](ADR-0003-proposal-first-automation.md) | Proposal-First Automation (Review-First Safety) | Accepted | 2026-02-23 |
 | [0004](ADR-0004-multi-tenancy-shared-schema.md) | Multi-Tenancy - Shared Schema + TenantId | Accepted (cross-user isolation live via per-UserId/board-access; multi-org/TenantId shared-schema premise parked: archive pivot) | 2026-02-22 |
-| [0005](ADR-0005-capture-model-queue-wrapper.md) | Capture Model - Queue-Wrapper MVP | Accepted (to be superseded by ADR-0065 when CF-01 `#2255` lands the ID-preserving backfill; until then the queue row is the capture) | 2026-02-23 |
+| [0005](ADR-0005-capture-model-queue-wrapper.md) | Capture Model - Queue-Wrapper MVP | Superseded by ADR-0065 (CF-01, PR #2344) | 2026-02-23 |
 | [0006](ADR-0006-llm-provider-mock-default.md) | LLM Provider - Mock-Default with Config-Gated Live Providers | Accepted | 2026-02 |
 | [0007](ADR-0007-stable-error-contracts.md) | Stable Error Contracts (ApiErrorResponse) | Accepted | 2026-01 |
 | [0008](ADR-0008-novice-first-product-legibility.md) | Novice-First Product Legibility Before Breadth | Accepted | 2026-03-07 |
@@ -66,7 +66,8 @@
 | [0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md) | Custom Fields, Aggregates, and Threshold Rules | Accepted (maintainer ruling 2026-08-29, q-4 A, recorded on #2091) | 2026-08-26 |
 | [0063](ADR-0063-archived-board-card-write-protection.md) | Archived Boards Reject Card Writes Until Restored | Accepted (maintainer scope ruling on `#2080`, 2026-08-24) | 2026-08-26 |
 | [0064](ADR-0064-machine-paths-are-exact-lowercase.md) | Machine-Facing Paths Are Exact Lowercase; Non-Canonical Spellings Are 404 at Every Layer | Accepted (maintainer ruling 2026-08-30, v0.3 RC deck q-10 A, recorded on `#1992`) | 2026-08-30 |
-| [0065](ADR-0065-context-fabric-capture-representation-processing.md) | Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing | Accepted under delegation (maintainer's 2026-08-30 mandate; nine conditions ruled by the agent pass on `#2254`, revisable) | 2026-08-30 |
+| [0065](ADR-0065-context-fabric-capture-representation-processing.md) | Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing | Accepted (confirmed 2026-08-30 with amendments — rulings first made under the maintainer's delegation on `#2254`, then confirmed the same day after the external audit of PR `#2280`; `SourceAsset` foundation, three capture state axes, producer principal and requested/effective intent, Worker Protocol v1-alpha, `IBlobStore` reference semantics, v0.4 gates A–D, risk-based CF-22 gate — see the ADR's *Amendments* section) | 2026-08-30 |
+| [0066](ADR-0066-smart-ci-fabric-and-private-repository-runner-trust.md) | Smart CI Fabric and Private-Repository Runner Trust — go private for v0.3.0 on a personal GitHub Pro account; one stable `Smart CI / Required Gate`; base-ref control plane; fail-closed shadow planner; Linux semantic baseline + Windows compatibility contract; isolated no-secret self-hosted runners; storage first | Accepted under delegation (maintainer directive 2026-08-30; nine rulings recorded on CI-00 `#2324`, revisable by reply; visibility, spend ceiling, branch protection and runner registration stay maintainer actions in `OUTSTANDING_TASKS.md` §J) | 2026-08-30 |
 
 > Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
 > archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,
