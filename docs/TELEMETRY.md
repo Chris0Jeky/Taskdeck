@@ -12,7 +12,9 @@ claim is written down, checkable, and versioned with the code (REVIVAL-12, `#130
 | Connectors you add yourself (for example the GitHub connector) | Only when you configure and use them | The requests those integrations need |
 | Error reporting to Sentry (`Sentry__Enabled=true` + a DSN) | **Only if an operator turns it on** — off with an empty DSN in every shipped configuration | Error reports with stack traces and request metadata (`SendDefaultPii=false`) |
 | OpenTelemetry export (`Observability__OtlpEndpoint` set) | **Only if an operator points it at a collector** — blank by default, no exporter is registered | Traces and metrics to that endpoint |
-| Anything else | Never | — |
+| Outbound webhooks (`OutboundWebhookService`, only for endpoints you register) | Only when you configure a webhook subscription | Board event notifications — event type plus board/card/entity identifiers — POSTed to your endpoint by `OutboundWebhookDeliveryWorker` |
+| External sign-in you configure (GitHub OAuth, generic OIDC) | Only during a login you start | The standard authorization-code back-channel exchange with that identity provider |
+| Anything else, in an untouched release configuration | Never | — |
 
 Defaults that make this true, all in `backend/src/Taskdeck.Api/appsettings.json`: `Sentry.Enabled=false`
 with an empty DSN, `Telemetry.Enabled=false`, `Analytics.Enabled=false` with no provider or script
@@ -22,14 +24,17 @@ misconfigured analytics script cannot execute or beacon from the shipped UI
 code can talk to — its seed entries do list `*.ingest.sentry.io` and the analytics hosts so that the
 operator-gated paths above are declared, not hidden — and the LLM and webhook clients enforce it as a
 destination allowlist; it is not a universal outbound proxy (connector clients such as the GitHub
-connector talk to their own configured host). The two rows marked "only if an operator turns it on"
-are the complete list of ways a v0.3 build can send anything beyond the LLM request you asked for.
+connector talk to their own configured host). Every row above is
+either something you asked for (an LLM request, a webhook you registered, a connector or login you
+configured) or an operator switch that ships off; there is no background, automatic, or unconditional
+destination.
 
 ## How to check it yourself
 
 Run a release build for ten minutes of normal use with a network capture (Windows: `pktmon` or
-Wireshark; Compose: `tcpdump` on the container network) and no LLM provider configured. The only
-traffic is loopback between the browser and the API.
+Wireshark; Compose: `tcpdump` on the container network) in an untouched configuration — no LLM
+provider, webhook subscription, connector, external login, Sentry DSN or OTLP endpoint configured.
+The only traffic is loopback between the browser and the API; anything else is a bug, report it.
 
 ## What changes in v0.4
 
