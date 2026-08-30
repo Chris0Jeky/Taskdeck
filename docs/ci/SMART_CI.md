@@ -146,7 +146,8 @@ Provisional budgets: R0/R1 ≤5 min, R2 ≤10, R3 ≤20, main verifier ≤5 — 
 | Measure the estate (read-only) | `node scripts/ci/smart-ci/measure-ci-estate.mjs --since YYYY-MM-DD --until YYYY-MM-DD --sample 30 --out-dir docs/ci/baselines` |
 | Measurement helper tests | `node --test scripts/ci/smart-ci/measure-ci-estate.test.mjs` |
 | Planner / gate self-tests (CI-02 scaffold) | `node --test scripts/ci/smart-ci/*.test.mjs` |
-| Plan one change locally | `node scripts/ci/smart-ci/plan.mjs --base <sha> --head <sha> --changed-files <file> --event pull_request --out ci-plan.json` |
+| Plan one change locally (what-if, no event payload) | `node scripts/ci/smart-ci/plan.mjs --policy ci/policy.v1.json --base-sha <sha> --head-sha <sha> --changed-files <one path per line> --out ci-plan.json` |
+| Evaluate a plan receipt locally | `node scripts/ci/smart-ci/evaluate-gate.mjs --plan ci-plan.json --policy ci/policy.v1.json --mode shadow` |
 | Action pin inventory | `node scripts/ci/smart-ci/action-pins.mjs` |
 | Runner VM broker (Hyper-V, no GitHub calls) | `scripts/ci/runners/Invoke-TaskdeckCiRunnerVm.ps1 -Action Status` |
 
