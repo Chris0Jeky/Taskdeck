@@ -87,7 +87,7 @@ jobs:
       - backend-solution
     uses: ./.github/workflows/reusable-container-images.yml
     with:
-      artifact-retention-days: 3
+      artifact-retention-days: 7
 
   sast-scanning:
     name: SAST Scanning (Semgrep)

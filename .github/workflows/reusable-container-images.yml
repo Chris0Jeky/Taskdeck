@@ -1,8 +1,8 @@
 name: Reusable Container Images
 
-# Artifact policy (CI-09 #2333, ADR-0066 §11): the exported image tars (~170 MB per run)
-# have no consumer on pull requests — 2,060 of them held 357 GB on 2026-08-30. Callers
-# choose the retention class explicitly; the required PR lane does not upload at all.
+# Artifact policy (CI-09 #2333, tracker #2324): the exported image tars (~170 MB per run)
+# have no consumer on pull requests — 2,067 of them held 359 GB on 2026-08-30. Callers
+# choose the retention class explicitly; the required PR lane neither exports nor uploads.
 on:
   workflow_call:
     inputs:
@@ -42,6 +42,7 @@ jobs:
         run: docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:ci .
 
       - name: Export container image artifacts
+        if: ${{ inputs.upload-artifacts }}
         run: |
           docker save taskdeck-api:ci | gzip -1 > /tmp/taskdeck-api.tar.gz
           docker save taskdeck-web:ci | gzip -1 > /tmp/taskdeck-web.tar.gz

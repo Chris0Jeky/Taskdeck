@@ -13,7 +13,7 @@
 #     ├── reusable-migration-validation.yml    EF Core migration chain validation (TST-61)
 #     ├── reusable-frontend-unit.yml           dev launcher + lint + typecheck + build + unit tests (Ubuntu + Windows)
 #     ├── reusable-paper-color-audit.yml       PAPER-12 hex-literal regression gate (#1008)
-#     ├── reusable-container-images.yml        compose validation + image build + artifact export
+#     ├── reusable-container-images.yml        compose validation + image build (tar export/upload only for nightly/release callers, CI-09)
 #     ├── reusable-gitleaks.yml                secret detection (PR scan, fail-on-detect) (#1132)
 #     ├── reusable-dependency-security-signals.yml  vulnerable-dependency gate (high+, enforced) (#1132)
 #     ├── reusable-sast-scanning.yml           Semgrep SAST gate (enforced) (#1132)

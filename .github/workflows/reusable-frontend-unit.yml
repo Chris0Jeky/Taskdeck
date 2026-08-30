@@ -67,8 +67,10 @@ jobs:
         if: runner.os == 'Linux'
         run: node scripts/ci/check-bundle-size.mjs --dist frontend/taskdeck-web/dist --fail-on-error
 
+      # CI-09 #2333: failure-only triage evidence (coverage is published by nightly-quality.yml);
+      # 14 days survives a weekend and costs ~10x less than 3 days on every green run.
       - name: Upload frontend test artifacts
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: frontend-unit-artifacts-${{ matrix.os }}
@@ -76,5 +78,4 @@ jobs:
             frontend/taskdeck-web/test-results
             frontend/taskdeck-web/coverage
           if-no-files-found: ignore
-          # CI-09 #2333: triage-only evidence; 3 days keeps the steady state under the Pro allowance.
-          retention-days: 3
+          retention-days: 14

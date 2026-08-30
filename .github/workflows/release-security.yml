@@ -153,4 +153,5 @@ jobs:
     name: Container Image Artifacts
     uses: ./.github/workflows/reusable-container-images.yml
     with:
+      # Pinned to today's effective default on purpose (see ci-release.yml; CI-10 #2334 owns release retention).
       artifact-retention-days: 90

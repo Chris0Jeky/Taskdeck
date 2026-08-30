@@ -2303,7 +2303,7 @@ Required workflow: `.github/workflows/ci-required.yml`
     static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback
   - Validates compose rendering
   - Builds backend/frontend container images
-  - Exports compressed image artifacts plus SHA256 checksums
+  - Exports compressed image artifacts plus SHA256 checksums only when the caller opts in (`upload-artifacts`, retention per caller — nightly 7 days, release 90; the required PR lane exports nothing since CI-09 `#2333`)
 - `e2e-smoke`
   - Playwright smoke + automation/ops + fixture bootstrap flow
   - Ubuntu only
