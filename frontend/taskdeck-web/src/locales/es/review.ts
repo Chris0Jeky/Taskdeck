@@ -43,6 +43,36 @@ export default {
     },
   },
 
+  // GH-1307 -- traducción automática (machine-translated), pendiente de revisión nativa.
+  batchExecute: {
+    request: 'Aplicar {count} aprobada | Aplicar {count} aprobadas',
+    requestLabel: 'Aplicar {count} propuesta aprobada | Aplicar {count} propuestas aprobadas',
+    nothingToApply: 'Ahora mismo no hay nada aprobado que aplicar.',
+    unknownProposal: 'Propuesta desconocida',
+    unknownReason: 'No se indicó ningún motivo.',
+    allApplied: 'Se aplicó {count} propuesta. | Se aplicaron {count} propuestas.',
+    allSkipped: 'Nada que hacer: {count} propuesta ya estaba aplicada. | Nada que hacer: {count} propuestas ya estaban aplicadas.',
+    noneApplied: 'No se aplicó nada. {count} propuesta falló. | No se aplicó nada. {count} propuestas fallaron.',
+    partial: 'Se aplicaron {applied}; {failed} fallaron. Revisa los recibos.',
+    failed: 'No se pudieron aplicar las propuestas aprobadas.',
+    outcome: {
+      Applied: 'Aplicada',
+      Skipped: 'Omitida',
+      Failed: 'Fallida',
+    },
+    dialog: {
+      title: '¿Aplicar las propuestas aprobadas?',
+      description: 'Confirma aplicar {count} propuesta aprobada | Confirma aplicar {count} propuestas aprobadas',
+      body: 'Taskdeck aplicará {count} propuesta ya aprobada a su tablero. | Taskdeck aplicará cada una de las {count} propuestas ya aprobadas a su tablero.',
+      partialWarning: 'Cada propuesta se aplica por separado. Algunas pueden completarse y otras fallar, y no se revierte nada.',
+      cancel: 'Seguir revisando',
+      confirm: 'Aplicar {count} propuesta | Aplicar {count} propuestas',
+      receiptsTitle: 'Qué se aplicó',
+      receiptsDescription: 'Resultado de {count} propuesta | Resultados de {count} propuestas',
+      receiptSummary: 'Aplicadas {applied} · omitidas {skipped} · fallidas {failed}.',
+      done: 'Cerrar',
+    },
+  },
   batchApprove: {
     selectLabel: 'Seleccionar {title} para aprobación por lotes',
     request: 'Revisar {count} aprobación seleccionada | Revisar {count} aprobaciones seleccionadas',

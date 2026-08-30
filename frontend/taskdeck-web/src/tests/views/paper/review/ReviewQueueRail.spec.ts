@@ -27,6 +27,7 @@ function mountRail(props?: Partial<{
   dismissableCount: number
   busy: boolean
   batchSelectedCount: number
+  batchExecutableCount: number
   applyRate: number
   cadence: number[]
   scopeLabel: string
@@ -41,6 +42,7 @@ function mountRail(props?: Partial<{
       dismissableCount: props?.dismissableCount ?? 0,
       busy: props?.busy ?? false,
       batchSelectedCount: props?.batchSelectedCount ?? 0,
+      batchExecutableCount: props?.batchExecutableCount ?? 0,
       recentlyApplied: props?.recentlyApplied ?? [],
       ...(props?.applyRate !== undefined ? { applyRate: props.applyRate } : {}),
       ...(props?.cadence !== undefined ? { cadence: props.cadence } : {}),
@@ -289,5 +291,34 @@ describe('ReviewQueueRail', () => {
       const bars = wrapper.findAll('.paper-review-cadence__bar')
       expect(bars).toHaveLength(7)
     })
+  })
+})
+
+describe('ReviewQueueRail apply-approved action (#1307)', () => {
+  it('hides the apply-approved action when nothing is approved', () => {
+    const wrapper = mountRail({ batchExecutableCount: 0 })
+    expect(wrapper.find('[data-testid="queue-batch-execute"]').exists()).toBe(false)
+  })
+
+  it('offers the apply-approved action with its count and asks the parent to confirm', async () => {
+    const wrapper = mountRail({ batchExecutableCount: 3 })
+    const apply = wrapper.find('[data-testid="queue-batch-execute"]')
+
+    expect(apply.exists()).toBe(true)
+    expect(apply.text()).toContain('3')
+    // The rail never applies anything itself: it asks the view to open the confirmation.
+    await apply.trigger('click')
+    expect(wrapper.emitted('request-batch-execute')).toHaveLength(1)
+  })
+
+  it('is disabled while a review action is in flight', () => {
+    const wrapper = mountRail({ batchExecutableCount: 2, busy: true })
+    expect(wrapper.find('[data-testid="queue-batch-execute"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('stands beside batch approve without replacing it', () => {
+    const wrapper = mountRail({ batchExecutableCount: 2, batchSelectedCount: 1 })
+    expect(wrapper.find('[data-testid="queue-batch-approve"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="queue-batch-execute"]').exists()).toBe(true)
   })
 })

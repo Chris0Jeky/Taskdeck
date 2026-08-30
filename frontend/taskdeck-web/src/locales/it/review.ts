@@ -44,6 +44,36 @@ export default {
     },
   },
 
+  // GH-1307 -- traduzione automatica (machine-translated), in attesa di revisione madrelingua.
+  batchExecute: {
+    request: 'Applica {count} approvata | Applica {count} approvate',
+    requestLabel: 'Applica {count} proposta approvata | Applica {count} proposte approvate',
+    nothingToApply: 'Al momento non c\'è nulla di approvato da applicare.',
+    unknownProposal: 'Proposta sconosciuta',
+    unknownReason: 'Nessun motivo riportato.',
+    allApplied: 'Applicata {count} proposta. | Applicate {count} proposte.',
+    allSkipped: 'Nulla da fare: {count} proposta era già stata applicata. | Nulla da fare: {count} proposte erano già state applicate.',
+    noneApplied: 'Non è stato applicato nulla. {count} proposta non riuscita. | Non è stato applicato nulla. {count} proposte non riuscite.',
+    partial: 'Applicate {applied}; {failed} non riuscite. Controlla le ricevute.',
+    failed: 'Non è stato possibile applicare le proposte approvate.',
+    outcome: {
+      Applied: 'Applicata',
+      Skipped: 'Saltata',
+      Failed: 'Non riuscita',
+    },
+    dialog: {
+      title: 'Applicare le proposte approvate?',
+      description: 'Conferma l\'applicazione di {count} proposta approvata | Conferma l\'applicazione di {count} proposte approvate',
+      body: 'Taskdeck applicherà {count} proposta già approvata alla sua bacheca. | Taskdeck applicherà ciascuna delle {count} proposte già approvate alla sua bacheca.',
+      partialWarning: 'Ogni proposta viene applicata singolarmente. Alcune possono riuscire e altre no, e nulla viene annullato.',
+      cancel: 'Continua a revisionare',
+      confirm: 'Applica {count} proposta | Applica {count} proposte',
+      receiptsTitle: 'Cosa è stato applicato',
+      receiptsDescription: 'Risultato per {count} proposta | Risultati per {count} proposte',
+      receiptSummary: 'Applicate {applied} · saltate {skipped} · non riuscite {failed}.',
+      done: 'Chiudi',
+    },
+  },
   batchApprove: {
     selectLabel: 'Seleziona {title} per l’approvazione in blocco',
     request: 'Rivedi {count} approvazione selezionata | Rivedi {count} approvazioni selezionate',

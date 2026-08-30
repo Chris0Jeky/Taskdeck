@@ -47,18 +47,34 @@ public class AutomationExecutorService : IAutomationExecutorService
 
     public async Task<Result> ExecuteProposalAsync(Guid proposalId, string idempotencyKey, CancellationToken cancellationToken = default)
     {
+        // Thin projection of the receipt call: one execution path, one materialization, one set of
+        // guards. Callers that only need success/failure keep their existing signature.
+        var receipt = await ExecuteProposalWithReceiptAsync(
+            proposalId,
+            idempotencyKey,
+            callerUserId: null,
+            cancellationToken);
+        return receipt.IsSuccess ? Result.Success() : Result.Failure(receipt.ErrorCode, receipt.ErrorMessage);
+    }
+
+    public async Task<Result<ProposalExecutionReceipt>> ExecuteProposalWithReceiptAsync(
+        Guid proposalId,
+        string idempotencyKey,
+        Guid? callerUserId = null,
+        CancellationToken cancellationToken = default)
+    {
         var startedAt = DateTimeOffset.UtcNow;
 
         if (proposalId == Guid.Empty)
         {
             _logger?.LogWarning("Automation proposal execution rejected: empty proposalId");
-            return Result.Failure(ErrorCodes.ValidationError, "ProposalId cannot be empty");
+            return Result.Failure<ProposalExecutionReceipt>(ErrorCodes.ValidationError, "ProposalId cannot be empty");
         }
 
         if (string.IsNullOrWhiteSpace(idempotencyKey))
         {
             _logger?.LogWarning("Automation proposal execution rejected for proposal {ProposalId}: missing idempotency key", proposalId);
-            return Result.Failure(ErrorCodes.ValidationError, "IdempotencyKey cannot be empty");
+            return Result.Failure<ProposalExecutionReceipt>(ErrorCodes.ValidationError, "IdempotencyKey cannot be empty");
         }
 
         // Get proposal
@@ -71,7 +87,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 proposalResult.ErrorCode,
                 proposalResult.ErrorMessage);
-            return Result.Failure(proposalResult.ErrorCode, proposalResult.ErrorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(proposalResult.ErrorCode, proposalResult.ErrorMessage);
         }
 
         var proposal = proposalResult.Value;
@@ -93,7 +109,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 "Automation proposal execution skipped for already-applied proposal {ProposalId} after {DurationMs}ms",
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
-            return Result.Success();
+            return Result.Success(new ProposalExecutionReceipt(AlreadyApplied: true, AppliedOperationCount: 0));
         }
 
         // Verify proposal is approved
@@ -104,7 +120,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 proposal.Status);
-            return Result.Failure(ErrorCodes.InvalidOperation, $"Cannot execute proposal in status {proposal.Status}");
+            return Result.Failure<ProposalExecutionReceipt>(ErrorCodes.InvalidOperation, $"Cannot execute proposal in status {proposal.Status}");
         }
 
         var effectiveProposalResult = await MaterializeEffectiveProposalAsync(proposal, cancellationToken);
@@ -116,7 +132,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 effectiveProposalResult.ErrorCode,
                 effectiveProposalResult.ErrorMessage);
-            return Result.Failure(effectiveProposalResult.ErrorCode, effectiveProposalResult.ErrorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(effectiveProposalResult.ErrorCode, effectiveProposalResult.ErrorMessage);
         }
 
         var effectiveProposal = effectiveProposalResult.Value;
@@ -131,7 +147,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 policyResult.ErrorCode,
                 policyResult.ErrorMessage);
-            return Result.Failure(policyResult.ErrorCode, policyResult.ErrorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(policyResult.ErrorCode, policyResult.ErrorMessage);
         }
 
         // Revalidate permissions. Execute is the mutation lane par excellence, so the requester
@@ -151,7 +167,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 permissionResult.ErrorCode,
                 permissionResult.ErrorMessage);
-            return Result.Failure(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
         }
 
         try
@@ -164,7 +180,43 @@ public class AutomationExecutorService : IAutomationExecutorService
             if (!decisionGuard.IsSuccess)
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                return Result.Failure(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+                return Result.Failure<ProposalExecutionReceipt>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+            }
+
+            // The caller's own bar, rechecked HERE - inside this item's transaction, after the
+            // archive guard and before the first operation - not at the top of a batch. The
+            // permission check above validates the proposal's original REQUESTER, which is a
+            // different person from the submitter whenever a collaborator applies someone else's
+            // proposal; and a batch reads authorization once before its loop, so a revocation that
+            // lands mid-batch would otherwise be invisible to every remaining item.
+            if (callerUserId is Guid callerId)
+            {
+                var callerPermission = effectiveProposal.BoardId.HasValue
+                    ? await _policyEngine.ValidatePermissionsAsync(
+                        callerId,
+                        effectiveProposal.BoardId,
+                        effectiveProposal.Operations,
+                        BoardAccessBar.Write,
+                        cancellationToken)
+                    // A board-less proposal has no ACL to consult, so ownership is the only bar
+                    // there is - the same rule the single-execute endpoint applies.
+                    : effectiveProposal.RequestedByUserId == callerId
+                        ? Result.Success()
+                        : Result.Failure(
+                            ErrorCodes.Forbidden,
+                            "You do not have permission to access this proposal.");
+
+                if (!callerPermission.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    _logger?.LogWarning(
+                        "Automation proposal execution refused for proposal {ProposalId}: caller {CallerUserId} lost board write access before execution",
+                        proposalId,
+                        callerId);
+                    return Result.Failure<ProposalExecutionReceipt>(
+                        callerPermission.ErrorCode,
+                        callerPermission.ErrorMessage);
+                }
             }
 
             // Execute operations in sequence order
@@ -206,8 +258,8 @@ public class AutomationExecutorService : IAutomationExecutorService
                 if (!updateResult.IsSuccess)
                 {
                     return failedResult.ErrorCode == ErrorCodes.Conflict
-                        ? Result.Failure(failedResult.ErrorCode, failureReason)
-                        : Result.Failure(updateResult.ErrorCode, updateResult.ErrorMessage);
+                        ? Result.Failure<ProposalExecutionReceipt>(failedResult.ErrorCode, failureReason)
+                        : Result.Failure<ProposalExecutionReceipt>(updateResult.ErrorCode, updateResult.ErrorMessage);
                 }
 
                 _logger?.LogWarning(
@@ -216,7 +268,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                     failedOperation,
                     (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                     failureReason);
-                return Result.Failure(failedResult.ErrorCode, failureReason);
+                return Result.Failure<ProposalExecutionReceipt>(failedResult.ErrorCode, failureReason);
             }
 
             // The board marker, operation effects, audit rows, and Applied status share this outer
@@ -231,7 +283,7 @@ public class AutomationExecutorService : IAutomationExecutorService
             if (!markResult.IsSuccess)
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                return Result.Failure(markResult.ErrorCode, markResult.ErrorMessage);
+                return Result.Failure<ProposalExecutionReceipt>(markResult.ErrorCode, markResult.ErrorMessage);
             }
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -257,7 +309,9 @@ public class AutomationExecutorService : IAutomationExecutorService
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 orderedOperations.Count);
-            return Result.Success();
+            return Result.Success(new ProposalExecutionReceipt(
+                AlreadyApplied: false,
+                AppliedOperationCount: orderedOperations.Count));
         }
         catch (Exception ex)
         {
@@ -273,7 +327,7 @@ public class AutomationExecutorService : IAutomationExecutorService
                 "Automation proposal execution threw for proposal {ProposalId} after {DurationMs}ms",
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
-            return Result.Failure(ErrorCodes.UnexpectedError, $"Failed to execute proposal: {ex.Message}");
+            return Result.Failure<ProposalExecutionReceipt>(ErrorCodes.UnexpectedError, $"Failed to execute proposal: {ex.Message}");
         }
     }
 
