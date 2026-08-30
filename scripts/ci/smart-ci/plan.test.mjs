@@ -16,7 +16,7 @@ import {
   validatePlan,
   validatePolicy,
 } from './lib/plan.mjs';
-import { inputFromEvent, parseChangedFiles } from './plan.mjs';
+import { inputFromEvent, parseChangedFiles, requirePullRequestMergeBinding } from './plan.mjs';
 
 const policyText = readFileSync(new URL('../../../ci/policy.v1.json', import.meta.url), 'utf8');
 const policy = JSON.parse(policyText);
@@ -444,14 +444,27 @@ test('inputFromEvent reads pull_request payloads without content and detects for
       labels: [{ name: 'ci:full' }],
     },
   };
-  const input = inputFromEvent({ ...event, sender: { login: 'someone', type: 'User' } }, 'pull_request_target', { changedFiles: ['docs/x.md'], changedFilesAvailable: true });
+  const fetchedMergeSha = 'f'.repeat(40);
+  const fetchedMergeTreeSha = 'd'.repeat(40);
+  const input = inputFromEvent({ ...event, sender: { login: 'someone', type: 'User' } }, 'pull_request_target', {
+    changedFiles: ['docs/x.md'],
+    changedFilesAvailable: true,
+    mergeSha: fetchedMergeSha,
+    mergeTreeSha: fetchedMergeTreeSha,
+  });
   assert.equal(input.isFork, true);
   assert.equal(input.senderLogin, 'someone');
   assert.equal(input.repositoryOwnerLogin, 'Chris0Jeky');
   assert.equal(input.isDraft, true);
   assert.equal(input.pullRequestNumber, 7);
   assert.deepEqual(input.labels, ['ci:full']);
-  assert.equal(input.mergeSha, 'e'.repeat(40));
+  assert.equal(input.mergeSha, fetchedMergeSha);
+  assert.equal(input.mergeTreeSha, fetchedMergeTreeSha);
+  requirePullRequestMergeBinding(event, input);
+  assert.throws(
+    () => requirePullRequestMergeBinding(event, { ...input, mergeSha: null }),
+    /merge SHA and tree SHA from the same fetched merge ref/,
+  );
   const plan = buildPlan(input, policy, digest);
   assert.equal(plan.trust, 'T3');
   assert.ok(!JSON.stringify(plan).includes('secret title'));
@@ -459,6 +472,17 @@ test('inputFromEvent reads pull_request payloads without content and detects for
   const push = inputFromEvent({ repository: { full_name: 'o/r', owner: { login: 'o' } }, before: BASE, after: HEAD, ref: 'refs/heads/main', sender: { login: 'o', type: 'User' } }, 'push', {});
   assert.equal(push.authorAssociation, 'OWNER');
   assert.equal(push.headSha, HEAD);
+});
+
+test('the shadow workflow records one exact merge-ref identity and fails closed on stale parents', () => {
+  const workflow = readFileSync(new URL('../../../.github/workflows/smart-ci-shadow.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /merge_sha="\$\(git rev-parse 'FETCH_HEAD\^\{commit\}'\)"/);
+  assert.match(workflow, /merge_tree="\$\(git rev-parse 'FETCH_HEAD\^\{tree\}'\)"/);
+  assert.match(workflow, /merge_base="\$\(git rev-parse 'FETCH_HEAD\^1'\)"/);
+  assert.match(workflow, /merge_head="\$\(git rev-parse 'FETCH_HEAD\^2'\)"/);
+  assert.match(workflow, /\[ "\$merge_base" != "\$EXPECTED_BASE" \] \|\| \[ "\$merge_head" != "\$EXPECTED_HEAD" \]/);
+  assert.match(workflow, /--merge-sha "\$\(cat artifacts\/merge-sha\.txt\)"/);
+  assert.match(workflow, /--merge-tree-sha "\$\(cat artifacts\/merge-tree-sha\.txt\)"/);
 });
 
 test('parseChangedFiles accepts plain lists and status/path/previous TSV', () => {
