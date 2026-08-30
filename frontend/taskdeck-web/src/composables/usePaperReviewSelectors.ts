@@ -1,6 +1,9 @@
 import { computed, onScopeDispose, ref, watch, type ComputedRef, type Ref } from 'vue'
 import { i18n } from '../i18n'
+import { captureApi } from '../api/captureApi'
 import type { Proposal as ApiProposal } from '../types/automation'
+import type { CaptureItem } from '../types/capture'
+import { normalizeProposalSourceType } from '../utils/automation'
 import {
   proposalDeepReviewApi,
   conflictToneWireValues,
@@ -25,6 +28,19 @@ export interface ProvenanceRow {
   key: string
   value: string
   weight: ProvenanceWeight
+}
+
+/**
+ * Server-recorded producer metadata for the active capture-linked proposal.
+ * Confidence and latency remain nullable because neither may be invented when
+ * their source endpoint does not provide a trustworthy value.
+ */
+export interface ProvenanceMetadata {
+  provider: string
+  model: string | null
+  promptVersion: string | null
+  confidence: number | null
+  latencyMs: number | null
 }
 
 /**
@@ -107,6 +123,7 @@ export interface SimilarPastRow {
 
 export interface PaperReviewSelectors {
   provenance: ComputedRef<ProvenanceRow[]>
+  provenanceMetadata: ComputedRef<ProvenanceMetadata | null>
   evidenceLinks: ComputedRef<EvidenceLink[]>
   sideEffects: ComputedRef<SideEffects>
   confidenceBreakdown: ComputedRef<ConfidenceBreakdown>
@@ -161,6 +178,63 @@ function mapProvenanceRow(dto: ProvenanceRowDto): ProvenanceRow {
     key: dto.key,
     value: dto.value,
     weight: resolveWeight(dto),
+  }
+}
+
+function meaningfulWireValue(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed === '' || trimmed.toLowerCase() === 'unknown') return null
+  return trimmed
+}
+
+function identifiersEqual(left: string | null | undefined, right: string | null | undefined): boolean {
+  const normalizedLeft = meaningfulWireValue(left)?.toLowerCase()
+  const normalizedRight = meaningfulWireValue(right)?.toLowerCase()
+  return normalizedLeft !== undefined && normalizedLeft === normalizedRight
+}
+
+/**
+ * Only Queue proposals carry capture ids in `sourceReferenceId`. Chat and Manual
+ * references belong to different domains and must never be probed as capture ids.
+ */
+function captureSourceReference(proposal: ApiProposal | null): string | null {
+  if (!proposal) return null
+  // Runtime payloads predating sourceType (and intentionally partial test fixtures) fail closed.
+  if (typeof proposal.sourceType !== 'string' && typeof proposal.sourceType !== 'number') return null
+  if (normalizeProposalSourceType(proposal.sourceType) !== 'Queue') return null
+  return meaningfulWireValue(proposal.sourceReferenceId)
+}
+
+function mapProvenanceMetadata(
+  capture: CaptureItem,
+  proposalId: string,
+  captureReference: string,
+  confidence: ConfidenceBreakdown,
+): ProvenanceMetadata | null {
+  const provenance = capture.provenance
+  if (!provenance) return null
+
+  // Fail closed if a stale sourceReference resolves to a different capture or proposal.
+  if (
+    !identifiersEqual(capture.id, captureReference) ||
+    !identifiersEqual(provenance.captureItemId, captureReference) ||
+    !identifiersEqual(provenance.proposalId, proposalId)
+  ) {
+    return null
+  }
+
+  const provider = meaningfulWireValue(provenance.provider)
+  if (provider === null) return null
+
+  return {
+    provider,
+    model: meaningfulWireValue(provenance.model),
+    promptVersion: meaningfulWireValue(provenance.promptVersion),
+    // `mapConfidence` already suppresses numbers for deterministic/not-reported sources.
+    confidence: confidence.overall,
+    // Capture provenance does not currently record triage latency. Keep the row absent.
+    latencyMs: null,
   }
 }
 
@@ -305,6 +379,7 @@ export function usePaperReviewSelectors(
   activeProposal: ComputedRef<ApiProposal | null>,
 ): PaperReviewSelectors {
   const provenanceData: Ref<ProvenanceRow[]> = ref([])
+  const provenanceMetadataData: Ref<ProvenanceMetadata | null> = ref(null)
   const evidenceLinksData: Ref<EvidenceLink[]> = ref([])
   // null means "nothing loaded" — the computed below then renders the
   // catalog-driven empty shape, so a language switch re-renders the fallback.
@@ -319,8 +394,14 @@ export function usePaperReviewSelectors(
   let abortController: AbortController | null = null
 
   watch(
-    () => activeProposal.value?.id,
-    async (proposalId) => {
+    [
+      () => activeProposal.value?.id,
+      () => captureSourceReference(activeProposal.value),
+    ],
+    async ([proposalId, captureReference]) => {
+      // Invalidate every older continuation, including when selection becomes empty.
+      const generation = ++fetchGeneration
+
       // Abort any in-flight requests from the previous watcher invocation
       if (abortController) {
         abortController.abort()
@@ -330,6 +411,7 @@ export function usePaperReviewSelectors(
       if (!proposalId) {
         isLoading.value = false
         provenanceData.value = EMPTY_PROVENANCE
+        provenanceMetadataData.value = null
         evidenceLinksData.value = EMPTY_EVIDENCE_LINKS
         sideEffectsData.value = null
         confidenceData.value = EMPTY_CONFIDENCE
@@ -339,12 +421,20 @@ export function usePaperReviewSelectors(
         return
       }
 
-      const generation = ++fetchGeneration
       const controller = new AbortController()
       abortController = controller
       const signal = controller.signal
 
       isLoading.value = true
+      // Never show the previous proposal's producer while the active capture is loading.
+      provenanceMetadataData.value = null
+
+      const captureRequest: Promise<CaptureItem | null> = captureReference
+        ? captureApi.getItem(captureReference, { signal })
+        : Promise.resolve(null)
+      // Attach rejection handling immediately, but do not let this optional lookup hold
+      // the six core review responses behind the HTTP client's retry window.
+      const captureSettlement = Promise.allSettled([captureRequest])
 
       const results = await Promise.allSettled([
         proposalDeepReviewApi.getProvenance(proposalId, { signal }),
@@ -367,8 +457,9 @@ export function usePaperReviewSelectors(
       evidenceLinksData.value =
         prov.status === 'fulfilled' ? mapEvidenceLinks(prov.value) : EMPTY_EVIDENCE_LINKS
 
-      confidenceData.value =
+      const mappedConfidence =
         conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
+      confidenceData.value = mappedConfidence
 
       sideEffectsData.value = side.status === 'fulfilled' ? mapSideEffects(side.value) : null
 
@@ -379,11 +470,22 @@ export function usePaperReviewSelectors(
 
       similarPastData.value =
         sim.status === 'fulfilled' ? mapSimilarPast(sim.value) : EMPTY_SIMILAR
+
+      const capture = (await captureSettlement)[0]
+      if (generation !== fetchGeneration || !capture) return
+
+      provenanceMetadataData.value =
+        captureReference && capture.status === 'fulfilled' && capture.value
+          ? mapProvenanceMetadata(capture.value, proposalId, captureReference, mappedConfidence)
+          : null
     },
     { immediate: true },
   )
 
   const provenance = computed<ProvenanceRow[]>(() => provenanceData.value)
+  const provenanceMetadata = computed<ProvenanceMetadata | null>(
+    () => provenanceMetadataData.value,
+  )
   const evidenceLinks = computed<EvidenceLink[]>(() => evidenceLinksData.value)
   const sideEffects = computed<SideEffects>(() => sideEffectsData.value ?? emptySideEffects())
   const confidenceBreakdown = computed<ConfidenceBreakdown>(() => confidenceData.value)
@@ -414,6 +516,7 @@ export function usePaperReviewSelectors(
 
   return {
     provenance,
+    provenanceMetadata,
     evidenceLinks,
     sideEffects,
     confidenceBreakdown,

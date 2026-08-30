@@ -1861,6 +1861,7 @@ async function onClearBoardScope() {
         :fields="fields"
         :change-sub-title="changeSubTitle"
         :provenance="selectors.provenance.value"
+        :metadata="selectors.provenanceMetadata.value"
         :evidence-links="selectors.evidenceLinks.value"
         :proposal-id="activeProposal?.id ?? ''"
         :side-effects="selectors.sideEffects.value"

@@ -71,6 +71,10 @@ export interface CaptureProvenance {
   triageRunId: string | null
   proposalId: string | null
   promptVersion: string | null
+  /** Server-stamped producer identity; absent on captures created before provenance v1 grew it. */
+  provider?: string | null
+  /** Server-stamped model/extractor identity; absent on captures created before provenance v1 grew it. */
+  model?: string | null
 }
 
 export interface CaptureSuggestionMetadata {
