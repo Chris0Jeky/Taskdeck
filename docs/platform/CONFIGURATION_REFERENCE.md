@@ -416,14 +416,18 @@ Bound to `AbuseDetectionSettings`.
 
 ### `ContextFabric`
 
-Bound to `ContextFabricSettings` (registered in `SettingsRegistration` as a singleton and validated
-through `OptionsValidationRegistration`). Migration switches for the Context Fabric slices
-(ADR-0065, `docs/architecture/CONTEXT_FABRIC.md`). Every key defaults to the shipped behaviour; the
-section is absent from `appsettings.json`.
+Bound to `ContextFabricSettings` (registered in `SettingsRegistration` as a singleton, mirrored to
+every host that applies migrations through `AddInfrastructure`, and validated through
+`OptionsValidationRegistration`). Migration switches for the Context Fabric slices (ADR-0065,
+`docs/architecture/CONTEXT_FABRIC.md`). The section is absent from `appsettings.json`; since CF-01
+`#2255` every key **defaults to on**, and turning one off falls back to reading the legacy queue row
+rather than changing what a user sees.
 
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
-| `ContextFabric:DualWriteCaptures` | `bool` | `false` | When true, every new capture is mirrored into the durable `Captures` table under the queue row's own id (ID-preserving dual-write, CF-01 `#2255`), staged in the same unit of work as the queue row. The mirror is written by the canonical `CaptureIntakeService` — the single writer of the durable aggregate — from **both** capture creation paths: `CaptureService.CreateAsync` and the `POST /api/llm-queue` enqueue path (`LlmQueueService.AddToQueueAsync`, which previously bypassed the dual-write). The capture text is stored beside the mirror as an inline `SourceAsset` (verbatim, in the same unit of work). Inbox reads keep using the queue row until CF-01 completes the backfill and flips the read path. When false the tables stay empty (`Captures`, `SourceAssets`, `SourceAssetTextPayloads`). | No |
+| `ContextFabric:DualWriteCaptures` | `bool` | `true` | When true, every capture admitted through the canonical `CaptureIntakeService` is written to the durable `Captures` aggregate under the queue row's own id (ID-preserving), staged in the same unit of work as the queue row. `CaptureIntakeService` is the single writer of the aggregate, and it serves **both** creation paths — `CaptureService.CreateAsync` and the `POST /api/llm-queue` enqueue path (`LlmQueueService.AddToQueueAsync`). The typed or pasted text becomes an immutable inline `SourceAsset` (verbatim, hashed over UTF-8) and a payload `externalRef` becomes an `ExternalReference` asset. Turning this off stops new captures reaching the aggregate, which also disarms the read switch below: reads fall back to the queue row, so nothing disappears, but the durable table stops tracking new work. | No |
+| `ContextFabric:BackfillCaptures` | `bool` | `true` | When true, the ID-preserving backfill of pre-existing capture queue rows (`inbox.capture.%`) runs after migrations at startup, on every host that applies them: the web API, the standalone MCP stdio and HTTP hosts, and the CLI. It is idempotent and resumable — the backlog is an anti-join over queue rows with no `Captures` row, so re-running creates nothing twice and a crash mid-way resumes at the next uncommitted row — and it costs one marker read plus one indexed count on a database that has already finished. Progress and completion are recorded in `CaptureBackfillStates`. A failure never blocks startup: it leaves the marker incomplete, which keeps Inbox reads on the queue row. Turning this off leaves the marker unset, with the same effect. | No |
+| `ContextFabric:ReadCapturesFromStore` | `bool` | `true` | When true, Inbox list / get resolve a capture's own material — its immutable source text, its capture source snapshot and its server intake time — from the durable aggregate through `ICaptureStore` instead of parsing the queue row's payload JSON. Job state (queue status, processed-at, retry count, error message) and the fields that have no column yet (triage provenance, suggestion metadata, the disposition receipt's who/when/where) keep their shipped source, so the DTOs are byte-identical across the switch. The switch is armed only once the backfill marker records completion, and it degrades per item: a capture with no durable row is still read from its queue row, so a capture can never disappear from the Inbox. Set to false to force every read back onto the queue row without touching the dual-write. | No |
 
 ## Workers
 

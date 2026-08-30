@@ -9,6 +9,14 @@ shipped, what the scaffold PR (`#2280`) and the same-day reconciliation pass add
 adds, and where the seams are. Shipped truth stays in `docs/STATUS.md`. The external audit that drove
 the reconciliation and its disposition: `docs/analysis/2026-08-30-context-fabric/AUDIT_RECONCILIATION.md`.
 
+**Status (2026-08-30, after CF-01 `#2255`).** The durable `Capture` aggregate and its `SourceAsset`s
+are live, not scaffolding: `ContextFabric:DualWriteCaptures` defaults **on**, an ID-preserving
+startup backfill brings every pre-existing capture-shaped `LlmRequest` row into the aggregate under
+its own id, and Inbox list / get resolve a capture's own material through `ICaptureStore` rather
+than parsing the queue payload. The read switch is armed by the `CaptureBackfillStates` marker and
+degrades per item, so a capture without a durable row is still read from its queue row. The queue
+row remains the **job** record until CF-03 replaces it.
+
 ## 1. The invariant
 
 ```text
@@ -20,7 +28,7 @@ Five concerns that the transcript wedge kept too close together are now separate
 
 | Concern | Object | Today (shipped) | Target |
 | --- | --- | --- | --- |
-| What entered | `Capture` + `SourceAsset` | `LlmRequest` row with a `CapturePayloadV1` JSON payload; `SourceArtefact` + `ArtefactBlob` | Durable `Capture` aggregate holding immutable `SourceAsset`s (both scaffolded; typed/pasted text is an inline asset, `SourceArtefact` adapts behind `LegacyArtefactId`) |
+| What entered | `Capture` + `SourceAsset` | Durable `Capture` aggregate holding immutable `SourceAsset`s, written on every intake and backfilled from the legacy `LlmRequest` rows (CF-01); the queue row is now the job record | Same, once CF-03 retires the queue row: typed/pasted text is an inline asset, corrections supersede rather than rewrite, `SourceArtefact` adapts behind `LegacyArtefactId` |
 | What Taskdeck derived | `Representation` (+ typed payloads) | `Transcript`, `ArtefactExtraction` | Header façade over both (CF-06 — draft contract), OCR/description payloads later |
 | Where it belongs | `ContextBinding` | board required by `CaptureTriageService` and `ChatService` | Resolver at change-planning time (CF-09); boardless understanding |
 | What should change | `ChangeSet` = `AutomationProposal` | proposal operations, revisions, Preview == Apply | Unchanged; candidates compile into it (CF-08) |
@@ -48,16 +56,20 @@ capture loses nothing. `Partial` renders as *Understood* with the failed leg lis
 | Domain | `Enums/CaptureUserDisposition.cs` (+ `CaptureUserDispositionMapping`), `CaptureProcessingSummary.cs`, `CaptureActionState.cs`, `CaptureTimeline.cs` | The three state axes and the timeline projection |
 | Domain | `Enums/RepresentationKind.cs`, `RepresentationQualityState.cs`, `EvidenceAnchorKind.cs`, `SemanticCandidateKind.cs`, `SemanticCandidateState.cs`, `ProcessingJobState.cs`, `ProcessorExecutionMode.cs`, `SourceAssetStorageKind.cs` | Vocabulary for CF-03/06/07/08/23 |
 | Domain | `Processing/ProcessingCapability.cs` | The capability vocabulary; `Externalizable` vs `InProcessOnly` (`context.resolve`, `change.plan`, `change.verify` never leave the process) |
-| Domain | `Entities/Capture.cs` | The durable aggregate: owner + `ProducedByPrincipalId`, `RequestedIntent` / `EffectiveIntent` / `IntentResolvedByRunId`, the three axes, `LegacySourceSnapshot`, up to 32 `SourceAssets`; `FromQueueRequest` builds the ID-preserving mirror |
-| Domain | `Entities/SourceAsset.cs`, `SourceAssetTextPayload.cs` | One immutable input: modality, media type, SHA-256, size, storage kind (`InlineText` · `Blob` · `ExternalReference` · `LegacyArtefact`); text kept verbatim in its own row |
-| Application | `Services/CaptureIntakeService.cs` | **The one writer** of the aggregate: mirrors a legacy queue row + its inline text asset while `ContextFabric:DualWriteCaptures` is on; called by `CaptureService.CreateAsync` and `LlmQueueService.AddToQueueAsync` |
-| Application | `Interfaces/ICaptureStore.cs` | Persistence façade (implemented: `EfCaptureStore`, aggregate-aware; `GetByIdForUserAsync` is owner-scoped, `ExistsAsync` is an id-only probe with no callers yet; set-based erasure) |
+| Domain | `Entities/Capture.cs` | The durable aggregate: owner + `ProducedByPrincipalId`, `RequestedIntent` / `EffectiveIntent` / `IntentResolvedByRunId`, the three axes, `LegacySourceSnapshot`, up to 32 active `SourceAssets`; `FromQueueRequest` builds the ID-preserving row (sources and machine-derived axes seeded before the user disposition, so an archived legacy row still arrives with its material); `SupersedeInlineTextSource` / `CurrentText` / `ActiveSourceAssets` are the correction model |
+| Domain | `Entities/SourceAsset.cs`, `SourceAssetTextPayload.cs` | One immutable input: modality, media type, SHA-256, size, storage kind (`InlineText` · `Blob` · `ExternalReference` · `LegacyArtefact`); text kept verbatim in its own row; `SupersedesAssetId` / `SupersededByAssetId` carry corrections without ever rewriting stored bytes |
+| Domain | `Entities/CaptureBackfillState.cs` | The singleton marker that arms the Inbox read switch; the backfill itself needs no cursor |
+| Domain | `Enums/CaptureLegacyStateMapping.cs` | Derives the three axes from a legacy queue row (status + proposal linkage + applied conversion + disposition); never a default `Received` |
+| Application | `Services/CaptureIntakeService.cs` | **The one writer** of the aggregate: sources first (inline text + an `ExternalReference` asset when the payload carries one), then the queue row as the job record; called by `CaptureService.CreateAsync`, `LlmQueueService.AddToQueueAsync` and the backfill through `BuildCapture` |
+| Application | `Services/CaptureBackfillService.cs` | The ID-preserving backfill: anti-join backlog (idempotent + resumable), batch-committed with its marker, a row it cannot map is skipped and keeps its queue-row reading |
+| Application | `Interfaces/ICaptureStore.cs` | Persistence façade (implemented: `EfCaptureStore`, aggregate-aware). Owner-scoped throughout: detached `GetByIdForUserAsync` and `GetByIdsForUserAsync` for reads, tracked `GetByIdForUpdateAsync` + `UpdateAsync` so aggregate mutators commit through the unit of work, set-based erasure |
+| Application | `Interfaces/ICaptureBackfillStore.cs` | The backlog anti-join and the completion marker (implemented: `EfCaptureBackfillStore`) |
 | Application | `Interfaces/IRepresentationStore.cs`, `Interfaces/IBlobStore.cs` | **Draft** contracts for CF-06 / CF-23 — reference-semantics blob store; representation header with quality state and a migration-window nullable `CaptureId`; **no implementation registered** |
 | Application | `Processing/ProcessorManifest.cs`, `ProcessorManifestValidator.cs`, `Processing/Schemas/processor-manifest.v1.schema.json`, `whisperx-processor.example.json` | Processor self-description with per-capability `capabilityContracts`; strict kebab-case enums; schema + canonical example embedded and read by the tests |
 | Application | `Processing/Protocol/WorkerProtocol.cs` | Taskdeck Worker Protocol **v1-alpha** envelopes + structural validator (`docs/architecture/WORKER_PROTOCOL_V1.md`) |
-| Application | `Services/ContextFabricSettings.cs` (`ContextFabric:DualWriteCaptures`, default `false`) | Migration switches |
-| Infrastructure | `Persistence/Configurations/CaptureConfiguration.cs`, `SourceAssetConfiguration.cs`, `SourceAssetTextPayloadConfiguration.cs`; migrations `20260830034447_AddCaptureAggregate`, `20260830141427_ReconcileContextFabricScaffold`; `Repositories/EfCaptureStore.cs` | The `Captures`, `SourceAssets`, `SourceAssetTextPayloads` tables (empty on an unchanged install) |
-| Tests | `Domain.Tests/CaptureTests.cs`, `CaptureTimelineTests.cs`, `SourceAssetTests.cs`, `CaptureSourceMappingTests.cs`, `ProcessingCapabilityTests.cs`; `Application.Tests/Processing/*`, `Services/CaptureServiceDualWriteTests.cs`, `LlmQueueServiceDualWriteTests.cs`; `MigrationBootstrapTests` (tables present + `EfCaptureStore` round-trip on SQLite) | Proving checks |
+| Application | `Services/ContextFabricSettings.cs` (`DualWriteCaptures`, `BackfillCaptures`, `ReadCapturesFromStore` — all default `true` since CF-01) | Migration switches; each one off falls back to the queue row |
+| Infrastructure | `Persistence/Configurations/CaptureConfiguration.cs`, `SourceAssetConfiguration.cs`, `SourceAssetTextPayloadConfiguration.cs`, `CaptureBackfillStateConfiguration.cs`; migrations `20260830034447_AddCaptureAggregate`, `20260830141427_ReconcileContextFabricScaffold`, `20260830172044_AddCaptureBackfillState`; `Repositories/EfCaptureStore.cs`, `EfCaptureBackfillStore.cs`; `Persistence/ContextFabricBootstrap.cs` (runs the backfill after `SerializedMigrator` on every host) | The `Captures`, `SourceAssets`, `SourceAssetTextPayloads`, `CaptureBackfillStates` tables |
+| Tests | `Domain.Tests/CaptureTests.cs`, `CaptureTimelineTests.cs`, `SourceAssetTests.cs`, `CaptureSourceMappingTests.cs`, `CaptureSourceSupersessionTests.cs`, `CaptureLegacyStateMappingTests.cs`, `ProcessingCapabilityTests.cs`; `Application.Tests/Processing/*`, `Services/CaptureServiceDualWriteTests.cs`, `LlmQueueServiceDualWriteTests.cs`, `CaptureBackfillServiceTests.cs`, `CaptureServiceReadSwitchTests.cs`, `CaptureIntakeSourceTests.cs`; `Api.Tests/ContextFabricCaptureBackfillTests.cs` (golden path over a seeded legacy queue), `MigrationBootstrapTests` (tables present + store round-trips on SQLite); `Architecture.Tests/CaptureIntakeSingleWriterTests.cs` (nothing but the intake constructs a `Capture`) | Proving checks |
 
 Unchanged and still authoritative: `CaptureRequestContract` and the queue lanes (ADR-0045), `Transcript`
 and `ProvenanceEvidenceLink` (ADR-0045 §7), `SourceArtefact` / `ArtefactExtraction` (ADR-0046),
