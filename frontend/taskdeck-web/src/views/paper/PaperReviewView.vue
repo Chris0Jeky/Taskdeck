@@ -749,6 +749,35 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
     .slice(0, 4)
 })
 
+// File-away deliberately removes settled rows from `proposals` immediately so
+// the queue and Recently applied rail respond without waiting for another read.
+// Keep only the decided rows this mounted surface already knew before that
+// removal: weekly metrics are history, not queue membership, and must not forget
+// a decision merely because its row was filed. Current server rows win by id so
+// a later refresh can still update the lifecycle fields we project.
+const filedAwayDecisionHistory = ref<ApiProposal[]>([])
+
+function upsertProposalById(target: ApiProposal[], proposal: ApiProposal) {
+  const index = target.findIndex((item) => proposalIdsEqual(item.id, proposal.id))
+  if (index >= 0) target[index] = proposal
+  else target.push(proposal)
+}
+
+function retainKnownDecisions(candidates: readonly ApiProposal[]) {
+  const retained = [...filedAwayDecisionHistory.value]
+  for (const proposal of candidates) {
+    if (!proposal.decidedAt || !proposal.decidedByUserId) continue
+    upsertProposalById(retained, proposal)
+  }
+  filedAwayDecisionHistory.value = retained
+}
+
+const weeklyDecisionSource = computed<ApiProposal[]>(() => {
+  const merged = [...filedAwayDecisionHistory.value]
+  for (const proposal of proposals.value) upsertProposalById(merged, proposal)
+  return merged
+})
+
 /**
  * Real 7-day cadence for the rail: how many proposals the CURRENT user decided
  * on each of the last seven calendar days, projected from the review-queue
@@ -760,13 +789,13 @@ const recentlyApplied = computed<RecentlyAppliedRow[]>(() => {
  * hides itself rather than inventing a week (#1782 / #1796 contract).
  */
 const cadence = useReviewCadence(
-  proposals,
+  weeklyDecisionSource,
   nowMs,
   () => session.userId,
   matchesActiveBoardFilter,
 )
 const applyRate = useReviewApplyRate(
-  proposals,
+  weeklyDecisionSource,
   nowMs,
   () => session.userId,
   matchesActiveBoardFilter,
@@ -1200,6 +1229,7 @@ async function onFileAway() {
     toast.info(t('review.toast.notDismissableYet'))
     return
   }
+  retainKnownDecisions([p])
   await handleDismissProposal(p.id)
   if (!proposals.value.some((proposal) => proposalIdsEqual(proposal.id, p.id))) {
     await clearProposalDeepLink(p.id)
@@ -1213,6 +1243,12 @@ async function onFileAwayBulk() {
     return
   }
   const deepLinkedId = hashProposalId.value
+  const filedAwayIds = [...ownedDismissableIds.value]
+  retainKnownDecisions(
+    proposals.value.filter((proposal) =>
+      filedAwayIds.some((id) => proposalIdsEqual(proposal.id, id)),
+    ),
+  )
   await handleDismissApplied()
   if (
     deepLinkedId &&

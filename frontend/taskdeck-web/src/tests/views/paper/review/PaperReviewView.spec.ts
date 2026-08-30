@@ -1334,6 +1334,48 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('keeps the weekly Apply rate while one applied decision is filed away', async () => {
+    const decidedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'applied-rate-single',
+        status: 'Applied',
+        summary: 'Applied rate single',
+        decidedAt,
+        decidedByUserId: 'u-1',
+        appliedAt: decidedAt,
+      }),
+      makeProposal({
+        id: 'rejected-rate-single',
+        status: 'Rejected',
+        summary: 'Rejected rate single',
+        decidedAt,
+        decidedByUserId: 'u-1',
+        appliedAt: null,
+      }),
+    ])
+
+    expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+
+    const recentApplied = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Applied rate single'))!
+    await recentApplied.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="decision-file-away"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith(['applied-rate-single'])
+    expect(
+      wrapper
+        .findAll('.paper-review-recent__row')
+        .some((button) => button.text().includes('Applied rate single')),
+    ).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+    expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').exists()).toBe(false)
+  })
+
   it('keeps decision keys dead on an applied record while ⌫ stays live', async () => {
     const wrapper = await mountView([
       makeProposal({
@@ -1450,6 +1492,41 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(mocks.dismissProposals).toHaveBeenCalledWith(['expired-a', 'expired-b'])
+  })
+
+  it('keeps the weekly Apply rate while bulk file-away removes decided rows', async () => {
+    const decidedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 2 })
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'applied-rate-bulk',
+        status: 'Applied',
+        summary: 'Applied rate bulk',
+        decidedAt,
+        decidedByUserId: 'u-1',
+        appliedAt: decidedAt,
+      }),
+      makeProposal({
+        id: 'rejected-rate-bulk',
+        status: 'Rejected',
+        summary: 'Rejected rate bulk',
+        decidedAt,
+        decidedByUserId: 'u-1',
+        appliedAt: null,
+      }),
+    ])
+
+    expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+    await wrapper.get('[data-testid="queue-file-away-all"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.dismissProposals).toHaveBeenCalledWith([
+      'applied-rate-bulk',
+      'rejected-rate-bulk',
+    ])
+    expect(wrapper.findAll('.paper-review-recent__row')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="paper-review-apply-rate"]').text()).toContain('50%')
+    expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').exists()).toBe(false)
   })
 
   it('shows the bulk "File away" action for a single settled proposal so it is never unclearable', async () => {
