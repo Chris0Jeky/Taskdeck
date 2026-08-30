@@ -6,7 +6,7 @@
 - **Date**: 2026-08-24
 - **Deciders**: Chris0Jeky (maintainer)
 - **Related**: `#1992`, `#1971`, `#1132` (AC4 auth-outcome ordering), `#1181` (bare `/` handling),
-  ADR-0036 amendment 2026-08-22
+  ADR-0036 amendment 2026-08-22, ADR-0064 (which spelling of a path is machine-facing at all)
 
 ## Context
 
@@ -37,6 +37,10 @@ as a *node-builder* policy, so the candidate set is partitioned by verb inside t
 request never sees the `POST` endpoint that shares its path.
 
 ## Decision
+
+*Which* request paths count as being under those prefixes is a separate question, settled later by
+ADR-0064: the prefixes are exact lowercase, and case or encoded-slash variants are rejected with the
+404 contract before the rule below is reached.
 
 Paths under `PipelineConfiguration.NonSpaPathPrefixes` answer on one rule, for every verb:
 
