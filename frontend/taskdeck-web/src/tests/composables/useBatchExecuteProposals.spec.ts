@@ -410,6 +410,36 @@ describe('useBatchExecuteProposals receipts survive the post-apply refresh', () 
     expect(h.receipts.value).toHaveLength(0)
   })
 
+  it('uses one fallback toast when context closes before in-flight receipts arrive', async () => {
+    const h = harness([
+      makeProposal({ id: 'p-1' }),
+      makeProposal({ id: 'p-2' }),
+    ])
+    let resolveExecute!: (value: BatchExecuteProposalsResult) => void
+    vi.mocked(automationApi.executeProposals).mockImplementationOnce(
+      () => new Promise<BatchExecuteProposalsResult>((resolve) => { resolveExecute = resolve }),
+    )
+
+    h.requestConfirmation()
+    const execution = h.confirmExecute()
+    await nextTick()
+    expect(h.busy.value).toBe(true)
+
+    h.forceClose()
+    resolveExecute(receipt([
+      { proposalId: 'p-1', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
+      { proposalId: 'p-2', outcome: 'Failed', errorCode: 'Conflict', errorMessage: 'Board moved on', appliedOperations: null },
+    ]))
+    await execution
+
+    expect(h.confirmationOpen.value).toBe(false)
+    expect(h.receipts.value.map((item) => item.outcome)).toEqual(['Applied', 'Failed'])
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+    expect(toast.info).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(toast.info).mock.calls[0][0]).toContain('Applied 1; 1 failed')
+  })
+
   it('keeps an all-skipped outcome in receipts without a completion toast', async () => {
     const h = harness([makeProposal({ id: 'p-1' }), makeProposal({ id: 'p-2' })])
     vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
