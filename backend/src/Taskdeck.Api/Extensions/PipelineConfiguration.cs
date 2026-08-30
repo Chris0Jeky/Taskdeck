@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -99,34 +100,34 @@ public static class PipelineConfiguration
         // HttpResponse still take effect.
         app.UseResponseCompression();
 
-        app.UseCors("AllowFrontend");
+        // Correlation ID, the unhandled-exception wrapper and the security headers move ahead of
+        // CORS so that the fail-closed machine-path guard below can precede CORS while still
+        // running inside all three (#1992 round 1). Moving them widens their reach — a CORS
+        // preflight now also carries a correlation ID and the security headers — and narrows
+        // nothing: response compression stays outermost, so every one of them can still append
+        // response headers.
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<UnhandledExceptionMiddleware>();
         app.UseMiddleware<SecurityHeadersMiddleware>();
 
         // Fail-closed machine-path spelling (#1992, maintainer ruling q-10 A; ADR-0064). A machine
-        // prefix is the exact lowercase literal at a segment boundary. A case variant (/API/boards)
-        // or a prefix-boundary encoded slash (/mcp%2Fmessages) is read as machine surface by ONE
-        // layer and as SPA surface by another — case-insensitive ASP.NET routing would serve
-        // /API/boards from the real controller while nginx never sends it to this container at all,
-        // and Kestrel leaves %2F encoded so /mcp%2Fmessages looks like a single non-machine segment
-        // here while nginx location-matches the decoded /mcp/messages. Neither is normalized into
-        // the canonical path: the ruling rejects normalization, so both answer the 404 contract.
+        // prefix is the exact lowercase literal at a segment boundary; every other spelling that
+        // some layer would read as that prefix answers the 404 contract instead — case variants
+        // (/API/boards), prefix-boundary encoded slashes (/mcp%2Fmessages), leading duplicate or
+        // encoded separators (//api/boards, /%2fapi/boards), and percent-encoded prefix letters
+        // (/%61pi/boards). Nothing is normalized into the canonical path: the ruling rejects that.
         //
-        // Placed before static files, MCP telemetry, and every authentication middleware so a
+        // Ahead of CORS, deliberately: CorsMiddleware short-circuits a preflight with 204 as soon
+        // as it sees Access-Control-Request-Method, so a guard placed after it would answer
+        // OPTIONS /API/boards with a success a browser reads as "this endpoint exists".
+        //
+        // Ahead of static files, MCP telemetry and every authentication middleware too, so a
         // variant is rejected before it can reach a real endpoint, consume a rate-limit budget, or
         // be answered 401 (which would say "this exists, authenticate" about a path that, under
         // this contract, does not exist).
-        app.Use(async (context, next) =>
-        {
-            if (MachinePathCanonicalForm.IsRejectedVariant(context.Request.Path, NonSpaPathPrefixes))
-            {
-                await WriteUnknownEndpointAsync(context);
-                return;
-            }
+        app.UseMachinePathCanonicalGuard();
 
-            await next(context);
-        });
+        app.UseCors("AllowFrontend");
 
         // SPA static file serving: serve Vue build output from wwwroot/.
         // Placed after security-headers middleware so that the OnStarting callback registered by
@@ -431,6 +432,32 @@ public static class PipelineConfiguration
         return context.Response.WriteAsJsonAsync(
             new ApiErrorResponse(ErrorCodes.NotFound, "The requested endpoint does not exist."));
     }
+
+    /// <summary>
+    /// Registers the fail-closed machine-path guard (`#1992`, ADR-0064): a request whose spelling
+    /// of a machine prefix is not the canonical one answers the 404 error contract here, before it
+    /// can reach an endpoint, an authentication middleware, or a rate-limit budget.
+    ///
+    /// Shared so the co-hosted API pipeline and the standalone <c>--mcp --transport http</c> host
+    /// enforce the identical rule. The standalone host serves only <c>/mcp</c> and has no SPA
+    /// fallback, so a variant there does not leak the app shell — but without this it answers 401
+    /// (or 200, with a valid key) for <c>/MCP</c>, which is a different contract from the one the
+    /// co-hosted host gives the same URL.
+    /// </summary>
+    internal static IApplicationBuilder UseMachinePathCanonicalGuard(this IApplicationBuilder app) =>
+        app.Use(async (context, next) =>
+        {
+            // The raw target is where a percent-encoded prefix letter is still visible; Path has
+            // already been decoded by the time this runs.
+            var rawTarget = context.Features.Get<IHttpRequestFeature>()?.RawTarget;
+            if (MachinePathCanonicalForm.IsRejectedSpelling(context.Request.Path, rawTarget, NonSpaPathPrefixes))
+            {
+                await WriteUnknownEndpointAsync(context);
+                return;
+            }
+
+            await next(context);
+        });
 
     internal static ForwardedHeadersOptions? BuildForwardedHeadersOptions(IConfiguration configuration)
     {

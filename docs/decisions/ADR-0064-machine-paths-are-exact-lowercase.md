@@ -1,4 +1,4 @@
-# ADR-0064: Machine-Facing Paths Are Exact Lowercase; Case and Encoded-Slash Variants Are 404 at Every Layer
+# ADR-0064: Machine-Facing Paths Are Exact Lowercase; Non-Canonical Spellings Are 404 at Every Layer
 
 - **Status**: Accepted (maintainer ruling 2026-08-30, v0.3 RC deck reply q-10 A, decision map
   `map:v1:bec0a8dd8ba5839bc4816da9e46371e89fc866c5bc936add3d9aceb414dd9138`, recorded on `#1992`;
@@ -20,8 +20,8 @@ them, and they did not agree on the spelling:
 | Service worker (`navigateFallbackDenylist`) | JS regex over `pathname + search` | **sensitive** | matches the **raw** pathname, so `%2F` is literal text |
 | ASP.NET Core (`PipelineConfiguration.NonSpaPathPrefixes`) | `PathString.StartsWithSegments` | **insensitive** | Kestrel decodes every escape **except** `%2F`, so `%2F` is literal text |
 
-Two spellings therefore had contradictory answers depending on which layer saw them first. Both were
-measured on `main` and recorded on `#1992`:
+Spellings therefore had contradictory answers depending on which layer saw them first. The two that
+were measured on `main` and recorded on `#1992` when the question was put to the maintainer:
 
 | URL | nginx | Service worker | API |
 | --- | --- | --- | --- |
@@ -39,11 +39,17 @@ Two dispositions were put to the maintainer as `#1992`'s open policy question:
 
 ## Decision
 
-**A.** A machine-facing prefix is the exact lowercase literal at a segment boundary. Any other
-spelling that some layer would read as that prefix is neither machine surface nor a client-side
-route: it answers `404` at nginx, is kept off the service worker's navigation fallback so that `404`
-reaches the user, and answers the JSON `404` error contract at the API. Nothing is rewritten,
+**A.** A machine-facing prefix is the exact lowercase literal at a segment boundary. A spelling in
+one of the four enumerated variant classes below — a case variant, a prefix-boundary encoded slash, a
+leading duplicate/encoded separator, or percent-encoded prefix letters — is neither machine surface
+nor a client-side route: it answers `404` at nginx, is kept off the service worker's navigation fallback so that `404` reaches
+the user, and answers the JSON `404` error contract at the API. Nothing is rewritten,
 lowercase-folded, or decoded into the canonical form.
+
+The four classes are the ones where a layer's own normalization creates the disagreement, and the
+decision covers exactly them — it is not a general claim that every conceivable alias is already
+handled. A newly discovered class (a further normalization in some layer, a proxy that rewrites) is
+a new slice against this ADR, not a silent gap in it.
 
 Concretely, and pinned end to end by `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` (run by
 required container CI before compose validation), `SpaFallbackRoutingApiTests` plus
@@ -60,10 +66,42 @@ required container CI before compose validation), `SpaFallbackRoutingApiTests` p
    (`if ($request_uri ~* "^/(?:api|hubs|health|mcp)%2f") { return 404; }`) evaluated before location
    selection. The API applies the same rule to `Request.Path`, where Kestrel has left `%2F` intact.
    The denylist already covered these (`#2079`).
+3. **Leading duplicate or encoded separators** — `//api/boards`, `/%2fapi/boards`, `//API/x`. nginx
+   percent-decodes and then applies `merge_slashes` (on by default), so the leading run collapses and
+   these select the machine location; `proxy_pass` carries no URI, so the API receives the client's
+   raw form, keeps the empty first segment, and reads it as an SPA path — `#1971`'s shape on a URL
+   the proxy had already classified as machine surface. Both alternations therefore live in the same
+   raw-`$request_uri` guard, with two or more leading separators as the discriminator (exactly one
+   plain slash is canonical). The API's guard consumes the same leading run and requires the same
+   segment boundary after the prefix, and the denylist regexes open with `(?:\/|%2[fF])+`. The
+   boundary is what keeps `//apidocs` a client-side route in all three layers.
+4. **Percent-encoded prefix letters** — `/%61pi/boards`, `/%6Dcp/messages`. These decode to the
+   canonical path in *both* nginx and Kestrel, so by the time either matches, the encoding is gone
+   and the request is on the real controller; `proxy_pass` carries no URI, so the raw form is what
+   the API receives. The rule needs the raw request *and* the decoded path at once, which one nginx
+   `if` cannot express, so the proxy states it as a conjunction of three `map`s: a percent escape
+   anywhere in the **first raw path segment** (`~^/[^/?]*%`) **and** a decoded path that is
+   machine-facing. The API applies the same conjunction against `IHttpRequestFeature.RawTarget`. The
+   service worker cannot decode, so its denylist spells each prefix letter as itself or its escape
+   (`(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)`), which matches every spelling that decodes to the
+   prefix and nothing else. Scoping to machine-facing decoded paths is what keeps `/caf%C3%A9`
+   working; scoping to the first segment is what keeps `/api/board%20s` ordinary route data.
 
-Scope is the prefix boundary. An encoded slash *inside* a machine path (`/api/boards%2Fx`) is
-ordinary route data, is already machine surface to all three layers, and already answers the `404`
-contract when no route matches it; it is untouched.
+Scope is the prefix boundary. An encoded slash *inside* a machine path (`/api/boards%2Fx`), and a
+duplicated slash inside one (`/api//boards`), are ordinary route data: already machine surface to all
+three layers, and already answering the `404` contract when no route matches. They are untouched.
+
+The **standalone MCP host** (`--mcp --transport http`) runs the same guard. It builds its own
+pipeline rather than calling `ConfigureTaskdeckPipeline`, so the guard is registered there
+explicitly, ahead of `ApiKeyMiddleware`. It has no SPA fallback to leak, but without the guard `/MCP`
+with a valid key reached the real endpoint — one URL meaning two different things depending on which
+host serves it.
+
+The guard runs **ahead of the CORS middleware** in both pipelines. `CorsMiddleware` short-circuits a
+preflight with `204` as soon as it sees `Access-Control-Request-Method`, so a guard behind it would
+answer `OPTIONS /API/boards` with a success a browser reads as "this endpoint exists". Correlation
+ID, the unhandled-exception wrapper and the security headers moved ahead of CORS with it, so the
+guard still runs inside all three.
 
 ## Consequences
 

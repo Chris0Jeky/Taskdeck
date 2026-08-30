@@ -332,6 +332,55 @@ public class StandaloneMcpHostFilteringTests
             });
     }
 
+    // The fail-closed machine-path contract holds on THIS host too (#1992 q-10 A, ADR-0064). The
+    // standalone branch builds its own pipeline instead of calling ConfigureTaskdeckPipeline, so it
+    // is the one place the guard could silently be absent: before it was registered there, /MCP with
+    // a valid key reached the real endpoint and answered 200 + a session id — the same URL the
+    // reverse proxy and the service worker both refuse to route, and which the co-hosted host
+    // answers 404.
+    //
+    // Discriminating by construction: the key is valid and the budget is clear, so a missing guard
+    // gives 200 (endpoint executed), and a guard placed AFTER ApiKeyMiddleware would give 401 for
+    // the no-key case below. Only "reject before authentication" produces 404 for both.
+    [Fact]
+    public async Task StandaloneMcpHttpHost_NonCanonicalMcpSpelling_Returns404BeforeAuthentication()
+    {
+        await RunSeededApiKeyHostAsync(
+            "tdsk_standalone_canonical_000000000000000",
+            perKeyPermitLimit: 1000,
+            async client =>
+            {
+                // Limited to spellings that survive System.Uri intact. A relative "//mcp" is a
+                // network-path reference (it would become host "mcp"), and "%6D" is an unreserved
+                // escape that Uri decodes, so neither can be put on the wire through HttpClient.
+                // Those two classes are covered against the shared guard itself, at exact
+                // Request.Path / RawTarget, in SpaFallbackRoutingApiTests.
+                foreach (var path in new[] { "/MCP", "/Mcp", "/mcp%2Fmessages" })
+                {
+                    using var withKey = await PostMcpInitializeAsync(client, path: path);
+                    var body = await withKey.Content.ReadAsStringAsync();
+
+                    withKey.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                        $"'{path}' is not the canonical spelling of the MCP prefix, so the standalone " +
+                        $"host must answer the same 404 contract the co-hosted host does; body was: {body}");
+                    withKey.Headers.Contains("Mcp-Session-Id").Should().BeFalse(
+                        "a rejected spelling must never reach the transport, let alone mint a session");
+                }
+
+                // Same paths without a key: still 404, never 401. The guard runs before
+                // ApiKeyMiddleware, so a non-existent path is never reported as "authenticate first".
+                using var noKeyClient = new HttpClient { BaseAddress = client.BaseAddress };
+                using var anonymous = await PostMcpInitializeAsync(noKeyClient, path: "/MCP");
+
+                anonymous.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+                // The canonical spelling is untouched by the guard: still authenticated, still served.
+                using var canonical = await PostMcpInitializeAsync(client);
+                canonical.StatusCode.Should().Be(HttpStatusCode.OK,
+                    "the guard must reject variants without narrowing the real MCP surface");
+            });
+    }
+
     /// <summary>
     /// Boots the real standalone MCP HTTP entry point with a per-key budget of
     /// <paramref name="perKeyPermitLimit"/> permits / 300s, seeds <paramref name="plaintextKey"/>
@@ -673,13 +722,16 @@ public class StandaloneMcpHostFilteringTests
     /// the Authorization header on the client. An <paramref name="origin"/> makes it a cross-origin
     /// request, which is the branch where CORS middleware evaluates a policy.
     /// </summary>
-    private static async Task<HttpResponseMessage> PostMcpInitializeAsync(HttpClient client, string? origin = null)
+    private static async Task<HttpResponseMessage> PostMcpInitializeAsync(
+        HttpClient client,
+        string? origin = null,
+        string path = "/mcp")
     {
         const string initializeRequest = """
             {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"Taskdeck.Api.Tests","version":"1.0"}}}
             """;
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/mcp")
+        using var request = new HttpRequestMessage(HttpMethod.Post, path)
         {
             Content = new StringContent(initializeRequest, Encoding.UTF8, "application/json")
         };

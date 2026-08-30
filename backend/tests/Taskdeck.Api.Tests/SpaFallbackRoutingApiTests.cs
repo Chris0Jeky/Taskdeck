@@ -5,6 +5,7 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Tests.Support;
@@ -532,14 +533,28 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
     /// hold, and is the only way to present a path (such as a still-double-encoded one) that no
     /// client URL can produce.
     /// </summary>
-    private async Task<(int StatusCode, string Body)> SendExactPathAsync(string rawPath)
+    private async Task<(int StatusCode, string Body)> SendExactPathAsync(
+        string rawPath,
+        string? rawTarget = null,
+        string method = "GET",
+        Action<HttpContext>? configure = null)
     {
         using var responseBody = new MemoryStream();
         var context = await _factory.Server.SendAsync(ctx =>
         {
-            ctx.Request.Method = HttpMethods.Get;
+            ctx.Request.Method = method;
             ctx.Request.Path = new PathString(rawPath);
+            // Kestrel always supplies the origin-form request line; TestServer does not, so a test
+            // that exercises the raw-target rule has to state it. Defaulting to the path keeps every
+            // other case honest — a path with no escapes IS its own raw target.
+            var requestFeature = ctx.Features.Get<IHttpRequestFeature>();
+            if (requestFeature is not null)
+            {
+                requestFeature.RawTarget = rawTarget ?? rawPath;
+            }
+
             ctx.Response.Body = responseBody;
+            configure?.Invoke(ctx);
         });
 
         return (context.Response.StatusCode, Encoding.UTF8.GetString(responseBody.ToArray()));
@@ -562,6 +577,130 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
         statusCode.Should().Be(StatusCodes.Status404NotFound);
         body.Should().Contain("NotFound");
         body.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    [InlineData("//api/boards")]
+    [InlineData("//api")]
+    [InlineData("///api/boards")]
+    [InlineData("//hubs/board")]
+    [InlineData("//health/live")]
+    [InlineData("//mcp/messages")]
+    [InlineData("//API/boards")]
+    [InlineData("/%2fapi/boards")]
+    [InlineData("/%2Fapi/boards")]
+    [InlineData("/%2fmcp")]
+    public async Task LeadingSeparatorVariant_Returns404ErrorContract(string rawPath)
+    {
+        // nginx percent-decodes and then merges slashes, so these select the machine location and
+        // are proxied on in their raw form; this host keeps the empty first segment, so before the
+        // guard they missed every machine check and landed on the SPA shell — including
+        // //api/boards, whose canonical form is a real, authenticated route.
+        var (statusCode, body) = await SendExactPathAsync(rawPath);
+
+        statusCode.Should().Be(StatusCodes.Status404NotFound);
+        body.Should().Contain("NotFound");
+        body.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    [InlineData("//apidocs")]
+    [InlineData("//mcpx")]
+    [InlineData("//workspace/review")]
+    public async Task LeadingDuplicateSlashOnAClientRoute_StillServesSpaShell(string rawPath)
+    {
+        // The boundary check keeps the widened rule from swallowing a client-side route that merely
+        // opens with a duplicated separator: nginx merges these to /apidocs, /mcpx and
+        // /workspace/review and sends all three to the SPA container.
+        var (statusCode, body) = await SendExactPathAsync(rawPath);
+
+        statusCode.Should().Be(StatusCodes.Status200OK);
+        body.Should().Contain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    // Decoded path -> raw request target. Kestrel decodes %61 into 'a', so by the time any
+    // middleware runs these ARE the canonical path: only the raw target still says otherwise.
+    [InlineData("/api/boards", "/%61pi/boards")]
+    [InlineData("/api/boards", "/ap%69/boards")]
+    [InlineData("/mcp/messages", "/%6Dcp/messages")]
+    [InlineData("/hubs/board", "/hub%73/board")]
+    [InlineData("/health/live", "/%68ealth/live")]
+    [InlineData("/api", "/%61pi")]
+    public async Task PercentEncodedPrefixLetters_Returns404ErrorContract(string path, string rawTarget)
+    {
+        // nginx decodes before location matching too, so it routes these to the API container; the
+        // API then resolved them to the real controller. An encoded spelling of the prefix therefore
+        // worked end to end, which is exactly what the fail-closed contract denies (#1992 round 1).
+        var (statusCode, body) = await SendExactPathAsync(path, rawTarget);
+
+        statusCode.Should().Be(StatusCodes.Status404NotFound);
+        body.Should().Contain("NotFound");
+        body.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    // An escape in the first segment of a NON-machine path is ordinary SPA routing and must keep
+    // working: the rule is scoped to requests whose decoded path is machine-facing.
+    [InlineData("/café", "/caf%C3%A9")]
+    [InlineData("/a b", "/a%20b")]
+    public async Task PercentEncodedFirstSegmentOnAClientRoute_StillServesSpaShell(string path, string rawTarget)
+    {
+        var (statusCode, body) = await SendExactPathAsync(path, rawTarget);
+
+        statusCode.Should().Be(StatusCodes.Status200OK);
+        body.Should().Contain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Fact]
+    public async Task PercentEncodedSegmentDeeperInAMachinePath_IsNotRejectedByTheSpellingRule()
+    {
+        // Only the FIRST segment spells the prefix. An escape further in is ordinary route data on a
+        // path that is already machine surface to every layer, so it keeps the normal contract —
+        // here, the 404 that any unknown machine path gets, not the spelling rejection.
+        var (statusCode, body) = await SendExactPathAsync("/api/board s", "/api/board%20s");
+
+        statusCode.Should().Be(StatusCodes.Status404NotFound);
+        body.Should().Contain("NotFound");
+    }
+
+    [Theory]
+    [InlineData("/API/boards")]
+    [InlineData("/api%2Fboards")]
+    [InlineData("//api/boards")]
+    public async Task CorsPreflightOnAVariant_Returns404(string rawPath)
+    {
+        // CorsMiddleware short-circuits a preflight with 204 the moment it sees
+        // Access-Control-Request-Method, so a guard registered after it would answer OPTIONS on a
+        // non-existent path with a success a browser reads as "this endpoint exists, go ahead".
+        // The guard therefore runs ahead of CORS (#1992 round 1).
+        var (statusCode, _) = await SendExactPathAsync(
+            rawPath,
+            method: "OPTIONS",
+            configure: ctx =>
+            {
+                ctx.Request.Headers.Origin = "http://localhost:5173";
+                ctx.Request.Headers.AccessControlRequestMethod = "GET";
+            });
+
+        statusCode.Should().Be(StatusCodes.Status404NotFound);
+    }
+
+    [Fact]
+    public async Task CorsPreflightOnACanonicalMachinePath_IsStillHandledByCors()
+    {
+        // The other direction: moving the guard ahead of CORS must not intercept a legitimate
+        // preflight. A canonical path is not a variant, so CORS still answers it.
+        var (statusCode, _) = await SendExactPathAsync(
+            "/api/boards",
+            method: "OPTIONS",
+            configure: ctx =>
+            {
+                ctx.Request.Headers.Origin = "http://localhost:5173";
+                ctx.Request.Headers.AccessControlRequestMethod = "GET";
+            });
+
+        statusCode.Should().NotBe(StatusCodes.Status404NotFound);
     }
 
     [Fact]

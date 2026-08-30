@@ -25,6 +25,15 @@ namespace Taskdeck.Api.Routing;
 /// single segment <c>mcp%2Fmessages</c> and reports "not machine-facing" — which bypasses
 /// <c>ApiKeyMiddleware</c>, the machine fallbacks, and the 404/405 contract, and falls through to
 /// the SPA shell.</description></item>
+/// <item><description><b>Leading duplicate or encoded separator.</b> nginx percent-decodes and then
+/// merges slashes (<c>merge_slashes</c> is on by default), so <c>//api/boards</c> and
+/// <c>/%2fapi/boards</c> both select the <c>/api</c> location and are proxied on carrying the
+/// client's raw form; this host keeps the empty first segment and reads it as an SPA path. See
+/// <see cref="IsLeadingSeparatorVariant"/>.</description></item>
+/// <item><description><b>Percent-encoded prefix letters.</b> <c>/%61pi/boards</c> decodes to the
+/// canonical path in <em>both</em> nginx and Kestrel, so by the time any middleware runs the
+/// encoding is gone and the request is at the real controller. Only the raw request target still
+/// carries it. See <see cref="IsRejectedSpelling"/>.</description></item>
 /// </list>
 ///
 /// Normalizing (lowercase-folding or decoding into the canonical path) was considered and rejected
@@ -48,6 +57,77 @@ internal static class MachinePathCanonicalForm
     /// <c>%2F</c>).</param>
     /// <param name="canonicalPrefixes">The exact lowercase machine prefixes, each starting with
     /// <c>/</c>.</param>
+    /// <summary>
+    /// The full fail-closed test: <see cref="IsRejectedVariant"/> plus the one variant class that is
+    /// invisible in <see cref="HttpRequest.Path"/> — percent-encoded prefix <em>letters</em>.
+    /// </summary>
+    /// <remarks>
+    /// Kestrel decodes every escape except <c>%2F</c>, so <c>/%61pi/boards</c> arrives with
+    /// <c>Path == "/api/boards"</c> — byte-identical to the canonical spelling by the time any
+    /// middleware sees it, and it reaches the real board controller. nginx decodes before location
+    /// matching too, so it also treats the URL as machine surface, but <c>proxy_pass</c> carries no
+    /// URI and forwards the raw form. The encoded spelling therefore worked end to end.
+    ///
+    /// The raw request target is the only place that encoding survives, so the rule is stated there:
+    /// a <c>%</c> anywhere in the first raw path segment, on a request whose decoded path is
+    /// machine-facing, is a non-canonical spelling of the prefix. Scoping it to machine-facing
+    /// decoded paths is what keeps an ordinary SPA route such as <c>/caf%C3%A9</c> working.
+    ///
+    /// <paramref name="rawTarget"/> is best-effort: a host that does not supply one (or supplies an
+    /// absolute-form target) is checked by <see cref="IsRejectedVariant"/> alone. On Kestrel it is
+    /// always present in origin form.
+    /// </remarks>
+    internal static bool IsRejectedSpelling(
+        PathString path,
+        string? rawTarget,
+        IReadOnlyList<string> canonicalPrefixes)
+        => IsRejectedVariant(path, canonicalPrefixes) ||
+           HasEncodedPrefixLetters(path, rawTarget, canonicalPrefixes);
+
+    private static bool HasEncodedPrefixLetters(
+        PathString path,
+        string? rawTarget,
+        IReadOnlyList<string> canonicalPrefixes)
+    {
+        if (string.IsNullOrEmpty(rawTarget) || rawTarget[0] != '/')
+        {
+            return false;
+        }
+
+        // First raw path segment: everything between the leading '/' and the next '/', stopping at
+        // the query. A '%' anywhere in it means the segment was not written literally.
+        var encoded = false;
+        for (var i = 1; i < rawTarget.Length; i++)
+        {
+            var c = rawTarget[i];
+            if (c == '/' || c == '?' || c == '#')
+            {
+                break;
+            }
+
+            if (c == '%')
+            {
+                encoded = true;
+                break;
+            }
+        }
+
+        if (!encoded)
+        {
+            return false;
+        }
+
+        foreach (var prefix in canonicalPrefixes)
+        {
+            if (path.StartsWithSegments(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     internal static bool IsRejectedVariant(PathString path, IReadOnlyList<string> canonicalPrefixes)
     {
         var value = path.Value;
@@ -73,6 +153,77 @@ internal static class MachinePathCanonicalForm
             // segment-boundary probe above cannot see it, because there is no segment boundary.
             if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
                 IsEncodedSlashAt(value, prefix.Length))
+            {
+                return true;
+            }
+        }
+
+        return IsLeadingSeparatorVariant(value, canonicalPrefixes);
+    }
+
+    /// <summary>
+    /// True when the path opens with a separator run that is anything other than the single
+    /// canonical <c>/</c> — a duplicated slash (<c>//api/boards</c>) or an encoded one
+    /// (<c>/%2fapi/boards</c>) — and a machine prefix follows it at a boundary.
+    ///
+    /// nginx normalizes both away before it picks a location: it percent-decodes (turning
+    /// <c>%2f</c> into a separator) and then applies <c>merge_slashes</c>, which is on by default,
+    /// so <c>//api/boards</c> and <c>/%2fapi/boards</c> both match <c>location ~ ^/api(?:/|$)</c>
+    /// and are proxied to the API — with the client's RAW form, because <c>proxy_pass</c> carries
+    /// no URI. This host does neither normalization, so the empty first segment makes
+    /// <see cref="PathString.StartsWithSegments(PathString)"/> false and the request falls through
+    /// to the SPA shell: the `#1971` shape again, on a URL the proxy had already classified as
+    /// machine surface.
+    ///
+    /// A single leading <c>/</c> is the canonical case and is never handled here; it has already
+    /// been decided by the two probes above.
+    /// </summary>
+    private static bool IsLeadingSeparatorVariant(string value, IReadOnlyList<string> canonicalPrefixes)
+    {
+        // Consume the leading separator run, counting real and encoded separators alike.
+        var index = 0;
+        var separators = 0;
+        while (index < value.Length)
+        {
+            if (value[index] == '/')
+            {
+                index++;
+                separators++;
+            }
+            else if (IsEncodedSlashAt(value, index))
+            {
+                index += 3;
+                separators++;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        // Exactly one separator is the canonical opening. (It is necessarily a real '/': an encoded
+        // one would have made the run at least two, since the path always starts with '/'.)
+        if (separators < 2)
+        {
+            return false;
+        }
+
+        foreach (var prefix in canonicalPrefixes)
+        {
+            // The prefixes carry their own leading '/', which the run above has consumed.
+            var name = prefix.AsSpan(1);
+            var remainder = value.AsSpan(index);
+            if (!remainder.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // Same segment boundary as everywhere else, so //apidocs stays a client-side route.
+            var after = index + name.Length;
+            if (after == value.Length ||
+                value[after] == '/' ||
+                value[after] == '?' ||
+                IsEncodedSlashAt(value, after))
             {
                 return true;
             }

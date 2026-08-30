@@ -193,6 +193,17 @@ if (args.Contains("--mcp"))
         // Correlation ID propagation: honours client X-Request-Id header.
         mcpHttpApp.UseMiddleware<Taskdeck.Api.Middleware.CorrelationIdMiddleware>();
 
+        // Fail-closed machine-path spelling (#1992, ADR-0064), the identical rule the co-hosted
+        // pipeline enforces. This host builds its own pipeline rather than calling
+        // ConfigureTaskdeckPipeline, so without this line /MCP answered 401 without a key and 200
+        // WITH one — the real endpoint, reached by a spelling the reverse proxy and the service
+        // worker both refuse to route. There is no SPA fallback here to leak, but one URL must not
+        // mean two different things depending on which host is serving it.
+        //
+        // Ahead of ApiKeyMiddleware so a variant is rejected before a key parse, the failure budget
+        // or the per-key budget, and so the answer is 404 rather than "authenticate for this".
+        Taskdeck.Api.Extensions.PipelineConfiguration.UseMachinePathCanonicalGuard(mcpHttpApp);
+
         // MCP telemetry middleware: structured logging, spans, and metrics for /mcp requests.
         // Runs before ApiKeyMiddleware so it captures all requests including those
         // rejected with 401 (missing/invalid/revoked API keys).
