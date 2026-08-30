@@ -23,6 +23,11 @@ public static class PipelineConfiguration
     /// probes, and the MCP HTTP transport — rather than by the Vue SPA. An unmatched path under one
     /// of these is a wrong path, never a client-side route, so it is answered with a 404 error
     /// contract instead of the SPA shell (#1971).
+    ///
+    /// The spelling is exact and lowercase, and is the same literal set nginx and the service
+    /// worker denylist carry. Variants that only some layers read as machine surface — other cases,
+    /// prefix-boundary encoded slashes — are rejected up front by
+    /// <see cref="MachinePathCanonicalForm"/> rather than normalized (#1992, ADR-0064).
     /// </summary>
     internal static readonly string[] NonSpaPathPrefixes = ["/api", "/hubs", "/health", "/mcp"];
 
@@ -98,6 +103,30 @@ public static class PipelineConfiguration
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseMiddleware<UnhandledExceptionMiddleware>();
         app.UseMiddleware<SecurityHeadersMiddleware>();
+
+        // Fail-closed machine-path spelling (#1992, maintainer ruling q-10 A; ADR-0064). A machine
+        // prefix is the exact lowercase literal at a segment boundary. A case variant (/API/boards)
+        // or a prefix-boundary encoded slash (/mcp%2Fmessages) is read as machine surface by ONE
+        // layer and as SPA surface by another — case-insensitive ASP.NET routing would serve
+        // /API/boards from the real controller while nginx never sends it to this container at all,
+        // and Kestrel leaves %2F encoded so /mcp%2Fmessages looks like a single non-machine segment
+        // here while nginx location-matches the decoded /mcp/messages. Neither is normalized into
+        // the canonical path: the ruling rejects normalization, so both answer the 404 contract.
+        //
+        // Placed before static files, MCP telemetry, and every authentication middleware so a
+        // variant is rejected before it can reach a real endpoint, consume a rate-limit budget, or
+        // be answered 401 (which would say "this exists, authenticate" about a path that, under
+        // this contract, does not exist).
+        app.Use(async (context, next) =>
+        {
+            if (MachinePathCanonicalForm.IsRejectedVariant(context.Request.Path, NonSpaPathPrefixes))
+            {
+                await WriteUnknownEndpointAsync(context);
+                return;
+            }
+
+            await next(context);
+        });
 
         // SPA static file serving: serve Vue build output from wwwroot/.
         // Placed after security-headers middleware so that the OnStarting callback registered by
@@ -352,6 +381,12 @@ public static class PipelineConfiguration
     /// <see cref="PathString.StartsWithSegments(PathString, StringComparison)"/> so the boundary is a
     /// segment boundary — <c>/api/x</c> and the bare <c>/api</c> are machine paths, <c>/apidocs</c> is
     /// not — matching the <c>^/api(?:/|$)</c> shape the reverse proxy uses for the same prefixes.
+    ///
+    /// The comparison stays case-insensitive on purpose even though the fail-closed guard
+    /// (<see cref="MachinePathCanonicalForm"/>) has already rejected every non-lowercase spelling
+    /// before this runs: if that guard were ever removed, an ordinal comparison here would hand
+    /// <c>/API/typo</c> back to the SPA shell — the exact defect #1971 fixed — while this one keeps
+    /// answering the machine contract.
     /// </summary>
     private static bool IsMachineFacingPath(PathString path)
     {

@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Taskdeck.Api.Controllers;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Tests.Support;
@@ -37,8 +39,9 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
         // A file-looking segment: the SPA catch-all is {*path:nonfile}, so this never matched the
         // shell — it fell through as a bodyless 404. It must now carry the API error contract too.
         "/api/nonexistent.json",
-        // Route matching is case-insensitive for literal segments, so an upper-case prefix resolves
-        // to the same fallback. If it did not, "/API/..." would be a trivial bypass back to the shell.
+        // An upper-case prefix answers the same 404 contract, though since #1992 it does so at the
+        // fail-closed guard (the spelling is not canonical) rather than at the per-prefix fallback.
+        // Either way "/API/..." must never be a bypass back to the shell.
         "/API/definitely-not-a-real-endpoint-hzn",
         "/hubs/definitely-not-a-real-hub",
         "/health/definitely-not-a-real-probe"
@@ -446,6 +449,189 @@ public class SpaFallbackRoutingApiTests : IClassFixture<SpaShellTestWebApplicati
 
         response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
         response.Content.Headers.Allow.Should().BeEquivalentTo("POST");
+    }
+
+    public static TheoryData<string> MachinePathCaseVariants() =>
+    [
+        // Bare prefixes in a spelling nginx and the service worker denylist do not recognise.
+        "/API",
+        "/Mcp",
+        "/HUBS",
+        "/Health",
+        // A case variant of a REAL route. Route matching is case-insensitive, so before the
+        // fail-closed guard this reached the board controller and answered 401 (anonymous) or 200
+        // (authenticated) on a URL the reverse proxy would have sent to the SPA container instead.
+        "/API/boards",
+        "/Api/boards",
+        // A case variant of a real health probe and a real hub, which have no auth gate at all.
+        "/HEALTH/live",
+        "/Hubs/board",
+        // /mcp is gated by ApiKeyMiddleware; a case variant must not reach it, so this answers 404
+        // rather than the 401 that middleware gives every real /mcp request without a key.
+        "/MCP/messages"
+    ];
+
+    [Theory]
+    [MemberData(nameof(MachinePathCaseVariants))]
+    public async Task MachinePathCaseVariant_Returns404ErrorContract_WhenAnonymous(string path)
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path);
+
+        // Fail closed (#1992, q-10 A): the machine prefixes are exact lowercase, so a case variant
+        // is not a machine path, not a client-side route, and is never normalized into either.
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+    }
+
+    [Theory]
+    [MemberData(nameof(MachinePathCaseVariants))]
+    public async Task MachinePathCaseVariant_Returns404ErrorContract_WhenAuthenticated(string path)
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "machine_path_case_variant");
+
+        var response = await client.GetAsync(path);
+        var body = await response.Content.ReadAsStringAsync();
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+        body.Should().NotContain(
+            SpaShellTestWebApplicationFactory.ShellMarker,
+            "a case variant of a machine path must not be answered with the app shell either (#1992)");
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task MachinePathCaseVariantOnARealRoute_Returns404ForEveryVerb(string method)
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "machine_path_case_variant_verb");
+
+        // POST /api/boards exists, so without the guard this is a real route reached by a variant
+        // spelling. The contract is verb-independent: the path does not exist, whatever the verb.
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/API/boards");
+        var response = await client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.Content.Headers.Allow.Should().BeEmpty(
+            "a path that does not exist advertises no methods");
+    }
+
+    /// <summary>
+    /// Drives the pipeline with an exact <c>Request.Path</c> instead of a client URL, so the
+    /// encoded-slash cases assert on the string the guard actually receives rather than on whatever
+    /// the client stack left after its own normalization.
+    ///
+    /// Measured on .NET 8 (pinned by
+    /// <see cref="EncodedSlashSurvivesTheTestClientsPathParsing"/>): <c>TestServer</c>'s
+    /// <c>HttpClient</c> builds the path with <c>PathString.FromUriComponent</c>, which decodes
+    /// percent-escapes except <c>%2F</c> — the same rule Kestrel applies — so a client-driven test
+    /// would in fact be faithful here. This helper removes the dependency on that continuing to
+    /// hold, and is the only way to present a path (such as a still-double-encoded one) that no
+    /// client URL can produce.
+    /// </summary>
+    private async Task<(int StatusCode, string Body)> SendExactPathAsync(string rawPath)
+    {
+        using var responseBody = new MemoryStream();
+        var context = await _factory.Server.SendAsync(ctx =>
+        {
+            ctx.Request.Method = HttpMethods.Get;
+            ctx.Request.Path = new PathString(rawPath);
+            ctx.Response.Body = responseBody;
+        });
+
+        return (context.Response.StatusCode, Encoding.UTF8.GetString(responseBody.ToArray()));
+    }
+
+    [Theory]
+    [InlineData("/mcp%2Fmessages")]
+    [InlineData("/mcp%2fmessages")]
+    [InlineData("/api%2Fboards")]
+    [InlineData("/hubs%2Fboard")]
+    [InlineData("/health%2Flive")]
+    [InlineData("/MCP%2Fmessages")]
+    public async Task PrefixBoundaryEncodedSlash_Returns404ErrorContract(string rawPath)
+    {
+        // nginx decodes before location matching, so it reads these as machine surface; this host
+        // leaves %2F encoded, so before the guard they looked like one opaque SPA segment and fell
+        // through to the shell — past ApiKeyMiddleware in the /mcp case (#1992).
+        var (statusCode, body) = await SendExactPathAsync(rawPath);
+
+        statusCode.Should().Be(StatusCodes.Status404NotFound);
+        body.Should().Contain("NotFound");
+        body.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Fact]
+    public void EncodedSlashSurvivesTheTestClientsPathParsing()
+    {
+        // Pins the measurement the helper above rests on, in both directions. %2F survives path
+        // parsing intact, while %25 does not — which is why a double-encoded slash arrives at the
+        // app as the single-encoded form and cannot be distinguished from it here (see
+        // DoubleEncodedSlash_CollapsesOntoTheEncodedSlashContract).
+        PathString.FromUriComponent(new Uri("http://localhost/mcp%2Fmessages"))
+            .Value.Should().Be("/mcp%2Fmessages");
+        PathString.FromUriComponent(new Uri("http://localhost/mcp%252Fmessages"))
+            .Value.Should().Be("/mcp%2Fmessages");
+    }
+
+    [Fact]
+    public async Task DoubleEncodedSlash_CollapsesOntoTheEncodedSlashContract()
+    {
+        // A client URL of /mcp%252Fmessages reaches this app as /mcp%2Fmessages: the host decodes
+        // %25 and leaves %2F, so the two spellings are one path here and the answer is the
+        // fail-closed 404. nginx and the service worker CAN tell them apart (both see the raw form)
+        // and route the double-encoded one to the SPA, so the layers diverge for this one input.
+        // That asymmetry is accepted rather than papered over: the divergence is toward 404, and
+        // the only way to remove it would be to decode %25 differently from every other escape.
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/mcp%252Fmessages");
+
+        await ApiTestHarness.AssertErrorContractAsync(response, HttpStatusCode.NotFound, "NotFound");
+    }
+
+    [Fact]
+    public async Task LiteralPercent2FTextAfterAPrefix_StillServesSpaShell()
+    {
+        // The path a still-double-encoded URI would have if it reached the app undecoded. It is not
+        // a prefix alias to any layer, so the guard must leave it on the SPA side — the boundary
+        // check is "%2F immediately after the prefix", not "the letters %2F appear".
+        var (statusCode, body) = await SendExactPathAsync("/mcp%252Fmessages");
+
+        statusCode.Should().Be(StatusCodes.Status200OK);
+        body.Should().Contain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Fact]
+    public async Task MachinePathCaseVariant_NeverReturnsTheSpaShell()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/API/definitely-not-a-real-endpoint");
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("text/html");
+        body.Should().NotContain(SpaShellTestWebApplicationFactory.ShellMarker);
+    }
+
+    [Theory]
+    [InlineData("/Apidocs")]
+    [InlineData("/Healthy")]
+    [InlineData("/McpX")]
+    public async Task PrefixShapedClientRoute_StillServesSpaShell_InAnyCase(string path)
+    {
+        // The guard keys on the segment boundary, so a client-side route that merely starts with a
+        // machine prefix's letters is untouched by it — in any casing.
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync(path);
+        var body = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Contain(SpaShellTestWebApplicationFactory.ShellMarker);
     }
 
     [Fact]
