@@ -863,12 +863,13 @@ key → user mapping via `HttpUserContextProvider` and does not read these keys.
 | --- | --- | --- | --- | --- |
 | `McpServer:DefaultUserId` | `string` (non-empty GUID) | unset | User ID used to identify the MCP stdio caller. When configured, it must name an existing active local user; an empty, zero, malformed, missing, or inactive value fails closed without trying another account. When truly unset, the provider selects the only active local user. Zero or multiple active users are errors, and inactive users do not count toward that fallback. | Required for MCP stdio when more than one active local user exists |
 
-Stdio caller identity is resolved lazily by the first operation that needs it, not during MCP
-startup. `initialize` and tool discovery can therefore succeed before an ambiguous or inactive
-identity is detected. If multiple active users leave `McpServer:DefaultUserId` unset, or the
-configured ID does not name an active user, that operation fails closed, writes the actionable
-configuration guidance once to the stderr diagnostic channel, and returns the same non-secret
-remediation in its tool error. HTTP MCP keeps its separate API-key identity path.
+Stdio caller identity is not resolved during `initialize`; it is first resolved by an identity-gated
+request. `tools/list`, `resources/list`, `resources/templates/list`, and `resources/read` are
+identity-gated, so normal tool discovery may be the first request to detect an ambiguous or inactive
+identity. In the two cases above, the host fails closed and writes the actionable guidance once to
+stderr. A known `tools/call` also returns that guidance in an `isError: true` tool result; discovery
+and resource requests return generic access-denied JSON-RPC errors. HTTP MCP keeps its separate
+API-key identity path.
 
 ## Logging
 
