@@ -84,6 +84,19 @@ public sealed class CaptureServiceReadSwitchTests
             capturedAtServer: request.CreatedAt,
             sourceText: text);
 
+    private CaptureListMaterial MaterialFor(
+        LlmRequest request,
+        string text,
+        CaptureSource source = CaptureSource.Typed,
+        DateTimeOffset? updatedAt = null) =>
+        new(request.Id, source, request.CreatedAt, updatedAt ?? DateTimeOffset.UtcNow.AddMinutes(5), text);
+
+    private void SetupListMaterial(params CaptureListMaterial[] material) =>
+        _captureStore
+            .Setup(store => store.GetListMaterialForUserAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(material);
+
     private void SetupList(params LlmRequest[] rows)
     {
         _queue
@@ -103,10 +116,7 @@ public sealed class CaptureServiceReadSwitchTests
         SetupList(row);
         // The aggregate is authoritative for the capture own material; the payload text below is
         // what the shipped path would have shown.
-        _captureStore
-            .Setup(store => store.GetByIdsForUserAsync(
-                It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { DurableFor(row, "durable source text", CaptureSource.Paste) });
+        SetupListMaterial(MaterialFor(row, "durable source text", CaptureSource.Paste));
 
         var result = await CreateService().ListAsync(_userId, new CaptureListFilterDto());
 
@@ -118,9 +128,13 @@ public sealed class CaptureServiceReadSwitchTests
         summary.CreatedAt.Should().Be(row.CreatedAt);
         summary.Status.Should().Be(CaptureStatus.New, "queue status is still job state");
         _captureStore.Verify(
-            store => store.GetByIdsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()),
+            store => store.GetListMaterialForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()),
             Times.Once,
             "one owner-scoped batch per page, never one query per item");
+        _captureStore.Verify(
+            store => store.GetByIdsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            Times.Never,
+            "a listing must never load whole aggregates, superseded revisions included");
     }
 
     [Fact]
@@ -129,10 +143,7 @@ public sealed class CaptureServiceReadSwitchTests
         var mirrored = QueueRow("mirrored text");
         var notBackfilled = QueueRow("only on the queue row");
         SetupList(mirrored, notBackfilled);
-        _captureStore
-            .Setup(store => store.GetByIdsForUserAsync(
-                It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { DurableFor(mirrored, "mirrored text") });
+        SetupListMaterial(MaterialFor(mirrored, "mirrored text"));
 
         var result = await CreateService().ListAsync(_userId, new CaptureListFilterDto());
 
@@ -151,7 +162,7 @@ public sealed class CaptureServiceReadSwitchTests
 
         result.Value.Should().ContainSingle().Which.TextExcerpt.Should().Be("payload text");
         _captureStore.Verify(
-            store => store.GetByIdsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            store => store.GetListMaterialForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never,
             "a host whose backfill has not run keeps reading the queue row");
     }
@@ -166,7 +177,7 @@ public sealed class CaptureServiceReadSwitchTests
 
         result.Value.Should().ContainSingle().Which.TextExcerpt.Should().Be("payload text");
         _captureStore.Verify(
-            store => store.GetByIdsForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
+            store => store.GetListMaterialForUserAsync(It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -175,10 +186,7 @@ public sealed class CaptureServiceReadSwitchTests
     {
         var row = QueueRow("identical text", CaptureSource.TranscriptPaste);
         SetupList(row);
-        _captureStore
-            .Setup(store => store.GetByIdsForUserAsync(
-                It.IsAny<IReadOnlyCollection<Guid>>(), _userId, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new[] { DurableFor(row, "identical text", CaptureSource.TranscriptPaste) });
+        SetupListMaterial(MaterialFor(row, "identical text", CaptureSource.TranscriptPaste));
 
         var throughStore = await CreateService().ListAsync(_userId, new CaptureListFilterDto());
         var throughQueue = await CreateService(backfillComplete: false).ListAsync(_userId, new CaptureListFilterDto());
@@ -186,6 +194,106 @@ public sealed class CaptureServiceReadSwitchTests
         throughStore.Value.Should().BeEquivalentTo(
             throughQueue.Value,
             "the Inbox is byte-identical across the read switch");
+    }
+
+    // ------------------------------------------------------------- divergence guard
+    [Fact]
+    public async Task ListAsync_ShouldServeTheQueueRowWhenTheAggregateHasFallenBehindIt()
+    {
+        // Round-1 review, HIGH-1 and MEDIUM-2: an edit that reached the queue row but not the
+        // aggregate (dual-write off, or a durable write that failed and was swallowed) must not be
+        // hidden behind stale aggregate text. The queue row is the newer writer, so it wins.
+        var row = QueueRow("corrected draft");
+        SetupList(row);
+        SetupListMaterial(MaterialFor(
+            row,
+            "first draft",
+            updatedAt: row.UpdatedAt.AddMinutes(-5)));
+
+        var result = await CreateService().ListAsync(_userId, new CaptureListFilterDto());
+
+        result.Value.Should().ContainSingle().Which.TextExcerpt
+            .Should().Be("corrected draft", "the read path prefers whichever writer moved last");
+    }
+
+    [Fact]
+    public async Task ListAsync_ShouldKeepUsingTheAggregateWhenItAgreesWithAQueueRowThatMovedOn()
+    {
+        // A triage transition stamps the queue row without touching the capture. The texts still
+        // agree, so this is not divergence and the read switch must stay on.
+        var row = QueueRow("same text");
+        SetupList(row);
+        SetupListMaterial(MaterialFor(
+            row,
+            "same text",
+            CaptureSource.Voice,
+            updatedAt: row.UpdatedAt.AddMinutes(-5)));
+
+        var result = await CreateService().ListAsync(_userId, new CaptureListFilterDto());
+
+        result.Value.Should().ContainSingle().Which.Source
+            .Should().Be(CaptureSource.Voice, "agreement on text means the aggregate is still authoritative");
+    }
+
+    // ------------------------------------------------------------- mutation responses obey the gate
+    [Fact]
+    public async Task KeepAsync_WithTheReadFlagOff_ShouldAnswerFromTheQueueRowNotTheAggregate()
+    {
+        // Round-1 review, MEDIUM-1: a mutation response is a read too. With the read switch
+        // disarmed, a keep must not hand back aggregate text that a GET would refuse to serve.
+        var row = QueueRow("payload text");
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>())).ReturnsAsync(row);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                row.Id,
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<RequestStatus>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _proposals
+            .Setup(repository => repository.GetBySourceReferenceAsync(
+                It.IsAny<ProposalSourceType>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AutomationProposal?)null);
+        _captureStore
+            .Setup(store => store.GetByIdForUpdateAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DurableFor(row, "aggregate text"));
+
+        var result = await CreateService(readFromStore: false).KeepAsync(_userId, row.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value!.RawText.Should().Be("payload text");
+    }
+
+    [Fact]
+    public async Task KeepAsync_ShouldStillRecordTheDurableDispositionWhenTheReadFlagIsOff()
+    {
+        // The gate governs what a response SHOWS, never whether the aggregate is kept in step: an
+        // aggregate allowed to drift is exactly what the divergence repair exists to prevent.
+        var row = QueueRow("payload text");
+        var durable = DurableFor(row, "payload text");
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>())).ReturnsAsync(row);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                row.Id,
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<RequestStatus>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _proposals
+            .Setup(repository => repository.GetBySourceReferenceAsync(
+                It.IsAny<ProposalSourceType>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AutomationProposal?)null);
+        _captureStore
+            .Setup(store => store.GetByIdForUpdateAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+
+        await CreateService(readFromStore: false).KeepAsync(_userId, row.Id);
+
+        durable.Disposition.Should().Be(CaptureUserDisposition.Kept);
+        _unitOfWork.Verify(unit => unit.BeginTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

@@ -169,7 +169,8 @@ public class MigrationBootstrapTests : IDisposable
             .Should().BeNull("a database that never ran the backfill has no marker, and reads stay on the queue row");
 
         var state = CaptureBackfillState.ForLegacyQueue(DateTimeOffset.UtcNow);
-        state.RecordBatch(migrated: 7, skipped: 1, "DomainException: unmappable");
+        state.RecordBatch(migrated: 7);
+        state.RecordSkipped(1, "DomainException: unmappable");
         await store.SaveStateAsync(state);
         await _context.SaveChangesAsync();
 

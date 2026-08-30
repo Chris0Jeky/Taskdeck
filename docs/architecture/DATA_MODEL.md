@@ -803,14 +803,31 @@ Active), and to requested intent as ProposalRequested → Act, Kept → Remember
 
 The backfill derives all three axes from what a legacy row actually recorded, through
 `CaptureLegacyStateMapping.Resolve(queueStatus, hasLinkedProposal, isConverted, disposition)` —
-never a single lifecycle value and never a default `Received`. It composes
-`CaptureStatusPolicy.MapFromQueueStatus` with the axis mapping the `ReconcileContextFabricScaffold`
-migration documents: Pending → Idle/Unplanned, Processing → Processing, Completed → Ready,
-Completed with a linked proposal → Ready/NeedsReview, an applied conversion → Ready/Acted, Failed →
-Failed, Cancelled → Archived. One deliberate departure from that composition: a cancelled row that
-had already produced a proposal or an applied change keeps its processing and action outcomes rather
-than collapsing to Idle/Unplanned, because archiving is a decision about the Inbox and does not make
-it untrue that the capture was understood or acted on. The one-line timeline still reads `Archived`.
+never a single lifecycle value and never a default `Received`.
+
+That mapping is **its own table, not a composition**: it does not call
+`CaptureStatusPolicy.MapFromQueueStatus`, because that policy collapses a row into one user-facing
+status and the collapse is exactly the information loss the axes exist to undo. Each axis is read
+from the raw signals independently:
+
+| Signal | Disposition · ProcessingSummary · ActionState |
+| --- | --- |
+| `Pending` | Active · Idle · Unplanned |
+| `Processing` | Active · Processing · Unplanned |
+| `Completed` | Active · Ready · Unplanned |
+| `Failed` | Active · Failed · Unplanned |
+| `Cancelled` | Archived · Idle · Unplanned |
+| + a linked proposal | action axis → `NeedsReview`; a cancelled row also moves processing → `Ready` |
+| + an applied conversion | action axis → `Acted`; a cancelled row also moves processing → `Ready` |
+| + a recorded disposition | disposition axis takes `CaptureUserDispositionMapping.FromLegacy`, overriding the `Archived` default a cancelled row would take |
+
+The two answers therefore differ wherever the collapse would have lost something — a `Failed` row
+that had already produced a proposal keeps `NeedsReview` on the action axis, where the collapsed
+status reports only `Failed`. The one departure from the axis mapping the
+`ReconcileContextFabricScaffold` migration documents is deliberate: a cancelled row that had already
+produced a proposal or an applied change keeps its processing and action outcomes rather than
+collapsing to Idle/Unplanned, because archiving is a decision about the Inbox and does not make it
+untrue that the capture was understood or acted on. The one-line timeline still reads `Archived`.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -906,11 +923,15 @@ The marker that records whether the ID-preserving capture backfill has finished 
 (CF-01 `#2255`). A singleton row under a fixed id, so every host converges on the same row and a
 concurrent first run collides on the primary key instead of writing a second, disagreeing marker.
 
-The backfill needs no cursor: its backlog is an anti-join (capture-shaped `LlmRequest` rows with no
-`Captures` row under the same id), which makes it idempotent and resumable on its own. This row
-exists for the **read switch** — without a durable record of completion a restart could not tell "no
-legacy capture rows" from "not migrated yet", and reading the aggregate on the second would drop
-captures out of the Inbox.
+The backfill needs no cursor: its backlog is a **divergence join** — capture-shaped `LlmRequest` rows
+that have no `Captures` row under the same id *or* whose `UpdatedAt` is newer than their capture's —
+which makes it idempotent and resumable on its own and lets the same pass repair drift, not only
+fill. This row exists for the **read switch**: without a durable record of completion a restart could
+not tell "no legacy capture rows" from "not reconciled yet", and reading the aggregate on the second
+would drop captures out of the Inbox. Completion requires an empty backlog, so an unmappable row
+keeps the switch disarmed rather than being papered over; once earned, completion is sticky, because
+disarming the whole Inbox over one row that arrived unmappable later would be worse than the
+per-item queue-row fallback that already covers it.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
@@ -919,7 +940,7 @@ captures out of the Inbox.
 | StartedAt | `DateTimeOffset` | Yes | | When a host first started this backfill |
 | CompletedAt | `DateTimeOffset?` | No | | When the backlog was first observed drained; null keeps the read switch disarmed |
 | MigratedCount | `int` | Yes | >= 0 | Legacy rows brought into the aggregate, accumulated across runs |
-| SkippedCount | `int` | Yes | >= 0 | Rows that could not be mapped; they stay readable through their queue row |
+| SkippedCount | `int` | Yes | >= 0 | Distinct rows the most recent run could not map, as a snapshot rather than a running total; they stay readable through their queue row |
 | LastSkipReason | `string?` | No | Max 500 chars | Operator diagnostic (exception type and message); never user content |
 | CreatedAt / UpdatedAt | `DateTimeOffset` | Yes | | |
 

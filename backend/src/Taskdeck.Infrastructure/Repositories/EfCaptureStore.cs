@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
@@ -71,6 +72,69 @@ public sealed class EfCaptureStore : ICaptureStore
             .ThenInclude(asset => asset.TextPayload)
             .Where(capture => capture.UserId == userId && distinctIds.Contains(capture.Id))
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<CaptureListMaterial>> GetListMaterialForUserAsync(
+        IReadOnlyCollection<Guid> ids,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+        {
+            return Array.Empty<CaptureListMaterial>();
+        }
+
+        var distinctIds = ids.Distinct().ToArray();
+
+        // Two narrow queries instead of one aggregate load. The second one filters on
+        // SupersededByAssetId IS NULL in SQL, so a correction history never reaches the client:
+        // an Inbox page pays for one text per capture, not for every revision of it.
+        var headers = await _context.Captures
+            .AsNoTracking()
+            .Where(capture => capture.UserId == userId && distinctIds.Contains(capture.Id))
+            .Select(capture => new
+            {
+                capture.Id,
+                capture.LegacySourceSnapshot,
+                capture.CapturedAtServer,
+                capture.UpdatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        if (headers.Count == 0)
+        {
+            return Array.Empty<CaptureListMaterial>();
+        }
+
+        var headerIds = headers.Select(header => header.Id).ToArray();
+        var activeText = await _context.SourceAssets
+            .AsNoTracking()
+            .Where(asset => headerIds.Contains(asset.CaptureId)
+                && asset.SupersededByAssetId == null
+                && asset.StorageKind == SourceAssetStorageKind.InlineText)
+            .Select(asset => new
+            {
+                asset.CaptureId,
+                asset.Ordinal,
+                Text = asset.TextPayload!.Text
+            })
+            .ToListAsync(cancellationToken);
+
+        // Last active inline asset by ordinal, matching Capture.CurrentText.
+        var textByCapture = activeText
+            .GroupBy(asset => asset.CaptureId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderByDescending(asset => asset.Ordinal).First().Text);
+
+        return headers
+            .Select(header => new CaptureListMaterial(
+                header.Id,
+                header.LegacySourceSnapshot,
+                header.CapturedAtServer,
+                header.UpdatedAt,
+                textByCapture.TryGetValue(header.Id, out var text) ? text : null))
+            .ToList();
     }
 
     public Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)

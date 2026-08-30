@@ -87,11 +87,25 @@ public class ContextFabricCaptureBackfillTests : IClassFixture<TestWebApplicatio
         return request.Id;
     }
 
-    private async Task<CaptureBackfillResult> RunBackfillAsync()
+    /// <summary>
+    /// A legacy row whose stored payload is not capture JSON. It reads back through the raw-text
+    /// fallback, which is how a row can be genuinely unmappable.
+    /// </summary>
+    private async Task<Guid> SeedRawCaptureAsync(Guid userId, string payload)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var request = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, payload);
+        db.LlmRequests.Add(request);
+        await db.SaveChangesAsync();
+        return request.Id;
+    }
+
+    private async Task<CaptureBackfillResult> RunBackfillAsync(int batchSize = 2)
     {
         using var scope = _factory.Services.CreateScope();
         var backfill = scope.ServiceProvider.GetRequiredService<CaptureBackfillService>();
-        return await backfill.RunAsync(batchSize: 2);
+        return await backfill.RunAsync(batchSize);
     }
 
     private async Task<List<CaptureItemSummaryDto>> ListInboxAsync()
@@ -134,6 +148,7 @@ public class ContextFabricCaptureBackfillTests : IClassFixture<TestWebApplicatio
 
         var result = await RunBackfillAsync();
         result.Migrated.Should().BeGreaterThanOrEqualTo(seeded.Length);
+        result.Skipped.Should().Be(0, "every seeded row is mappable");
         result.Remaining.Should().Be(0);
         result.Complete.Should().BeTrue();
 
@@ -269,6 +284,157 @@ public class ContextFabricCaptureBackfillTests : IClassFixture<TestWebApplicatio
     }
 
     [Fact]
+    public async Task EditingWhileDualWriteIsOff_ShouldNotLeaveTheInboxServingPreEditText()
+    {
+        // Round-1 review, HIGH-1, reproduced end to end: create, backfill, disarm the dual-write,
+        // edit, re-arm. An anti-join backfill reported nothing to do and the Inbox went back to
+        // showing the pre-edit text; the divergence guard and the reconcile pass must both hold.
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "cf01-divergence");
+        var settings = _factory.Services.GetRequiredService<ContextFabricSettings>();
+
+        var created = (await (await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "first draft", "typed")))
+            .Content.ReadFromJsonAsync<CaptureItemDto>())!;
+        await RunBackfillAsync();
+
+        settings.DualWriteCaptures = false;
+        try
+        {
+            var update = await _client.PutAsJsonAsync(
+                $"/api/capture/items/{created.Id}/suggestion",
+                new UpdateCaptureSuggestionDto("corrected draft"));
+            update.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // Even with the aggregate deliberately left behind, the read path must not serve stale
+            // text: the queue row is the newer writer.
+            var whileDisarmed = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+            whileDisarmed!.RawText.Should().Be("corrected draft");
+        }
+        finally
+        {
+            settings.DualWriteCaptures = true;
+        }
+
+        var reread = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        reread!.RawText.Should().Be("corrected draft", "re-arming the flag must never resurrect pre-edit text");
+
+        var listed = await ListInboxAsync();
+        listed.Single(item => item.Id == created.Id).TextExcerpt.Should().Be("corrected draft");
+
+        using var scope = _factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<ICaptureStore>();
+        var capture = (await store.GetByIdForUserAsync(created.Id, user.UserId))!;
+        capture.CurrentText.Should().Be("corrected draft",
+            "an aggregate that already exists is kept in step even while the dual-write flag is off");
+        capture.SourceAssets.Should().HaveCount(2, "the edit supersedes, it never rewrites");
+        capture.SourceAssets[0].TextPayload!.Text.Should().Be("first draft");
+        capture.SourceAssets[0].IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ADivergedAggregate_ShouldBeRepairedByTheReconcilePassAndNeverServedStale()
+    {
+        // The other half of HIGH-1: an aggregate that genuinely fell behind its queue row, which is
+        // what a swallowed durable write leaves behind. The edit is applied straight to the stored
+        // payload so nothing keeps the capture in step, exactly as that failure would.
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "cf01-repair");
+        var created = (await (await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "first draft", "typed")))
+            .Content.ReadFromJsonAsync<CaptureItemDto>())!;
+        await RunBackfillAsync();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(row => row.Id == created.Id);
+            var payload = CaptureRequestContract.ParseStoredPayload(request.Payload);
+            request.UpdatePayload(CaptureRequestContract.SerializePayload(payload with { Text = "corrected draft" }));
+            await db.SaveChangesAsync();
+        }
+
+        // Before the repair: the queue row is the newer writer, so the read path must prefer it.
+        var whileDiverged = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        whileDiverged!.RawText.Should().Be("corrected draft", "stale aggregate text must never be served");
+
+        var result = await RunBackfillAsync();
+        result.Reconciled.Should().BeGreaterThan(0, "the diverged capture is picked up by the divergence join");
+        result.Remaining.Should().Be(0);
+
+        using var repaired = _factory.Services.CreateScope();
+        var store = repaired.ServiceProvider.GetRequiredService<ICaptureStore>();
+        var capture = (await store.GetByIdForUserAsync(created.Id, user.UserId))!;
+        capture.CurrentText.Should().Be("corrected draft");
+        capture.SourceAssets.Should().HaveCount(2, "the repair supersedes, it never rewrites");
+        capture.SourceAssets[0].TextPayload!.Text.Should().Be("first draft");
+
+        // And the pass settles: a second run finds nothing left to do.
+        var second = await RunBackfillAsync();
+        second.Reconciled.Should().Be(0, "the reconciliation stamp takes the capture out of the backlog");
+        second.Remaining.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Backfill_ShouldStepOverUnmappableRowsAndReportAnHonestMarker()
+    {
+        // Round-1 review, HIGH-2, reproduced against the real schema: rows whose payload falls back
+        // to raw text and exceeds what a source asset may carry sit at the head of the oldest-first
+        // backlog. The younger healthy rows behind them must still be brought in, and the marker
+        // must not claim completion while anything is outstanding.
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "cf01-poisoned");
+        var poisoned = new List<Guid>();
+        var healthy = new List<Guid>();
+        try
+        {
+            for (var index = 0; index < 3; index++)
+            {
+                poisoned.Add(await SeedRawCaptureAsync(user.UserId, new string('x', SourceAsset.MaxInlineTextLength + 1)));
+            }
+
+            for (var index = 0; index < 5; index++)
+            {
+                healthy.Add(await SeedLegacyCaptureAsync(user.UserId, $"healthy {index}"));
+            }
+
+            var result = await RunBackfillAsync(batchSize: 3);
+
+            result.Skipped.Should().Be(3);
+            result.Remaining.Should().Be(3);
+            result.Complete.Should().BeFalse("the run must not claim a drained backlog while rows are outstanding");
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            foreach (var id in healthy)
+            {
+                (await db.Captures.CountAsync(capture => capture.Id == id))
+                    .Should().Be(1, "a poisoned head must not stall the rows behind it");
+            }
+
+            foreach (var id in poisoned)
+            {
+                (await db.Captures.CountAsync(capture => capture.Id == id)).Should().Be(0);
+            }
+
+            var backfillStore = scope.ServiceProvider.GetRequiredService<ICaptureBackfillStore>();
+            var marker = await backfillStore.GetStateAsync(CaptureBackfillState.LegacyQueueBackfillKey);
+            marker!.SkippedCount.Should().Be(3, "the marker records what could not be brought in");
+
+            // Nothing disappears: every seeded row is still an Inbox item, poisoned ones included.
+            var listed = await ListInboxAsync();
+            listed.Select(item => item.Id).Should().Contain(poisoned).And.Contain(healthy);
+        }
+        finally
+        {
+            // The unmappable rows would otherwise stay in this shared database and leave every later
+            // test in the class with a permanently non-empty backlog.
+            using var cleanup = _factory.Services.CreateScope();
+            var db = cleanup.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            await db.LlmRequests.Where(row => poisoned.Contains(row.Id)).ExecuteDeleteAsync();
+        }
+    }
+
+    [Fact]
     public async Task ExportingUserData_ShouldCarryTheDurableCaptureAndItsSources()
     {
         var user = await ApiTestHarness.AuthenticateAsync(_client, "cf01-export");
@@ -284,11 +450,39 @@ public class ContextFabricCaptureBackfillTests : IClassFixture<TestWebApplicatio
         export.IsSuccess.Should().BeTrue(export.ErrorMessage);
         var exported = export.Value!.Data.CaptureItems.Single(item => item.Id == created.Id);
         exported.DurableCapture.Should().NotBeNull("portability must carry the capture own record");
+        exported.LegacySource.Should().BeNull("the durable record already carries the material");
         exported.DurableCapture!.Disposition.Should().Be(nameof(CaptureUserDisposition.Active));
         exported.DurableCapture.Timeline.Should().Be(nameof(CaptureTimelineStep.Received));
         exported.DurableCapture.SourceAssets.Should().HaveCount(2);
         exported.DurableCapture.SourceAssets[0].Text.Should().Be("exported material");
         exported.DurableCapture.SourceAssets[1].ExternalReference.Should().Be("https://example.test/x");
+    }
+
+    [Fact]
+    public async Task ExportingACaptureWithNoDurableRow_ShouldStillCarryItsWords()
+    {
+        // Round-1 review (Codex 3890182497): portability must not depend on a feature flag. A row the
+        // backfill has not reached exports its queue-row material instead of an empty record.
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "cf01-export-fallback");
+        var legacyId = await SeedLegacyCaptureAsync(
+            user.UserId,
+            "words that must leave with the user",
+            CaptureSource.WebClip,
+            externalRef: "https://example.test/fallback",
+            titleHint: "Fallback");
+
+        using var scope = _factory.Services.CreateScope();
+        var exporter = scope.ServiceProvider.GetRequiredService<IDataExportService>();
+        var export = await exporter.ExportUserDataAsync(user.UserId);
+
+        export.IsSuccess.Should().BeTrue(export.ErrorMessage);
+        var exported = export.Value!.Data.CaptureItems.Single(item => item.Id == legacyId);
+        exported.DurableCapture.Should().BeNull("this row has not been backfilled yet");
+        exported.LegacySource.Should().NotBeNull();
+        exported.LegacySource!.Text.Should().Be("words that must leave with the user");
+        exported.LegacySource.TitleHint.Should().Be("Fallback");
+        exported.LegacySource.ExternalRef.Should().Be("https://example.test/fallback");
+        exported.LegacySource.Source.Should().Be(nameof(CaptureSource.WebClip));
     }
 
     [Fact]

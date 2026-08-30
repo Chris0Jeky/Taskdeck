@@ -11,34 +11,28 @@ using Capture = Taskdeck.Domain.Entities.Capture;
 namespace Taskdeck.Application.Tests.Services;
 
 /// <summary>
-/// CF-01 (#2255): the ID-preserving backfill of legacy capture queue rows. It must be idempotent,
-/// resumable, derive the three state axes from what each row recorded, store the material as
-/// immutable source assets, and never let one unmappable row abort the run or wedge the read switch.
+/// CF-01 (#2255): the ID-preserving backfill and reconcile pass. It must be idempotent, resumable,
+/// derive the three state axes from what each row recorded, store the material as immutable source
+/// assets, bring a diverged aggregate back into agreement with its queue row, step over a row it
+/// cannot map instead of stalling behind it, and never claim completion while anything is
+/// outstanding.
 /// </summary>
 public sealed class CaptureBackfillServiceTests
 {
     private readonly Mock<IUnitOfWork> _unitOfWork = new();
-    private readonly Mock<ICaptureStore> _captureStore = new();
-    private readonly FakeBackfillStore _backfillStore = new();
-    private readonly List<Capture> _written = new();
+    private readonly FakeCaptureStore _captureStore = new();
+    private readonly FakeBackfillStore _backfillStore;
     private readonly Guid _userId = Guid.NewGuid();
 
     public CaptureBackfillServiceTests()
     {
-        _captureStore
-            .Setup(store => store.AddAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()))
-            .Callback<Capture, CancellationToken>((capture, _) =>
-            {
-                _written.Add(capture);
-                _backfillStore.MarkMigrated(capture.Id);
-            })
-            .Returns(Task.CompletedTask);
+        _backfillStore = new FakeBackfillStore(_captureStore);
     }
 
     private CaptureBackfillService CreateService(bool backfill = true) =>
         new(
             _unitOfWork.Object,
-            _captureStore.Object,
+            _captureStore,
             _backfillStore,
             new ContextFabricSettings { BackfillCaptures = backfill });
 
@@ -60,12 +54,25 @@ public sealed class CaptureBackfillServiceTests
             ExternalRef: externalRef,
             Provenance: provenance,
             Disposition: disposition);
-        var request = new LlmRequest(
-            _userId,
-            CaptureRequestContract.ResolveRequestTypeForSource(source),
+        return SeedRawRow(
             CaptureRequestContract.SerializePayload(payload),
+            CaptureRequestContract.ResolveRequestTypeForSource(source),
+            status,
             boardId);
+    }
 
+    /// <summary>
+    /// A row whose stored payload is whatever the caller says. Used for the poisoned rows: a legacy
+    /// row whose payload is not valid capture JSON falls back to raw text, and a raw text longer than
+    /// a source asset may carry cannot be mapped at all.
+    /// </summary>
+    private LlmRequest SeedRawRow(
+        string payload,
+        string requestType = CaptureRequestContract.RequestTypeV1,
+        RequestStatus status = RequestStatus.Pending,
+        Guid? boardId = null)
+    {
+        var request = new LlmRequest(_userId, requestType, payload, boardId);
         switch (status)
         {
             case RequestStatus.Processing:
@@ -88,6 +95,9 @@ public sealed class CaptureBackfillServiceTests
         return request;
     }
 
+    private LlmRequest SeedUnmappableRow() =>
+        SeedRawRow(new string('x', SourceAsset.MaxInlineTextLength + 1));
+
     [Fact]
     public async Task RunAsync_ShouldMigrateEveryLegacyRowUnderItsOwnId()
     {
@@ -99,9 +109,9 @@ public sealed class CaptureBackfillServiceTests
         result.Migrated.Should().Be(2);
         result.Remaining.Should().Be(0);
         result.Complete.Should().BeTrue();
-        _written.Select(capture => capture.Id).Should().BeEquivalentTo(new[] { first.Id, second.Id });
-        _written.Should().OnlyContain(capture => capture.LegacyRequestId == capture.Id);
-        _written.Should().OnlyContain(capture => capture.UserId == _userId);
+        _captureStore.All.Select(capture => capture.Id).Should().BeEquivalentTo(new[] { first.Id, second.Id });
+        _captureStore.All.Should().OnlyContain(capture => capture.LegacyRequestId == capture.Id);
+        _captureStore.All.Should().OnlyContain(capture => capture.UserId == _userId);
     }
 
     [Fact]
@@ -114,8 +124,9 @@ public sealed class CaptureBackfillServiceTests
         var second = await service.RunAsync();
 
         first.Migrated.Should().Be(1);
-        second.Migrated.Should().Be(0, "a migrated row leaves the backlog forever");
-        _written.Should().ContainSingle();
+        second.Migrated.Should().Be(0, "a row that agrees with its capture leaves the backlog");
+        second.Reconciled.Should().Be(0, "and it is not re-examined either");
+        _captureStore.All.Should().ContainSingle();
     }
 
     [Fact]
@@ -126,14 +137,12 @@ public sealed class CaptureBackfillServiceTests
             SeedLegacyRow(text: $"row {index}");
         }
 
-        // A crash after the first committed batch: the second run picks up exactly what is left.
         var interrupted = await CreateService().RunAsync(batchSize: 2);
-        _backfillStore.SimulateCrashAfter(interrupted.Migrated);
+        _backfillStore.SimulateCrashAfter(interrupted.Migrated - 1);
 
         var resumed = await CreateService().RunAsync(batchSize: 2);
 
-        (interrupted.Migrated + resumed.Migrated).Should().Be(5);
-        _written.Select(capture => capture.Id).Distinct().Should().HaveCount(5, "nothing is created twice");
+        _captureStore.All.Select(capture => capture.Id).Distinct().Should().HaveCount(5, "nothing is created twice");
         resumed.Remaining.Should().Be(0);
     }
 
@@ -147,7 +156,7 @@ public sealed class CaptureBackfillServiceTests
 
         await CreateService().RunAsync();
 
-        var capture = _written.Should().ContainSingle().Subject;
+        var capture = _captureStore.All.Should().ContainSingle().Subject;
         capture.SourceAssets.Should().HaveCount(2);
         capture.SourceAssets[0].StorageKind.Should().Be(SourceAssetStorageKind.InlineText);
         capture.SourceAssets[0].TextPayload!.Text.Should().Be("the clipped article");
@@ -178,7 +187,7 @@ public sealed class CaptureBackfillServiceTests
 
         await CreateService().RunAsync();
 
-        var capture = _written.Should().ContainSingle().Subject;
+        var capture = _captureStore.All.Should().ContainSingle().Subject;
         capture.ProcessingSummary.Should().Be(expectedProcessing);
         capture.ActionState.Should().Be(expectedAction);
         capture.Timeline.Should().Be(expectedTimeline);
@@ -191,7 +200,7 @@ public sealed class CaptureBackfillServiceTests
 
         await CreateService().RunAsync();
 
-        var capture = _written.Should().ContainSingle().Subject;
+        var capture = _captureStore.All.Should().ContainSingle().Subject;
         capture.Disposition.Should().Be(CaptureUserDisposition.Kept);
         capture.RequestedIntent.Should().Be(CaptureIntentMode.Remember);
         capture.Timeline.Should().Be(CaptureTimelineStep.Kept);
@@ -211,33 +220,119 @@ public sealed class CaptureBackfillServiceTests
 
         await CreateService().RunAsync();
 
-        var capture = _written.Should().ContainSingle().Subject;
+        var capture = _captureStore.All.Should().ContainSingle().Subject;
         capture.Disposition.Should().Be(CaptureUserDisposition.Archived);
         capture.ActionState.Should().Be(CaptureActionState.Acted, "archiving does not erase what was applied");
         capture.ProcessingSummary.Should().Be(CaptureProcessingSummary.Ready);
         capture.Timeline.Should().Be(CaptureTimelineStep.Archived);
     }
 
+    // ---------------------------------------------------------------- HIGH-2: a poisoned head
     [Fact]
-    public async Task RunAsync_ShouldSkipAnUnmappableRowWithoutAbortingOrWedgingTheReadSwitch()
+    public async Task RunAsync_ShouldStepOverAWholeBatchOfUnmappableRowsAndStillReachTheHealthyOnesBehindThem()
     {
-        SeedLegacyRow(text: "healthy row");
-        var poisoned = SeedLegacyRow(text: "poisoned row");
-        _backfillStore.Poison(poisoned.Id);
-        _captureStore
-            .Setup(store => store.AddAsync(
-                It.Is<Capture>(capture => capture.Id == poisoned.Id),
-                It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new Domain.Exceptions.DomainException(
-                Domain.Exceptions.ErrorCodes.ValidationError,
-                "unmappable"));
+        // Round-1 review, reproduced: three unmappable rows sit at the head of the oldest-first
+        // backlog and a batch holds exactly three. Re-reading the same head each iteration stalled
+        // the pass on every start while the marker still claimed completion.
+        var poisoned = new[] { SeedUnmappableRow(), SeedUnmappableRow(), SeedUnmappableRow() };
+        var healthy = Enumerable.Range(0, 5)
+            .Select(index => SeedLegacyRow(text: $"healthy {index}"))
+            .ToArray();
 
-        var result = await CreateService().RunAsync(batchSize: 1);
+        var result = await CreateService().RunAsync(batchSize: 3);
 
-        result.Migrated.Should().Be(1);
-        result.Skipped.Should().BeGreaterThan(0);
-        result.Complete.Should().BeTrue("one bad row must not hold the read switch hostage");
-        result.Remaining.Should().Be(1, "the skipped row stays readable through its queue row");
+        result.Migrated.Should().Be(5, "every healthy row behind the poisoned head is still reached");
+        result.Skipped.Should().Be(3);
+        result.Remaining.Should().Be(3, "only the unmappable rows are left");
+        result.Complete.Should().BeFalse("the marker must not claim a drained backlog while rows are outstanding");
+        _captureStore.All.Select(capture => capture.Id).Should().BeEquivalentTo(healthy.Select(row => row.Id));
+        _captureStore.All.Select(capture => capture.Id).Should().NotIntersectWith(poisoned.Select(row => row.Id));
+        _backfillStore.SavedState!.IsComplete.Should().BeFalse();
+        _backfillStore.SavedState.SkippedCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task RunAsync_ShouldCountASkippedRowOnceNoMatterHowManyTimesItIsRetried()
+    {
+        SeedUnmappableRow();
+        SeedLegacyRow(text: "healthy");
+        var service = CreateService();
+
+        await service.RunAsync(batchSize: 1);
+        await service.RunAsync(batchSize: 1);
+        var third = await service.RunAsync(batchSize: 1);
+
+        third.Skipped.Should().Be(1);
+        _backfillStore.SavedState!.SkippedCount.Should().Be(1, "the snapshot counts rows, not attempts");
+        _backfillStore.SavedState.MigratedCount.Should().Be(1, "and the healthy row is only brought in once");
+    }
+
+    // ---------------------------------------------------------------- HIGH-1: divergence
+    [Fact]
+    public async Task RunAsync_ShouldReconcileACaptureWhoseQueueRowWasEditedWhileDualWriteWasOff()
+    {
+        // Round-1 review, reproduced: with dual-write off the edit lands only on the queue row. An
+        // anti-join would report nothing to do, and the read switch would then serve the pre-edit
+        // text forever. The divergence join has to notice and re-supersede.
+        var request = SeedLegacyRow(text: "first draft");
+        await CreateService().RunAsync();
+        _captureStore.All.Should().ContainSingle().Which.CurrentText.Should().Be("first draft");
+
+        EditQueuePayloadOnly(request, "corrected draft");
+
+        var result = await CreateService().RunAsync();
+
+        result.Migrated.Should().Be(0, "the capture already exists");
+        result.Reconciled.Should().Be(1);
+        result.Remaining.Should().Be(0);
+        result.Complete.Should().BeTrue();
+
+        var capture = _captureStore.All.Should().ContainSingle().Subject;
+        capture.CurrentText.Should().Be("corrected draft");
+        capture.SourceAssets.Should().HaveCount(2, "the correction supersedes, it never rewrites");
+        capture.SourceAssets[0].TextPayload!.Text.Should().Be("first draft");
+        capture.SourceAssets[0].IsActive.Should().BeFalse();
+        capture.SourceAssets[1].SupersedesAssetId.Should().Be(capture.SourceAssets[0].Id);
+    }
+
+    [Fact]
+    public async Task RunAsync_ShouldReconcileATitleAndAnExternalReferenceAddedAfterTheCaptureWasBuilt()
+    {
+        var request = SeedLegacyRow(text: "clip me");
+        await CreateService().RunAsync();
+
+        EditQueuePayloadOnly(
+            request,
+            "clip me",
+            titleHint: "Renamed",
+            externalRef: "https://example.test/added-later");
+
+        await CreateService().RunAsync();
+
+        var capture = _captureStore.All.Should().ContainSingle().Subject;
+        capture.UserTitle.Should().Be("Renamed");
+        capture.ActiveSourceAssets.Should().Contain(asset =>
+            asset.StorageKind == SourceAssetStorageKind.ExternalReference &&
+            asset.ExternalReference == "https://example.test/added-later");
+    }
+
+    [Fact]
+    public async Task RunAsync_ShouldStampACaptureThatNeededNoChangeSoItLeavesTheBacklog()
+    {
+        // Without the stamp a row whose queue UpdatedAt merely moved on (a triage transition, say)
+        // would be re-examined on every single start, forever.
+        var request = SeedLegacyRow(text: "unchanged");
+        await CreateService().RunAsync();
+        request.MarkAsProcessing();
+
+        var first = await CreateService().RunAsync();
+        var second = await CreateService().RunAsync();
+
+        first.Reconciled.Should().Be(1);
+        second.Reconciled.Should().Be(0, "the reconciliation stamp took the capture out of the backlog");
+        second.Remaining.Should().Be(0);
+        _captureStore.All.Should().ContainSingle().Which.ProcessingSummary
+            .Should().Be(CaptureProcessingSummary.Processing, "the axes follow the queue row too");
     }
 
     [Fact]
@@ -249,12 +344,12 @@ public sealed class CaptureBackfillServiceTests
 
         result.Ran.Should().BeFalse();
         result.Complete.Should().BeFalse();
-        _written.Should().BeEmpty();
+        _captureStore.All.Should().BeEmpty();
         _backfillStore.SavedState.Should().BeNull("nothing is recorded, so Inbox reads stay on the queue row");
     }
 
     [Fact]
-    public async Task RunAsync_ShouldCommitEachBatchWithItsProgressMarker()
+    public async Task RunAsync_ShouldCommitEachBatchWithItsProgressMarkerAndReleaseTheTracker()
     {
         for (var index = 0; index < 4; index++)
         {
@@ -265,58 +360,153 @@ public sealed class CaptureBackfillServiceTests
 
         // Two batches plus the final completion write.
         _unitOfWork.Verify(unit => unit.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(3));
+        _backfillStore.TrackerReleases.Should().Be(2, "the tracker is released once per committed batch");
         _backfillStore.SavedState!.MigratedCount.Should().Be(4);
         _backfillStore.SavedState.IsComplete.Should().BeTrue();
     }
 
+    private static void EditQueuePayloadOnly(
+        LlmRequest request,
+        string text,
+        string? titleHint = null,
+        string? externalRef = null)
+    {
+        var payload = new CapturePayloadV1(
+            CaptureRequestContract.CurrentSchemaVersion,
+            CaptureSource.Typed,
+            text,
+            TitleHint: titleHint,
+            ExternalRef: externalRef);
+        request.UpdatePayload(CaptureRequestContract.SerializePayload(payload));
+    }
+
+    /// <summary>An in-memory <see cref="ICaptureStore"/> that keeps the aggregates it is given.</summary>
+    private sealed class FakeCaptureStore : ICaptureStore
+    {
+        private readonly Dictionary<Guid, Capture> _captures = new();
+
+        public IReadOnlyList<Capture> All => _captures.Values.ToList();
+
+        public void Forget(Guid id) => _captures.Remove(id);
+
+        public Task AddAsync(Capture capture, CancellationToken cancellationToken = default)
+        {
+            _captures[capture.Id] = capture;
+            return Task.CompletedTask;
+        }
+
+        public Task<Capture?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_captures.TryGetValue(id, out var capture) && capture.UserId == userId ? capture : null);
+
+        public Task<Capture?> GetByIdForUpdateAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
+            => GetByIdForUserAsync(id, userId, cancellationToken);
+
+        public Task UpdateAsync(Capture capture, CancellationToken cancellationToken = default)
+        {
+            _captures[capture.Id] = capture;
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<Capture>> GetByIdsForUserAsync(
+            IReadOnlyCollection<Guid> ids,
+            Guid userId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Capture>>(
+                ids.Where(_captures.ContainsKey)
+                    .Select(id => _captures[id])
+                    .Where(capture => capture.UserId == userId)
+                    .ToList());
+
+        public Task<IReadOnlyList<CaptureListMaterial>> GetListMaterialForUserAsync(
+            IReadOnlyCollection<Guid> ids,
+            Guid userId,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<CaptureListMaterial>>(
+                ids.Where(_captures.ContainsKey)
+                    .Select(id => _captures[id])
+                    .Where(capture => capture.UserId == userId)
+                    .Select(capture => new CaptureListMaterial(
+                        capture.Id,
+                        capture.LegacySourceSnapshot,
+                        capture.CapturedAtServer,
+                        capture.UpdatedAt,
+                        capture.CurrentText))
+                    .ToList());
+
+        public Task<bool> ExistsAsync(Guid id, CancellationToken cancellationToken = default)
+            => Task.FromResult(_captures.ContainsKey(id));
+
+        public Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(_captures.Values.Count(capture => capture.UserId == userId));
+
+        public Task<int> DeleteByUserAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            var removed = _captures.Values.Where(capture => capture.UserId == userId).Select(c => c.Id).ToList();
+            foreach (var id in removed)
+            {
+                _captures.Remove(id);
+            }
+
+            return Task.FromResult(removed.Count);
+        }
+    }
+
     /// <summary>
-    /// An in-memory <see cref="ICaptureBackfillStore"/> whose backlog is the same anti-join the EF
-    /// implementation runs: a row leaves it as soon as its capture is written.
+    /// An in-memory <see cref="ICaptureBackfillStore"/> whose backlog is the same DIVERGENCE join the
+    /// EF implementation runs: a row leaves it only once a capture exists AND that capture is at
+    /// least as fresh as the queue row.
     /// </summary>
     private sealed class FakeBackfillStore : ICaptureBackfillStore
     {
         private readonly List<LlmRequest> _rows = new();
-        private readonly HashSet<Guid> _migrated = new();
-        private readonly HashSet<Guid> _poisoned = new();
+        private readonly FakeCaptureStore _captures;
+
+        public FakeBackfillStore(FakeCaptureStore captures)
+        {
+            _captures = captures;
+        }
 
         public CaptureBackfillState? SavedState { get; private set; }
 
+        public int TrackerReleases { get; private set; }
+
         public void Add(LlmRequest request) => _rows.Add(request);
 
-        public void MarkMigrated(Guid id)
-        {
-            if (!_poisoned.Contains(id))
-            {
-                _migrated.Add(id);
-            }
-        }
-
-        /// <summary>Marks a row that the capture store will refuse, so it never leaves the backlog.</summary>
-        public void Poison(Guid id) => _poisoned.Add(id);
-
-        /// <summary>Drops everything after the first <paramref name="committed"/> rows, as a crash would.</summary>
+        /// <summary>Discards everything after the first <paramref name="committed"/> captures, as a crash would.</summary>
         public void SimulateCrashAfter(int committed)
         {
-            var keep = _migrated.Take(committed).ToHashSet();
-            _migrated.Clear();
-            foreach (var id in keep)
+            foreach (var capture in _captures.All.Skip(committed))
             {
-                _migrated.Add(id);
+                _captures.Forget(capture.Id);
             }
         }
+
+        private IEnumerable<LlmRequest> Backlog =>
+            _rows.Where(row =>
+            {
+                var capture = _captures.All.FirstOrDefault(c => c.Id == row.Id);
+                return capture is null || capture.UpdatedAt < row.UpdatedAt;
+            });
 
         public Task<IReadOnlyList<LlmRequest>> GetLegacyCaptureBacklogAsync(
             int batchSize,
+            IReadOnlyCollection<Guid> excludedIds,
             CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<LlmRequest>>(
-                _rows.Where(row => !_migrated.Contains(row.Id))
+                Backlog.Where(row => !excludedIds.Contains(row.Id))
                     .OrderBy(row => row.CreatedAt)
                     .ThenBy(row => row.Id)
                     .Take(batchSize)
                     .ToList());
 
         public Task<int> CountLegacyCaptureBacklogAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(_rows.Count(row => !_migrated.Contains(row.Id)));
+            => Task.FromResult(Backlog.Count());
+
+        public Task ReleaseTrackedBatchAsync(CancellationToken cancellationToken = default)
+        {
+            TrackerReleases++;
+            return Task.CompletedTask;
+        }
 
         public Task<CaptureBackfillState?> GetStateAsync(string key, CancellationToken cancellationToken = default)
             => Task.FromResult(SavedState);

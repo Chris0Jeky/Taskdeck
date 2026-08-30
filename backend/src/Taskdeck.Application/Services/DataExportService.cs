@@ -85,6 +85,13 @@ public class DataExportService : IDataExportService
         return result;
     }
 
+    /// <summary>
+    /// The queue-row material, for a capture with no durable row. Without this an unbackfillable
+    /// capture would export as an id, a status and nothing the user could actually read back.
+    /// </summary>
+    private static UserDataExportCaptureSourceDto MapLegacyCaptureSource(CapturePayloadV1 payload) =>
+        new(payload.Source.ToString(), payload.Text, payload.TitleHint, payload.ExternalRef);
+
     private static UserDataExportDurableCaptureDto? MapDurableCapture(Domain.Entities.Capture? capture)
     {
         if (capture is null)
@@ -249,7 +256,8 @@ public class DataExportService : IDataExportService
                             c.Payload.Disposition.At,
                             c.Payload.Disposition.ByUserId,
                             c.Payload.Disposition.BoardId),
-                    MapDurableCapture(durableCaptures.GetValueOrDefault(c.Request.Id)));
+                    MapDurableCapture(durableCaptures.GetValueOrDefault(c.Request.Id)),
+                    durableCaptures.ContainsKey(c.Request.Id) ? null : MapLegacyCaptureSource(c.Payload));
             }).ToList();
 
             var exportProposals = proposals.Select(p => new UserDataExportProposalDto(
@@ -467,24 +475,37 @@ public class DataExportService : IDataExportService
             // capture items (small)
             var captures = await _unitOfWork.LlmQueue.GetByUserAsync(userId, cancellationToken);
             var resolvedCaptures = await ResolveCaptureExportsAsync(captures, cancellationToken);
-            var streamedDurableCaptures = await LoadDurableCapturesAsync(
-                userId,
-                resolvedCaptures.Select(c => c.Request.Id).ToList(),
-                cancellationToken);
             writer.WriteStartArray("captureItems");
-            foreach (var c in resolvedCaptures)
+            // Durable graphs are loaded a page at a time and written as they arrive. Buffering them
+            // all first would defeat the point of the streaming export: every capture, every
+            // superseded revision of every capture, resident at once.
+            for (var offset = 0; offset < resolvedCaptures.Count; offset += DurableCaptureChunkSize)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                writer.WriteStartObject();
-                writer.WriteString("id", c.Request.Id.ToString());
-                writer.WriteString("status", c.Request.Status.ToString());
-                writer.WriteString("requestType", c.Request.RequestType);
-                writer.WriteString("createdAt", c.Request.CreatedAt);
-                WriteNullableGuid(writer, "boardId", c.BoardId);
-                WriteCaptureProvenance(writer, c.Payload.Provenance);
-                WriteCaptureDisposition(writer, c.Payload.Disposition);
-                WriteDurableCapture(writer, streamedDurableCaptures.GetValueOrDefault(c.Request.Id));
-                writer.WriteEndObject();
+                var page = resolvedCaptures.Skip(offset).Take(DurableCaptureChunkSize).ToList();
+                var pageDurableCaptures = await LoadDurableCapturesAsync(
+                    userId,
+                    page.Select(c => c.Request.Id).ToList(),
+                    cancellationToken);
+
+                foreach (var c in page)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    writer.WriteStartObject();
+                    writer.WriteString("id", c.Request.Id.ToString());
+                    writer.WriteString("status", c.Request.Status.ToString());
+                    writer.WriteString("requestType", c.Request.RequestType);
+                    writer.WriteString("createdAt", c.Request.CreatedAt);
+                    WriteNullableGuid(writer, "boardId", c.BoardId);
+                    WriteCaptureProvenance(writer, c.Payload.Provenance);
+                    WriteCaptureDisposition(writer, c.Payload.Disposition);
+                    var durable = pageDurableCaptures.GetValueOrDefault(c.Request.Id);
+                    WriteDurableCapture(writer, durable);
+                    WriteLegacyCaptureSource(writer, durable is null ? c.Payload : null);
+                    writer.WriteEndObject();
+                }
+
+                await writer.FlushAsync(cancellationToken);
             }
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);
@@ -812,6 +833,24 @@ public class DataExportService : IDataExportService
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
+        writer.WriteEndObject();
+    }
+
+    /// <summary>Streams the queue-row material for a capture with no durable row; null otherwise.</summary>
+    private static void WriteLegacyCaptureSource(Utf8JsonWriter writer, CapturePayloadV1? payload)
+    {
+        writer.WritePropertyName("legacySource");
+        if (payload is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        writer.WriteStartObject();
+        writer.WriteString("source", payload.Source.ToString());
+        writer.WriteString("text", payload.Text);
+        writer.WriteString("titleHint", payload.TitleHint);
+        writer.WriteString("externalRef", payload.ExternalRef);
         writer.WriteEndObject();
     }
 

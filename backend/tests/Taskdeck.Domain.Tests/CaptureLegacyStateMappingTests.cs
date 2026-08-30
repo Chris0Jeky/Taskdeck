@@ -96,6 +96,50 @@ public sealed class CaptureLegacyStateMappingTests
     }
 
     [Fact]
+    public void Resolve_ShouldReadEachAxisIndependentlyRatherThanFromTheCollapsedStatus()
+    {
+        // Round-1 review, LOW-1: this mapping is its own table, not a composition over
+        // CaptureStatusPolicy.MapFromQueueStatus. These are the cases where the two differ, pinned so
+        // a future edit cannot quietly turn one into the other and lose the axes again.
+
+        // A failed row that had already produced a proposal: the collapsed status is Failed and says
+        // nothing about the proposal, but the action axis keeps it.
+        var failedWithProposal = CaptureLegacyStateMapping.Resolve(
+            RequestStatus.Failed, hasLinkedProposal: true, isConverted: false, legacyDisposition: null);
+        CaptureStatusPolicy.MapFromQueueStatus(RequestStatus.Failed, hasLinkedProposal: true)
+            .Should().Be(CaptureStatus.Failed, "the collapsed status keeps only the failure");
+        failedWithProposal.ProcessingSummary.Should().Be(CaptureProcessingSummary.Failed);
+        failedWithProposal.ActionState.Should().Be(CaptureActionState.NeedsReview,
+            "the proposal is still awaiting a human decision, whatever the job did");
+
+        // An applied conversion: the collapsed status reports only Converted, while the axes keep
+        // both the processing outcome and the queue status underneath it.
+        var convertedFromCancelled = CaptureLegacyStateMapping.Resolve(
+            RequestStatus.Cancelled, hasLinkedProposal: true, isConverted: true, legacyDisposition: null);
+        CaptureStatusPolicy.MapFromQueueStatus(RequestStatus.Cancelled, true, true)
+            .Should().Be(CaptureStatus.Converted, "the collapsed status hides the cancellation");
+        convertedFromCancelled.Disposition.Should().Be(CaptureUserDisposition.Archived);
+        convertedFromCancelled.ProcessingSummary.Should().Be(CaptureProcessingSummary.Ready);
+        convertedFromCancelled.ActionState.Should().Be(CaptureActionState.Acted);
+
+        // A cancelled row with nothing produced keeps the migration-documented Idle/Unplanned.
+        var plainCancelled = CaptureLegacyStateMapping.Resolve(
+            RequestStatus.Cancelled, hasLinkedProposal: false, isConverted: false, legacyDisposition: null);
+        plainCancelled.ProcessingSummary.Should().Be(CaptureProcessingSummary.Idle);
+        plainCancelled.ActionState.Should().Be(CaptureActionState.Unplanned);
+    }
+
+    [Fact]
+    public void Resolve_ShouldLetARecordedDispositionOverrideTheCancelledDefault()
+    {
+        var keptButCancelled = CaptureLegacyStateMapping.Resolve(
+            RequestStatus.Cancelled, false, false, CaptureDisposition.Kept);
+
+        keptButCancelled.Disposition.Should().Be(CaptureUserDisposition.Kept,
+            "an explicit user decision outranks the archived default a cancelled row would take");
+    }
+
+    [Fact]
     public void Resolve_ShouldBeTotalOverEveryQueueStatusAndDisposition()
     {
         foreach (var status in Enum.GetValues<RequestStatus>())
@@ -130,12 +174,30 @@ public sealed class CaptureBackfillStateTests
     {
         var state = CaptureBackfillState.ForLegacyQueue(DateTimeOffset.UtcNow);
 
-        state.RecordBatch(10, 0);
-        state.RecordBatch(5, 2, "DomainException: title too long");
+        state.RecordBatch(10);
+        state.RecordBatch(5);
+        state.RecordSkipped(2, "DomainException: title too long");
 
         state.MigratedCount.Should().Be(15);
         state.SkippedCount.Should().Be(2);
         state.LastSkipReason.Should().Be("DomainException: title too long");
+
+        // A later run that hits the same two rows records two, not four: the snapshot counts rows,
+        // never attempts.
+        state.RecordSkipped(2, "DomainException: title too long");
+        state.SkippedCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void RecordSkipped_ShouldClearTheReasonWhenARunFindsNothingToSkip()
+    {
+        var state = CaptureBackfillState.ForLegacyQueue(DateTimeOffset.UtcNow);
+        state.RecordSkipped(1, "DomainException: unmappable");
+
+        state.RecordSkipped(0);
+
+        state.SkippedCount.Should().Be(0);
+        state.LastSkipReason.Should().BeNull("a clean run must not leave a stale diagnostic behind");
     }
 
     [Fact]

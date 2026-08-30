@@ -77,7 +77,21 @@ public record UserDataExportCaptureDto(
     // ADR-0065 / CF-01 (#2255): the durable aggregate behind this capture, when one exists. Added
     // as an optional member so a reader of the previous shape keeps working, and null on a host
     // whose ContextFabric:DualWriteCaptures has never been on.
-    UserDataExportDurableCaptureDto? DurableCapture = null);
+    UserDataExportDurableCaptureDto? DurableCapture = null,
+    // The queue-row material, exported whenever there is no durable row to carry it. Portability
+    // must not depend on a feature flag: a capture the backfill could not map, or one created while
+    // dual-write was off, still has to leave with the words the user gave Taskdeck.
+    UserDataExportCaptureSourceDto? LegacySource = null);
+
+/// <summary>
+/// The capture material as the legacy queue row holds it. Populated only when
+/// <c>DurableCapture</c> is null, so the two never disagree inside one exported record.
+/// </summary>
+public record UserDataExportCaptureSourceDto(
+    string Source,
+    string Text,
+    string? TitleHint,
+    string? ExternalRef);
 
 /// <summary>
 /// The durable <c>Capture</c> row and its immutable <c>SourceAsset</c>s, exported so a portability

@@ -302,16 +302,18 @@ public sealed class Capture : Entity
         var current = Ordered
             .LastOrDefault(asset => asset.IsActive && asset.StorageKind == SourceAssetStorageKind.InlineText);
 
-        // Constructed first: a rejected correction (blank, over the cap) throws here, before the
-        // capture is touched at all, so a failed edit never leaves it without a current source.
+        // Constructed first: a rejected correction (blank, over the length cap) throws here, before the
+        // capture is touched at all. The append runs next and validates everything else, and only
+        // once it has succeeded is the previous asset marked superseded -- so no guard, present or
+        // future, can leave a superseded head with no replacement.
         var replacement = SourceAsset.FromInlineText(Id, _sourceAssets.Count, text, mediaType, originalName);
+        AppendSourceAsset(replacement, replacing: current);
         if (current is not null)
         {
             replacement.RecordSupersedes(current.Id);
             current.MarkSupersededBy(replacement.Id);
         }
 
-        AddSourceAsset(replacement);
         return replacement;
     }
 
@@ -330,7 +332,15 @@ public sealed class Capture : Entity
     /// (a summary for lists — the constructor's value is only the mapping's guess until an asset
     /// exists); later assets never change it, and routing reads each asset's own modality.
     /// </summary>
-    public void AddSourceAsset(SourceAsset asset)
+    public void AddSourceAsset(SourceAsset asset) => AppendSourceAsset(asset, replacing: null);
+
+    /// <summary>
+    /// The single append path. Every validation runs before anything is mutated, so a rejected
+    /// append leaves the capture exactly as it was — which is what lets
+    /// <see cref="SupersedeInlineTextSource"/> mark the asset it replaces only after the replacement
+    /// is safely in place, and never strand a superseded head with no successor.
+    /// </summary>
+    private void AppendSourceAsset(SourceAsset asset, SourceAsset? replacing)
     {
         ArgumentNullException.ThrowIfNull(asset);
         EnsureNotArchived("add a source to");
@@ -339,10 +349,13 @@ public sealed class Capture : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Source asset belongs to a different capture");
         if (asset.Ordinal != _sourceAssets.Count)
             throw new DomainException(ErrorCodes.ValidationError, $"Source asset ordinal must be {_sourceAssets.Count}");
+
         // The cap bounds how many inputs a capture HAS, not how long its correction history is: a
-        // superseded asset is history, so an edit is net-zero against the limit and a capture the
-        // shipped contract lets a user edit can never be rejected here.
-        if (_sourceAssets.Count(existing => existing.IsActive) >= MaxSourceAssets)
+        // superseded asset is history, so a correction is net-zero against the limit and a capture the
+        // shipped contract lets a user edit can never be rejected here. The asset being replaced is
+        // discounted up front rather than marked first, so the check runs before any mutation.
+        var activeCount = _sourceAssets.Count(existing => existing.IsActive) - (replacing is not null ? 1 : 0);
+        if (activeCount >= MaxSourceAssets)
             throw new DomainException(ErrorCodes.ValidationError, $"A capture cannot hold more than {MaxSourceAssets} active source assets");
 
         if (_sourceAssets.Count == 0)
@@ -461,6 +474,21 @@ public sealed class Capture : Entity
 
         ContextBoardId = boardId;
         Touch();
+    }
+
+    /// <summary>
+    /// Records that this capture has been checked against the legacy queue row it was admitted from
+    /// and now agrees with it (CF-01 <c>#2255</c>). The reconcile pass finds divergence by comparing
+    /// <see cref="Entity.UpdatedAt"/> with the queue row's, so a capture that needed no change still
+    /// has to carry the stamp forward — otherwise it would be re-examined on every single start.
+    /// Only ever moves the stamp forward.
+    /// </summary>
+    public void RecordLegacyReconciliation(DateTimeOffset legacyUpdatedAt)
+    {
+        if (legacyUpdatedAt > UpdatedAt)
+        {
+            UpdatedAt = legacyUpdatedAt;
+        }
     }
 
     public void Retitle(string? userTitle)

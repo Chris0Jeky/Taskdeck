@@ -19,9 +19,11 @@ namespace Taskdeck.Domain.Entities;
 public sealed class CaptureBackfillState : Entity
 {
     /// <summary>
-    /// The singleton row's identity. A fixed id rather than a generated one so every host converges
-    /// on the same row and a concurrent first run collides on the primary key instead of writing a
-    /// second, disagreeing marker.
+    /// The identity of the marker row. Fixed rather than generated so every host that opens this
+    /// database converges on the same row and a concurrent first run collides on the primary key
+    /// instead of writing a second, disagreeing marker. The marker describes the <b>database</b>,
+    /// never a host or a process: one row per backfill key, shared by the web API, both MCP hosts
+    /// and the CLI.
     /// </summary>
     public static readonly Guid LegacyQueueBackfillId = new("2f5c9d41-7f0e-4a63-9d8a-1c6b4f2a9e55");
 
@@ -41,7 +43,12 @@ public sealed class CaptureBackfillState : Entity
     /// <summary>Legacy rows mirrored into the aggregate across every run.</summary>
     public int MigratedCount { get; private set; }
 
-    /// <summary>Legacy rows the backfill could not mirror; they stay readable through the queue-row fallback.</summary>
+    /// <summary>
+    /// Distinct legacy rows the most recent run could not bring in - a snapshot of that run, not a
+    /// running total, so a row that fails on every start is counted once rather than once per
+    /// attempt. Those rows stay readable through the queue-row fallback, and while any of them
+    /// remain the marker stays incomplete.
+    /// </summary>
     public int SkippedCount { get; private set; }
 
     /// <summary>The last skip reason, for the operator; never user content.</summary>
@@ -72,26 +79,51 @@ public sealed class CaptureBackfillState : Entity
     public static CaptureBackfillState ForLegacyQueue(DateTimeOffset startedAt) =>
         new(LegacyQueueBackfillId, LegacyQueueBackfillKey, startedAt);
 
-    /// <summary>Adds the outcome of one batch. Counts accumulate across runs and restarts.</summary>
-    public void RecordBatch(int migrated, int skipped, string? lastSkipReason = null)
+    /// <summary>
+    /// Adds the outcome of one committed batch. Rows brought in accumulate across runs and restarts;
+    /// rows merely reconciled with their queue row do not, because they were counted when they were
+    /// first brought in.
+    /// </summary>
+    public void RecordBatch(int migrated)
     {
-        if (migrated < 0 || skipped < 0)
+        if (migrated < 0)
             throw new DomainException(ErrorCodes.ValidationError, "Backfill counts cannot be negative");
 
         MigratedCount += migrated;
-        SkippedCount += skipped;
+        Touch();
+    }
+
+    /// <summary>
+    /// Replaces the skip snapshot with the distinct count this run could not bring in. Assignment,
+    /// not accumulation: the same unmappable row must not inflate the number every time a host
+    /// starts.
+    /// </summary>
+    public void RecordSkipped(int distinctSkipped, string? lastSkipReason = null)
+    {
+        if (distinctSkipped < 0)
+            throw new DomainException(ErrorCodes.ValidationError, "Backfill counts cannot be negative");
+
+        SkippedCount = distinctSkipped;
         if (!string.IsNullOrWhiteSpace(lastSkipReason))
         {
             var trimmed = lastSkipReason.Trim();
             LastSkipReason = trimmed.Length > MaxNoteLength ? trimmed[..MaxNoteLength] : trimmed;
+        }
+        else if (distinctSkipped == 0)
+        {
+            LastSkipReason = null;
         }
 
         Touch();
     }
 
     /// <summary>
-    /// Records that the backlog is drained. Idempotent: a later run over an already-complete marker
-    /// keeps the first completion time, because that is when the read switch became safe.
+    /// Records that the backlog is drained - every capture-shaped queue row is in the aggregate and
+    /// none of them has diverged from it. Only a caller that has just observed an empty backlog may
+    /// call this: while a single row is outstanding the read switch must stay disarmed, because this
+    /// marker is the only thing that separates "this database has no legacy capture rows" from "this
+    /// database has not been reconciled yet". Idempotent: a later run keeps the first completion
+    /// time, because that is when the read switch became safe.
     /// </summary>
     public void MarkComplete(DateTimeOffset completedAt)
     {

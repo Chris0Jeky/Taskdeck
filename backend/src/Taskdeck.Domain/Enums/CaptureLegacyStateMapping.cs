@@ -15,23 +15,36 @@ public readonly record struct CaptureLegacyState(
 /// <para>
 /// <b>Why not one value.</b> The retired <c>CaptureLifecycleState</c> fused these axes, and the
 /// backfill must not resurrect that mistake by stamping every legacy row <c>Received</c> or by
-/// picking a single winner. The mapping below is the same one the
-/// <c>ReconcileContextFabricScaffold</c> migration documents, composed with the shipped
-/// <see cref="CaptureStatusPolicy.MapFromQueueStatus"/>: queue status maps to the retired lifecycle
-/// value (<c>Pending→Received</c>, <c>Processing→Preparing</c>, <c>Completed→Understood</c> or
-/// <c>NeedsReview</c> with a proposal, converted<c>→Acted</c>, <c>Cancelled→Archived</c>,
-/// <c>Failed→Failed</c>) and that value maps to the axes exactly as the migration's SQL does
-/// (<c>Kept→Kept</c>, <c>Archived→Archived</c>; <c>Preparing→Processing</c>,
-/// <c>Understood/Routed/NeedsReview/Acted→Ready</c>, <c>Failed→Failed</c>;
-/// <c>NeedsReview→NeedsReview</c>, <c>Acted→Acted</c>).
+/// picking a single winner.
 /// </para>
 /// <para>
-/// It differs from that composition in exactly one respect, deliberately: a <b>cancelled</b> row
-/// that had already produced a proposal or an applied change keeps its processing and action
-/// outcomes instead of collapsing to <c>Idle</c>/<c>Unplanned</c>. Archiving is a decision about the
-/// Inbox; it does not make it untrue that the capture was understood or acted on (ADR-0065
-/// §Decision 1). The one-line <see cref="CaptureTimeline"/> still shows <c>Archived</c>, so nothing
-/// a user sees changes.
+/// <b>Its own table, not a composition.</b> It deliberately does <i>not</i> call
+/// <see cref="CaptureStatusPolicy.MapFromQueueStatus"/>: that policy collapses a row into one
+/// user-facing status, which is exactly the information loss the axes exist to undo - a converted
+/// row reports only <c>Converted</c> and a cancelled row only <c>Ignored</c>, so the processing and
+/// action facts underneath are gone. Each axis is read from the raw signals independently, and the
+/// two answers therefore differ wherever the collapse would have lost something: a <c>Failed</c> row
+/// that had already produced a proposal keeps <c>NeedsReview</c> on the action axis, and an applied
+/// conversion sets <c>Acted</c> without hiding the queue status underneath it. The whole table:
+/// </para>
+/// <list type="table">
+/// <listheader><term>Signal</term><description>Disposition, ProcessingSummary, ActionState</description></listheader>
+/// <item><term>Pending</term><description>Active, Idle, Unplanned</description></item>
+/// <item><term>Processing</term><description>Active, Processing, Unplanned</description></item>
+/// <item><term>Completed</term><description>Active, Ready, Unplanned</description></item>
+/// <item><term>Failed</term><description>Active, Failed, Unplanned</description></item>
+/// <item><term>Cancelled</term><description>Archived, Idle, Unplanned</description></item>
+/// <item><term>plus a linked proposal</term><description>action axis becomes NeedsReview; a cancelled row also moves its processing axis to Ready</description></item>
+/// <item><term>plus an applied conversion</term><description>action axis becomes Acted; a cancelled row also moves its processing axis to Ready</description></item>
+/// <item><term>plus a recorded disposition</term><description>the disposition axis takes CaptureUserDispositionMapping.FromLegacy, overriding the Archived default a cancelled row would otherwise get</description></item>
+/// </list>
+/// <para>
+/// One departure from the axis mapping the <c>ReconcileContextFabricScaffold</c> migration documents
+/// is deliberate: a <b>cancelled</b> row that had already produced a proposal or an applied change
+/// keeps its processing and action outcomes instead of collapsing to <c>Idle</c> and
+/// <c>Unplanned</c>. Archiving is a decision about the Inbox; it does not make it untrue that the
+/// capture was understood or acted on (ADR-0065 Decision 1). The one-line
+/// <see cref="CaptureTimeline"/> still shows <c>Archived</c>, so nothing a user sees changes.
 /// </para>
 /// </summary>
 public static class CaptureLegacyStateMapping
