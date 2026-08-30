@@ -87,6 +87,7 @@ jobs:
       - backend-solution
     uses: ./.github/workflows/reusable-container-images.yml
     with:
+      artifact-name: container-image-artifacts-nightly
       artifact-retention-days: 7
 
   sast-scanning:

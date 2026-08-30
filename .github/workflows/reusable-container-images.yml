@@ -16,6 +16,11 @@ on:
         type: number
         required: false
         default: 7
+      artifact-name:
+        description: Artifact name. Give every retention class its own name so a cleanup scoped by prefix can never reach evidence retained for longer.
+        type: string
+        required: false
+        default: container-image-artifacts
 
 permissions:
   contents: read
@@ -52,7 +57,7 @@ jobs:
         if: ${{ always() && inputs.upload-artifacts }}
         uses: actions/upload-artifact@v7
         with:
-          name: container-image-artifacts
+          name: ${{ inputs.artifact-name }}
           path: |
             /tmp/taskdeck-api.tar.gz
             /tmp/taskdeck-web.tar.gz

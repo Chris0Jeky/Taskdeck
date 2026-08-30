@@ -106,4 +106,5 @@ jobs:
     with:
       # Pinned to today's effective default on purpose: release evidence stays 90 days even if the
       # repository default retention is lowered later (CI-10 #2334 owns release retention).
+      artifact-name: container-image-artifacts-release
       artifact-retention-days: 90
