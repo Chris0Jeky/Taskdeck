@@ -10,6 +10,7 @@ import ReviewMain from './review/ReviewMain.vue'
 import type { ApplyPhase, EditLock } from './review/ReviewDecisionRail.vue'
 import ApplyToBoardDialog from '../../components/review/ApplyToBoardDialog.vue'
 import BatchApproveDialog from '../../components/review/BatchApproveDialog.vue'
+import BatchExecuteDialog from '../../components/review/BatchExecuteDialog.vue'
 import RejectProposalDialog from '../../components/review/RejectProposalDialog.vue'
 import ReviewRevisionEditor from './review/ReviewRevisionEditor.vue'
 import ReviewRightRail from './review/ReviewRightRail.vue'
@@ -17,6 +18,7 @@ import { useReviewProposals, isProposalReadOnly } from '../../composables/useRev
 import { useReviewCadence } from '../../composables/useReviewCadence'
 import { useReviewActions } from '../../composables/useReviewActions'
 import { useBatchApproveProposals } from '../../composables/useBatchApproveProposals'
+import { useBatchExecuteProposals } from '../../composables/useBatchExecuteProposals'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import { useReviewKeymap } from '../../composables/useReviewKeymap'
 import { useProposalRevisions } from '../../composables/useProposalRevisions'
@@ -189,6 +191,25 @@ const {
   cancelConfirmation: cancelBatchApproval,
   confirmApproval: confirmBatchApproval,
 } = useBatchApproveProposals(proposals, currentUserId, nowMs, loadProposals)
+
+// #1307, q-14 C. Separate from batch approve on purpose: approve and execute stay two explicit
+// steps (ADR-0003 / GP-06), so this acts only on proposals that are ALREADY Approved and never
+// approves anything itself.
+const {
+  executableCount: batchExecutableCount,
+  confirmationOpen: batchExecuteOpen,
+  busy: batchExecuteBusy,
+  receipts: batchExecuteReceipts,
+  requestConfirmation: requestBatchExecute,
+  cancelConfirmation: cancelBatchExecute,
+  confirmExecute: confirmBatchExecute,
+} = useBatchExecuteProposals(
+  proposals,
+  currentUserId,
+  nowMs,
+  loadProposals,
+  (proposal) => proposal.summary || t('review.queueItem.noSummary'),
+)
 
 // --- Active proposal ---------------------------------------------------
 
@@ -998,6 +1019,8 @@ const busy = computed(
     bulkDismissBusy.value ||
     batchApproveBusy.value ||
     batchConfirmationOpen.value ||
+    batchExecuteBusy.value ||
+    batchExecuteOpen.value ||
     applyGuardBusy.value,
 )
 
@@ -1790,6 +1813,7 @@ async function onClearBoardScope() {
       :scope-clear-label="$t('review.scope.clear')"
       :dismissable-count="bulkDismissableCount"
       :batch-selected-count="batchSelectedCount"
+      :batch-executable-count="batchExecutableCount"
       :busy="busy"
       :recently-applied="recentlyApplied"
       :cadence="cadence"
@@ -1798,6 +1822,7 @@ async function onClearBoardScope() {
       @select="selectProposal"
       @toggle-batch="toggleBatchSelection"
       @request-batch-approval="requestBatchApproval"
+      @request-batch-execute="requestBatchExecute"
       @file-away-all="onFileAwayBulk"
       @clear-scope="onClearBoardScope"
     />
@@ -2092,6 +2117,15 @@ async function onClearBoardScope() {
       :busy="batchApproveBusy"
       @confirm="confirmBatchApproval"
       @cancel="cancelBatchApproval"
+    />
+
+    <BatchExecuteDialog
+      :open="batchExecuteOpen"
+      :count="batchExecutableCount"
+      :busy="batchExecuteBusy"
+      :receipts="batchExecuteReceipts"
+      @confirm="confirmBatchExecute"
+      @close="cancelBatchExecute"
     />
   </div>
 </template>
