@@ -323,6 +323,26 @@ if (DesktopRuntime.IsPackagedDesktop)
 try
 {
 var builder = DesktopRuntime.CreateWebApplicationBuilder(args);
+
+// #2233: a Windows profile that once ran a Gemini-era Taskdeck keeps user-scope Llm__Gemini__*
+// variables forever, and the packaged double-click inherits them. Drop those environment-sourced
+// retired names before any reader sees them so the packaged app still starts on its default
+// provider. Only environment sources are filtered — retired settings the user wrote into
+// Taskdeck's own appsettings files remain fatal — and only in the packaged desktop host, so the
+// container / dotnet run / CI fail-closed contract is untouched.
+var retiredProviderNotice = new RetiredLlmProviderConfigurationNotice();
+if (DesktopRuntime.IsPackagedDesktop)
+{
+    RetiredProviderEnvironmentConfiguration.IgnoreInheritedRetiredProviderConfiguration(
+        builder.Configuration,
+        retiredProviderNotice);
+    if (retiredProviderNotice.IgnoredEnvironmentConfiguration)
+    {
+        DesktopRuntime.WriteRetiredProviderConfigurationIgnored();
+    }
+}
+
+builder.Services.AddSingleton(retiredProviderNotice);
 DesktopRuntime.ConfigurePackagedListenUrl(builder);
 var bootstrapHeadless = DesktopRuntime.IsBootstrapHeadlessEnvironment(DesktopRuntime.IsPackagedDesktop);
 var localConfigPath = FirstRunBootstrapper.ResolveLocalConfigPath(

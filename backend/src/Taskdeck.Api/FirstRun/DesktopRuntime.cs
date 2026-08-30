@@ -222,6 +222,29 @@ internal static class DesktopRuntime
         Console.WriteLine("Taskdeck stopped. You can close this window.");
     }
 
+    /// <summary>
+    /// The value-blind console warning for retired provider configuration that a packaged start
+    /// inherited from the process environment and ignored (#2233). Key names and values are both
+    /// withheld; the guidance names the retired variable FAMILY so the user can clean the profile.
+    /// </summary>
+    internal static IReadOnlyList<string> FormatRetiredProviderConfigurationIgnored()
+        =>
+        [
+            "TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored",
+            "Taskdeck ignored retired Gemini provider settings left in this Windows profile's environment " +
+            "and started with its built-in offline provider. Remove the leftover Llm__Gemini__* variables " +
+            "(and any Llm__Provider=Gemini) to clear this warning, then choose OpenAI, OpenAICompatible, " +
+            "Ollama, or Mock in Taskdeck. No settings were printed."
+        ];
+
+    internal static void WriteRetiredProviderConfigurationIgnored()
+    {
+        foreach (var line in FormatRetiredProviderConfigurationIgnored())
+        {
+            Console.WriteLine(line);
+        }
+    }
+
     internal static IReadOnlyList<string> FormatFatalStartup(Exception? exception)
     {
         if (exception is RetiredLlmProviderConfigurationException)
