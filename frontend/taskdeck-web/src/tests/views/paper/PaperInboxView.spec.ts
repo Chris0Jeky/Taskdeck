@@ -4,6 +4,8 @@ import { reactive, ref } from 'vue'
 import PaperInboxView from '../../../views/paper/PaperInboxView.vue'
 import { i18n } from '../../../i18n'
 import type { CaptureItem, CaptureItemSummary } from '../../../types/capture'
+import MockAdapter from 'axios-mock-adapter'
+import http from '../../../api/http'
 import { AUTH_EXPIRED_EVENT } from '../../../utils/authExpiry'
 import {
   CAPTURE_DRAFT_STORAGE_KEY,
@@ -1096,6 +1098,70 @@ describe('PaperInboxView', () => {
       expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
       expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
       expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
+    })
+
+    it('survives a real 401 on capture submit: redirect, sign in again, draft back in the composer', async () => {
+      // The whole journey through the production 401 path (GH-2142 AC-1/AC-2):
+      // the capture POST 401s, api/http.ts clears the session and assigns
+      // location.href, and the draft has to come back on the other side.
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/workspace/inbox', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      const adapter = new MockAdapter(http)
+      adapter.onPost('/capture').reply(401, { message: 'Token expired' })
+      mockCaptureStore.createItem.mockImplementationOnce(async () => {
+        await http.post('/capture', { text: 'Survives a real 401' })
+        return { id: 'never' }
+      })
+      mockBoardStore.boards = [{ id: 'board-9', name: 'Ops' }]
+
+      const before = mount(PaperInboxView)
+      await flushPromises()
+      const textarea = before.find('textarea[aria-label="Capture body"]')
+      await textarea.setValue('Survives a real 401')
+      await before.find('select[aria-label="Board picker"]').setValue('board-9')
+      await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+      await flushPromises()
+
+      // The interceptor really did navigate...
+      expect(window.location.href).toBe(
+        '/login?redirect=' + encodeURIComponent('/workspace/inbox'),
+      )
+      // ...and the document teardown that navigation implies loses the view.
+      before.unmount()
+      adapter.restore()
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+        configurable: true,
+      })
+
+      // Back on the Inbox after signing in again.
+      const after = mount(PaperInboxView)
+      await flushPromises()
+
+      expect(
+        after.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+      ).toBe('Survives a real 401')
+      expect(
+        after.find<HTMLSelectElement>('select[aria-label="Board picker"]').element.value,
+      ).toBe('board-9')
+      expect(after.get('[data-testid="paper-inbox-capture-restored"]').text()).toContain(
+        'Draft restored.',
+      )
+      // The interceptor fires before the POST's own rejection reaches the
+      // view, so the receipt is the synthesised session-expiry reason rather
+      // than the server message - an explanation either way, never a blank.
+      expect(after.get('[data-testid="paper-inbox-capture-error"]').text()).toContain(
+        'Your session expired before this capture was saved.',
+      )
+
+      // This view would otherwise stay mounted and its listener would stash
+      // into the next spec.
+      after.unmount()
     })
 
     it('leaves no auth-expiry listener behind when the view is unmounted', async () => {
