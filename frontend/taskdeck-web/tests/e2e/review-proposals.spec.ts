@@ -9,7 +9,7 @@
 
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
-import { registerAndAttachSession, type AuthResult } from './support/authSession'
+import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { expectApplyConfirmDialog } from './support/applyConfirm'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
@@ -277,6 +277,63 @@ test('review view should display multiple pending proposals for the same board',
   await expect(page.getByTestId('paper-review-view')).toBeVisible()
   await expect(proposalQueueItem(page, proposalId1 as string, cardTitle1)).toBeVisible({ timeout: 15_000 })
   await expect(proposalQueueItem(page, proposalId2 as string, cardTitle2)).toBeVisible({ timeout: 15_000 })
+})
+
+test('held Enter on batch confirmation keeps receipts open until keyup', async ({ page, request }) => {
+  test.setTimeout(90_000)
+
+  const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Held Enter Batch',
+    description: 'held Enter batch receipt guard',
+    columnNamePrefix: 'Todo',
+  })
+  const cardTitle = `Held Enter receipt ${seed}`
+  const capture = await createCaptureItem(request, auth, boardId, `- [ ] ${cardTitle}`)
+  await triageCaptureItem(request, auth, capture.id)
+  const triaged = await waitForProposalCreated(request, auth, capture.id)
+  const proposalId = triaged.provenance?.proposalId
+  expect(proposalId).toBeTruthy()
+
+  await assertOk(
+    await request.post(
+      `${API_BASE_URL}/automation/proposals/${encodeURIComponent(proposalId!)}/approve`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    ),
+    `approve held-Enter proposal ${proposalId}`,
+  )
+
+  await page.goto(`/workspace/review?boardId=${boardId}`)
+  const requestBatch = page.getByTestId('queue-batch-execute')
+  await expect(requestBatch).toBeVisible({ timeout: 15_000 })
+  await requestBatch.click()
+
+  const confirm = page.getByTestId('batch-execute-confirm')
+  await expect(confirm).toBeVisible()
+  await confirm.focus()
+  await expect(confirm).toBeFocused()
+
+  const executeResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().endsWith('/automation/proposals/execute'))
+  await page.keyboard.down('Enter')
+  await assertOk(await executeResponse, 'batch execute held-Enter proposal')
+
+  const receipts = page.getByTestId('batch-execute-receipts')
+  const done = page.getByTestId('batch-execute-done')
+  await expect(receipts).toBeVisible()
+  await expect(page.getByTestId('batch-execute-receipt-summary')).toContainText('Applied 1')
+  await expect(done).toBeFocused()
+
+  // A second keydown without keyup is native auto-repeat. It must not activate
+  // the newly focused Done button and discard the only durable receipt record.
+  await page.keyboard.down('Enter')
+  await expect(receipts).toBeVisible()
+  await expect(done).toBeFocused()
+
+  await page.keyboard.up('Enter')
+  await page.keyboard.press('Enter')
+  await expect(receipts).toHaveCount(0)
 })
 
 // --- Applied proposal appears in the Paper filing ledger ---
