@@ -2231,7 +2231,7 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.Tests.ps1
 ```
 
-The validator is deliberately non-starting: it reads the user-scope profile and requires the exact sorted set of running `docker-mcp=true` container IDs to match before and after the check. Normal output exposes only counts and SHA-256 fingerprints, never profile JSON or container IDs. Any inventory error or identity-set drift fails closed, and the validator never stops or removes containers because the shared Docker daemon provides no invocation identity that proves ownership. This proves profile membership and zero container churn during the validation window; it does not prove live gateway startup.
+The validator is deliberately non-starting: it reads the user-scope profile and requires the exact sorted set of all container IDs labeled `docker-mcp=true`, including stopped containers, to match before and after the check. Normal output exposes only counts and SHA-256 fingerprints, never profile JSON or container IDs. Any inventory error or identity-set drift fails closed, and the validator never stops or removes containers because the shared Docker daemon provides no invocation identity that proves ownership. This proves profile membership and zero container churn during the validation window; it does not prove live gateway startup.
 
 Optional servers (`postman`, `dockerhub`) warning mode:
 

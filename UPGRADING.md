@@ -134,6 +134,15 @@ the mirrored rows go with the tables. Downgrading past `ReconcileContextFabricSc
 three state axes back into the single legacy `Lifecycle` column, which is lossy — irrelevant while the
 tables are empty, but a reason to export before downgrading if you ever turned the setting on.
 
+- **MCP stdio identity remediation is reported by known tool calls, not at startup.** The stdio host
+  completes `initialize` without resolving caller identity, but tool and resource discovery or reads
+  are identity-gated and may detect an ambiguous or inactive identity first. For multiple active
+  users with no `McpServer__DefaultUserId`, or a configured ID that is not active, every
+  identity-gated request fails closed and writes the actionable guidance once to stderr; a known
+  `tools/call` also returns that guidance in an `isError: true` tool result, while discovery and
+  resource requests return generic access-denied JSON-RPC errors. HTTP MCP is unchanged and no
+  fallback account is authorized.
+
 ## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
 
 *Tagged 2026-08-30 at `9d2ea3c7c`. This heading is kept verbatim because the quick start inside the

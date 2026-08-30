@@ -56,13 +56,13 @@ When you use MCP tools, include:
 | `context7` | PASS | Resolve library id -> query docs works |
 | `playwright` | PASS | End-to-end browser automation works |
 | `chromeDevTools` | PASS | Chrome DevTools protocol surface available via MCP |
-| `docker` | PASS | Docker gateway defaults to `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform` |
+| `docker` | PASS | Docker gateway defaults to `docker,docker-docs,time,jetbrains,filesystem,SQLite` |
 | `docker-docs` | PASS | Fast Docker docs retrieval via Docker MCP gateway |
-| `openapi` | PASS | OpenAPI/Swagger validation + snippet generation available via Docker MCP gateway |
+| `openapi` | OPT-IN | Available in the Docker catalog, but not in the default gateway profile |
 | `SQLite` | PASS | Local Docker volume-backed SQLite MCP server available via Docker MCP gateway |
 | `filesystem` | PASS | Restricted to `C:\Users\jekyt\source\Taskdeck` and `C:\Users\jekyt\source` |
 | `jetbrains` | PASS | Requires JetBrains MCP plugin and local IDE listener (port `8090`) |
-| `terraform` | PASS | Terraform docs/registry helpers available via Docker MCP gateway |
+| `terraform` | OPT-IN | Available in the Docker catalog, but not in the default gateway profile |
 | `time` | PASS | Timezone/time conversion helpers available via Docker MCP gateway |
 | `postman` | OPTIONAL | Enabled in Docker catalog but requires `POSTMAN_API_KEY` secret |
 | `dockerhub` | OPTIONAL | Enabled in Docker catalog but requires username + `HUB_PAT_TOKEN` secret |
@@ -139,7 +139,7 @@ Enabled in Docker MCP registry:
 - `time`
 
 Default Docker MCP gateway servers (stable/no extra secrets required):
-- `docker,docker-docs,openapi,time,jetbrains,filesystem,SQLite,terraform`
+- `docker,docker-docs,time,jetbrains,filesystem,SQLite`
 
 Optional-but-enabled servers requiring additional setup:
 - `postman`: set Docker MCP secret `postman.postman-api-key`
