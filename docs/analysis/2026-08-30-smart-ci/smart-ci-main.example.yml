@@ -1,0 +1,65 @@
+# REFERENCE ONLY. Normal merges receive a tiny verifier; bypass/direct pushes escalate.
+name: Smart CI Main (example)
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+
+concurrency:
+  group: smart-ci-main
+  cancel-in-progress: false
+
+jobs:
+  provenance:
+    name: Main / Qualification Provenance
+    runs-on: ubuntu-24.04
+    outputs:
+      qualified: ${{ steps.lookup.outputs.qualified }}
+      reason: ${{ steps.lookup.outputs.reason }}
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ci/find-qualification-receipt.mjs --sha "$GITHUB_SHA" --github-output "$GITHUB_OUTPUT"
+
+  landed-sanity:
+    name: Main / Landed Sanity
+    needs: provenance
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          persist-credentials: false
+      - run: node scripts/check-docs-governance.mjs
+      - run: dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release --filter FullyQualifiedName~CriticalRepositoryInvariant
+      - run: ./scripts/ci/smoke-startup.sh
+
+  fallback-full:
+    name: Main / Full Fallback
+    needs: provenance
+    if: ${{ needs.provenance.outputs.qualified != 'true' }}
+    uses: ./.github/workflows/ci-full-hosted.yml
+    with:
+      reason: ${{ needs.provenance.outputs.reason }}
+
+  main-gate:
+    name: Main / Verification Gate
+    if: always()
+    needs: [provenance, landed-sanity, fallback-full]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          test "${{ needs.landed-sanity.result }}" = success
+          if [ "${{ needs.provenance.outputs.qualified }}" != true ]; then
+            test "${{ needs.fallback-full.result }}" = success
+          fi

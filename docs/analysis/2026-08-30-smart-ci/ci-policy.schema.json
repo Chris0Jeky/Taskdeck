@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/ci-policy.v1.json",
+  "title": "Taskdeck Smart CI Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "policyId",
+    "defaultExecutionMode",
+    "failClosed",
+    "riskClasses",
+    "trustClasses",
+    "runnerClasses",
+    "controlPaths",
+    "pathGroups",
+    "laneDefinitions",
+    "fullEscalationTriggers"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "policyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "defaultExecutionMode": {
+      "enum": [
+        "hosted",
+        "self-hosted",
+        "hybrid"
+      ]
+    },
+    "failClosed": {
+      "const": true
+    },
+    "riskClasses": {
+      "type": "object",
+      "minProperties": 5
+    },
+    "trustClasses": {
+      "type": "object",
+      "minProperties": 5
+    },
+    "runnerClasses": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "controlPaths": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "pathGroups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "patterns",
+          "riskFloor",
+          "lanes"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "patterns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "riskFloor": {
+            "enum": [
+              "R0",
+              "R1",
+              "R2",
+              "R3",
+              "R4"
+            ]
+          },
+          "lanes": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "laneDefinitions": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "fullEscalationTriggers": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

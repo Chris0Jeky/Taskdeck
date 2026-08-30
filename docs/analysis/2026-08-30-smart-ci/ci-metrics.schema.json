@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/ci-run-metrics.v1.json",
+  "title": "Taskdeck CI Run Metrics v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "sha",
+    "policyId",
+    "risk",
+    "trust",
+    "outcome",
+    "jobs",
+    "summary"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "runId": {
+      "type": [
+        "integer",
+        "string"
+      ]
+    },
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "policyId": {
+      "type": "string"
+    },
+    "risk": {
+      "enum": [
+        "R0",
+        "R1",
+        "R2",
+        "R3",
+        "R4"
+      ]
+    },
+    "trust": {
+      "enum": [
+        "T0",
+        "T1",
+        "T2",
+        "T3",
+        "T4"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "success",
+        "failure",
+        "cancelled",
+        "timed_out",
+        "skipped"
+      ]
+    },
+    "jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "runnerClass",
+          "hosted",
+          "selectedReason",
+          "outcome",
+          "totalSeconds"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "runnerClass": {
+            "type": "string"
+          },
+          "hosted": {
+            "type": "boolean"
+          },
+          "selectedReason": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "queueSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "setupSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "testSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "totalSeconds": {
+            "type": "number",
+            "minimum": 0
+          },
+          "billableMinutesEstimate": {
+            "type": "number",
+            "minimum": 0
+          },
+          "costUsdEstimate": {
+            "type": "number",
+            "minimum": 0
+          },
+          "testsRun": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "testsFailed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "testsSkipped": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rerun": {
+            "type": "boolean"
+          },
+          "cacheHit": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "artifactBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "criticalPathSeconds",
+        "aggregateRunnerSeconds",
+        "hostedMinutesEstimate",
+        "selfHostedWallSeconds"
+      ],
+      "properties": {
+        "criticalPathSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "aggregateRunnerSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hostedMinutesEstimate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hostedCostUsdEstimate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "selfHostedWallSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "flakeDetected": {
+          "type": "boolean"
+        },
+        "duplicateQualification": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

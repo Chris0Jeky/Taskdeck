@@ -1,0 +1,308 @@
+{
+  "$schema": "./ci-policy.schema.json",
+  "schemaVersion": 1,
+  "policyId": "taskdeck.smart-ci.v1-example",
+  "defaultExecutionMode": "hybrid",
+  "failClosed": true,
+  "riskClasses": {
+    "R0": {
+      "description": "docs and inert metadata",
+      "requiredLanes": [
+        "control",
+        "docs",
+        "secret-diff"
+      ]
+    },
+    "R1": {
+      "description": "isolated component",
+      "requiredLanes": [
+        "control",
+        "affected-unit",
+        "secret-diff"
+      ]
+    },
+    "R2": {
+      "description": "normal product change",
+      "requiredLanes": [
+        "control",
+        "linux-semantic",
+        "affected-integration",
+        "secret-diff"
+      ]
+    },
+    "R3": {
+      "description": "cross-cutting/stateful/security-sensitive product change",
+      "requiredLanes": [
+        "control",
+        "linux-full",
+        "affected-integration",
+        "windows-compat",
+        "selected-e2e",
+        "secret-diff"
+      ]
+    },
+    "R4": {
+      "description": "CI/release/supply-chain/security-control",
+      "requiredLanes": [
+        "hosted-control-full",
+        "linux-full-hosted",
+        "workflow-contract",
+        "secret-diff"
+      ]
+    }
+  },
+  "trustClasses": {
+    "T0": {
+      "description": "protected control-plane code",
+      "selfHostedAllowed": false
+    },
+    "T1": {
+      "description": "trusted same-repo product change",
+      "selfHostedAllowed": true
+    },
+    "T2": {
+      "description": "same-repo control change",
+      "selfHostedAllowed": false
+    },
+    "T3": {
+      "description": "fork/collaborator/bot/untrusted",
+      "selfHostedAllowed": false
+    },
+    "T4": {
+      "description": "protected release",
+      "selfHostedAllowed": false
+    }
+  },
+  "runnerClasses": {
+    "hostedLinux": [
+      "ubuntu-24.04"
+    ],
+    "hostedWindows": [
+      "windows-2025"
+    ],
+    "hostedMac": [
+      "macos-15"
+    ],
+    "selfHostedLinuxHeavy": [
+      "self-hosted",
+      "taskdeck",
+      "trusted",
+      "linux",
+      "x64",
+      "heavy"
+    ],
+    "selfHostedWindowsCompat": [
+      "self-hosted",
+      "taskdeck",
+      "trusted",
+      "windows",
+      "x64",
+      "compatibility"
+    ]
+  },
+  "controlPaths": [
+    ".github/**",
+    "scripts/ci/**",
+    "ci/**",
+    "global.json",
+    "backend/Directory.Packages.props",
+    "frontend/taskdeck-web/package-lock.json",
+    "Dockerfile*",
+    "deploy/**",
+    "scripts/release/**"
+  ],
+  "pathGroups": [
+    {
+      "id": "docs",
+      "patterns": [
+        "**/*.md",
+        "docs/**"
+      ],
+      "riskFloor": "R0",
+      "lanes": [
+        "docs"
+      ]
+    },
+    {
+      "id": "backend-domain",
+      "patterns": [
+        "backend/src/Taskdeck.Domain/**"
+      ],
+      "riskFloor": "R2",
+      "lanes": [
+        "backend-domain",
+        "backend-application",
+        "architecture"
+      ]
+    },
+    {
+      "id": "backend-application",
+      "patterns": [
+        "backend/src/Taskdeck.Application/**"
+      ],
+      "riskFloor": "R2",
+      "lanes": [
+        "backend-application",
+        "api-affected"
+      ]
+    },
+    {
+      "id": "api",
+      "patterns": [
+        "backend/src/Taskdeck.Api/**"
+      ],
+      "riskFloor": "R2",
+      "lanes": [
+        "api-affected"
+      ]
+    },
+    {
+      "id": "migrations",
+      "patterns": [
+        "backend/src/Taskdeck.Infrastructure/Migrations/**",
+        "backend/src/Taskdeck.Infrastructure/Persistence/**"
+      ],
+      "riskFloor": "R3",
+      "lanes": [
+        "migration",
+        "api-persistence",
+        "export-delete"
+      ]
+    },
+    {
+      "id": "auth-security",
+      "patterns": [
+        "backend/src/**/Auth*",
+        "backend/src/**/Security*",
+        "docs/security/**"
+      ],
+      "riskFloor": "R3",
+      "lanes": [
+        "auth-security",
+        "cross-user-isolation"
+      ]
+    },
+    {
+      "id": "capture-proposal",
+      "patterns": [
+        "backend/src/**/Capture*",
+        "backend/src/**/AutomationProposal*",
+        "backend/src/**/Provenance*"
+      ],
+      "riskFloor": "R3",
+      "lanes": [
+        "capture-proposal-executor",
+        "e2e-core-loop"
+      ]
+    },
+    {
+      "id": "mcp-process",
+      "patterns": [
+        "backend/src/**/Mcp/**",
+        "backend/tests/**/Mcp*"
+      ],
+      "riskFloor": "R3",
+      "lanes": [
+        "mcp-contract",
+        "mcp-process-http",
+        "windows-process"
+      ]
+    },
+    {
+      "id": "frontend",
+      "patterns": [
+        "frontend/taskdeck-web/src/**"
+      ],
+      "riskFloor": "R2",
+      "lanes": [
+        "frontend-semantic",
+        "e2e-affected"
+      ]
+    },
+    {
+      "id": "desktop-windows",
+      "patterns": [
+        "scripts/**/*.ps1",
+        "scripts/**/*.cmd",
+        "backend/src/**/Desktop*",
+        "frontend/taskdeck-web/scripts/**"
+      ],
+      "riskFloor": "R3",
+      "lanes": [
+        "windows-compat"
+      ]
+    },
+    {
+      "id": "containers",
+      "patterns": [
+        "Dockerfile*",
+        "docker-compose*.yml",
+        "deploy/**"
+      ],
+      "riskFloor": "R3",
+      "lanes": [
+        "container-build",
+        "container-integration"
+      ]
+    }
+  ],
+  "laneDefinitions": {
+    "control": {
+      "runner": "hostedLinux",
+      "trustedOnly": false
+    },
+    "docs": {
+      "runner": "hostedLinux",
+      "trustedOnly": false
+    },
+    "secret-diff": {
+      "runner": "hostedLinux",
+      "trustedOnly": false
+    },
+    "linux-semantic": {
+      "runner": "selfHostedLinuxHeavy",
+      "hostedFallback": "hostedLinux",
+      "trustedOnly": true
+    },
+    "linux-full": {
+      "runner": "selfHostedLinuxHeavy",
+      "hostedFallback": "hostedLinux",
+      "trustedOnly": true
+    },
+    "linux-full-hosted": {
+      "runner": "hostedLinux",
+      "trustedOnly": false
+    },
+    "windows-compat": {
+      "runner": "selfHostedWindowsCompat",
+      "hostedFallback": "hostedWindows",
+      "trustedOnly": true
+    },
+    "selected-e2e": {
+      "runner": "selfHostedLinuxHeavy",
+      "hostedFallback": "hostedLinux",
+      "trustedOnly": true
+    },
+    "container-build": {
+      "runner": "selfHostedLinuxHeavy",
+      "hostedFallback": "hostedLinux",
+      "trustedOnly": true
+    },
+    "hosted-control-full": {
+      "runner": "hostedLinux",
+      "trustedOnly": false
+    },
+    "workflow-contract": {
+      "runner": "hostedLinux",
+      "trustedOnly": false
+    }
+  },
+  "fullEscalationTriggers": [
+    "planner-error",
+    "policy-schema-error",
+    "unmapped-path",
+    "control-path-change",
+    "base-comparison-unavailable",
+    "dependency-map-stale"
+  ]
+}

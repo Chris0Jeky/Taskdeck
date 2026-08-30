@@ -1,0 +1,107 @@
+# REFERENCE ONLY.
+# Store this workflow on Taskdeck's protected main branch. In the preferred
+# organization topology, configure the self-hosted runner group to allow ONLY:
+# ORGANIZATION/Taskdeck/.github/workflows/ci-heavy-trusted.yml@refs/heads/main
+name: Smart CI Heavy Trusted (example)
+
+on:
+  workflow_call:
+    inputs:
+      pull_request_number:
+        type: number
+        required: true
+      expected_head_sha:
+        type: string
+        required: true
+      target_sha:
+        type: string
+        required: true
+      policy_id:
+        type: string
+        required: true
+      policy_digest:
+        type: string
+        required: true
+      plan_json:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  authorize:
+    name: Heavy / Revalidate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      authorized: ${{ steps.auth.outputs.authorized }}
+      linux_runner: ${{ steps.auth.outputs.linux_runner }}
+      windows_runner: ${{ steps.auth.outputs.windows_runner }}
+      run_windows: ${{ steps.auth.outputs.run_windows }}
+      run_e2e: ${{ steps.auth.outputs.run_e2e }}
+      run_containers: ${{ steps.auth.outputs.run_containers }}
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          ref: refs/heads/main
+          persist-credentials: false
+      - id: auth
+        env:
+          PR_NUMBER: ${{ inputs.pull_request_number }}
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+          TARGET_SHA: ${{ inputs.target_sha }}
+          POLICY_ID: ${{ inputs.policy_id }}
+          POLICY_DIGEST: ${{ inputs.policy_digest }}
+          PLAN_JSON: ${{ inputs.plan_json }}
+        run: >-
+          node tools/ci/revalidate-heavy-request.mjs
+          --reject-control-path-changes
+          --reject-stale-sha
+          --github-output "$GITHUB_OUTPUT"
+
+  linux:
+    name: Heavy / Linux
+    needs: authorize
+    if: ${{ needs.authorize.outputs.authorized == 'true' }}
+    runs-on: ${{ fromJSON(needs.authorize.outputs.linux_runner) }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: ./scripts/ci/run-selected.sh --plan-json '${{ inputs.plan_json }}' --platform linux
+
+  windows:
+    name: Heavy / Windows Compatibility
+    needs: authorize
+    if: ${{ needs.authorize.outputs.authorized == 'true' && needs.authorize.outputs.run_windows == 'true' }}
+    runs-on: ${{ fromJSON(needs.authorize.outputs.windows_runner) }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          ref: ${{ inputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - shell: pwsh
+        run: ./scripts/ci/Run-Selected.ps1 -PlanJson '${{ inputs.plan_json }}' -Platform windows
+
+  result:
+    name: Heavy / Result
+    if: always()
+    needs: [authorize, linux, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          test "${{ needs.authorize.result }}" = success
+          test "${{ needs.authorize.outputs.authorized }}" = true
+          test "${{ needs.linux.result }}" = success
+          case "${{ needs.windows.result }}" in success|skipped) ;; *) exit 1 ;; esac

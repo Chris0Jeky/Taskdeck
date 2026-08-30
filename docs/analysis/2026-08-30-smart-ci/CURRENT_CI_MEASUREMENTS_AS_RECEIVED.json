@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "capturedAtUtc": "2026-08-30T15:00:00Z",
+  "repository": "Chris0Jeky/Taskdeck",
+  "caveat": "Snapshot assembled from GitHub API and repository records on 2026-08-30. Re-measure before implementation.",
+  "workflowRunCounts": {
+    "lifetime": 12560,
+    "since2026_08_01": 2647,
+    "pullRequestTriggeredSince2026_08_01": 1635
+  },
+  "sample": {
+    "pullRequest": 2280,
+    "runId": 33295882109,
+    "headSha": "2b426ac80aeaccb97fefd3b4c155054e99ecfa16",
+    "durationsMinutesApprox": {
+      "backendUnitUbuntu": 5.17,
+      "backendUnitWindows": 6.1,
+      "apiIntegrationUbuntuTestStep": 6.03,
+      "apiIntegrationWindowsTestStep": 15.55,
+      "frontendWindowsJob": 12.48,
+      "fiveMeasuredJobsAggregate": 47.83
+    },
+    "apiSlowTestsSecondsApprox": {
+      "ubuntu": {
+        "AutomatedJourneyGapTests": 73.8,
+        "McpHostRealStartupTests": 37.8,
+        "McpHttpAuthTests": 32.9,
+        "McpHttpIsolationTests": 29.0,
+        "McpHttpProposalSurfaceTests": 27.5,
+        "McpHttpHostileWriteAuthTests": 26.2,
+        "ChatSseEndpointTests": 22.0
+      },
+      "windows": {
+        "AutomatedJourneyGapTests": 98.0,
+        "McpHttpAuthTests": 91.8,
+        "McpHttpIsolationTests": 80.2,
+        "McpHttpProposalSurfaceTests": 77.9,
+        "McpHttpHostileWriteAuthTests": 76.2,
+        "ChatSseEndpointTests": 49.0,
+        "FirstRunMcpSmokeTests": 44.2,
+        "McpHttpBackgroundServiceTests": 43.3,
+        "McpHostRealStartupTests": 42.5
+      }
+    }
+  },
+  "currentWorkflowFacts": {
+    "ciRequiredTriggers": [
+      "pull_request",
+      "push:main",
+      "push:master",
+      "merge_group"
+    ],
+    "fullBackendUnitMatrix": [
+      "ubuntu-latest",
+      "windows-latest"
+    ],
+    "fullApiIntegrationMatrix": [
+      "ubuntu-latest",
+      "windows-latest"
+    ],
+    "fullFrontendMatrix": [
+      "ubuntu-latest",
+      "windows-latest"
+    ],
+    "rulesets": 0,
+    "branchProtectionRecordDate": "2026-08-19",
+    "recordedRequiredContexts": [
+      "Dependency Security / Dependency Security Signals",
+      "SAST Scan / SAST Scan (Semgrep)",
+      "Secret Scan / Gitleaks Scan"
+    ],
+    "recordedStrictUpToDate": false,
+    "recordedOverallCiRequired": false
+  }
+}

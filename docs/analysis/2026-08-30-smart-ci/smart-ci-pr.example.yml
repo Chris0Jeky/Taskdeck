@@ -1,0 +1,99 @@
+# REFERENCE ONLY.
+# Preferred use: source this workflow as an ORGANIZATION RULESET REQUIRED WORKFLOW
+# from a separately protected private CI-policy repository. The Taskdeck PR must
+# not be able to edit the workflow that supplies its own merge decision.
+name: Smart CI Required (example)
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: smart-ci-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    name: Smart CI / Plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      policy_id: ${{ steps.plan.outputs.policy_id }}
+      policy_digest: ${{ steps.plan.outputs.policy_digest }}
+      risk: ${{ steps.plan.outputs.risk }}
+      trust: ${{ steps.plan.outputs.trust }}
+      target_sha: ${{ steps.plan.outputs.target_sha }}
+      plan_json: ${{ steps.plan.outputs.plan_json }}
+      run_heavy: ${{ steps.plan.outputs.run_heavy }}
+    steps:
+      # Checkout the TRUSTED CI-policy source, not Taskdeck PR code.
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          repository: ORGANIZATION/taskdeck-ci-policy
+          ref: refs/heads/main
+          path: ci-control
+          persist-credentials: false
+      - id: plan
+        name: Build plan from GitHub API metadata
+        working-directory: ci-control
+        env:
+          EVENT_JSON: ${{ toJSON(github.event) }}
+          CI_EXECUTION_MODE: ${{ vars.CI_EXECUTION_MODE || 'hybrid' }}
+        run: node tools/plan.mjs --event "$GITHUB_EVENT_PATH" --github-output "$GITHUB_OUTPUT"
+
+  hosted-control:
+    name: Smart CI / Hosted Control
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          ref: ${{ needs.plan.outputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: node --test scripts/ci/**/*.test.mjs
+      - run: node scripts/check-docs-governance.mjs
+      - run: node scripts/check-github-ops-governance.mjs
+      # Workflow/control changes are fully qualified here and never sent to self-hosted.
+
+  heavy:
+    name: Smart CI / Trusted Heavy
+    needs: [plan, hosted-control]
+    if: ${{ needs.plan.outputs.run_heavy == 'true' && needs.hosted-control.result == 'success' }}
+    # The runner group must be restricted to THIS reusable workflow on main.
+    uses: ORGANIZATION/Taskdeck/.github/workflows/ci-heavy-trusted.yml@refs/heads/main
+    with:
+      pull_request_number: ${{ github.event.pull_request.number }}
+      expected_head_sha: ${{ github.event.pull_request.head.sha }}
+      target_sha: ${{ needs.plan.outputs.target_sha }}
+      policy_id: ${{ needs.plan.outputs.policy_id }}
+      policy_digest: ${{ needs.plan.outputs.policy_digest }}
+      plan_json: ${{ needs.plan.outputs.plan_json }}
+    secrets: inherit # The callee must expose/consume NO ordinary secrets; omit if unnecessary.
+
+  required-gate:
+    name: Smart CI / Required Gate
+    if: always()
+    needs: [plan, hosted-control, heavy]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@FULL_COMMIT_SHA # vX.Y.Z
+        with:
+          repository: ORGANIZATION/taskdeck-ci-policy
+          ref: refs/heads/main
+          path: ci-control
+          persist-credentials: false
+      - name: Evaluate exact plan and outcomes
+        working-directory: ci-control
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          CONTROL_RESULT: ${{ needs.hosted-control.result }}
+          HEAVY_RESULT: ${{ needs.heavy.result }}
+          POLICY_ID: ${{ needs.plan.outputs.policy_id }}
+          TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+        run: node tools/evaluate-gate.mjs --event "$GITHUB_EVENT_PATH" --results-env
