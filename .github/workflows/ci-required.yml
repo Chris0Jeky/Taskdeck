@@ -159,6 +159,9 @@ jobs:
   container-images:
     name: Container Images
     uses: ./.github/workflows/reusable-container-images.yml
+    with:
+      # CI-09 #2333: the image tars have no PR consumer; the build + compose validation is the evidence.
+      upload-artifacts: false
 
   # ── Security gate (#1132): secret/dependency/SAST scans in the required PR lane ──
   # Previously these ran only in label-gated ci-extended / nightly / release lanes, so a PR

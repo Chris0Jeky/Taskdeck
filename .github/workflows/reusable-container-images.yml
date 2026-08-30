@@ -1,7 +1,21 @@
 name: Reusable Container Images
 
+# Artifact policy (CI-09 #2333, ADR-0066 §11): the exported image tars (~170 MB per run)
+# have no consumer on pull requests — 2,060 of them held 357 GB on 2026-08-30. Callers
+# choose the retention class explicitly; the required PR lane does not upload at all.
 on:
   workflow_call:
+    inputs:
+      upload-artifacts:
+        description: Upload the exported image tars, resolved compose file and checksums as a workflow artifact.
+        type: boolean
+        required: false
+        default: true
+      artifact-retention-days:
+        description: Retention (days) for the container image artifact when it is uploaded.
+        type: number
+        required: false
+        default: 7
 
 permissions:
   contents: read
@@ -34,7 +48,7 @@ jobs:
           sha256sum /tmp/taskdeck-api.tar.gz /tmp/taskdeck-web.tar.gz /tmp/taskdeck-compose.resolved.yml > /tmp/taskdeck-container-artifacts.sha256
 
       - name: Upload container image artifacts
-        if: always()
+        if: ${{ always() && inputs.upload-artifacts }}
         uses: actions/upload-artifact@v7
         with:
           name: container-image-artifacts
@@ -44,3 +58,4 @@ jobs:
             /tmp/taskdeck-compose.resolved.yml
             /tmp/taskdeck-container-artifacts.sha256
           if-no-files-found: ignore
+          retention-days: ${{ inputs.artifact-retention-days }}

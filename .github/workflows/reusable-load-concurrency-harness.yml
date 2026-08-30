@@ -161,6 +161,7 @@ jobs:
             frontend/taskdeck-web/test-results/load/k6-output.log
             frontend/taskdeck-web/test-results/load/backend-load-api.log
           if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload Playwright report
         if: failure()

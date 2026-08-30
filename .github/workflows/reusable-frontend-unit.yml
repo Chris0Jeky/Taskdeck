@@ -76,3 +76,5 @@ jobs:
             frontend/taskdeck-web/test-results
             frontend/taskdeck-web/coverage
           if-no-files-found: ignore
+          # CI-09 #2333: triage-only evidence; 3 days keeps the steady state under the Pro allowance.
+          retention-days: 3

@@ -103,3 +103,5 @@ jobs:
   container-images:
     name: Container Image Artifacts
     uses: ./.github/workflows/reusable-container-images.yml
+    with:
+      artifact-retention-days: 90
