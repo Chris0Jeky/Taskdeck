@@ -94,6 +94,9 @@ implementation.
   schema plus migration, carrying its own audit, export/import/deletion, MCP/API, realtime,
   concurrency, migration and rollback bar, not a single nullable column; #2094 is re-milestoned off
   v0.3.
+  *Timing amendment (2026-08-30, v0.3 RC deck q-3 = B, recorded on #2093): the "ship #2093 in v0.3"
+  slot moves to v0.4; only the multiple-assignments sub-slice (#2240 — no estimates, no roll-ups, no
+  new participant record) stays in v0.3. The ruling's content, prerequisites and gate are unchanged.*
 - **adr0062-gate-on-2093** — A: ADR-0062 does gate #2093's estimate and roll-up half — #2093 may not
   start until ADR-0060 is Accepted and both the built-in-measure boundary and the derived-aggregate
   rule above are ratified. Consequence: the estimate cannot ship as a mutable "actual hours" number

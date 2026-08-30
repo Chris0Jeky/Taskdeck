@@ -114,11 +114,39 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
-## Unreleased — after v0.2.0
+## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
 
-**BREAKING: none.** These notes cover hosts tracking `main` past the v0.2.0 tag (the v0.3 lane merged
-into `main` on 2026-08-29). This heading is renamed to the release version when the next version
-ships; nothing below is in the published v0.2.0 artifacts.
+**BREAKING: yes, for two kinds of integration** — scripts that create API keys through the API or
+CLI must now name explicit scopes, and clients that treated a non-null capture `errorMessage` as
+"the capture failed" must key on the status instead. Ordinary Windows and Compose users have no
+manual step: both schema migrations run automatically after the pre-migration snapshot. This is a
+**release candidate**: the GitHub Release is flagged *Pre-release*, it is not shown as *Latest*, and
+the container lane publishes only `ghcr.io/chris0jeky/taskdeck:0.3.0-rc.1` — `:latest` and `:0.3`
+stay where they were. Nothing below is in the published v0.2.0 artifacts.
+
+**Behaviour changes to read before upgrading**
+
+1. **New API, UI and CLI keys must select one or more of `read`, `propose`, `manage`.** Omitted,
+   empty or unknown scope selections are rejected instead of defaulting to Full. Existing keys are
+   backfilled to Full and keep working (details below).
+2. **A successful capture can carry an `errorMessage`** (the triage degradation notice). Only the
+   status says whether a capture failed (details below).
+3. **Archive-card proposal operations now block the card with a generated reason** instead of
+   applying as a silent no-op (`#2185`). A previously approved proposal that archives a card will,
+   on apply, show that card as blocked — the intended visible outcome.
+4. **Prerelease semantics for container hosts (`#2217`).** If you deploy `:latest` or `:0.3`, an
+   RC never moves your tag; opt into the RC explicitly with `:0.3.0-rc.1` (pin by digest as the
+   threat model recommends).
+
+**Going back to v0.2.0** after starting the RC once: stop Taskdeck and restore the automatic
+[pre-migration snapshot](#automatic-pre-migration-backups) (or your manual copy) — v0.2.0 does not
+know the two new columns.
+
+**Known limitations carried into this RC (unchanged since earlier releases):** MFA TOTP seeds are
+stored unencrypted in the SQLite file until `#1653` lands — protect the file as you would a
+password store; artefact extraction (files/PDF/images) is present in the code but not connected to
+any request path until the memory-capped worker (`#1429`); batch **approve** stops at *Approved* —
+applying stays per-proposal; Taskdeck sends no telemetry (see `docs/TELEMETRY.md`).
 
 - **New schema: source-labelled proposal confidence.** The `MakeProvenanceConfidenceHonest`
   migration makes `ProvenanceFields.Confidence` nullable and adds the required integer

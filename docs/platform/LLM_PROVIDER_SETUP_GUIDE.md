@@ -22,6 +22,12 @@ Backend provider runtime now supports:
   - OpenAI adapter maps pseudonymous end-user token to provider `user` field
   - capture queue payload provenance now persists actor/correlation/source attribution metadata for audit follow-through
 
+Provider keys are supplied through configuration — `appsettings.local.json` or `Llm__*` environment
+variables — and checked with the **Verify LLM** probe; there is no in-app OpenAI-key entry, rotation
+or removal screen in v0.x (maintainer ruling 2026-08-30 on `#1879`, RC deck q-11 A; ADR-0055). The
+**Settings → API Keys** page manages *Taskdeck's own* scoped keys for MCP/HTTP clients, not provider
+keys. Leftover retired-provider variables must never stop the packaged app from starting (`#2233`).
+
 The OpenAI adapter sends `max_completion_tokens` (never the legacy `max_tokens`) and omits
 `temperature` for reasoning-family models (`gpt-5*`, `o1*`, `o3*`, `o4*`), which reject
 non-default temperature values on chat completions. Reasoning effort is left at the model

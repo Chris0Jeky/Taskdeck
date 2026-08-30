@@ -2,7 +2,7 @@
 
 Use this checklist to manually validate current Taskdeck behavior on `main`.
 
-Last Updated: 2026-04-25
+Last Updated: 2026-08-30
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -61,6 +61,12 @@ Optional clean start:
 - Stop API process.
 - Remove `backend/src/Taskdeck.Api/taskdeck.db`.
 - Restart API.
+
+## R1. v0.3.0-rc.1 release-candidate checks (2026-08-30)
+
+- [ ] **Prerelease semantics (`#2217`).** The `v0.3.0-rc.1` GitHub Release shows the *Pre-release* badge and `/releases/latest` still resolves to `v0.2.0`; `ghcr.io/chris0jeky/taskdeck:latest` and `:0.2` digests are unchanged from before the tag (record both digests before tagging), and `:0.3.0-rc.1` exists.
+- [ ] **Upgrade from a real v0.2.0 database.** Start the RC on a copy of a v0.2.0 workspace: a pre-migration snapshot appears next to the database, `MakeProvenanceConfidenceHonest` and `AddApiKeyScopes` are the only migrations applied, every pre-existing API key shows **Full**, and creating a new key without scopes is rejected.
+- [ ] **Triage degradation is visible (`#2202`).** With the LLM provider unavailable (kill switch or no key), a transcript capture completes as *Triaged* with the degradation notice rendered in both Inbox surfaces, and the deterministic proposals are still reviewable.
 
 ## C0. Container Deployment Hardening Matrix (`#142`)
 

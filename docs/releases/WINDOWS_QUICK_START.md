@@ -1,7 +1,13 @@
-# Taskdeck Windows Quick Start (0.2.x)
+# Taskdeck Windows Quick Start (0.3.x)
 
-Taskdeck 0.2.x supports **Windows 10/11 x64**. Download the Windows ZIP and its
-`.sha256` file from the [official Taskdeck Releases page](https://github.com/Chris0Jeky/Taskdeck/releases/latest).
+Taskdeck 0.3.x supports **Windows 10/11 x64**. Download the Windows ZIP and its
+`.sha256` file from the [official Taskdeck Releases page](https://github.com/Chris0Jeky/Taskdeck/releases).
+
+> **Release candidate.** `v0.3.0-rc.1` is a *pre-release*: it is listed on the Releases page but is
+> not the one marked **Latest** (that stays v0.2.0 until v0.3.0 final). On its first start it runs
+> the two v0.3 schema migrations after taking an automatic pre-migration snapshot; read the
+> `v0.3.0-rc.1` section of [UPGRADING.md](../../UPGRADING.md) first if you have an existing
+> workspace.
 The other archives attached to v0.1.0 are preserved historical artifacts, not a continuing support
 promise.
 
@@ -11,7 +17,7 @@ Open PowerShell in the download folder, set the version you downloaded, and comp
 its checksum file:
 
 ```powershell
-$version = 'v0.2.0' # change this to the version you downloaded
+$version = 'v0.3.0-rc.1' # change this to the version you downloaded
 $zip = "taskdeck-$version-win-x64.zip"
 $expected = ((Get-Content "$zip.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
 $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
@@ -43,7 +49,7 @@ extracted folder.
 
 ### Windows unsigned-beta warning
 
-The 0.2.x executable is not code-signed. Windows SmartScreen may show **Windows protected your PC**.
+The 0.3.x executable is not code-signed. Windows SmartScreen may show **Windows protected your PC**.
 Continue with **More info -> Run anyway** only when the ZIP came from the official Taskdeck release
 and the SHA-256 check above passed. Do not disable SmartScreen globally. Delete the download and
 [report it](https://github.com/Chris0Jeky/Taskdeck/issues) if its source or hash is wrong.
