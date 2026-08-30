@@ -1,9 +1,14 @@
 # ADR-0065: Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing
 
-- **Status**: Proposed (2026-08-30). **Not in force.** Nothing below is buildable until the
-  maintainer records the acceptance conditions in §Acceptance conditions (tracker CF-00). Until
-  then the shipped capture model (ADR-0005), the transcript lane (ADR-0045), the generalist wave
-  (ADR-0046), and review-first automation (ADR-0003 / GP-06 / ADR-0056) remain fully operative.
+- **Status**: Accepted under delegation (2026-08-30). The maintainer widened the pass mid-session
+  ("continue working on this part, go as far as you can … I'll leave this to you. I want you to pave
+  the way to (possibly even) v1.0"), so the nine acceptance conditions below were **ruled by the
+  agent pass under that explicit delegation** and recorded, with reasons, on tracker CF-00
+  (`#2254`). Every ruling is revisable by the maintainer at any time; a reply on CF-00 overturns it.
+  Shipped behaviour is unchanged until each CF slice lands behind its own tests: the queue-wrapper
+  capture model (ADR-0005), the transcript lane (ADR-0045), the generalist wave (ADR-0046), and
+  review-first automation (ADR-0003 / GP-06 / ADR-0056) remain fully operative, and the delegated
+  authority slice (§Decision 9) keeps its own separate gate.
 - **Date**: 2026-08-30
 - **Deciders**: Chris0Jeky (maintainer)
 - **Source**: the maintainer's 2026-08-30 *Context Fabric* planning pack (an external LLM planning
@@ -359,7 +364,16 @@ chains.
 
 ## Acceptance conditions
 
-This ADR moves from Proposed to Accepted only when the maintainer has recorded, on tracker CF-00:
+Ruled under the maintainer's 2026-08-30 delegation and recorded with reasons on tracker CF-00
+(`#2254`): (1) *Context Fabric* internal, public wedge line as in §Decision; (2) foundation slices
+0–3 and the storage seam join v0.4 beside the hosted beta, the payoff wave is v0.5; (3) candidates
+are persisted; (4) `IBlobStore` with `SqliteBlobStore` now, object storage only at ADR-0061 stage
+3; (5) fresh-install default *Balanced* with one-time explicit consent before the first remote
+processor; (6) first delegated class = create-card from an explicit `Act` capture into a named
+board with extractive evidence under *Assist*, behind a provisional evidence bar; (7) ID-preserving
+backfill; (8) ADR-0046 amended in place, ADR-0005 superseded when CF-01 ships, ADR-0033 partially
+superseded; (9) Flow / Guided / Control replace the workspace modes, default Guided. The conditions
+as originally posed:
 
 1. terminology and the public product line (§Decision preamble);
 2. the release placement of the wave — whether the behaviour-preserving foundation slices (0–3)

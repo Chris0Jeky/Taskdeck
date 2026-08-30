@@ -18,6 +18,14 @@ This file is the Codex active-gate pointer for Taskdeck. It intentionally summar
 - Fast agent seam map: `autodoc/AGENT_INDEX.md`
 - Agentic protocols: `docs/agentic/QUESTION_PROTOCOL.md`, `docs/agentic/FAILURE_LEDGER.md`, `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`, `docs/agentic/SKILL_REGISTRY.md`, `docs/agentic/AGENT_TOOL_PARITY.md`
 
+## v0.3.0 north star (maintainer-issued 2026-08-30, for the v0.3 lane)
+
+> A stranger downloads Taskdeck, double-clicks it, and can trust it: whatever context they paste becomes evidence-linked proposals they explicitly approve; agents and MCP clients act only through scoped, attributed, review-first paths; nothing degrades silently and nothing changes without a receipt. Every open v0.3 milestone issue is a gap between that sentence and the shipped ZIP/container — close it with a tested, reviewed, merged slice; prefer finishing over adding; anything outside the milestone becomes an issue, not code.
+
+## Context Fabric pointer (2026-08-30 — ADR-0065, accepted under delegation; NOT part of the v0.3 lane)
+
+The architecture for "speak, type, paste, or drop" is `docs/decisions/ADR-0065-context-fabric-capture-representation-processing.md`, mapped in `docs/architecture/CONTEXT_FABRIC.md`, tracked on CF-00 `#2254` (children `#2255`–`#2277`, label `context-fabric`, milestones v0.4 foundation / v0.5 payoff / v0.6 rules). Behaviour-preserving scaffolding is on `main` (`Capture` aggregate + empty `Captures` table, `ICaptureStore`, manifest/protocol contracts, `ContextFabric:DualWriteCaptures` off by default). Do not pull CF issues into the v0.3 lane; do not add `CaptureSource` values or request-type lane predicates anywhere; do not build CF-22 (delegated authority) without its own maintainer go. Review-first automation is unchanged.
+
 ## Current Focus Snapshot
 
 **Direction (2026-08-26 checkpoint; ADR-0044 extended by ADR-0046 and ADR-0051):** Taskdeck is being revived and shipped as a **free open beta** — the local-first, review-first action-item engine (transcripts/notes/artefacts in → evidence-linked proposals out → human-approved board apply), with the write-gated MCP server as the developer-facing second act. Active sequencing is `docs/REVIVAL_PLAN.md`: the ratified REVIVAL/GEN waves remain the product spine, while ADR-0051 permits a bounded autonomous queue of acceptance-ready tracked backlog (maximum four `Now`, eight `Next`) without another owner decision. v0.1.2 shipped on 2026-08-25; its bounded follow-up is tracked through `#1947` and proposed ADR-0060 through ADR-0062. The 2026-06-13 archive pivot remains only the traction-checkpoint fallback, and new product surface still requires plan or Accepted-ADR authority. Merge authority is read live from `.agent-harness/tier.json`; CODEOWNERS is advisory routing rather than a blanket human gate. The project thesis remains unchanged:

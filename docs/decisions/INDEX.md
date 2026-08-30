@@ -6,7 +6,7 @@
 | [0002](ADR-0002-claims-first-identity.md) | Claims-First Identity Model | Accepted | 2026-01 |
 | [0003](ADR-0003-proposal-first-automation.md) | Proposal-First Automation (Review-First Safety) | Accepted | 2026-02-23 |
 | [0004](ADR-0004-multi-tenancy-shared-schema.md) | Multi-Tenancy - Shared Schema + TenantId | Accepted (cross-user isolation live via per-UserId/board-access; multi-org/TenantId shared-schema premise parked: archive pivot) | 2026-02-22 |
-| [0005](ADR-0005-capture-model-queue-wrapper.md) | Capture Model - Queue-Wrapper MVP | Accepted | 2026-02-23 |
+| [0005](ADR-0005-capture-model-queue-wrapper.md) | Capture Model - Queue-Wrapper MVP | Accepted (to be superseded by ADR-0065 when CF-01 `#2255` lands the ID-preserving backfill; until then the queue row is the capture) | 2026-02-23 |
 | [0006](ADR-0006-llm-provider-mock-default.md) | LLM Provider - Mock-Default with Config-Gated Live Providers | Accepted | 2026-02 |
 | [0007](ADR-0007-stable-error-contracts.md) | Stable Error Contracts (ApiErrorResponse) | Accepted | 2026-01 |
 | [0008](ADR-0008-novice-first-product-legibility.md) | Novice-First Product Legibility Before Breadth | Accepted | 2026-03-07 |
@@ -47,7 +47,7 @@
 | [0043](ADR-0043-proposal-quality-feedback-signal.md) | Proposal Quality Feedback as a Separate Content-Free Signal | Accepted | 2026-06-27 |
 | [0044](ADR-0044-revival-pivot-open-beta.md) | Revival Pivot — Open-Beta Distribution with a Commercial Horizon (Supersedes the Archive Pivot) | Accepted | 2026-07-10 |
 | [0045](ADR-0045-llm-transcript-triage-engine.md) | LLM Transcript Triage — Dedicated Worker Lane, Strategy-with-Fallback, Honest Provenance | Accepted | 2026-07-11 |
-| [0046](ADR-0046-generalist-expansion-single-app.md) | Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork) | Accepted | 2026-07-13 |
+| [0046](ADR-0046-generalist-expansion-single-app.md) | Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork) | Accepted (amended 2026-08-30 by ADR-0065: decision 4 storage now via `IBlobStore` over SQLite, decision 5 image intake becomes local-OCR-first with cloud vision as one registered escalation processor) | 2026-07-13 |
 | [0047](ADR-0047-artefact-extraction-resource-bounding.md) | Artefact-Extraction Resource Bounding — Permit Gate (Shipped) + Provider-Injection Decode Ceiling as Defense-in-Depth | Accepted | 2026-07-18 |
 | [0048](ADR-0048-decompression-bomb-containment-worker-process.md) | Decompression-Bomb Containment Boundary — Memory-Capped Extraction Worker Process | Accepted | 2026-07-18 |
 | [0049](ADR-0049-frontend-spec-typecheck-quarantined-project.md) | Type-Check the Frontend Spec Tree via a Separate Project with an Explicit Quarantine | Accepted | 2026-08-07 |
@@ -65,6 +65,7 @@
 | [0061](ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md) | Trusted Shared Instance and Managed SaaS Boundary | Accepted as direction only, evidence pending (maintainer ruling 2026-08-29, q-3 A, recorded on #1772) | 2026-08-26 |
 | [0062](ADR-0062-custom-fields-aggregates-and-threshold-rules.md) | Custom Fields, Aggregates, and Threshold Rules | Accepted (maintainer ruling 2026-08-29, q-4 A, recorded on #2091) | 2026-08-26 |
 | [0063](ADR-0063-archived-board-card-write-protection.md) | Archived Boards Reject Card Writes Until Restored | Accepted (maintainer scope ruling on `#2080`, 2026-08-24) | 2026-08-26 |
+| [0065](ADR-0065-context-fabric-capture-representation-processing.md) | Context Fabric — Durable Capture, Derived Representations, Semantic Candidates, and Capability-Based Processing | Accepted under delegation (maintainer's 2026-08-30 mandate; nine conditions ruled by the agent pass on `#2254`, revisable) | 2026-08-30 |
 
 > Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
 > archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,

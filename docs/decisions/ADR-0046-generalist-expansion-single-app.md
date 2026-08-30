@@ -1,6 +1,11 @@
 # ADR-0046: Generalist Expansion — Artefact Intake and Dossiers in the Single App (No Twin Fork)
 
-- Status: Accepted
+- Status: Accepted — **amended 2026-08-30 by ADR-0065** (Context Fabric): decision 4 keeps blobs in
+  SQLite but behind an `IBlobStore` seam (CF-23 `#2276`); decision 5's cloud-vision-first image MVP
+  becomes local-OCR-first (CF-18 `#2272`) with GEN-03 `#1317` shipping as one registered
+  `image.describe` escalation processor under the same consent and egress constraints; GEN-04 `#1318`
+  is superseded (artefact text is no longer routed as if it were a transcript) and GEN-06 `#1320` is
+  the first slice of Universal Capture (CF-20 `#2273`). Everything else in this ADR stands.
 - Date: 2026-07-13
 - Deciders: Maintainer (Chris)
 - Related: ADR-0044 (revival pivot — the plan this amends), ADR-0045 (LLM transcript triage engine, PR #1312), ADR-0008 (novice-first product legibility before breadth — the standing precedent this extends), `docs/REVIVAL_PLAN.md` §Phase 4, tracker `#1327` (GEN-00), decision gate `#1326` (GEN-12)

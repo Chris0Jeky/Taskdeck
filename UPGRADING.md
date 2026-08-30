@@ -114,6 +114,15 @@ to a later release applies every intervening migration in one startup.
 
 # Version notes
 
+## Unreleased — after v0.3.0-rc.1 (Context Fabric scaffold)
+
+**BREAKING: none.** The first Context Fabric slice (ADR-0065) adds one **empty** table, `Captures`,
+through migration `20260830034447_AddCaptureAggregate`. The pre-migration snapshot runs as usual and
+the copy is small. Nothing reads or writes the table unless the new `ContextFabric:DualWriteCaptures`
+setting is set to `true` (default `false`); with the default, every capture, inbox, proposal and
+transcript behaviour is unchanged. Downgrading after this migration means dropping the empty table
+(the migration's `Down` does exactly that).
+
 ## v0.3.0-rc.1 — release candidate (prerelease; date stamped at the tag)
 
 *Tagged 2026-08-30 at `9d2ea3c7c`. This heading is kept verbatim because the quick start inside the

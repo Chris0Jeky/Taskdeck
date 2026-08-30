@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-29
+Last Updated: 2026-08-30
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -68,6 +68,14 @@ behaviour.
 > These are the delivery, governance, and correction records, newest first. They were hoisted below
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
+
+## Planning update (2026-08-30, Context Fabric — ADR-0065 under delegation, release ladder to v1.0)
+
+- **Direction.** The maintainer's 2026-08-30 planning pack ("speak, type, paste, or drop") was reconciled against `main` (`docs/analysis/2026-08-30-context-fabric/RECONCILIATION.md`) and recorded as **ADR-0065 Context Fabric** — durable `Capture`, representations with typed evidence anchors, persisted semantic candidates, capability-based processing behind a processor registry and the Taskdeck Worker Protocol (`docs/architecture/WORKER_PROTOCOL_V1.md`). The maintainer widened the pass mid-session ("go as far as you can … I'll leave this to you … pave the way to (possibly even) v1.0"), so the ADR's nine acceptance conditions were ruled under that delegation and recorded, with reasons, on tracker **CF-00 `#2254`**; each ruling is revisable there.
+- **Ladder.** Milestone 5 renamed *v0.4 — Hosted Open Beta + Work Model + Fabric Foundation*; milestones 6–11 created: *v0.5 — Speak, Type, Paste, or Drop*, *v0.6 — Under Your Rules*, *v0.7 — Project Companion*, *v0.8 — Teams and Trust*, *v0.9 — Scale and Steadiness*, *v1.0 — General Availability*. Themes beyond v0.5 are epic-level and LEANING/PROVISIONAL (`docs/strategy/PRODUCT_DIRECTION.md` §5).
+- **Wave.** Phase 5 in `docs/REVIVAL_PLAN.md` §4: CF-01..CF-24 = `#2255`–`#2277` (CF-19 = GEN-03 `#1317`), label `context-fabric`. Re-pointed: `#1327` GEN-00, `#1317` (→ v0.5), `#1318` GEN-04 closed as superseded, `#1320` (→ v0.5, child of CF-20), `#1323`, `#1429` (first sidecar host), `#1276` (voice half → CF-16), `#2141`, `#2004`, `#2089`, `#1972`.
+- **Scaffold.** The same pass landed the behaviour-preserving scaffolding on `main`: capture dimension enums + `CaptureSourceMapping`, `CaptureLifecycleState`, the `Capture` aggregate with the empty `Captures` table (migration `AddCaptureAggregate`), `ICaptureStore`/`EfCaptureStore`, `IRepresentationStore`/`IBlobStore` contracts (unregistered), `ProcessorManifest` + validator + JSON schema, the worker-protocol envelopes + validator, `ProcessingCapability`, and `ContextFabric:DualWriteCaptures` (default off). Map: `docs/architecture/CONTEXT_FABRIC.md`.
+- **Unchanged.** Review-first automation (ADR-0003/GP-06/ADR-0056), the shipped capture and transcript paths, ADR-0060's board model, and the v0.3 milestone. ADR-0005 is scheduled for supersession when CF-01 lands; ADR-0046 decisions 4 and 5 are amended in place; ADR-0033's voice deprioritisation is partially superseded.
 
 ## Closeout checkpoint (2026-08-28, v0.3 integration wave)
 
