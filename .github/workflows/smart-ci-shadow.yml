@@ -57,10 +57,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout the base commit (control plane — never the PR head)
+      - name: Checkout the base branch (control plane — never the PR head)
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          # No ref: on pull_request_target the default checkout IS the base branch's
+          # current head — the same protected source the workflow file itself came from.
+          # (pull_request.base.sha is the base recorded at PR creation and can predate
+          # the control plane entirely; the first live run failed exactly that way.)
           fetch-depth: 1
           persist-credentials: false
 
@@ -149,10 +152,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout the base commit (control plane — never the PR head)
+      - name: Checkout the base branch (control plane — never the PR head)
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          # No ref: on pull_request_target the default checkout IS the base branch's
+          # current head — the same protected source the workflow file itself came from.
+          # (pull_request.base.sha is the base recorded at PR creation and can predate
+          # the control plane entirely; the first live run failed exactly that way.)
           fetch-depth: 1
           persist-credentials: false
 
