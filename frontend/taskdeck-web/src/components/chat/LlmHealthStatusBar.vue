@@ -123,6 +123,13 @@ const llmStatusCopy = computed(() => {
     : `${providerLabel} is not ready for live requests.`
 })
 
+// #2233: the packaged desktop drops retired provider variables left in the machine's
+// environment. Say so here rather than leaving the user to wonder why their old provider is
+// not in use. No key names or values are sent by the server, so none can be shown.
+const retiredProviderConfigurationIgnored = computed(
+  () => props.chatHealth?.retiredProviderConfigurationIgnored === true,
+)
+
 const llmStatusMeta = computed(() => {
   if (!props.chatHealth || llmHealthState.value === 'loading' || llmHealthState.value === 'error') {
     return null
@@ -144,6 +151,15 @@ const llmStatusMeta = computed(() => {
     <div>
       <h2 class="td-chat-status__title">{{ llmStatusTitle }}</h2>
       <p class="td-chat-status__copy">{{ llmStatusCopy }}</p>
+      <p
+        v-if="retiredProviderConfigurationIgnored"
+        class="td-chat-status__note"
+        data-testid="llm-retired-configuration-ignored"
+      >
+        Taskdeck found retired Gemini provider settings in this machine's environment and ignored
+        them, so it started on its built-in provider. Remove those leftover variables, then choose
+        a supported provider to go live.
+      </p>
     </div>
     <span v-if="llmStatusMeta" class="td-chat-status__meta">
       {{ llmStatusMeta }}
@@ -196,6 +212,13 @@ const llmStatusMeta = computed(() => {
   margin: 0;
   color: var(--td-text-secondary);
   line-height: 1.5;
+}
+
+.td-chat-status__note {
+  margin: var(--td-space-2) 0 0;
+  color: var(--td-text-secondary);
+  line-height: 1.5;
+  font-size: var(--td-font-xs);
 }
 
 .td-chat-status__meta {
