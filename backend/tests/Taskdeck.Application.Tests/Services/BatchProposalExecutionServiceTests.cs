@@ -65,7 +65,12 @@ public class BatchProposalExecutionServiceTests
 
         ArrangeExecute(first, new ProposalExecutionReceipt(AlreadyApplied: false, AppliedOperationCount: 2));
         _executorService
-            .Setup(e => e.ExecuteProposalWithReceiptAsync(failing, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(
+                failing,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Failure<ProposalExecutionReceipt>(ErrorCodes.WipLimitExceeded, "WIP limit reached"));
         ArrangeExecute(third, new ProposalExecutionReceipt(AlreadyApplied: false, AppliedOperationCount: 1));
 
@@ -87,7 +92,12 @@ public class BatchProposalExecutionServiceTests
         // The failing item must not have short-circuited the ones after it: each proposal is its
         // own transaction, so the executor is still asked for every selected proposal.
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(third, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                third,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -127,6 +137,8 @@ public class BatchProposalExecutionServiceTests
                 proposal,
                 It.IsAny<string>(),
                 _callerId,
+                It.Is<ProposalExecutionRevisionExpectation>(expectation =>
+                    expectation.ApprovedRevisionId == null),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
@@ -149,6 +161,8 @@ public class BatchProposalExecutionServiceTests
                 proposal,
                 It.IsAny<string>(),
                 _callerId,
+                It.Is<ProposalExecutionRevisionExpectation>(expectation =>
+                    expectation.ApprovedRevisionId == null),
                 It.IsAny<CancellationToken>()),
             Times.Once);
     }
@@ -170,10 +184,20 @@ public class BatchProposalExecutionServiceTests
             _callerId);
 
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(first, "key-first", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                first,
+                "key-first",
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(second, "key-second", It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                second,
+                "key-second",
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
@@ -205,7 +229,12 @@ public class BatchProposalExecutionServiceTests
         // The unauthorized item must never reach the executor: a 403-class outcome is decided
         // before any board write is attempted.
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(forbidden, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                forbidden,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -221,7 +250,12 @@ public class BatchProposalExecutionServiceTests
         result.Value.Results.Single().Outcome.Should().Be(BatchExecuteOutcome.Failed);
         result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.NotFound);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -238,7 +272,12 @@ public class BatchProposalExecutionServiceTests
         result.Value.Results.Single().Outcome.Should().Be(BatchExecuteOutcome.Failed);
         result.Value.Results.Single().ErrorCode.Should().Be(ErrorCodes.Conflict);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -306,7 +345,12 @@ public class BatchProposalExecutionServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -401,6 +445,7 @@ public class BatchProposalExecutionServiceTests
                 It.IsAny<Guid>(),
                 It.IsAny<string>(),
                 _callerId,
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
                 It.IsAny<CancellationToken>()),
             Times.Exactly(2));
     }
@@ -417,7 +462,12 @@ public class BatchProposalExecutionServiceTests
 
         result.IsSuccess.Should().BeFalse();
         _executorService.Verify(
-            e => e.ExecuteProposalWithReceiptAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()),
+            e => e.ExecuteProposalWithReceiptAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -452,6 +502,12 @@ public class BatchProposalExecutionServiceTests
 
     private void ArrangeExecute(Guid proposalId, ProposalExecutionReceipt receipt) =>
         _executorService
-            .Setup(e => e.ExecuteProposalWithReceiptAsync(proposalId, It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(
+                proposalId,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.Is<ProposalExecutionRevisionExpectation>(expectation =>
+                    expectation.ApprovedRevisionId == ProposalPin(proposalId)),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(receipt));
 }

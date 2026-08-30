@@ -205,6 +205,7 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             selection.ProposalId,
             selection.IdempotencyKey,
             callerUserId,
+            new ProposalExecutionRevisionExpectation(selection.ApprovedRevisionId),
             cancellationToken);
         if (!receipt.IsSuccess)
         {
