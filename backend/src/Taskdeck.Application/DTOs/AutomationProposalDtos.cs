@@ -98,6 +98,7 @@ public sealed record BatchExecuteProposalSelectionDto(
 /// the same idempotency keys reports <see cref="Skipped"/> instead of re-claiming an apply that this
 /// call did not do. Both are success outcomes; the whole response is 200 either way.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum BatchExecuteOutcome
 {
     /// <summary>This call executed the proposal and moved it to Applied.</summary>

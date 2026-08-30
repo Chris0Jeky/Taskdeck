@@ -37,6 +37,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     private readonly ISideEffectAnalyzer _sideEffectAnalyzer;
     private readonly IProposalRevisionService _revisionService;
     private readonly IProposalFeedbackService _feedbackService;
+    private readonly IBatchProposalExecutionService _batchExecutionService;
 
     public AutomationProposalsController(
         IAutomationProposalService proposalService,
@@ -50,6 +51,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         ISideEffectAnalyzer sideEffectAnalyzer,
         IProposalRevisionService revisionService,
         IProposalFeedbackService feedbackService,
+        IBatchProposalExecutionService batchExecutionService,
         IUserContext userContext) : base(userContext)
     {
         _proposalService = proposalService;
@@ -63,6 +65,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         _sideEffectAnalyzer = sideEffectAnalyzer;
         _revisionService = revisionService;
         _feedbackService = feedbackService;
+        _batchExecutionService = batchExecutionService;
     }
 
     /// <summary>
@@ -401,6 +404,106 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         var result = await _proposalService.GetProposalByIdAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Executes a bounded batch of approved proposals, each one independently (#1307, q-14 C).
+    /// <para>
+    /// Deliberately NOT all-or-none, and deliberately never 207: a syntactically valid request
+    /// returns 200 with one outcome row per requested proposal. Partial success is the contract, so
+    /// a failing item - including one the caller may not execute - isolates to its own
+    /// <c>Failed</c> row rather than rejecting the whole request. The one exception is a request in
+    /// which EVERY item failed authorization: that is indistinguishable in intent from a forbidden
+    /// request, so it is reported as a whole-request 403.
+    /// </para>
+    /// <para>
+    /// Idempotency is per item and works exactly as single execute's does: the key is carried into
+    /// the same executor call, and a proposal that is already Applied is a no-op reported as
+    /// <c>Skipped</c>.
+    /// </para>
+    /// </summary>
+    [HttpPost("execute")]
+    public async Task<IActionResult> ExecuteProposals(
+        [FromBody] ExecuteProposalsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        if (request.Proposals is null || request.Proposals.Count == 0)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "At least one proposal is required"));
+        }
+
+        if (request.Proposals.Count > MaxProposalListLimit)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                $"Cannot execute more than {MaxProposalListLimit} proposals at once"));
+        }
+
+        if (request.Proposals.Any(proposal => proposal is null))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Proposal selections cannot be null"));
+        }
+
+        if (request.Proposals.Any(proposal => proposal.ProposalId == Guid.Empty))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Proposal IDs are required"));
+        }
+
+        // The pin echo is a required member of the contract even though its value is nullable. An
+        // omitted key would otherwise read as "approved from the original operations" and wave a
+        // drifted proposal straight through the fail-closed check.
+        if (request.Proposals.Any(proposal => !proposal.HasApprovedRevisionId))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "approvedRevisionId is required for every proposal (send null when the proposal was approved without a revision)"));
+        }
+
+        if (request.Proposals.Any(proposal => string.IsNullOrWhiteSpace(proposal.IdempotencyKey)))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "An idempotencyKey is required for every proposal"));
+        }
+
+        if (request.Proposals.Select(proposal => proposal.ProposalId).Distinct().Count() != request.Proposals.Count)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Proposal IDs must be unique"));
+        }
+
+        var result = await _batchExecutionService.ExecuteProposalsAsync(
+            request.Proposals.Select(proposal => new BatchExecuteProposalSelectionDto(
+                proposal.ProposalId,
+                proposal.ApprovedRevisionId,
+                proposal.IdempotencyKey!)).ToList(),
+            callerUserId,
+            cancellationToken);
+        if (!result.IsSuccess)
+            return result.ToErrorActionResult();
+
+        // Every item forbidden is not a partial success worth 200: no proposal in the request was
+        // the caller's to execute, which is a forbidden request in substance.
+        var results = result.Value.Results;
+        if (results.Count > 0 && results.All(item =>
+                item.Outcome == BatchExecuteOutcome.Failed && item.ErrorCode == ErrorCodes.Forbidden))
+        {
+            return Result.Failure(
+                ErrorCodes.Forbidden,
+                "You do not have permission to execute any proposal in this batch").ToErrorActionResult();
+        }
+
+        return Ok(result.Value);
     }
 
     /// <summary>
