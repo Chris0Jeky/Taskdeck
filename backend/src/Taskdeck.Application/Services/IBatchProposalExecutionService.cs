@@ -29,12 +29,14 @@ public sealed record ProposalExecutionAuthorizationSnapshot(
     Guid? ApprovedRevisionId);
 
 /// <summary>
-/// Reads phase-one batch authorization snapshots without attaching proposal entities to the
-/// request persistence context. A snapshot must never poison the executor's later fresh lookup.
+/// Reads caller-visible phase-one batch authorization snapshots without attaching proposal
+/// entities to the request persistence context. A snapshot must never poison the executor's
+/// later fresh lookup or disclose whether an inaccessible proposal exists.
 /// </summary>
 public interface IProposalExecutionAuthorizationSnapshotReader
 {
     Task<ProposalExecutionAuthorizationSnapshot?> FindAsync(
         Guid proposalId,
+        Guid callerUserId,
         CancellationToken cancellationToken = default);
 }

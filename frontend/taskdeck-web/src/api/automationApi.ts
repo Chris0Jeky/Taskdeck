@@ -9,6 +9,11 @@ import type {
 } from '../types/automation'
 import { buildQueryString } from '../utils/queryBuilder'
 
+interface AutomationReadOptions {
+  signal?: AbortSignal
+  skipRetry?: boolean
+}
+
 export const automationApi = {
   /**
    * `options` exists for the background review-queue poll (#2194): it opts out
@@ -25,7 +30,7 @@ export const automationApi = {
    */
   async getProposals(
     filters?: ProposalFilters,
-    options?: { signal?: AbortSignal; skipRetry?: boolean },
+    options?: AutomationReadOptions,
   ): Promise<Proposal[]> {
     const url = `/automation/proposals${buildQueryString(filters)}`
     const { data } = options
@@ -34,8 +39,11 @@ export const automationApi = {
     return data
   },
 
-  async getProposal(id: string): Promise<Proposal> {
-    const { data } = await http.get<Proposal>(`/automation/proposals/${encodeURIComponent(id)}`)
+  async getProposal(id: string, options?: AutomationReadOptions): Promise<Proposal> {
+    const url = `/automation/proposals/${encodeURIComponent(id)}`
+    const { data } = options
+      ? await http.get<Proposal>(url, options)
+      : await http.get<Proposal>(url)
     return data
   },
 

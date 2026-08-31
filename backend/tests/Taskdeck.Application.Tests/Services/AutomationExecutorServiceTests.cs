@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -771,6 +772,100 @@ public class AutomationExecutorServiceTests
     }
 
     [Fact]
+    public async Task ExecuteProposal_ShouldSanitizeUnexpectedOperationFailureBeforeStatusResultAndLogs()
+    {
+        const string canary = @"Npgsql.PostgresException SELECT secret FROM private_table; constraint FK_secret at C:\tenant\db.cs:line 41 STACK_CANARY";
+        const string genericMessage = "An unexpected error occurred.";
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var board = TestDataBuilder.CreateBoard();
+        var operations = new List<ProposalOperationDto>
+        {
+            new(
+                Guid.NewGuid(),
+                proposalId,
+                0,
+                "update",
+                "board",
+                null,
+                $$"""{"boardId":"{{board.Id}}","name":"Renamed Board"}""",
+                "key1",
+                null)
+        };
+        var proposal = CreateApprovedProposal(proposalId, userId, board.Id, operations);
+        var proposalEntity = CreateApprovedProposalEntity(userId, board.Id);
+        var loggerMock = new Mock<ILogger<AutomationExecutorService>>();
+        var serviceWithLogger = new AutomationExecutorService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _cardServiceMock.Object,
+            _boardServiceMock.Object,
+            _columnServiceMock.Object,
+            loggerMock.Object);
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, board.Id, operations, BoardAccessBar.Write, default))
+            .ReturnsAsync(Result.Success());
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default))
+            .ThrowsAsync(new InvalidOperationException(canary));
+
+        var result = await serviceWithLogger.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().Be(genericMessage);
+        proposalEntity.Status.Should().Be(ProposalStatus.Failed);
+        proposalEntity.FailureReason.Should().Be(genericMessage);
+        AssertLogsContainNoSensitiveFailure(loggerMock, canary);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldSanitizeUnexpectedTransactionFailureBeforeStatusResultAndLogs()
+    {
+        const string canary = @"Microsoft.Data.Sqlite.SqliteException constraint IX_private at C:\tenant\db.cs:line 52 STACK_CANARY";
+        const string genericMessage = "An unexpected error occurred.";
+        var proposalId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var operations = new List<ProposalOperationDto>();
+        var proposal = CreateApprovedProposal(proposalId, userId, boardId, operations);
+        var proposalEntity = CreateApprovedProposalEntity(userId, boardId);
+        var loggerMock = new Mock<ILogger<AutomationExecutorService>>();
+        var serviceWithLogger = new AutomationExecutorService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _cardServiceMock.Object,
+            _boardServiceMock.Object,
+            _columnServiceMock.Object,
+            loggerMock.Object);
+
+        _proposalServiceMock.Setup(s => s.GetProposalByIdAsync(proposalId, default))
+            .ReturnsAsync(Result.Success(proposal));
+        _policyEngineMock.Setup(e => e.ValidatePolicy(proposal)).Returns(Result.Success());
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, operations, BoardAccessBar.Write, default))
+            .ReturnsAsync(Result.Success());
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default)).ReturnsAsync(proposalEntity);
+        _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(default))
+            .ThrowsAsync(new InvalidOperationException(canary));
+
+        var result = await serviceWithLogger.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().Be(genericMessage);
+        proposalEntity.Status.Should().Be(ProposalStatus.Failed);
+        proposalEntity.FailureReason.Should().Be(genericMessage);
+        AssertLogsContainNoSensitiveFailure(loggerMock, canary);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ShouldFailWithValidationError_ForMissingRequiredParameter()
     {
         // Arrange
@@ -887,6 +982,26 @@ public class AutomationExecutorServiceTests
             null,
             "corr1",
             operations);
+    }
+
+    private static void AssertLogsContainNoSensitiveFailure<T>(Mock<ILogger<T>> loggerMock, string canary)
+    {
+        var loggedArguments = loggerMock.Invocations
+            .SelectMany(invocation => invocation.Arguments)
+            .ToList();
+        var rendered = string.Join(
+            "\n",
+            loggedArguments.Select(argument => argument?.ToString() ?? string.Empty));
+
+        rendered.Should().NotContain(canary);
+        rendered.Should().NotContain("Npgsql");
+        rendered.Should().NotContain("Microsoft.Data.Sqlite");
+        rendered.Should().NotContain("SELECT secret");
+        rendered.Should().NotContain(@"C:\tenant");
+        rendered.Should().NotContain("constraint IX_private");
+        rendered.Should().NotContain("constraint FK_secret");
+        rendered.Should().NotContain("STACK_CANARY");
+        loggedArguments.Should().NotContain(argument => argument is Exception);
     }
 
     private static AutomationProposal CreateApprovedProposalEntity(Guid userId, Guid? boardId = null)

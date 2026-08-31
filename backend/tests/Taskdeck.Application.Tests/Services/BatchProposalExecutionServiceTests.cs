@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
@@ -19,6 +20,7 @@ public class BatchProposalExecutionServiceTests
     private readonly Mock<IProposalExecutionAuthorizationSnapshotReader> _snapshotReader = new();
     private readonly Mock<IAutomationExecutorService> _executorService = new();
     private readonly Mock<IAuthorizationService> _authorizationService = new();
+    private readonly Mock<ILogger<BatchProposalExecutionService>> _logger = new();
     private readonly BatchProposalExecutionService _service;
 
     private readonly Guid _callerId = Guid.NewGuid();
@@ -44,7 +46,8 @@ public class BatchProposalExecutionServiceTests
         _service = new BatchProposalExecutionService(
             _snapshotReader.Object,
             _executorService.Object,
-            _authorizationService.Object);
+            _authorizationService.Object,
+            _logger.Object);
     }
 
     [Fact]
@@ -98,7 +101,41 @@ public class BatchProposalExecutionServiceTests
                 It.IsAny<Guid?>(),
                 It.IsAny<ProposalExecutionRevisionExpectation>(),
                 It.IsAny<CancellationToken>()),
-            Times.Once);
+                Times.Once);
+    }
+
+    [Fact]
+    public async Task ExecuteProposals_WhenExecutorReturnsUnexpectedError_SanitizesReceiptAndLogs()
+    {
+        const string canary = @"SqlException SELECT secret; constraint FK_private at C:\tenant\provider.cs STACK_CANARY";
+        var proposal = ArrangeProposal();
+        _executorService
+            .Setup(e => e.ExecuteProposalWithReceiptAsync(
+                proposal,
+                It.IsAny<string>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<ProposalExecutionRevisionExpectation>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<ProposalExecutionReceipt>(ErrorCodes.UnexpectedError, canary));
+
+        var result = await _service.ExecuteProposalsAsync(new[] { Select(proposal) }, _callerId);
+
+        result.IsSuccess.Should().BeTrue();
+        var item = result.Value.Results.Single();
+        item.Outcome.Should().Be(BatchExecuteOutcome.Failed);
+        item.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        item.ErrorMessage.Should().Be("An unexpected error occurred.");
+        var renderedLogs = string.Join(
+            "\n",
+            _logger.Invocations
+                .SelectMany(invocation => invocation.Arguments)
+                .Select(argument => argument?.ToString() ?? string.Empty));
+        renderedLogs.Should().NotContain(canary);
+        renderedLogs.Should().NotContain("SqlException");
+        renderedLogs.Should().NotContain("SELECT secret");
+        renderedLogs.Should().NotContain(@"C:\tenant");
+        renderedLogs.Should().NotContain("constraint FK_private");
+        renderedLogs.Should().NotContain("STACK_CANARY");
     }
 
     [Fact]
@@ -154,7 +191,7 @@ public class BatchProposalExecutionServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Results.Should().ContainSingle().Which.Outcome.Should().Be(BatchExecuteOutcome.Skipped);
         _snapshotReader.Verify(
-            reader => reader.FindAsync(proposal, It.IsAny<CancellationToken>()),
+            reader => reader.FindAsync(proposal, _callerId, It.IsAny<CancellationToken>()),
             Times.Once);
         _executorService.Verify(
             executor => executor.ExecuteProposalWithReceiptAsync(
@@ -315,7 +352,7 @@ public class BatchProposalExecutionServiceTests
     {
         var missing = Guid.NewGuid();
         _snapshotReader
-            .Setup(reader => reader.FindAsync(missing, It.IsAny<CancellationToken>()))
+            .Setup(reader => reader.FindAsync(missing, _callerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProposalExecutionAuthorizationSnapshot?)null);
         var present = ArrangeProposal();
         ArrangeExecute(present, new ProposalExecutionReceipt(false, 1));
@@ -344,6 +381,7 @@ public class BatchProposalExecutionServiceTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().Be("An unexpected error occurred.");
         _executorService.Verify(
             e => e.ExecuteProposalWithReceiptAsync(
                 It.IsAny<Guid>(),
@@ -382,7 +420,7 @@ public class BatchProposalExecutionServiceTests
         var foreign = ArrangeProposal(boardId: foreignBoardId);
         var missing = Guid.NewGuid();
         _snapshotReader
-            .Setup(reader => reader.FindAsync(missing, It.IsAny<CancellationToken>()))
+            .Setup(reader => reader.FindAsync(missing, _callerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync((ProposalExecutionAuthorizationSnapshot?)null);
 
         // Neither writable nor readable: the caller has no access to that board at all.
@@ -461,6 +499,7 @@ public class BatchProposalExecutionServiceTests
         var result = await _service.ExecuteProposalsAsync(new[] { Select(proposal) }, _callerId);
 
         result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Be("An unexpected error occurred.");
         _executorService.Verify(
             e => e.ExecuteProposalWithReceiptAsync(
                 It.IsAny<Guid>(),
@@ -495,7 +534,7 @@ public class BatchProposalExecutionServiceTests
 
         _pins[proposalId] = approvedRevisionId;
         _snapshotReader
-            .Setup(reader => reader.FindAsync(proposalId, It.IsAny<CancellationToken>()))
+            .Setup(reader => reader.FindAsync(proposalId, _callerId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(snapshot);
         return proposalId;
     }

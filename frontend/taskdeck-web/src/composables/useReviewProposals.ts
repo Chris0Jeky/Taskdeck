@@ -570,8 +570,10 @@ export function useReviewProposals() {
    *
    * Server truth wins for ordering and removals -- the response replaces the
    * list, exactly as `loadProposals` does -- with one carve-out: a `#proposal-`
-   * deep-link target is fetched by id and may legitimately sit outside the list
-   * page, so a refresh must not evict the very record the URL names.
+   * deep-link target may legitimately sit outside the list page. When the list
+   * omits that pinned row, its by-id read must re-authorise and refresh it before
+   * anything lands; restoring the cached DTO would preserve revoked access or
+   * stale revision content.
    */
   async function refreshProposals(): Promise<void> {
     // An explicit load is authoritative and about to replace the list wholesale.
@@ -593,16 +595,30 @@ export function useReviewProposals() {
     // The scope this read is ASKING about. A late answer -- success or 403 --
     // describes the board it queried, never whichever board is on screen now.
     const requestedBoardId = activeBoardFilter.value || null
-    // True when this answer is about a different question than the one the
-    // surface is now asking: a newer explicit load started, or the board scope
-    // moved. Applies to the 403 branch too, which is the whole point: a 403 from
-    // a board the reviewer has already left says nothing about the board they
-    // are on, and must not clear it or stop its polling.
-    const isSupersededRead = () =>
+    // A hash target is part of the question too. Hash navigation does not start
+    // a queue load, so it needs its own snapshot to stop an old by-id answer from
+    // inserting or marking unavailable whichever proposal is selected next.
+    const requestedHash = route.hash
+    const hashTargetId = getProposalIdFromHash(requestedHash)
+    const controller = new AbortController()
+    // A list refusal is scoped to the queue query, not to whichever proposal is
+    // selected. Hash navigation must not erase authority from a current-board
+    // 403, while a load or board change still supersedes it.
+    const isSupersededQueueRead = () =>
       observedLoadId !== latestProposalLoadRequestId ||
       proposalsLoading.value ||
       (activeBoardFilter.value || null) !== requestedBoardId
-    const controller = new AbortController()
+    const isSupersededCompositeRead = () =>
+      isSupersededQueueRead() || route.hash !== requestedHash
+    // The list and optional by-id request form one composite read. Every guard
+    // is deliberately re-run after BOTH awaits so the second response cannot
+    // bypass the protections already required for the list response.
+    const isCurrentRead = () =>
+      !controller.signal.aborted &&
+      !isSupersededCompositeRead() &&
+      proposals.value === observedProposals &&
+      observedWriteGeneration === queueWriteGeneration &&
+      (!shouldRefreshNow || shouldRefreshNow())
     refreshAbort = controller
     refreshInFlight = true
     try {
@@ -617,36 +633,63 @@ export function useReviewProposals() {
         // answer arbitrarily late; `stopQueueRefresh` aborts whatever is open.
         { skipRetry: true, signal: controller.signal },
       )
-      if (controller.signal.aborted) return
-      // A newer explicit load started, or the scope moved, while this poll was in
-      // flight; its answer supersedes this one.
-      if (isSupersededRead()) return
-      if (proposals.value !== observedProposals) return
-      // An out-of-band write landed that this read predates -- a saved revision,
-      // which leaves the `proposals` reference untouched and so is invisible to
-      // the identity check above.
-      if (observedWriteGeneration !== queueWriteGeneration) return
-      // Re-checked AFTER the await, not only before it: a confirm dialog can open
-      // while the read is in flight, and landing then would pull the record out
-      // from under the reviewer -- the Reject dialog is bound to a computed that
-      // closes itself when its proposal leaves the list, discarding a half-typed
-      // reason.
-      if (shouldRefreshNow && !shouldRefreshNow()) return
-      const hashTargetId = getProposalIdFromHash(route.hash)
+      if (!isCurrentRead()) return
       const next = [...loadedProposals]
-      if (hashTargetId && !next.some((p) => proposalIdsEqual(p.id, hashTargetId))) {
-        const pinned = proposals.value.find((p) => proposalIdsEqual(p.id, hashTargetId))
-        if (pinned) {
-          // Restore it at its createdAt position, by the same rule
-          // `upsertProposal` uses. Appending would drop the record the reviewer
-          // is reading to the bottom of a rail that renders array order, so it
-          // would visibly jump on the first refresh.
-          const pinnedCreatedAt = new Date(pinned.createdAt).getTime()
-          const insertIndex = next.findIndex(
-            (current) => new Date(current.createdAt).getTime() < pinnedCreatedAt,
+      let pinUnavailable = false
+      if (
+        hashTargetId &&
+        !next.some((proposal) => proposalIdsEqual(proposal.id, hashTargetId))
+      ) {
+        try {
+          const currentPinnedProposal = await automationApi.getProposal(
+            hashTargetId,
+            // This is part of the background poll, not an explicit navigation.
+            // Keep it in the same cancellation and fail-fast envelope as the
+            // list request so teardown cannot leave a retry chain behind.
+            { skipRetry: true, signal: controller.signal },
           )
-          if (insertIndex >= 0) next.splice(insertIndex, 0, pinned)
-          else next.push(pinned)
+          if (!isCurrentRead()) return
+
+          if (
+            !proposalIdsEqual(currentPinnedProposal.id, hashTargetId) ||
+            !matchesActiveBoardFilter(currentPinnedProposal.boardId)
+          ) {
+            // A wrong identity or cross-scope record is not authority to keep
+            // showing the cached pin. Accept the readable list and fail closed
+            // for this requested target.
+            pinUnavailable = true
+          } else {
+            // Reinsert the current DTO at its createdAt position, by the same
+            // rule `upsertProposal` uses. Appending would visibly move the row
+            // under review to the bottom of the rail.
+            const pinnedCreatedAt = new Date(currentPinnedProposal.createdAt).getTime()
+            const insertIndex = next.findIndex(
+              (current) => new Date(current.createdAt).getTime() < pinnedCreatedAt,
+            )
+            if (insertIndex >= 0) next.splice(insertIndex, 0, currentPinnedProposal)
+            else next.push(currentPinnedProposal)
+          }
+        } catch (e: unknown) {
+          if (!isCurrentRead()) return
+          if (isForbiddenError(e) || isHttpNotFound(e)) {
+            // The list itself succeeded, so only the pin is unavailable. Do not
+            // turn a proposal-level refusal into whole-queue revocation.
+            pinUnavailable = true
+          } else {
+            // The composite read is incomplete. Preserve the exact queue and
+            // availability state currently rendered; a later tick can retry.
+            logError('Review deep-link background refresh failed:', e)
+            return
+          }
+        }
+      }
+
+      if (!isCurrentRead()) return
+      if (hashTargetId) {
+        if (pinUnavailable) {
+          unavailableProposalId.value = hashTargetId
+        } else if (proposalIdsEqual(unavailableProposalId.value, hashTargetId)) {
+          unavailableProposalId.value = null
         }
       }
       proposals.value = next
@@ -654,7 +697,10 @@ export function useReviewProposals() {
       // this to notice that the row they were rendering has just been dropped
       // or reordered away, instead of silently sliding onto another one
       // (#2215 A).
-      onQueueReplacedByPoll?.()
+      // A refused or invalid deep-link target has its own explicit unavailable
+      // state. Arming the settled-row notice as well would let that notice win
+      // the render branch and hide the authoritative pin-level outcome.
+      if (!pinUnavailable) onQueueReplacedByPoll?.()
     } catch (e: unknown) {
       // An abort is this surface's own teardown, not a failure.
       if (controller.signal.aborted) return
@@ -662,7 +708,7 @@ export function useReviewProposals() {
         // Only trust a 403 that answers the question currently being asked.
         // Without this, a late refusal from a board the reviewer just left would
         // wipe the board they moved to and stop polling a scope that is fine.
-        if (isSupersededRead()) return
+        if (isSupersededQueueRead()) return
         // Board access was revoked. Stop polling rather than hammering an
         // endpoint that will keep refusing, drop rows the server no longer
         // authorises, and let the surface say so.
