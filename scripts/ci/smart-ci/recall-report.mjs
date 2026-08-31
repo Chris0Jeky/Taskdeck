@@ -35,6 +35,7 @@ const FAILURE_CONCLUSIONS = new Set([
 const REQUIRED_RUN_CONCLUSIONS = new Set([
   'success',
   'failure',
+  'cancelled',
   'timed_out',
   'action_required',
   'startup_failure',
@@ -43,6 +44,12 @@ const REQUIRED_RUN_CONCLUSIONS = new Set([
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function isMeasurableRequiredAttempt(attempt) {
+  return isObject(attempt)
+    && attempt.status === 'completed'
+    && REQUIRED_RUN_CONCLUSIONS.has(attempt.conclusion);
 }
 
 function uniqueSorted(values) {
@@ -357,7 +364,7 @@ async function collectPullObservations(token, repo, pull, tempRoot, maxPages, si
         const raw = { ...baseRaw, headSha: run.head_sha };
         try {
           const attempt = (await ghFetch(token, `${API}/repos/${repo}/actions/runs/${run.id}/attempts/${attemptNumber}`)).json;
-          if (attempt.status !== 'completed' || !REQUIRED_RUN_CONCLUSIONS.has(attempt.conclusion)) continue;
+          if (!isMeasurableRequiredAttempt(attempt)) continue;
           const attemptUpdatedMs = Date.parse(attempt.updated_at ?? '');
           if (Number.isNaN(attemptUpdatedMs) || attemptUpdatedMs < sinceMs || attemptUpdatedMs > Math.min(mergedMs, untilMs)) continue;
 

@@ -111,7 +111,7 @@ jobs:
           # The checkout kept no credentials; authenticate this one read-only fetch with the job
           # token so the merge ref still resolves once the repository is private.
           auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          if git -c "http.extraheader=${auth_header}" fetch --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge"; then
+          if git -c "http.extraheader=${auth_header}" fetch --no-tags --depth=2 origin "refs/pull/${PR_NUMBER}/merge"; then
             merge_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
             merge_base="$(git rev-parse 'FETCH_HEAD^1')"
             merge_head="$(git rev-parse 'FETCH_HEAD^2')"

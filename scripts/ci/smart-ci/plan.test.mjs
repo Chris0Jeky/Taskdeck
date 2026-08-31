@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import { globToRegExp, matchesGlob } from './lib/glob.mjs';
 import {
   PolicyError,
@@ -483,6 +487,68 @@ test('the shadow workflow records one exact merge-ref identity and fails closed 
   assert.match(workflow, /\[ "\$merge_base" != "\$EXPECTED_BASE" \] \|\| \[ "\$merge_head" != "\$EXPECTED_HEAD" \]/);
   assert.match(workflow, /--merge-sha "\$\(cat artifacts\/merge-sha\.txt\)"/);
   assert.match(workflow, /--merge-tree-sha "\$\(cat artifacts\/merge-tree-sha\.txt\)"/);
+});
+
+test('the shadow workflow fetch depth exposes both parents of a synthetic merge ref', () => {
+  const workflow = readFileSync(new URL('../../../.github/workflows/smart-ci-shadow.yml', import.meta.url), 'utf8');
+  const depthMatch = workflow.match(/fetch --no-tags --depth=(\d+) origin "refs\/pull\/\$\{PR_NUMBER\}\/merge"/);
+  assert.ok(depthMatch, 'the merge-ref fetch must declare a bounded depth');
+
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'taskdeck-smart-ci-merge-ref-'));
+  const origin = join(fixtureRoot, 'origin.git');
+  const source = join(fixtureRoot, 'source');
+  const checkout = join(fixtureRoot, 'checkout');
+  const gitEnvironment = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'Taskdeck Smart CI Test',
+    GIT_AUTHOR_EMAIL: 'smart-ci-test@example.invalid',
+    GIT_COMMITTER_NAME: 'Taskdeck Smart CI Test',
+    GIT_COMMITTER_EMAIL: 'smart-ci-test@example.invalid',
+  };
+  const git = (cwd, ...args) => execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: gitEnvironment,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+
+  try {
+    git(fixtureRoot, 'init', '--bare', origin);
+    git(fixtureRoot, 'init', source);
+    git(source, 'config', 'user.name', gitEnvironment.GIT_AUTHOR_NAME);
+    git(source, 'config', 'user.email', gitEnvironment.GIT_AUTHOR_EMAIL);
+    writeFileSync(join(source, 'fixture.txt'), 'base\n');
+    git(source, 'add', 'fixture.txt');
+    git(source, 'commit', '-m', 'Create base');
+    git(source, 'branch', '-M', 'main');
+    const baseSha = git(source, 'rev-parse', 'HEAD');
+
+    git(source, 'switch', '-c', 'feature');
+    writeFileSync(join(source, 'fixture.txt'), 'head\n');
+    git(source, 'commit', '-am', 'Create head');
+    const headSha = git(source, 'rev-parse', 'HEAD');
+
+    git(source, 'switch', 'main');
+    git(source, 'merge', '--no-ff', '--no-edit', 'feature');
+    const mergeSha = git(source, 'rev-parse', 'HEAD');
+    const mergeTreeSha = git(source, 'rev-parse', 'HEAD^{tree}');
+    const originUrl = pathToFileURL(origin).href;
+    git(source, 'remote', 'add', 'origin', originUrl);
+    git(source, 'push', 'origin',
+      `${baseSha}:refs/heads/main`,
+      `${headSha}:refs/heads/feature`,
+      `${mergeSha}:refs/pull/1/merge`);
+
+    git(fixtureRoot, 'clone', '--no-checkout', '--depth=1', '--branch', 'main', originUrl, checkout);
+    git(checkout, 'fetch', '--no-tags', `--depth=${depthMatch[1]}`, 'origin', 'refs/pull/1/merge');
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^{commit}'), mergeSha);
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^1'), baseSha);
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^2'), headSha);
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^{tree}'), mergeTreeSha);
+    assert.equal(depthMatch[1], '2');
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
 });
 
 test('parseChangedFiles accepts plain lists and status/path/previous TSV', () => {

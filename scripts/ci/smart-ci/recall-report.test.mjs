@@ -5,6 +5,7 @@ import { buildPlan, policyDigest } from './lib/plan.mjs';
 import {
   buildRecallReport,
   exitCodeForReport,
+  isMeasurableRequiredAttempt,
   nextLink,
   normaliseObservation,
   parseArgs,
@@ -172,6 +173,12 @@ test('successful and skipped jobs are not failures', () => {
   assert.deepEqual(result.missedLanes, []);
 });
 
+test('completed cancelled required attempts remain available for job evidence', () => {
+  assert.equal(isMeasurableRequiredAttempt({ status: 'completed', conclusion: 'cancelled' }), true);
+  assert.equal(isMeasurableRequiredAttempt({ status: 'in_progress', conclusion: 'cancelled' }), false);
+  assert.equal(isMeasurableRequiredAttempt({ status: 'completed', conclusion: 'neutral' }), false);
+});
+
 test('planner errors, invalid plans and policy drift make observations unusable', () => {
   const plannerError = observation(4, { mutate: (raw) => { raw.plan.plannerError = { name: 'Error', message: 'canary' }; } });
   assert.equal(normaliseObservation(plannerError, policy, window).usable, false);
@@ -201,14 +208,23 @@ test('artifact, PR and SHA bindings fail closed', () => {
   assert(normaliseObservation(wrongRunSha, policy, window).errors.includes('required-head-sha-mismatch'));
 });
 
-test('incomplete, cancelled-only and temporally invalid required evidence is unusable', () => {
+test('incomplete, cancelled-without-failure and temporally invalid required evidence is unusable', () => {
   const incomplete = observation(11, { mutate: (raw) => { raw.requiredRun.status = 'in_progress'; raw.jobs[0].status = 'in_progress'; } });
   const incompleteResult = normaliseObservation(incomplete, policy, window);
   assert(incompleteResult.errors.includes('required-run-incomplete'));
   assert(incompleteResult.errors.some((error) => error.startsWith('required-job-incomplete:')));
 
   const cancelledRun = observation(12, { mutate: (raw) => { raw.requiredRun.conclusion = 'cancelled'; } });
-  assert(normaliseObservation(cancelledRun, policy, window).errors.includes('required-run-conclusion-unusable'));
+  assert(normaliseObservation(cancelledRun, policy, window).errors.includes('required-run-failed-without-failed-job'));
+
+  const cancelledWithFailedLane = observation(21, {
+    failedCheckName: 'Docs Governance / Docs Governance',
+    mutate: (raw) => { raw.requiredRun.conclusion = 'cancelled'; },
+  });
+  const cancelledWithFailedLaneResult = normaliseObservation(cancelledWithFailedLane, policy, window);
+  assert.equal(cancelledWithFailedLaneResult.usable, true);
+  assert.equal(cancelledWithFailedLaneResult.covered, true);
+  assert.deepEqual(cancelledWithFailedLaneResult.failedLanes.map((lane) => lane.lane), ['docs-governance']);
 
   const timedOutRun = observation(19, {
     failedCheckName: 'Docs Governance / Docs Governance',
