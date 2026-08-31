@@ -52,6 +52,7 @@ internal static class ConsoleOutput
 
               taskdeck invite create [--expires <days>]
 
+              taskdeck --verify-connectors --database <path> [--key-file <path>]
               taskdeck --version
 
             Exit codes:

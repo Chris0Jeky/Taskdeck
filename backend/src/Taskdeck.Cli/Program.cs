@@ -21,6 +21,14 @@ if (VersionCommand.IsVersionRequest(args))
     return VersionCommand.Execute();
 }
 
+// Restore-time connector verification must not build the normal host. That path
+// can provision a new key, migrate the database, and start provider dependencies,
+// all of which would invalidate a read-only verification result (#2239).
+if (ConnectorVerificationCommand.IsRequest(args))
+{
+    return await ConnectorVerificationCommand.ExecuteAsync(args);
+}
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // CLI stdout must be clean JSON. Remove all default logging providers so EF Core

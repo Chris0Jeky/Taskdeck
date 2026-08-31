@@ -226,7 +226,68 @@ SQL
 
 Compare against your last known-good row counts (see evidence log if available).
 
-### Step 5 — Start the API and verify health
+### Step 5: Verify connector credential decryption
+
+Before restarting the API, verify that the connector encryption key paired with the
+restored database can decrypt every stored connector credential.
+
+For Docker Compose, use the CLI assembly already packaged in the API image. The one-off
+container mounts the same data volume and receives the configured connector key without
+starting the API:
+
+```bash
+docker compose -f deploy/docker-compose.yml --profile baseline run --rm --no-deps \
+  --user 10001:10001 --entrypoint dotnet api \
+  /app/cli/Taskdeck.Cli.dll --verify-connectors --database /app/data/taskdeck.db
+```
+
+From a source checkout, prefer a protected key file so key material does not appear in
+the process command line:
+
+```bash
+dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj -- \
+  --verify-connectors \
+  --database /path/to/taskdeck.db \
+  --key-file /secure/path/connector-encryption.key
+```
+
+PowerShell from a source checkout:
+
+```powershell
+dotnet run --project backend\src\Taskdeck.Cli\Taskdeck.Cli.csproj -- `
+  --verify-connectors `
+  --database "C:\app\data\taskdeck.db" `
+  --key-file "C:\secure\connector-encryption.key"
+```
+
+If the deployment already supplies `TASKDECK_CONNECTORS__ENCRYPTIONKEY` or
+`Connectors__EncryptionKey`, omit `--key-file`. The current Windows desktop archive
+contains `Taskdeck.Api.exe`, not a separate Taskdeck CLI executable. Do not substitute the
+API executable for the commands above.
+
+The verifier requires a standalone database with no `-wal`, `-shm`, or `-journal`
+sidecars. The restore scripts remove those sidecars after producing the standalone target.
+The command opens that target through SQLite's read-only immutable URI, does not create
+sidecars, and fails if a sidecar is present. It also compares SHA-256 hashes of the database
+before and after decryption, failing if the file changes during verification. It does not run
+migrations, generate a key, or start connector providers.
+
+Interpret the aggregate-only output as follows:
+
+| Output | Exit | Meaning |
+|---|---:|---|
+| `ok=N failed=0` | 0 | Every stored credential decrypted with the supplied key. |
+| `ok=0 failed=0` plus `Nothing to verify.` | 0 | The database has no connector credentials. This does not prove the key. |
+| `ok=N failed=M`, where `M > 0` | 1 | At least one credential could not be decrypted. Keep the API stopped. |
+
+A wrong key and damaged ciphertext are intentionally indistinguishable. The command never
+prints keys, plaintext, ciphertext, connector identifiers, or exception details. Missing or
+unreadable key/database inputs also fail with a non-zero exit.
+
+Until #2238 adds the restore-command integration, the restore scripts do not call this
+verifier automatically. Run this step manually after restore and before API startup.
+
+### Step 6: Start the API and verify health
 
 ```bash
 # Docker Compose deployment
@@ -244,7 +305,7 @@ done
 curl -s http://localhost:5000/health/ready | python3 -m json.tool
 ```
 
-### Step 6 — Record the restore in the evidence log
+### Step 7: Record the restore in the evidence log
 
 File an evidence entry in `docs/ops/rehearsals/` using the template in
 `docs/ops/EVIDENCE_TEMPLATE.md`. Tag it with `restore-event` rather than `rehearsal` if
