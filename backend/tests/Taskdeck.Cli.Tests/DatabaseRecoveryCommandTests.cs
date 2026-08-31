@@ -163,6 +163,63 @@ public class DatabaseRecoveryCommandTests
     }
 
     [Fact]
+    public async Task Restore_TargetDeletionFailure_RestoresExistingTargetAndRetainsSafetyArchive()
+    {
+        await using var harness = new CliTestHarness("cli-recovery-target-deletion-rollback");
+        var existingTarget = Path.Combine(harness.DataDirectory, "existing-target.db");
+        File.Copy(harness.DatabasePath, existingTarget);
+        var create = await harness.RunAsync("boards create ReplacementBoard --json");
+        create.ExitCode.Should().Be(ExitCodes.Success, create.StdErr);
+        var outputDirectory = Path.Combine(harness.DataDirectory, "archives");
+        Directory.CreateDirectory(outputDirectory);
+        var key = Convert.FromBase64String(BackupKey);
+        var deletionInjected = false;
+
+        try
+        {
+            var backup = await DatabaseRecoveryCommand.CreateBackupAsync(
+                harness.DatabasePath,
+                outputDirectory,
+                key);
+
+            Func<Task> restore = async () => await DatabaseRecoveryCommand.RestoreAsync(
+                backup.ArchivePath,
+                existingTarget,
+                key,
+                ConnectorKey,
+                targetArtifactDeletedProbe: deletedPath =>
+                {
+                    if (string.Equals(deletedPath, existingTarget, StringComparison.Ordinal))
+                    {
+                        deletionInjected = true;
+                        throw new IOException("injected target deletion failure");
+                    }
+                });
+
+            await restore.Should().ThrowAsync<IOException>();
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
+
+        deletionInjected.Should().BeTrue();
+        (await CountRowsAsync(existingTarget, "Boards")).Should().Be(0);
+        AssertNoJournalFiles(existingTarget);
+        AssertNoRestoreStaging(harness.DataDirectory);
+        Directory.EnumerateFiles(
+                harness.DataDirectory,
+                "taskdeck-pre-restore-*.tdbk",
+                SearchOption.TopDirectoryOnly)
+            .Should().ContainSingle();
+        Directory.EnumerateFiles(
+                harness.DataDirectory,
+                ".*.rollback-*.db",
+                SearchOption.TopDirectoryOnly)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Backup_MissingKey_FailsWithoutCreatingAnArchive()
     {
         await using var harness = new CliTestHarness("cli-recovery-missing-key");

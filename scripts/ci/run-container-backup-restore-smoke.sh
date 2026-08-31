@@ -52,7 +52,7 @@ done
 
 docker run --rm \
   -v "${source_volume}:/app/data" \
-  -e "TASKDECK_CONNECTION_STRING=Data Source=/app/data/taskdeck.db" \
+  -e "ConnectionStrings__DefaultConnection=Data Source=/app/data/taskdeck.db" \
   -e "TASKDECK_CONNECTORS__ENCRYPTIONKEY=${connector_key}" \
   "${image}" \
   dotnet /app/cli/Taskdeck.Cli.dll boards create RecoverySmoke --json >/tmp/taskdeck-recovery-board.json
@@ -127,12 +127,14 @@ grep -Fx 'connectors ok=1 failed=0' <<<"${restore_output}" >/dev/null
 
 boards_json="$(docker run --rm \
   -v "${restore_volume}:/app/data" \
-  -e "TASKDECK_CONNECTION_STRING=Data Source=/app/data/taskdeck.db" \
+  -e "ConnectionStrings__DefaultConnection=Data Source=/app/data/taskdeck.db" \
   -e "TASKDECK_CONNECTORS__ENCRYPTIONKEY=${connector_key}" \
   "${image}" \
   dotnet /app/cli/Taskdeck.Cli.dll boards list --json)"
-board_count="$(grep -o '"name":"RecoverySmoke"' <<<"${boards_json}" 2>/dev/null || true)"
-board_count="$(wc -l <<<"${board_count}" | tr -d ' ')"
+mapfile -t board_matches < <(grep -o '"name":"RecoverySmoke"' <<<"${boards_json}" || true)
+board_count="${#board_matches[@]}"
+mapfile -t missing_board_matches < <(grep -o '"name":"DefinitelyMissingRecoverySmoke"' <<<"${boards_json}" || true)
+test "${#missing_board_matches[@]}" -eq 0
 if [ "${board_count}" != "1" ]; then
   echo "Restored board assertion failed: ${boards_json}" >&2
   exit 1

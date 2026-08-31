@@ -230,7 +230,8 @@ internal static class DatabaseRecoveryCommand
         ReadOnlyMemory<byte> backupKey,
         string connectorKey,
         CancellationToken cancellationToken = default,
-        Func<string, CancellationToken, Task>? postPromotionProbe = null)
+        Func<string, CancellationToken, Task>? postPromotionProbe = null,
+        Action<string>? targetArtifactDeletedProbe = null)
     {
         var targetDirectory = Path.GetDirectoryName(databasePath)
             ?? throw new InvalidOperationException("Restore target directory is unavailable.");
@@ -239,7 +240,8 @@ internal static class DatabaseRecoveryCommand
             $"{Path.GetFileName(databasePath)}.restore-{Guid.NewGuid():N}.db");
         string? safetyArchivePath = null;
         string? rollbackPath = null;
-        var targetRemoved = false;
+        var rollbackReady = false;
+        var targetReplacementStarted = false;
         var databasePromoted = false;
 
         try
@@ -286,10 +288,11 @@ internal static class DatabaseRecoveryCommand
                     targetDirectory,
                     $".{Path.GetFileName(databasePath)}.rollback-{Guid.NewGuid():N}.db");
                 await CreateSqliteSnapshotAsync(databasePath, rollbackPath, cancellationToken);
+                rollbackReady = true;
             }
 
-            DeleteDatabaseArtifacts(databasePath);
-            targetRemoved = true;
+            targetReplacementStarted = true;
+            DeleteDatabaseArtifacts(databasePath, targetArtifactDeletedProbe);
             File.Move(stagingPath, databasePath);
             databasePromoted = true;
             RestrictUnixFileMode(databasePath);
@@ -331,25 +334,45 @@ internal static class DatabaseRecoveryCommand
         catch
         {
             TryDeleteDatabaseArtifacts(stagingPath);
-            if (databasePromoted)
+            if (rollbackReady && targetReplacementStarted && rollbackPath is not null)
+            {
+                if (TryRestoreRollback(rollbackPath, databasePath))
+                {
+                    rollbackPath = null;
+                }
+            }
+            else if (databasePromoted)
             {
                 TryDeleteDatabaseArtifacts(databasePath);
             }
 
-            if (targetRemoved && rollbackPath is not null && File.Exists(rollbackPath))
+            if (!rollbackReady && rollbackPath is not null)
             {
-                try
-                {
-                    File.Move(rollbackPath, databasePath);
-                    rollbackPath = null;
-                }
-                catch (Exception exception) when (IsFileSystemException(exception))
-                {
-                    // The encrypted safety archive and restricted rollback
-                    // copy are retained when automatic rollback cannot finish.
-                }
+                TryDeleteDatabaseArtifacts(rollbackPath);
             }
             throw;
+        }
+    }
+
+    private static bool TryRestoreRollback(string rollbackPath, string databasePath)
+    {
+        if (!File.Exists(rollbackPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            DeleteDatabaseArtifacts(databasePath);
+            File.Move(rollbackPath, databasePath);
+            return true;
+        }
+        catch (Exception exception) when (
+            IsFileSystemException(exception) || exception is InvalidOperationException)
+        {
+            // The encrypted safety archive and restricted rollback copy are
+            // retained when automatic rollback cannot finish.
+            return false;
         }
     }
 
@@ -662,11 +685,17 @@ internal static class DatabaseRecoveryCommand
         }
     }
 
-    private static void DeleteJournalSidecars(string databasePath)
+    private static void DeleteJournalSidecars(
+        string databasePath,
+        Action<string>? artifactDeletedProbe = null)
     {
         foreach (var sidecar in JournalSidecars(databasePath))
         {
-            File.Delete(sidecar);
+            if (File.Exists(sidecar))
+            {
+                File.Delete(sidecar);
+                artifactDeletedProbe?.Invoke(sidecar);
+            }
         }
 
         EnsureNoJournalSidecars(databasePath);
@@ -679,10 +708,16 @@ internal static class DatabaseRecoveryCommand
         yield return databasePath + "-journal";
     }
 
-    private static void DeleteDatabaseArtifacts(string databasePath)
+    private static void DeleteDatabaseArtifacts(
+        string databasePath,
+        Action<string>? artifactDeletedProbe = null)
     {
-        DeleteJournalSidecars(databasePath);
-        File.Delete(databasePath);
+        DeleteJournalSidecars(databasePath, artifactDeletedProbe);
+        if (File.Exists(databasePath))
+        {
+            File.Delete(databasePath);
+            artifactDeletedProbe?.Invoke(databasePath);
+        }
         if (File.Exists(databasePath))
         {
             throw new IOException("Recovery staging database could not be removed.");
