@@ -21,6 +21,13 @@ if (VersionCommand.IsVersionRequest(args))
     return VersionCommand.Execute();
 }
 
+// Backup and restore are operator recovery boundaries. They must not build the
+// normal host, migrate either database, provision keys, or start providers (#2238).
+if (DatabaseRecoveryCommand.IsRequest(args))
+{
+    return await DatabaseRecoveryCommand.ExecuteAsync(args);
+}
+
 // Restore-time connector verification must not build the normal host. That path
 // can provision a new key, migrate the database, and start provider dependencies,
 // all of which would invalidate a read-only verification result (#2239).

@@ -43,8 +43,17 @@ jobs:
       - name: Build backend container image
         run: docker build -f deploy/docker/backend.Dockerfile -t taskdeck-api:ci .
 
+      - name: Verify encrypted backup and restore in packaged backend image
+        run: bash scripts/ci/run-container-backup-restore-smoke.sh taskdeck-api:ci
+
       - name: Build frontend container image
         run: docker build --build-arg VITE_API_BASE_URL=/api -f deploy/docker/frontend.Dockerfile -t taskdeck-web:ci .
+
+      - name: Build exact production image for recovery proof
+        run: docker build --build-arg VITE_API_BASE_URL=/api -f deploy/Dockerfile.production -t taskdeck-production:ci .
+
+      - name: Verify encrypted backup and restore in exact production image
+        run: bash scripts/ci/run-container-backup-restore-smoke.sh taskdeck-production:ci
 
       - name: Export container image artifacts
         if: ${{ inputs.upload-artifacts }}

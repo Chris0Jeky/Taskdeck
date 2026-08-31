@@ -129,7 +129,12 @@ COPY --chown=taskdeck:taskdeck --from=frontend-build /app/dist ./wwwroot/
 
 # Copy the entrypoint script that fixes volume permissions at runtime
 COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod +x /app/docker-entrypoint.sh
+COPY deploy/docker/taskdeck-backup /usr/local/bin/taskdeck-backup
+COPY deploy/docker/taskdeck-restore /usr/local/bin/taskdeck-restore
+RUN chmod +x \
+    /app/docker-entrypoint.sh \
+    /usr/local/bin/taskdeck-backup \
+    /usr/local/bin/taskdeck-restore
 
 # Environment defaults for production.
 # Railway/Render inject a PORT env var at runtime. The entrypoint script

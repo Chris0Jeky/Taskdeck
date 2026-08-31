@@ -52,6 +52,8 @@ internal static class ConsoleOutput
 
               taskdeck invite create [--expires <days>]
 
+              taskdeck --backup --database <path> --output <directory> [--key-file <path>]
+              taskdeck --restore --archive <path> --database <path> [--key-file <path>] [--connector-key-file <path>]
               taskdeck --verify-connectors --database <path> [--key-file <path>]
               taskdeck --version
 
