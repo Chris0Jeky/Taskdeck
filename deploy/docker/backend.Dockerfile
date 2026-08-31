@@ -52,11 +52,17 @@ COPY --chown=appuser:appuser LICENSES /app/LICENSES
 # unprivileged. security_opt: no-new-privileges (set in compose) prevents any
 # later escalation.
 COPY deploy/docker/backend-entrypoint.sh /usr/local/bin/taskdeck-entrypoint
-RUN chmod +x /usr/local/bin/taskdeck-entrypoint
+COPY deploy/docker/taskdeck-backup /usr/local/bin/taskdeck-backup
+COPY deploy/docker/taskdeck-restore /usr/local/bin/taskdeck-restore
+RUN chmod +x \
+    /usr/local/bin/taskdeck-entrypoint \
+    /usr/local/bin/taskdeck-backup \
+    /usr/local/bin/taskdeck-restore
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -fsS http://localhost:8080/health/ready || exit 1
 
-ENTRYPOINT ["/usr/local/bin/taskdeck-entrypoint", "dotnet", "Taskdeck.Api.dll"]
+ENTRYPOINT ["/usr/local/bin/taskdeck-entrypoint"]
+CMD ["dotnet", "Taskdeck.Api.dll"]
