@@ -206,6 +206,35 @@ public class ConnectorVerificationCommandTests
     }
 
     [Fact]
+    public async Task VerifyDatabaseAsync_WalAppearsDuringFinalHash_FailsBeforeReturningCounts()
+    {
+        await using var harness = new CliTestHarness("cli-verify-connectors-late-wal");
+        await SeedCredentialsAsync(harness.DatabasePath, CorrectKey, "stable-secret");
+        var hashCallCount = 0;
+        var stableHash = Enumerable.Repeat((byte)0x42, 32).ToArray();
+
+        Task<byte[]> HashDatabaseAsync(string path)
+        {
+            if (Interlocked.Increment(ref hashCallCount) == 2)
+            {
+                File.WriteAllText($"{path}-wal", "late-uncheckpointed-test-state");
+            }
+
+            return Task.FromResult(stableHash);
+        }
+
+        var action = async () => await ConnectorVerificationCommand.VerifyDatabaseAsync(
+            harness.DatabasePath,
+            new AesCredentialEncryptionService(CorrectKey),
+            HashDatabaseAsync);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*standalone database without journal sidecars*");
+        hashCallCount.Should().Be(2);
+        File.Exists($"{harness.DatabasePath}-wal").Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Execute_EmptyDatabase_SucceedsWithExplicitNothingToVerifyMessage()
     {
         await using var harness = new CliTestHarness("cli-verify-connectors-empty");

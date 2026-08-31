@@ -219,6 +219,7 @@ internal static class ConnectorVerificationCommand
 
         EnsureNoJournalSidecars(databasePath);
         var hashAfter = await databaseHashAsync(databasePath);
+        EnsureNoJournalSidecars(databasePath);
         if (!CryptographicOperations.FixedTimeEquals(hashBefore, hashAfter))
         {
             throw new InvalidOperationException(
