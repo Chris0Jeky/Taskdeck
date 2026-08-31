@@ -193,13 +193,8 @@ internal static class ConnectorVerificationCommand
         string databasePath,
         ICredentialEncryptionService encryptionService)
     {
-        var connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadOnly,
-            Cache = SqliteCacheMode.Private,
-            Pooling = false
-        }.ToString();
+        EnsureNoJournalSidecars(databasePath);
+        var connectionString = CreateReadOnlyConnectionString(databasePath);
 
         await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync();
@@ -214,7 +209,38 @@ internal static class ConnectorVerificationCommand
             verifier.Verify(ciphertext);
         }
 
+        EnsureNoJournalSidecars(databasePath);
         return verifier.Counts;
+    }
+
+    internal static string CreateReadOnlyConnectionString(string databasePath)
+    {
+        var dataSource = new UriBuilder
+        {
+            Scheme = Uri.UriSchemeFile,
+            Host = string.Empty,
+            Path = Path.GetFullPath(databasePath),
+            Query = "immutable=1"
+        }.Uri.AbsoluteUri;
+
+        return new SqliteConnectionStringBuilder
+        {
+            DataSource = dataSource,
+            Mode = SqliteOpenMode.ReadOnly,
+            Cache = SqliteCacheMode.Private,
+            Pooling = false
+        }.ToString();
+    }
+
+    private static void EnsureNoJournalSidecars(string databasePath)
+    {
+        if (File.Exists($"{databasePath}-wal") ||
+            File.Exists($"{databasePath}-shm") ||
+            File.Exists($"{databasePath}-journal"))
+        {
+            throw new InvalidOperationException(
+                "Connector verification requires a standalone database without journal sidecars.");
+        }
     }
 
     private sealed record ConnectorKeyResult(

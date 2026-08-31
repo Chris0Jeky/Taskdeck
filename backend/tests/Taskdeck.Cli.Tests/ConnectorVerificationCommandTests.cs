@@ -36,6 +36,23 @@ public class ConnectorVerificationCommandTests
     }
 
     [Fact]
+    public void CreateReadOnlyConnectionString_UsesAnImmutableUri()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), "connector verifier #1?.db");
+
+        var connectionString = ConnectorVerificationCommand.CreateReadOnlyConnectionString(databasePath);
+
+        var builder = new SqliteConnectionStringBuilder(connectionString);
+        builder.Mode.Should().Be(SqliteOpenMode.ReadOnly);
+        builder.Cache.Should().Be(SqliteCacheMode.Private);
+        builder.Pooling.Should().BeFalse();
+        builder.DataSource.Should().StartWith("file:");
+        builder.DataSource.Should().Contain("immutable=1");
+        builder.DataSource.Should().Contain("%23");
+        builder.DataSource.Should().Contain("%3F");
+    }
+
+    [Fact]
     public void VerifyCiphertexts_AttemptsEveryCredentialAndCountsFailures()
     {
         var encryption = new RecordingEncryptionService(value =>
@@ -125,6 +142,45 @@ public class ConnectorVerificationCommandTests
         result.ExitCode.Should().Be(ExitCodes.Success, result.StdErr);
         result.StdOut.Should().Be("ok=1 failed=0");
         result.StdErr.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Execute_WalHeaderWithoutSidecars_VerifiesWithoutCreatingSidecars()
+    {
+        await using var harness = new CliTestHarness("cli-verify-connectors-wal-header");
+        await SeedCredentialsAsync(harness.DatabasePath, CorrectKey, "wal-secret");
+        await PrepareStandaloneWalHeaderAsync(harness.DatabasePath);
+        var keyPath = await WriteKeyFileAsync(harness.DataDirectory, CorrectKey);
+        var beforeHash = ComputeSha256(harness.DatabasePath);
+        AssertNoJournalFiles(harness.DatabasePath);
+
+        var result = await harness.RunAsync(
+            $"--verify-connectors --database \"{harness.DatabasePath}\" --key-file \"{keyPath}\"");
+
+        result.ExitCode.Should().Be(ExitCodes.Success, result.StdErr);
+        result.StdOut.Should().Be("ok=1 failed=0");
+        result.StdErr.Should().BeEmpty();
+        ComputeSha256(harness.DatabasePath).Should().Be(beforeHash);
+        AssertNoJournalFiles(harness.DatabasePath);
+    }
+
+    [Fact]
+    public async Task Execute_DatabaseWithWalSidecar_FailsClosedInsteadOfIgnoringIt()
+    {
+        await using var harness = new CliTestHarness("cli-verify-connectors-wal-sidecar");
+        await SeedCredentialsAsync(harness.DatabasePath, CorrectKey, "database-secret");
+        var keyPath = await WriteKeyFileAsync(harness.DataDirectory, CorrectKey);
+        var walPath = $"{harness.DatabasePath}-wal";
+        await File.WriteAllTextAsync(walPath, "uncheckpointed-test-state");
+        var walHash = ComputeSha256(walPath);
+
+        var result = await harness.RunAsync(
+            $"--verify-connectors --database \"{harness.DatabasePath}\" --key-file \"{keyPath}\"");
+
+        result.ExitCode.Should().Be(ExitCodes.Failure);
+        result.StdOut.Should().BeEmpty();
+        result.StdErr.Should().Contain("Connector database is unavailable");
+        ComputeSha256(walPath).Should().Be(walHash);
     }
 
     [Fact]
@@ -275,6 +331,48 @@ public class ConnectorVerificationCommandTests
             journalMode.CommandText = "PRAGMA journal_mode=DELETE;";
             var mode = (string?)await journalMode.ExecuteScalarAsync();
             mode.Should().Be("delete");
+        }
+    }
+
+    private static async Task PrepareStandaloneWalHeaderAsync(string databasePath)
+    {
+        var connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = databasePath,
+            Pooling = false
+        }.ToString();
+
+        await using (var connection = new SqliteConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            await using (var journalMode = connection.CreateCommand())
+            {
+                journalMode.CommandText = "PRAGMA journal_mode=WAL;";
+                var mode = (string?)await journalMode.ExecuteScalarAsync();
+                mode.Should().Be("wal");
+            }
+
+            await using (var checkpoint = connection.CreateCommand())
+            {
+                checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+                await using var result = await checkpoint.ExecuteReaderAsync();
+                (await result.ReadAsync()).Should().BeTrue();
+                result.GetInt32(0).Should().Be(0, "the standalone fixture must checkpoint without a busy writer");
+            }
+        }
+
+        var header = await File.ReadAllBytesAsync(databasePath);
+        header.Should().HaveCountGreaterThan(19);
+        header[18].Should().Be(2, "the fixture must retain a WAL write-version header");
+        header[19].Should().Be(2, "the fixture must retain a WAL read-version header");
+
+        foreach (var suffix in new[] { "-wal", "-shm" })
+        {
+            var sidecar = databasePath + suffix;
+            if (File.Exists(sidecar))
+            {
+                File.Delete(sidecar);
+            }
         }
     }
 

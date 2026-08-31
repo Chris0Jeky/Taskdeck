@@ -229,27 +229,47 @@ Compare against your last known-good row counts (see evidence log if available).
 ### Step 5: Verify connector credential decryption
 
 Before restarting the API, verify that the connector encryption key paired with the
-restored database can decrypt every stored connector credential. Prefer a protected key
-file so key material does not appear in the process command line:
+restored database can decrypt every stored connector credential.
+
+For Docker Compose, use the CLI assembly already packaged in the API image. The one-off
+container mounts the same data volume and receives the configured connector key without
+starting the API:
 
 ```bash
-taskdeck --verify-connectors \
+docker compose -f deploy/docker-compose.yml --profile baseline run --rm --no-deps \
+  --user 10001:10001 --entrypoint dotnet api \
+  /app/cli/Taskdeck.Cli.dll --verify-connectors --database /app/data/taskdeck.db
+```
+
+From a source checkout, prefer a protected key file so key material does not appear in
+the process command line:
+
+```bash
+dotnet run --project backend/src/Taskdeck.Cli/Taskdeck.Cli.csproj -- \
+  --verify-connectors \
   --database /path/to/taskdeck.db \
   --key-file /secure/path/connector-encryption.key
 ```
 
-PowerShell (Windows):
+PowerShell from a source checkout:
 
 ```powershell
-taskdeck --verify-connectors `
+dotnet run --project backend\src\Taskdeck.Cli\Taskdeck.Cli.csproj -- `
+  --verify-connectors `
   --database "C:\app\data\taskdeck.db" `
   --key-file "C:\secure\connector-encryption.key"
 ```
 
 If the deployment already supplies `TASKDECK_CONNECTORS__ENCRYPTIONKEY` or
-`Connectors__EncryptionKey`, omit `--key-file`. The command opens an existing database in
-SQLite read-only mode. It does not run migrations, generate a key, or start connector
-providers.
+`Connectors__EncryptionKey`, omit `--key-file`. The current Windows desktop archive
+contains `Taskdeck.Api.exe`, not a separate Taskdeck CLI executable. Do not substitute the
+API executable for the commands above.
+
+The verifier requires a standalone database with no `-wal`, `-shm`, or `-journal`
+sidecars. The restore scripts remove those sidecars after producing the standalone target.
+The command opens that target through SQLite's read-only immutable URI, does not create
+sidecars, and fails if a sidecar is present. It does not run migrations, generate a key, or
+start connector providers.
 
 Interpret the aggregate-only output as follows:
 
