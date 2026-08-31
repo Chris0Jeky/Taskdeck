@@ -174,6 +174,13 @@ test('successful and skipped jobs are not failures', () => {
   assert.deepEqual(result.missedLanes, []);
 });
 
+test('shadow-only PR activity cannot qualify required-workflow recall evidence', () => {
+  const labeled = observation(23, { mutate: (raw) => { raw.plan.event.action = 'labeled'; } });
+  const result = normaliseObservation(labeled, policy, window);
+  assert.equal(result.usable, false);
+  assert(result.errors.includes('plan-event-action-not-required'));
+});
+
 test('completed cancelled required attempts remain available for job evidence', () => {
   assert.equal(isMeasurableRequiredAttempt({ status: 'completed', conclusion: 'cancelled' }), true);
   assert.equal(isMeasurableRequiredAttempt({ status: 'in_progress', conclusion: 'cancelled' }), false);

@@ -434,6 +434,7 @@ test('a plan that claims a self-hosted runner for a non-T1 or R4 change is inval
 
 test('inputFromEvent reads pull_request payloads without content and detects forks', () => {
   const event = {
+    action: 'synchronize',
     repository: { full_name: 'Chris0Jeky/Taskdeck', owner: { login: 'Chris0Jeky' } },
     pull_request: {
       number: 7,
@@ -457,6 +458,7 @@ test('inputFromEvent reads pull_request payloads without content and detects for
     mergeTreeSha: fetchedMergeTreeSha,
   });
   assert.equal(input.isFork, true);
+  assert.equal(input.eventAction, 'synchronize');
   assert.equal(input.senderLogin, 'someone');
   assert.equal(input.repositoryOwnerLogin, 'Chris0Jeky');
   assert.equal(input.isDraft, true);
@@ -471,6 +473,10 @@ test('inputFromEvent reads pull_request payloads without content and detects for
   );
   const plan = buildPlan(input, policy, digest);
   assert.equal(plan.trust, 'T3');
+  assert.equal(plan.event.action, 'synchronize');
+  const missingAction = structuredClone(plan);
+  delete missingAction.event.action;
+  assert(validatePlan(missingAction).includes('event.action must be a string or null'));
   assert.ok(!JSON.stringify(plan).includes('secret title'));
   assert.ok(!JSON.stringify(plan).includes('secret body'));
   const push = inputFromEvent({ repository: { full_name: 'o/r', owner: { login: 'o' } }, before: BASE, after: HEAD, ref: 'refs/heads/main', sender: { login: 'o', type: 'User' } }, 'push', {});

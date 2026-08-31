@@ -41,6 +41,7 @@ const REQUIRED_RUN_CONCLUSIONS = new Set([
   'startup_failure',
   'stale',
 ]);
+const REQUIRED_PULL_REQUEST_ACTIONS = new Set(['opened', 'synchronize', 'reopened']);
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -562,6 +563,7 @@ export function normaliseObservation(raw, policy, options = {}) {
       if (plan.event.pullRequest !== prNumber) addError('plan-pr-number-mismatch');
       if (options.repository && plan.event.repository !== options.repository) addError('plan-repository-mismatch');
       if (plan.event.name !== 'pull_request_target') addError('plan-event-mismatch');
+      if (!REQUIRED_PULL_REQUEST_ACTIONS.has(plan.event.action)) addError('plan-event-action-not-required');
       if (plan.event.ref !== raw.baseBranch) addError('plan-base-branch-mismatch');
     }
     validateCommit(raw.planMergeCommit, plan.mergeSha, [plan.baseSha, headSha], plan.mergeTreeSha, 'plan-merge-commit');

@@ -14,9 +14,10 @@
     "event": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "repository", "pullRequest", "ref", "isDraft"],
+      "required": ["name", "action", "repository", "pullRequest", "ref", "isDraft"],
       "properties": {
         "name": { "type": ["string", "null"] },
+        "action": { "type": ["string", "null"], "description": "GitHub activity action that produced this plan" },
         "repository": { "type": ["string", "null"] },
         "pullRequest": { "type": ["integer", "null"] },
         "ref": { "type": ["string", "null"] },

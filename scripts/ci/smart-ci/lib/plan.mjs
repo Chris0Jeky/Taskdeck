@@ -309,6 +309,7 @@ export function buildPlan(input, policy, digest) {
     mode: policy.mode,
     event: {
       name: input.eventName ?? null,
+      action: input.eventAction ?? null,
       repository: input.repository ?? null,
       pullRequest: Number.isInteger(input.pullRequestNumber) ? input.pullRequestNumber : null,
       ref: input.ref ?? null,
@@ -353,7 +354,7 @@ export function errorPlan(input, policy, digest, error) {
     policyId: policy && policy.policyId ? policy.policyId : null,
     policyDigest: digest ?? null,
     mode: policy && policy.mode ? policy.mode : 'shadow',
-    event: { name: input.eventName ?? null, repository: input.repository ?? null, pullRequest: Number.isInteger(input.pullRequestNumber) ? input.pullRequestNumber : null, ref: input.ref ?? null, isDraft: input.isDraft === true },
+    event: { name: input.eventName ?? null, action: input.eventAction ?? null, repository: input.repository ?? null, pullRequest: Number.isInteger(input.pullRequestNumber) ? input.pullRequestNumber : null, ref: input.ref ?? null, isDraft: input.isDraft === true },
     baseSha: input.baseSha ?? null,
     headSha: input.headSha ?? null,
     mergeSha: input.mergeSha ?? null,
@@ -394,6 +395,7 @@ export function validatePlan(plan, policy = null) {
   if (!isNonEmptyString(plan.policyId)) errors.push('policyId is required');
   if (!/^sha256:[0-9a-f]{64}$/.test(String(plan.policyDigest ?? ''))) errors.push('policyDigest must be sha256:<hex>');
   if (!['shadow', 'enforce'].includes(plan.mode)) errors.push('mode must be shadow or enforce');
+  if (!plan.event || !Object.hasOwn(plan.event, 'action') || (plan.event.action !== null && typeof plan.event.action !== 'string')) errors.push('event.action must be a string or null');
   if (!TRUST_CLASSES.includes(plan.trust)) errors.push('trust must be T0..T4');
   if (!RISK_ORDER.includes(plan.risk)) errors.push('risk must be R0..R4');
   if (typeof plan.escalated !== 'boolean') errors.push('escalated must be boolean');
