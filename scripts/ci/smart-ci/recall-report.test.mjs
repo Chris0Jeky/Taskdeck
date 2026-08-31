@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { buildPlan, policyDigest } from './lib/plan.mjs';
 import {
   buildRecallReport,
+  collectPullObservations,
   exitCodeForReport,
   isMeasurableRequiredAttempt,
   nextLink,
@@ -177,6 +178,60 @@ test('completed cancelled required attempts remain available for job evidence', 
   assert.equal(isMeasurableRequiredAttempt({ status: 'completed', conclusion: 'cancelled' }), true);
   assert.equal(isMeasurableRequiredAttempt({ status: 'in_progress', conclusion: 'cancelled' }), false);
   assert.equal(isMeasurableRequiredAttempt({ status: 'completed', conclusion: 'neutral' }), false);
+});
+
+test('a merged PR with only pre-window required runs remains an unusable observation', async () => {
+  const prNumber = 22;
+  const finalHeadSha = shaFor(prNumber);
+  const baseSha = shaFor(100000 + prNumber);
+  const mergeCommitSha = shaFor(400000 + prNumber);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const json = String(url).includes('/git/commits/')
+      ? {
+        sha: mergeCommitSha,
+        tree: { sha: shaFor(300000 + prNumber) },
+        parents: [{ sha: baseSha }, { sha: finalHeadSha }],
+      }
+      : {
+        workflow_runs: [{
+          id: 22000,
+          path: '.github/workflows/ci-required.yml',
+          event: 'pull_request',
+          head_branch: `issue-${prNumber}/fixture`,
+          head_repository: { full_name: repository },
+          head_sha: finalHeadSha,
+          created_at: '2026-08-30T20:00:00.000Z',
+          run_attempt: 1,
+        }],
+      };
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => '' },
+      json: async () => json,
+      text: async () => JSON.stringify(json),
+    };
+  };
+
+  try {
+    const rows = await collectPullObservations('test-token', repository, {
+      prNumber,
+      mergedAt: '2026-08-31T12:00:00.000Z',
+      finalHeadSha,
+      headBranch: `issue-${prNumber}/fixture`,
+      headRepository: repository,
+      baseSha,
+      baseBranch: 'main',
+      baseRepository: repository,
+      mergeCommitSha,
+    }, '.', 1, window.since, window.until);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].prNumber, prNumber);
+    assert.equal(rows[0].collectionError, 'no completed measurable required workflow attempt exists in the observation window');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('planner errors, invalid plans and policy drift make observations unusable', () => {

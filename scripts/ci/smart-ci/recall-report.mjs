@@ -323,7 +323,7 @@ async function collectPlanEvidence(token, repo, pull, headSha, tempRoot, maxPage
   };
 }
 
-async function collectPullObservations(token, repo, pull, tempRoot, maxPages, since, until) {
+export async function collectPullObservations(token, repo, pull, tempRoot, maxPages, since, until) {
   const baseRaw = { ...pull, repository: repo };
   try {
     if (!Number.isInteger(pull.prNumber) || !validSha(pull.finalHeadSha)) throw new Error('merged PR has no valid final head SHA');
@@ -349,7 +349,6 @@ async function collectPullObservations(token, repo, pull, tempRoot, maxPages, si
         && Date.parse(run.created_at ?? '') <= Math.min(mergedMs, untilMs))
       .sort((a, b) => Date.parse(a.created_at ?? '') - Date.parse(b.created_at ?? '') || Number(a.id) - Number(b.id));
     const candidates = branchRuns.filter((run) => Date.parse(run.created_at ?? '') >= sinceMs);
-    if (candidates.length === 0 && branchRuns.length > 0) return [];
 
     const planEvidence = new Map();
     const associatedPulls = new Map();
