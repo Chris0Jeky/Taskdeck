@@ -189,28 +189,43 @@ internal static class ConnectorVerificationCommand
         }
     }
 
-    private static async Task<ConnectorVerificationCounts> VerifyDatabaseAsync(
+    internal static async Task<ConnectorVerificationCounts> VerifyDatabaseAsync(
         string databasePath,
-        ICredentialEncryptionService encryptionService)
+        ICredentialEncryptionService encryptionService,
+        Func<string, Task<byte[]>>? databaseHashAsync = null)
     {
+        databaseHashAsync ??= ComputeDatabaseHashAsync;
         EnsureNoJournalSidecars(databasePath);
+        var hashBefore = await databaseHashAsync(databasePath);
         var connectionString = CreateReadOnlyConnectionString(databasePath);
 
-        await using var connection = new SqliteConnection(connectionString);
-        await connection.OpenAsync();
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT \"EncryptedValue\" FROM \"ConnectorCredentials\";";
-        await using var reader = await command.ExecuteReaderAsync();
-
-        var verifier = new ConnectorCredentialVerifier(encryptionService);
-        while (await reader.ReadAsync())
+        ConnectorVerificationCounts counts;
+        await using (var connection = new SqliteConnection(connectionString))
         {
-            var ciphertext = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
-            verifier.Verify(ciphertext);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT \"EncryptedValue\" FROM \"ConnectorCredentials\";";
+            await using var reader = await command.ExecuteReaderAsync();
+
+            var verifier = new ConnectorCredentialVerifier(encryptionService);
+            while (await reader.ReadAsync())
+            {
+                var ciphertext = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+                verifier.Verify(ciphertext);
+            }
+
+            counts = verifier.Counts;
         }
 
         EnsureNoJournalSidecars(databasePath);
-        return verifier.Counts;
+        var hashAfter = await databaseHashAsync(databasePath);
+        if (!CryptographicOperations.FixedTimeEquals(hashBefore, hashAfter))
+        {
+            throw new InvalidOperationException(
+                "The database changed during connector verification.");
+        }
+
+        return counts;
     }
 
     internal static string CreateReadOnlyConnectionString(string databasePath)
@@ -241,6 +256,19 @@ internal static class ConnectorVerificationCommand
             throw new InvalidOperationException(
                 "Connector verification requires a standalone database without journal sidecars.");
         }
+    }
+
+    private static async Task<byte[]> ComputeDatabaseHashAsync(string databasePath)
+    {
+        await using var stream = new FileStream(databasePath, new FileStreamOptions
+        {
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read,
+            BufferSize = 128 * 1024,
+            Options = FileOptions.Asynchronous | FileOptions.SequentialScan
+        });
+        return await SHA256.HashDataAsync(stream);
     }
 
     private sealed record ConnectorKeyResult(

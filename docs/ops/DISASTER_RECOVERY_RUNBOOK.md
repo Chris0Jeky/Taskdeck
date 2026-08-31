@@ -268,8 +268,9 @@ API executable for the commands above.
 The verifier requires a standalone database with no `-wal`, `-shm`, or `-journal`
 sidecars. The restore scripts remove those sidecars after producing the standalone target.
 The command opens that target through SQLite's read-only immutable URI, does not create
-sidecars, and fails if a sidecar is present. It does not run migrations, generate a key, or
-start connector providers.
+sidecars, and fails if a sidecar is present. It also compares SHA-256 hashes of the database
+before and after decryption, failing if the file changes during verification. It does not run
+migrations, generate a key, or start connector providers.
 
 Interpret the aggregate-only output as follows:
 

@@ -184,6 +184,28 @@ public class ConnectorVerificationCommandTests
     }
 
     [Fact]
+    public async Task VerifyDatabaseAsync_DatabaseHashChanges_FailsBeforeReturningCounts()
+    {
+        await using var harness = new CliTestHarness("cli-verify-connectors-hash-drift");
+        await SeedCredentialsAsync(harness.DatabasePath, CorrectKey, "stable-secret");
+        var hashCallCount = 0;
+        Task<byte[]> HashDatabaseAsync(string _)
+        {
+            var marker = Interlocked.Increment(ref hashCallCount);
+            return Task.FromResult(Enumerable.Repeat((byte)marker, 32).ToArray());
+        }
+
+        var action = async () => await ConnectorVerificationCommand.VerifyDatabaseAsync(
+            harness.DatabasePath,
+            new AesCredentialEncryptionService(CorrectKey),
+            HashDatabaseAsync);
+
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*changed during connector verification*");
+        hashCallCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task Execute_EmptyDatabase_SucceedsWithExplicitNothingToVerifyMessage()
     {
         await using var harness = new CliTestHarness("cli-verify-connectors-empty");
