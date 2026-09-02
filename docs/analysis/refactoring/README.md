@@ -60,19 +60,29 @@ Git happens to linearise that edit before or after the rename. Any event that cr
 at an already-seen path -- an add, a copy, or a rename onto it -- opens a new lineage, so a path that
 is deleted and later reused does not inherit the previous file's history.
 
-Every Git invocation pins the configuration that decides these numbers without changing the
-repository: `core.attributesFile` is neutralised, `diff.renameLimit` is unlimited, `diff.algorithm`
-is `myers`, and `core.bigFileThreshold` is raised. Command-line `-c` outranks every other
-configuration source, so a contributor's global, system, or environment settings cannot mark a
-source extension binary, suppress rename detection, or otherwise move churn. In-tree
-`.gitattributes` remains in force because it is repository policy. `info/attributes` is per-clone and
-uncommitted and cannot be overridden by `-c` or by the environment, so the receipt records whether
-one was in effect (`gitObjectPolicy.repositoryLocalAttributes`) rather than refusing to run - this
-repository legitimately keeps one for end-of-line handling. Two receipts are comparable only when
-that field matches. Pointers that would redirect Git away from the repository
-under analysis (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_ATTRIBUTES_FILE` and friends) are removed from the
-child environment; the rest of the environment is left alone, because system configuration also
-carries the platform end-of-line settings that decide whether a checkout reads as clean.
+The history and diff reads - the ones the ranked numbers actually come from - pin the configuration
+that moves those numbers without changing the repository: `core.attributesFile` is neutralised,
+`diff.renameLimit` is unlimited (`0` means no limit, not "disabled"), `diff.algorithm` is held at
+`myers`, and `core.bigFileThreshold` is held at its default. Command-line `-c` outranks every other
+configuration source including `GIT_CONFIG_KEY_*`, and `GIT_ATTR_NOSYSTEM=1` covers
+`$(prefix)/etc/gitattributes`, which is a file no `-c` value can reach. So a contributor's global,
+system, or environment settings cannot mark a source extension binary, suppress rename detection, or
+otherwise move churn. `GIT_ATTR_SOURCE` is dropped from those reads for the same reason.
+
+These pins are applied to the history and diff reads **only**. Object reads (`ls-tree`, `cat-file`)
+are unaffected by attributes or diff configuration, and the tracked-state probe is deliberately left
+unpinned so it sees the checkout exactly as the contributor's own `git status` does - neutralising a
+global attributes file changes how an end-of-line-exempted blob compares, and pinning there would
+report a genuinely clean checkout as dirty with a false and unactionable error.
+
+In-tree `.gitattributes` remains in force because it is repository policy. `info/attributes` is
+per-clone and uncommitted and cannot be overridden by `-c` or by the environment, so the receipt
+records whether one was in effect (`gitObjectPolicy.repositoryLocalAttributes`) rather than refusing
+to run - this repository legitimately keeps one for end-of-line handling. Two receipts are comparable
+only when that field matches. Pointers that would redirect Git away from the repository under
+analysis (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE` and friends) are removed from the child
+environment; the rest of the environment is left alone, because system configuration also carries the
+platform end-of-line settings that decide whether a checkout reads as clean.
 
 Ties sort by churn, lines, then repository-relative path, so the same repository state produces byte-stable JSON when written with the same options. The report also records the Git version because rename detection can vary between Git releases.
 
@@ -90,9 +100,10 @@ occupies the old path, so if a *different* file was moved onto that path on a pa
 visited first, the rename joins the wrong lineage. Two unrelated current files can then share one
 lineage and each report the summed churn and the union of the touching commits of both. Resolving
 this needs per-commit ancestry rather than a linearisation, which this tool does not compute, so it
-is a documented boundary. It requires a delete or a rename onto a path on one branch plus a rename
-away from the same path on an incomparable branch - if a report shows two current files with
-identical churn and touching-commit counts, check for that shape before trusting either row.
+is a documented boundary. It requires an event that *creates* a new occupant at the old path on one
+branch - an add, a copy, or a rename onto it, but not a bare delete, which opens no new generation -
+plus a rename away from that same path on an incomparable branch. If a report shows two current files
+with identical churn and touching-commit counts, check for that shape before trusting either row.
 
 Tracked paths that are not valid UTF-8 cannot be ranked and are counted in
 `summary.excludedUndecodableTrackedPaths` instead of aborting the report. A large or frequently

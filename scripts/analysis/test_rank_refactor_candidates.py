@@ -128,7 +128,7 @@ class RefactorRankerUnitTests(unittest.TestCase):
         self.assertEqual((1, 2), self._totals([edit, rename], "src/new.cs"))
         self.assertEqual((1, 2), self._totals([rename, edit], "src/new.cs"))
 
-    def test_a_reused_path_starts_a_new_lineage_in_either_order(self) -> None:
+    def test_a_reused_path_starts_a_new_lineage(self) -> None:
         events = [
             ("c1", "M", None, "src/reused.cs", 7),
             ("c2", "D", None, "src/reused.cs", 2),
@@ -322,12 +322,31 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
     def test_global_attributes_file_cannot_change_reported_churn(self) -> None:
         baseline = self.report()["candidates"][0]
         attributes = self.repo / "global.gitattributes"
-        attributes.write_text("*.cs binary\n", encoding="utf-8")
+        # `-diff` is the attribute that makes Git report `-`/`-` numstat and score the
+        # file at zero churn. `binary` is deliberately not used here: it also unsets
+        # `text`, which changes how `git status` compares an end-of-line-converted
+        # working file, and the tracked-state probe is intentionally left unpinned so
+        # it sees the checkout exactly as the contributor's own Git does.
+        attributes.write_text("*.cs -diff\n", encoding="utf-8")
         self.git("config", "core.attributesFile", str(attributes))
 
         candidate = self.report()["candidates"][0]
         self.assertEqual(baseline["churn"], candidate["churn"])
         self.assertEqual(baseline["touchingCommits"], candidate["touchingCommits"])
+
+    def test_the_tracked_state_probe_agrees_with_plain_git_status(self) -> None:
+        # The determinism pins must not reach `git status`: neutralising a global
+        # attributes file changes how an end-of-line-exempted blob compares, which would
+        # report a genuinely clean checkout as dirty and give a false, unactionable
+        # "Tracked files are dirty" error.
+        attributes = self.repo / "global.gitattributes"
+        attributes.write_text("*.cs -text\n", encoding="utf-8")
+        self.git("config", "core.attributesFile", str(attributes))
+
+        self.assertEqual(
+            not self.git("status", "--porcelain=v1", "--untracked-files=no"),
+            ranker.tracked_tree_is_clean(self.repo),
+        )
 
     def test_rename_limit_configuration_cannot_break_rename_attribution(self) -> None:
         # A low diff.renameLimit makes Git skip the exhaustive stage and report an
@@ -366,10 +385,30 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
         self.assertEqual(baseline["touchingCommits"], candidate["touchingCommits"])
 
     def test_diff_algorithm_configuration_cannot_change_reported_churn(self) -> None:
-        baseline = self.report()["candidates"][0]
-        self.git("config", "diff.algorithm", "histogram")
+        # A pure append scores identically under every algorithm, so the reflow below is
+        # what actually separates them: measured on git 2.45.1 this commit is 5/2 under
+        # myers, histogram and minimal, but 6/3 under patience.
+        self.write(
+            "src/reflow.cs",
+            "header\n\nint A() {\n    return 1;\n}\n\nint B() {\n    return 2;\n}\n",
+        )
+        self.git("add", ".")
+        self.git("commit", "-m", "reflow baseline")
+        self.write(
+            "src/reflow.cs",
+            "header\n\nint B() {\n    return 2;\n}\n\nint A() {\n    return 1;\n}\n"
+            "\nint C() {\n    return 3;\n}\n",
+        )
+        self.git("add", ".")
+        self.git("commit", "-m", "reflow")
 
-        self.assertEqual(baseline["churn"], self.report()["candidates"][0]["churn"])
+        def reflow_row(report: dict[str, object]) -> dict[str, object]:
+            return next(row for row in report["candidates"] if row["path"] == "src/reflow.cs")
+
+        baseline = reflow_row(self.report())
+        self.git("config", "diff.algorithm", "patience")
+
+        self.assertEqual(baseline["churn"], reflow_row(self.report())["churn"])
 
     def test_repository_local_attributes_are_recorded_in_the_receipt(self) -> None:
         # Neither -c nor an environment variable can disable info/attributes, and it is

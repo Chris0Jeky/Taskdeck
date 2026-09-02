@@ -78,23 +78,37 @@ GIT_DETERMINISM_OPTIONS = (
 # `-c` outranks every configuration source including `GIT_CONFIG_KEY_*`, so the pins
 # above do not need the surrounding config scrubbed - and scrubbing it would be wrong,
 # because system configuration also carries platform end-of-line settings that decide
-# whether a checkout reads as clean. Only pointers that would redirect Git away from
-# the repository under analysis, or supply an attributes file the pins do not cover,
-# are removed. `info/attributes` is per-clone and uncommitted, so it is rejected
-# outright rather than silently honoured as if it were repository policy.
+# whether a checkout reads as clean.
+#
+# The pins are applied to the history and diff reads only, never to the tracked-state
+# probe, for the same reason: neutralising a contributor's global attributes file
+# changes how `git status` compares an end-of-line-exempted blob, which would report a
+# genuinely clean checkout as dirty.
 GIT_ENVIRONMENT_REMOVED = (
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_ATTRIBUTES_FILE",
     "GIT_COMMON_DIR",
     "GIT_DIR",
     "GIT_INDEX_FILE",
     "GIT_OBJECT_DIRECTORY",
     "GIT_WORK_TREE",
 )
+# `$(prefix)/etc/gitattributes` is a file, so no `-c` value can reach it; only this
+# variable suppresses it. `GIT_ATTR_SOURCE` (Git 2.40+) redirects the `.gitattributes`
+# lookup to an arbitrary tree-ish, so it is dropped alongside. Both apply to the pinned
+# reads only. There is no `GIT_ATTRIBUTES_FILE` in Git - measured on 2.45.1, setting it
+# changes nothing - so it is deliberately not listed.
+GIT_PINNED_ENVIRONMENT_OVERRIDES = {"GIT_ATTR_NOSYSTEM": "1"}
+GIT_PINNED_ENVIRONMENT_REMOVED = ("GIT_ATTR_SOURCE",)
 
 
-def _git_environment() -> dict[str, str]:
-    return {key: value for key, value in os.environ.items() if key not in GIT_ENVIRONMENT_REMOVED}
+def _git_environment(pinned: bool) -> dict[str, str]:
+    removed = set(GIT_ENVIRONMENT_REMOVED)
+    if pinned:
+        removed.update(GIT_PINNED_ENVIRONMENT_REMOVED)
+    environment = {key: value for key, value in os.environ.items() if key not in removed}
+    if pinned:
+        environment.update(GIT_PINNED_ENVIRONMENT_OVERRIDES)
+    return environment
 
 
 class AnalysisError(RuntimeError):
@@ -107,12 +121,21 @@ def _run_git(
     check: bool = True,
     timeout: int = GIT_TIMEOUT_SECONDS,
     input_data: bytes | None = None,
+    pinned: bool = False,
 ) -> subprocess.CompletedProcess[bytes]:
+    """Run one Git command. `pinned` adds the determinism policy; see its constants.
+
+    Only the reads whose *output* the ranked numbers come from are pinned. Object reads
+    (`ls-tree`, `cat-file`) are unaffected by attributes or diff configuration, and the
+    tracked-state probe must see the checkout exactly as the contributor's own Git does.
+    """
+
+    options = GIT_DETERMINISM_OPTIONS if pinned else ()
     try:
         result = subprocess.run(
-            ["git", "--no-replace-objects", *GIT_DETERMINISM_OPTIONS, "-C", os.fspath(repo), *args],
+            ["git", "--no-replace-objects", *options, "-C", os.fspath(repo), *args],
             check=False,
-            env=_git_environment(),
+            env=_git_environment(pinned),
             input=input_data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -508,6 +531,7 @@ def collect_churn(
         "--no-textconv",
         revision_range,
         "--",
+        pinned=True,
     )
 
     lineages = _PathLineages()
@@ -652,7 +676,7 @@ def build_report(
             "replacementObjects": "ignored",
             "grafts": "rejected",
             "repositoryLocalAttributes": "present" if local_attributes else "absent",
-            "systemAndGlobalAttributes": "ignored",
+            "systemAndGlobalAttributesInDiffReads": "ignored",
             "pinnedDiffOptions": list(GIT_DETERMINISM_OPTIONS),
         },
         "lineSource": "Git blobs from headCommit",
