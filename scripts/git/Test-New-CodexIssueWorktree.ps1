@@ -836,7 +836,7 @@ finally {
             Assert-True (-not (Test-Path -LiteralPath $linkedWorktreeLocalSettingsPath)) "Permission fixture should not copy the local settings file into the linked worktree."
 
             $inheritedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
-            Assert-Equal "bypassPermissions" $inheritedConfiguration.PermissionMode "The main-checkout local default mode should override the committed project default when local settings are enabled."
+            Assert-Equal "bypassPermissions" $inheritedConfiguration.PermissionMode "The main-checkout local default mode should apply to a linked worktree when local settings are enabled."
             Assert-True ($inheritedConfiguration.Allow -contains $broadLocalRule) "A main-checkout local allow should remain effective for a linked worktree when the local source is enabled."
 
             $dontAskWithLocalConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLinePermissionMode "dontAsk"

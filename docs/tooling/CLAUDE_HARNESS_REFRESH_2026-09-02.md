@@ -58,7 +58,8 @@ then confirm with `claude agents --json`. Commit in claude-config.
    headless workers stop prompting: `Bash(node scripts/check-*:*)`, `Bash(node --test:*)`,
    `Bash(py -3 -B:*)`, `Bash(git worktree:*)`, `Bash(rg:*)`, `Bash(cat:*)`, `Bash(head:*)`, `Bash(wc:*)`,
    `Bash(find:*)`. Use `/fewer-permission-prompts` to mine the real transcripts before hand-writing more.
-4. Keep `defaultMode: acceptEdits` committed. Rewrite the README line: project files *cannot* grant
+4. ~~Keep `defaultMode: acceptEdits` committed.~~ Superseded the same day by #2395: a project-scope
+   `defaultMode` outranks the user's mode, so the line was removed. Rewrite the README line: project files *cannot* grant
    bypass or auto on 2.1.257; both come from user settings or launch flags.
 5. `.mcp.json`: remove `context7` (connector covers it); remove `github` unless someone authenticates it
    via `/mcp` and a workflow needs a write `gh` cannot do; pin `chrome-devtools-mcp` instead of `@latest`;
