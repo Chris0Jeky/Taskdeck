@@ -82,17 +82,35 @@ class SemanticRuleTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (base / "bad.json").write_text(json.dumps({"id": "not-a-uuid", "at": "yesterday"}), encoding="utf-8")
-            (base / "good.json").write_text(
-                json.dumps({"id": "5f0b2a5e-2f1c-4c8e-9d3a-6a1e7c2b9f10", "at": "2026-09-02T09:00:00Z"}), encoding="utf-8"
+            good_id = "5f0b2a5e-2f1c-4c8e-9d3a-6a1e7c2b9f10"
+            # Python's fromisoformat accepts both of these; RFC 3339 (JSON Schema date-time) does not.
+            (base / "no-offset.json").write_text(json.dumps({"id": good_id, "at": "2026-09-02T09:00:00"}), encoding="utf-8")
+            (base / "space.json").write_text(json.dumps({"id": good_id, "at": "2026-09-02 09:00:00Z"}), encoding="utf-8")
+            (base / "good.json").write_text(json.dumps({"id": good_id, "at": "2026-09-02T09:00:00Z"}), encoding="utf-8")
+            (base / "good-offset.json").write_text(
+                json.dumps({"id": good_id, "at": "2026-09-02t09:00:00.250+02:00"}), encoding="utf-8"
             )
             manifest = base / "contracts.manifest.json"
             manifest.write_text(
-                json.dumps({"contracts": [{"schema": "thing.schema.json", "fixtures": ["bad.json", "good.json"], "semantic": []}]}),
+                json.dumps(
+                    {
+                        "contracts": [
+                            {
+                                "schema": "thing.schema.json",
+                                "fixtures": ["bad.json", "no-offset.json", "space.json", "good.json", "good-offset.json"],
+                                "semantic": [],
+                            }
+                        ]
+                    }
+                ),
                 encoding="utf-8",
             )
             errors, _ = sut.check(manifest)
-        self.assertEqual(2, len(errors), errors)
-        self.assertTrue(all("bad.json" in error for error in errors), errors)
+        self.assertEqual(4, len(errors), errors)
+        self.assertEqual(2, sum("bad.json" in error for error in errors), errors)
+        self.assertEqual(1, sum("no-offset.json" in error for error in errors), errors)
+        self.assertEqual(1, sum("space.json" in error for error in errors), errors)
+        self.assertFalse(any("good" in error for error in errors), errors)
 
     def test_semantic_rules_apply_per_document_and_unknown_rules_fail_without_fixtures(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

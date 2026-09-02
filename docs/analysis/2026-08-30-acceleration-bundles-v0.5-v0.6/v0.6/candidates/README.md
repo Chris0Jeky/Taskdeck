@@ -38,6 +38,14 @@ fuller list.
 | `python/runtime_metrics.py` | averages cost over accepted operations even when some have no attributable cost — must report unknown until attribution is complete |
 | `python/provider_benchmark.py` | failed or cancelled observations with partial WER/latency are folded into quality averages — separate them |
 | `typescript/controlMetricsModel.ts` | its metric key does not match the report schema's wire key (`runtime-metrics-report.schema.json`) |
+| `csharp/RouterV1.cs` (second Codex round) | skips the cost ceiling when `EstimatedCost` is null and the region allowlist when `Region` is null (both must fail closed); never checks the candidate's `DataClass` against `Policy.AllowedDataClasses`; `SingleOrDefault` throws on duplicate capability preferences instead of denying the route |
+| `csharp/OcrSufficiencyPolicy.cs` | `NaN` confidence passes both comparisons and is classified sufficient; non-finite confidence must be insufficient (CF-18 edge case) |
+| `csharp/ConsentGrant.cs` | a grant whose `GrantedAt` is in the future still reports `Active`; consent must not cover work before its grant instant |
+| `csharp/CacheReservationMachine.cs` | `TryCommit` at or after `ExpiresAt` moves to `Expired` and discards finished work; CF-11 requires a recoverable commit-after-expiry transition |
+| `csharp/ProcessingPolicySnapshot.cs` | lowercases `ApprovedHosts` without de-duplicating, so case variants of one host change the digest of a set-equivalent policy |
+| `python/shadow_canary_report.py` | coerces JSON strings with `bool()`, so `"false"` counts as an observed kill switch; require real booleans |
+| `typescript/profileVocabulary.ts` | the type guard uses `in`, so prototype keys such as `constructor` pass; use an explicit value set |
+| `schemas/runtime-metrics-report.schema.json` | bounds `numerator` and `denominator` independently; a semantic rule must enforce `numerator <= denominator` and recompute `value` |
 
 Admission contract (unchanged from `docs/analysis/2026-08-30-acceleration-bundle/RECONCILIATION.md`):
 a live issue owns the behaviour and its Project state is synchronized; current source does not already

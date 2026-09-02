@@ -22,6 +22,8 @@ were dropped as bundle tooling.
 | `csharp/ProcessingPolicySnapshot.cs` | `ComputeDigest` uses default `JsonSerializerOptions` — not canonical, so a field reorder silently changes every stored digest |
 | `csharp/ProcessorRouteEvaluator.cs` | cost-orders candidates, which is scoring by another name (forbidden before the CF-24A corpus) |
 | `csharp/SemanticCandidate.cs` | discards its evidence anchors, has no `CaptureId`, and its state enum drops `Corrected` / `Dismissed` |
+| `typescript/captureComposerMachine.ts` | `SUBMITTED` / `FAIL` events carry no session identity, so a late event from a reset session overwrites the active capture; tag events with a session id and drop mismatches |
+| `python/score_fixtures.py` | duplicate fixture `id` / result `fixtureId` rows are silently collapsed by dict comprehensions; fail the run on duplicates |
 | `csharp/AutomationSafetyGate.cs`, `python/canary_report.py` | hard-code the struck-through ≥50 / ≤10 % / zero-reversal numbers as a `safeToExpand` verdict and omit the maintainer go (ADR-0065 amendment 10) — rejected |
 
 The admission contract in `../../v0.6/candidates/README.md` applies unchanged.

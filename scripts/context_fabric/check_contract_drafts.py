@@ -13,8 +13,10 @@ What this check proves, per manifest entry:
   for an object schema validates document by document);
 * the semantic rules the bundle's own validators enforced: a route receipt names exactly one
   chosen alternative and no duplicate processors; an authority shadow receipt never reports
-  ``executionPerformed = true``; a runtime metrics report carries no content-bearing keys; a
-  policy snapshot's ``policyDigest`` is the SHA-256 of its canonical ``policy`` JSON.
+  ``executionPerformed = true``; a runtime metrics report carries no content-bearing keys (a
+  key-shape audit only: string *values* are not checked against the CF-24B frozen metric and
+  reason-code dictionaries, which do not exist until CF-24B lands); a policy snapshot's
+  ``policyDigest`` is the SHA-256 of its canonical ``policy`` JSON.
 
 Usage (repo root)::
 
@@ -28,6 +30,7 @@ dependency is a failure, not a skip: install it or do not claim the check green.
 from __future__ import annotations
 
 import argparse
+import re
 import hashlib
 import json
 import re
@@ -77,6 +80,11 @@ def canonical_digest(value: Any) -> str:
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+RFC3339_DATE_TIME = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})"
+)
 
 
 def semantic_route_receipt(value: dict) -> list[str]:
@@ -143,7 +151,11 @@ def build_format_checker():
     def _is_date_time(instance: Any) -> bool:
         if not isinstance(instance, str):
             return True
-        datetime.fromisoformat(instance.replace("Z", "+00:00"))
+        # RFC 3339 shape first: ``fromisoformat`` alone accepts a bare local time or a space
+        # separator, which JSON Schema ``date-time`` does not.
+        if not RFC3339_DATE_TIME.fullmatch(instance):
+            raise ValueError(f"{instance!r} is not an RFC 3339 date-time (needs 'T' and a UTC offset)")
+        datetime.fromisoformat(instance[:-1] + "+00:00" if instance[-1] in "zZ" else instance)
         return True
 
     return checker
