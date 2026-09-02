@@ -159,9 +159,10 @@ The linked-worktree checkout does not physically contain the gitignored
 `.claude/settings.local.json`, but Claude Code stores project-local approvals at the main
 repository root and applies them to sessions in its linked worktrees. Permission allow arrays also
 merge across enabled settings sources. Physical absence therefore does not mean that a local or
-user allow rule is ineffective. The committed `acceptEdits` default auto-approves in-scope edits
-and common filesystem operations, but acceptEdits does not approve arbitrary Git or PowerShell
-commands and is not sufficient by itself for the detached-first handoff. The committed
+user allow rule is ineffective. The committed `.claude/settings.json` sets no `defaultMode` (a project
+pin would outrank the user's own mode), so the mode is whatever the user's settings or launch flag
+say; even acceptEdits does not approve arbitrary Git or PowerShell commands and is not sufficient
+by itself for the detached-first handoff. The committed
 `.claude/settings.json` deliberately does not allow a generic relative initializer command because
 that rule could match the wrong checkout. The helper prints two exact full-command PowerShell rules
 for each task: one for the mandatory guard and one for the initializer. They include the target,
