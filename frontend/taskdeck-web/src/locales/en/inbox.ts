@@ -103,7 +103,9 @@ export default {
   },
   nib: {
     eyebrow: 'Quick capture · {shortcut}',
-    destination: 'This capture has no board; it lands in Inbox for triage.',
+    destinationWithBoard: 'This capture lands in Inbox, linked to {board}, for triage.',
+    destinationWithoutBoard: 'This capture lands in Inbox without a board, for triage.',
+    selectedBoard: 'the selected board',
     submit: 'Capture',
   },
   scope: {

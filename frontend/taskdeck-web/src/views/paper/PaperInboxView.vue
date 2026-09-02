@@ -540,6 +540,8 @@ defineExpose({ variant, toggleVariant, setVariant })
         :submitting="captureSubmitting"
         :invalid="!!nibError"
         :error-id="nibError ? CAPTURE_ERROR_ID : null"
+        :active-board-id="activeBoardId"
+        :active-board-name="activeBoardName"
         @submit="onNibSubmit"
       />
       <PaperCaptureComposer

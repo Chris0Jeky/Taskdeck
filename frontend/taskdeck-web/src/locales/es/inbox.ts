@@ -76,7 +76,9 @@ export default {
   },
   nib: {
     eyebrow: 'Captura rapida · {shortcut}',
-    destination: 'Esta captura no tiene tablero; llega al Inbox para el triage.',
+    destinationWithBoard: 'Esta captura llega al Inbox vinculada a {board} para el triage.',
+    destinationWithoutBoard: 'Esta captura llega al Inbox sin tablero para el triage.',
+    selectedBoard: 'el tablero seleccionado',
     submit: 'Capturar',
   },
   scope: {

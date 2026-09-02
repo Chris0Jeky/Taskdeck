@@ -10,6 +10,8 @@ type NibProps = {
   submitting?: boolean
   invalid?: boolean
   errorId?: string | null
+  activeBoardId?: string | null
+  activeBoardName?: string | null
 }
 
 function mountNib(options: { attachTo?: HTMLElement; props?: NibProps } = {}) {
@@ -157,11 +159,27 @@ describe('PaperCaptureNib', () => {
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
 
-  it('states that board-less captures land in Inbox for triage', () => {
+  it('states that board-less captures land in Inbox without a board', () => {
     const wrapper = mountNib()
 
     expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
-      .toBe('This capture has no board; it lands in Inbox for triage.')
+      .toBe('This capture lands in Inbox without a board, for triage.')
+  })
+
+  it('states that a board-scoped capture lands in Inbox linked to that board', () => {
+    const wrapper = mountNib({
+      props: { activeBoardId: 'board-active', activeBoardName: 'Active board' },
+    })
+
+    expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
+      .toBe('This capture lands in Inbox, linked to Active board, for triage.')
+  })
+
+  it('uses a safe board label when a scoped route has no board name', () => {
+    const wrapper = mountNib({ props: { activeBoardId: 'board-active' } })
+
+    expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
+      .toBe('This capture lands in Inbox, linked to the selected board, for triage.')
   })
 
   it('renders the variant shortcut for Win32 without a Mac modifier glyph', () => {

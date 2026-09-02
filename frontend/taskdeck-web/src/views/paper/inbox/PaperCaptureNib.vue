@@ -35,6 +35,10 @@ const props = defineProps<{
   invalid?: boolean
   /** DOM id of the failure receipt to associate via `aria-describedby`. */
   errorId?: string | null
+  /** Active Inbox board scope. The parent also uses this id for nib submission. */
+  activeBoardId?: string | null
+  /** Human-readable active board name, when the scoped route has one. */
+  activeBoardName?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -46,6 +50,15 @@ const text = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const canSubmit = computed(() => text.value.trim().length > 0 && !props.submitting)
 const variantShortcut = computed(() => formatShortcut('mod+;'))
+const destination = computed(() => {
+  if (!props.activeBoardId) {
+    return t('inbox.nib.destinationWithoutBoard')
+  }
+
+  return t('inbox.nib.destinationWithBoard', {
+    board: props.activeBoardName?.trim() || t('inbox.nib.selectedBoard'),
+  })
+})
 
 function onKeydown(event: KeyboardEvent) {
   if (event.isComposing) {
@@ -120,7 +133,7 @@ defineExpose({ focus: () => inputRef.value?.focus(), resetDraft, snapshotDraft, 
 
     <footer v-if="!bleeding" class="paper-nib__footer">
       <span class="paper-nib__destination tk-meta" data-testid="paper-nib-destination">
-        {{ t('inbox.nib.destination') }}
+        {{ destination }}
       </span>
       <PaperHLBtn
         :label="t('inbox.nib.submit')"

@@ -74,7 +74,9 @@ export default {
   },
   nib: {
     eyebrow: 'Cattura rapida · {shortcut}',
-    destination: 'Questa cattura non ha una bacheca; arriva in Inbox per il triage.',
+    destinationWithBoard: 'Questa cattura arriva nell’Inbox, collegata a {board}, per il triage.',
+    destinationWithoutBoard: 'Questa cattura arriva nell’Inbox senza bacheca, per il triage.',
+    selectedBoard: 'la bacheca selezionata',
     submit: 'Cattura',
   },
   scope: {
