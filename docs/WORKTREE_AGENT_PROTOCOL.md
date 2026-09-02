@@ -280,6 +280,42 @@ Workers must derive absolute paths from a value available in their current shell
 helper-printed native Git executable with `rev-parse --show-toplevel`; do not assume a child
 PowerShell process changed the parent environment or location.
 
+## Helper Handoff Contract
+
+This is the single canonical statement of what a worker does with a worktree created by
+`scripts/git/New-CodexIssueWorktree.ps1`. `AGENTS.md`, `.claude/README.md`, and the orchestrator,
+worker, and `issue-to-pr` skills point here instead of restating it.
+
+1. **First commands are the helper's complete printed PowerShell block, unchanged.** It invokes the
+   exact absolute target `worktree_guard.ps1` with pinned Git, gates on its status and exit code, then
+   runs the bounded exact-target `Initialize-CodexIssueWorktree.ps1`, gated the same way. The initializer
+   binds the exact detached worktree and base before `switch -c` and stops on any exact-worktree,
+   detached-base, guard, or switch failure. The helper rejects linked-source invocation; run it from the
+   main checkout.
+2. **Late branch collision.** The initializer removes the unused detached worktree only when its tracked,
+   untracked, and ignored inventory is empty; otherwise it preserves it for inspection.
+3. **Byte validation is creation-time only.** The helper checks the target guard and initializer bytes
+   against reviewed raw blobs before emitting the block; a same-user replacement after emission is a
+   residual outside this boundary.
+4. **From Bash,** launch a reviewed absolute PowerShell application in the worktree and run the whole
+   block. Never resolve bare `powershell` through PATH, translate only the branch command, or substitute a
+   PATH-first batch shim. The generic `powershell -File scripts/worktree_guard.ps1` /
+   `source scripts/worktree_guard.sh` is for worktrees the helper did not create.
+5. **Headless authorization** adds both exact additive full-command PowerShell rules the helper prints
+   (guard plus initializer), every applicable pinned argument, no wildcard, as two `--allowedTools` argv
+   values — never a generic relative handoff rule. Start `claude -p` in the exact helper-created target
+   without `--worktree`, and accept project trust interactively first. For an untrusted launch pass every
+   allow through CLI argv; unsupported clients use an interactive coordinator launch.
+6. **PowerShell-tool posture.** The project does not enable the unsandboxed Windows PowerShell tool or
+   grant generic PowerShell access; two narrow manual failure-ledger utility rules remain in committed
+   settings. When the trusted host enables the tool for a handoff, review those two rules together with the
+   exact guard and initializer rules, restore the prior host value when the launch returns, and keep later
+   commands on Git Bash. The launch allowlist is not the sole authorization boundary and `acceptEdits`
+   alone does not authorize the wrapper. Taskdeck installs no project command-deny hook.
+
+The full effective-permission posture and the executable example are in "Permission Posture In
+Worktrees" above.
+
 ## Worker Prompt Template
 
 ```text

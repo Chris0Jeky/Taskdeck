@@ -9,7 +9,7 @@ the contributor contract in `../AGENTS.md`; review doctrine in the global laws. 
 | --- | --- |
 | `settings.json` | normal development permissions, worktree symlinks, and project MCP enablement; no repo runtime hooks or deny list |
 | `settings.local.json` | machine-local overrides (not a place for `bypassPermissions`) |
-| `skills/` | 16 repo-local workflow skills — **prefer these over plugin equivalents**; routing table in `../AGENTS.md` |
+| `skills/` | repo-local workflow skills (canonical; `.codex/skills/` is the Codex adapter) — **prefer these over plugin equivalents**; table in `skills/README.md` |
 | `worktrees/` | Claude-managed worktrees — do not read by default |
 
 Tier and push/merge authority are declared only in `../.agent-harness/tier.json`; read it live rather than copying its values into routing docs.
@@ -23,8 +23,11 @@ Tier and push/merge authority are declared only in `../.agent-harness/tier.json`
 
 - Use `../docs/WORKTREE_AGENT_PROTOCOL.md` for Claude `isolation: "worktree"` sessions.
 - Do not pass absolute main-checkout paths into worktree worker prompts.
-- For a helper-created detached worktree, the complete printed handoff begins with the exact absolute target `worktree_guard.ps1` command using pinned Git, then invokes the bounded `Initialize-CodexIssueWorktree.ps1` command. The initializer binds the exact detached worktree/base before switching branches and removes a late-collision worktree only when its tracked, untracked, and ignored inventory is empty, otherwise preserving it for inspection. For headless launch, add both exact full-command PowerShell rules printed by the helper (guard plus initializer), including all applicable pinned arguments and no wildcard; no generic relative handoff rule is committed.
-- For headless workers, start `claude -p` in the exact helper-created target; do not add `--worktree`, which creates another checkout. Follow the reviewed effective-permission posture in the protocol: exclude user/local file sources, review committed permissions and explicit rules together, and treat managed policy as an administrator-owned trust boundary. The project does not enable the unsandboxed Windows PowerShell tool or grant generic PowerShell access, and it installs no runtime hooks; two narrow manual failure-ledger utility rules remain in committed settings. When the trusted host enables the tool for handoff, review those two rules together with the exact guard and initializer rules, then restore the prior host value when the launch returns. The launch allowlist is not the sole authorization boundary, and `acceptEdits` alone does not authorize the wrapper. Use the generic guard first only for worktrees that were not created by the detached-first helper.
+- Helper-created worktree (`scripts/git/New-CodexIssueWorktree.ps1`): the first worker commands are its complete
+  printed block — the exact pinned-Git `worktree_guard.ps1` command, then the bounded
+  `Initialize-CodexIssueWorktree.ps1` command. Headless `--allowedTools` authorization, the Bash launch rule,
+  and the PowerShell-tool posture are the "Helper Handoff Contract" in `../docs/WORKTREE_AGENT_PROTOCOL.md`.
+  For headless workers start `claude -p` in the exact target; never add `--worktree`.
 - Keep one coordinator responsible for final synthesis, docs updates, and verification claims.
 
 ## Coordinating with Codex

@@ -12,10 +12,7 @@ review doctrine here.
 
 ## Read First
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to
-the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines
-— never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root
-`CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load.
 
 ## Taskdeck Lenses
 
@@ -45,5 +42,5 @@ Flag these surfaces as Taskdeck risk context for the global pipeline:
 
 ## Targeted Verification
 
-- Backend: `dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~RelevantTest"`
-- Frontend: `cd frontend/taskdeck-web; npx vitest --run -t "relevant test"`
+- Backend: `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~RelevantTest"`
+- Frontend: `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 <path/to.spec.ts>` (bare `vitest --run` OOMs on this box)

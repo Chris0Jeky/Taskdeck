@@ -1,189 +1,90 @@
 ---
 name: taskdeck-issue-batch-orchestrator
-description: Coordinate high-autonomy Taskdeck issue batches from selection through worktrees, PRs, canonical review handoff, CI recovery, docs reconciliation, and handoff. Use when asked to take care of many issues, pick next issues, coordinate agents, or reconcile GitHub project status.
+description: Coordinate Taskdeck issue batches - selection, worktrees, worker prompts, PRs, review handoff, CI recovery, docs and project-board reconciliation.
+disable-model-invocation: true
 ---
 
 # Taskdeck Issue Batch Orchestrator
 
-Use this skill for Claude Code batch work. It mirrors the Codex workflow in `.codex/skills/taskdeck-issue-batch-orchestrator` while using Claude's worktree protocol where applicable.
-
-## Read First
-
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
-
-Read as needed: `docs/GITHUB_PROJECT_AUTOMATION.md` (Status/Priority project-board sync — this skill's operational reference).
+Claude Code batch coordination. This is the canonical copy; `.codex/skills/` holds the Codex adapter.
+Operational reference: `docs/GITHUB_PROJECT_AUTOMATION.md` (Status/Priority project-board sync).
 
 ## Coordinator Responsibilities
 
 The coordinator owns issue selection, dependency checks, worktree prompts, conflict resolution, PR
 quality, project status/priority sync, canonical review-pipeline evidence handoff, CI/comment
-recovery, docs rehydration, and final handoff.
-
-Do not delegate final synthesis. Do not silently defer work.
+recovery, docs rehydration, and final handoff. Do not delegate final synthesis. Do not silently defer work.
 
 ## Work Splitting
 
-Split only by non-overlapping ownership:
-
-- one backend issue per worker
-- one frontend issue per worker
-- one docs-only issue per worker
-- review workers only when the global pipeline requests Taskdeck lenses
-- one CI/conflict worker per failing PR
-
-Avoid concurrent edits to the same view, store, service, migration chain, project file, or canonical doc unless the coordinator controls merge order.
+Split only by non-overlapping ownership: one backend issue, one frontend issue, or one docs-only issue
+per worker; review workers only when the global pipeline requests Taskdeck lenses; one CI/conflict
+worker per failing PR. Avoid concurrent edits to the same view, store, service, migration chain, project
+file, or canonical doc unless the coordinator controls merge order.
 
 ## Read-only Inventory Hygiene
 
 - Route every delegated shell-backed Git or GitHub inventory command through
-  `scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1`; pass an argv array, for example
-  `& scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1 -Command @("gh", "pr", "list", "--state", "open")`.
-  Run its `-SelfTest` mode when changing the wrapper or this routing contract.
-- A purpose-built connector whose exposed operation is intrinsically read-only may be used directly.
-  Direct `git` or `gh` belongs to the coordinator's separately authorized mutation lane, not to a
-  delegated read-only inventory lane.
-- The wrapper is an opt-in routed entry point, not a project command-deny hook. It validates command
-  argv against an exact per-subcommand option allowlist and refuses anything unlisted, including
-  Git's unambiguous long-option abbreviations; never describe it as enforcement over commands that
-  bypass the entry point.
-- The allowlist is the only thing keeping the lane read-only, so do not widen it casually. A short
-  option that takes a value must be followed by a value that does not start with `-`, and an option
-  whose argument is optional is never listed as a short value flag: `git diff -U --output=<path>`
-  once passed validation and Git wrote the file. Use `--unified=<n>`, not `-U`. `git grep --no-index`
-  is unlisted because it reads untracked and gitignored working-tree files such as `.env.local`.
-- `git ls-remote` is the only remote-touching lane and requires an explicit lowercase `https://` URL.
-  A remote name, `ssh://`, `git://`, `file://`, `ext::`, or `user@host:path` operand is refused before
-  launch, and every Git launch pins `protocol.allow=never` with `protocol.https.allow=always` and
-  clears the `GIT_SSH*`, proxy, askpass, protocol, config-injection (`GIT_CONFIG_PARAMETERS`,
-  `GIT_CONFIG_COUNT`, `GIT_CONFIG_GLOBAL`, `GIT_CONFIG_SYSTEM`), and `GIT_EXEC_PATH` environment
-  variables.
-- A read-only inventory lane is filesystem-read-only as well as GitHub-read-only. Process bounded Git, GitHub, CI, and ProjectV2 responses in memory or stream them directly to the coordinator; never redirect a snapshot into the primary checkout or any worktree.
-- This is detection and accountability for accidental same-account filesystem mutation, not an OS security boundary against a malicious same-account process. The coordinator must still keep the lane filesystem-read-only and compare checkout status before and after the wave.
-- Before launching every lane, capture the bounded non-ignored status-artifact fingerprint with one nonempty caller token. Capture creates an authenticated, direct-child OS-temp state file outside all linked worktrees; do not put the token, state payload, or its digest in a handoff.
+  `scripts/github/Invoke-TaskdeckReadOnlyInventory.ps1` with an argv array, for example
+  `-Command @("gh", "pr", "list", "--state", "open")`; run its `-SelfTest` when changing the wrapper or
+  this routing contract. A connector whose exposed operation is intrinsically read-only may be used
+  directly. Direct `git`/`gh` belongs to the coordinator's separately authorized mutation lane.
+- The wrapper is an opt-in routed entry point with an exact per-subcommand option allowlist, not a
+  command-deny hook; never describe it as enforcement over commands that bypass it, and do not widen
+  the allowlist casually (its header records the `-U`, `git grep --no-index`, and `git ls-remote`
+  protocol/environment rules).
+- A lane is filesystem-read-only as well as GitHub-read-only: stream bounded responses to the
+  coordinator; never redirect a snapshot into the primary checkout or any worktree (root `.tmp-*.json`
+  is gitignored only as a belt — use the session scratchpad).
+- Wrap every lane in the checkout fingerprint guard:
 
   ```powershell
-  $checkout = (& git rev-parse --show-toplevel).Trim()
-  $fingerprintTool = [IO.Path]::GetFullPath((Join-Path -Path $checkout -ChildPath 'scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1'))
-  if (-not [IO.Path]::IsPathRooted($fingerprintTool) -or -not (Test-Path -LiteralPath $fingerprintTool -PathType Leaf)) {
-    throw 'checkout fingerprint guard path is not a valid absolute file'
-  }
-  $inventoryToken = [Guid]::NewGuid().ToString('N')
-
-  # 255 is a fail-closed sentinel. If the guard script cannot be resolved or
-  # launched at all, $LASTEXITCODE would otherwise still hold the previous
-  # command's success code and the wrapper would accept an unguarded lane.
-  $global:LASTEXITCODE = 255
-  $capture = & $fingerprintTool -Mode Capture -CheckoutPath $checkout -Token $inventoryToken
-  $captureExit = $LASTEXITCODE
-  if ($captureExit -ne 0) { exit $captureExit }
-  $inventoryState = ($capture | ConvertFrom-Json).path
-
-  # Launch the read-only lane only after the capture exit check succeeds.
-  # Compare and Cleanup MUST stay inside `finally`. A scriptblock or function
-  # lane that calls `exit` (or `break`) raises a flow-control exception that
-  # `catch` cannot see and that skips every statement after the `try`, so guard
-  # finalization placed after the try/catch never runs and the checkout is never
-  # compared. `finally` is the only control flow PowerShell still guarantees on
-  # those paths, and an `exit` inside `finally` supersedes the lane's in-flight
-  # exit code, so a guard failure can never be masked by the lane's own status.
-  $laneSucceeded = $false
-  $laneExit = $null
-  $laneError = $null
-  $guardExit = 0
-  try {
-    & $laneCommand
-    $laneSucceeded = $?
-    $laneExit = $LASTEXITCODE
-  }
-  catch {
-    $laneError = $_
-  }
-  finally {
-    $global:LASTEXITCODE = 255
-    & $fingerprintTool -Mode Compare -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
-    $compareExit = $LASTEXITCODE
-    if ($compareExit -ne 0) {
-      $guardExit = $compareExit # preserves state for investigation
-    }
-    else {
-      $global:LASTEXITCODE = 255
-      & $fingerprintTool -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
-      $cleanupExit = $LASTEXITCODE
-      if ($cleanupExit -ne 0) { $guardExit = $cleanupExit }
-    }
-    if ($guardExit -ne 0) {
-      # This `exit` unwinds the whole frame, so the statements after the
-      # try/catch — including `throw $laneError` — never run. Surface the lane
-      # exception text here or a lane that both threw and mutated the checkout
-      # is reported only as a mutation and its cause is lost.
-      if ($null -ne $laneError) {
-        [Console]::Error.WriteLine('Lane error superseded by guard disposition: ' + $laneError.Exception.Message)
-      }
-      exit $guardExit
-    }
-  }
-
-  if ($null -ne $laneError) { throw $laneError }
-  if (-not $laneSucceeded) {
-    # $LASTEXITCODE is only consulted when the lane itself failed: a successful
-    # function lane can still carry a handled native probe's stale exit code.
-    if ($null -ne $laneExit -and $laneExit -ne 0) { exit $laneExit }
-    exit 1
-  }
+  & scripts/agentic/Invoke-TaskdeckGuardedLane.ps1 -LaneCommand { <lane command> }
   ```
 
-- The fingerprint covers the checkout's HEAD commit and symbolic ref plus exact non-ignored Git status-listed regular files, subject to its limits. It detects same-path overwrite, deletion, and creation, and — because a clean-to-clean `git switch` or commit mutates the checkout without touching one status artifact — `ref-moved` and `head-moved`. Any unreadable, reparse, malformed, limit, state-authentication, or checkout-identity uncertainty fails closed. A Compare failure preserves its state and stops the wave; Cleanup is an explicit checked success-only step.
-- The final gate is `if (-not $laneSucceeded)` alone, not `-not $laneSucceeded -or $laneExit -ne 0`. `$LASTEXITCODE` is process-global and survives any native command the lane handled internally, so a lane that succeeded after probing with, say, a failing `git rev-parse` would be reported as failed on that stale code. `$?` is the only signal that describes the lane itself, and `$laneExit` is consulted only once `$?` has already said the lane failed.
-- Do not relocate Compare or Cleanup out of the `finally` block and do not add a bare `exit` between the lane call and that block. Guard finalization placed after the `try`/`catch` is skipped whenever a lane unwinds, which is the exact defect this recipe shape exists to prevent. A lane that terminates the session outside PowerShell control flow — `[Environment]::Exit`, a process kill — is outside the guarantee; the guard is accidental-mutation accountability, not a hostile-process boundary.
+  It captures the bounded non-ignored status fingerprint with a generated token, runs the lane, then
+  compares and cleans up inside a `finally` no lane `exit` can skip. A mutation, `ref-moved`, or
+  `head-moved` fails closed with the guard's exit code, preserves the state file for investigation, and
+  surfaces a superseded lane error on stderr. The guarantee boundary, limits, and control-flow
+  rationale are in that script's header; `scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1`
+  pins its shape. This is accidental-mutation accountability for a same-account lane, not an OS
+  security boundary; compare checkout status before and after the wave regardless.
 
 ## Structured Patch Discipline
 
-When editing with structured patches:
-
-- Default each `apply_patch` (or equivalent structured patch operation) to one target file. Use a multi-file operation only for a tightly homogeneous mechanical set where every file has its own independently stable anchor.
-- In prose or Unicode-bearing files, anchor hunks on nearby ASCII-stable headings or lines instead of typography-sensitive exact text.
-- After a context rejection, inspect the live target before retrying, then reduce the retry to the smallest independently anchored hunk.
-- Never repeat the same broad multi-file patch after it is rejected.
-- Record every repeated or unresolved patch rejection in the active orchestrator/run ledger and final handoff, even when work resumes.
-- Keep the record bounded and sanitized: include target(s), a failure class/error summary, a safe reproduction pointer when available, and the working invocation or workaround. Redact secrets, omit full patch payloads, and truncate oversized error context.
-- Then invoke `taskdeck-failure-capture` to classify the failure and escalate it to the repository failure ledger when that skill's criteria apply.
+- One target file per `apply_patch` (or equivalent); multi-file only for a tightly homogeneous
+  mechanical set where every file has its own stable anchor.
+- In prose or Unicode-bearing files, anchor hunks on nearby ASCII-stable lines, not typography.
+- After a context rejection, inspect the live target, then retry the smallest independently anchored
+  hunk; never repeat a rejected broad multi-file patch.
+- Record every repeated or unresolved patch rejection (targets, failure class, safe repro pointer,
+  working workaround; redacted, bounded) in the run ledger and final handoff, then invoke
+  `taskdeck-failure-capture` when its criteria apply.
 
 ## Worker Setup
 
-For isolated workers:
-
-1. Use Claude `isolation: "worktree"` or the repo worktree script from the main checkout, depending on runtime; the repo helper rejects linked-source invocation.
+1. Use Claude `isolation: "worktree"` or `scripts/git/New-CodexIssueWorktree.ps1` from the main
+   checkout (the helper rejects linked-source invocation).
 2. Do not include absolute main-checkout paths in worker prompts.
-3. When the repo helper was used, require its complete printed PowerShell handoff block as the first worker commands. Its first command invokes the exact absolute target `worktree_guard.ps1` with pinned Git; the bounded exact-target `Initialize-CodexIssueWorktree.ps1` follows on guard success, binds the detached base, and only then runs `switch -c`. A late collision removes the unused detached worktree only when its tracked, untracked, and ignored inventory is empty; otherwise it is preserved for inspection. The helper validates target guard/initializer bytes against reviewed raw blobs before emitting the block, but same-user replacement after emission remains outside this boundary. When launch authorization requires PowerShell rules, use both exact additive full-command rules printed by the helper (guard plus initializer), including every applicable pinned argument and no wildcard; pass its ordered rule array as two `--allowedTools` argv values, never a generic relative handoff rule. Start `claude -p` in the exact helper-created target without `--worktree`; accept project trust interactively before relying on project settings. The project does not enable the unsandboxed Windows PowerShell tool or grant generic PowerShell access; two narrow manual failure-ledger utility rules remain in committed settings. When the trusted host enables the tool for handoff, review those two rules together with the exact guard and initializer rules, restore the prior host value when the launch returns, then keep later commands on Git Bash as the documented portable shell. Taskdeck installs no project command-deny hook. For an untrusted launch, supply every allow through CLI argv. Unsupported clients require an interactive coordinator launch.
-4. From a Bash worker, launch a reviewed absolute PowerShell application in the worktree and run that whole block unchanged; never resolve bare `powershell`. Otherwise use the first guard command from `docs/WORKTREE_AGENT_PROTOCOL.md`; never substitute a PATH-first batch shim.
-5. Assign explicit file/module ownership.
-6. Tell workers they are not alone in the codebase and must not revert others' edits.
-7. Require targeted tests and handoff into the canonical review pipeline.
-8. Require every file-editing worker prompt to restate the structured patch discipline above.
+3. When the helper was used, the worker's first commands are its complete printed handoff block: the
+   exact pinned-Git `worktree_guard.ps1` command, then the bounded `Initialize-CodexIssueWorktree.ps1`
+   command. Headless authorization, PowerShell-tool posture, and the Bash launch rule are the
+   "Helper Handoff Contract" in `docs/WORKTREE_AGENT_PROTOCOL.md`; do not paraphrase them here.
+4. Assign explicit file/module ownership; tell workers they are not alone and must not revert others'
+   edits; require targeted tests and handoff into the canonical review pipeline; require every
+   file-editing worker prompt to restate the structured patch discipline above.
 
 ## Review And CI
 
-Enter ready PRs into the global `review-and-ship` pipeline (laws 2 and 11). Supply these surfaces
-as Taskdeck-specific risk context:
-
-- auth, sessions, tokens, security, secrets, redaction
-- migrations, persistence, deletion, import/export
-- capture, inbox, proposal review, execute, provenance
-- MCP or external-agent write surfaces
-- CI, project automation, scripts
-- broad frontend route/store/shell changes
-
-Use `taskdeck-pr-review-loop` and `taskdeck-ci-conflict-recovery` for Taskdeck lenses and recovery
-work. Reviewer invocation, counts, severity, convergence, aging, and merge disposition remain in
-the global pipeline.
+Enter ready PRs into the global `review-and-ship` pipeline (laws 2 and 11). Taskdeck risk context:
+auth/sessions/secrets, migrations/persistence/deletion/import-export, capture/inbox/proposal/execute/
+provenance, MCP or external-agent write surfaces, CI/project automation/scripts, broad frontend
+route/store/shell changes. Use `taskdeck-pr-review-loop` and `taskdeck-ci-conflict-recovery` for lenses
+and recovery; reviewer counts, severity, convergence, aging, and merge disposition stay in the pipeline.
 
 ## Final Reconciliation
 
-Before handoff, reconcile:
-
-- `docs/STATUS.md` when shipped reality changed
-- `docs/IMPLEMENTATION_MASTERPLAN.md` when sequencing or delivery history changed
-- `docs/TESTING_GUIDE.md` when testing expectations or totals changed
-- `docs/MANUAL_TEST_CHECKLIST.md` or runbooks when manual verification became recurring
-- GitHub project `Status` and `Priority` when issue/PR state changed
-
+Before handoff, reconcile `docs/STATUS.md` (shipped reality), `docs/IMPLEMENTATION_MASTERPLAN.md`
+(sequencing/delivery history), `docs/TESTING_GUIDE.md` (testing expectations or totals),
+`docs/MANUAL_TEST_CHECKLIST.md` or runbooks (recurring manual verification), and the GitHub project
+`Status`/`Priority` fields.

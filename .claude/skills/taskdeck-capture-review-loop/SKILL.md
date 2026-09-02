@@ -1,6 +1,7 @@
 ---
 name: taskdeck-capture-review-loop
-description: Protect Taskdeck's core capture-review-apply-board loop. Use when touching Inbox, capture, triage, automation proposals, proposal summaries, approve-reject-execute behavior, provenance, or board handoff semantics across backend or frontend.
+description: Protect the capture -> review -> explicit apply -> board loop - inbox, triage, proposals, approve/reject/execute, provenance, board handoff.
+paths: ["backend/**", "frontend/**"]
 ---
 
 # Taskdeck Capture Review Loop
@@ -11,7 +12,7 @@ Protect the central Taskdeck loop:
 
 ## Read first
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them. The capture→review→board seam row in the map names the exact entry points and the preview==Apply (#1235) invariant.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load. The capture→review→board seam row in the map names the exact entry points and the preview==Apply (#1235) invariant.
 
 Read as needed:
 

@@ -36,8 +36,8 @@ owns any Taskdeck-specific intake and review design that remains after consolida
 
 ## Codex skill packs
 
-Repo-local skills live in `.codex/skills/` (Codex) and `.claude/skills/` (Claude); they supplement this
-file, never override it. Start at the respective `README.md`. Routing:
+Repo-local skills live in `.claude/skills/` (canonical) and `.codex/skills/` (the Codex adapter); they supplement
+this file, never override it. Start at the respective `README.md`. Routing:
 
 | Situation | Skill |
 | --- | --- |
@@ -58,7 +58,7 @@ file, never override it. Start at the respective `README.md`. Routing:
 ## Codex worktree safety
 
 - Use `scripts/git/New-CodexIssueWorktree.ps1` to create isolated issue worktrees under `.worktrees/`.
-- For a helper-created detached worktree, the first worker command must be the helper's complete printed `scripts/worktree_guard.ps1` command with pinned Git, followed by its bounded `scripts/git/Initialize-CodexIssueWorktree.ps1` command. The initializer verifies the exact detached worktree/base before `switch -c`; a late collision removes the unused worktree only when its tracked, untracked, and ignored inventory is empty, otherwise preserving it for inspection. For other already-created worktrees, first run `powershell -File scripts/worktree_guard.ps1` (or `source scripts/worktree_guard.sh` in Bash).
+- For a helper-created detached worktree, the first worker command must be the helper's complete printed `scripts/worktree_guard.ps1` command with pinned Git, followed by its bounded `scripts/git/Initialize-CodexIssueWorktree.ps1` command. Late-collision handling, the Bash launch rule, headless authorization, and the PowerShell-tool posture are the "Helper Handoff Contract" in `docs/WORKTREE_AGENT_PROTOCOL.md`. For other already-created worktrees, first run `powershell -File scripts/worktree_guard.ps1` (or `source scripts/worktree_guard.sh` in Bash).
 - Do not pass absolute main-checkout paths to worktree workers. Derive paths in the current process with `git rev-parse --show-toplevel`; do not rely on a child PowerShell guard to export `$env:WT_PROJECT_DIR` back to its parent.
 - Only the coordinator should update canonical batch docs such as `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, and `docs/TESTING_GUIDE.md` unless a worker explicitly owns a docs-only issue.
 

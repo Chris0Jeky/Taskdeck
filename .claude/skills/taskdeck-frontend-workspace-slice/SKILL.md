@@ -1,6 +1,7 @@
 ---
 name: taskdeck-frontend-workspace-slice
-description: Implement Taskdeck frontend shell and workspace changes. Use when changing Vue routes, stores, components, Home, Today, Boards, workspace-mode flows, keyboard behavior, help states, or novice-first product legibility outside the core capture-review semantics.
+description: Implement Taskdeck frontend shell/workspace changes - Vue routes, stores, components, Home/Today/Boards, keyboard and help states, novice legibility.
+paths: ["frontend/**"]
 ---
 
 # Taskdeck Frontend Workspace Slice
@@ -9,7 +10,7 @@ Strengthen the shipped Taskdeck workspace without drifting into disconnected sur
 
 ## Read first
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them. Region rules auto-load from `frontend/taskdeck-web/CLAUDE.md`.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load. (`frontend/taskdeck-web/CLAUDE.md` is the region rule.)
 
 Read as needed:
 
