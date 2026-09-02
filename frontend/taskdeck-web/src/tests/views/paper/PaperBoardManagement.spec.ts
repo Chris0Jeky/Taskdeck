@@ -457,6 +457,28 @@ describe('PaperBoardView — column reorder', () => {
     await flushPromises()
     expect(moveRight.attributes('disabled')).toBeUndefined()
   })
+
+  it('ignores a column drop while a move-button reorder is in flight', async () => {
+    let resolveReorder!: () => void
+    mockBoardStore.reorderColumns.mockReturnValueOnce(
+      new Promise<Column[]>((resolve) => {
+        resolveReorder = () => resolve(columns)
+      }),
+    )
+    const wrapper = mountView()
+
+    void wrapper.findAll('[data-testid="paper-column-move-right"]')[0]!.trigger('click')
+    await nextTick()
+
+    const lanes = wrapper.findAll('[data-column-dnd-id]')
+    await lanes[1]!.get('[data-action="drag-column-handle"]').trigger('dragstart')
+    await lanes[2]!.trigger('drop')
+
+    expect(mockBoardStore.reorderColumns).toHaveBeenCalledTimes(1)
+
+    resolveReorder()
+    await flushPromises()
+  })
 })
 
 describe('PaperBoardView — add a column to a populated board', () => {

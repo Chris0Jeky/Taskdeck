@@ -267,7 +267,7 @@ const {
   handleColumnDragEnd,
   handleColumnDragOver,
   handleColumnDragLeave,
-  handleColumnDrop,
+  handleColumnDrop: performColumnDrop,
   handleCardDragStart,
   handleCardDragEnd,
 } = useBoardDragDrop(() => boardId.value, sortedColumns)
@@ -514,6 +514,22 @@ async function createCardInColumn(column: Column, title: string) {
 }
 
 const columnReorderBusy = ref(false)
+
+async function onColumnDrop(column: Column, event: DragEvent) {
+  if (!draggedColumn.value) return
+  if (columnReorderBusy.value) {
+    event.preventDefault()
+    handleColumnDragLeave()
+    return
+  }
+
+  columnReorderBusy.value = true
+  try {
+    await performColumnDrop(column, event)
+  } finally {
+    columnReorderBusy.value = false
+  }
+}
 
 /**
  * Keyboard/pointer column reorder, alongside the existing drag handle. Drag is
@@ -838,7 +854,7 @@ async function addStarterColumns() {
           @dragend="handleColumnDragEnd"
           @dragover="(event) => { handleColumnDragOver(column, event); onCardDragOverColumn(column, event) }"
           @dragleave="handleColumnDragLeave"
-          @drop="(event) => { handleColumnDrop(column, event); if (draggedCard) onCardDropOnColumn(column, event) }"
+          @drop="(event) => { onColumnDrop(column, event); if (draggedCard) onCardDropOnColumn(column, event) }"
         >
           <PaperBoardColumn
             :column="column"
