@@ -82,7 +82,7 @@ Configuration note:
 
 ### A) "Where is X implemented?" / "Find call sites"
 1. Use native `rg -n "<symbol>"` in repo root.
-2. If shell search is unavailable, use GitHub MCP `search_code`.
+2. If shell search is unavailable: Codex uses GitHub MCP `search_code`; Claude uses `gh search code` (GitHub MCP is not in `.mcp.json`).
 3. Open files from local workspace for edits.
 
 ### B) "How do I use API/library/framework feature X?"
@@ -103,7 +103,7 @@ Configuration note:
 2. Keep Playwright MCP for deterministic user-flow reproduction.
 
 ### D) "Plan/track work" / "Turn docs into issues"
-Use GitHub MCP:
+Codex: use GitHub MCP. Claude: use `gh` (`gh issue`, `gh pr`, `gh api`, `gh project`) — the same read/write rules apply:
 - Read: list/search issues, PRs, branches, commits
 - Write: create/update issues and PR metadata when explicitly requested
 
@@ -212,7 +212,7 @@ Why it fails on Windows:
 
 Required fallback:
 - use native shell `rg -n "<pattern>" .`
-- if shell search is unavailable, use GitHub MCP `search_code`
+- if shell search is unavailable, use GitHub MCP `search_code` (Codex) or `gh search code` (Claude)
 
 ---
 

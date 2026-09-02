@@ -8,7 +8,10 @@
   "includeCoAuthoredBy": false,
   "enableAllProjectMcpServers": true,
   "worktree": {
-    "symlinkDirectories": ["node_modules", "frontend/taskdeck-web/node_modules"]
+    "symlinkDirectories": [
+      "node_modules",
+      "frontend/taskdeck-web/node_modules"
+    ]
   },
   "permissions": {
     "defaultMode": "acceptEdits",
@@ -63,13 +66,23 @@
       "Bash(git remote:*)",
       "Bash(git push:*)",
       "Bash(git worktree:*)",
-      "Bash(gh:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh api:*)",
+      "Bash(gh run:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh release:*)",
+      "Bash(gh project:*)",
+      "Bash(gh label:*)",
+      "Bash(gh search:*)",
+      "Bash(gh milestone:*)",
       "Bash(rg:*)",
       "Bash(cat:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
       "Bash(wc:*)",
-      "Bash(find:*)",
       "Bash(ls:*)",
       "Bash(pwd:*)",
       "Bash(docker compose:*)",

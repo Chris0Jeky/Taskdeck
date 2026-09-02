@@ -7,7 +7,7 @@ the contributor contract in `../AGENTS.md`; review doctrine in the global laws. 
 
 | Path | Purpose |
 | --- | --- |
-| `settings.json` | `acceptEdits` default, development permission rules (proving checks, `gh`, `dotnet`, `npm`, read-only shell), worktree symlinks, project MCP enablement; no repo runtime hooks or deny list. Rules are prefix rules: `Bash(gh:*)` matches every `gh` command, while `Bash(gh :*)` (with a space) matches nothing — `:*` is a wildcard only when it ends the token |
+| `settings.json` | `acceptEdits` default, development permission rules (proving checks, `gh`, `dotnet`, `npm`, read-only shell), worktree symlinks, project MCP enablement; no repo runtime hooks or deny list. Rules are prefix rules (`:*` is a wildcard only when it ends the token; `Bash(gh :*)` with a space matched nothing). `gh` is allowed per subcommand (`pr`, `issue`, `api`, `run`, `workflow`, `release`, `project`, `label`, `search`, `milestone`, `auth status`, `repo view`) so `gh repo delete`, `gh secret`, `gh variable`, and key management still prompt; `find` is not allowed because `-delete`/`-exec` would ride the read-only intent — use `rg` |
 | `settings.local.json` | gitignored machine-local overrides (output style, personal allows). Since Claude Code 2.1.257 **no project-scope file can grant `bypassPermissions` or `auto`** — a `defaultMode` set here is logged as ignored; those modes come only from user settings (`~/.claude/settings.json`), managed policy, or a launch flag (`--permission-mode bypassPermissions`, `--dangerously-skip-permissions`) |
 | `skills/` | 16 repo-local workflow skills — **prefer these over plugin equivalents**; routing table in `../AGENTS.md` |
 | `worktrees/` | Claude-managed worktrees — do not read by default |

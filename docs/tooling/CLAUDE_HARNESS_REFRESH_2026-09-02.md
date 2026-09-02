@@ -63,7 +63,7 @@ then confirm with `claude agents --json`. Commit in claude-config.
 5. `.mcp.json`: remove `context7` (connector covers it); remove `github` unless someone authenticates it
    via `/mcp` and a workflow needs a write `gh` cannot do; pin `chrome-devtools-mcp` instead of `@latest`;
    decide whether both `playwright` (executeautomation) and `chromeDevTools` stay — E2E proof uses the
-   Playwright CLI, not the MCP. Mirror the removals in `AGENTS.md` "MCP tooling" and `.codex/config.toml`.
+   Playwright CLI, not the MCP. Mirror the removals in `AGENTS.md` "MCP tooling" only — **not** in `.codex/config.toml`: Codex has no connector, so it keeps Context7 and its authenticated GitHub server (executed decision, PR A).
 6. `.claude/settings.local.json` (gitignored, owner's file): drop the ignored `defaultMode`.
 
 Verify: `claude --debug --debug-file <log> -p 'reply ok'` and grep the log for `ignored`/`failed to parse`;
@@ -113,7 +113,7 @@ Verify: `node scripts/check-docs-governance.mjs`, `node scripts/check-golden-pri
 8. Frontmatter: `disable-model-invocation: true` on the four heavy workflow skills (orchestrator,
    issue-to-pr, docs-sweep, pre-merge-gate) so they never auto-fire mid-task; `paths:` on
    `taskdeck-backend-slice` (`backend/**`), `taskdeck-frontend-workspace-slice` (`frontend/**`),
-   `taskdeck-capture-review-loop` (both) for path-precise activation; trim descriptions to ≤150 chars — with
+   `taskdeck-capture-review-loop` (both) for path-precise activation (`paths` is a documented skill frontmatter key — confirmed against the skills reference 2026-09-02; the headless probe reports such skills as "conditional"); trim descriptions to ≤150 chars — with
    16 local + 8 global + ~25 plugin skills the listing budget truncates long ones.
 9. Optional, not now (law 8): run `issue-to-pr` as `context: fork` + `agent: worktree-worker`. Revisit after
    the global `reviewer`/`worktree-worker` agents are proven registered.
