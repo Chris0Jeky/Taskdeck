@@ -12,8 +12,9 @@ Exit-code contract:
   - a Capture failure exits with the guard's code before the lane ever runs;
   - a Compare or Cleanup failure exits with the guard's code, preserves the state file for investigation,
     reports its path on stderr, and supersedes whatever the lane returned;
-  - otherwise a lane that threw rethrows, a lane that failed exits with its own nonzero code (or 1), and a
-    clean successful lane exits 0.
+  - otherwise a lane that threw rethrows with `$LASTEXITCODE` set to 1, a lane that failed exits with its own
+    nonzero code (or 1), and a clean successful lane exits 0. Callers must check `$LASTEXITCODE` (or catch)
+    and stop the wave on any nonzero result.
 
 Guarantee boundary: this is accidental-mutation accountability for a same-account lane, not a security
 boundary against a hostile process. `[Environment]::Exit` or a process kill inside the lane is outside it.
@@ -145,7 +146,12 @@ finally {
     }
 }
 
-if ($null -ne $laneError) { throw $laneError }
+if ($null -ne $laneError) {
+    # `throw` does not touch $LASTEXITCODE, which the clean Cleanup just left at 0;
+    # a caller that reads the code (the repo's PowerShell idiom) must not see success.
+    $global:LASTEXITCODE = 1
+    throw $laneError
+}
 if (-not $laneSucceeded) {
     # $LASTEXITCODE is only consulted when the lane itself failed: a successful
     # lane can still carry a handled native probe's stale exit code.

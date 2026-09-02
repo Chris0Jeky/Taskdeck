@@ -39,14 +39,18 @@ file, or canonical doc unless the coordinator controls merge order.
 - Wrap every lane in the checkout fingerprint guard:
 
   ```powershell
-  & scripts/agentic/Invoke-TaskdeckGuardedLane.ps1 -LaneCommand { <lane command> }
+  $checkout = (& git rev-parse --show-toplevel).Trim()
+  & (Join-Path $checkout 'scripts/agentic/Invoke-TaskdeckGuardedLane.ps1') -LaneCommand { <lane command> }
+  if ($LASTEXITCODE -ne 0) { throw "guarded lane failed ($LASTEXITCODE): stop the wave; state is preserved" }
   ```
 
   It captures the bounded non-ignored status fingerprint with a generated token, runs the lane, then
   compares and cleans up inside a `finally` no lane `exit` can skip. A mutation, `ref-moved`, or
   `head-moved` fails closed with the guard's exit code, preserves the state file for investigation, and
-  surfaces a superseded lane error on stderr. The guarantee boundary, limits, and control-flow
-  rationale are in that script's header; `scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1`
+  surfaces a superseded lane error on stderr. **A nonzero exit stops the wave**: the script no longer
+  unwinds the coordinator's own frame the way the inline recipe did, so the `$LASTEXITCODE` check above is
+  mandatory; Compare failure preserves its state for investigation, and Cleanup is an explicit checked
+  success-only step. The guarantee boundary, limits, and control-flow rationale are in that script's header; `scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1`
   pins its shape. This is accidental-mutation accountability for a same-account lane, not an OS
   security boundary; compare checkout status before and after the wave regardless.
 

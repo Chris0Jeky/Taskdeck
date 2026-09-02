@@ -86,7 +86,9 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
 - Before launching every lane, capture the bounded non-ignored status-artifact fingerprint with one nonempty caller token. Capture creates an authenticated, direct-child OS-temp state file outside all linked worktrees; do not put the token, state payload, or its digest in a handoff.
 
   ```powershell
-  & scripts/agentic/Invoke-TaskdeckGuardedLane.ps1 -LaneCommand { <lane command> }
+  $checkout = (& git rev-parse --show-toplevel).Trim()
+  & (Join-Path $checkout 'scripts/agentic/Invoke-TaskdeckGuardedLane.ps1') -LaneCommand { <lane command> }
+  if ($LASTEXITCODE -ne 0) { throw "guarded lane failed ($LASTEXITCODE): stop the wave; state is preserved" }
   ```
 
 - The fingerprint covers the checkout's HEAD commit and symbolic ref plus exact non-ignored Git status-listed regular files, subject to its limits. It detects same-path overwrite, deletion, and creation, and — because a clean-to-clean `git switch` or commit mutates the checkout without touching one status artifact — `ref-moved` and `head-moved`. Any unreadable, reparse, malformed, limit, state-authentication, or checkout-identity uncertainty fails closed. A Compare failure preserves its state and stops the wave; Cleanup is an explicit checked success-only step.

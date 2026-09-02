@@ -658,6 +658,25 @@ Run-Test 'lets a nonzero exiting lane keep its code once the guard is clean' {
     }
 }
 
+Run-Test 'fails a throwing lane once the guard is clean instead of reporting success' {
+    New-TestRepository {
+        param($repo)
+        $token = 'throwing-clean-lane-token'
+        $run = Invoke-ExitingLaneWrapper -Repo $repo -Token $token -LaneExit 0 -ThrowMessage 'lane threw on a clean checkout'
+        try {
+            Assert-True ($run.stdout.Contains('LANE-RAN')) ('the lane never ran: ' + $run.stderr)
+            Assert-True ($run.stdout.Contains('"classification":"cleaned"')) ('Cleanup was skipped by the throwing lane: ' + $run.stdout)
+            Assert-True ($run.exitCode -ne 0) 'a throwing lane with a clean guard was reported as success'
+            Assert-True ($run.stderr.Contains('lane threw on a clean checkout')) ('the lane error text was lost: ' + $run.stderr)
+        }
+        finally {
+            if (-not [string]::IsNullOrWhiteSpace($run.state)) {
+                Cleanup-State -Repo $repo -State $run.state -Token $token
+            }
+        }
+    }
+}
+
 Run-Test 'detects a clean-to-clean branch switch between capture and compare' {
     New-TestRepository {
         param($repo)
