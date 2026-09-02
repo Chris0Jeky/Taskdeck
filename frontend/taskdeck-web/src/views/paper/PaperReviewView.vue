@@ -75,6 +75,7 @@ const {
   proposalsLoading,
   unavailableProposalId,
   queueAccessRevoked,
+  queueRefreshStale,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -1857,6 +1858,17 @@ async function onClearBoardScope() {
       @file-away-all="onFileAwayBulk"
       @clear-scope="onClearBoardScope"
     />
+
+    <p
+      v-if="queueRefreshStale && !queueAccessRevoked"
+      class="paper-review-deep__queue-stale tk-meta"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-queue-stale"
+    >
+      This review queue may be out of date. Showing the last available proposals while Taskdeck retries.
+    </p>
 
     <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
       <div

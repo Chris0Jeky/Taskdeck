@@ -5,7 +5,10 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import type { CaptureItem } from '../../../../types/capture'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
-import { REVIEW_QUEUE_REFRESH_MS } from '../../../../composables/useReviewProposals'
+import {
+  REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+  REVIEW_QUEUE_REFRESH_MS,
+} from '../../../../composables/useReviewProposals'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 
@@ -2996,6 +2999,30 @@ describe('PaperReviewView', () => {
       // "Nothing waiting. Good." -- the exact false negative #2194 is about.
       expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
       expect(wrapper.text()).not.toContain('Nothing waiting')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders and politely announces a degraded retained queue after repeated poll failures', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.find('[data-testid="paper-review-queue-stale"]')
+      expect(stale.exists()).toBe(true)
+      expect(stale.attributes('role')).toBe('status')
+      expect(stale.attributes('aria-live')).toBe('polite')
+      expect(stale.text()).toContain('may be out of date')
+      expect(wrapper.text()).toContain('Split "dark mode" into 3 cards')
       wrapper.unmount()
     } finally {
       vi.useRealTimers()

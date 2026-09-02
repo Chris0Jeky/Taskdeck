@@ -3,7 +3,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../types/automation'
 import ReviewView from '../../views/ReviewView.vue'
-import { REVIEW_QUEUE_REFRESH_MS } from '../../composables/useReviewProposals'
+import {
+  REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+  REVIEW_QUEUE_REFRESH_MS,
+} from '../../composables/useReviewProposals'
 import { resetProposalDisplayNamesForTests } from '../../composables/useProposalDisplayNames'
 
 const vueHelpers = vi.hoisted(async () => {
@@ -342,6 +345,32 @@ describe('ReviewView', () => {
     expect(live.attributes('role')).toBe('status')
     expect(live.attributes('aria-live')).toBe('polite')
     expect(live.text()).toContain('0 proposals awaiting review')
+  })
+
+  it('renders and politely announces a degraded retained queue after repeated poll failures', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      const { wrapper } = await mountAt('/workspace/review')
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.find('[data-testid="review-queue-stale"]')
+      expect(stale.exists()).toBe(true)
+      expect(stale.attributes('role')).toBe('status')
+      expect(stale.attributes('aria-live')).toBe('polite')
+      expect(stale.text()).toContain('may be out of date')
+      expect(wrapper.find('[data-testid="review-queue-live"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows guided empty-state actions when there are no proposals', async () => {
