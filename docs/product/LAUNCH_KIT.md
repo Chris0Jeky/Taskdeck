@@ -16,7 +16,7 @@ sentence that cannot inherit one of these shipped sources.
 
 | Claim allowed in this kit | Shipped evidence | Owner | Last verified |
 | --- | --- | --- | --- |
-| Windows users can verify, extract, and double-click a portable ZIP; the listener remains local. | [Shipped ZIP/provenance receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L31-L35) and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Release maintainer | 2026-09-02 |
+| Windows users can verify, extract, and double-click a portable ZIP; untouched packaged defaults are loopback-only. | [Shipped ZIP/provenance receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L31-L35) and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Release maintainer | 2026-09-02 |
 | Self-hosters can run the supported Compose baseline. | [Shipped container baseline](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L873-L873) and [README Compose instructions](../../README.md) | Release maintainer | 2026-09-02 |
 | A workspace is local SQLite data the operator controls; back up its accompanying local configuration/keys too. | [Shipped local-first direction](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L354-L354), [README local-first ownership](../../README.md), and [upgrade guide](../../UPGRADING.md) | Operator | 2026-09-02 |
 | Captured text can become source-linked proposals; the review/apply loop is a separate, explicit user decision. | [Live-verified proposal loop](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L105-L105) | Product maintainer | 2026-09-02 |
@@ -28,6 +28,13 @@ sentence that cannot inherit one of these shipped sources.
 
 ## Posting boundary and release facts to re-check
 
+- **Publication gate:** Before every maintainer post, and again after any
+  private-repository cutover, resolve and record SC-8's public-home decision
+  for the release assets and public-source messaging. While signed out, verify
+  every ZIP and checksum download plus every documentation, support, and
+  security URL used by the draft from that public home. Complete a real
+  anonymous download of both the ZIP and its checksum and verify that pair.
+  **Do not publish if no public home works for every required link.**
 - The maintainer posts. This document does **not** authorize an agent or
   contributor to submit to Reddit, Hacker News, dev.to, GitHub, or any other
   channel.
@@ -41,6 +48,17 @@ sentence that cannot inherit one of these shipped sources.
   them, route public questions to [Taskdeck Issues](https://github.com/Chris0Jeky/Taskdeck/issues),
   not to a nonexistent Discussion category.
 
+## Listener and network-binding boundary
+
+Untouched packaged defaults are loopback-only; that statement does not survive
+an explicit or inherited listener override. `urls` (including command-line
+`--urls`) or `ASPNETCORE_URLS`; bare `HTTP_PORTS` / `HTTPS_PORTS`;
+`DOTNET_HTTP_PORTS` / `DOTNET_HTTPS_PORTS`; their
+`ASPNETCORE_HTTP_PORTS` / `ASPNETCORE_HTTPS_PORTS` variants; and
+`Kestrel:Endpoints` settings may override packaged loopback selection and
+expose Taskdeck. Do not use wildcard or non-loopback bindings unless exposure
+is intentional and the operator has reviewed the resulting network boundary.
+
 ## Maintainer-voice drafts
 
 ### r/selfhosted
@@ -52,6 +70,10 @@ somewhere without handing an AI the keys to their board.
 
 For Windows, download the ZIP from the release page, verify its SHA-256,
 extract it, and double-click `Taskdeck.Api.exe`. For Docker:
+
+Follow the canonical [README Compose setup](../../README.md): copy
+`deploy/.env.example` to `deploy/.env`, then populate `TASKDECK_JWT_SECRET`
+and `TASKDECK_CONNECTORS_ENCRYPTION_KEY` in `deploy/.env` before running:
 
 ```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline up -d --build
@@ -75,7 +97,11 @@ The Windows artifact is currently unsigned, so SmartScreen may say “Windows
 protected your PC.” Only continue after downloading from the official release
 and verifying the published SHA-256; do not turn SmartScreen off globally.
 
-Known limits are below. Questions and bugs go to the [issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues).
+Known limits are below. Questions and non-security bugs go to the
+[issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues). Suspected
+vulnerabilities must not be opened as a public issue, discussion, or PR; use
+the private route in the [security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+until coordinated disclosure.
 
 ### Show HN
 
@@ -95,7 +121,11 @@ Workspace data is SQLite data the operator owns, with recovery guidance in the
 I would especially value reports about installation, the review flow, and
 where the local-first boundary is unclear. The Windows ZIP is unsigned at this
 time; verify its SHA-256 before running it. Please use the
-[issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues) for questions or bugs.
+[issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues) for questions
+and ordinary, non-security bugs. Suspected vulnerabilities must not be opened
+as a public issue, discussion, or PR; use the private route in
+[the security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+until coordinated disclosure.
 
 **First comment:**
 
@@ -133,7 +163,10 @@ The project is candid about its beta limits. The Windows ZIP is unsigned,
 there is no hosted instance, and several product boundaries remain open. If
 this workflow is useful, install it from the official release, verify the
 checksum, and use the [issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues)
-to report what works or does not.
+to report ordinary, non-security problems. Suspected vulnerabilities must not
+be opened as a public issue, discussion, or PR; use the private route in
+[the security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+until coordinated disclosure.
 
 ### awesome-selfhosted — do not submit yet
 
@@ -196,21 +229,29 @@ policy summary, not legal advice.
 
 ## First 48 hours after a maintainer post
 
-1. **Same day:** triage every credible bug report into a GitHub issue, label it
-   with the observed impact, and acknowledge the report without asking for
-   secrets, private workspace content, keys, or a database copy. Use the
-   [security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
-   for a security concern.
+1. **Same day:** triage every credible ordinary, non-security bug report into
+   a public GitHub issue, label it with the observed impact, and acknowledge
+   the report without asking for secrets, private workspace content, keys, or
+   a database copy. A suspected vulnerability must not become a public issue,
+   discussion, or PR: route it privately through
+   [SECURITY.md](../../SECURITY.md) until coordinated disclosure.
 2. **Same day:** answer installation and product questions on the issue tracker
-   while Discussions remain disabled. If Discussions are later enabled, update
+   while Discussions remain disabled. Do not continue a suspected vulnerability
+   in that public channel; use the private [SECURITY.md](../../SECURITY.md)
+   route until coordinated disclosure. If Discussions are later enabled, update
    this kit and route questions to the announced category instead.
-3. **Fix boundary:** “same-day” promises same-day triage and issue creation —
-   not a guaranteed same-day release. A same-day fix is considered only for a
+3. **Fix boundary:** “same-day” promises same-day triage and public issue
+   creation for ordinary, non-security reports — not a guaranteed same-day
+   release. Suspected vulnerabilities stay off public issues, discussions, and
+   PRs and use the private [SECURITY.md](../../SECURITY.md) route until
+   coordinated disclosure. A same-day fix is considered only for a
    reproducible security problem, data-loss risk, or release-blocking
    regression with a safe, narrowly scoped patch and maintainer release
    authority. Everything else gets a tracked issue and an honest status.
-4. **At 24 and 48 hours:** re-check the official release, checksum, and issue
-   intake; publish no new capability claim unless it has a shipped source.
+4. **At 24 and 48 hours:** re-check the official release, checksum, ordinary
+   public-issue intake, and the private [SECURITY.md](../../SECURITY.md)
+   reporting route; publish no new capability claim unless it has a shipped
+   source.
 
 ### Pinned known-issues text (use only if Discussions become enabled)
 
@@ -220,9 +261,13 @@ policy summary, not legal advice.
 > Windows ZIP is currently unsigned; verify the official SHA-256 before you run
 > it. Known limits include no audio ingestion/diarization, unwired artefact
 > extraction, unencrypted TOTP seeds at rest, and per-proposal Apply. Please
-> report reproducible bugs with redacted steps; never post secrets, keys, or
-> private workspace data. We triage bugs to issues the same day, but do not
-> promise every fix the same day.
+> report reproducible non-security bugs with redacted steps; never post
+> secrets, keys, or private workspace data. Suspected vulnerabilities must not
+> be posted as a public issue, discussion, or PR; use the private
+> [security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+> route until coordinated disclosure. We
+> triage ordinary bugs to issues the same day, but do not promise every fix the
+> same day.
 
 Until Discussions are actually enabled, do not post this pinned text: the live
 public channel is [Taskdeck Issues](https://github.com/Chris0Jeky/Taskdeck/issues).
@@ -230,8 +275,15 @@ public channel is [Taskdeck Issues](https://github.com/Chris0Jeky/Taskdeck/issue
 ## Before a maintainer publishes
 
 - [ ] Confirm the final `v0.3.0` release exists and replace RC-specific links.
+- [ ] Resolve and record SC-8's public-home decision. After any private
+      cutover, while signed out, open every ZIP/checksum, documentation,
+      support, and security URL in the selected draft; complete a real
+      anonymous ZIP/checksum download and verification. Do not publish unless
+      every required link works from a public home.
 - [ ] Re-run the Windows ZIP checksum and start path; run the supported Compose
-      path separately.
+      path separately after the canonical README setup: copy
+      `deploy/.env.example` to `deploy/.env` and populate
+      `TASKDECK_JWT_SECRET` and `TASKDECK_CONNECTORS_ENCRYPTION_KEY`.
 - [ ] Confirm the unsigned/SmartScreen wording against the actual release
       artifact; never claim signing or universal SmartScreen behaviour.
 - [ ] Re-check the telemetry destination table and every issue-linked gap.
