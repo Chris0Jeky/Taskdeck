@@ -2648,7 +2648,7 @@ Tracking issues: `#683`, `#680`, `#685`, `#686`, `#687`, `#688`
 
 New test files:
 - `boardStore.wipLimit.spec.ts` (7 tests): WIP-limit toast deduplication regression for `createCard` and `moveCard`; guards against future double-toast introduction
-- `sessionStore.authToast.spec.ts` (20 tests): auth-flow toast lifecycle — login/register/OAuth failure and success toasts, cross-flow isolation, auto-removal independence; uses real `toastStore` backed by fresh Pinia
+- `sessionStore.authToast.spec.ts` (23 tests): auth-flow toast lifecycle — login/register/OAuth failure and success toasts, repeated credential-login failure receipt replacement with diagnostics, cross-flow isolation, and auto-removal independence; uses real `toastStore` backed by fresh Pinia
 - `router/authGuard.spec.ts` (new): auth guard decision table — unauthenticated redirect, expired-token cleanup, authenticated pass-through, deflection from /login when authenticated, demo mode, 12-route exhaustive table
 - `router/workspaceRouteStability.spec.ts` (new): workspace mode persistence across simulated reloads, hydration drift prevention, `resetForLogout` cleanup
 - `InboxView.spec.ts` (+21 tests): single-item triage action states (per status variant), bulk action bar visibility and count, batchBusy disabled state, select-all behavior; all assertions on DOM state

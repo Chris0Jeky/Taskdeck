@@ -1198,7 +1198,7 @@ Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
     - board header presence label bug fixed (`#683`/`#744`): username/email flip resolved with `normalizePresenceMembers()` in `BoardView.vue`; adversarial review confirmed no edge cases; 3 new tests
     - manual card provenance empty state fixed (`#680`/`#754`): 3 bugs caught and fixed by adversarial review (overly broad 404 swallow, global Axios log regression, empty-state flash); `CardModal.vue` now shows "No capture provenance available." correctly; 4 new tests
     - WIP-limit toast dedup regression tests (`#686`/`#745`): 7 tests in `boardStore.wipLimit.spec.ts` for `createCard` and `moveCard`
-    - auth-flow toast lifecycle tests (`#685`/`#742`): 20 tests in `sessionStore.authToast.spec.ts`; adversarial review fixed timer leak, mock isolation, inverted assertion
+    - auth-flow toast lifecycle tests (`#685`/`#742`, extended by `#2373`/`#2384`): 23 tests in `sessionStore.authToast.spec.ts`; adversarial review fixed timer leak, mock isolation, and an inverted assertion, while the later credential-login slice pins repeated-failure receipt replacement, structured diagnostics, cross-flow isolation, and success cleanup
     - router auth guard + workspace stability tests (`#687`/`#748`): `authGuard.spec.ts` and `workspaceRouteStability.spec.ts` with 16-case exhaustive guard table; pre-existing `AuthControllerEdgeCaseTests.cs` compile error fixed
     - inbox triage action visibility tests (`#688`/`#743`): 21 new tests in `InboxView.spec.ts` for single-item triage and bulk action bar visibility
     - webhook HMAC verification tests (`#726`/`#750`): 11 tests in `OutboundWebhookHmacDeliveryTests.cs` for header format, round-trip, wrong-key, secret rotation, timing-safe comparison
