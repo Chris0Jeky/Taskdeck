@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../../../store/boardStore'
 import PaperBoardDialogShell from './PaperBoardDialogShell.vue'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import type { Column } from '../../../types/board'
 import { logError } from '../../../utils/errorReporting'
+import { useRealtimeSafeDialogDraft } from '../../../composables/useRealtimeSafeDialogDraft'
 
 /**
  * PaperColumnSettingsDialog — Paper-skinned rename / WIP-limit / delete for one
@@ -46,23 +47,35 @@ const wipLimit = ref<number | null>(null)
 const confirmingDelete = ref(false)
 const busy = ref(false)
 const error = ref<string | null>(null)
+let seededName = ''
+let seededHasWipLimit = false
+let seededWipLimit: number | null = null
 
 /**
- * Re-seed the form whenever the dialog opens or the target column changes, so a
- * cancelled edit never leaks into the next open.
+ * Opening or switching targets always seeds the latest values. A same-column
+ * realtime replacement only re-seeds while the user has not changed the draft.
  */
-watch(
-  [() => props.column, () => props.isOpen],
-  ([column, isOpen]) => {
-    if (!column || !isOpen) return
+useRealtimeSafeDialogDraft({
+  isOpen: () => props.isOpen,
+  source: () => props.column,
+  sourceKey: (column) => column.id,
+  seed: (column) => {
     name.value = column.name
     hasWipLimit.value = column.wipLimit != null && column.wipLimit > 0
     wipLimit.value = column.wipLimit
+    seededName = name.value
+    seededHasWipLimit = hasWipLimit.value
+    seededWipLimit = wipLimit.value
     confirmingDelete.value = false
     error.value = null
   },
-  { immediate: true },
-)
+  isDirty: () =>
+    busy.value ||
+    confirmingDelete.value ||
+    name.value !== seededName ||
+    hasWipLimit.value !== seededHasWipLimit ||
+    wipLimit.value !== seededWipLimit,
+})
 
 const canDelete = computed(() => props.cardCount === 0)
 
@@ -83,7 +96,7 @@ async function save() {
   error.value = null
   try {
     await boardStore.updateColumn(props.boardId, props.column.id, {
-      // `null` means "leave unchanged" in UpdateColumnDto — mirrors ColumnEditModal.
+      // A null name leaves it unchanged; a null wipLimit clears the limit.
       name: name.value.trim() !== props.column.name ? name.value.trim() : null,
       wipLimit: hasWipLimit.value ? wipLimit.value : null,
       position: null,

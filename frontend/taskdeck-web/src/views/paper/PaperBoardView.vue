@@ -37,8 +37,10 @@ const props = withDefaults(
     /** Card visual variant — propagated to every column. */
     cardVariant?: PaperBoardCardVariant
     selectedCardId?: string | null
+    /** Lane currently targeted by BoardView's keyboard model. */
+    selectedColumnId?: string | null
   }>(),
-  { cardVariant: 'index', selectedCardId: null },
+  { cardVariant: 'index', selectedCardId: null, selectedColumnId: null },
 )
 
 const emit = defineEmits<{
@@ -511,12 +513,16 @@ async function createCardInColumn(column: Column, title: string) {
   }
 }
 
+const columnReorderBusy = ref(false)
+
 /**
  * Keyboard/pointer column reorder, alongside the existing drag handle. Drag is
  * the only reorder Legacy offers; it is unusable without a pointer, so Paper
  * adds explicit controls over the same `reorderColumns` action.
  */
 async function moveColumn(column: Column, direction: 'left' | 'right') {
+  if (columnReorderBusy.value) return
+
   const columns = sortedColumns.value
   const index = columns.findIndex((c) => c.id === column.id)
   const targetIndex = direction === 'left' ? index - 1 : index + 1
@@ -527,6 +533,7 @@ async function moveColumn(column: Column, direction: 'left' | 'right') {
   if (!removed) return
   reordered.splice(targetIndex, 0, removed)
 
+  columnReorderBusy.value = true
   try {
     await boardStore.reorderColumns(
       boardId.value,
@@ -534,6 +541,8 @@ async function moveColumn(column: Column, direction: 'left' | 'right') {
     )
   } catch (error) {
     logError('Failed to reorder columns (paper):', error)
+  } finally {
+    columnReorderBusy.value = false
   }
 }
 
@@ -840,8 +849,10 @@ async function addStarterColumns() {
             :style="columnWidthStyle"
             :is-drag-over="dragOverColumnId === column.id"
             :selected-card-id="activeSelectedCardId"
+            :selected="column.id === props.selectedColumnId"
             :can-move-left="idx > 0"
             :can-move-right="idx < sortedColumns.length - 1"
+            :reorder-busy="columnReorderBusy"
             :composer-open="composerColumnId === column.id"
             :composer-busy="composerBusy"
             :composer-error="composerError"

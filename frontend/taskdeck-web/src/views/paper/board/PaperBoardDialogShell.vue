@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { ref } from 'vue'
 import PaperKbd from '../../../components/paper/PaperKbd.vue'
 import { useEscapeToClose } from '../../../composables/useEscapeToClose'
+import { useDialogFocusManagement } from '../../../composables/useDialogFocusManagement'
+import { useVisualViewport } from '../../../composables/useVisualViewport'
 
 /**
  * PaperBoardDialogShell — the shared paper-card chrome for the two board
@@ -40,39 +42,27 @@ useEscapeToClose(() => props.isOpen, close)
  * Focus on open, focus back on close (GH-1959).
  *
  * Opening a modal that leaves focus on the button behind it is how a keystroke
- * aimed at the dialog reaches the board instead. This mirrors `TdDialog.vue`'s
- * approach for these two behaviours ONLY — the full Tab trap and the
- * visual-viewport sizing are tracked separately as GH-1975 and deliberately not
- * copied here.
+ * aimed at the dialog reaches the board instead. Focus entry, Tab trapping, and
+ * restore now use the same composable as `TdDialog.vue`; visual-viewport sizing
+ * uses the same shared viewport observer.
  *
- * The restore runs from `onUnmounted` as well as the watcher because these
+ * The shared restore runs from `onUnmounted` as well as the watcher because these
  * dialogs are `v-if`-ed by the parent on the same state as `isOpen`: closing
  * usually destroys the component before the watcher can see `false`. Whichever
  * path runs first clears the reference, so the other is a no-op.
  */
 const dialogRef = ref<HTMLElement | null>(null)
-let previouslyFocusedElement: HTMLElement | null = null
+const { trapFocus } = useDialogFocusManagement({
+  isOpen: () => props.isOpen,
+  dialogRef,
+})
 
-function restoreFocus() {
-  previouslyFocusedElement?.focus()
-  previouslyFocusedElement = null
-}
-
-watch(
-  () => props.isOpen,
-  async (isOpen) => {
-    if (isOpen) {
-      previouslyFocusedElement = document.activeElement as HTMLElement | null
-      await nextTick()
-      dialogRef.value?.focus()
-    } else {
-      restoreFocus()
-    }
-  },
-  { immediate: true },
-)
-
-onUnmounted(restoreFocus)
+// Match the visual viewport so a software keyboard cannot cover footer actions.
+// The unset fallback leaves the guarded 100dvh/100vh CSS chain below intact.
+const { style: visualViewportStyle } = useVisualViewport({
+  prefix: '--paper-board-dialog',
+  fallback: 'unset',
+})
 </script>
 
 <template>
@@ -84,7 +74,9 @@ onUnmounted(restoreFocus)
     aria-modal="true"
     :aria-label="title"
     :data-testid="testid"
+    :style="visualViewportStyle"
     @click.self="close"
+    @keydown="trapFocus"
   >
     <!-- `tabindex="-1"` is what makes the panel focusable on open; it stays out
          of the Tab order itself. -->
@@ -119,7 +111,11 @@ onUnmounted(restoreFocus)
 <style scoped>
 .paper-board-dialog__backdrop {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: var(--paper-board-dialog-visual-viewport-offset-top, 0px);
+  height: 100vh;
+  box-sizing: border-box;
   z-index: 60;
   background: rgba(26, 24, 20, 0.2);
   display: flex;
@@ -127,6 +123,12 @@ onUnmounted(restoreFocus)
   justify-content: center;
   padding: 60px 16px 16px;
   overflow-y: auto;
+}
+
+@supports (height: 100dvh) {
+  .paper-board-dialog__backdrop {
+    height: var(--paper-board-dialog-visual-viewport-height, 100dvh);
+  }
 }
 
 .paper-board-dialog {

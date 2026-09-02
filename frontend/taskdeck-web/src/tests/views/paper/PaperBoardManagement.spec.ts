@@ -288,6 +288,27 @@ describe('PaperBoardView — column settings', () => {
     ).toBe('Today')
   })
 
+  it('keeps a column draft when realtime replaces the live column object', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[1]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-name"]').setValue('My draft column')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-today'
+          ? { ...column, name: 'Server refresh', updatedAt: new Date().toISOString() }
+          : column,
+      ),
+    }
+    await nextTick()
+
+    expect(
+      (wrapper.get('[data-testid="paper-column-dialog-name"]').element as HTMLInputElement).value,
+    ).toBe('My draft column')
+  })
+
   it('renames a column through boardStore.updateColumn and closes', async () => {
     const wrapper = mountView()
 
@@ -414,6 +435,28 @@ describe('PaperBoardView — column reorder', () => {
     expect(right[2]?.attributes('disabled')).toBeDefined()
     expect(right[0]?.attributes('disabled')).toBeUndefined()
   })
+
+  it('allows only one column reorder while the first request is in flight', async () => {
+    let resolveReorder!: () => void
+    mockBoardStore.reorderColumns.mockReturnValueOnce(
+      new Promise<Column[]>((resolve) => {
+        resolveReorder = () => resolve(columns)
+      }),
+    )
+    const wrapper = mountView()
+    const moveRight = wrapper.findAll('[data-testid="paper-column-move-right"]')[0]!
+
+    void moveRight.trigger('click')
+    await nextTick()
+    await moveRight.trigger('click')
+
+    expect(mockBoardStore.reorderColumns).toHaveBeenCalledTimes(1)
+    expect(moveRight.attributes('disabled')).toBeDefined()
+
+    resolveReorder()
+    await flushPromises()
+    expect(moveRight.attributes('disabled')).toBeUndefined()
+  })
 })
 
 describe('PaperBoardView — add a column to a populated board', () => {
@@ -511,6 +554,34 @@ describe('PaperBoardView — board settings', () => {
       (wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value,
     ).toBe('Product Backlog')
     expect(wrapper.get('[data-testid="paper-board-dialog-state"]').text()).toBe('Active')
+  })
+
+  it('keeps board drafts when realtime replaces the live board object', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-dialog-name"]').setValue('My draft board')
+    await wrapper
+      .get('[data-testid="paper-board-dialog-description"]')
+      .setValue('My draft description')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'Server refresh',
+      description: 'Server description',
+      updatedAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value,
+    ).toBe('My draft board')
+    expect(
+      (
+        wrapper.get('[data-testid="paper-board-dialog-description"]')
+          .element as HTMLTextAreaElement
+      ).value,
+    ).toBe('My draft description')
   })
 
   it('renames the board through boardStore.updateBoard and closes', async () => {
@@ -643,6 +714,17 @@ describe('PaperBoardView — dialogs and the board shortcuts', () => {
     await nextTick()
 
     expect(document.activeElement).toBe(opener)
+  })
+})
+
+describe('PaperBoardView — visible keyboard column selection', () => {
+  it('marks the lane targeted by the board keyboard model', () => {
+    const wrapper = mountView({ selectedColumnId: 'col-today' })
+    const selected = wrapper.get('[data-column-id="col-today"]')
+
+    expect(selected.classes()).toContain('paper-board-column--selected')
+    expect(selected.attributes('aria-current')).toBe('true')
+    expect(wrapper.get('[data-column-id="col-backlog"]').attributes('aria-current')).toBeUndefined()
   })
 })
 

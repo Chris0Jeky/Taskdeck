@@ -92,7 +92,6 @@ export default {
     archiveConfirmCancel: 'Keep it here',
     restore: 'Restore board',
     saveError: 'Could not save the board. Please try again.',
-    archiveError: 'Could not archive the board. Please try again.',
     restoreError: 'Could not restore the board. Please try again.',
   },
 }
