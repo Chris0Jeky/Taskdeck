@@ -10,6 +10,8 @@ import {
   createCardFilterActions,
   createBoardUiActions,
 } from './board'
+import { useSessionStore } from './sessionStore'
+import { watch } from 'vue'
 
 // Re-export the CardFilters type so existing consumers keep working
 export type { CardFilters } from './board'
@@ -17,18 +19,26 @@ export type { CardFilters } from './board'
 export const useBoardStore = defineStore('board', () => {
   // Shared state
   const state = createBoardState()
+  const sessionStore = useSessionStore()
+  const getSessionIdentity = () => `${sessionStore.userId ?? ''}\u0000${sessionStore.token ?? ''}`
 
   // Shared helpers (toast, error handling, demo guard, etc.)
   const helpers = createBoardHelpers(state)
 
   // Domain action groups
-  const boardCrud = createBoardCrudActions(state, helpers)
+  const boardCrud = createBoardCrudActions(state, helpers, getSessionIdentity)
   const columns = createColumnActions(state, helpers)
   const cards = createCardActions(state, helpers)
   const comments = createCardCommentActions(state, helpers)
   const labels = createLabelActions(state, helpers)
   const filtering = createCardFilterActions(state)
   const ui = createBoardUiActions(state)
+
+  watch(
+    getSessionIdentity,
+    () => boardCrud.reset(),
+    { flush: 'sync' },
+  )
 
   // Detail loads commit board, cards, and labels together in boardCrud.
   async function fetchBoard(id: string) {
@@ -60,6 +70,7 @@ export const useBoardStore = defineStore('board', () => {
     createBoard: boardCrud.createBoard,
     updateBoard: boardCrud.updateBoard,
     deleteBoard: boardCrud.deleteBoard,
+    resetForSession: boardCrud.reset,
 
     // Actions — columns
     createColumn: columns.createColumn,

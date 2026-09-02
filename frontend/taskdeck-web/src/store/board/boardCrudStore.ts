@@ -14,17 +14,61 @@ import type { BoardHelpers } from './boardStoreHelpers'
 // succession; the throttle guard prevents duplicate network round-trips.
 const FETCH_BOARDS_THROTTLE_MS = 5000
 
-export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
+type SessionIdentityProvider = () => string
+
+interface InFlightBoardListRequest {
+  identity: string
+  promise: Promise<void>
+}
+
+const DEFAULT_SESSION_IDENTITY: SessionIdentityProvider = () => 'unscoped'
+
+export function createBoardCrudActions(
+  state: BoardState,
+  helpers: BoardHelpers,
+  getSessionIdentity: SessionIdentityProvider = DEFAULT_SESSION_IDENTITY,
+) {
   let lastFetchBoardsAt = 0
-  let unfilteredFetchBoardsInFlight: Promise<void> | null = null
+  let unfilteredFetchBoardsInFlight: InFlightBoardListRequest | null = null
   let boardFetchGeneration = 0
 
+  function isCurrentSession(identity: string) {
+    return identity === getSessionIdentity()
+  }
+
+  function reset() {
+    boardFetchGeneration += 1
+    lastFetchBoardsAt = 0
+    unfilteredFetchBoardsInFlight = null
+
+    state.boards.value = []
+    state.activeBoardId.value = null
+    state.currentBoard.value = null
+    state.currentBoardCards.value = []
+    state.currentBoardLabels.value = []
+    state.cardCommentsByCardId.value = {}
+    state.boardPresenceMembers.value = []
+    state.editingCardId.value = null
+    state.loading.value = false
+    state.error.value = null
+    state.filters.value = {
+      searchText: '',
+      labelIds: [],
+      dueDateFilter: 'all',
+      showBlockedOnly: false,
+    }
+  }
+
   async function fetchBoards(search?: string, includeArchived = false) {
+    const requestIdentity = getSessionIdentity()
     const now = Date.now()
     // Allow forced refreshes (search/archive filter changes) to bypass throttle.
     const isFilteredRequest = !!search || includeArchived
-    if (!isFilteredRequest && unfilteredFetchBoardsInFlight) {
-      return unfilteredFetchBoardsInFlight
+    if (
+      !isFilteredRequest &&
+      unfilteredFetchBoardsInFlight?.identity === requestIdentity
+    ) {
+      return unfilteredFetchBoardsInFlight.promise
     }
     if (!isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
       return
@@ -42,6 +86,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         state.loading.value = true
         state.error.value = null
         const freshBoards = await boardsApi.getBoards(search, includeArchived)
+        if (!isCurrentSession(requestIdentity)) {
+          return
+        }
+
         lastFetchBoardsAt = Date.now()
         state.boards.value = freshBoards
 
@@ -55,23 +103,30 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           state.activeBoardId.value = freshBoards[0]?.id ?? null
         }
       } catch (e: unknown) {
+        if (!isCurrentSession(requestIdentity)) {
+          return
+        }
+
         helpers.handleApiError(e, 'Failed to fetch boards')
         throw e
       } finally {
-        state.loading.value = false
+        if (isCurrentSession(requestIdentity)) {
+          state.loading.value = false
+        }
       }
     })()
 
     if (!isFilteredRequest) {
-      unfilteredFetchBoardsInFlight = request
+      const inFlightRequest = { identity: requestIdentity, promise: request }
+      unfilteredFetchBoardsInFlight = inFlightRequest
       void request.then(
         () => {
-          if (unfilteredFetchBoardsInFlight === request) {
+          if (unfilteredFetchBoardsInFlight === inFlightRequest) {
             unfilteredFetchBoardsInFlight = null
           }
         },
         () => {
-          if (unfilteredFetchBoardsInFlight === request) {
+          if (unfilteredFetchBoardsInFlight === inFlightRequest) {
             unfilteredFetchBoardsInFlight = null
           }
         },
@@ -83,12 +138,13 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
   async function fetchBoard(id: string): Promise<boolean> {
     const requestGeneration = ++boardFetchGeneration
+    const requestIdentity = getSessionIdentity()
 
     if (helpers.isDemoMode) {
       state.loading.value = true
       state.error.value = null
       const demo = buildDemoBoardDetail(id)
-      if (requestGeneration === boardFetchGeneration) {
+      if (requestGeneration === boardFetchGeneration && isCurrentSession(requestIdentity)) {
         state.currentBoard.value = demo.board
         state.currentBoardCards.value = demo.cards
         state.currentBoardLabels.value = []
@@ -109,7 +165,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         labelsApi.getLabels(id),
       ])
 
-      if (requestGeneration !== boardFetchGeneration) {
+      if (requestGeneration !== boardFetchGeneration || !isCurrentSession(requestIdentity)) {
         return false
       }
 
@@ -127,14 +183,14 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       state.cardCommentsByCardId.value = {}
       return true
     } catch (e: unknown) {
-      if (requestGeneration !== boardFetchGeneration) {
+      if (requestGeneration !== boardFetchGeneration || !isCurrentSession(requestIdentity)) {
         return false
       }
 
       helpers.handleApiError(e, 'Failed to fetch board')
       throw e
     } finally {
-      if (requestGeneration === boardFetchGeneration) {
+      if (requestGeneration === boardFetchGeneration && isCurrentSession(requestIdentity)) {
         state.loading.value = false
       }
     }
@@ -228,6 +284,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
   return {
     fetchBoards,
     fetchBoard,
+    reset,
     createBoard,
     updateBoard,
     deleteBoard,

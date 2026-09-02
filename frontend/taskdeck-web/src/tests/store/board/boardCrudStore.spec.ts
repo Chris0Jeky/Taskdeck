@@ -64,6 +64,12 @@ function createMockState() {
     activeBoardId: ref<string | null>('board-1'),
     loading: ref(false),
     error: ref<string | null>(null),
+    filters: ref({
+      searchText: '',
+      labelIds: [],
+      dueDateFilter: 'all' as const,
+      showBlockedOnly: false,
+    }),
   }
 }
 
@@ -202,6 +208,64 @@ describe('boardCrudStore', () => {
 
       await expect(fetchBoards()).resolves.toBeUndefined()
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not share or commit a stale request across session reset', async () => {
+      let sessionIdentity = 'user-a\u0000token-a'
+      const userABoards = createDeferred<Array<{ id: string; name: string }>>()
+      const userBBoards = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(userABoards.promise)
+        .mockReturnValueOnce(userBBoards.promise)
+
+      state.boards.value = [{ id: 'old-board', name: 'Old board' }]
+      state.currentBoard.value = { id: 'old-board', name: 'Old board' }
+      state.currentBoardCards.value = [{ id: 'old-card' }]
+      state.currentBoardLabels.value = [{ id: 'old-label' }]
+      state.cardCommentsByCardId.value = { 'old-card': [{ text: 'old comment' }] }
+      state.boardPresenceMembers.value = [{ id: 'old-user' }]
+      state.editingCardId.value = 'old-card'
+      state.activeBoardId.value = 'old-board'
+      state.filters.value.searchText = 'old search'
+
+      const actions = createBoardCrudActions(state as any, helpers as any, () => sessionIdentity)
+      const userARequest = actions.fetchBoards()
+
+      sessionIdentity = 'user-b\u0000token-b'
+      actions.reset()
+
+      expect(state.boards.value).toEqual([])
+      expect(state.currentBoard.value).toBeNull()
+      expect(state.currentBoardCards.value).toEqual([])
+      expect(state.currentBoardLabels.value).toEqual([])
+      expect(state.cardCommentsByCardId.value).toEqual({})
+      expect(state.boardPresenceMembers.value).toEqual([])
+      expect(state.editingCardId.value).toBeNull()
+      expect(state.activeBoardId.value).toBeNull()
+      expect(state.loading.value).toBe(false)
+      expect(state.error.value).toBeNull()
+      expect(state.filters.value).toEqual({
+        searchText: '',
+        labelIds: [],
+        dueDateFilter: 'all',
+        showBlockedOnly: false,
+      })
+
+      const userBRequest = actions.fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+
+      userABoards.resolve([{ id: 'user-a-board', name: 'User A board' }])
+      await expect(userARequest).resolves.toBeUndefined()
+      expect(state.boards.value).toEqual([])
+      expect(state.activeBoardId.value).toBeNull()
+      expect(state.error.value).toBeNull()
+      expect(state.loading.value).toBe(true)
+
+      userBBoards.resolve([{ id: 'user-b-board', name: 'User B board' }])
+      await expect(userBRequest).resolves.toBeUndefined()
+      expect(state.boards.value).toEqual([{ id: 'user-b-board', name: 'User B board' }])
+      expect(state.activeBoardId.value).toBe('user-b-board')
+      expect(state.loading.value).toBe(false)
     })
 
     it('bypasses throttle for filtered requests with search', async () => {

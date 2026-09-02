@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBoardStore } from '../../store/boardStore'
+import { useSessionStore } from '../../store/sessionStore'
 import { boardsApi } from '../../api/boardsApi'
 import { cardsApi } from '../../api/cardsApi'
 import { cardCommentsApi } from '../../api/cardCommentsApi'
@@ -8,6 +9,16 @@ import { columnsApi } from '../../api/columnsApi'
 import { labelsApi } from '../../api/labelsApi'
 import type { Board, Card, Column, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
+}
 
 // Mock all API modules
 vi.mock('../../api/boardsApi', () => ({
@@ -107,6 +118,37 @@ describe('boardStore', () => {
       expect(store.boards).toEqual([])
       expect(store.error).toBe(errorMessage)
       expect(store.loading).toBe(false)
+    })
+
+    it('resets synchronously when the authenticated session identity changes', async () => {
+      const session = useSessionStore()
+      session.userId = 'user-a'
+      session.token = 'token-a'
+
+      const staleFetch = createDeferred<Board[]>()
+      vi.mocked(boardsApi.getBoards).mockReturnValueOnce(staleFetch.promise)
+      const request = store.fetchBoards()
+
+      session.userId = 'user-b'
+
+      expect(store.boards).toEqual([])
+      expect(store.activeBoardId).toBeNull()
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+
+      staleFetch.resolve([
+        {
+          id: 'user-a-board',
+          name: 'User A board',
+          description: '',
+          isArchived: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          columns: [],
+        },
+      ])
+      await expect(request).resolves.toBeUndefined()
+      expect(store.boards).toEqual([])
     })
   })
 
