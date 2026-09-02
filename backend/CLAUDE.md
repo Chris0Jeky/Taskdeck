@@ -24,7 +24,9 @@
   in the Api layer; the policy evaluator (`AutomationPolicyEngine`) lives in Application.
 
 ## Verify
-`dotnet test backend/Taskdeck.sln -c Release -m:1` (full); narrow with
-`--filter "FullyQualifiedName~<TestClass>"`. Build: `dotnet build backend/Taskdeck.sln -c Release`.
+One layer first: `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1`
+(Domain/Application/Infrastructure/Api/Cli/Architecture; ~30 s cold). Narrow further with
+`--filter "FullyQualifiedName~<TestClass>"`. The full solution (`dotnet test backend/Taskdeck.sln -c Release -m:1`)
+takes minutes — last resort for cross-layer changes. Build: `dotnet build backend/Taskdeck.sln -c Release`.
 
 Seam map: `autodoc/AGENT_INDEX.md`

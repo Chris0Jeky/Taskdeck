@@ -9,50 +9,52 @@ Local-first execution workspace for developers: transcripts/notes in → evidenc
 → human-approved board changes. No silent or destructive mutations; SQLite persistence.
 .NET 8 backend (clean architecture) + Vue 3/Vite frontend + a write-gated MCP server.
 
-**Active direction:** strategy spine is `docs/strategy/PRODUCT_DIRECTION.md` (2026-08-23 — adaptive
-work OS destination, context-to-action engine, transcripts/notes/captures wedge); execution plan is
-`docs/REVIVAL_PLAN.md` (ADR-0044 revival, free open beta). ADR-0051 adds a bounded
-autonomous-admission lane for acceptance-ready tracked backlog while keeping new product surfaces
-inside the plan/ADR boundary. The 2026-06-13 archive pivot is superseded (archive remains only the
-checkpoint fallback). Shipped trust model stays review-first (ADR-0003/GP-06/ADR-0056); the
-delegated-autonomy future is ADR-0057, **Accepted as direction only (2026-08-24, openness
-caveat) — no implementation is in force or buildable without its own separate gate**. The repository
-**goes private for the v0.3.0 release** on the maintainer's personal GitHub Pro account (directive
-2026-08-30; ADR-0066 Smart CI Fabric, tracker CI-00 `#2324`): CI-control changes (`.github/**`, `ci/**`,
-`scripts/ci/**`) are R4 and qualify hosted-only; the Smart CI lane (CI-02 `#2326`) is shadow-only until the maintainer
-registers `Smart CI / Required Gate` — `docs/ci/SMART_CI.md`.
+**Direction:** strategy spine `docs/strategy/PRODUCT_DIRECTION.md`; execution plan `docs/REVIVAL_PLAN.md`
+(ADR-0044 revival, ADR-0051 bounded autonomous admission). The shipped trust model is review-first
+(ADR-0003/GP-06/ADR-0056); ADR-0057 delegated autonomy is **direction only — nothing under it is buildable
+without its own separate gate**. The repository goes private for the v0.3.0 release (directive 2026-08-30).
 
 ## Orient (do NOT bulk-read the big docs)
 
 1. `autodoc/AGENT_INDEX.md` — the seam map. Start here, find your region, jump to entry points.
-2. `docs/STATUS.md` (~775 lines after the 2026-08-23 head-lean rotation) — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
+2. `docs/STATUS.md` — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
 3. `OUTSTANDING_TASKS.md` — the human-action file (global law 5). Surface open `[ ]` items in every summary.
-4. Region rules auto-load when you touch files: `backend/CLAUDE.md`, `frontend/taskdeck-web/CLAUDE.md`,
-   `scripts/agent_hooks/CLAUDE.md`. Pick a workflow skill from `.claude/skills/README.md` (local skills beat plugins).
+4. Region rules auto-load by path: `backend/CLAUDE.md`, `frontend/taskdeck-web/CLAUDE.md`,
+   `scripts/agent_hooks/CLAUDE.md`, `.claude/rules/ci-control.md` (`.github/**`, `ci/**`, `scripts/ci/**`),
+   `.claude/rules/docs.md` (`docs/**`, root `*.md`). Workflow skills: `.claude/skills/README.md` — local
+   skills beat plugins; they trigger by description.
+
+## Claude Code runtime facts
+
+- Auto mode is the user-level default. `bypassPermissions` comes only from user settings, managed policy, or
+  a launch flag — project files cannot grant it (2.1.257). The committed project default is `acceptEdits`.
+- The global floor hook runs on every Bash call in every mode. It refuses `$var`-built command names and
+  redirect targets it cannot inspect (a `->` followed by a backtick counts) — write literal commands and
+  put multi-line edits in a script file, not a heredoc.
+- `AGENTS.md` is Codex-facing and is **not** auto-loaded by Claude; read it only for Codex coordination.
+- Permission rules are prefix rules: `Bash(gh:*)`, never `Bash(gh :*)` — `:*` is a wildcard only at the end.
 
 ## Proving checks (narrowest command per seam)
 
-Run only what your change touches. Timings measured 2026-07-27 on this box (warm caches).
+Run only what your change touches. Everything is seconds unless marked.
 
-| Changed seam | Command (repo root unless noted) | Measured |
-| --- | --- | --- |
-| Root/agent docs, `docs/**` | `node scripts/check-docs-governance.mjs` | ~1s, green |
-| `docs/GOLDEN_PRINCIPLES.md`, invariants | `node scripts/check-golden-principles.mjs` | ~1s, green |
-| `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` | ~1s, green |
-| `ci/**`, `scripts/ci/smart-ci/**`, `.github/workflows/smart-ci-shadow.yml` | `node --test scripts/ci/smart-ci/*.test.mjs` | ~1s, green |
-| Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` | ~1s, 11 passed |
-| One backend layer | `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1` | Domain: ~30s cold, 1636 passed |
-| Backend, cross-layer | `dotnet test backend/Taskdeck.sln -c Release -m:1` | minutes — last resort |
-| Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` | — |
-| One frontend spec | `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 <path/to.spec.ts>` | ~5s |
-| Frontend, broad | `cd frontend/taskdeck-web; npm run typecheck; npm run build; npx vitest --run --maxWorkers=2` | slow; bare `vitest --run` **OOMs on this box** |
-| E2E | `cd frontend/taskdeck-web; npx playwright test tests/e2e/<file>.spec.ts --reporter=line` | needs a running stack |
+| Changed seam | Command (repo root unless noted) |
+| --- | --- |
+| Root/agent docs, `docs/**` | `node scripts/check-docs-governance.mjs` |
+| `docs/GOLDEN_PRINCIPLES.md`, invariants | `node scripts/check-golden-principles.mjs` |
+| `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` |
+| `ci/**`, `scripts/ci/smart-ci/**`, the smart-ci shadow workflow | `node --test scripts/ci/smart-ci/*.test.mjs` |
+| Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` |
+| `scripts/agentic/**`, the orchestrator guard recipe | `powershell -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1` |
+| One backend layer | `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1` (~30 s cold) |
+| Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` |
+| Backend, cross-layer | `dotnet test backend/Taskdeck.sln -c Release -m:1` (minutes — last resort) |
+| One frontend spec | `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 <path/to.spec.ts>` |
+| Frontend, broad | `cd frontend/taskdeck-web; npm run typecheck; npm run build; npx vitest --run --maxWorkers=2` (slow; bare `vitest --run` **OOMs on this box**) |
+| E2E | `cd frontend/taskdeck-web; npx playwright test tests/e2e/<file>.spec.ts --reporter=line` (needs a running stack) |
 
-`ci-required.yml` is the required CI gate. PRs touching `.github/workflows/`, `backend/`, `frontend/`,
-`deploy/`, `scripts/`, or `*.csproj` also trigger CI Extended — an optional, non-blocking lane (several
-jobs are label-gated). Read its results, but it does not gate the merge. `smart-ci-shadow.yml` (ADR-0066; lands with CI-02 `#2326`) is observation-only and not a required
-check: a red `Smart CI / Required Gate` is a planner/policy defect to fix under R4, not a product verdict — never
-ignore it, never treat it as flaky.
+`ci-required.yml` is the required CI gate; CI Extended and the Smart CI shadow lane are advisory. The CI
+region's rules (R4 class, what "red" means there) live in `.claude/rules/ci-control.md`.
 
 ## Run it
 
@@ -69,10 +71,10 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 `Program.cs`, `Api/Mcp/*`); `Cli` is a separate entry point. `Architecture.Tests` enforces the boundaries.
 Tests mirror the layout in `backend/tests/`.
 
-**Frontend** `frontend/taskdeck-web/src/` — `views/` (route pages; large ones are thin shells <300 lines
-delegating to composables/components), `store/` (Pinia; `boardStore` is a facade over `store/board/*`),
-`api/` (all HTTP through `api/http.ts`), `composables/`, `components/ui/` (17 shared `Td*` primitives),
-`router/`. Tailwind + TS + `<script setup>`.
+**Frontend** `frontend/taskdeck-web/src/` — `views/` (route pages; large ones are thin shells delegating to
+composables/components), `store/` (Pinia; `boardStore` is a facade over `store/board/*`), `api/` (all HTTP
+through `api/http.ts`), `composables/`, `components/ui/` (shared `Td*` primitives), `router/`.
+Tailwind + TS + `<script setup>`.
 
 **Flow:** capture → captureStore → inbox API → proposal generated → ReviewView → explicit approve, then
 explicit execute (needs an Idempotency-Key). Preview == Apply (both materialize the latest
@@ -85,34 +87,26 @@ Retired Gemini selectors/settings fail startup with migration guidance — `docs
 
 ## Repo-specific pitfalls
 
-- **Long paths.** A `git worktree add` into a deep directory fails with `Filename too long` —
-  `docs/InReview/MVP_EXPANSION/EXPANDED/...` is ~115 chars on its own. Keep worktree roots short.
-- **DCO enforcement is paused.** By explicit maintainer decision on 2026-08-23, `Signed-off-by:`
-  trailers are optional and do not affect merge eligibility. Do not rewrite commits or add trailers to
-  another contributor's work. The dormant verifier assets remain under `scripts/ci/`; `#2019` tracks a
-  possible future restoration and does not itself authorize reactivation. Never use `--no-verify`.
-- **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or local command-deny
-  list, and the root has no `.codex/hooks.json`. Declared authority, global laws, CI, and worktree guards still
-  apply; user-, organization-, and runtime-level hooks are separate effective layers.
+- **Long paths.** A `git worktree add` into a deep directory fails with `Filename too long`. Keep worktree
+  roots short (`C:/Users/jekyt/source/td-<slug>` works).
+- **DCO enforcement is paused** (maintainer decision 2026-08-23): `Signed-off-by:` trailers are optional
+  and do not affect merge eligibility. Never rewrite another contributor's commits to add one; never use
+  `--no-verify`. `#2019` tracks a possible restoration and does not itself authorize it.
+- **No Taskdeck-owned runtime hooks.** `.claude/settings.json` has no hook groups or command-deny list and
+  the root has no `.codex/hooks.json`. User-level hooks (the floor) still apply.
 - **PowerShell:** no `&&` chaining; use `;` and check `$LASTEXITCODE`.
-- **Git resolution:** if `git` resolves to Cygwin or throws signal errors, run
-  `bash scripts/check-git-env.sh` (or `powershell -File scripts/check-git-env.ps1`); it also clears a
-  stale `.git/index.lock` after confirming no git process is live.
-- **`.worktrees/` holds ~30 stale issue checkouts** with unpushed branches. Do not prune or clean them.
-- Create issue worktrees with `scripts/git/New-CodexIssueWorktree.ps1`. Run its complete printed handoff:
-  the exact pinned-Git `worktree_guard.ps1` command first, then the bounded
-  `Initialize-CodexIssueWorktree.ps1` command before creating the issue branch.
+- **Git resolution:** if `git` resolves to Cygwin or throws signal errors, run `bash scripts/check-git-env.sh`
+  (or `powershell -File scripts/check-git-env.ps1`); it also clears a stale `.git/index.lock` safely.
+- **`.worktrees/` holds ~70 stale Codex issue checkouts** with unpushed branches. Do not prune or clean them.
+- Create issue worktrees with `scripts/git/New-CodexIssueWorktree.ps1` and run its complete printed
+  handoff (guard first, then the bounded initializer) — contract in `docs/WORKTREE_AGENT_PROTOCOL.md`.
 
 ## Definition of done
 
 Behavior changes ship with tests. Errors handled explicitly, never swallowed. Stable HTTP codes
 (400/401/403/404/409), claims-first identity, no cross-user leaks, never trust client input for identity.
-Update `docs/STATUS.md` when shipped reality changes and `docs/IMPLEMENTATION_MASTERPLAN.md` for roadmap
-impact. Backend: C# conventions, 4-space, layer purity. Frontend: `PascalCase.vue`, `<script setup>`.
-
-**ADRs** live in `docs/decisions/` (template + `INDEX.md` there). Write one when a change picks between
-competing approaches, sets a project-wide constraint, is hard to reverse, or would surprise a future
-contributor — technology, data model, security posture, automation safety boundary, strategy.
+Backend: C# conventions, 4-space, layer purity. Frontend: `PascalCase.vue`, `<script setup>`.
+Canonical-doc sync and the ADR trigger list: `.claude/rules/docs.md`.
 
 ## Authority
 
@@ -123,8 +117,8 @@ canonical global laws and `review-and-ship` pipeline. Human-action file: `OUTSTA
 ## Key docs
 
 `docs/strategy/PRODUCT_DIRECTION.md` (strategy spine) · `docs/REVIVAL_PLAN.md` (execution plan) ·
-`docs/STATUS.md` · `docs/IMPLEMENTATION_MASTERPLAN.md` ·
-`docs/GOLDEN_PRINCIPLES.md` · `docs/TESTING_GUIDE.md` · `docs/ISSUE_EXECUTION_GUIDE.md` ·
-`docs/MCP_TOOLING_GUIDE.md` · `docs/decisions/INDEX.md` · `docs/agentic/` (question, failure-ledger,
-guide-update protocols) · `docs/platform/CONFIGURATION_REFERENCE.md` · `docs/platform/EF_MIGRATION_WORKFLOW.md` ·
+`docs/STATUS.md` · `docs/IMPLEMENTATION_MASTERPLAN.md` · `docs/GOLDEN_PRINCIPLES.md` ·
+`docs/TESTING_GUIDE.md` · `docs/ISSUE_EXECUTION_GUIDE.md` · `docs/MCP_TOOLING_GUIDE.md` ·
+`docs/decisions/INDEX.md` · `docs/agentic/` (question, failure-ledger, guide-update protocols) ·
+`docs/platform/CONFIGURATION_REFERENCE.md` · `docs/platform/EF_MIGRATION_WORKFLOW.md` ·
 `AGENTS.md` (Codex-facing contributor protocol).
