@@ -4174,6 +4174,65 @@ describe('PaperReviewView', () => {
       }
     })
 
+    it('returns focus to Request edit after cancelling from the composer', async () => {
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+      const opener = wrapper.get('[data-testid="decision-edit"]').element as HTMLButtonElement
+      opener.focus()
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      expect(
+        wrapper.get('[data-testid="revision-editor"]').element.contains(document.activeElement),
+      ).toBe(true)
+
+      const cancel = wrapper.get('[data-testid="revision-cancel"]')
+      ;(cancel.element as HTMLButtonElement).focus()
+      await cancel.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(opener)
+
+      wrapper.unmount()
+    })
+
+    it('returns focus to Request edit after a revision saves successfully', async () => {
+      const now = new Date().toISOString()
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-focus-1',
+        proposalId: 'proposal-001',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'Clarify the decision',
+        createdAt: now,
+      })
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+      const opener = wrapper.get('[data-testid="decision-edit"]').element as HTMLButtonElement
+      opener.focus()
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-reason"]').setValue('Clarify the decision')
+      const save = wrapper.get('[data-testid="revision-save"]')
+      ;(save.element as HTMLButtonElement).focus()
+      await save.trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      expect(mocks.createRevision).toHaveBeenCalledOnce()
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(opener)
+
+      wrapper.unmount()
+    })
+
     it('states on the rail why the decisions are disabled, and offers the exit there', async () => {
       const wrapper = await mountView([makeProposal()])
 
