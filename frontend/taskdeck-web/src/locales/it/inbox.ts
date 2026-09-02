@@ -72,6 +72,13 @@ export default {
     metadataCompatibilityLead: 'Cattura salvata senza scadenza né etichette.',
     metadataCompatibilityDetail: 'Questa versione del server ha ignorato quei metadati. Non riprovare: la cattura è già nell’Inbox.',
   },
+  nib: {
+    eyebrow: 'Cattura rapida · {shortcut}',
+    destinationWithBoard: 'Questa cattura arriva nell’Inbox, collegata a {board}, per il triage.',
+    destinationWithoutBoard: 'Questa cattura arriva nell’Inbox senza bacheca, per il triage.',
+    selectedBoard: 'la bacheca selezionata',
+    submit: 'Cattura',
+  },
   scope: {
     board: 'Bacheca: {board}',
     boardAndColumn: 'Bacheca: {board} · Colonna: {column}',
