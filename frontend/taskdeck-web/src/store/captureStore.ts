@@ -519,6 +519,7 @@ export const useCaptureStore = defineStore('capture', () => {
     let deadlineTimerId: ReturnType<typeof setTimeout> | null = null
     let activeRequest: AbortController | null = null
     const refreshedDetailIds = new Set<string>()
+    let observedPostEnqueueList = false
 
     function stop() {
       if (stopped) return
@@ -549,6 +550,7 @@ export const useCaptureStore = defineStore('capture', () => {
           )
         }
         if (!isTriageTerminalStatus(summary.status)) return false
+        if (!observedPostEnqueueList) return false
         if (!detail) return true
         return (
           detail.status === summary.status &&
@@ -588,6 +590,7 @@ export const useCaptureStore = defineStore('capture', () => {
         const loadedItems = await captureApi.listItems(query, requestOptions)
         if (!isCurrent()) return
         items.value = loadedItems
+        observedPostEnqueueList = true
         await refreshTerminalDetails(trackedIds, {
           requestOptions,
           isCurrent,

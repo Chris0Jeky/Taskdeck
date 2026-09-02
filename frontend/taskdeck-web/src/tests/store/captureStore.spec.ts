@@ -1426,6 +1426,55 @@ describe('captureStore', () => {
     }
   })
 
+  it('does not complete from cached terminal state before a post-enqueue observation', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = useCaptureStore()
+      vi.mocked(captureApi.getItem)
+        .mockResolvedValueOnce(degradedDetail('Failed', 'cached failure'))
+        .mockResolvedValueOnce(degradedDetail('Failed', DEGRADED_NOTICE))
+      await store.fetchDetail('c-deg')
+
+      vi.mocked(captureApi.batchTriage).mockResolvedValue({
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        results: [{ itemId: 'c-deg', success: true }],
+      })
+      vi.mocked(captureApi.listItems)
+        .mockRejectedValueOnce(new Error('post-write-refresh-exhausted'))
+        .mockResolvedValueOnce([
+          { id: 'c-deg', userId: 'u1', boardId: null, status: 'Failed',
+            source: 'TranscriptPaste', textExcerpt: 'standup at nine',
+            createdAt: new Date().toISOString(), processedAt: new Date().toISOString(),
+            errorMessage: DEGRADED_NOTICE, disposition: null } as never,
+        ])
+
+      await store.batchTriage(['c-deg'], 'triage')
+      expect(store.detailById['c-deg']).toMatchObject({
+        status: 'Failed',
+        errorMessage: 'cached failure',
+      })
+
+      store.pollBatchTriageCompletion(['c-deg'], { limit: 200 })
+      await vi.advanceTimersByTimeAsync(2_999)
+      expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+      expect(captureApi.getItem).toHaveBeenLastCalledWith(
+        'c-deg',
+        expect.objectContaining({ skipRetry: true }),
+      )
+      expect(store.detailById['c-deg']).toMatchObject({
+        status: 'Failed',
+        errorMessage: DEGRADED_NOTICE,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('refetches a cached detail whose list row reached a terminal status', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.getItem).mockResolvedValue(degradedDetail('Triaging', null))
