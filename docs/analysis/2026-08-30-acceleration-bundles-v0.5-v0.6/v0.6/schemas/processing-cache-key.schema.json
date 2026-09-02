@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskdeck.processing-cache-key.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "canonicalizationVersion",
+    "ownerUserId",
+    "capability",
+    "inputs",
+    "processorId",
+    "processorVersion",
+    "configurationDigest",
+    "outputSchemas",
+    "protocolVersion"
+  ],
+  "properties": {
+    "canonicalizationVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ownerUserId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "role",
+          "contentHash"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "processorId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "processorVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "modelSnapshot": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "configurationDigest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "outputSchemas": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "protocolVersion": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}

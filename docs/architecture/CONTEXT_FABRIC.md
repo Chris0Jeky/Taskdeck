@@ -1,6 +1,6 @@
 # Context Fabric — architecture reference
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-02
 
 **Authority:** ADR-0065 (`docs/decisions/ADR-0065-context-fabric-capture-representation-processing.md`),
 Accepted — confirmed by the maintainer on 2026-08-30 with the amendments recorded in its *Amendments*
@@ -144,6 +144,15 @@ ordinary user — CF-13's lightweight route one-click, downloaded-on-enable or b
 managed route. WhisperX through a manually configured Python/CUDA environment is a dogfooding route,
 not the public "Speak" promise.
 
+**Head-start material for v0.5 and v0.6 (planning input, not authority).** The maintainer's two
+acceleration bundles of 2026-08-30 were validated and reconciled against `main` on 2026-09-02
+(tracker `#2368`, record `docs/analysis/2026-08-30-acceleration-bundles-v0.5-v0.6/RECONCILIATION.md`).
+Read that folder when a CF issue is admitted: `v0.6/ARCHITECTURE.md` plus one corrected file per v0.6
+issue (child slices, live dependencies, test plan, edge cases), `v0.5/CANDIDATE_MAP.md` for the v0.5
+issues, contract-draft schemas + fixtures under `contracts.manifest.json` (checked by
+`py -3 -B scripts/context_fabric/check_contract_drafts.py`), reference-only candidate code and
+diagrams. Each live CF issue also carries a comment pointing at its file.
+
 ## 6. Rules an implementer must not break
 
 1. A capture is valid the moment its source assets are stored; no job failure may make it unreadable,
@@ -169,4 +178,5 @@ dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c 
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~Processing|FullyQualifiedName~CaptureService|FullyQualifiedName~LlmQueueService|FullyQualifiedName~AccountDeletion"
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~MigrationBootstrapTests|FullyQualifiedName~McpApplicationServiceRegistrationTests"
 dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1
+py -3 -B scripts/context_fabric/check_contract_drafts.py   # v0.5/v0.6 contract drafts + fixtures (planning input)
 ```

@@ -1,0 +1,20 @@
+{
+  "canonicalizationVersion": 1,
+  "ownerUserId": "0d3a5c2e-8b7f-4a61-9e2d-1c4b6f8a0e21",
+  "capability": "audio.transcribe",
+  "inputs": [
+    {
+      "id": "asset-1",
+      "role": "audio",
+      "contentHash": "c8c89a7283fe10583f08619ed19d685da4a31d2d378e15d2487e62453f022305"
+    }
+  ],
+  "processorId": "whisperx-sidecar",
+  "processorVersion": "3.1.1",
+  "modelSnapshot": "large-v3@2024-10",
+  "configurationDigest": "sha256:9ccb012da2cafe2975ed887a1ca226cc649a0c4f88cd07e99d2e14c29d9fe735",
+  "outputSchemas": [
+    "transcript.v1"
+  ],
+  "protocolVersion": 1
+}

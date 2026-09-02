@@ -1,0 +1,22 @@
+[
+  {
+    "id": "fixture-action-001",
+    "capability": "semantic.extract",
+    "sourceHash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "expectedKeys": [
+      "task:prepare-demo"
+    ],
+    "license": "synthetic",
+    "notes": "No user content."
+  },
+  {
+    "id": "fixture-decision-001",
+    "capability": "semantic.extract",
+    "sourceHash": "1111111111111111111111111111111111111111111111111111111111111111",
+    "expectedKeys": [
+      "decision:retain-local-processing"
+    ],
+    "license": "synthetic",
+    "notes": "No user content."
+  }
+]
