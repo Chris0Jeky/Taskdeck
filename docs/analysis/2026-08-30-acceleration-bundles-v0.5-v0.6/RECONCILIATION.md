@@ -142,9 +142,33 @@ The Domain vocabulary that the validation pass judged safe to scaffold ahead of 
 
 Breadth recommendation for the coordinator (not a decision): CF-18 has the shortest **effective** graph — it is the only breadth vertical with a slice producing a real artefact today, and its blockers (CF-04/`#1429`, CF-06, CF-07) are work Taskdeck must do anyway; CF-15's path runs through an unbuilt consent subsystem and CF-17's through the `#2240` decision. Caveat: CF-18 also has the longest raw blocker list.
 
-## Issue comments posted
+## Issue comments posted (2026-09-02)
 
-_(filled after posting)_
+Each comment carries the ordered child slices, live dependency status, the most important corrections
+and the archived file path; every one states it is planning input and that admission follows
+`REVIVAL_PLAN` §5 / Project WIP.
+
+| Issue | Comment |
+| --- | --- |
+| CF-10 `#2264` | [issuecomment-5503035874](https://github.com/Chris0Jeky/Taskdeck/issues/2264#issuecomment-5503035874) |
+| CF-11 `#2265` | [issuecomment-5503036002](https://github.com/Chris0Jeky/Taskdeck/issues/2265#issuecomment-5503036002) — includes the `SourceReferenceId` correction to the issue text |
+| CF-15 `#2269` | [issuecomment-5503036122](https://github.com/Chris0Jeky/Taskdeck/issues/2269#issuecomment-5503036122) |
+| CF-17 `#2271` | [issuecomment-5503036244](https://github.com/Chris0Jeky/Taskdeck/issues/2271#issuecomment-5503036244) |
+| CF-18 `#2272` | [issuecomment-5503036347](https://github.com/Chris0Jeky/Taskdeck/issues/2272#issuecomment-5503036347) |
+| CF-22 `#2275` | [issuecomment-5503036437](https://github.com/Chris0Jeky/Taskdeck/issues/2275#issuecomment-5503036437) — states that nothing authorizes execution |
+| CF-24B `#2277` | [issuecomment-5503036524](https://github.com/Chris0Jeky/Taskdeck/issues/2277#issuecomment-5503036524) |
+| CF-08 `#2262` | [issuecomment-5503036648](https://github.com/Chris0Jeky/Taskdeck/issues/2262#issuecomment-5503036648) — semantic-key idea |
+| CF-12 `#2266` | [issuecomment-5503036790](https://github.com/Chris0Jeky/Taskdeck/issues/2266#issuecomment-5503036790) — chunked upload session, dry-run retention |
+| CF-14 `#2268` | [issuecomment-5503036890](https://github.com/Chris0Jeky/Taskdeck/issues/2268#issuecomment-5503036890) — sequence diagram, minimal snapshot shape |
+| CF-16 `#2270` | [issuecomment-5503036986](https://github.com/Chris0Jeky/Taskdeck/issues/2270#issuecomment-5503036986) — composer reducer, viewport helper |
+| CF-20 `#2273` | [issuecomment-5503037092](https://github.com/Chris0Jeky/Taskdeck/issues/2273#issuecomment-5503037092) — single-reducer hosting constraint |
+| CF-21 `#2274` | [issuecomment-5503037190](https://github.com/Chris0Jeky/Taskdeck/issues/2274#issuecomment-5503037190) — presentation boundary function, missing mode migration |
+| CF-24A `#2319` | [issuecomment-5503037280](https://github.com/Chris0Jeky/Taskdeck/issues/2319#issuecomment-5503037280) — fixture record schema and scorer |
+| CF-07 `#2261` | [issuecomment-5503037372](https://github.com/Chris0Jeky/Taskdeck/issues/2261#issuecomment-5503037372) — Worker Protocol accepts zero-length time ranges and never bounds by duration |
+| CF-03 `#2257` | [issuecomment-5503037481](https://github.com/Chris0Jeky/Taskdeck/issues/2257#issuecomment-5503037481) — canonical snapshot digest; run-linked priced usage |
+
+No comment for CF-09 `#2263`, CF-13 `#2267`, GEN-03 `#1317` or GEN-06 `#1320`: the v0.5 bundle adds
+nothing to them. No issue body, label, milestone or Project field was edited.
 
 ## Candidate-code admission contract
 
