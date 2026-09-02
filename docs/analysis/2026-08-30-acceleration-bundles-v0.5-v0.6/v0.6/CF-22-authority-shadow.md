@@ -89,7 +89,7 @@ line caveat, §2, §4, §5), ADR-0065 §Decision 9 and §Amendments ruling 6; co
 | `backend/src/Taskdeck.Domain/Authority/` | to be created | producer |
 | `backend/src/Taskdeck.Application/Authority/` | to be created | producer |
 | `backend/tests/Taskdeck.{Domain,Application}.Tests/Authority/` | to be created | producer |
-| `scripts/context-fabric/authority-report.*` | to be created (`scripts/context-fabric/` does not exist) | producer |
+| `scripts/context_fabric/authority-report.*` | to be created beside `scripts/context_fabric/check_contract_drafts.py` (directory exists since `#2371`) | producer |
 | `backend/src/Taskdeck.Application/Services/AutomationProposalService.cs` | exists — **do not edit** | integration owner |
 | `backend/src/Taskdeck.Application/Services/AutomationPolicyEngine.cs` | exists — read `ClassifyRisk` only; it is a proposal risk/permission engine, not an authority-profile engine | integration owner |
 | `backend/src/Taskdeck.Api/Controllers/AutomationProposalsController.cs` | exists — **do not edit**; it owns the explicit approve/execute + `Idempotency-Key` contract | integration owner |

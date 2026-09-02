@@ -89,7 +89,7 @@ before editing.
 | `processors/taskdeck-ocr/` | to be created (no `processors/` tree exists) | producer |
 | `backend/src/Taskdeck.Application/Processing/Ocr/` | to be created | producer |
 | `backend/tests/Taskdeck.{Domain,Application,Api}.Tests/Processing/Ocr/` | to be created | producer |
-| `scripts/context-fabric/benchmark-ocr.*` | to be created (`scripts/context-fabric/` does not exist) | producer |
+| `scripts/context_fabric/benchmark-ocr.*` | to be created beside `scripts/context_fabric/check_contract_drafts.py` (directory exists since `#2371`) | producer |
 | `backend/src/Taskdeck.Application/Processing/Protocol/WorkerProtocol.cs` | exists — CF-04 owns it; CF-18 should need no change | integration owner |
 | `backend/src/Taskdeck.Application/Processing/Schemas/processor-manifest.v1.schema.json` | exists | integration owner |
 | `backend/src/Taskdeck.Infrastructure/Migrations/TaskdeckDbContextModelSnapshot.cs` | exists | integration owner |
@@ -150,5 +150,5 @@ representation references an uninstalled processor · account deletion races a r
 4. **Consent does not exist.** As with CF-15, `backend/src` has no processing or destination consent model (the word appears only in prose about the batch-execution approved-revision pin, an unrelated concept). "Destination consent active" is CF-10 `#2264` new work.
 5. **GEN-03 `#1317` and GEN-09 `#1323` are correctly listed as blockers** — this is a place the pack is *stricter* than the live issue, which names only `#1317`. Keep the pack's version: ADR-0065 rule 6 makes prompt rails a hard condition for feeding OCR text into extraction.
 6. **`WorkerProtocol.cs` should not need editing.** Listing it as a coordinator seam is fine as a fence, but an OCR change to the protocol would mean the representation contract was mis-specified; escalate to CF-04 rather than patch it.
-7. **Missing paths.** `processors/`, `backend/src/Taskdeck.Application/Processing/Ocr/` and `scripts/context-fabric/` are all new directories.
+7. **Missing paths.** `processors/`, `backend/src/Taskdeck.Application/Processing/Ocr/` and `scripts/context_fabric/` are all new directories.
 8. **Protocol is v1-alpha.** It is fixed only once PdfPig (`#1429`) *and* WhisperX (CF-14 `#2268`) pass CF-04 conformance — so a CF-18 manifest written today may need field additions.

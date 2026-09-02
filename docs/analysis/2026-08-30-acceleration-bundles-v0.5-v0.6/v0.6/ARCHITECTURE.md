@@ -84,7 +84,7 @@ v0.4 foundations (all OPEN)            v0.5 payoff (all OPEN)
   CF-07 #2261 evidence anchors           CF-14 #2268 WhisperX
   #1429 ADR-0048 worker (CF-04 sidecar)  CF-21 #2274 Control / grouped review
   #2093 participants (work model)        CF-24A #2319 corpus + benchmark
-                                         GEN-03 #1317 image.describe · GEN-09 #1323 prompt rails
+                                         GEN-03 #1317 image.describe · GEN-09 #1323 prompt rails (unmilestoned)
             └──────────────┬────────────────────┘
                            ▼
 v0.6   CF-10 ─┬─ CF-11        CF-24B ─── CF-22 (shadow evidence only)
@@ -147,7 +147,7 @@ microservices, new work-item types for decisions/questions/risks, hidden cloud f
 
 | Seam (verified path) | Why lanes collide | Rule |
 | --- | --- | --- |
-| `backend/src/Taskdeck.Infrastructure/Persistence/TaskdeckDbContext.cs`, `Migrations/TaskdeckDbContextModelSnapshot.cs` | every persistent CF object wants a DbSet and a migration | integration owner only; suggested migration allocation: `AddProcessingProfilesAndRouteReceipts` → `AddProcessingCacheReservations` → `AddContextFabricMetricFacts` → `AddMeetingRegistersAndSpeakerAliases` → `AddAuthorityShadowEvaluations`; CF-15/CF-18 normally need no domain migration beyond registration and run facts |
+| `backend/src/Taskdeck.Infrastructure/Persistence/TaskdeckDbContext.cs`, `backend/src/Taskdeck.Infrastructure/Migrations/TaskdeckDbContextModelSnapshot.cs` (not the older `Persistence/Migrations/`) | every persistent CF object wants a DbSet and a migration | integration owner only; suggested migration allocation: `AddProcessingProfilesAndRouteReceipts` → `AddProcessingCacheReservations` → `AddContextFabricMetricFacts` → `AddMeetingRegistersAndSpeakerAliases` → `AddAuthorityShadowEvaluations`; CF-15/CF-18 normally need no domain migration beyond registration and run facts |
 | `backend/src/Taskdeck.Infrastructure/DependencyInjection.cs` | router, cache, metrics and processor registrations converge | producers return registration fragments |
 | `backend/src/Taskdeck.Application/Processing/Protocol/WorkerProtocol.cs`, `ProcessorManifest*.cs` | CF-15/CF-18 tempted to amend the wire | CF-04 owner only until v1 |
 | `backend/src/Taskdeck.Application/Services/AutomationPolicyEngine.cs` | CF-22 tempted to add delegated policy into human proposal policy | new Authority module; no direct edits |

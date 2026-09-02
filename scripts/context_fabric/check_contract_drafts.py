@@ -30,7 +30,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,23 +45,26 @@ DEFAULT_MANIFEST = (
     / "contracts.manifest.json"
 )
 
-# Key fragments that must never appear in a content-free metric fact or report (CF-24B).
-FORBIDDEN_METRIC_KEY_FRAGMENTS = (
-    "text",
-    "prompt",
-    "quote",
-    "transcript",
-    "filename",
-    "file_name",
-    "url",
-    "message",
-    "description",
-    "title",
-    "content",
-    "sourcebytes",
-    "speakername",
-    "speaker_name",
+# Key words that mark a content-bearing field in a metric fact or report (CF-24B). Keys are split into
+# words (camelCase and snake_case), so ``contextBindingStatus`` is not caught by ``text`` and a word is
+# only flagged when it stands alone: ``evidenceQuote`` fails, ``quoteCount`` passes because the key also
+# carries a shape word that says it holds a number or an identifier, never the content itself. A bare
+# ``name`` is allowed because a metric's dictionary name is a code, not user content; ``speakerName``
+# is still caught through ``speaker``. This is a guard on the drafts, not the allowlisted schema CF-24B
+# must ship (its ``RUNTIME_METRICS.md`` rule).
+CONTENT_WORDS = frozenset(
+    {"text", "prompt", "quote", "transcript", "filename", "url", "message", "description", "title",
+     "content", "bytes", "speaker", "body", "excerpt", "snippet"}
 )
+CONTENT_SAFE_SHAPE_WORDS = frozenset(
+    {"hash", "digest", "id", "ids", "count", "status", "kind", "length", "size", "ms", "rate", "class",
+     "code", "codes", "version", "state", "bucket", "sha256", "known", "present", "included"}
+)
+_WORD_SPLIT = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+
+
+def key_words(key: str) -> list[str]:
+    return [word.lower() for word in _WORD_SPLIT.findall(key.replace("-", "_").replace("_", " "))]
 
 
 def canonical_json(value: Any) -> bytes:
@@ -101,8 +106,9 @@ def semantic_content_free(value: Any, path: str = "$") -> list[str]:
     findings: list[str] = []
     if isinstance(value, dict):
         for key, child in value.items():
-            normalized = key.replace("-", "_").lower()
-            if any(fragment in normalized for fragment in FORBIDDEN_METRIC_KEY_FRAGMENTS):
+            words = key_words(key)
+            content_bearing = any(word in CONTENT_WORDS for word in words) or "".join(words) in CONTENT_WORDS
+            if content_bearing and not any(word in CONTENT_SAFE_SHAPE_WORDS for word in words):
                 findings.append(f"{path}.{key}: content-bearing key in a metric document")
             findings.extend(semantic_content_free(child, f"{path}.{key}"))
     elif isinstance(value, list):
@@ -124,6 +130,23 @@ SEMANTIC_RULES = {
     "content-free": semantic_content_free,
     "policy-snapshot-digest": semantic_policy_snapshot,
 }
+
+
+def build_format_checker():
+    """``format`` is annotation-only in jsonschema unless a checker is supplied. ``uuid`` is built in;
+    ``date-time`` is enforced here without the optional ``rfc3339-validator`` dependency."""
+    from jsonschema import Draft202012Validator
+
+    checker = Draft202012Validator.FORMAT_CHECKER
+
+    @checker.checks("date-time", raises=ValueError)
+    def _is_date_time(instance: Any) -> bool:
+        if not isinstance(instance, str):
+            return True
+        datetime.fromisoformat(instance.replace("Z", "+00:00"))
+        return True
+
+    return checker
 
 
 def build_registry(schema_paths: list[Path]):
@@ -161,6 +184,7 @@ def check(manifest_path: Path) -> tuple[list[str], list[str]]:
         return errors, report
 
     registry = build_registry(all_schema_paths)
+    format_checker = build_format_checker()
 
     for entry in manifest["contracts"]:
         schema_path = base / entry["schema"]
@@ -170,7 +194,12 @@ def check(manifest_path: Path) -> tuple[list[str], list[str]]:
         except Exception as exc:  # noqa: BLE001 - report every schema defect
             errors.append(f"{entry['schema']}: invalid schema: {exc}")
             continue
-        validator = Draft202012Validator(schema, registry=registry)
+        rule_names = entry.get("semantic", [])
+        unknown_rules = [name for name in rule_names if name not in SEMANTIC_RULES]
+        for name in unknown_rules:
+            errors.append(f"{entry['schema']}: unknown semantic rule {name}")
+        rules = [SEMANTIC_RULES[name] for name in rule_names if name in SEMANTIC_RULES]
+        validator = Draft202012Validator(schema, registry=registry, format_checker=format_checker)
         fixtures = entry.get("fixtures", [])
         for fixture_rel in fixtures:
             fixture_path = base / fixture_rel
@@ -185,13 +214,9 @@ def check(manifest_path: Path) -> tuple[list[str], list[str]]:
                 prefix = f"[{index}]" if is_document_list else ""
                 for problem in validator.iter_errors(document):
                     errors.append(f"{fixture_rel}{prefix}: {problem.json_path}: {problem.message}")
-            for rule_name in entry.get("semantic", []):
-                rule = SEMANTIC_RULES.get(rule_name)
-                if rule is None:
-                    errors.append(f"{entry['schema']}: unknown semantic rule {rule_name}")
-                    continue
-                for problem in rule(value):
-                    errors.append(f"{fixture_rel}: {rule_name}: {problem}")
+                for rule_name, rule in zip([n for n in rule_names if n in SEMANTIC_RULES], rules):
+                    for problem in rule(document):
+                        errors.append(f"{fixture_rel}{prefix}: {rule_name}: {problem}")
         report.append(
             f"{entry['schema']}: schema ok; fixtures={len(fixtures)}; semantic={','.join(entry.get('semantic', [])) or '-'}"
         )

@@ -236,9 +236,11 @@ Paths are relative to `docs/analysis/2026-08-30-acceleration-bundles-v0.5-v0.6/v
 
 ## NOT verified
 
-- Nothing was compiled, typechecked or executed here. The bundle's claims (8 Python tests, a
-  TypeScript strict pass, 8 C# files compiling with 0 warnings in an isolated net8.0 project) are
-  recorded as received and were **not** reproduced on this box.
+- This map was written from source reading only. The bundle's self-checks were reproduced by the
+  coordinator on this box on 2026-09-02, separately from this map (receipt in `../RECONCILIATION.md`):
+  8 Python tests passed, the 3 TypeScript files pass `tsc --strict --noEmit`, and the 8 C# files build
+  together in an isolated `net8.0` class library with 0 warnings. None of that proves repository
+  integration; no candidate was compiled inside the Taskdeck solution.
 - No GitHub call was made. Issue state comes from cached bodies captured for this pass; live
   labels, comments, milestone membership and project status were not re-read.
 - Delivery state was verified only for CF-01 `#2255` (closed, in force per `docs/STATUS.md`). The

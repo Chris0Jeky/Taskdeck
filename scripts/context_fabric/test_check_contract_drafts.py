@@ -59,6 +59,67 @@ class SemanticRuleTests(unittest.TestCase):
         findings = sut.semantic_content_free({"metrics": [{"count": 1, "evidenceQuote": "x"}]})
         self.assertEqual(["$.metrics[0].evidenceQuote: content-bearing key in a metric document"], findings)
         self.assertEqual([], sut.semantic_content_free({"sampleSize": {"processingRuns": 3}}))
+        for bad in ("sourceText", "prompt_text", "speakerName", "transcript", "file-name", "errorMessage"):
+            self.assertEqual(1, len(sut.semantic_content_free({bad: "x"})), bad)
+
+    def test_content_free_allows_shape_words_that_carry_no_content(self) -> None:
+        # The CF-24B fact model requires these; a substring denylist would wrongly reject them.
+        for good in ("contextBindingStatus", "contentHash", "quoteCount", "promptVersion", "textLength", "speakerLabelId"):
+            self.assertEqual([], sut.semantic_content_free({good: 1}), good)
+
+    def test_formats_are_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "thing.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "$id": "taskdeck.test.formats.v1",
+                        "type": "object",
+                        "properties": {"id": {"type": "string", "format": "uuid"}, "at": {"type": "string", "format": "date-time"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (base / "bad.json").write_text(json.dumps({"id": "not-a-uuid", "at": "yesterday"}), encoding="utf-8")
+            (base / "good.json").write_text(
+                json.dumps({"id": "5f0b2a5e-2f1c-4c8e-9d3a-6a1e7c2b9f10", "at": "2026-09-02T09:00:00Z"}), encoding="utf-8"
+            )
+            manifest = base / "contracts.manifest.json"
+            manifest.write_text(
+                json.dumps({"contracts": [{"schema": "thing.schema.json", "fixtures": ["bad.json", "good.json"], "semantic": []}]}),
+                encoding="utf-8",
+            )
+            errors, _ = sut.check(manifest)
+        self.assertEqual(2, len(errors), errors)
+        self.assertTrue(all("bad.json" in error for error in errors), errors)
+
+    def test_semantic_rules_apply_per_document_and_unknown_rules_fail_without_fixtures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "receipt.schema.json").write_text(
+                json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "taskdeck.test.r.v1", "type": "object"}),
+                encoding="utf-8",
+            )
+            (base / "receipts.json").write_text(
+                json.dumps([{"executionPerformed": False}, {"executionPerformed": True}]), encoding="utf-8"
+            )
+            manifest = base / "contracts.manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "contracts": [
+                            {"schema": "receipt.schema.json", "fixtures": ["receipts.json"], "semantic": ["authority-shadow-receipt"]},
+                            {"schema": "receipt.schema.json", "fixtures": [], "semantic": ["no-such-rule"]},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            errors, _ = sut.check(manifest)
+        self.assertEqual(2, len(errors), errors)
+        self.assertTrue(any("receipts.json[1]: authority-shadow-receipt" in error for error in errors), errors)
+        self.assertTrue(any("unknown semantic rule no-such-rule" in error for error in errors), errors)
 
     def test_policy_snapshot_digest_is_canonical_sha256(self) -> None:
         policy = {"b": 1, "a": [1, 2]}

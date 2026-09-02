@@ -86,7 +86,7 @@ before editing.
 | `backend/src/Taskdeck.Application/Processing/RemoteSpeech/` | to be created | producer |
 | `backend/src/Taskdeck.Infrastructure/…/RemoteSpeech/` (adapter + SDK) | to be created | producer |
 | `backend/src/Taskdeck.Api/Extensions/RemoteSpeechRegistration.cs` | to be created (`Api/Extensions/` exists) | producer |
-| `scripts/context-fabric/benchmark-speech.*` | to be created (`scripts/context-fabric/` does not exist) | producer |
+| `scripts/context_fabric/benchmark-speech.*` | to be created beside `scripts/context_fabric/check_contract_drafts.py` (directory exists since `#2371`) | producer |
 | `backend/tests/Taskdeck.{Domain,Application,Api}.Tests/Processing/RemoteSpeech/` | to be created | producer |
 | `backend/src/Taskdeck.Application/Services/EgressRegistry.cs` (seed a speech host) | exists | integration owner |
 | `backend/src/Taskdeck.Infrastructure/DependencyInjection.cs` | exists | integration owner |
@@ -148,5 +148,5 @@ historical receipt names an uninstalled processor.
 4. **`ILlmProvider.cs` as a coordinator seam.** Listing it as the integration seam invites the wrong shape: speech is a processor, not a completion provider. The real central seams are `EgressRegistry` (seed host), `Infrastructure/DependencyInjection.cs`, and CF-04's registry.
 5. **`RemoteSpeechResult` is not protocol-shaped.** The pack's `Status` string plus `DiagnosticCodes` bypasses the protocol's discriminated `outputs` union and its mandatory non-empty `processor.configurationHash`. Map to `representation` + `diagnostic` per `WORKER_PROTOCOL_V1.md` §3.5 and define no wire convention of its own.
 6. **Missing predecessors.** The pack lists `#2258 #2264 #2266 #2319`. CF-03 `#2257` (run/usage) and CF-06 `#2260` (durable representation) are equally hard blockers.
-7. **Paths that do not exist yet.** `backend/src/Taskdeck.Application/Processing/RemoteSpeech/` and `scripts/context-fabric/` are new directories, not existing ones; the pack's `owns` lists read as if they were.
+7. **Paths that do not exist yet.** `backend/src/Taskdeck.Application/Processing/RemoteSpeech/` and `scripts/context_fabric/` are new directories, not existing ones; the pack's `owns` lists read as if they were.
 8. **Protocol status.** The pack treats the protocol as settled. It is **v1-alpha** and stays draft until PdfPig (`#1429`) and WhisperX (CF-14 `#2268`) both pass CF-04 conformance; a `remote` transport mapping is explicitly "later" in §7.

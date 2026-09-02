@@ -70,7 +70,7 @@ CF-03/CF-08/CF-21/CF-24A merged state. Decide the retention posture above before
 
 **Producer-owned paths.** `backend/src/Taskdeck.Application/Metrics/ContextFabric/` — *to be
 created*, no `Metrics/` directory exists under Application. `backend/src/Taskdeck.Infrastructure/ReadModels/ContextFabricMetrics/`
-— *to be created*, no `ReadModels/` directory exists. `scripts/context-fabric/` — *to be created*.
+— *to be created*, no `ReadModels/` directory exists. `scripts/context_fabric/` — *to be created*.
 Frontend: `frontend/taskdeck-web/src/features/control-metrics/` **does not match the repo** — there
 is no `src/features/`; use `src/components/…`, `src/store/…`, `src/api/…` per
 `frontend/taskdeck-web/CLAUDE.md`. Tests go in `backend/tests/Taskdeck.Application.Tests/Metrics/`
@@ -169,7 +169,7 @@ fact rows recorded explicitly. `docs/TESTING_GUIDE.md` gains the metrics checkpo
    frontend has no `src/features/` directory — the layout is `views/`, `store/`, `api/`,
    `composables/`, `components/`. **Consequence:** correct the path before a lane claims it.
 5. **Bundle:** producer paths `backend/src/Taskdeck.Application/Metrics/ContextFabric/`,
-   `backend/src/Taskdeck.Infrastructure/ReadModels/ContextFabricMetrics/`, `scripts/context-fabric/`.
+   `backend/src/Taskdeck.Infrastructure/ReadModels/ContextFabricMetrics/`, `scripts/context_fabric/`.
    **True:** none of the three exists; also `IMetricsExportService` / `MetricsView.vue` already own
    the word "metrics" for board metrics. **Consequence:** create them and prefix every new type
    `ContextFabric…` so the two surfaces stay distinguishable.
