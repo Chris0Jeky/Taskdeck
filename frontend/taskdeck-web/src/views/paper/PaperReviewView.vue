@@ -1139,6 +1139,8 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 const mainColRef = ref<HTMLElement | null>(null)
 const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
+let revisionReturnFocusEl: HTMLElement | null = null
+let revisionReturnFocusProposalId: string | null = null
 
 // The rail's primary control, whichever it currently is: the decision button,
 // or the filing button the rail becomes once the proposal is applied and
@@ -1150,6 +1152,36 @@ function decisionRailFocusTarget(): HTMLElement | null {
     root.querySelector<HTMLElement>('[data-testid="decision-apply"]') ??
     root.querySelector<HTMLElement>('[data-testid="decision-file-away"]')
   )
+}
+
+function revisionRailFocusTarget(): HTMLElement | null {
+  return mainColRef.value?.querySelector<HTMLElement>('[data-testid="decision-edit"]') ?? null
+}
+
+/**
+ * The revision composer lives below the rail and moves focus into its first
+ * field on entry. Capture the rail action before that move so both deliberate
+ * exits (cancel and a successful save) return the reviewer to the control that
+ * opened the editor. A proposal-id guard prevents a late save from moving focus
+ * onto a different proposal after the queue selection changes.
+ */
+function captureRevisionReturnFocus(proposalId: string) {
+  revisionReturnFocusEl = revisionRailFocusTarget()
+  revisionReturnFocusProposalId = proposalId
+}
+
+function restoreRevisionFocus() {
+  const captured = revisionReturnFocusEl
+  const proposalId = revisionReturnFocusProposalId
+  revisionReturnFocusEl = null
+  revisionReturnFocusProposalId = null
+
+  if (!proposalId) return
+  void nextTick(() => {
+    if (!proposalIdsEqual(activeProposal.value?.id, proposalId)) return
+    const target = captured?.isConnected ? captured : revisionRailFocusTarget()
+    if (target && isFocusable(target)) target.focus?.()
+  })
 }
 
 watch(executeConfirmProposal, (pending, previous) => {
@@ -1396,7 +1428,13 @@ function onRequestEdit() {
     toast.info(t('review.toast.notEditable'))
     return
   }
+  captureRevisionReturnFocus(p.id)
   startRevisionEditing()
+}
+
+function onCancelRevision() {
+  cancelRevisionEditing()
+  restoreRevisionFocus()
 }
 
 async function onDefer() {
@@ -1641,6 +1679,7 @@ async function onPreviewDiff() {
 
 async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   if (isArchivedHistory.value) return
+  const proposalId = activeProposal.value?.id
   await saveRevision(payload)
   // Saving an edit changes what Apply will execute, so a diff already on screen is
   // now stale — drop it so the "reflects your saved edit" note cannot certify a
@@ -1648,6 +1687,15 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   if (previewDiffProposalId.value) {
     latestDiffRequestId += 1
     clearPreviewDiff()
+  }
+  // Failed saves leave the editor open. A successful save closes it; restore
+  // only for that close and only if the reviewer is still on the same proposal.
+  if (
+    proposalId &&
+    !revisionEditing.value &&
+    proposalIdsEqual(activeProposal.value?.id, proposalId)
+  ) {
+    restoreRevisionFocus()
   }
 }
 
@@ -1899,7 +1947,7 @@ async function onClearBoardScope() {
         @request-edit="onRequestEdit"
         @defer="onDefer"
         @dismiss="onFileAway"
-        @cancel-edit="cancelRevisionEditing"
+        @cancel-edit="onCancelRevision"
         @report="onReportBadSuggestion"
       />
       <details
@@ -2036,7 +2084,7 @@ async function onClearBoardScope() {
         :operations-payload="editablePayload"
         :saving="revisionSaving"
         @save="onSaveRevision"
-        @cancel="cancelRevisionEditing"
+        @cancel="onCancelRevision"
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">

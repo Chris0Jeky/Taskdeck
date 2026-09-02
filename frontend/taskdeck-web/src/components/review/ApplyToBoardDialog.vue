@@ -109,15 +109,18 @@ const operationLabel = computed(() => {
 // short enough for a key held a beat too long to clear it, and it makes whether
 // the board gets written a race with the reviewer's reflexes.
 //
-// WHAT THIS DOES. Container focus stays. The dialog binds ⏎ itself, with three
+// WHAT THIS DOES. Container focus stays. The dialog binds ⏎ itself, with four
 // guards, so the accept is reachable from the keyboard without ever being
 // reachable by ACCIDENT:
-//   1. `event.repeat` is ignored. Auto-repeat is how a HELD key presents, and
+//   1. Modified chords are consumed. Only a plain ⏎ is the explicit confirm;
+//      Ctrl/Meta/Alt/Shift+⏎ cannot activate a focused native button or leak
+//      to the shortcut layer behind the dialog.
+//   2. `event.repeat` is ignored. Auto-repeat is how a HELD key presents, and
 //      the press that approved is the only one that can still be down when this
 //      opens — so this is the exact keyboard analogue of the backdrop guard.
-//   2. It fires at most once per open. A second ⏎ against an already-consumed
+//   3. It fires at most once per open. A second ⏎ against an already-consumed
 //      dialog cannot re-dispatch.
-//   3. Keystrokes from a control inside the dialog are left alone, so ⏎ on
+//   4. Keystrokes from a control inside the dialog are left alone, so ⏎ on
 //      "Not yet" still cancels rather than confirming.
 //
 // ADR-0003 is untouched: this is a second, deliberate human keystroke reaching
@@ -128,13 +131,21 @@ let enterArmed = false
 
 function onDialogKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter') return
-  // Guard 1 — the approving press, still held.
+  // Guard 1 — this action owns plain Enter, not a modified chord. Cancel the
+  // browser's default too: Enter on a focused native button otherwise turns
+  // into a click even though this delegated keydown handler returned early.
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    return
+  }
+  // Guard 2 — the approving press, still held.
   if (event.repeat) return
   if (event.isComposing) return
   if (props.busy) return
-  // Guard 3 — a focused button owns its own Enter.
+  // Guard 4 — a focused button owns its own Enter.
   if (isInteractiveTarget(event.target)) return
-  // Guard 2 — one confirm per open.
+  // Guard 3 — one confirm per open.
   if (!enterArmed) return
   enterArmed = false
   event.preventDefault()
