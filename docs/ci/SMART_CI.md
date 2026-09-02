@@ -127,6 +127,16 @@ P50/P95 critical path, minutes per merged PR, hosted cost, queue delay, selectio
 per lane, flake rate, slow-test regressions, duplicate exact-SHA runs, cache utility and storage.
 Provisional budgets: R0/R1 ≤5 min, R2 ≤10, R3 ≤20, main verifier ≤5 — a regression names the lane.
 
+The shadow recall report is read-only and uses GitHub REST plus `gh run download`; it does not need
+GraphQL project quota. It counts unique merged PRs, while retaining every measurable head and rerun
+attempt so an earlier failure cannot disappear behind a later green run. A PR is usable only when all
+of its collected evidence is exact and its final head has a successful required run. The plan's fetched
+merge commit must have the recorded base and head parents and merge tree, and the landed merge commit
+must match the final base, head and tree. Missing, duplicate, expired, stale or mismatched evidence
+fails closed. A lane family is ready only after at least 20 usable merged PRs, an actual failure in that
+family, 100% recall and no missed failure anywhere in the sample. Exit codes are `0` ready, `1`
+unusable evidence, `2` insufficient or zero-failure evidence, and `3` a recall miss.
+
 ## 9. Rollout (evidence-gated)
 
 | Phase | What lands | Gate to the next phase |
@@ -148,6 +158,7 @@ Provisional budgets: R0/R1 ≤5 min, R2 ≤10, R3 ≤20, main verifier ≤5 — 
 | Planner / gate self-tests (CI-02 scaffold) | `node --test scripts/ci/smart-ci/*.test.mjs` |
 | Plan one change locally (what-if, no event payload) | `node scripts/ci/smart-ci/plan.mjs --policy ci/policy.v1.json --base-sha <sha> --head-sha <sha> --changed-files <one path per line> --out ci-plan.json` |
 | Evaluate a plan receipt locally | `node scripts/ci/smart-ci/evaluate-gate.mjs --plan ci-plan.json --policy ci/policy.v1.json --mode shadow` |
+| Measure shadow recall (read-only) | `node scripts/ci/smart-ci/recall-report.mjs --since YYYY-MM-DDTHH:mm:ssZ --until YYYY-MM-DDTHH:mm:ssZ --out-json artifacts/ci-recall.json --out-md artifacts/ci-recall.md` |
 | Action pin inventory | `node scripts/ci/smart-ci/action-pins.mjs` |
 | Runner VM broker (Hyper-V, no GitHub calls) | `scripts/ci/runners/Invoke-TaskdeckCiRunnerVm.ps1 -Action Status` |
 
@@ -159,6 +170,7 @@ ci/test-ownership.v1.json                  production boundary → lanes (CI-05)
 ci/schemas/                                policy, plan, receipt schemas
 scripts/ci/smart-ci/plan.mjs               deterministic planner
 scripts/ci/smart-ci/evaluate-gate.mjs      gate evaluator
+scripts/ci/smart-ci/recall-report.mjs      exact-evidence shadow recall report
 scripts/ci/smart-ci/measure-ci-estate.mjs  estate measurement (CI-01)
 scripts/ci/smart-ci/action-pins.mjs        external action pin inventory (CI-11)
 scripts/ci/runners/                        VM bootstrap, broker, runbook (CI-04)

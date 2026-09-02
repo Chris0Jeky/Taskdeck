@@ -1,0 +1,15 @@
+
+digraph G {
+  rankdir=LR;
+  graph [fontname="Arial", labelloc="t", label="Cloud speech trust boundary"];
+  node [shape=box, fontname="Arial"];
+  Audio [label="Owner-scoped audio SourceAsset"];
+  Policy [label="CF-10 policy / consent / budget"];
+  Adapter [label="Provider-neutral speech adapter"];
+  Egress [label="Egress envelope + SSRF + circuit breaker"];
+  Provider [label="Approved regional provider", shape=ellipse];
+  Result [label="Protocol-shaped transcript + usage"];
+  Receipt [label="ProcessingRun + route receipt"];
+
+  Audio -> Policy -> Adapter -> Egress -> Provider -> Result -> Receipt;
+}

@@ -1,0 +1,18 @@
+
+digraph G {
+  rankdir=LR;
+  graph [fontname="Arial", labelloc="t", label="Router v1 decision sequence"];
+  node [shape=box, fontname="Arial"];
+  Profile [label="Resolve effective profile"];
+  Freeze [label="Freeze snapshot + digest"];
+  Registry [label="Read registry / health snapshot"];
+  Inputs [label="Validate input contracts"];
+  Egress [label="Check locality / host / region"];
+  Consent [label="Check current consent"];
+  Budget [label="Reserve deadline / cost budget"];
+  Preference [label="Apply ordered preference"];
+  Receipt [label="Persist full route receipt"];
+  Dispatch [label="Dispatch chosen route"];
+
+  Profile -> Freeze -> Registry -> Inputs -> Egress -> Consent -> Budget -> Preference -> Receipt -> Dispatch;
+}

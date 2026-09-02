@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant U as User / Adapter
+    participant I as Canonical Intake
+    participant P as Policy + Router
+    participant J as Job Runner
+    participant H as Processor Host
+    participant S as Stores
+    U->>I: Source + requested intent
+    I->>S: Capture and immutable SourceAsset
+    I->>P: capability + consent + limits
+    P->>S: policy snapshot + route decision
+    P->>J: create ProcessingJob
+    J->>H: typed inputs + session secret
+    H-->>J: typed outputs + usage + warnings
+    J->>S: ProcessingRun + Representations + Candidates
+    J-->>U: inspectable partial/final state

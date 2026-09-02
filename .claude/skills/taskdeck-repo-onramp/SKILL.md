@@ -1,6 +1,6 @@
 ---
 name: taskdeck-repo-onramp
-description: Orient to the Taskdeck repo before editing. Use when starting a session, entering an unfamiliar area, reconciling a broad request against current reality, or turning a vague task into a scoped plan.
+description: Orient to the Taskdeck repo before editing - new session, unfamiliar area, reconciling a broad request, or scoping a vague task.
 ---
 
 # Taskdeck Repo Onramp
@@ -9,7 +9,7 @@ Establish current Taskdeck truth before editing code or docs.
 
 ## Read first
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load.
 
 Read when relevant:
 

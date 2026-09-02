@@ -1,0 +1,46 @@
+{
+  "methodDate": "2026-08-30",
+  "observationCount": 3,
+  "processors": [
+    {
+      "fixtureCount": 1,
+      "meanAlignmentErrorMs": 80.0,
+      "meanDer": null,
+      "meanEstimatedCost": 0.02,
+      "meanOcrAccuracy": null,
+      "meanPeakRamMb": 120.0,
+      "meanWallTimeMs": 3300.0,
+      "meanWer": 0.08,
+      "processorId": "cloud-speech",
+      "successCount": 1,
+      "unknownCostCount": 0
+    },
+    {
+      "fixtureCount": 1,
+      "meanAlignmentErrorMs": null,
+      "meanDer": null,
+      "meanEstimatedCost": 0.0,
+      "meanOcrAccuracy": 0.93,
+      "meanPeakRamMb": 250.0,
+      "meanWallTimeMs": 600.0,
+      "meanWer": null,
+      "processorId": "local-ocr",
+      "successCount": 1,
+      "unknownCostCount": 0
+    },
+    {
+      "fixtureCount": 1,
+      "meanAlignmentErrorMs": 100.0,
+      "meanDer": null,
+      "meanEstimatedCost": 0.0,
+      "meanOcrAccuracy": null,
+      "meanPeakRamMb": 650.0,
+      "meanWallTimeMs": 12000.0,
+      "meanWer": 0.11,
+      "processorId": "local-whisper",
+      "successCount": 1,
+      "unknownCostCount": 0
+    }
+  ],
+  "schemaVersion": 1
+}

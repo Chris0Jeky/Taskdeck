@@ -1,6 +1,6 @@
 ---
 name: taskdeck-failure-capture
-description: Classify and record Taskdeck agent failures, failed commands, flaky or blocked checks, MCP/tool problems, CI failures, docs-governance warnings, and workarounds. Use whenever unresolved friction should be visible in handoff or promoted into guidance.
+description: Classify and record Taskdeck agent failures (failed commands, flaky or blocked checks, MCP/tool/CI problems, workarounds) for handoff or guidance.
 ---
 
 # Taskdeck Failure Capture

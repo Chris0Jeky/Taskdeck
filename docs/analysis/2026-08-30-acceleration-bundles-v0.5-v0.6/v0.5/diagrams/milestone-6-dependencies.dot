@@ -1,0 +1,7 @@
+digraph G {
+  rankdir=LR;
+  graph [fontname="DejaVu Sans", bgcolor="transparent", nodesep=0.35, ranksep=0.7];
+  node [fontname="DejaVu Sans", fontsize=10, style="rounded", margin=0.08];
+  edge [fontname="DejaVu Sans", fontsize=8];
+
+}

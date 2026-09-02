@@ -69,6 +69,34 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Planning update (2026-09-02, v0.5 / v0.6 acceleration bundles unbundled)
+
+- **Two more bundles were validated and unbundled, not copied** (tracker `#2368`; record
+  `docs/analysis/2026-08-30-acceleration-bundles-v0.5-v0.6/RECONCILIATION.md`). The v0.6 bundle was
+  grounded at `c27283fb2` and every one of its 7 issue packs was cross-checked against `main` `79dd57cd3`,
+  the live issue bodies (unchanged since the snapshot, no branches or PRs) and ADR-0065/ADR-0057; the
+  "milestone 6" (v0.5) bundle failed its GitHub grounding (0 issues), so this pass mapped its surviving
+  candidates and diagrams to the live v0.5 issues itself.
+- **Head start is now discoverable where it will be needed.** One corrected file per v0.6 issue (live
+  dependencies, ordered child slices, architecture adapted to existing types, test plan, corrections), the
+  v0.6 milestone architecture with waves, ownership fences, gate matrix and risk register, a v0.5
+  candidate map, 8 contract-draft schemas with fixtures under an executable check
+  (`scripts/context_fabric/check_contract_drafts.py`), reference-only candidate code that compiles in
+  isolation, and diagrams — linked from `CONTEXT_FABRIC.md`, `AGENT_INDEX.md` and `docs/INDEX.md`, with one
+  comment per live issue.
+- **What the validation changed.** Missed dependencies were added (CF-10 → CF-21; CF-11 → CF-07/CF-23;
+  CF-24B → CF-10/CF-22; CF-15 → CF-03/CF-06; CF-17 → CF-07/CF-16); CF-11's live issue text mislabels
+  `SourceReferenceId` as an artefact hash; CF-24B's "cost per accepted change" is not computable until
+  CF-03/CF-10 record price and attribution; several candidates carry real defects (a consent-key mismatch and
+  PascalCase digests in the router, a denylist privacy guard that rejects its own facts, a non-canonical
+  snapshot digest, a cost-ordering evaluator that is scoring by another name); CF-22 material was audited
+  and opens no execution path. No new ADR is warranted (the router draft is ADR-0065 §Decision 6–8).
+- **Startable now, contract-only:** CF-24B metric dictionary, CF-10 profile contract, CF-22 shadow records,
+  a narrow `image.ocr` manifest, then CF-11's cache key; everything else stays behind CF-03/04/06/07/08/21/24A
+  or a human decision. A separate small PR scaffolds five Domain vocabulary enums ahead of CF-10/CF-24B, the
+  way `#2280` did for CF-06. Breadth recommendation (coordinator input, not a decision): CF-18 has the shortest
+  effective dependency graph.
+
 ## Planning update (2026-08-30, engineering-review bundle reconciliation)
 
 - **Evidence, not authority.** The external security/quality/performance/payment-gating bundle at

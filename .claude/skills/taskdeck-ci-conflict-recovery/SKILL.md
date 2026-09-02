@@ -9,9 +9,9 @@ Use this skill when a PR is blocked by CI, review/bot comments, conflicts, stale
 
 ## Read First
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load.
 
-For the CI topology (`ci-required.yml` = the merge gate; `reusable-*` + scheduled lanes) use the **Agent tooling/CI/docs** seam row of the map. `scripts/agent_hooks/CLAUDE.md` auto-loads only when the fix touches the manual failure-ledger tools — it does NOT cover `.github/workflows/` changes. Read as needed: the failing workflow under `.github/workflows/`, `docs/TESTING_GUIDE.md`, and the PR's checks/comments/annotations.
+For the CI topology (`ci-required.yml` = the merge gate; `reusable-*` + scheduled lanes) use the **Agent tooling/CI/docs** seam row of the map. The CI region's path rule `.claude/rules/ci-control.md` (added by #2367; until it lands, read `docs/ci/SMART_CI.md`) auto-loads for `.github/**`, `ci/**`, and `scripts/ci/**`: CI-control changes are R4 and hosted-only, and a red Smart CI shadow gate is a planner defect, never flaky. Read as needed: the failing workflow under `.github/workflows/`, `docs/TESTING_GUIDE.md`, and the PR's checks/comments/annotations.
 
 ## Triage Sequence
 

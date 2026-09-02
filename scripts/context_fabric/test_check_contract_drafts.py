@@ -1,0 +1,193 @@
+"""Proving tests for ``check_contract_drafts.py``.
+
+Run: ``py -3 -B -m unittest discover -s scripts/context_fabric -p "test_check_contract_drafts.py"``
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import check_contract_drafts as sut
+
+
+class ManifestPassesTests(unittest.TestCase):
+    def test_default_manifest_is_green(self) -> None:
+        errors, report = sut.check(sut.DEFAULT_MANIFEST)
+        self.assertEqual(errors, [], "\n".join(errors))
+        self.assertGreaterEqual(len(report), 7)
+
+
+class SemanticRuleTests(unittest.TestCase):
+    def test_route_receipt_requires_exactly_one_chosen_alternative(self) -> None:
+        receipt = {
+            "chosenProcessorId": "a",
+            "alternatives": [
+                {"processorId": "a", "eligibility": "chosen"},
+                {"processorId": "b", "eligibility": "chosen"},
+            ],
+        }
+        self.assertIn(
+            "chosenProcessorId does not match exactly one chosen alternative",
+            sut.semantic_route_receipt(receipt),
+        )
+
+    def test_route_receipt_rejects_duplicate_processors(self) -> None:
+        receipt = {
+            "chosenProcessorId": None,
+            "alternatives": [
+                {"processorId": "a", "eligibility": "ineligible"},
+                {"processorId": "a", "eligibility": "ineligible"},
+            ],
+        }
+        self.assertIn("duplicate processor alternatives", sut.semantic_route_receipt(receipt))
+
+    def test_forced_rerun_requires_reason(self) -> None:
+        self.assertIn(
+            "forced rerun requires forcedRerunReason",
+            sut.semantic_route_receipt({"forcedRerun": True, "alternatives": []}),
+        )
+
+    def test_authority_receipt_never_executes(self) -> None:
+        self.assertEqual([], sut.semantic_authority_shadow_receipt({"executionPerformed": False}))
+        self.assertEqual(1, len(sut.semantic_authority_shadow_receipt({"executionPerformed": True})))
+        self.assertEqual(1, len(sut.semantic_authority_shadow_receipt({})))
+
+    def test_content_free_flags_text_bearing_keys_at_any_depth(self) -> None:
+        findings = sut.semantic_content_free({"metrics": [{"count": 1, "evidenceQuote": "x"}]})
+        self.assertEqual(["$.metrics[0].evidenceQuote: content-bearing key in a metric document"], findings)
+        self.assertEqual([], sut.semantic_content_free({"sampleSize": {"processingRuns": 3}}))
+        for bad in ("sourceText", "prompt_text", "speakerName", "transcript", "file-name", "errorMessage"):
+            self.assertEqual(1, len(sut.semantic_content_free({bad: "x"})), bad)
+
+    def test_content_free_allows_shape_words_that_carry_no_content(self) -> None:
+        # The CF-24B fact model requires these; a substring denylist would wrongly reject them.
+        for good in ("contextBindingStatus", "contentHash", "quoteCount", "promptVersion", "textLength", "speakerLabelId"):
+            self.assertEqual([], sut.semantic_content_free({good: 1}), good)
+
+    def test_formats_are_enforced(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "thing.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "$id": "taskdeck.test.formats.v1",
+                        "type": "object",
+                        "properties": {"id": {"type": "string", "format": "uuid"}, "at": {"type": "string", "format": "date-time"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (base / "bad.json").write_text(json.dumps({"id": "not-a-uuid", "at": "yesterday"}), encoding="utf-8")
+            good_id = "5f0b2a5e-2f1c-4c8e-9d3a-6a1e7c2b9f10"
+            # Python's fromisoformat accepts both of these; RFC 3339 (JSON Schema date-time) does not.
+            (base / "no-offset.json").write_text(json.dumps({"id": good_id, "at": "2026-09-02T09:00:00"}), encoding="utf-8")
+            (base / "space.json").write_text(json.dumps({"id": good_id, "at": "2026-09-02 09:00:00Z"}), encoding="utf-8")
+            (base / "good.json").write_text(json.dumps({"id": good_id, "at": "2026-09-02T09:00:00Z"}), encoding="utf-8")
+            (base / "good-offset.json").write_text(
+                json.dumps({"id": good_id, "at": "2026-09-02t09:00:00.250+02:00"}), encoding="utf-8"
+            )
+            manifest = base / "contracts.manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "contracts": [
+                            {
+                                "schema": "thing.schema.json",
+                                "fixtures": ["bad.json", "no-offset.json", "space.json", "good.json", "good-offset.json"],
+                                "semantic": [],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            errors, _ = sut.check(manifest)
+        self.assertEqual(4, len(errors), errors)
+        self.assertEqual(2, sum("bad.json" in error for error in errors), errors)
+        self.assertEqual(1, sum("no-offset.json" in error for error in errors), errors)
+        self.assertEqual(1, sum("space.json" in error for error in errors), errors)
+        self.assertFalse(any("good" in error for error in errors), errors)
+
+    def test_semantic_rules_apply_per_document_and_unknown_rules_fail_without_fixtures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "receipt.schema.json").write_text(
+                json.dumps({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "taskdeck.test.r.v1", "type": "object"}),
+                encoding="utf-8",
+            )
+            (base / "receipts.json").write_text(
+                json.dumps([{"executionPerformed": False}, {"executionPerformed": True}]), encoding="utf-8"
+            )
+            manifest = base / "contracts.manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "contracts": [
+                            {"schema": "receipt.schema.json", "fixtures": ["receipts.json"], "semantic": ["authority-shadow-receipt"]},
+                            {"schema": "receipt.schema.json", "fixtures": [], "semantic": ["no-such-rule"]},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            errors, _ = sut.check(manifest)
+        self.assertEqual(2, len(errors), errors)
+        self.assertTrue(any("receipts.json[1]: authority-shadow-receipt" in error for error in errors), errors)
+        self.assertTrue(any("unknown semantic rule no-such-rule" in error for error in errors), errors)
+
+    def test_policy_snapshot_digest_is_canonical_sha256(self) -> None:
+        policy = {"b": 1, "a": [1, 2]}
+        good = {"policy": policy, "policyDigest": sut.canonical_digest(policy)}
+        self.assertEqual([], sut.semantic_policy_snapshot(good))
+        bad = {"policy": policy, "policyDigest": "sha256:" + "0" * 64}
+        self.assertEqual(1, len(sut.semantic_policy_snapshot(bad)))
+        # Key order must not change the digest.
+        self.assertEqual(sut.canonical_digest({"a": [1, 2], "b": 1}), sut.canonical_digest(policy))
+
+
+class ManifestFailureTests(unittest.TestCase):
+    def test_missing_fixture_and_invalid_document_are_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "s").mkdir()
+            (base / "f").mkdir()
+            (base / "s" / "thing.schema.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://json-schema.org/draft/2020-12/schema",
+                        "$id": "taskdeck.test.thing.v1",
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {"id": {"type": "string"}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (base / "f" / "bad.json").write_text(json.dumps({"id": 5}), encoding="utf-8")
+            manifest = base / "contracts.manifest.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "contracts": [
+                            {
+                                "schema": "s/thing.schema.json",
+                                "fixtures": ["f/bad.json", "f/missing.json"],
+                                "semantic": [],
+                            }
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            errors, _ = sut.check(manifest)
+        self.assertEqual(2, len(errors), errors)
+        self.assertTrue(any("missing fixture" in error for error in errors))
+        self.assertTrue(any("$.id" in error for error in errors))
+
+
+if __name__ == "__main__":
+    unittest.main()
