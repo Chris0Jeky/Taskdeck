@@ -142,7 +142,7 @@ historical receipt names an uninstalled processor.
 
 ## Corrections to the bundle
 
-1. **"Existing … consent" primitives.** The bundle repeatedly says the adapter plugs into consent that already exists. There is **no consent model anywhere in `backend/src`** (a whole-tree grep for `Consent` returns nothing). Consent is CF-10 `#2264` new work; CF-15 cannot assume it and must not invent a second one.
+1. **"Existing … consent" primitives.** The bundle repeatedly says the adapter plugs into consent that already exists. There is **no processing or destination consent model anywhere in `backend/src`** (the word appears only in prose about the batch-execution approved-revision pin in `IAutomationExecutorService` / `BatchProposalExecutionService`, an unrelated concept). Consent is CF-10 `#2264` new work; CF-15 cannot assume it and must not invent a second one.
 2. **"Account quota reservation before dispatch."** `ILlmQuotaService.ReserveAsync` is real and atomic, but it is **token-denominated and keyed by `LlmSurface { Chat, CaptureTriage, Worker }`**. Minutes are a new unit and speech is a new surface — both are schema work, not reuse.
 3. **Circuit breaker.** `CircuitBreakerStateTracker`/`CircuitBreakerSettings` exist but are wired to the LLM provider path in `LlmProviderRegistration.cs`. There is no generic processor breaker; processor health belongs to CF-04's registry. Reuse the type, not the wiring.
 4. **`ILlmProvider.cs` as a coordinator seam.** Listing it as the integration seam invites the wrong shape: speech is a processor, not a completion provider. The real central seams are `EgressRegistry` (seed host), `Infrastructure/DependencyInjection.cs`, and CF-04's registry.
