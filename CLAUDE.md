@@ -46,9 +46,9 @@ Run only what your change touches. Everything is seconds unless marked.
 | `ci/**`, `scripts/ci/smart-ci/**`, the smart-ci shadow workflow | `node --test scripts/ci/smart-ci/*.test.mjs` |
 | Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` |
 | `scripts/agentic/**`, the orchestrator guard recipe | `powershell -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1` |
-| One backend layer | `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1` (~30 s cold) |
+| One backend test project | `dotnet test backend/tests/<Project>/<Project>.csproj -c Release -m:1` — `Taskdeck.{Domain,Application,Api,Cli,Architecture,Integration}.Tests` (~30 s cold; Infrastructure is covered by Integration + Api) |
 | Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` |
-| Backend, cross-layer | `dotnet test backend/Taskdeck.sln -c Release -m:1` (minutes — last resort) |
+| Backend, before the PR | `dotnet test backend/Taskdeck.sln -c Release -m:1` (minutes; the `backend/AGENTS.md` required check — once per backend PR, CI repeats it) |
 | One frontend spec | `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 <path/to.spec.ts>` |
 | Frontend, broad | `cd frontend/taskdeck-web; npm run typecheck; npm run build; npx vitest --run --maxWorkers=2` (slow; bare `vitest --run` **OOMs on this box**) |
 | E2E | `cd frontend/taskdeck-web; npx playwright test tests/e2e/<file>.spec.ts --reporter=line` (needs a running stack) |
