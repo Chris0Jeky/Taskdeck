@@ -1,0 +1,14 @@
+{
+  "tests": [
+    "Taskdeck.Api.IntegrationTests.CoreApiTests",
+    "Taskdeck.Api.IntegrationTests.McpHttpAuthTests",
+    "Taskdeck.Api.IntegrationTests.McpHttpIsolationTests",
+    "Taskdeck.Api.IntegrationTests.McpHttpHostileWriteAuthTests",
+    "Taskdeck.Api.IntegrationTests.McpHttpProposalSurfaceTests",
+    "Taskdeck.Api.IntegrationTests.McpContractTests",
+    "Taskdeck.Api.IntegrationTests.FirstRunMcpSmokeTests",
+    "Taskdeck.Api.IntegrationTests.ChatSseEndpointTests",
+    "Taskdeck.Api.IntegrationTests.AutomatedJourneyGapTests",
+    "Taskdeck.Api.IntegrationTests.MigrationBootstrapTests"
+  ]
+}

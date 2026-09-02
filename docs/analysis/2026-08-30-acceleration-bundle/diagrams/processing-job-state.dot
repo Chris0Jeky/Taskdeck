@@ -1,0 +1,20 @@
+digraph ProcessingJobState {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.4, ranksep=0.55, fontname="Arial", label="ProcessingJob state and lease model", labelloc=t, fontsize=18];
+  node [shape=ellipse, style="filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+  Pending -> Leased [label="atomic claim + token + expiry"];
+  Pending -> Cancelled;
+  Leased -> Running [label="start"];
+  Leased -> Retryable [label="lease expires/crash"];
+  Leased -> Cancelled;
+  Running -> Succeeded [label="run + outputs committed"];
+  Running -> Failed [label="terminal failure"];
+  Running -> Retryable [label="retryable class"];
+  Running -> Cancelled [label="user/deadline/cost"];
+  Retryable -> Leased [label="next attempt"];
+  Retryable -> Failed [label="attempt policy exhausted"];
+  Retryable -> Cancelled;
+  Succeeded [shape=doublecircle];
+  Failed [shape=doublecircle];
+  Cancelled [shape=doublecircle];
+}

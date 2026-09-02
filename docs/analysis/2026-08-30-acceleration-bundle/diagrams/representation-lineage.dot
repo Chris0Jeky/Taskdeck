@@ -1,0 +1,25 @@
+digraph RepresentationLineage {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.7, fontname="Arial", label="Representation lineage and evidence", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  capture [label="Capture"];
+  asset [label="SourceAsset\nimmutable raw material"];
+  run [label="ProcessingRun\nprocessor receipt"];
+  rep1 [label="Representation A\nprovisional/initial"];
+  rep2 [label="Representation B\nfinal/derived"];
+  payload [label="Typed payload table\ntext/transcript/OCR/structure/event"];
+  anchor [label="EvidenceAnchor\nimmutable locator"];
+  viewer [label="Owner-scoped bounded viewer\nboard view: opaque IDs/offsets only"];
+
+  capture -> asset;
+  asset -> rep1 [label="exactly one parent"];
+  rep1 -> rep2 [label="derived / superseded forward"];
+  run -> rep1 [label="produced by"];
+  run -> rep2 [label="produced by"];
+  rep1 -> payload;
+  rep2 -> payload;
+  rep1 -> anchor;
+  rep2 -> anchor;
+  anchor -> viewer;
+}
