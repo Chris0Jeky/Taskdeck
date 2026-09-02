@@ -41,7 +41,7 @@ file, or canonical doc unless the coordinator controls merge order.
   ```powershell
   $checkout = (& git rev-parse --show-toplevel).Trim()
   & (Join-Path $checkout 'scripts/agentic/Invoke-TaskdeckGuardedLane.ps1') -LaneCommand { <lane command> }
-  if ($LASTEXITCODE -ne 0) { throw "guarded lane failed ($LASTEXITCODE): stop the wave; state is preserved" }
+  if ($LASTEXITCODE -ne 0) { throw "guarded lane failed ($LASTEXITCODE): stop the wave (a guard failure reports its preserved state path on stderr)" }
   ```
 
   It captures the bounded non-ignored status fingerprint with a generated token, runs the lane, then
