@@ -165,6 +165,45 @@ describe('boardCrudStore', () => {
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
     })
 
+    it('shares an in-flight unfiltered fetch before applying the post-success throttle', async () => {
+      vi.useFakeTimers()
+      const firstFetch = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(firstFetch.promise).mockResolvedValueOnce([{ id: 'board-2', name: 'Second Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const first = fetchBoards()
+      const second = fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      firstFetch.resolve([{ id: 'board-1', name: 'First Board' }])
+      await expect(first).resolves.toBeUndefined()
+      await expect(second).resolves.toBeUndefined()
+
+      vi.advanceTimersByTime(5001)
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+    })
+
+    it('clears a rejected unfiltered fetch so a retry starts a new request', async () => {
+      const failedFetch = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(failedFetch.promise).mockResolvedValueOnce([{ id: 'board-2', name: 'Recovered Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const first = fetchBoards()
+      const second = fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      failedFetch.reject(new Error('network error'))
+      await expect(first).rejects.toThrow('network error')
+      await expect(second).rejects.toThrow('network error')
+      expect(helpers.handleApiError).toHaveBeenCalledTimes(1)
+
+      await expect(fetchBoards()).resolves.toBeUndefined()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+    })
+
     it('bypasses throttle for filtered requests with search', async () => {
       vi.useFakeTimers()
       const freshBoards = [{ id: 'board-1', name: 'My Board' }]
