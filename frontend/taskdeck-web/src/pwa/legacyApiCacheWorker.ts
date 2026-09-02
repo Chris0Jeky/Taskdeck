@@ -3,16 +3,38 @@ import { logWarn } from '../utils/errorReporting'
 /**
  * Handshake shared with `public/api-cache-cleanup.js`. The literals are duplicated
  * because the worker script is plain JavaScript served from `public/` and cannot
- * import from `src/`; `src/tests/pwa/apiCacheWorkerContract.spec.ts` pins them.
+ * import from `src/`; `src/tests/pwa/legacyApiCacheWorker.spec.ts` pins them against
+ * the real worker source.
  */
 export const API_CACHE_POLICY_QUERY = 'taskdeck:api-cache-policy'
 export const API_CACHE_POLICY_RETIRED = 'legacy-api-cache-retired'
 export const API_CACHE_SKIP_WAITING = 'taskdeck:skip-waiting'
 
-const HANDSHAKE_TIMEOUT_MS = 2_000
-const ACTIVATION_TIMEOUT_MS = 10_000
+const HANDSHAKE_TIMEOUT_MS = 1_500
+const UPDATE_TIMEOUT_MS = 5_000
+const ACTIVATION_TIMEOUT_MS = 6_000
+/**
+ * Hard ceiling on the whole migration. Session restore and the router guard both
+ * await it, so an unbounded step here would pin the app on its loading state with a
+ * reload that re-enters the same wait.
+ */
+const RETIREMENT_DEADLINE_MS = 12_000
 
 let activeRetirement: Promise<boolean> | null = null
+
+function withTimeout<T>(work: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: T) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    const timer = setTimeout(() => finish(fallback), timeoutMs)
+    work.then((value) => finish(value), () => finish(fallback))
+  })
+}
 
 function asksRetirementPolicy(worker: ServiceWorker, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -45,21 +67,109 @@ function asksRetirementPolicy(worker: ServiceWorker, timeoutMs: number): Promise
   })
 }
 
-function waitForControllerChange(timeoutMs: number): Promise<boolean> {
+/**
+ * Latches `controllerchange` from the moment it is created rather than from the
+ * moment it is awaited. Another tab's migration claims every client, so the event
+ * can land while this tab is still mid-handshake; a listener attached later would
+ * miss it and then tear down a perfectly good registration.
+ */
+function controllerChangeLatch(): { fired: () => boolean; wait: (timeoutMs: number) => Promise<boolean>; dispose: () => void } {
+  let fired = false
+  let notify: (() => void) | null = null
+  const onChange = () => {
+    fired = true
+    notify?.()
+  }
+  navigator.serviceWorker.addEventListener('controllerchange', onChange)
+  return {
+    fired: () => fired,
+    wait(timeoutMs: number) {
+      if (fired) return Promise.resolve(true)
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          notify = null
+          resolve(false)
+        }, timeoutMs)
+        notify = () => {
+          clearTimeout(timer)
+          resolve(true)
+        }
+      })
+    },
+    dispose() {
+      navigator.serviceWorker.removeEventListener('controllerchange', onChange)
+    },
+  }
+}
+
+function sendSkipWaiting(worker: ServiceWorker | null): void {
+  try {
+    worker?.postMessage({ type: API_CACHE_SKIP_WAITING })
+  } catch {
+    // The worker went redundant between the state check and the post.
+  }
+}
+
+/**
+ * Resolves once a replacement worker has been told to skip waiting, or the wait
+ * expires.
+ *
+ * `registration.update()` resolves as soon as the update job is *started* - the
+ * spec resolves the job promise inside Install, before the install event's
+ * lifetime promises settle - so `registration.waiting` is normally still null when
+ * it returns and a one-shot read there would never deliver the message. The
+ * replacement has to be followed through `updatefound` and `statechange` instead.
+ */
+function forceReplacementToActivate(
+  registration: ServiceWorkerRegistration,
+  timeoutMs: number,
+): Promise<void> {
   return new Promise((resolve) => {
     let settled = false
-    const finish = (changed: boolean) => {
+    const finish = () => {
       if (settled) return
       settled = true
-      navigator.serviceWorker.removeEventListener('controllerchange', onChange)
-      resolve(changed)
-    }
-    const onChange = () => {
       clearTimeout(timer)
-      finish(true)
+      registration.removeEventListener('updatefound', onUpdateFound)
+      resolve()
     }
-    const timer = setTimeout(() => finish(false), timeoutMs)
-    navigator.serviceWorker.addEventListener('controllerchange', onChange)
+    const timer = setTimeout(finish, timeoutMs)
+
+    const follow = (worker: ServiceWorker | null) => {
+      if (!worker) return
+      if (worker.state === 'installed') {
+        sendSkipWaiting(worker)
+        finish()
+        return
+      }
+      const onStateChange = () => {
+        if (worker.state === 'installed') {
+          sendSkipWaiting(worker)
+        } else if (worker.state !== 'installing') {
+          // 'activated' means it took over on its own; 'redundant' means it never will.
+          worker.removeEventListener('statechange', onStateChange)
+          finish()
+          return
+        } else {
+          return
+        }
+        worker.removeEventListener('statechange', onStateChange)
+        finish()
+      }
+      worker.addEventListener('statechange', onStateChange)
+    }
+
+    const onUpdateFound = () => follow(registration.installing)
+    registration.addEventListener('updatefound', onUpdateFound)
+
+    // A replacement may already be waiting (the user dismissed the update banner)
+    // or installing (another tab started the same migration).
+    if (registration.waiting) {
+      sendSkipWaiting(registration.waiting)
+      finish()
+      return
+    }
+    follow(registration.installing)
   })
 }
 
@@ -68,39 +178,63 @@ async function retire(): Promise<boolean> {
   // Nothing is intercepting this page's requests, so no worker can serve a
   // cached API response to it.
   if (!controller) return true
-  if (await asksRetirementPolicy(controller, HANDSHAKE_TIMEOUT_MS)) return true
 
-  // The controlling worker predates the API-cache retirement, so it repopulates
-  // the authenticated namespace on every request and the page-side purge alone is
-  // not an upgrade. `registerType: 'prompt'` lets a replacement wait indefinitely -
-  // the update banner is never shown on the public login route, and a user can
-  // dismiss it - so the migration is forced here instead of being left to the UI.
-  const registration = await navigator.serviceWorker.getRegistration()
-  if (!registration) return true
-
-  const controllerChanged = waitForControllerChange(ACTIVATION_TIMEOUT_MS)
+  const latch = controllerChangeLatch()
   try {
-    await registration.update()
-  } catch {
-    // An update fetch can fail offline; the waiting worker below may still exist.
-  }
-  registration.waiting?.postMessage({ type: API_CACHE_SKIP_WAITING })
+    if (await asksRetirementPolicy(controller, HANDSHAKE_TIMEOUT_MS)) return true
 
-  if (await controllerChanged) {
-    const replacement = navigator.serviceWorker.controller
-    if (replacement && (await asksRetirementPolicy(replacement, HANDSHAKE_TIMEOUT_MS))) return true
-  }
+    // Another tab may have completed the migration while that handshake was
+    // pending; the new worker claims every client, including this one.
+    const claimed = navigator.serviceWorker.controller
+    if (claimed && claimed !== controller && (await asksRetirementPolicy(claimed, HANDSHAKE_TIMEOUT_MS))) {
+      return true
+    }
 
-  // No replacement took over. Unregistering stops the legacy worker from ever
-  // controlling this origin again, but it keeps controlling the *current* page
-  // until a reload, so this attempt still fails closed.
-  try {
-    await registration.unregister()
-  } catch {
-    // Reported below with the same operator-facing warning as any other failure.
+    // The controlling worker predates the API-cache retirement, so it repopulates
+    // the authenticated namespace on every request and the page-side purge alone is
+    // not an upgrade. `registerType: 'prompt'` lets a replacement wait indefinitely -
+    // the update banner is never shown on the public login route, and a user can
+    // dismiss it - so the migration is forced here instead of being left to the UI.
+    const registration = await navigator.serviceWorker.getRegistration()
+    if (!registration) {
+      // Unregistering never releases a page the worker already controls, so a
+      // missing registration is only safe when nothing controls this page. A
+      // controller that did not answer the handshake still intercepts every fetch.
+      return navigator.serviceWorker.controller === null
+    }
+
+    const forced = forceReplacementToActivate(registration, ACTIVATION_TIMEOUT_MS)
+    // Bounded: a stalled-but-open update fetch would otherwise never settle, and
+    // every caller of the purge shares this one promise.
+    await withTimeout(registration.update(), UPDATE_TIMEOUT_MS, undefined)
+    await forced
+
+    if (await latch.wait(ACTIVATION_TIMEOUT_MS)) {
+      const replacement = navigator.serviceWorker.controller
+      if (!replacement) return true
+      if (await asksRetirementPolicy(replacement, HANDSHAKE_TIMEOUT_MS)) return true
+    }
+
+    if (registration.installing || registration.waiting) {
+      // A replacement is on its way in. Unregistering would destroy it, and a
+      // reload lets it take over, so fail closed without touching it.
+      logWarn('A replacement service worker is installed but not yet in control; reload before signing in.')
+      return false
+    }
+
+    // Nothing is coming. Removing the registration stops the legacy worker from
+    // ever controlling this origin again, but it keeps controlling the *current*
+    // page until a reload, so this attempt still fails closed.
+    try {
+      await registration.unregister()
+    } catch {
+      // Reported below with the same operator-facing warning as any other failure.
+    }
+    logWarn('A retired service worker still controls this page; reload before signing in.')
+    return false
+  } finally {
+    latch.dispose()
   }
-  logWarn('A retired service worker still controls this page; reload before signing in.')
-  return false
 }
 
 /**
@@ -114,10 +248,12 @@ export function retireLegacyApiCacheWorker(): Promise<boolean> {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return Promise.resolve(true)
   if (activeRetirement) return activeRetirement
 
-  activeRetirement = retire()
-    .catch(() => false)
-    .finally(() => {
-      activeRetirement = null
-    })
+  activeRetirement = withTimeout(
+    retire().catch(() => false),
+    RETIREMENT_DEADLINE_MS,
+    false,
+  ).finally(() => {
+    activeRetirement = null
+  })
   return activeRetirement
 }

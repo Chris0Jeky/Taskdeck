@@ -33,12 +33,33 @@ dismiss it - so the migration is not left to the update UI.
 
 Before any session is established, the page asks the controlling worker for the retirement policy over
 a `MessageChannel` (`src/pwa/legacyApiCacheWorker.ts`). A pre-#2350 worker has no listener, so silence
-identifies it. The page then calls `registration.update()` and messages the waiting worker to skip
-waiting; the replacement claims open clients on activation, so the switch does not need a reload. If no
-replacement takes over within the bounded wait, the registration is unregistered and the attempt
-**fails closed**: the legacy worker still controls the current page, so session establishment is
-refused until the page is reloaded. Normal (non-security) updates still go through the
-`SwUpdatePrompt` banner.
+identifies it. The page then calls `registration.update()` and follows the replacement through
+`updatefound` and `statechange` until it reaches `installed`, at which point it is messaged to skip
+waiting. Following it matters: `registration.update()` resolves inside Install, *before* the install
+event's lifetime promises settle, so `registration.waiting` is normally still null when it returns and
+a one-shot read there would never deliver the message. The replacement claims open clients on
+activation, so the switch does not need a reload.
+
+Every step is bounded, and the whole migration has a hard 12-second ceiling, because session restore
+and the router guard both await it - an unbounded update fetch would pin the app on its loading state
+with a reload that re-enters the same wait. `controllerchange` is latched from the start of the
+attempt rather than subscribed to at the end, so a replacement that another tab's migration used to
+claim this page is not missed.
+
+If nothing takes over inside the wait, the attempt **fails closed**. It unregisters only when the
+registration holds nothing that could still become a compliant controller; when a replacement is
+installing or waiting, unregistering would destroy it, so the page reports failure and a reload lets
+it activate. Either way the legacy worker still controls the current page, so session establishment
+stays refused until reload - and a *missing* registration is not treated as success while a
+non-answering controller is still intercepting, because `unregister()` never releases a page the
+worker already controls.
+
+Activation also evicts any entry in `taskdeck-static-assets` that the current route would refuse.
+The pre-#2350 extension-only matcher could have stored an authenticated response there under a
+prefixed API base, where it would otherwise survive an account switch for 30 days.
+
+Normal (non-security) updates still go through the `SwUpdatePrompt` banner: only this migration sends
+skip-waiting.
 
 ### Navigation Fallback
 
