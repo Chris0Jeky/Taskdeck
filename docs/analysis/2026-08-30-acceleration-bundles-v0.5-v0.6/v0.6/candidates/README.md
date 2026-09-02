@@ -23,6 +23,22 @@ consistency, not repository integration.
 | `csharp/ContextFabricMetrics.cs`, `MetricPrivacyGuard.cs`, `python/runtime_metrics.py`, `privacy_audit.py`, `typescript/controlMetricsModel.ts` | CF-24B `#2277` | `../CF-24B-runtime-metrics-dashboard.md` |
 | `typescript/profileVocabulary.ts`, `routeReceiptPresenter.ts` | CF-10 / CF-21 Control surface | `../CF-10-processing-profiles-router.md` |
 
+## Known defects (archived verbatim; fix on adoption, never here)
+
+Found by the validation pass and the Codex review of PR `#2371`; each curated issue file carries the
+fuller list.
+
+| File | Defect |
+| --- | --- |
+| `csharp/RouterV1.cs` | `HasConsent` passes a processor id into `ConsentGrant.Covers`'s `processorFamily`; rebuilds health/cost gates the repo already ships; digest serializes enums PascalCase against the kebab-case contract |
+| `csharp/MetricPrivacyGuard.cs` | substring denylist rejects `contextBindingStatus` / `contentHash`; must become the allowlist `RUNTIME_METRICS.md` prescribes |
+| `csharp/CacheReservationMachine.cs` | in-memory state machine with no unique key — not a stampede guard |
+| `csharp/SelectiveEscalationPlanner.cs` | declares its own `EscalationAnchorKind` (use `EvidenceAnchorKind`); accepts a text/time/page/image escalation anchor with no coordinates |
+| `csharp/AuthorityShadow.cs`, `StableCanaryAllocator.cs` | evaluator never returns `Ineligible`; *Assist* never bound as a field; allocator's 16-bit draw modulo 10 000 is biased |
+| `python/runtime_metrics.py` | averages cost over accepted operations even when some have no attributable cost — must report unknown until attribution is complete |
+| `python/provider_benchmark.py` | failed or cancelled observations with partial WER/latency are folded into quality averages — separate them |
+| `typescript/controlMetricsModel.ts` | its metric key does not match the report schema's wire key (`runtime-metrics-report.schema.json`) |
+
 Admission contract (unchanged from `docs/analysis/2026-08-30-acceleration-bundle/RECONCILIATION.md`):
 a live issue owns the behaviour and its Project state is synchronized; current source does not already
 provide it; the code is adapted to Taskdeck namespaces, layer boundaries, error contracts, auth and DI;

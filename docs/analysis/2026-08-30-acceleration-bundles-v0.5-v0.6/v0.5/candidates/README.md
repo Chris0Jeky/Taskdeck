@@ -13,4 +13,15 @@ Python utilities (`canary_report.py`, `score_fixtures.py`) run against `../fixtu
 consistency only, not repository integration. `dependency_planner.py` and the bundle-handoff schemas
 were dropped as bundle tooling.
 
+## Known defects (archived verbatim; fix on adoption, never here)
+
+| File | Defect |
+| --- | --- |
+| `csharp/AudioCaptureSession.cs` | keeps accepting chunks after the client marked chunk *N* final; a re-registered chunk is only hash-checked against the first |
+| `csharp/RetentionPlanner.cs` | emits `Delete` decisions (must be an `IBlobStore` reference release); an unknown `RetentionSubject.Kind` is not failed closed |
+| `csharp/ProcessingPolicySnapshot.cs` | `ComputeDigest` uses default `JsonSerializerOptions` — not canonical, so a field reorder silently changes every stored digest |
+| `csharp/ProcessorRouteEvaluator.cs` | cost-orders candidates, which is scoring by another name (forbidden before the CF-24A corpus) |
+| `csharp/SemanticCandidate.cs` | discards its evidence anchors, has no `CaptureId`, and its state enum drops `Corrected` / `Dismissed` |
+| `csharp/AutomationSafetyGate.cs`, `python/canary_report.py` | hard-code the struck-through ≥50 / ≤10 % / zero-reversal numbers as a `safeToExpand` verdict and omit the maintainer go (ADR-0065 amendment 10) — rejected |
+
 The admission contract in `../../v0.6/candidates/README.md` applies unchanged.
