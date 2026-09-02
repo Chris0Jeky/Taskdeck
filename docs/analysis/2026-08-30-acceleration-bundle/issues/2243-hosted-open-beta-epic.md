@@ -30,7 +30,7 @@ A stranger opens a URL, registers, and runs capture → proposal → review → 
 | `HOST-0-operating-adr` | An ADR (ADR-0061 amendment or a new one) choosing tenancy, custody, cost owner, RPO/RTO, registration policy, support owner, data region/retention and the exit/closure policy | ADR-0061 | **Drafting yes, ratifying no.** Every value in it is a maintainer decision; an agent may prepare the options brief and nothing more |
 | `HOST-1-trusted-instance` | Finish #1772 Stage 1 | #1772 | No — human deploy act |
 | `HOST-2-adversarial-isolation` | A cross-user matrix over every ID-bearing API / MCP HTTP + stdio / SignalR group / export / blob / evidence path, with opaque-ID enumeration, guessed IDs, stale tokens, concurrency and deleted-resource cases | — | **Yes.** This is the largest purely-agent slice in the epic and it needs no deployment: it is test code against the existing stack |
-| `HOST-3-abuse-and-cost` | Registration/login rate limits, per-account quotas, e-mail verification, bounded shared-key ceiling with a global kill switch, egress ceilings, close-registration switch | HOST-0 for the numbers | Partly — the mechanisms are buildable; the ceilings are values |
+| `HOST-3-abuse-and-cost` | Registration/login rate limits, per-account quotas, e-mail verification, a true whole-instance cross-surface LLM ceiling wired to every billable path (including worker jobs) with a global kill switch, egress ceilings, close-registration switch | HOST-0 for the numbers | Partly — the mechanisms are buildable; the ceiling value follows HOST-0, but the cross-surface mechanism is new code |
 | `HOST-4-operations` | Status page, monitoring, incident severity + comms templates, restore drill receipt, support runbook, privacy/terms, deletion SLA | #2238's runbook | Partly — much of `docs/ops/` already exists and should be extended, not duplicated |
 | `HOST-5-public-gate` | Controlled invited cohort → evidence review → open registration, with a tested rollback to invite-only | all above, #2012 | No |
 
@@ -45,7 +45,7 @@ A stranger opens a URL, registers, and runs capture → proposal → review → 
 | Container restore smoke | `scripts/ci/run-container-backup-restore-smoke.sh` | **exists** | Runs against the built image at the packaged runtime UID/GID |
 | Registration gating | `RegistrationSettings`, `IRegistrationPolicyService` / `RegistrationPolicyService` | **exists** | Shipped default is `Open`; a Stage 1/2 deployment must set the mode explicitly at deploy time |
 | API-key scopes | `ApiKeyScope` (`Read`, `Propose`, `Manage`, `Full`) | **exists** | Least-privilege exists for the MCP HTTP transport; Stage 2/3 isolation tests should exercise it |
-| Per-user LLM quota / global ceiling | `LlmQuotaService`, `LlmQuota:GlobalBudgetCeilingTokens` | **exists** | Unlimited by default; the ceiling is a deployment value, not code |
+| Per-user LLM quota / whole-instance ceiling | `LlmQuotaService`, `LlmQuota:GlobalBudgetCeilingTokens` | **partial** | The existing reservation total is filtered by `LlmSurface`, so Chat and CaptureTriage each receive the configured allowance and future worker jobs are not covered. HOST-3 must implement one atomic cross-surface ceiling before a deployment value can bound shared-key spend |
 | Hosted session model, tenancy split, status page, abuse limits, deletion SLA | — | **new** | None exists |
 
 ## Implementation plan
@@ -63,7 +63,7 @@ A stranger opens a URL, registers, and runs capture → proposal → review → 
 - [ ] Cross-user adversarial suite: two synthetic users against every CRUD endpoint and nested resource, proposal preview/apply/audit, MCP HTTP and stdio, SignalR subscriptions and groups, exports/imports/account deletion, captures/source assets/blobs, diagnostics/search/notifications/health — `dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1`
 - [ ] Enumeration: a guessed or stale ID returns the same shape as a genuinely missing one (the batch-execute path already sets this precedent — do not regress it)
 - [ ] Rate/quota bypass: registration flood, login flood, oversized body, oversized file, and a per-account token ceiling breach each fail closed with a stable code
-- [ ] Cost: a global LLM ceiling breach fails the job with an actionable outcome and leaves the capture intact; the kill switch stops new billable work within one request
+- [ ] Cost: one whole-instance ceiling is shared atomically across Chat, CaptureTriage and worker jobs; concurrent reservations cannot exceed it, a breach fails with an actionable outcome and leaves the capture intact, and the kill switch stops new billable work within one request
 - [ ] Recovery: a timed restore drill in the exact production image with the elapsed time recorded — `bash scripts/ci/run-container-backup-restore-smoke.sh <image>` (needs Docker)
 - [ ] Registration: closing registration takes effect for an in-flight invite and an already-loaded signup page
 - [ ] Deletion: account deletion releases blobs and leaves no owner-scoped row behind
