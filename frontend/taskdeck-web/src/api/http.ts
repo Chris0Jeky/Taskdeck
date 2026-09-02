@@ -6,6 +6,7 @@ import { isDemoMode } from '../utils/demoMode'
 import { notifyAuthExpired } from '../utils/authExpiry'
 import * as tokenStorage from '../utils/tokenStorage'
 import { logError, logWarn } from '../utils/errorReporting'
+import { purgeLegacyApiCaches } from '../pwa/legacyApiCache'
 import {
   MAX_RETRIES,
   computeRetryDelay,
@@ -65,7 +66,7 @@ http.interceptors.request.use(
 // Response interceptor for error handling
 http.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     if (error.response) {
       // Callers can set `expectedStatuses` on the request config to mark certain
       // error statuses as an expected part of that endpoint's contract (e.g. a 404
@@ -94,6 +95,7 @@ http.interceptors.response.use(
       const skipAuth401 = (error.config as Record<string, unknown> | undefined)?.skipAuth401 === true
       if (error.response.status === 401 && !isDemoMode && !skipAuth401) {
         tokenStorage.clearAll()
+        await purgeLegacyApiCaches()
         const pathname = window.location.pathname
         const currentPath = `${pathname}${window.location.search}`
         if (!isAuthRoutePath(pathname)) {

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { isLocaleCatalogRequest, isStaticAssetRequest } from './src/pwa/runtimeCachePolicy.ts'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -21,7 +22,7 @@ export default defineConfig({
         enabled: false,
       },
       workbox: {
-        importScripts: ['share-target-handler.js'],
+        importScripts: ['api-cache-cleanup.js', 'share-target-handler.js'],
         // Precache app shell assets (JS, CSS, HTML, icons)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
         // Exclude manifest icons from glob — they are precached via the manifest config
@@ -89,7 +90,7 @@ export default defineConfig({
           {
             // Lazy locale catalogs (excluded from precache above): cache on
             // first use so a user who picked it/es keeps their language offline.
-            urlPattern: /\/assets\/(?:it|es)-[\w-]+\.js$/,
+            urlPattern: isLocaleCatalogRequest,
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'taskdeck-locale-chunks',
@@ -98,31 +99,8 @@ export default defineConfig({
             },
           },
           {
-            // Canonical spellings only, and the cache name is versioned (#1992 round 1). Before the
-            // fail-closed contract this rule was case-insensitive, so a response to /API/... could
-            // be stored here — and an installed PWA would keep replaying that cached 200 for a URL
-            // that now answers 404 at every layer. The new name means those entries are never read
-            // again. Note they are not deleted: Workbox's cleanupOutdatedCaches covers precaches,
-            // not runtime caches, so the old cache is orphaned rather than purged.
-            urlPattern: /^https?:\/\/.*\/api\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'taskdeck-api-cache-v2',
-              expiration: {
-                maxAgeSeconds: 24 * 60 * 60, // 1 day
-                maxEntries: 100,
-              },
-              networkTimeoutSeconds: 10,
-              // Only cache same-origin 200 responses — status 0 (opaque) would
-              // cache empty bodies from cross-origin requests.
-              cacheableResponse: {
-                statuses: [200],
-              },
-            },
-          },
-          {
             // CacheFirst for static assets (fonts, images, icons)
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i,
+            urlPattern: isStaticAssetRequest,
             handler: 'CacheFirst',
             options: {
               cacheName: 'taskdeck-static-assets',

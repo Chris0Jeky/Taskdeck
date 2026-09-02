@@ -7,6 +7,7 @@ import { isDemoMode, isDemoSessionActive } from '../utils/demoMode'
 import * as tokenStorage from '../utils/tokenStorage'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
 import { useFeatureFlagStore } from '../store/featureFlagStore'
+import { purgeLegacyApiCaches } from '../pwa/legacyApiCache'
 import type { FeatureFlags } from '../types/feature-flags'
 
 // Augment vue-router's RouteMeta so that `requiresFlag` is type-safe throughout.
@@ -364,10 +365,22 @@ const router = createRouter({
 
 // Route-transition performance instrumentation
 const routePerf = usePerformanceMark('route-transition')
+let startupCachePurge: Promise<boolean> | undefined
+
+function purgeLegacyApiCachesBeforeNavigation(): Promise<boolean> {
+  startupCachePurge ??= purgeLegacyApiCaches()
+  return startupCachePurge
+}
 
 // Navigation guard for auth and feature flags
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   routePerf.start()
+
+  // A hard refresh evaluates router guards before App.vue restores a session.
+  // Never let that early localStorage read make an old identity usable before
+  // the retired API namespace has been removed.
+  const cachePurgeSucceeded = await purgeLegacyApiCachesBeforeNavigation()
+  if (!cachePurgeSucceeded) tokenStorage.clearAll()
 
   const isPublic = to.meta.public === true
   const demoActive = isDemoMode && isDemoSessionActive()

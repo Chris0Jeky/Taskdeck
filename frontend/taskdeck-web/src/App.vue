@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import ToastContainer from './components/common/ToastContainer.vue'
 import PaperToastContainer from './components/paper/PaperToastContainer.vue'
@@ -15,6 +15,7 @@ const route = useRoute()
 const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
 const paperTheme = usePaperThemeStore()
+const sessionReady = ref(false)
 
 paperTheme.apply()
 
@@ -22,9 +23,10 @@ const showShell = computed(() => {
   return route.meta.requiresShell === true
 })
 
-onMounted(() => {
-  session.restoreSession()
+onMounted(async () => {
+  await session.restoreSession()
   featureFlags.restore()
+  sessionReady.value = true
 })
 </script>
 
@@ -32,11 +34,11 @@ onMounted(() => {
   <div id="app">
     <a href="#td-main-content" class="td-skip-link">Skip to main content</a>
     <!-- Shell layout for workspace routes -->
-    <ErrorBoundary v-if="showShell">
+    <ErrorBoundary v-if="sessionReady && showShell">
       <AppShell />
     </ErrorBoundary>
     <!-- Direct render for public routes (login/register) -->
-    <ErrorBoundary v-else>
+    <ErrorBoundary v-else-if="sessionReady">
       <router-view />
     </ErrorBoundary>
     <PaperToastContainer v-if="paperTheme.isOn" />

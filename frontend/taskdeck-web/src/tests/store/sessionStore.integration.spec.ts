@@ -187,7 +187,7 @@ describe('sessionStore — integration (real authApi, mocked HTTP)', () => {
   // ── restoreSession ────────────────────────────────────────────────────────
 
   describe('restoreSession', () => {
-    it('restores an active session from localStorage without calling the API', () => {
+    it('restores an active session from localStorage after cache cleanup', async () => {
       const token = fakeJwt(3600)
       localStorage.setItem('taskdeck_token', token)
       localStorage.setItem('taskdeck_session', JSON.stringify({
@@ -205,7 +205,7 @@ describe('sessionStore — integration (real authApi, mocked HTTP)', () => {
       } })
 
       const store = useSessionStore()
-      store.restoreSession()
+      await store.restoreSession()
 
       expect(store.token).toBe(token)
       expect(store.userId).toBe('user-1')

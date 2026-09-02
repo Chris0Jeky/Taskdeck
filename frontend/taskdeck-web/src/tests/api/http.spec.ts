@@ -58,6 +58,13 @@ const errorReportingMock = vi.hoisted(() => ({
 }))
 vi.mock('../../utils/errorReporting', () => errorReportingMock)
 
+const cachePurgeMocks = vi.hoisted(() => ({
+  purge: vi.fn(),
+}))
+vi.mock('../../pwa/legacyApiCache', () => ({
+  purgeLegacyApiCaches: cachePurgeMocks.purge,
+}))
+
 // ─── Module imports (after mocks) ───────────────────────────────────────────
 
 import http from '../../api/http'
@@ -74,6 +81,7 @@ describe('http interceptors (#725)', () => {
     mock = new MockAdapter(http)
     localStorage.clear()
     vi.restoreAllMocks()
+    cachePurgeMocks.purge.mockResolvedValue(true)
     navigationMock.isAuthRoutePath.mockReturnValue(false)
     demoModeFlag.value = false
     // Reset window.location to a test-friendly object
@@ -188,6 +196,33 @@ describe('http interceptors (#725)', () => {
       await expect(http.get('/test')).rejects.toThrow()
 
       expect(clearSpy).toHaveBeenCalled()
+    })
+
+    it('clears credentials before waiting for purge and delays navigation until it completes', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      const clearSpy = vi.spyOn(tokenStorage, 'clearAll')
+      let releasePurge: (result: boolean) => void = () => undefined
+      cachePurgeMocks.purge.mockReturnValueOnce(new Promise<boolean>((resolve) => {
+        releasePurge = resolve
+      }))
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/workspace/home', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      mock.onGet('/test').reply(401, { message: 'Unauthorized' })
+
+      const request = http.get('/test')
+      const completed = request.then(
+        () => { throw new Error('Expected the 401 request to reject.') },
+        () => undefined,
+      )
+      await vi.waitFor(() => expect(clearSpy).toHaveBeenCalled())
+      expect(window.location.href).toBe('')
+
+      releasePurge(true)
+      await completed
+      expect(window.location.href).toContain('/login?redirect=')
     })
 
     it('redirects to /login with return URL on 401', async () => {

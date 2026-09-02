@@ -10,6 +10,7 @@ import { isDemoMode, isDemoSessionActive, activateDemoSession, clearDemoSession,
 import * as tokenStorage from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
 import { proposalDisplayNames } from '../composables/useProposalDisplayNames'
+import { purgeLegacyApiCaches } from '../pwa/legacyApiCache'
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -50,10 +51,16 @@ export const useSessionStore = defineStore('session', () => {
     })
   }
 
-  function setSession(data: AuthResponse) {
+  async function setSession(data: AuthResponse): Promise<boolean> {
     if (!tokenStorage.isValidJwtStructure(data.token)) {
       logWarn('Received token with invalid JWT structure — session not persisted.')
-      return
+      return false
+    }
+
+    // A replacement token is usable only after the legacy cache namespace is
+    // gone, including a refresh for the same user.
+    if (!(await purgeLegacyApiCaches())) {
+      return false
     }
 
     if (userId.value !== data.user.id) proposalDisplayNames.reset()
@@ -71,6 +78,7 @@ export const useSessionStore = defineStore('session', () => {
       email: data.user.email,
       defaultRole: data.user.defaultRole,
     })
+    return true
   }
 
   function clearSession() {
@@ -84,6 +92,15 @@ export const useSessionStore = defineStore('session', () => {
     expiresAt.value = null
     tokenStorage.clearAll()
     clearDemoSession()
+    // Credential removal is synchronous. A following identity establishment
+    // awaits this deduplicated purge before it can issue authenticated reads.
+    void purgeLegacyApiCaches()
+  }
+
+  async function requireLegacyApiCachePurge(): Promise<void> {
+    if (!await purgeLegacyApiCaches()) {
+      throw new Error('Unable to establish a session safely. Please retry.')
+    }
   }
 
   async function hydrateDefaultRoleFromProfile(restoredUserId: string, restoredToken: string) {
@@ -128,7 +145,7 @@ export const useSessionStore = defineStore('session', () => {
     toast.success('Welcome to the Taskdeck demo')
   }
 
-  function restoreSession() {
+  async function restoreSession() {
     if (isDemoMode && isDemoSessionActive()) {
       setDemoSession()
       return
@@ -137,6 +154,16 @@ export const useSessionStore = defineStore('session', () => {
     const savedToken = tokenStorage.getToken()
     const session = tokenStorage.getSession()
     if (savedToken && session) {
+      if (isTokenExpired(savedToken)) {
+        clearSession()
+        return
+      }
+
+      if (!await purgeLegacyApiCaches()) {
+        clearSession()
+        return
+      }
+
       if (userId.value !== session.userId) proposalDisplayNames.reset()
       token.value = savedToken
       userId.value = session.userId
@@ -144,11 +171,6 @@ export const useSessionStore = defineStore('session', () => {
       email.value = session.email
       defaultRole.value = typeof session.defaultRole === 'number' ? session.defaultRole : null
       expiresAt.value = getTokenExpiryIso(savedToken)
-      if (isTokenExpired(savedToken)) {
-        clearSession()
-        return
-      }
-
       void hydrateDefaultRoleFromProfile(session.userId, savedToken)
     } else if (savedToken && !session) {
       // Token exists but session metadata is missing or corrupt — clean up
@@ -160,8 +182,9 @@ export const useSessionStore = defineStore('session', () => {
     try {
       loading.value = true
       error.value = null
+      await requireLegacyApiCachePurge()
       const response = await authApi.login(credentials)
-      setSession(response)
+      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
       toast.success('Logged in successfully')
       return response
     } catch (e: unknown) {
@@ -178,8 +201,9 @@ export const useSessionStore = defineStore('session', () => {
     try {
       loading.value = true
       error.value = null
+      await requireLegacyApiCachePurge()
       const response = await authApi.register(request)
-      setSession(response)
+      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
       toast.success('Registration successful')
       return response
     } catch (e: unknown) {
@@ -212,8 +236,9 @@ export const useSessionStore = defineStore('session', () => {
     try {
       loading.value = true
       error.value = null
+      await requireLegacyApiCachePurge()
       const response = await authApi.exchangeOAuthCode(code)
-      setSession(response)
+      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
       toast.success('Signed in with GitHub')
       return response
     } catch (e: unknown) {
@@ -230,8 +255,9 @@ export const useSessionStore = defineStore('session', () => {
     try {
       loading.value = true
       error.value = null
+      await requireLegacyApiCachePurge()
       const response = await authApi.exchangeOidcCode(code)
-      setSession(response)
+      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
       toast.success('Signed in successfully')
       return response
     } catch (e: unknown) {
@@ -251,7 +277,9 @@ export const useSessionStore = defineStore('session', () => {
    */
   async function refreshSession(): Promise<void> {
     const response = await authApi.refreshToken()
-    setSession(response)
+    if (!await setSession(response)) {
+      throw new Error('Unable to refresh the session safely. Please retry.')
+    }
   }
 
   function logout() {
