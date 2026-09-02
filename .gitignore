@@ -160,3 +160,5 @@ frontend/*/reports/mutation/
 /audit_prs_*.tsv
 /filesAndResources/taskdeck_context_fabric_pack
 /filesAndResources/taskdeck_smart_ci_pack
+/filesAndResources/taskdeck-milestone-6-acceleration-bundle-2026-08-30
+/filesAndResources/taskdeck-v0.6-acceleration-bundle-2026-08-30
