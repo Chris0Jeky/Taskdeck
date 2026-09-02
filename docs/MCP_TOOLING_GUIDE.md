@@ -22,7 +22,7 @@ Operational companion:
 ### 0.1) Codex and Claude configuration parity
 - Codex project MCP servers live in `.codex/config.toml`.
 - Claude project MCP servers live in `.mcp.json`, with project approval and `/mcp` authentication where required.
-- Keep the shared project baseline aligned: `openaiDeveloperDocs`, `github`, `context7`, `playwright`, `chromeDevTools`. The Docker MCP gateway is user-scope only (see "Need container/runtime deployment checks") and belongs in neither project file.
+- Shared project baseline: `openaiDeveloperDocs`, `playwright`, `chromeDevTools`. Codex additionally declares `context7` and an authenticated `github` server in `.codex/config.toml`; Claude's `.mcp.json` omits both on purpose (2026-09-02) — Context7 arrives through the claude.ai connector and GitHub work goes through `gh`, so a project copy only added a duplicate process per session. The Docker MCP gateway is user-scope only (see "Need container/runtime deployment checks") and belongs in neither project file.
 - Use each runtime's native mechanics: Codex configured agents/worktrees when policy allows; Claude skills/hooks/worktree sessions and MCP auth flow.
 
 ### 1) Prefer the right tool over guessing
@@ -32,7 +32,7 @@ Operational companion:
 - Browser deep-debug and runtime protocol inspection -> `chromeDevTools` MCP
 - Container/build/runtime inspection -> `docker` MCP
 - Repo-wide code search -> native `rg` (ripgrep MCP is unreliable on Windows right now)
-- Repo/PR/issue state and automation -> `github` MCP
+- Repo/PR/issue state and automation -> `github` MCP (Codex) or `gh` CLI (Claude, and the fallback for both)
 
 ### 2) Write actions are high risk
 GitHub MCP may have write capability in this environment. Use write actions only when the task explicitly requires them and authentication has been verified in the active runtime.
@@ -82,7 +82,7 @@ Configuration note:
 
 ### A) "Where is X implemented?" / "Find call sites"
 1. Use native `rg -n "<symbol>"` in repo root.
-2. If shell search is unavailable, use GitHub MCP `search_code`.
+2. If shell search is unavailable: Codex uses GitHub MCP `search_code`; Claude uses `gh search code` (GitHub MCP is not in `.mcp.json`).
 3. Open files from local workspace for edits.
 
 ### B) "How do I use API/library/framework feature X?"
@@ -103,7 +103,7 @@ Configuration note:
 2. Keep Playwright MCP for deterministic user-flow reproduction.
 
 ### D) "Plan/track work" / "Turn docs into issues"
-Use GitHub MCP:
+Codex: use GitHub MCP. Claude: use `gh` (`gh issue`, `gh pr`, `gh api`, `gh project`) — the same read/write rules apply:
 - Read: list/search issues, PRs, branches, commits
 - Write: create/update issues and PR metadata when explicitly requested
 
@@ -212,7 +212,7 @@ Why it fails on Windows:
 
 Required fallback:
 - use native shell `rg -n "<pattern>" .`
-- if shell search is unavailable, use GitHub MCP `search_code`
+- if shell search is unavailable, use GitHub MCP `search_code` (Codex) or `gh search code` (Claude)
 
 ---
 

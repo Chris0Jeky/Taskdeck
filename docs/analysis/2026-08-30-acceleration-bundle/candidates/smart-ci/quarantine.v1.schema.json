@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.local/ci/schemas/quarantine.v1.schema.json",
+  "title": "Taskdeck CI quarantine v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "entries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "test",
+          "issue",
+          "owner",
+          "reason",
+          "created_on",
+          "expires_on",
+          "compensating_coverage"
+        ],
+        "properties": {
+          "test": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issue": {
+            "type": "string",
+            "minLength": 2
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 2
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 12
+          },
+          "created_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "expires_on": {
+            "type": "string",
+            "format": "date"
+          },
+          "compensating_coverage": {
+            "type": "string",
+            "minLength": 5
+          },
+          "maximum_matches": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maintainer_exception": {
+            "type": "string",
+            "minLength": 8
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+
+digraph G {
+  rankdir=LR;
+  graph [fontname="Arial", labelloc="t", label="Content-free runtime metrics"];
+  node [shape=box, fontname="Arial"];
+  Runs [label="ProcessingRun / usage facts"];
+  Candidates [label="Candidate state facts"];
+  Bindings [label="Target binding facts"];
+  Outcomes [label="ProposalOutcome / Feedback"];
+  Guard [label="Metric privacy allowlist"];
+  Projection [label="Content-free fact projection"];
+  Calculator [label="Versioned metric dictionary"];
+  Report [label="Reproducible CLI / JSON report"];
+  Dashboard [label="Control dashboard"];
+  Shadow [label="CF-22 evidence section"];
+
+  Runs -> Guard; Candidates -> Guard; Bindings -> Guard; Outcomes -> Guard;
+  Guard -> Projection -> Calculator -> Report;
+  Report -> Dashboard;
+  Report -> Shadow;
+}

@@ -1,6 +1,6 @@
 ---
 name: taskdeck-interface-map
-description: Maintain Taskdeck's agent-facing interface maps. Use when adding, splitting, refactoring, or documenting complex domains so future agents can find entry points, invariants, edit seams, traps, and verification commands without bulk-reading the repo.
+description: Maintain Taskdeck's agent-facing interface maps (autodoc) so future agents find entry points, invariants, seams, traps, and checks without bulk reads.
 ---
 
 # Taskdeck Interface Map

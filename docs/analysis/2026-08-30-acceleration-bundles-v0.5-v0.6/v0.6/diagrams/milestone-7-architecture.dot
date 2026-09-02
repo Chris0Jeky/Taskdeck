@@ -1,0 +1,27 @@
+
+digraph G {
+  rankdir=TB;
+  graph [fontname="Arial", labelloc="t", label="Taskdeck v0.6 architecture"];
+  node [shape=box, fontname="Arial"];
+  edge [fontname="Arial"];
+  Source [label="Capture / SourceAsset / Representation"];
+  Resolver [label="ProcessingProfileResolver"];
+  Snapshot [label="Immutable PolicySnapshot"];
+  Eligibility [label="Registry + Eligibility"];
+  Router [label="Deterministic Router v1"];
+  Cache [label="Processing Cache"];
+  Processor [label="Local / Sidecar / Remote Processor"];
+  Run [label="ProcessingRun + RouteReceipt"];
+  Output [label="Representation / Candidate Batch"];
+  Review [label="Proposal Review"];
+  Metrics [label="Content-free Runtime Metrics"];
+  Shadow [label="Authority Shadow Evaluator"];
+  Human [label="Explicit Maintainer Gate", shape=diamond];
+
+  Source -> Resolver -> Snapshot -> Eligibility -> Router;
+  Router -> Cache;
+  Router -> Processor;
+  Cache -> Run;
+  Processor -> Run;
+  Run -> Output -> Review -> Metrics -> Shadow -> Human;
+}

@@ -1,0 +1,77 @@
+digraph Milestone5 {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.35, ranksep=0.65, fontname="Arial", label="Taskdeck v0.4 milestone dependency map", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10, margin="0.08,0.05"];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  subgraph cluster_cf {
+    label="Context Fabric"; color="#9bb7d4"; style="rounded";
+    i2255 [label="#2255 CF-01\nCapture"];
+    i2256 [label="#2256 CF-02\nDimensions"];
+    i2257 [label="#2257 CF-03\nJobs/Runs"];
+    i2258 [label="#2258 CF-04\nWorker Protocol"];
+    i1429 [label="#1429\nMemory cap"];
+    i2260 [label="#2260 CF-06\nRepresentations"];
+    i2259 [label="#2259 CF-05\nsemantic.extract"];
+    i2261 [label="#2261 CF-07\nEvidence anchors"];
+    i2276 [label="#2276 CF-23\nBlob refs"];
+    i2089 [label="#2089\nCapture links/ledger"];
+    i2255 -> i2256;
+    i2255 -> i2257;
+    i2255 -> i2276;
+    i2257 -> i2258;
+    i2257 -> i2260;
+    i2258 -> i1429;
+    i2260 -> i2259;
+    i2260 -> i2261;
+    i2261 -> i2089;
+    i2257 -> i2259;
+  }
+
+  subgraph cluster_work {
+    label="Work model"; color="#b5d5a7"; style="rounded";
+    contract [shape=note, label="Shared Card/DTO/\nexport/proposal contract"];
+    i2087 [label="#2087\nType + hierarchy"];
+    i2092 [label="#2092\nTyped links"];
+    i2240 [label="M4 #2240\nAssignments", style="rounded,dashed,filled", fillcolor="white"];
+    i2093 [label="#2093\nParticipants/estimate/rollups"];
+    i2094 [label="#2094\nCustom fields"];
+    contract -> i2087;
+    contract -> i2092;
+    contract -> i2094;
+    i2240 -> i2093;
+    i2087 -> i2093 [style=dashed];
+  }
+
+  subgraph cluster_hosted {
+    label="Hosted beta"; color="#e6c58a"; style="rounded";
+    m4ops [shape=note, style="filled,dashed", label="M4 backup/key/private\ninstance proof"];
+    i1308 [label="#1308\nTelemetry/feedback"];
+    i1310 [label="#1310\nLaunch kit"];
+    i2243 [label="#2243\nHosted open-beta gate"];
+    m4ops -> i2243;
+    i1308 -> i1310;
+    i1308 -> i2243;
+    i1310 -> i2243;
+    i2276 -> i2243 [style=dashed];
+  }
+
+  subgraph cluster_other {
+    label="Independent / depth"; color="#c7b1d8"; style="rounded";
+    i2241 [label="#2241\nTrue SSE"];
+    i2236 [label="#2236\nRefactor pass"];
+    i2237 [label="#2237\nPerformance baseline"];
+  }
+
+  subgraph cluster_ci {
+    label="Smart CI depth"; color="#e2a6a6"; style="rounded";
+    m4ci [shape=note, style="filled,dashed", label="M4 CI baseline +\ncontrol plane"];
+    i2330 [label="#2330 CI-06\nAPI shards"];
+    i2336 [label="#2336 CI-12\nReceipts/report"];
+    i2339 [label="#2339 CI-15\nFlake governance"];
+    i2334 [label="#2334 CI-10\nNightly/release"];
+    m4ci -> i2330;
+    m4ci -> i2336;
+    m4ci -> i2334;
+    i2336 -> i2339;
+  }
+}

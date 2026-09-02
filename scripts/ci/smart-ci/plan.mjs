@@ -4,7 +4,7 @@
 //   node scripts/ci/smart-ci/plan.mjs --policy ci/policy.v1.json \
 //     --event "$GITHUB_EVENT_PATH" --changed-files changed.txt \
 //     [--event-name pull_request_target] [--execution-mode hosted] \
-//     [--merge-tree-sha <sha>] --out artifacts/ci-plan.json [--summary "$GITHUB_STEP_SUMMARY"]
+//     [--merge-sha <sha> --merge-tree-sha <sha>] --out artifacts/ci-plan.json [--summary "$GITHUB_STEP_SUMMARY"]
 //
 // Reads ONLY metadata: the event payload (SHAs, actor login/type/association, labels,
 // draft/fork flags) and a changed-file list. It never reads file contents and never
@@ -16,7 +16,7 @@ import { dirname } from 'node:path';
 import { buildPlan, errorPlan, policyDigest, renderPlanSummary } from './lib/plan.mjs';
 
 function parseArgs(argv) {
-  const args = { policy: 'ci/policy.v1.json', event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, changedFiles: null, changedFilesExpected: null, headActors: null, headActorsKnown: false, notes: [], executionMode: null, mergeTreeSha: null, out: 'artifacts/ci-plan.json', summary: null, overrides: {} };
+  const args = { policy: 'ci/policy.v1.json', event: null, eventName: process.env.GITHUB_EVENT_NAME ?? null, changedFiles: null, changedFilesExpected: null, headActors: null, headActorsKnown: false, notes: [], executionMode: null, mergeSha: null, mergeTreeSha: null, out: 'artifacts/ci-plan.json', summary: null, overrides: {} };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = () => argv[++index];
@@ -26,6 +26,7 @@ function parseArgs(argv) {
       case '--event-name': args.eventName = next(); break;
       case '--changed-files': args.changedFiles = next(); break;
       case '--execution-mode': args.executionMode = next(); break;
+      case '--merge-sha': args.mergeSha = next(); break;
       case '--merge-tree-sha': args.mergeTreeSha = next(); break;
       case '--changed-files-expected': args.changedFilesExpected = Number(next()); break;
       case '--head-actors': args.headActors = next().split(',').map((value) => value.trim()).filter(Boolean); args.headActorsKnown = true; break;
@@ -42,13 +43,21 @@ function parseArgs(argv) {
       case '--fork': args.overrides.isFork = true; break;
       case '--labels': args.overrides.labels = next().split(',').map((label) => label.trim()).filter(Boolean); break;
       case '--help':
-        console.log('usage: plan.mjs --policy <file> (--event <github event json> | --base-sha S --head-sha S [--actor L] [--association A] [--fork] [--labels a,b] [--pr N]) --changed-files <list> [--event-name N] [--execution-mode M] [--merge-tree-sha S] --out <file> [--summary <file>]');
+        console.log('usage: plan.mjs --policy <file> (--event <github event json> | --base-sha S --head-sha S [--actor L] [--association A] [--fork] [--labels a,b] [--pr N]) --changed-files <list> [--event-name N] [--execution-mode M] [--merge-sha S --merge-tree-sha S] --out <file> [--summary <file>]');
         process.exit(0);
         break;
       default: throw new Error(`Unknown argument: ${arg}`);
     }
   }
   return args;
+}
+
+export function requirePullRequestMergeBinding(event, input) {
+  if (!event || !event.pull_request) return;
+  if (!/^[0-9a-f]{40}$/i.test(String(input && input.mergeSha ? input.mergeSha : ''))
+    || !/^[0-9a-f]{40}$/i.test(String(input && input.mergeTreeSha ? input.mergeTreeSha : ''))) {
+    throw new Error('pull-request planning requires merge SHA and tree SHA from the same fetched merge ref');
+  }
 }
 
 /** Turn a GitHub event payload into the content-free planner input. */
@@ -63,7 +72,7 @@ export function inputFromEvent(event, eventName, options = {}) {
     isDraft: false,
     baseSha: null,
     headSha: null,
-    mergeSha: null,
+    mergeSha: options.mergeSha ?? null,
     mergeTreeSha: options.mergeTreeSha ?? null,
     actorLogin: null,
     actorType: null,
@@ -89,7 +98,7 @@ export function inputFromEvent(event, eventName, options = {}) {
     input.isDraft = pr.draft === true;
     input.baseSha = pr.base ? pr.base.sha ?? null : null;
     input.headSha = pr.head ? pr.head.sha ?? null : null;
-    input.mergeSha = pr.merge_commit_sha ?? null;
+    input.mergeSha = Object.hasOwn(options, 'mergeSha') ? options.mergeSha : pr.merge_commit_sha ?? null;
     input.actorLogin = pr.user ? pr.user.login ?? null : null;
     input.actorType = pr.user ? pr.user.type ?? null : null;
     input.authorAssociation = pr.author_association ?? null;
@@ -153,8 +162,8 @@ function main() {
       changedFilesAvailable = true;
     }
     const notes = [...args.notes];
-    if (!args.mergeTreeSha) notes.push('merge-tree-unavailable');
-    input = inputFromEvent(event, args.eventName ?? (event ? null : 'local'), { changedFiles: [...changedFiles], changedFileRows, changedFilesAvailable, changedFilesExpected: args.changedFilesExpected, headActors: args.headActors, headActorsKnown: args.headActorsKnown, notes, executionMode: args.executionMode, mergeTreeSha: args.mergeTreeSha });
+    input = inputFromEvent(event, args.eventName ?? (event ? null : 'local'), { changedFiles: [...changedFiles], changedFileRows, changedFilesAvailable, changedFilesExpected: args.changedFilesExpected, headActors: args.headActors, headActorsKnown: args.headActorsKnown, notes, executionMode: args.executionMode, mergeSha: args.mergeSha, mergeTreeSha: args.mergeTreeSha });
+    requirePullRequestMergeBinding(event, input);
     if (!event) {
       // Local what-if: an explicit actor is the operator; default to a trusted owner preview.
       input.actorLogin = 'local';

@@ -680,6 +680,111 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task ExecuteProposal_ArchiveCard_ShouldPersistBlockedCardAppliedReceiptAndAudit()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-exec-archive-card");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "archive-card-proposal");
+
+        Guid columnId;
+        using (var setupScope = _factory.Services.CreateScope())
+        {
+            var setupDb = setupScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            columnId = await setupDb.Columns
+                .Where(column => column.BoardId == boardId)
+                .Select(column => column.Id)
+                .SingleAsync();
+        }
+
+        var createCardResponse = await client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, columnId, "Archive through proposal", null, null, null));
+        var createCardBody = await createCardResponse.Content.ReadAsStringAsync();
+        createCardResponse.StatusCode.Should().Be(HttpStatusCode.Created, createCardBody);
+        var card = JsonSerializer.Deserialize<CardDto>(
+            createCardBody,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        card.Should().NotBeNull();
+        card!.IsBlocked.Should().BeFalse();
+
+        var createProposalResponse = await client.PostAsJsonAsync(
+            "/api/automation/proposals",
+            new CreateProposalDto(
+                ProposalSourceType.Manual,
+                user.UserId,
+                "Archive card",
+                RiskLevel.High,
+                Guid.NewGuid().ToString(),
+                boardId,
+                Operations:
+                [
+                    new CreateProposalOperationDto(
+                        0,
+                        "archive",
+                        "card",
+                        JsonSerializer.Serialize(new { boardId, cardId = card.Id }),
+                        Guid.NewGuid().ToString(),
+                        card.Id.ToString())
+                ]));
+        var createProposalBody = await createProposalResponse.Content.ReadAsStringAsync();
+        createProposalResponse.StatusCode.Should().Be(HttpStatusCode.Created, createProposalBody);
+        var proposal = JsonSerializer.Deserialize<ProposalDto>(
+            createProposalBody,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        proposal.Should().NotBeNull();
+
+        var approveResponse = await client.PostAsync(
+            $"/api/automation/proposals/{proposal!.Id}/approve",
+            null);
+        var approveBody = await approveResponse.Content.ReadAsStringAsync();
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK, approveBody);
+        var approved = JsonSerializer.Deserialize<ProposalDto>(
+            approveBody,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        approved.Should().NotBeNull();
+        approved!.Status.Should().Be(ProposalStatus.Approved);
+
+        using var executeRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/api/automation/proposals/{proposal.Id}/execute");
+        executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var executeResponse = await client.SendAsync(executeRequest);
+        var executeBody = await executeResponse.Content.ReadAsStringAsync();
+        executeResponse.StatusCode.Should().Be(HttpStatusCode.OK, executeBody);
+        var receipt = JsonSerializer.Deserialize<ProposalDto>(
+            executeBody,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        receipt.Should().NotBeNull();
+        receipt!.Id.Should().Be(proposal.Id);
+        receipt.Status.Should().Be(ProposalStatus.Applied);
+        receipt.AppliedAt.Should().NotBeNull();
+        receipt.FailureReason.Should().BeNull();
+
+        using var verificationScope = _factory.Services.CreateScope();
+        var db = verificationScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var persistedCard = await db.Cards
+            .AsNoTracking()
+            .SingleAsync(entity => entity.Id == card.Id);
+        persistedCard.IsBlocked.Should().BeTrue();
+        persistedCard.BlockReason.Should().Be("Archived by an approved proposal.");
+
+        var persistedProposal = await db.AutomationProposals
+            .AsNoTracking()
+            .SingleAsync(entity => entity.Id == proposal.Id);
+        persistedProposal.Status.Should().Be(ProposalStatus.Applied);
+        persistedProposal.AppliedAt.Should().Be(receipt.AppliedAt);
+        persistedProposal.FailureReason.Should().BeNull();
+
+        var audit = await db.AuditLogs
+            .AsNoTracking()
+            .SingleAsync(log => log.EntityId == card.Id && log.Action == AuditAction.Archived);
+        audit.EntityType.Should().Be("card");
+        audit.UserId.Should().Be(user.UserId);
+        audit.Changes.Should().Contain(proposal.Id.ToString());
+        audit.Changes.Should().Contain("archive card");
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ShouldNotMutateUnrelatedCapture_WhenQueueSourceReferenceIsCallerSupplied()
     {
         var proposalClient = _factory.CreateClient();

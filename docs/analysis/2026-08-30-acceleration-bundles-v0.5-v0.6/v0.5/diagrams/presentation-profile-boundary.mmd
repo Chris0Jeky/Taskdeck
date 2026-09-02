@@ -1,0 +1,8 @@
+flowchart LR
+  Actions[Shared domain actions] --> Flow[Flow profile]
+  Actions --> Guided[Guided profile]
+  Actions --> Control[Control profile]
+  Flow --> Commands[Same commands and permissions]
+  Guided --> Commands
+  Control --> Commands
+  Commands --> Audit[Same audit/provenance]

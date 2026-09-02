@@ -237,3 +237,11 @@ completion conditions:
 4. Keep `#2238` / `#2239` as separate production-image and key-verification PRs, then run one timed
    restore drill before private-instance `#1772` evidence.
 5. Resolve `#2240`'s assignment substrate fork before the v0.4 work-model contract train.
+
+## 2026-09-02 follow-up
+
+This record is the 2026-08-30 disposition and stays as written. The 2026-09-02 re-pass under `#2376` archived the
+bundle's durable material beside it and validated every issue pack against `main` `de488fea0`; read
+`HEAD_START.md` for what shipped since, the re-validation receipt, per-issue findings and the startable slices, and
+`issues/<n>-*.md` for the head-start of a specific issue. Items 1, 3 and 4 of the next safe slices above are now
+delivered or in flight (`#2356` open for REF-0; `#2238` / `#2239` closed); items 2 and 5 remain.

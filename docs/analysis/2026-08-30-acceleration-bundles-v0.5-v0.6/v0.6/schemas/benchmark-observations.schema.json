@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskdeck.processor-benchmark-observations.v1",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "fixtureId",
+      "processorId",
+      "wallTimeMs",
+      "outcome"
+    ],
+    "properties": {
+      "fixtureId": {
+        "type": "string"
+      },
+      "processorId": {
+        "type": "string"
+      },
+      "wallTimeMs": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "peakRamMb": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "estimatedCost": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "wer": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "der": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "alignmentErrorMs": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      },
+      "ocrAccuracy": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0,
+        "maximum": 1
+      },
+      "outcome": {
+        "enum": [
+          "completed",
+          "failed",
+          "cancelled"
+        ]
+      }
+    }
+  }
+}

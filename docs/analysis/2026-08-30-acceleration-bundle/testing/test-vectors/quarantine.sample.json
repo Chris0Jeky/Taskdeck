@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "test": "Taskdeck.DevUp.Tests.HighVolumeMarkerAcceptanceTests",
+      "issue": "#2157",
+      "owner": "ci-reliability-owner",
+      "reason": "Intermittent Windows marker acceptance deadline while the deterministic fix is reviewed.",
+      "created_on": "2026-08-30",
+      "expires_on": "2026-09-13",
+      "compensating_coverage": "nightly/windows-dev-up-full"
+    }
+  ]
+}

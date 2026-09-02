@@ -22,12 +22,12 @@ Use one primary skill per task and at most one support skill. Skills are for tar
 
 ## Claude Skills
 
-Claude skills under `.claude/skills/` mirror the Taskdeck workflows above and add Claude-oriented helpers such as `issue-to-pr`, `pre-merge-gate`, and `docs-sweep`. The review pipeline is not mirrored here — it lives in the global `review-and-ship` skill.
+`.claude/skills/` is the canonical tree for the shared workflows above and adds the Claude-only helpers `issue-to-pr`, `pre-merge-gate`, and `docs-sweep`. `.codex/skills/` is the Codex adapter: same workflow names, Codex-shaped frontmatter and orientation order, per-skill `agents/` folders. The two trees are not byte mirrors (measured 2026-09-02) — port a shared-workflow change from the canonical tree to the adapter in the same PR. The review pipeline lives in neither; it is the global `review-and-ship` skill.
 
 ## Maintenance
 
 - Keep `SKILL.md` concise and procedural.
 - Move long examples or background into existing topical docs or `references/` only when needed.
-- Keep Codex and Claude mirrors aligned when a workflow is shared.
+- When a shared workflow changes, edit `.claude/skills/` first and port the change to the `.codex/skills/` adapter in the same PR.
 - Keep tool capability parity aligned through `docs/agentic/AGENT_TOOL_PARITY.md`.
 - Use `scripts/agent_hooks/render_failure_ledger.py` before promoting recurring failures into skills.

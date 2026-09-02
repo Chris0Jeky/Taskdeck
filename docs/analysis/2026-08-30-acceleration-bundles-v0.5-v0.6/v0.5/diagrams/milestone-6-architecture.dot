@@ -1,0 +1,15 @@
+digraph G {
+ rankdir=LR; graph [fontname="DejaVu Sans", bgcolor="transparent", ranksep=0.8]; node [shape=box, style=rounded, fontname="DejaVu Sans"];
+ capture [label="Capture + SourceAsset"];
+ policy [label="Policy Snapshot"];
+ job [label="ProcessingJob"];
+ host [label="ProcessorHost"];
+ run [label="ProcessingRun"];
+ repr [label="Immutable Representation"];
+ anchor [label="EvidenceAnchor"];
+ candidate [label="SemanticCandidate"];
+ proposal [label="Proposal / Review / Apply"];
+ safety [label="Shadow / Canary Safety"];
+ capture -> job; policy -> job; job -> host -> run -> repr -> anchor -> candidate -> proposal -> safety;
+ run -> candidate; policy -> safety;
+}

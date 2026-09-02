@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "simple-delta",
+      "chunks": [
+        "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\n"
+      ],
+      "expect_text": "Hi"
+    },
+    {
+      "name": "crlf-split",
+      "chunks": [
+        "data: one\r",
+        "\n\r",
+        "\n"
+      ],
+      "expect_event_data": "one"
+    },
+    {
+      "name": "multiline-data",
+      "chunks": [
+        "data: one\ndata: two\n\n"
+      ],
+      "expect_event_data": "one\ntwo"
+    },
+    {
+      "name": "keepalive",
+      "chunks": [
+        ": ping\n\ndata: [DONE]\n\n"
+      ],
+      "expect_done": true
+    },
+    {
+      "name": "json-across-network-chunks",
+      "chunks": [
+        "data: {\"cho",
+        "ices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n"
+      ],
+      "expect_text": "x"
+    },
+    {
+      "name": "provider-error",
+      "chunks": [
+        "data: {\"error\":{\"type\":\"invalid_request_error\",\"code\":\"stream_unsupported\"}}\n\n"
+      ],
+      "expect_error_type": "invalid_request_error"
+    },
+    {
+      "name": "midstream-malformed",
+      "chunks": [
+        "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n",
+        "data: {bad}\n\n"
+      ],
+      "expect": "explicit_protocol_failure_no_automatic_replay"
+    }
+  ]
+}

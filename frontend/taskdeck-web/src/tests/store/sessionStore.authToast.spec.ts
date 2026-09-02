@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { authApi } from '../../api/authApi'
 import { useSessionStore } from '../../store/sessionStore'
-import { useToastStore } from '../../store/toastStore'
+import { toastReceiptText, useToastStore } from '../../store/toastStore'
 import type { AuthResponse } from '../../types/auth'
 
 vi.mock('../../api/authApi', () => ({
@@ -61,6 +61,20 @@ function makeAuthResponse(expOffsetSeconds = 3600): AuthResponse {
 
 function makeLoginError(message = 'Invalid credentials') {
   return { response: { data: { message } } }
+}
+
+function makeDetailedLoginError(message = 'Invalid credentials', requestId = 'req-login-1') {
+  return {
+    response: {
+      status: 401,
+      data: { errorCode: 'AuthenticationFailed', message },
+    },
+    config: {
+      method: 'post',
+      url: '/auth/login',
+      headers: { 'X-Request-Id': requestId },
+    },
+  }
 }
 
 function makeRegistrationDuplicateError() {
@@ -135,6 +149,50 @@ describe('auth-flow toast regression (#685)', () => {
 
       expect(session.error).toBe('Invalid credentials')
       expect(toast.toasts.some((t) => t.type === 'error')).toBe(true)
+    })
+
+    it('coalesces repeated equivalent failures into one durable diagnostic receipt', async () => {
+      vi.mocked(authApi.login)
+        .mockRejectedValueOnce(makeDetailedLoginError())
+        .mockRejectedValueOnce(makeDetailedLoginError('Invalid credentials', 'req-login-2'))
+
+      await expect(
+        session.login({ usernameOrEmail: 'bad', password: 'bad' }),
+      ).rejects.toBeDefined()
+      const firstReceiptId = toast.toasts.find((t) => t.type === 'error')?.id
+
+      await expect(
+        session.login({ usernameOrEmail: 'bad', password: 'still-bad' }),
+      ).rejects.toBeDefined()
+
+      const errorToasts = toast.toasts.filter((t) => t.type === 'error')
+      expect(errorToasts).toHaveLength(1)
+      expect(errorToasts[0].id).not.toBe(firstReceiptId)
+      expect(errorToasts[0].message).toBe('Invalid credentials')
+      expect(errorToasts[0].duration).toBe(0)
+      expect(errorToasts[0].details).toBe(
+        'Status: 401\nEndpoint: POST /auth/login\nCode: AuthenticationFailed\nRequest ID: req-login-2',
+      )
+      expect(toastReceiptText(errorToasts[0])).toContain('Request ID: req-login-2')
+    })
+
+    it('replaces the prior login receipt when the server message changes', async () => {
+      vi.mocked(authApi.login)
+        .mockRejectedValueOnce(makeLoginError('Invalid credentials'))
+        .mockRejectedValueOnce(makeLoginError('Your account has been locked. Contact support.'))
+
+      await expect(
+        session.login({ usernameOrEmail: 'locked', password: 'bad' }),
+      ).rejects.toBeDefined()
+      await expect(
+        session.login({ usernameOrEmail: 'locked', password: 'bad-again' }),
+      ).rejects.toBeDefined()
+
+      const errorToasts = toast.toasts.filter((t) => t.type === 'error')
+      expect(errorToasts).toHaveLength(1)
+      expect(errorToasts[0].message).toBe('Your account has been locked. Contact support.')
+      expect(toast.toasts.some((t) => t.message === 'Invalid credentials')).toBe(false)
+      expect(session.error).toBe('Your account has been locked. Contact support.')
     })
   })
 
@@ -228,9 +286,6 @@ describe('auth-flow toast regression (#685)', () => {
         session.login({ usernameOrEmail: 'bad', password: 'bad' }),
       ).rejects.toBeDefined()
 
-      // Simulate navigation: toast store is cleared (as a page/route-level component would do)
-      toast.clear()
-
       // Second attempt succeeds
       vi.mocked(authApi.login).mockResolvedValueOnce(makeAuthResponse())
       await session.login({ usernameOrEmail: 'testuser', password: 'pass' })
@@ -239,6 +294,49 @@ describe('auth-flow toast regression (#685)', () => {
       expect(toast.toasts.every((t) => t.type !== 'error')).toBe(true)
       expect(toast.toasts.filter((t) => t.type === 'success')).toHaveLength(1)
       expect(toast.toasts[0].message).toBe('Logged in successfully')
+    })
+
+    it('preserves registration, password, OAuth, and unrelated errors while replacing and clearing the login receipt', async () => {
+      toast.error('Background sync failed')
+
+      vi.mocked(authApi.register).mockRejectedValueOnce(makeLoginError('Registration failed'))
+      await expect(
+        session.register({ username: 'u', email: 'u@example.com', password: 'pass' }),
+      ).rejects.toBeDefined()
+
+      vi.mocked(authApi.changePassword).mockRejectedValueOnce(makeLoginError('Password change failed'))
+      await expect(
+        session.changePassword({ currentPassword: 'old', newPassword: 'new-password' }),
+      ).rejects.toBeDefined()
+
+      vi.mocked(authApi.exchangeOAuthCode).mockRejectedValueOnce(makeLoginError('OAuth failed'))
+      await expect(session.exchangeOAuthCode('bad-code')).rejects.toBeDefined()
+
+      const independentReceiptIds = new Set(toast.toasts.map((item) => item.id))
+
+      vi.mocked(authApi.login)
+        .mockRejectedValueOnce(makeLoginError('Invalid credentials'))
+        .mockRejectedValueOnce(makeLoginError('Account locked'))
+
+      await expect(
+        session.login({ usernameOrEmail: 'bad', password: 'bad' }),
+      ).rejects.toBeDefined()
+      await expect(
+        session.login({ usernameOrEmail: 'bad', password: 'still-bad' }),
+      ).rejects.toBeDefined()
+
+      expect(toast.toasts.filter((item) => item.message === 'Account locked')).toHaveLength(1)
+      for (const id of independentReceiptIds) {
+        expect(toast.toasts.some((item) => item.id === id)).toBe(true)
+      }
+
+      vi.mocked(authApi.login).mockResolvedValueOnce(makeAuthResponse())
+      await session.login({ usernameOrEmail: 'testuser', password: 'pass' })
+
+      expect(toast.toasts.some((item) => item.message === 'Account locked')).toBe(false)
+      for (const id of independentReceiptIds) {
+        expect(toast.toasts.some((item) => item.id === id)).toBe(true)
+      }
     })
 
     it('registration error does not bleed into a subsequent login success toast', async () => {

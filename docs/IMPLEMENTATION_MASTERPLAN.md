@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-02
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -69,6 +69,34 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Planning update (2026-09-02, v0.5 / v0.6 acceleration bundles unbundled)
+
+- **Two more bundles were validated and unbundled, not copied** (tracker `#2368`; record
+  `docs/analysis/2026-08-30-acceleration-bundles-v0.5-v0.6/RECONCILIATION.md`). The v0.6 bundle was
+  grounded at `c27283fb2` and every one of its 7 issue packs was cross-checked against `main` `79dd57cd3`,
+  the live issue bodies (unchanged since the snapshot, no branches or PRs) and ADR-0065/ADR-0057; the
+  "milestone 6" (v0.5) bundle failed its GitHub grounding (0 issues), so this pass mapped its surviving
+  candidates and diagrams to the live v0.5 issues itself.
+- **Head start is now discoverable where it will be needed.** One corrected file per v0.6 issue (live
+  dependencies, ordered child slices, architecture adapted to existing types, test plan, corrections), the
+  v0.6 milestone architecture with waves, ownership fences, gate matrix and risk register, a v0.5
+  candidate map, 8 contract-draft schemas with fixtures under an executable check
+  (`scripts/context_fabric/check_contract_drafts.py`), reference-only candidate code that compiles in
+  isolation, and diagrams — linked from `CONTEXT_FABRIC.md`, `AGENT_INDEX.md` and `docs/INDEX.md`, with one
+  comment per live issue.
+- **What the validation changed.** Missed dependencies were added (CF-10 → CF-21; CF-11 → CF-07/CF-23;
+  CF-24B → CF-10/CF-22; CF-15 → CF-03/CF-06; CF-17 → CF-07/CF-16); CF-11's live issue text mislabels
+  `SourceReferenceId` as an artefact hash; CF-24B's "cost per accepted change" is not computable until
+  CF-03/CF-10 record price and attribution; several candidates carry real defects (a consent-key mismatch and
+  PascalCase digests in the router, a denylist privacy guard that rejects its own facts, a non-canonical
+  snapshot digest, a cost-ordering evaluator that is scoring by another name); CF-22 material was audited
+  and opens no execution path. No new ADR is warranted (the router draft is ADR-0065 §Decision 6–8).
+- **Startable now, contract-only:** CF-24B metric dictionary, CF-10 profile contract, CF-22 shadow records,
+  a narrow `image.ocr` manifest, then CF-11's cache key; everything else stays behind CF-03/04/06/07/08/21/24A
+  or a human decision. A separate small PR scaffolds five Domain vocabulary enums ahead of CF-10/CF-24B, the
+  way `#2280` did for CF-06. Breadth recommendation (coordinator input, not a decision): CF-18 has the shortest
+  effective dependency graph.
+
 ## Planning update (2026-08-30, engineering-review bundle reconciliation)
 
 - **Evidence, not authority.** The external security/quality/performance/payment-gating bundle at
@@ -99,6 +127,14 @@ behaviour.
   `221aa88c8`; live `main` was already 42 commits and 116 changed files ahead. The source, validation
   receipt, component/workstream dispositions, and candidate-code admission contract are recorded in
   `docs/analysis/2026-08-30-acceleration-bundle/RECONCILIATION.md` under tracker `#2348`.
+- **2026-09-02 re-pass (`#2376`).** The bundle's durable material is archived beside that record and every open
+  milestone-4/5 target issue has a head-start file validated against `main` `de488fea0`
+  (`docs/analysis/2026-08-30-acceleration-bundle/HEAD_START.md`). Delivered lanes are recorded so they are not
+  re-planned: CF-01 `#2255`, backup/restore `#2238` (PR `#2361`), connector verification `#2239` (PR `#2360`), the
+  Smart CI shadow control plane, the Option B telemetry ruling. Sequencing consequences: CF-02/CF-03 sit behind
+  `#2345`/`#2347`; CF-23 `#2276`, CF-07 `#2261`, CF-04 `#2258` hosts and CF-05 `#2259`'s eligibility gate are
+  startable now; `#2240`'s assignment fork, `#2094`'s ratified deferral and `#1131`'s product decision block their
+  lanes.
 - **Stale starter lanes were removed before admission.** CF-01 `#2255` is merged/closed with residuals
   `#2345`/`#2347`; OpenAI-compatible streaming `#2241` already satisfies AC2/AC4/AC6 and retains only
   API-level/live proof; Smart CI depth consumes ADR-0066's landed control plane. Incorrect milestone-4
@@ -1162,7 +1198,7 @@ Roadmap v4 first-wave delivery (2026-04-25, PRs `#985`--`#988`):
     - board header presence label bug fixed (`#683`/`#744`): username/email flip resolved with `normalizePresenceMembers()` in `BoardView.vue`; adversarial review confirmed no edge cases; 3 new tests
     - manual card provenance empty state fixed (`#680`/`#754`): 3 bugs caught and fixed by adversarial review (overly broad 404 swallow, global Axios log regression, empty-state flash); `CardModal.vue` now shows "No capture provenance available." correctly; 4 new tests
     - WIP-limit toast dedup regression tests (`#686`/`#745`): 7 tests in `boardStore.wipLimit.spec.ts` for `createCard` and `moveCard`
-    - auth-flow toast lifecycle tests (`#685`/`#742`): 20 tests in `sessionStore.authToast.spec.ts`; adversarial review fixed timer leak, mock isolation, inverted assertion
+    - auth-flow toast lifecycle tests (`#685`/`#742`, extended by `#2373`/`#2384`): 23 tests in `sessionStore.authToast.spec.ts`; adversarial review fixed timer leak, mock isolation, and an inverted assertion, while the later credential-login slice pins repeated-failure receipt replacement, structured diagnostics, cross-flow isolation, and success cleanup
     - router auth guard + workspace stability tests (`#687`/`#748`): `authGuard.spec.ts` and `workspaceRouteStability.spec.ts` with 16-case exhaustive guard table; pre-existing `AuthControllerEdgeCaseTests.cs` compile error fixed
     - inbox triage action visibility tests (`#688`/`#743`): 21 new tests in `InboxView.spec.ts` for single-item triage and bulk action bar visibility
     - webhook HMAC verification tests (`#726`/`#750`): 11 tests in `OutboundWebhookHmacDeliveryTests.cs` for header format, round-trip, wrong-key, secret rotation, timing-safe comparison
