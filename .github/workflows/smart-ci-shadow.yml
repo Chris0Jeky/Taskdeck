@@ -99,20 +99,31 @@ jobs:
             > artifacts/head-actors.txt
           printf 'head identities: %s\n' "$(cat artifacts/head-actors.txt)"
 
-      - name: Resolve the merge tree (git objects only; nothing is executed)
+      - name: Resolve the merge commit and tree (git objects only; nothing is executed)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           # The checkout kept no credentials; authenticate this one read-only fetch with the job
           # token so the merge ref still resolves once the repository is private.
           auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          if git -c "http.extraheader=${auth_header}" fetch --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/merge"; then
-            git rev-parse 'FETCH_HEAD^{tree}' > artifacts/merge-tree-sha.txt
+          if git -c "http.extraheader=${auth_header}" fetch --no-tags --depth=2 origin "refs/pull/${PR_NUMBER}/merge"; then
+            merge_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
+            merge_base="$(git rev-parse 'FETCH_HEAD^1')"
+            merge_head="$(git rev-parse 'FETCH_HEAD^2')"
+            merge_tree="$(git rev-parse 'FETCH_HEAD^{tree}')"
+            if [ "$merge_base" != "$EXPECTED_BASE" ] || [ "$merge_head" != "$EXPECTED_HEAD" ]; then
+              echo "merge ref parents do not match the event base/head - the planner fails closed" >&2
+              exit 1
+            fi
+            printf '%s\n' "$merge_sha" > artifacts/merge-sha.txt
+            printf '%s\n' "$merge_tree" > artifacts/merge-tree-sha.txt
           else
-            echo "merge ref unavailable (conflict, or not computed yet) — the plan records merge-tree-unavailable" >&2
+            echo "merge ref unavailable (conflict, or not computed yet) - the planner fails closed" >&2
           fi
 
       - name: Plan
@@ -122,8 +133,11 @@ jobs:
         run: |
           set -euo pipefail
           plan_args=(--head-actors "$(cat artifacts/head-actors.txt)")
-          if [ -s artifacts/merge-tree-sha.txt ]; then
-            plan_args+=(--merge-tree-sha "$(cat artifacts/merge-tree-sha.txt)")
+          if [ -s artifacts/merge-sha.txt ] && [ -s artifacts/merge-tree-sha.txt ]; then
+            plan_args+=(
+              --merge-sha "$(cat artifacts/merge-sha.txt)"
+              --merge-tree-sha "$(cat artifacts/merge-tree-sha.txt)"
+            )
           fi
           node scripts/ci/smart-ci/plan.mjs \
             --policy ci/policy.v1.json \
