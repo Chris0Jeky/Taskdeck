@@ -30,11 +30,11 @@ Both agents must preserve:
 | Repo search | native `rg` via shell | native `rg` via Bash | GitHub MCP `search_code` |
 | File edits | Codex patch/edit tooling | Claude Edit/MultiEdit/Write | small manual patches only |
 | Multi-file reads | parallel shell reads where available | batched Bash reads where practical | narrow sequential reads |
-| Library/framework docs | Context7 MCP | Context7 MCP from `.mcp.json` | official docs search |
+| Library/framework docs | Context7 MCP (`.codex/config.toml`) | Context7 via the claude.ai connector (not `.mcp.json`) | official docs search |
 | OpenAI/Codex/API docs | `openaiDeveloperDocs` MCP | `openaiDeveloperDocs` MCP from `.mcp.json` | official OpenAI docs only |
 | UI reproduction | Playwright MCP | Playwright MCP from `.mcp.json` | local Playwright CLI |
 | Browser protocol debugging | Chrome DevTools MCP | Chrome DevTools MCP from `.mcp.json` | Playwright traces/screenshots |
-| GitHub issues/PRs | GitHub MCP or `scripts/github/*` | GitHub MCP from `.mcp.json` or `gh` | `gh` CLI with explicit notes |
+| GitHub issues/PRs | GitHub MCP or `scripts/github/*` | `gh` CLI (GitHub MCP removed from `.mcp.json` 2026-09-02) | `gh` CLI with explicit notes |
 | Containers/SQLite docs | Docker MCP gateway (user scope) | Docker MCP gateway (user scope) | `docker`/repo scripts |
 | High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills and worktree sessions | local coordinator flow |
 | Guardrails | global/runtime policy, `AGENTS.md`, `.codex/config.toml`, worktree guards | global/runtime policy, `.claude/settings.json`, skills, worktree guards | stop and ask for safety blockers |
@@ -51,7 +51,7 @@ Both agents must preserve:
 ## Claude Strengths To Use
 
 - Use project MCP servers from `.mcp.json`; project approval may be required on first use.
-- Use `/mcp` to authenticate remote HTTP MCP servers such as GitHub when the local Claude runtime asks for auth.
+- Use `/mcp` to authenticate remote HTTP MCP servers (`openaiDeveloperDocs`) when the local Claude runtime asks for auth.
 - Use `.claude/settings.json` for normal development permissions and worktree configuration. Taskdeck installs no project runtime hooks or command-deny list.
 - Use Claude skills and slash-command workflows for review, pre-merge gates, issue-to-PR execution, and docs sweeps.
 - On native Windows, project `.mcp.json` wraps `npx` MCP servers with `cmd /c` so Claude can launch them reliably.
@@ -64,10 +64,11 @@ Claude project MCP configuration lives in `.mcp.json`.
 Shared project baseline servers:
 
 - `openaiDeveloperDocs`
-- `github`
-- `context7`
 - `playwright`
 - `chromeDevTools`
+
+Codex-only project servers (Codex has no connector): `github` (authenticated), `context7`, `ripgrep`. Claude gets
+Context7 from the claude.ai connector and uses `gh` for GitHub.
 
 The Docker MCP gateway is not a project server: it is declared once at user scope (`MCP_DOCKER` in
 `~/.claude.json` and `~/.codex/config.toml`) serving `docker,docker-docs,time,jetbrains,filesystem,SQLite`.

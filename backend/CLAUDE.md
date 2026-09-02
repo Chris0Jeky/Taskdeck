@@ -24,7 +24,12 @@
   in the Api layer; the policy evaluator (`AutomationPolicyEngine`) lives in Application.
 
 ## Verify
-`dotnet test backend/Taskdeck.sln -c Release -m:1` (full); narrow with
-`--filter "FullyQualifiedName~<TestClass>"`. Build: `dotnet build backend/Taskdeck.sln -c Release`.
+Fast feedback first: `dotnet test backend/tests/<Project>/<Project>.csproj -c Release -m:1` where `<Project>` is one
+of `Taskdeck.Domain.Tests`, `Taskdeck.Application.Tests`, `Taskdeck.Api.Tests`, `Taskdeck.Cli.Tests`,
+`Taskdeck.Architecture.Tests`, or `Taskdeck.Integration.Tests` (Infrastructure has no project of its own — its
+persistence and adapter behavior is covered by `Taskdeck.Integration.Tests` and `Taskdeck.Api.Tests`). Narrow
+further with `--filter "FullyQualifiedName~<TestClass>"`. Before opening the PR, run the required check from
+`backend/AGENTS.md` once: `dotnet test backend/Taskdeck.sln -c Release -m:1` (minutes; `ci-required` repeats it on
+every push). Build: `dotnet build backend/Taskdeck.sln -c Release`.
 
 Seam map: `autodoc/AGENT_INDEX.md`

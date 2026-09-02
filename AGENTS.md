@@ -23,8 +23,9 @@ owns any Taskdeck-specific intake and review design that remains after consolida
 - Selection rules and safe usage: `docs/MCP_TOOLING_GUIDE.md`. High-autonomy Codex batches:
   `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md`. Playwright vs DevTools vs logs: `docs/tooling/DEVTOOLS_OBSERVABILITY_ADDON.md`.
 - MCP-first when an MCP tool can do the job; otherwise shell/CLI and say so in the handoff.
-- OpenAI/Codex docs → openaiDeveloperDocs · third-party library docs → Context7 · UI repro/regression →
-  Playwright · issues/PRs/workflows → GitHub MCP (writes only when required).
+- OpenAI/Codex docs → openaiDeveloperDocs · third-party library docs → Context7 (Codex: `.codex/config.toml`
+  stdio server; Claude: the claude.ai connector — `.mcp.json` deliberately omits it) · UI repro/regression →
+  Playwright · issues/PRs/workflows → `gh` CLI for Claude; GitHub MCP is Codex-only (writes only when required).
 - **GitHub quota fallback:** if GitHub MCP or `gh api graphql` reports an exhausted GraphQL quota,
   continue through GitHub's REST API with `gh api` where the operation has a REST equivalent; record
   the fallback in the handoff. Wait for GraphQL reset only for operations that genuinely require it
