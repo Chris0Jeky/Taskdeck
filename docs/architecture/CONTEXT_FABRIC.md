@@ -1,6 +1,6 @@
 # Context Fabric — architecture reference
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-02
 
 **Authority:** ADR-0065 (`docs/decisions/ADR-0065-context-fabric-capture-representation-processing.md`),
 Accepted — confirmed by the maintainer on 2026-08-30 with the amendments recorded in its *Amendments*
@@ -59,6 +59,7 @@ capture loses nothing. `Partial` renders as *Understood* with the failed leg lis
 | Domain | `Enums/CaptureSourceMapping.cs` | Total forward mapping from the legacy `CaptureSource`; lossy reverse for compatibility readers; test enumerates the enum |
 | Domain | `Enums/CaptureUserDisposition.cs` (+ `CaptureUserDispositionMapping`), `CaptureProcessingSummary.cs`, `CaptureActionState.cs`, `CaptureTimeline.cs` | The three state axes and the timeline projection |
 | Domain | `Enums/RepresentationKind.cs`, `RepresentationQualityState.cs`, `EvidenceAnchorKind.cs`, `SemanticCandidateKind.cs`, `SemanticCandidateState.cs`, `ProcessingJobState.cs`, `ProcessorExecutionMode.cs`, `SourceAssetStorageKind.cs` | Vocabulary for CF-03/06/07/08/23 |
+| Domain | `Enums/ProcessingProfilePreset.cs` (Private · Balanced · Strict · Expert), `ProcessingEgressClass.cs`, `ProcessorEligibility.cs`, `ProcessingConsentState.cs`, `MetricAvailability.cs` (`ContextFabricVocabularyTests` pins names and values) | Vocabulary for CF-10 `#2264` and CF-24B `#2277`, scaffolded 2026-09-02 (`#2368`) the way `#2280` did for CF-06; rejection reasons and metric names stay kebab-case strings, not enums |
 | Domain | `Processing/ProcessingCapability.cs` | The capability vocabulary; `Externalizable` vs `InProcessOnly` (`context.resolve`, `change.plan`, `change.verify` never leave the process) |
 | Domain | `Entities/Capture.cs` | The durable aggregate: owner + `ProducedByPrincipalId`, `RequestedIntent` / `EffectiveIntent` / `IntentResolvedByRunId`, the three axes, `LegacySourceSnapshot`, up to 32 active `SourceAssets`; `FromQueueRequest` builds the ID-preserving row (sources and machine-derived axes seeded before the user disposition, so an archived legacy row still arrives with its material); `SupersedeInlineTextSource` / `CurrentText` / `ActiveSourceAssets` are the correction model |
 | Domain | `Entities/SourceAsset.cs`, `SourceAssetTextPayload.cs` | One immutable input: modality, media type, SHA-256, size, storage kind (`InlineText` · `Blob` · `ExternalReference` · `LegacyArtefact`); text kept verbatim in its own row; `SupersedesAssetId` / `SupersededByAssetId` carry corrections without ever rewriting stored bytes |
