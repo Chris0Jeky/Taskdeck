@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
+import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import { formatShortcut } from '../../../utils/keyboardShortcuts'
 
 /**
@@ -39,8 +41,11 @@ const emit = defineEmits<{
   (event: 'submit', text: string): void
 }>()
 
+const { t } = useI18n()
 const text = ref('')
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const canSubmit = computed(() => text.value.trim().length > 0 && !props.submitting)
+const variantShortcut = computed(() => formatShortcut('mod+;'))
 
 function onKeydown(event: KeyboardEvent) {
   if (event.isComposing) {
@@ -57,9 +62,8 @@ function onKeydown(event: KeyboardEvent) {
 }
 
 function submit() {
-  if (props.submitting) return
+  if (!canSubmit.value) return
   const value = text.value.trim()
-  if (!value) return
   emit('submit', value)
 }
 
@@ -90,7 +94,9 @@ defineExpose({ focus: () => inputRef.value?.focus(), resetDraft, snapshotDraft, 
 
 <template>
   <div class="paper-nib">
-    <div class="paper-nib__eyebrow tk-eyebrow">Quick capture · {{ formatShortcut('mod+;') }}</div>
+    <div class="paper-nib__eyebrow tk-eyebrow">
+      {{ t('inbox.nib.eyebrow', { shortcut: variantShortcut }) }}
+    </div>
 
     <div v-if="bleeding" class="paper-nib__bleed" data-testid="paper-nib-bleed">
       <!-- TODO(PAPER-07/PAPER-10): wire ink bleed once #1010 merges. -->
@@ -111,6 +117,19 @@ defineExpose({ focus: () => inputRef.value?.focus(), resetDraft, snapshotDraft, 
       :aria-describedby="errorId ?? undefined"
       @keydown="onKeydown"
     />
+
+    <footer v-if="!bleeding" class="paper-nib__footer">
+      <span class="paper-nib__destination tk-meta" data-testid="paper-nib-destination">
+        {{ t('inbox.nib.destination') }}
+      </span>
+      <PaperHLBtn
+        :label="t('inbox.nib.submit')"
+        kbd="enter"
+        variant="ember"
+        :disabled="!canSubmit"
+        @click="submit"
+      />
+    </footer>
 
     <div class="paper-nib__rule" aria-hidden="true" />
   </div>
@@ -156,6 +175,21 @@ defineExpose({ focus: () => inputRef.value?.focus(), resetDraft, snapshotDraft, 
 .paper-nib__input::placeholder {
   color: var(--whisper);
   font-style: italic;
+}
+
+.paper-nib__footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.paper-nib__destination {
+  min-width: 0;
+}
+
+.paper-nib__footer :deep(.pbtn) {
+  margin-left: auto;
 }
 
 .paper-nib__rule {

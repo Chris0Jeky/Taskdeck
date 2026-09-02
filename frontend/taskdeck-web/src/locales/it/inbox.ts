@@ -72,6 +72,11 @@ export default {
     metadataCompatibilityLead: 'Cattura salvata senza scadenza né etichette.',
     metadataCompatibilityDetail: 'Questa versione del server ha ignorato quei metadati. Non riprovare: la cattura è già nell’Inbox.',
   },
+  nib: {
+    eyebrow: 'Cattura rapida · {shortcut}',
+    destination: 'Questa cattura non ha una bacheca; arriva in Inbox per il triage.',
+    submit: 'Cattura',
+  },
   scope: {
     board: 'Bacheca: {board}',
     boardAndColumn: 'Bacheca: {board} · Colonna: {column}',
