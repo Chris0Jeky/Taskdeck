@@ -3023,6 +3023,19 @@ describe('PaperReviewView', () => {
       expect(stale.attributes('aria-live')).toBe('polite')
       expect(stale.text()).toContain('may be out of date')
       expect(wrapper.text()).toContain('Split "dark mode" into 3 cards')
+      const root = wrapper.get('[data-testid="paper-review-view"]')
+      const queue = wrapper.get('[data-testid="paper-review-queue-rail"]')
+      const main = wrapper.get('.paper-review-deep__main-col')
+      const right = wrapper.get('[data-testid="paper-review-right-rail"]')
+      expect(stale.element.parentElement).toBe(main.element)
+      expect(queue.element.parentElement).toBe(root.element)
+      expect(main.element.parentElement).toBe(root.element)
+      expect(right.element.parentElement).toBe(root.element)
+      expect(Array.from(root.element.children)).toEqual([
+        queue.element,
+        main.element,
+        right.element,
+      ])
       wrapper.unmount()
     } finally {
       vi.useRealTimers()

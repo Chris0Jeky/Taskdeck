@@ -291,6 +291,18 @@ onUnmounted(() => {
     </p>
 
     <div
+      v-if="queueRefreshStale && !queueAccessRevoked"
+      class="td-panel"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="review-queue-stale"
+    >
+      <p>This review queue may be out of date.</p>
+      <p>Showing the last available proposals while Taskdeck retries.</p>
+    </div>
+
+    <div
       v-if="queueAccessRevoked"
       class="td-panel"
       role="status"
@@ -301,18 +313,6 @@ onUnmounted(() => {
         Your access to these boards changed, so the queue was cleared and has stopped
         updating. Reload or pick a board you can still reach.
       </p>
-    </div>
-
-    <div
-      v-if="queueRefreshStale && !queueAccessRevoked"
-      class="td-panel"
-      role="status"
-      aria-live="polite"
-      aria-atomic="true"
-      data-testid="review-queue-stale"
-    >
-      <p>This review queue may be out of date.</p>
-      <p>Showing the last available proposals while Taskdeck retries.</p>
     </div>
 
     <div v-else-if="proposalsLoading" class="td-review__skeleton" aria-live="polite" role="status">

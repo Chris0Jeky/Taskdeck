@@ -350,7 +350,24 @@ describe('ReviewView', () => {
   it('renders and politely announces a degraded retained queue after repeated poll failures', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
     try {
-      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      mocks.getProposals.mockResolvedValue([
+        buildProposal({
+          id: 'retained-1',
+          operations: [
+            {
+              id: 'op-retained',
+              proposalId: 'retained-1',
+              sequence: 0,
+              actionType: 'CreateCard',
+              targetType: 'Card',
+              targetId: null,
+              parameters: '{}',
+              idempotencyKey: 'retained-key',
+              expectedVersion: null,
+            },
+          ],
+        }),
+      ])
       const { wrapper } = await mountAt('/workspace/review')
       mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
 
@@ -368,6 +385,8 @@ describe('ReviewView', () => {
       expect(wrapper.find('[data-testid="review-queue-live"]').text()).toContain(
         '1 proposal awaiting review',
       )
+      const retainedCard = wrapper.get('#proposal-retained-1')
+      expect(retainedCard.text()).toContain('Approve for board')
     } finally {
       vi.useRealTimers()
     }
