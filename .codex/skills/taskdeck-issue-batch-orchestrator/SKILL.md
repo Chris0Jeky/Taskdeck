@@ -87,77 +87,12 @@ Avoid parallel workers on the same view, store, service, migration chain, projec
 
   ```powershell
   $checkout = (& git rev-parse --show-toplevel).Trim()
-  $fingerprintTool = [IO.Path]::GetFullPath((Join-Path -Path $checkout -ChildPath 'scripts/agentic/Assert-TaskdeckCheckoutFingerprint.ps1'))
-  if (-not [IO.Path]::IsPathRooted($fingerprintTool) -or -not (Test-Path -LiteralPath $fingerprintTool -PathType Leaf)) {
-    throw 'checkout fingerprint guard path is not a valid absolute file'
-  }
-  $inventoryToken = [Guid]::NewGuid().ToString('N')
-
-  # 255 is a fail-closed sentinel. If the guard script cannot be resolved or
-  # launched at all, $LASTEXITCODE would otherwise still hold the previous
-  # command's success code and the wrapper would accept an unguarded lane.
-  $global:LASTEXITCODE = 255
-  $capture = & $fingerprintTool -Mode Capture -CheckoutPath $checkout -Token $inventoryToken
-  $captureExit = $LASTEXITCODE
-  if ($captureExit -ne 0) { exit $captureExit }
-  $inventoryState = ($capture | ConvertFrom-Json).path
-
-  # Launch the read-only lane only after the capture exit check succeeds.
-  # Compare and Cleanup MUST stay inside `finally`. A scriptblock or function
-  # lane that calls `exit` (or `break`) raises a flow-control exception that
-  # `catch` cannot see and that skips every statement after the `try`, so guard
-  # finalization placed after the try/catch never runs and the checkout is never
-  # compared. `finally` is the only control flow PowerShell still guarantees on
-  # those paths, and an `exit` inside `finally` supersedes the lane's in-flight
-  # exit code, so a guard failure can never be masked by the lane's own status.
-  $laneSucceeded = $false
-  $laneExit = $null
-  $laneError = $null
-  $guardExit = 0
-  try {
-    & $laneCommand
-    $laneSucceeded = $?
-    $laneExit = $LASTEXITCODE
-  }
-  catch {
-    $laneError = $_
-  }
-  finally {
-    $global:LASTEXITCODE = 255
-    & $fingerprintTool -Mode Compare -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
-    $compareExit = $LASTEXITCODE
-    if ($compareExit -ne 0) {
-      $guardExit = $compareExit # preserves state for investigation
-    }
-    else {
-      $global:LASTEXITCODE = 255
-      & $fingerprintTool -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
-      $cleanupExit = $LASTEXITCODE
-      if ($cleanupExit -ne 0) { $guardExit = $cleanupExit }
-    }
-    if ($guardExit -ne 0) {
-      # This `exit` unwinds the whole frame, so the statements after the
-      # try/catch — including `throw $laneError` — never run. Surface the lane
-      # exception text here or a lane that both threw and mutated the checkout
-      # is reported only as a mutation and its cause is lost.
-      if ($null -ne $laneError) {
-        [Console]::Error.WriteLine('Lane error superseded by guard disposition: ' + $laneError.Exception.Message)
-      }
-      exit $guardExit
-    }
-  }
-
-  if ($null -ne $laneError) { throw $laneError }
-  if (-not $laneSucceeded) {
-    # $LASTEXITCODE is only consulted when the lane itself failed: a successful
-    # function lane can still carry a handled native probe's stale exit code.
-    if ($null -ne $laneExit -and $laneExit -ne 0) { exit $laneExit }
-    exit 1
-  }
+  & (Join-Path $checkout 'scripts/agentic/Invoke-TaskdeckGuardedLane.ps1') -LaneCommand { <lane command> }
+  if ($LASTEXITCODE -ne 0) { throw "guarded lane failed ($LASTEXITCODE): stop the wave; state is preserved" }
   ```
 
 - The fingerprint covers the checkout's HEAD commit and symbolic ref plus exact non-ignored Git status-listed regular files, subject to its limits. It detects same-path overwrite, deletion, and creation, and — because a clean-to-clean `git switch` or commit mutates the checkout without touching one status artifact — `ref-moved` and `head-moved`. Any unreadable, reparse, malformed, limit, state-authentication, or checkout-identity uncertainty fails closed. A Compare failure preserves its state and stops the wave; Cleanup is an explicit checked success-only step.
-- The final gate is `if (-not $laneSucceeded)` alone, not `-not $laneSucceeded -or $laneExit -ne 0`. `$LASTEXITCODE` is process-global and survives any native command the lane handled internally, so a lane that succeeded after probing with, say, a failing `git rev-parse` would be reported as failed on that stale code. `$?` is the only signal that describes the lane itself, and `$laneExit` is consulted only once `$?` has already said the lane failed.
+- The wrapper's shape is pinned by `scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1`; its header carries the control-flow rationale. The final gate is `if (-not $laneSucceeded)` alone, not `-not $laneSucceeded -or $laneExit -ne 0`. `$LASTEXITCODE` is process-global and survives any native command the lane handled internally, so a lane that succeeded after probing with, say, a failing `git rev-parse` would be reported as failed on that stale code. `$?` is the only signal that describes the lane itself, and `$laneExit` is consulted only once `$?` has already said the lane failed.
 - Do not relocate Compare or Cleanup out of the `finally` block and do not add a bare `exit` between the lane call and that block. Guard finalization placed after the `try`/`catch` is skipped whenever a lane unwinds, which is the exact defect this recipe shape exists to prevent. A lane that terminates the session outside PowerShell control flow — `[Environment]::Exit`, a process kill — is outside the guarantee; the guard is accidental-mutation accountability, not a hostile-process boundary.
 
 ## Structured patch discipline

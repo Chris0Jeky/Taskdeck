@@ -1,16 +1,18 @@
 ---
 name: issue-to-pr
-description: End-to-end issue implementation. Takes a GitHub issue number, creates a branch, implements the change, runs tests, opens a PR linking the issue, and reports back for review.
+description: Implement one GitHub issue end to end - worktree, branch, change, tests, ready PR linking the issue, coordinator handoff.
+argument-hint: "<issue number>"
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # Issue to PR
 
-Autonomous workflow: GitHub issue -> branch -> implementation -> tests -> PR.
+Autonomous workflow: GitHub issue -> detached worktree -> implementation -> seam tests -> ready PR.
 
 ## Input
 
-The user provides a GitHub issue number (e.g., `#350` or just `350`).
+`$ARGUMENTS` is a GitHub issue number (`#350` or `350`).
 
 ## Workflow
 
@@ -20,98 +22,66 @@ The user provides a GitHub issue number (e.g., `#350` or just `350`).
 gh issue view <number> --json title,body,labels,assignees,milestone
 ```
 
-Read the issue thoroughly. Identify:
-- what needs to change
-- acceptance criteria
-- labels (which layers are involved: backend, frontend, docs, testing)
-- linked issues or dependencies
+Identify what must change, the acceptance criteria, the layers involved (labels: backend, frontend,
+docs, testing), and linked issues or dependencies. Orient via `autodoc/AGENT_INDEX.md`; root
+`CLAUDE.md` and region rules auto-load.
 
-### 2. Orient to current state
+### 2. Create a detached worktree, guard it, then create the branch
 
-Use the `taskdeck-repo-onramp` skill mentally:
-- read `docs/STATUS.md` for current constraints
-- identify affected files and layers
-
-### 3. Create a detached worktree, guard it, then create the branch
-
-From the coordinator checkout, refresh and create from the explicit remote base without changing
-or cleaning the coordinator's branch or working tree:
+From the coordinator checkout, without changing or cleaning its branch or working tree:
 
 ```powershell
-powershell -File scripts/git/New-CodexIssueWorktree.ps1 `
-  -IssueNumber <number> `
-  -Slug <short-slug>
+powershell -File scripts/git/New-CodexIssueWorktree.ps1 -IssueNumber <number> -Slug <short-slug>
 ```
 
-Enter the printed worktree and run the helper's complete printed PowerShell block unchanged. Its
-first command invokes the exact absolute target `worktree_guard.ps1` with selected native Git; the
-bounded exact-target `Initialize-CodexIssueWorktree.ps1` follows on success, verifies the detached
-base, then performs `switch -c`. A late collision removes the unused detached worktree only when its
-tracked, untracked, and ignored inventory is empty; otherwise it is preserved for inspection. The helper validates target guard/initializer bytes against reviewed raw blobs before
-emission, but same-user replacement after emission remains a residual. Use both exact additive full-command permission
-rules printed by the helper (guard plus initializer), including every applicable pinned argument and no wildcard, when launch authorization requires them; never substitute a generic relative rule. From Bash, launch a reviewed absolute PowerShell
-application in the worktree for the whole block; do not resolve bare `powershell`, translate only
-the branch command, or substitute a PATH-first batch shim.
+Enter the printed worktree and run the helper's complete printed PowerShell block unchanged: the exact
+pinned-Git `worktree_guard.ps1` command first, then the bounded `Initialize-CodexIssueWorktree.ps1`
+command, which verifies the detached base and performs `switch -c`. Headless authorization rules and
+the Bash launch rule are the "Helper Handoff Contract" in `docs/WORKTREE_AGENT_PROTOCOL.md`.
 
-Branch naming remains `issue-<number>/<2-4 word slug>` (for example,
-`issue-350/capture-validation`). Continue the implementation there; never switch the coordinator
-checkout merely to obtain a clean tree.
+Branch naming: `issue-<number>/<2-4 word slug>` (for example `issue-350/capture-validation`). Never
+switch the coordinator checkout merely to obtain a clean tree.
 
-### 4. Implement
+### 3. Implement
 
-- follow the relevant skill for the layer being changed (backend-slice, frontend-workspace-slice, capture-review-loop)
-- make incremental commits, one per logical change
-- run tests after each significant change
+Follow the layer skill (`taskdeck-backend-slice`, `taskdeck-frontend-workspace-slice`,
+`taskdeck-capture-review-loop`). Incremental commits, one per logical change; run the seam's tests
+after each significant change.
 
-### 5. Verify
+### 4. Verify
 
-Run the appropriate checks based on what changed:
+Use the proving-check table in root `CLAUDE.md` — the narrowest command per seam:
 
-- `.cs` files: `dotnet test backend/Taskdeck.sln -c Release -m:1`
-- `.ts`/`.vue` files: `cd frontend/taskdeck-web && npx vitest --run --reporter=verbose && npm run typecheck`
-- both: run both
-- E2E-relevant: `npx playwright test` with targeted spec
+- `.cs`: one layer — `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1`;
+  the full solution only for cross-layer changes.
+- `.ts`/`.vue` (Bash): `cd frontend/taskdeck-web && npx vitest --run --maxWorkers=2 <path/to.spec.ts> && npm run typecheck`
+  — `&&` so a failing spec stops the chain (in PowerShell use `;` plus an explicit `$LASTEXITCODE` check after each
+  step). Bare `vitest --run` OOMs on this box.
+- Flow changes: `npx playwright test tests/e2e/<file>.spec.ts --reporter=line` against a running stack.
+- Docs: `node scripts/check-docs-governance.mjs`.
 
-### 6. Push and open PR
+### 5. Push and open the PR ready for review
 
 ```bash
 git push -u origin issue-<number>/<short-slug>
+gh pr create --title "<concise title>" --body-file <body.md>
 ```
 
-Open PR with:
+Body: `## Summary` (what and why), `Closes #<number>`, `## Changes`, `## Test plan` (what was verified,
+how, and what was NOT verified). Write the body to a file first — backtick-led lines inside a heredoc
+trip the floor hook.
 
-```bash
-gh pr create --title "<concise title>" --body "$(cat <<'EOF'
-## Summary
-<what changed and why>
+### 6. Coordinator handoff
 
-Closes #<number>
-
-## Changes
-<bullet list of key changes>
-
-## Test plan
-<what was verified and how>
-EOF
-)"
-```
-
-### 7. Coordinator handoff
-
-Open the PR ready-for-review, capture its exact head/base identity and verification evidence, then
-return it to the coordinator. Only the coordinator enters or re-enters the global
-`review-and-ship` pipeline (global laws 2 and 11) with the Taskdeck-specific
-`taskdeck-pr-review-loop` lenses. Resume implementation only for pipeline-directed fixes returned
-by the coordinator.
-
-### 8. Report back
-
-Provide the PR URL and the handoff summary from `taskdeck-verification-doc-sync`.
+Return the PR URL, exact head/base identity, and verification evidence to the coordinator. Only the
+coordinator enters the global `review-and-ship` pipeline (laws 2 and 11) with `taskdeck-pr-review-loop`
+lenses; resume implementation only for pipeline-directed fixes. Report with the handoff shape from
+`taskdeck-verification-doc-sync`.
 
 ## Guardrails
 
-- do not skip tests
-- if the issue is ambiguous, ask the user before implementing
-- if the issue is too large for one PR, propose a split and implement the first slice
-- hand the ready PR and exact evidence to the coordinator; do not enter the review pipeline or
-  decide merge disposition from this implementation skill
+- Do not skip tests.
+- Ambiguity: run `taskdeck-question-batch` — batch true blockers into one question, otherwise proceed on a
+  named assumption and record it in the PR (law 6).
+- Too large for one PR: propose a split and implement the first slice.
+- Hand the ready PR and exact evidence to the coordinator; do not decide merge disposition here.

@@ -1,6 +1,6 @@
 ---
 name: taskdeck-question-batch
-description: Decide whether a Taskdeck agent should ask the user, proceed with a documented assumption, or stop for safety. Use when a task is broad, underspecified, has possible product/security/schema ambiguity, or risks context-expensive question loops.
+description: Decide whether to ask the user, proceed on a named assumption, or stop for safety when a Taskdeck task is broad, ambiguous, or risky.
 ---
 
 # Taskdeck Question Batch

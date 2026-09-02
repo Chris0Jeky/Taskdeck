@@ -1,6 +1,7 @@
 ---
 name: taskdeck-backend-slice
-description: Implement Taskdeck backend changes safely. Use when changing .NET API, application, domain, infrastructure, worker, auth, provider-runtime, import-export, notification, archive, or persistence behavior.
+description: Implement Taskdeck backend (.NET) changes safely - API, application, domain, infrastructure, worker, auth, providers, import-export, persistence.
+paths: ["backend/**"]
 ---
 
 # Taskdeck Backend Slice
@@ -9,7 +10,7 @@ Implement the smallest backend slice that fits the existing layering and contrac
 
 ## Read first
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map) — find your area in its seams table and jump to the entry point. Read only the relevant section of `docs/STATUS.md` (source of truth; ~1.3k lines — never read end-to-end); don't bulk-read `docs/IMPLEMENTATION_MASTERPLAN.md`. Root `CLAUDE.md`/`AGENTS.md` auto-load — don't re-read them. Region rules auto-load from `backend/CLAUDE.md`.
+Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load. (`backend/CLAUDE.md` is the region rule.)
 
 Read as needed:
 
