@@ -7,8 +7,8 @@ the contributor contract in `../AGENTS.md`; review doctrine in the global laws. 
 
 | Path | Purpose |
 | --- | --- |
-| `settings.json` | normal development permissions, worktree symlinks, and project MCP enablement; no repo runtime hooks or deny list |
-| `settings.local.json` | machine-local overrides (not a place for `bypassPermissions`) |
+| `settings.json` | `acceptEdits` default, development permission rules (proving checks, `gh`, `dotnet`, `npm`, read-only shell), worktree symlinks, project MCP enablement; no repo runtime hooks or deny list. Rules are prefix rules (`:*` is a wildcard only when it ends the token; `Bash(gh :*)` with a space matched nothing). `gh` is allowed per subcommand (`pr`, `issue`, `api`, `run`, `workflow`, `release`, `project`, `label`, `search`, `milestone`, `auth status`, `repo view`) so `gh repo delete`, `gh secret`, `gh variable`, and key management still prompt; `find` is not allowed because `-delete`/`-exec` would ride the read-only intent — use `rg` |
+| `settings.local.json` | gitignored machine-local overrides (output style, personal allows). Since Claude Code 2.1.257 **no project-scope file can grant `bypassPermissions` or `auto`** — a `defaultMode` set here is logged as ignored; those modes come only from user settings (`~/.claude/settings.json`), managed policy, or a launch flag (`--permission-mode bypassPermissions`, `--dangerously-skip-permissions`) |
 | `skills/` | 16 repo-local workflow skills — **prefer these over plugin equivalents**; routing table in `../AGENTS.md` |
 | `worktrees/` | Claude-managed worktrees — do not read by default |
 
@@ -37,7 +37,16 @@ On conflict: `docs/STATUS.md` for reality, `AGENTS.md` for protocol.
 
 ## MCP
 
-`../.mcp.json` declares the project servers (openaiDeveloperDocs, github, context7, playwright,
-chromeDevTools). The **Docker MCP gateway is intentionally absent** — it is declared once at user scope,
-and a project-scope copy starts a second gateway process per session (agent-harness#87). Use `/mcp` to
-authenticate the remote HTTP servers. Repo search is native `rg`, not an MCP.
+`../.mcp.json` declares the project servers: `openaiDeveloperDocs` (HTTP; authenticate via `/mcp`),
+`playwright`, and `chromeDevTools` (stdio via `npx`; DevTools is version-pinned — bump it deliberately,
+never `@latest`). Not declared, on purpose (2026-09-02, RAM/MCP hygiene):
+
+- **Context7** — provided by the claude.ai connector (`mcp__claude_ai_Context7__*`); a project stdio copy
+  started a second node process per session and per subagent.
+- **GitHub MCP** — surfaced no tools unauthenticated and every workflow here uses `gh`; re-add only if a
+  workflow needs a write `gh` cannot do, and authenticate it via `/mcp` first.
+- **Docker MCP gateway** — declared once at user scope; a project-scope copy starts a second gateway
+  process per session (agent-harness#87).
+
+Codex keeps its own baseline in `../.codex/config.toml` (no connector there, so it declares Context7 and an
+authenticated GitHub MCP itself). Repo search is native `rg`, not an MCP.
