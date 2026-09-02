@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskdeck.context-fabric-metrics-report.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "methodDate",
+    "sampleSize",
+    "metrics",
+    "cost"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "methodDate": {
+      "type": "string",
+      "format": "date"
+    },
+    "sampleSize": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "numerator",
+          "denominator",
+          "unknown",
+          "value",
+          "minimum_cohort_met"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "numerator": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "denominator": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknown": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "value": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "minimum_cohort_met": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "cost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "knownCost",
+        "acceptedOperations",
+        "unknownCostRecords",
+        "costPerAcceptedOperation",
+        "currency"
+      ],
+      "properties": {
+        "knownCost": {
+          "type": "string",
+          "pattern": "^[0-9]+(?:\\.[0-9]+)?$"
+        },
+        "acceptedOperations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknownCostRecords": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "costPerAcceptedOperation": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "currency": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[A-Z]{3}$"
+        }
+      }
+    }
+  }
+}

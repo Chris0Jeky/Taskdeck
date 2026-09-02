@@ -1,0 +1,10 @@
+flowchart LR
+  C[Capture] --> A1[Audio SourceAsset]
+  C --> A2[Document/Image SourceAsset]
+  A1 --> R1[Transcript Representation]
+  A2 --> R2[OCR / Structure Representation]
+  R1 --> E1[TimeRange anchors]
+  R2 --> E2[Page/ImageRegion anchors]
+  E1 --> SC[SemanticCandidates]
+  E2 --> SC
+  SC --> P[Proposal operations]

@@ -1,0 +1,20 @@
+
+digraph G {
+  rankdir=TB;
+  graph [fontname="Arial", labelloc="t", label="Meeting understanding"];
+  node [shape=box, fontname="Arial"];
+  Transcript [label="Diarised transcript representation"];
+  Candidates [label="Semantic candidates + evidence"];
+  Aliases [label="Explicit speaker aliases"];
+  Participants [label="Authorized participants"];
+  Registers [label="Action / Decision / Question / Risk registers"];
+  Matches [label="Existing-work match candidates"];
+  Conflicts [label="Non-blocking conflict facts"];
+  Review [label="Capture-centred grouped review"];
+
+  Transcript -> Candidates -> Registers -> Review;
+  Aliases -> Registers;
+  Participants -> Aliases;
+  Registers -> Matches -> Review;
+  Registers -> Conflicts -> Review;
+}

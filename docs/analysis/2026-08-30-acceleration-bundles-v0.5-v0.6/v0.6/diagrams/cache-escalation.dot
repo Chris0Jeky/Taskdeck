@@ -1,0 +1,26 @@
+
+digraph G {
+  rankdir=TB;
+  graph [fontname="Arial", labelloc="t", label="Cache and selective escalation"];
+  node [shape=box, fontname="Arial"];
+  Key [label="Canonical cache key"];
+  Lookup [label="Owner-scoped lookup"];
+  Hit [label="Cache hit\nzero new billed usage"];
+  Reserve [label="Acquire miss reservation"];
+  Run [label="Processor run"];
+  Commit [label="Commit cache entry"];
+  Output [label="Immutable representation"];
+  Quality [label="Quality / sufficiency facts"];
+  Escalate [label="Bounded escalation plan"];
+  Stronger [label="Stronger processor"];
+  Supersede [label="Append superseding representation"];
+
+  Key -> Lookup;
+  Lookup -> Hit [label="hit"];
+  Lookup -> Reserve [label="miss"];
+  Reserve -> Run -> Commit -> Output;
+  Hit -> Output;
+  Output -> Quality;
+  Quality -> Escalate [label="insufficient"];
+  Escalate -> Stronger -> Supersede;
+}

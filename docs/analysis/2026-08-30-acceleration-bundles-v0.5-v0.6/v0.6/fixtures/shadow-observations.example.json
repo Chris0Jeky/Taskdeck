@@ -1,0 +1,32 @@
+[
+  {
+    "observationId": "s1",
+    "policyVersion": "1",
+    "eligible": true,
+    "wouldAllow": true,
+    "targetCorrect": true,
+    "permissionCorrect": true,
+    "humanApprovedUnchanged": true,
+    "falseAction": false,
+    "correctNoAction": null,
+    "compensationSupported": true,
+    "compensationSimulated": true,
+    "boundaryViolation": false,
+    "killSwitchObserved": true
+  },
+  {
+    "observationId": "s2",
+    "policyVersion": "1",
+    "eligible": false,
+    "wouldAllow": false,
+    "targetCorrect": false,
+    "permissionCorrect": true,
+    "humanApprovedUnchanged": false,
+    "falseAction": true,
+    "correctNoAction": null,
+    "compensationSupported": true,
+    "compensationSimulated": true,
+    "boundaryViolation": false,
+    "killSwitchObserved": true
+  }
+]
