@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "id": "typed-keep-ready",
+      "legacy": {
+        "source": "Typed",
+        "status": "Completed",
+        "disposition": "Kept",
+        "text": "alpha"
+      },
+      "expect": {
+        "same_id": true,
+        "inline_asset": true,
+        "processing_summary": "Ready"
+      }
+    },
+    {
+      "id": "paste-pending",
+      "legacy": {
+        "source": "Paste",
+        "status": "Pending",
+        "disposition": null,
+        "text": "beta"
+      },
+      "expect": {
+        "same_id": true,
+        "processing_summary": "Idle"
+      }
+    },
+    {
+      "id": "transcript-processing",
+      "legacy": {
+        "source": "TranscriptPaste",
+        "status": "Processing",
+        "disposition": null,
+        "text": "gamma"
+      },
+      "expect": {
+        "same_id": true,
+        "processing_summary": "Processing"
+      }
+    },
+    {
+      "id": "processor-failed",
+      "legacy": {
+        "source": "Typed",
+        "status": "Failed",
+        "disposition": null,
+        "text": "delta"
+      },
+      "expect": {
+        "capture_readable": true,
+        "processing_summary": "Failed"
+      }
+    },
+    {
+      "id": "markdown-import-human",
+      "legacy": {
+        "source": "MarkdownImport",
+        "status": "Completed",
+        "text": "# note"
+      },
+      "expect": {
+        "origin": "Import",
+        "producer": "Human"
+      }
+    },
+    {
+      "id": "integration-import-override",
+      "legacy": {
+        "source": "Import",
+        "status": "Completed",
+        "text": "event"
+      },
+      "intake_override": {
+        "producer": "Integration"
+      },
+      "expect": {
+        "producer": "Integration"
+      }
+    },
+    {
+      "id": "empty-text",
+      "legacy": {
+        "source": "Typed",
+        "status": "Pending",
+        "text": ""
+      },
+      "expect": {
+        "policy": "stable-error-or-explicit-empty-asset"
+      }
+    },
+    {
+      "id": "malformed-json",
+      "legacy_raw": "{broken",
+      "expect": {
+        "quarantined": true,
+        "other_rows_continue": true
+      }
+    },
+    {
+      "id": "idempotent-rerun",
+      "repeat": "typed-keep-ready",
+      "expect": {
+        "no_duplicate_capture": true,
+        "no_duplicate_asset": true
+      }
+    },
+    {
+      "id": "interrupted-resume",
+      "checkpoint_after": 3,
+      "expect": {
+        "final_matches_clean_run": true
+      }
+    }
+  ]
+}

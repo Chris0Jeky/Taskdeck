@@ -1,0 +1,17 @@
+digraph SmartCI {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.7, fontname="Arial", label="Smart CI evidence control loop", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  change [label="Change + trust +\nhistorical evidence"];
+  classify [label="Risk classifier\nR0..R3"];
+  plan [label="Planner\nselected / skipped with reason"];
+  broker [label="Runner broker"];
+  execute [label="Shards / gates / nightly / release"];
+  receipt [label="ci-run.v1 receipt\ncontent-free"];
+  analyse [label="Critical path · cost · yield ·\nflake · duplicate SHA · cache"];
+  findings [label="Weekly report +\nowned findings/quarantine"];
+  policy [label="Reviewed policy/ADR change"];
+
+  change -> classify -> plan -> broker -> execute -> receipt -> analyse -> findings -> policy -> classify;
+}

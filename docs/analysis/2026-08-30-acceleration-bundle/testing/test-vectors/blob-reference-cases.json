@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "same-owner-same-hash",
+      "expect": {
+        "objects": 1,
+        "references": 2
+      }
+    },
+    {
+      "name": "different-owner-same-hash",
+      "expect": {
+        "objects": 2,
+        "references": 2
+      }
+    },
+    {
+      "name": "release-one-of-two",
+      "expect": {
+        "objects": 1,
+        "references": 1
+      }
+    },
+    {
+      "name": "release-last",
+      "expect": {
+        "objects": 0,
+        "references": 0
+      }
+    },
+    {
+      "name": "foreign-release",
+      "expect_error": "blob_reference_owner_mismatch",
+      "no_mutation": true
+    },
+    {
+      "name": "stream-exceeds-declared",
+      "expect_error": "blob_declared_size_exceeded"
+    },
+    {
+      "name": "quota-rejects-before-read",
+      "expect_error": "blob_quota_exceeded",
+      "source_bytes_read": 0
+    },
+    {
+      "name": "transaction-rolls-back",
+      "expect": {
+        "reference_and_object_rolled_back": true
+      }
+    }
+  ]
+}
