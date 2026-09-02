@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-02
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -99,6 +99,14 @@ behaviour.
   `221aa88c8`; live `main` was already 42 commits and 116 changed files ahead. The source, validation
   receipt, component/workstream dispositions, and candidate-code admission contract are recorded in
   `docs/analysis/2026-08-30-acceleration-bundle/RECONCILIATION.md` under tracker `#2348`.
+- **2026-09-02 re-pass (`#2376`).** The bundle's durable material is archived beside that record and every open
+  milestone-4/5 target issue has a head-start file validated against `main` `de488fea0`
+  (`docs/analysis/2026-08-30-acceleration-bundle/HEAD_START.md`). Delivered lanes are recorded so they are not
+  re-planned: CF-01 `#2255`, backup/restore `#2238` (PR `#2361`), connector verification `#2239` (PR `#2360`), the
+  Smart CI shadow control plane, the Option B telemetry ruling. Sequencing consequences: CF-02/CF-03 sit behind
+  `#2345`/`#2347`; CF-23 `#2276`, CF-07 `#2261`, CF-04 `#2258` hosts and CF-05 `#2259`'s eligibility gate are
+  startable now; `#2240`'s assignment fork, `#2094`'s ratified deferral and `#1131`'s product decision block their
+  lanes.
 - **Stale starter lanes were removed before admission.** CF-01 `#2255` is merged/closed with residuals
   `#2345`/`#2347`; OpenAI-compatible streaming `#2241` already satisfies AC2/AC4/AC6 and retains only
   API-level/live proof; Smart CI depth consumes ADR-0066's landed control plane. Incorrect milestone-4

@@ -30,7 +30,7 @@ by the csproj; they are adapted into the owning test project when a candidate is
 | `dotnet/OpsCommandExitCodes.cs` | `#1131` | `../issues/1131-*.md` |
 | `dotnet/ConnectorKeyVerifier.cs`, `ops/CONNECTOR_KEY_VERIFICATION_CONTRACT.md` | `#2239` — **delivered** by PR `#2360`; retained for the diff record only | — |
 | `ops/backup_manifest.py`, `schemas/backup-manifest.v1.schema.json` | `#2238` — **delivered** by PR `#2361`; retained for the diff record only | — |
-| `python/telemetry_payload_linter.py`, `telemetry-policy.sample.json` | `#1308` (blocked on the telemetry decision) | `../issues/1308-*.md` |
+| `python/telemetry_payload_linter.py`, `telemetry-policy.sample.json` | `#1308` (Option B ruled; endpoint, retention and publication values still open) | `../issues/1308-*.md` |
 | `python/rank_refactor_candidates.py` | `#2236` — REF-0 tooling is in open PR `#2356`; do not duplicate | `../issues/2236-*.md` |
 | `smart-ci/*` (shards fixture, receipt and quarantine schemas, validators, weekly report) | `#2330`, `#2336`, `#2339`, `#2334` | `../issues/2330-*.md`, `../issues/2336-*.md`, `../issues/2339-*.md`, `../issues/2334-*.md` |
 
