@@ -51,7 +51,7 @@ Preparing → Understood → Needs input / Needs review → Acted*, with *Kept*,
 states. It is computed, never persisted as the only truth, so a kept, partially processed, already-acted
 capture loses nothing. `Partial` renders as *Understood* with the failed leg listed beneath it.
 
-## 2. Code map (scaffold PR `#2280` + reconciliation pass, 2026-08-30)
+## 2. Code map (scaffold PR `#2280` + reconciliation pass, 2026-08-30; v0.6 vocabulary 2026-09-02)
 
 | Layer | File | Role |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ capture loses nothing. `Partial` renders as *Understood* with the failed leg lis
 | Domain | `Enums/CaptureSourceMapping.cs` | Total forward mapping from the legacy `CaptureSource`; lossy reverse for compatibility readers; test enumerates the enum |
 | Domain | `Enums/CaptureUserDisposition.cs` (+ `CaptureUserDispositionMapping`), `CaptureProcessingSummary.cs`, `CaptureActionState.cs`, `CaptureTimeline.cs` | The three state axes and the timeline projection |
 | Domain | `Enums/RepresentationKind.cs`, `RepresentationQualityState.cs`, `EvidenceAnchorKind.cs`, `SemanticCandidateKind.cs`, `SemanticCandidateState.cs`, `ProcessingJobState.cs`, `ProcessorExecutionMode.cs`, `SourceAssetStorageKind.cs` | Vocabulary for CF-03/06/07/08/23 |
-| Domain | `Enums/ProcessingProfilePreset.cs` (Private · Balanced · Strict · Expert), `ProcessingEgressClass.cs`, `ProcessorEligibility.cs`, `ProcessingConsentState.cs`, `MetricAvailability.cs` (`ContextFabricVocabularyTests` pins names and values) | Vocabulary for CF-10 `#2264` and CF-24B `#2277`, scaffolded 2026-09-02 (`#2368`) the way `#2280` did for CF-06; rejection reasons and metric names stay kebab-case strings, not enums |
+| Domain | `Enums/ProcessingProfilePreset.cs` (Private · Balanced · Strict · Expert), `ProcessingEgressClass.cs`, `ProcessorEligibility.cs`, `ProcessingConsentState.cs`, `MetricAvailability.cs` (`ContextFabricVocabularyTests` pins names, values and that every zero value fails closed — `Private`, `LocalOnly`, `Ineligible`, `Revoked`, `Unknown`) | Vocabulary **only** for CF-10 `#2264` and CF-24B `#2277`, scaffolded 2026-09-02 (`#2368`) the way `#2280` did for CF-06 — no profile, router, receipt, consent or metric code exists yet; rejection reasons and metric names stay kebab-case strings, not enums |
 | Domain | `Processing/ProcessingCapability.cs` | The capability vocabulary; `Externalizable` vs `InProcessOnly` (`context.resolve`, `change.plan`, `change.verify` never leave the process) |
 | Domain | `Entities/Capture.cs` | The durable aggregate: owner + `ProducedByPrincipalId`, `RequestedIntent` / `EffectiveIntent` / `IntentResolvedByRunId`, the three axes, `LegacySourceSnapshot`, up to 32 active `SourceAssets`; `FromQueueRequest` builds the ID-preserving row (sources and machine-derived axes seeded before the user disposition, so an archived legacy row still arrives with its material); `SupersedeInlineTextSource` / `CurrentText` / `ActiveSourceAssets` are the correction model |
 | Domain | `Entities/SourceAsset.cs`, `SourceAssetTextPayload.cs` | One immutable input: modality, media type, SHA-256, size, storage kind (`InlineText` · `Blob` · `ExternalReference` · `LegacyArtefact`); text kept verbatim in its own row; `SupersedesAssetId` / `SupersededByAssetId` carry corrections without ever rewriting stored bytes |
@@ -166,7 +166,7 @@ not the public "Speak" promise.
 ## 7. Verify
 
 ```text
-dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureTests|FullyQualifiedName~CaptureSourceMappingTests|FullyQualifiedName~ProcessingCapabilityTests|FullyQualifiedName~SourceAssetTests|FullyQualifiedName~CaptureTimelineTests"
+dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureTests|FullyQualifiedName~CaptureSourceMappingTests|FullyQualifiedName~ProcessingCapabilityTests|FullyQualifiedName~SourceAssetTests|FullyQualifiedName~CaptureTimelineTests|FullyQualifiedName~ContextFabricVocabularyTests"
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~Processing|FullyQualifiedName~CaptureService|FullyQualifiedName~LlmQueueService|FullyQualifiedName~AccountDeletion"
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~MigrationBootstrapTests|FullyQualifiedName~McpApplicationServiceRegistrationTests"
 dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1
