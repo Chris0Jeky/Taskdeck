@@ -2,7 +2,7 @@
 
 Last Updated: 2026-09-02
 
-> Curated from the v0.3/v0.4 acceleration bundle (grounded `221aa88c8`, 2026-08-30) against `main` `de488fea0` on 2026-09-02 under tracker #2348 follow-up. Planning input, not authority: the live issue **including its 2026-09-02 comment** (which asks this issue to rule on zero-length time ranges and on where duration bounding lives), ADR-0065 §Decision 4, ADR-0045 §7 and `docs/STATUS.md` win. Corrections to the bundle's issue pack are in the last section.
+> Curated from the v0.3/v0.4 acceleration bundle (grounded `221aa88c8`, 2026-08-30) against `main` `de488fea0` on 2026-09-02 under tracker #2376 (follow-up to #2348). Planning input, not authority: the live issue **including its 2026-09-02 comment** (which asks this issue to rule on zero-length time ranges and on where duration bounding lives), ADR-0065 §Decision 4, ADR-0045 §7 and `docs/STATUS.md` win. Corrections to the bundle's issue pack are in the last section.
 
 ## Outcome
 

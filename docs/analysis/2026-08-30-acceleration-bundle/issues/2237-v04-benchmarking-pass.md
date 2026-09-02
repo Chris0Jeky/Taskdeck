@@ -2,7 +2,7 @@
 
 Last Updated: 2026-09-02
 
-> Curated from the v0.3/v0.4 acceleration bundle (grounded `221aa88c8`, 2026-08-30) and validated against `main` `de488fea0` on 2026-09-02 under tracker #2348 follow-up. Planning input, not authority: the live issue and its two comments, `docs/HARDENING_AND_PERFORMANCE.md` and the shipped k6 gate win. Corrections to the bundle are in the last section.
+> Curated from the v0.3/v0.4 acceleration bundle (grounded `221aa88c8`, 2026-08-30) and validated against `main` `de488fea0` on 2026-09-02 under tracker #2376 (follow-up to #2348). Planning input, not authority: the live issue and its two comments, `docs/HARDENING_AND_PERFORMANCE.md` and the shipped k6 gate win. Corrections to the bundle are in the last section.
 
 ## Outcome
 

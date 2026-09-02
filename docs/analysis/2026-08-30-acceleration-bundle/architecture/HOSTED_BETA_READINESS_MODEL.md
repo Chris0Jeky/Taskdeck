@@ -1,5 +1,17 @@
 # Hosted open-beta readiness model
 
+> **Validated 2026-09-02 against `main` `de488fea0`.**
+> - **The Stage 1 gate is now satisfied in code.** "Production-image backup/restore and connector-key verification" shipped while this blueprint was in transit: `#2238` closed via PR `#2361` (AES-256-GCM `RecoveryArchive` with an authenticated header, `taskdeck --backup` / `--restore` intercepted in `Taskdeck.Cli/Program.cs` before the host is built, `deploy/docker/taskdeck-backup` + `taskdeck-restore` installed by `deploy/Dockerfile.production`, `scripts/ci/run-container-backup-restore-smoke.sh`, and `docs/ops/DISASTER_RECOVERY_RUNBOOK.md`), and `#2239` closed via PR `#2360` (`taskdeck --verify-connectors`, read-only, content-free). What remains at Stage 1 is the human deploy act and the CL-1 values, not engineering.
+> - **§4 "Availability and data" recommends RPO ≤24 h / RTO ≤2 h. The shipped runbook publishes different numbers:** local-SQLite RTO <30 min, Docker/hosted RTO <60 min, default RPO <24 h, high-frequency RPO <1 h. `docs/ops/DISASTER_RECOVERY_RUNBOOK.md` is the operational authority; treat the blueprint's figures as a floor, not the target.
+> - **§4 "Identity and secrets" has a hole.** It lists registration mode, e-mail verification, TOTP-seed encryption, connector-key encryption and rotation — but not the **browser session model**. On `main`, `frontend/taskdeck-web/src/utils/tokenStorage.ts` persists the JWT and session metadata in `localStorage` under ADR-0009's local-first acceptance, and CodeQL alerts #44/#45 are dismissed rather than fixed. That is `#1644` (v0.4, Priority I) and it is a Stage-3 blocker the checklist does not name.
+> - **"Secret rotation and operator recovery" is not achievable today.** ADR-0061 records that connector-key rotation has no tool and re-encrypting stored connector credentials is unimplemented. Verification after restore now works; rotation does not. Do not score that row as met.
+> - **§3's tenancy table is still the open decision, and its warning is the important half.** "Do not choose shared SQLite solely because it is already deployed" — `#2243` HOST-0 owns the choice, and the comparison is proof burden, not implementation cost.
+> - **The ladder has five rungs, and Taskdeck is standing on Stage 0.** The `#2243` epic's own path list starts at Stage 1; v0.3's downloadable Windows ZIP + self-host container *is* Stage 0, and `#2242` is its launch kit. Read §2 as the fuller map.
+> - **Two gates the checklist omits.** `#2012` is a recorded **hard two-part gate** on any public managed-service commitment (a model decision *and* an answered contribution-policy/inbound-rights question — ADR-0061 ruling `2012-blocks-managed-path`), and `#1653` (TOTP seeds encrypted at rest) keeps MFA disabled until it lands.
+> - **Telemetry (§4) is decided, not open.** RC deck **q-5 = B** (2026-08-29, recorded on `#1308`): opt-in Home-Assistant-style analytics for v0.4, zero telemetry in v0.3. `docs/TELEMETRY.md` ships on `main`. What is still undecided is endpoint ownership, retention and aggregate-publication cadence.
+>
+> The body below is the bundle text, unedited.
+
 ## 1. Principle
 
 A hosted beta is an operating model, not a Docker deployment. “Accessible from anywhere” widens the threat model from trusted operators/users to untrusted registrants, cost abuse, support load and data-custody obligations.

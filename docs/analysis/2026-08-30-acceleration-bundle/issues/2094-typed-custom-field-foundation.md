@@ -2,7 +2,7 @@
 
 Last Updated: 2026-09-02
 
-> Curated from the v0.3/v0.4 acceleration bundle (grounded `221aa88c8`, 2026-08-30) against `main` `de488fea0` on 2026-09-02 under tracker #2348 follow-up. Planning input, not authority: the live issue, the accepted ADRs and `docs/STATUS.md` win. Corrections to the bundle are listed in the last section. **The bundle shipped no issue pack for `#2094`** — only a paste-ready comment — so this file is built from the live issue, ADR-0062, the blueprint and the C# candidate.
+> Curated from the v0.3/v0.4 acceleration bundle (grounded `221aa88c8`, 2026-08-30) against `main` `de488fea0` on 2026-09-02 under tracker #2376 (follow-up to #2348). Planning input, not authority: the live issue, the accepted ADRs and `docs/STATUS.md` win. Corrections to the bundle are listed in the last section. **The bundle shipped no issue pack for `#2094`** — only a paste-ready comment — so this file is built from the live issue, ADR-0062, the blueprint and the C# candidate.
 
 ## Outcome
 
