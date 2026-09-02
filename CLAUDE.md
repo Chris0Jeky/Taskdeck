@@ -99,7 +99,8 @@ Retired Gemini selectors/settings fail startup with migration guidance — `docs
   (or `powershell -File scripts/check-git-env.ps1`); it also clears a stale `.git/index.lock` safely.
 - **`.worktrees/` holds ~70 stale Codex issue checkouts** with unpushed branches. Do not prune or clean them.
 - Create issue worktrees with `scripts/git/New-CodexIssueWorktree.ps1` and run its complete printed
-  handoff (guard first, then the bounded initializer) — contract in `docs/WORKTREE_AGENT_PROTOCOL.md`.
+  handoff: the exact pinned-Git `worktree_guard.ps1` command first, then the bounded
+  `Initialize-CodexIssueWorktree.ps1` command — contract in `docs/WORKTREE_AGENT_PROTOCOL.md`.
 
 ## Definition of done
 
