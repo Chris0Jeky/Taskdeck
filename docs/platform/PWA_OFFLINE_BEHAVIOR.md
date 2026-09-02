@@ -14,9 +14,52 @@ All app shell assets (JS, CSS, HTML, icons, fonts) are precached on first load. 
 
 | Resource | Strategy | TTL | Notes |
 |----------|----------|-----|-------|
-| API responses (`/api/*`) | NetworkFirst | 24 hours | Fresh data preferred; falls back to cache when offline |
+| API responses (`/api/*`) | Network only | N/A | Never stored by the service worker or browser cache because responses may be identity-bound |
 | Lazy `it`/`es` locale chunks | StaleWhileRevalidate | Content-versioned | Cached after first use so the selected language remains available offline |
-| Same-origin static assets (images, bundled fonts, icons) | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
+| Static assets under `/assets/` and `/icons/` | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
+
+The static-asset route is anchored on the directories the build emits, not on the file extension.
+The API base is a deployment choice - `VITE_API_BASE_URL` may be prefixed, such as `/taskdeck/api` -
+so denying `/api` alone would not stop an authenticated `GET /taskdeck/api/users/by-username/alice.png`
+from being stored in the shared, cross-identity static cache. An unrecognised layout therefore loses
+runtime caching for a static asset; it never admits an API response.
+
+### Retiring the pre-#2350 worker
+
+An installation that predates this change still runs a worker with a NetworkFirst API route, and it
+repopulates the authenticated cache after any page-side purge. `registerType: 'prompt'` lets that
+worker wait indefinitely - the update banner is never shown on the public login route, and a user can
+dismiss it - so the migration is not left to the update UI.
+
+Before any session is established, the page asks the controlling worker for the retirement policy over
+a `MessageChannel` (`src/pwa/legacyApiCacheWorker.ts`). A pre-#2350 worker has no listener, so silence
+identifies it. The page then calls `registration.update()` and follows the replacement through
+`updatefound` and `statechange` until it reaches `installed`, at which point it is messaged to skip
+waiting. Following it matters: `registration.update()` resolves inside Install, *before* the install
+event's lifetime promises settle, so `registration.waiting` is normally still null when it returns and
+a one-shot read there would never deliver the message. The replacement claims open clients on
+activation, so the switch does not need a reload.
+
+Every step is bounded, and the whole migration has a hard 12-second ceiling, because session restore
+and the router guard both await it - an unbounded update fetch would pin the app on its loading state
+with a reload that re-enters the same wait. `controllerchange` is latched from the start of the
+attempt rather than subscribed to at the end, so a replacement that another tab's migration used to
+claim this page is not missed.
+
+If nothing takes over inside the wait, the attempt **fails closed**. It unregisters only when the
+registration holds nothing that could still become a compliant controller; when a replacement is
+installing or waiting, unregistering would destroy it, so the page reports failure and a reload lets
+it activate. Either way the legacy worker still controls the current page, so session establishment
+stays refused until reload - and a *missing* registration is not treated as success while a
+non-answering controller is still intercepting, because `unregister()` never releases a page the
+worker already controls.
+
+Activation also evicts any entry in `taskdeck-static-assets` that the current route would refuse.
+The pre-#2350 extension-only matcher could have stored an authenticated response there under a
+prefixed API base, where it would otherwise survive an account switch for 30 days.
+
+Normal (non-security) updates still go through the `SwUpdatePrompt` banner: only this migration sends
+skip-waiting.
 
 ### Navigation Fallback
 
@@ -24,11 +67,9 @@ For SPA deep links (e.g. `/workspace/boards/{id}`), the service worker serves `i
 
 ## What Works Offline
 
-These features function with cached data when the network is unavailable:
+These features function without backend data when the network is unavailable:
 
 - **App shell and navigation**: All routes render. The sidebar, topbar, command palette, and keyboard shortcuts work normally.
-- **Previously loaded board views**: Boards, columns, and cards that were loaded during the last online session are available from the API response cache.
-- **Previously loaded data**: Inbox items, notifications, review proposals, and other data loaded while online remain accessible via cached API responses.
 - **Local UI interactions**: Sorting, filtering, searching within already-loaded data, toggling UI states, opening/closing modals.
 
 ## What Queues (Future)
@@ -58,7 +99,11 @@ When the browser transitions from offline to online:
 
 1. The **offline banner** (`OfflineBanner.vue`) disappears automatically via the `useOnlineStatus` composable.
 2. **SignalR** attempts automatic reconnection (handled by the existing `useBoardRealtime` composable).
-3. **Cached API responses** continue to be served until fresh data is fetched. The NetworkFirst strategy for API calls means the next navigation or data load will fetch fresh data from the server.
+3. **API reads** fetch from the server; an offline or failed read surfaces the application's normal error state rather than replaying data from a previous identity.
+5. **Cache-boundary failures are reported by what already committed.** A failure before the credential
+   is sent asks the user to retry. A failure after the server has already created an account or issued
+   a token says so and asks for a reload and a fresh sign-in, because retrying the original call would
+   collide on a duplicate username or a consumed invite.
 4. **No automatic retry** of failed mutations. The user must re-trigger any write operations that failed while offline.
 
 ## Service Worker Updates
@@ -77,7 +122,7 @@ Workbox handles cache versioning automatically via content hashing in precache m
 
 - Precached assets with changed hashes are fetched and updated.
 - Stale caches from previous versions are cleaned up (`cleanupOutdatedCaches: true`).
-- Runtime caches (API responses, lazy locale chunks, and static assets) have bounded expiration and entry counts.
+- Runtime caches for lazy locale chunks and static assets have bounded expiration and entry counts. Every legacy `taskdeck-api-cache*` namespace is deleted on service-worker activation and identity transitions; the share-target queue is preserved.
 
 ## PWA Installability
 
@@ -103,6 +148,6 @@ The app uses responsive design tokens and mobile-specific CSS breakpoints:
 ## Limitations and Future Work
 
 - **No IndexedDB queue**: Offline writes are blocked, not queued. A future iteration may add an IndexedDB-backed mutation queue with conflict resolution.
-- **Cache size**: Runtime caches are bounded (100 API entries, 50 static assets). Heavy usage may evict older entries.
+- **Cache size**: Static runtime caches are bounded (50 static assets); locale chunks are bounded separately. API responses are intentionally not cached.
 - **Background sync**: The Background Sync API is not yet used. Failed requests are not automatically retried.
 - **Push notifications**: Web Push is not implemented. Notifications require an active tab with SignalR connection.

@@ -58,6 +58,13 @@ const errorReportingMock = vi.hoisted(() => ({
 }))
 vi.mock('../../utils/errorReporting', () => errorReportingMock)
 
+const cachePurgeMocks = vi.hoisted(() => ({
+  purge: vi.fn(),
+}))
+vi.mock('../../pwa/legacyApiCache', () => ({
+  purgeLegacyApiCaches: cachePurgeMocks.purge,
+}))
+
 // ─── Module imports (after mocks) ───────────────────────────────────────────
 
 import http from '../../api/http'
@@ -74,6 +81,7 @@ describe('http interceptors (#725)', () => {
     mock = new MockAdapter(http)
     localStorage.clear()
     vi.restoreAllMocks()
+    cachePurgeMocks.purge.mockResolvedValue(true)
     navigationMock.isAuthRoutePath.mockReturnValue(false)
     demoModeFlag.value = false
     // Reset window.location to a test-friendly object
@@ -188,6 +196,32 @@ describe('http interceptors (#725)', () => {
       await expect(http.get('/test')).rejects.toThrow()
 
       expect(clearSpy).toHaveBeenCalled()
+    })
+
+    it('clears credentials and starts the purge without holding the login redirect on CacheStorage', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      const clearSpy = vi.spyOn(tokenStorage, 'clearAll')
+      // A stalled CacheStorage must not keep a server-invalidated user on the
+      // protected screen: every path that establishes a new session awaits this
+      // same deduplicated purge before it can issue an authenticated read.
+      let releasePurge: (result: boolean) => void = () => undefined
+      cachePurgeMocks.purge.mockReturnValueOnce(new Promise<boolean>((resolve) => {
+        releasePurge = resolve
+      }))
+      Object.defineProperty(window, 'location', {
+        value: { pathname: '/workspace/home', search: '', href: '' },
+        writable: true,
+        configurable: true,
+      })
+      mock.onGet('/test').reply(401, { message: 'Unauthorized' })
+
+      await expect(http.get('/test')).rejects.toThrow()
+
+      expect(clearSpy).toHaveBeenCalled()
+      expect(cachePurgeMocks.purge).toHaveBeenCalled()
+      expect(window.location.href).toContain('/login?redirect=')
+
+      releasePurge(true)
     })
 
     it('redirects to /login with return URL on 401', async () => {

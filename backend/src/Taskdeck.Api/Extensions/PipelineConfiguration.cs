@@ -112,6 +112,7 @@ public static class PipelineConfiguration
         // nothing: response compression stays outermost, so every one of them can still append
         // response headers.
         app.UseMiddleware<CorrelationIdMiddleware>();
+        app.UseMiddleware<ApiCacheControlMiddleware>();
         app.UseMiddleware<UnhandledExceptionMiddleware>();
         app.UseMiddleware<SecurityHeadersMiddleware>();
 

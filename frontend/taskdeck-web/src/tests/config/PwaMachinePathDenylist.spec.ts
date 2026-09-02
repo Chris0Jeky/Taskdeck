@@ -172,7 +172,7 @@ describe('PWA navigation fallback denylist', () => {
  * case-insensitive — so an installed PWA could hold a cached `200` under `/API/...` and keep
  * replaying it for a URL that now answers `404` at every layer.
  */
-describe('PWA runtime API cache', () => {
+describe.skip('retired PWA runtime API cache contract', () => {
   const rule = viteConfig.match(
     /urlPattern:\s*(?<pattern>\/\^https\?[^\n]*?),\s*\n\s*handler:\s*'NetworkFirst'[\s\S]*?cacheName:\s*'(?<cacheName>[^']+)'/,
   )
@@ -198,5 +198,12 @@ describe('PWA runtime API cache', () => {
     // are orphaned rather than deleted: cleanupOutdatedCaches covers precaches, not runtime caches.
     expect(rule!.groups!.cacheName).toBe('taskdeck-api-cache-v2')
     expect(rule!.groups!.cacheName).not.toBe('taskdeck-api-cache')
+  })
+})
+
+describe('PWA runtime API cache removal', () => {
+  it('contains no authenticated API runtime cache rule or cache namespace', () => {
+    expect(viteConfig).not.toMatch(/taskdeck-api-cache/)
+    expect(viteConfig).not.toMatch(/handler:\s*'NetworkFirst'/)
   })
 })
