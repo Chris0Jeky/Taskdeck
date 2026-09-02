@@ -93,16 +93,16 @@ describe('Paper branding assets', () => {
         ),
       )
 
-    expect(packageJson.dependencies['@material-symbols/font-200']).toBe('0.46.0')
+    expect(packageJson.dependencies['@material-symbols/font-200']).toBe('0.47.0')
     expect(packageJson.dependencies['@material-symbols/font-400']).toBeUndefined()
     expect(packageLock.packages['node_modules/@material-symbols/font-200']).toMatchObject({
-      version: '0.46.0',
+      version: '0.47.0',
       license: 'Apache-2.0',
     })
     expect(packageLock.packages['node_modules/@material-symbols/font-400']).toBeUndefined()
     expect(materialSymbolsPackage).toMatchObject({
       name: '@material-symbols/font-200',
-      version: '0.46.0',
+      version: '0.47.0',
       license: 'Apache-2.0',
     })
     expect(activeFrontendSources).not.toMatch(/@material-symbols\/font-\d+\/.*\.css/)
