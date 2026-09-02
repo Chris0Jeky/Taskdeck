@@ -17,6 +17,7 @@ Companion Active Docs:
 - `#2242` / PR `#2389` / merge `81a5921bc`: the launch-kit drafts passed docs governance, GitHub-operations governance, 50 local-link checks, external-link validation, diff hygiene, exact-head review, and hosted CI including E2E Smoke. No launch post, final tag/artifact, signing step, or visibility cutover was performed.
 - `#2390` / PR `#2392` / merge `982f40e8e`: the safety follow-up passed docs governance, GitHub-operations governance, 29 focused `DesktopRuntimeTests`, diff hygiene, exact-head review, and 20/20 hosted checks including E2E Smoke. Real anonymous public-home and SC-8 verification remain unperformed human gates.
 - `#1937` / PR `#2393` / merge `12ffc4e9f`: three quick-capture component specs passed 78 tests, the locale-catalog guard passed 19, and typecheck plus diff hygiene passed. All 36 hosted checks succeeded or were deliberately skipped, including E2E Smoke. A dedicated manual-browser/screen-reader pass was not run; Spanish accenting and duplicate test-local i18n setup remain LOW polish notes.
+- `#1983` / PR `#2396` / merge `125804d34`: targeted tests in `ApplyToBoardDialog.spec.ts` and `PaperReviewView.spec.ts` assert plain Enter confirmation, modifier chord rejection, and proposal-guarded focus restoration to the Request edit control on cancel and save. Typecheck, build, and hosted CI including E2E Smoke passed.
 
 ## 2026-08-30 Smart CI Fabric checks (ADR-0066, shadow phase)
 
