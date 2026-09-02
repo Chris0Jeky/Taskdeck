@@ -37,6 +37,8 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.EntityFrameworkCore.Sqlite"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.EntityFrameworkCore.SqlServer"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.EntityFrameworkCore.Design"
         update-types: ["version-update:semver-major"]
       # Central Package Management aligns the whole backend stack to the net8.0
