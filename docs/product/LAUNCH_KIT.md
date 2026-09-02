@@ -11,17 +11,20 @@ the release tag immediately before publication.
 
 Only make a public claim when its evidence is in this ledger. “Last verified”
 means this document's source check, not a new end-user or production exercise.
+The drafts and probe answers below inherit this ledger; narrow or remove a
+sentence that cannot inherit one of these shipped sources.
 
 | Claim allowed in this kit | Shipped evidence | Owner | Last verified |
 | --- | --- | --- | --- |
-| Windows users can verify, extract, and double-click a portable ZIP; the listener remains local. | [Windows quick start](../releases/WINDOWS_QUICK_START.md) and [v0.3.0-rc.1 notes](../releases/notes/v0.3.0-rc.1.md) | Release maintainer | 2026-09-02 |
-| Self-hosters can run the supported Compose baseline. | [README Compose instructions](../../README.md) | Release maintainer | 2026-09-02 |
-| A workspace is local SQLite data the operator controls; back up its accompanying local configuration/keys too. | [README local-first ownership](../../README.md) and [upgrade guide](../../UPGRADING.md) | Operator | 2026-09-02 |
-| Untouched v0.3 builds have no automatic usage ping, crash reporter, update check, analytics script, or background destination. Configured LLMs, connectors, webhooks, login, Sentry, and OTLP are separate, user/operator-enabled egress. | [Telemetry policy](../TELEMETRY.md) | Release maintainer | 2026-09-02 |
-| Agent-originated board changes are review-first: proposal, review, approval, then a separate Apply confirmation. | [Windows quick start](../releases/WINDOWS_QUICK_START.md) and [v0.3.0-rc.1 notes](../releases/notes/v0.3.0-rc.1.md) | Product maintainer | 2026-09-02 |
-| Encrypted backup/restore and connector verification exist for the supported Docker deployment. The recovery objectives are objectives, not measured guarantees. | [Shipped recovery record](../STATUS.md) and [disaster-recovery runbook](../ops/DISASTER_RECOVERY_RUNBOOK.md) | Recovery operator | 2026-09-02 |
-| Windows ZIP checksums are published; the current ZIP is unsigned. | [Windows quick start](../releases/WINDOWS_QUICK_START.md) and [release trust programme](../ops/RELEASE_TRUST_AND_DISTRIBUTION.md) | Release maintainer | 2026-09-02 |
-| The core is GPL-3.0-only; earlier MIT releases retain the grants already made. | [Licensing policy](../../LICENSING.md), [GPL text](../../LICENSE), and [ADR-0050](../decisions/ADR-0050-gplv3-copyleft-core.md) | Maintainer/legal owner | 2026-09-02 |
+| Windows users can verify, extract, and double-click a portable ZIP; the listener remains local. | [Shipped ZIP/provenance receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L31-L35) and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Release maintainer | 2026-09-02 |
+| Self-hosters can run the supported Compose baseline. | [Shipped container baseline](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L873-L873) and [README Compose instructions](../../README.md) | Release maintainer | 2026-09-02 |
+| A workspace is local SQLite data the operator controls; back up its accompanying local configuration/keys too. | [Shipped local-first direction](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L354-L354), [README local-first ownership](../../README.md), and [upgrade guide](../../UPGRADING.md) | Operator | 2026-09-02 |
+| Captured text can become source-linked proposals; the review/apply loop is a separate, explicit user decision. | [Live-verified proposal loop](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L105-L105) | Product maintainer | 2026-09-02 |
+| Untouched v0.3 builds have no automatic usage ping, crash reporter, update check, analytics script, or background destination. Configured LLMs, connectors, webhooks, login, Sentry, and OTLP are separate, user/operator-enabled egress. | [Shipped v0.3 telemetry statement](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L55-L55) and [telemetry policy](../TELEMETRY.md) | Release maintainer | 2026-09-02 |
+| Agent-originated board changes are review-first: proposal, review, approval, then a separate Apply confirmation. | [Shipped end-to-end receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L121-L121) and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Product maintainer | 2026-09-02 |
+| Encrypted backup/restore and connector verification exist for the supported Docker deployment. The recovery objectives are objectives, not measured guarantees. | [Shipped recovery receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L39-L39), [PR #2360](https://github.com/Chris0Jeky/Taskdeck/pull/2360), [PR #2361](https://github.com/Chris0Jeky/Taskdeck/pull/2361), and [disaster-recovery runbook](../ops/DISASTER_RECOVERY_RUNBOOK.md) | Recovery operator | 2026-09-02 |
+| Windows ZIP checksums are published; the current ZIP is unsigned. | [Shipped ZIP/checksum receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L31-L35), [published-artifact journey](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L121-L121), and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Release maintainer | 2026-09-02 |
+| The core is GPL-3.0-only; earlier MIT releases retain the grants already made. | [Shipped licensing record](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L281-L281), [licensing follow-up](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L366-L366), [licensing policy](../../LICENSING.md), [GPL text](../../LICENSE), and [ADR-0050](../decisions/ADR-0050-gplv3-copyleft-core.md) | Maintainer/legal owner | 2026-09-02 |
 
 ## Posting boundary and release facts to re-check
 
@@ -78,10 +81,10 @@ Known limits are below. Questions and bugs go to the [issue tracker](https://git
 
 **Title:** Show HN: Taskdeck – local-first action items with a review gate for AI changes
 
-Hi HN — I made Taskdeck because I wanted notes, e-mails, and transcripts to
-become actionable without permitting an AI to silently edit my work. It turns
-capture into source-linked proposals; I review, approve, and separately Apply
-them to a board.
+Hi HN — I made Taskdeck because I wanted captured text to become actionable
+without permitting an AI to silently edit my work. It turns capture into
+source-linked proposals; I review, approve, and separately Apply them to a
+board.
 
 It runs locally from a Windows ZIP or the supported Docker Compose baseline.
 The default build sends no background telemetry; configured providers and
@@ -174,8 +177,14 @@ policy summary, not legal advice.
 - No audio ingestion or speaker diarization is part of this downloadable
   release. Do not imply otherwise.
 - This is a single-node SQLite deployment, not a multi-node scale-out offer.
-  No release performance number is claimed here: the checked sources provide
-  recovery objectives, not a validated throughput ceiling.
+  The documented board-heavy k6 envelope uses shared 2-core runners, 20 VUs,
+  and 90 seconds: median about 12 ms and board-write p95 2.0–3.0 s. A 2.0 s
+  p95 is the near-capacity warning; 4.5 s is the tail gate. This is documented
+  capacity, not a 100–500-user guarantee. See the [board-heavy k6 profile](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/tests/load/k6/board-heavy-load.js#L5-L6),
+  [shared-runner calibration](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/tests/load/k6/board-heavy-load.js#L26-L30),
+  [shipped capacity record](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L250-L252),
+  [recalibration record](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L378-L378),
+  [performance budgets](../PERFORMANCE_BUDGETS.md), and [ADR-0052](../decisions/ADR-0052-ci-estate-right-sizing.md).
 - Artefact extraction is not connected to a request path yet ([#1429](https://github.com/Chris0Jeky/Taskdeck/issues/1429)).
 - MFA TOTP seeds remain unencrypted at rest in SQLite until
   [#1653](https://github.com/Chris0Jeky/Taskdeck/issues/1653); protect the data
