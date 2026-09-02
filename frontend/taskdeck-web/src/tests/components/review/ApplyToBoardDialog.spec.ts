@@ -306,6 +306,46 @@ describe('ApplyToBoardDialog', () => {
       expect(wrapper.emitted('confirm')).toHaveLength(1)
     })
 
+    it('cancels modified Enter activation on the focused accept button', async () => {
+      const wrapper = await openDialog()
+      const accept = document.body.querySelector(
+        '[data-testid="apply-confirm-accept"]',
+      ) as HTMLButtonElement
+      accept.focus()
+      expect(document.activeElement).toBe(accept)
+
+      for (const modifiers of [
+        { ctrlKey: true },
+        { metaKey: true },
+        { altKey: true },
+        { shiftKey: true },
+      ]) {
+        const event = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          bubbles: true,
+          cancelable: true,
+          ...modifiers,
+        })
+        // happy-dom does not synthesize a native button click from keydown. Model
+        // that default activation only when the dialog did not cancel the event;
+        // before the fix, every modified chord reaches this click and confirms.
+        if (accept.dispatchEvent(event)) accept.click()
+        expect(event.defaultPrevented).toBe(true)
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('confirm')).toBeUndefined()
+
+      const plain = new KeyboardEvent('keydown', {
+        key: 'Enter',
+        bubbles: true,
+        cancelable: true,
+      })
+      if (accept.dispatchEvent(plain)) accept.click()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
+    })
+
     it('ignores an auto-repeat Enter — the approving keypress, still held', async () => {
       const wrapper = await openDialog()
       pressEnter({ repeat: true })

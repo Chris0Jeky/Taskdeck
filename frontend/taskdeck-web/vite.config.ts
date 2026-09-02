@@ -21,7 +21,7 @@ export default defineConfig({
         enabled: false,
       },
       workbox: {
-        importScripts: ['share-target-handler.js'],
+        importScripts: ['api-cache-cleanup.js', 'share-target-handler.js'],
         // Precache app shell assets (JS, CSS, HTML, icons)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
         // Exclude manifest icons from glob — they are precached via the manifest config
@@ -89,7 +89,12 @@ export default defineConfig({
           {
             // Lazy locale catalogs (excluded from precache above): cache on
             // first use so a user who picked it/es keeps their language offline.
-            urlPattern: /\/assets\/(?:it|es)-[\w-]+\.js$/,
+            // Workbox serializes this callback into sw.js. Keep every
+            // dependency inline: imported helpers become free identifiers in
+            // the generated worker.
+            urlPattern: ({ url }) =>
+              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
+              /^\/assets\/(?:it|es)-[\w-]+\.js$/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'taskdeck-locale-chunks',
@@ -98,31 +103,18 @@ export default defineConfig({
             },
           },
           {
-            // Canonical spellings only, and the cache name is versioned (#1992 round 1). Before the
-            // fail-closed contract this rule was case-insensitive, so a response to /API/... could
-            // be stored here — and an installed PWA would keep replaying that cached 200 for a URL
-            // that now answers 404 at every layer. The new name means those entries are never read
-            // again. Note they are not deleted: Workbox's cleanupOutdatedCaches covers precaches,
-            // not runtime caches, so the old cache is orphaned rather than purged.
-            urlPattern: /^https?:\/\/.*\/api\//,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'taskdeck-api-cache-v2',
-              expiration: {
-                maxAgeSeconds: 24 * 60 * 60, // 1 day
-                maxEntries: 100,
-              },
-              networkTimeoutSeconds: 10,
-              // Only cache same-origin 200 responses — status 0 (opaque) would
-              // cache empty bodies from cross-origin requests.
-              cacheableResponse: {
-                statuses: [200],
-              },
-            },
-          },
-          {
             // CacheFirst for static assets (fonts, images, icons)
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i,
+            // See the locale matcher above: this must remain self-contained
+            // when vite-plugin-pwa serializes it into the service worker.
+            // Anchored on the directories the build emits, not on the file
+            // extension alone. The API base is a deployment choice - a prefixed
+            // `VITE_API_BASE_URL` such as `/taskdeck/api` is supported - so an
+            // authenticated `GET /taskdeck/api/users/by-username/alice.png` is not
+            // caught by the `/api` denial and would otherwise be stored in this
+            // shared, cross-identity cache. Mirrors src/pwa/runtimeCachePolicy.ts.
+            urlPattern: ({ url }) =>
+              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
+              /^\/(?:assets|icons)\/[^?#]*\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i.test(url.pathname),
             handler: 'CacheFirst',
             options: {
               cacheName: 'taskdeck-static-assets',

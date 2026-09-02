@@ -9,6 +9,10 @@ const displayNameMocks = vi.hoisted(() => ({
   reset: vi.fn(),
 }))
 
+const cachePurgeMocks = vi.hoisted(() => ({
+  purge: vi.fn(),
+}))
+
 vi.mock('../../api/authApi', () => ({
   authApi: {
     login: vi.fn(),
@@ -16,6 +20,7 @@ vi.mock('../../api/authApi', () => ({
     changePassword: vi.fn(),
     getProviders: vi.fn(),
     exchangeOAuthCode: vi.fn(),
+    refreshToken: vi.fn(),
   },
 }))
 
@@ -27,6 +32,10 @@ vi.mock('../../api/usersApi', () => ({
 
 vi.mock('../../composables/useProposalDisplayNames', () => ({
   proposalDisplayNames: { reset: displayNameMocks.reset },
+}))
+
+vi.mock('../../pwa/legacyApiCache', () => ({
+  purgeLegacyApiCaches: cachePurgeMocks.purge,
 }))
 
 function toBase64Url(value: string): string {
@@ -61,6 +70,7 @@ describe('sessionStore', () => {
     setActivePinia(createPinia())
     store = useSessionStore()
     vi.clearAllMocks()
+    cachePurgeMocks.purge.mockResolvedValue(true)
     localStorage.clear()
   })
 
@@ -145,8 +155,7 @@ describe('sessionStore', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     })
 
-    store.restoreSession()
-    await Promise.resolve()
+    await store.restoreSession()
     await Promise.resolve()
 
     expect(store.token).toBe(token)
@@ -197,8 +206,7 @@ describe('sessionStore', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     })
 
-    store.restoreSession()
-    await Promise.resolve()
+    await store.restoreSession()
     await Promise.resolve()
 
     expect(store.defaultRole).toBe(1)
@@ -228,8 +236,7 @@ describe('sessionStore', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     })
 
-    store.restoreSession()
-    await Promise.resolve()
+    await store.restoreSession()
     await Promise.resolve()
 
     expect(vi.mocked(usersApi.getUser)).toHaveBeenCalledWith('user-1')
@@ -252,8 +259,7 @@ describe('sessionStore', () => {
 
     vi.mocked(usersApi.getUser).mockRejectedValue(new Error('profile fetch failed'))
 
-    store.restoreSession()
-    await Promise.resolve()
+    await store.restoreSession()
     await Promise.resolve()
 
     expect(store.token).toBe(token)
@@ -303,8 +309,7 @@ describe('sessionStore', () => {
       updatedAt: '2026-01-01T00:00:00Z',
     })
 
-    store.restoreSession()
-    await Promise.resolve()
+    await store.restoreSession()
     await Promise.resolve()
 
     expect(store.defaultRole).toBe(2)
@@ -337,6 +342,86 @@ describe('sessionStore', () => {
     await store.login({ usernameOrEmail: 'account-b', password: 'pass' })
 
     expect(displayNameMocks.reset).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not expose a same-user replacement token until the legacy API cache purge completes', async () => {
+    const first = makeAuthResponse(3600, 'account-a')
+    const replacement = makeAuthResponse(7200, 'account-a')
+    vi.mocked(authApi.login).mockResolvedValue(first)
+    vi.mocked(authApi.refreshToken).mockResolvedValue(replacement)
+    await store.login({ usernameOrEmail: 'account-a', password: 'pass' })
+
+    let releasePurge: (result: boolean) => void = () => undefined
+    cachePurgeMocks.purge.mockReturnValueOnce(new Promise<boolean>((resolve) => {
+      releasePurge = resolve
+    }))
+
+    const refresh = store.refreshSession()
+    await Promise.resolve()
+    expect(store.token).toBe(first.token)
+
+    releasePurge(true)
+    await refresh
+    expect(store.token).toBe(replacement.token)
+  })
+
+  it('does not tell a user to retry a registration the server already committed', async () => {
+    vi.mocked(authApi.register).mockResolvedValue(makeAuthResponse(3600, 'account-a'))
+    // The account exists by the time setSession runs, so retrying would collide on
+    // the username or a consumed invite. The message must point at the recovery
+    // that works: reload, then sign in.
+    cachePurgeMocks.purge.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    await expect(
+      store.register({ username: 'account-a', email: 'a@example.invalid', password: 'pass' }),
+    ).rejects.toThrow('Your account was created')
+    expect(store.isAuthenticated).toBe(false)
+  })
+
+  it('keeps the retry message for a token this client cannot use at all', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({
+      ...makeAuthResponse(3600, 'account-a'),
+      token: 'not-a-jwt',
+    })
+
+    await expect(store.login({ usernameOrEmail: 'account-a', password: 'pass' }))
+      .rejects.toThrow('Unable to establish a session safely')
+  })
+
+  it('rejects a same-user refresh when the legacy API cache purge fails', async () => {
+    const first = makeAuthResponse(3600, 'account-a')
+    const replacement = makeAuthResponse(7200, 'account-a')
+    vi.mocked(authApi.login).mockResolvedValue(first)
+    vi.mocked(authApi.refreshToken).mockResolvedValue(replacement)
+    await store.login({ usernameOrEmail: 'account-a', password: 'pass' })
+    cachePurgeMocks.purge.mockResolvedValueOnce(false)
+
+    await expect(store.refreshSession()).rejects.toThrow('could not clear a retired offline cache')
+    expect(store.token).toBe(first.token)
+  })
+
+  it('does not restore a persisted identity before the legacy API cache purge completes', async () => {
+    const response = makeAuthResponse(3600, 'account-a')
+    localStorage.setItem('taskdeck_token', response.token)
+    localStorage.setItem('taskdeck_session', JSON.stringify({
+      userId: response.user.id,
+      username: response.user.username,
+      email: response.user.email,
+      defaultRole: response.user.defaultRole,
+    }))
+
+    let releasePurge: (result: boolean) => void = () => undefined
+    cachePurgeMocks.purge.mockReturnValueOnce(new Promise<boolean>((resolve) => {
+      releasePurge = resolve
+    }))
+
+    const restore = store.restoreSession()
+    await Promise.resolve()
+    expect(store.token).toBeNull()
+
+    releasePurge(true)
+    await restore
+    expect(store.token).toBe(response.token)
   })
 
   it('requireUserId throws when session is missing', () => {

@@ -13,6 +13,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import http from '../../api/http'
 import { useSessionStore } from '../../store/sessionStore'
 
+const cachePurgeMocks = vi.hoisted(() => ({ purge: vi.fn() }))
+
 vi.mock('../../api/http', () => ({
   default: {
     get: vi.fn(),
@@ -21,6 +23,10 @@ vi.mock('../../api/http', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+}))
+
+vi.mock('../../pwa/legacyApiCache', () => ({
+  purgeLegacyApiCaches: cachePurgeMocks.purge,
 }))
 
 vi.mock('../../store/toastStore', () => ({
@@ -58,6 +64,7 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    cachePurgeMocks.purge.mockResolvedValue(true)
     localStorage.clear()
   })
 
@@ -259,7 +266,8 @@ describe('sessionStore — OIDC exchange and extended lifecycle', () => {
       vi.mocked(http.post).mockResolvedValue({ data: badAuth })
 
       const store = useSessionStore()
-      await store.login({ usernameOrEmail: 'user', password: 'pass' })
+      await expect(store.login({ usernameOrEmail: 'user', password: 'pass' }))
+        .rejects.toThrow('Unable to establish a session safely')
 
       // setSession returns early before assigning any in-memory state when the
       // token has an invalid JWT structure, so the store stays unauthenticated.

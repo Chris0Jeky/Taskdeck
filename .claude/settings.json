@@ -14,7 +14,6 @@
     ]
   },
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(powershell -File scripts/worktree_guard.ps1:*)",
       "Bash(source scripts/worktree_guard.sh:*)",

@@ -26,8 +26,10 @@ without its own separate gate**. The repository goes private for the v0.3.0 rele
 
 ## Claude Code runtime facts
 
-- Auto mode is the user-level default. `bypassPermissions` comes only from user settings, managed policy, or
-  a launch flag — project files cannot grant it (2.1.257). The committed project default is `acceptEdits`.
+- The permission mode comes from the user's own settings. `bypassPermissions` comes only from user settings,
+  managed policy, or a launch flag — project files cannot grant it (2.1.257). The committed project settings
+  set no `defaultMode` on purpose: a project-scope `defaultMode` outranks the user's choice, so `acceptEdits`
+  here would demote a user who runs bypass by default.
 - The global floor hook runs on every Bash call in every mode. It refuses `$var`-built command names and
   paths, and it has refused heredocs whose body contained backticks ("dynamic redirect target cannot be
   inspected") — write literal commands, `Write` multi-line edits to a scratchpad script and run it, and pass
@@ -46,6 +48,7 @@ Run only what your change touches. Everything is seconds unless marked.
 | `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` |
 | `ci/**`, `scripts/ci/smart-ci/**`, the smart-ci shadow workflow | `node --test scripts/ci/smart-ci/*.test.mjs` |
 | Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` |
+| `scripts/analysis/**` refactoring ranker | `py -3 -B -m unittest discover -s scripts/analysis -p "test_rank_refactor_candidates.py"` |
 | `scripts/agentic/**`, the orchestrator guard recipe | `powershell -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1` |
 | One backend test project | `dotnet test backend/tests/<Project>/<Project>.csproj -c Release -m:1` — `Taskdeck.{Domain,Application,Api,Cli,Architecture,Integration}.Tests` (~30 s cold; Infrastructure is covered by Integration + Api) |
 | Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` |
