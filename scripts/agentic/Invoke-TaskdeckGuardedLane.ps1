@@ -130,7 +130,10 @@ finally {
         $global:LASTEXITCODE = 255
         & $fingerprintTool -Mode Cleanup -CheckoutPath $checkout -Token $inventoryToken -StatePath $inventoryState
         $cleanupExit = $LASTEXITCODE
-        if ($cleanupExit -ne 0) { $guardExit = $cleanupExit }
+        if ($cleanupExit -ne 0) {
+            $guardExit = $cleanupExit # the state file survives a failed cleanup too
+            [Console]::Error.WriteLine('Checkout fingerprint state preserved for investigation: ' + $inventoryState)
+        }
     }
     if ($guardExit -ne 0) {
         # This `exit` unwinds the whole frame, so the statements after the

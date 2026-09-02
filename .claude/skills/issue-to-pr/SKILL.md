@@ -54,8 +54,9 @@ Use the proving-check table in root `CLAUDE.md` — the narrowest command per se
 
 - `.cs`: one layer — `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1`;
   the full solution only for cross-layer changes.
-- `.ts`/`.vue`: `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 <path/to.spec.ts>; npm run typecheck`
-  (bare `vitest --run` OOMs on this box).
+- `.ts`/`.vue` (Bash): `cd frontend/taskdeck-web && npx vitest --run --maxWorkers=2 <path/to.spec.ts> && npm run typecheck`
+  — `&&` so a failing spec stops the chain (in PowerShell use `;` plus an explicit `$LASTEXITCODE` check after each
+  step). Bare `vitest --run` OOMs on this box.
 - Flow changes: `npx playwright test tests/e2e/<file>.spec.ts --reporter=line` against a running stack.
 - Docs: `node scripts/check-docs-governance.mjs`.
 

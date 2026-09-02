@@ -11,7 +11,7 @@ Use this skill when a PR is blocked by CI, review/bot comments, conflicts, stale
 
 Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load.
 
-For the CI topology (`ci-required.yml` = the merge gate; `reusable-*` + scheduled lanes) use the **Agent tooling/CI/docs** seam row of the map. `.claude/rules/ci-control.md` auto-loads for `.github/**`, `ci/**`, and `scripts/ci/**` (R4 class; a red Smart CI shadow gate is a planner defect, never flaky). Read as needed: the failing workflow under `.github/workflows/`, `docs/TESTING_GUIDE.md`, and the PR's checks/comments/annotations.
+For the CI topology (`ci-required.yml` = the merge gate; `reusable-*` + scheduled lanes) use the **Agent tooling/CI/docs** seam row of the map. The CI region's path rule `.claude/rules/ci-control.md` (added by #2367; until it lands, read `docs/ci/SMART_CI.md`) auto-loads for `.github/**`, `ci/**`, and `scripts/ci/**`: CI-control changes are R4 and hosted-only, and a red Smart CI shadow gate is a planner defect, never flaky. Read as needed: the failing workflow under `.github/workflows/`, `docs/TESTING_GUIDE.md`, and the PR's checks/comments/annotations.
 
 ## Triage Sequence
 

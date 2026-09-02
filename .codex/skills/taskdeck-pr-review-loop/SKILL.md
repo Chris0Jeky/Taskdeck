@@ -44,7 +44,7 @@ Flag these surfaces as Taskdeck risk context for the global pipeline:
 ## Targeted verification
 
 - Backend: `dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~RelevantTest"`
-- Frontend: `cd frontend/taskdeck-web; npx vitest --run -t "relevant test"`
+- Frontend: `cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 <path/to.spec.ts>` (bare `vitest --run` OOMs on this box)
 
 ## Tooling
 
