@@ -330,13 +330,38 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
         self.assertEqual(baseline["touchingCommits"], candidate["touchingCommits"])
 
     def test_rename_limit_configuration_cannot_break_rename_attribution(self) -> None:
-        # A low diff.renameLimit makes Git report a rename as a delete plus an add,
-        # which is exactly the lineage break this tool exists to avoid. The pinned
-        # -c option must outrank it.
-        baseline = self.report()["candidates"][0]
-        self.git("config", "diff.renameLimit", "1")
+        # A low diff.renameLimit makes Git skip the exhaustive stage and report an
+        # inexact rename as a delete plus an add, which is exactly the lineage break
+        # this tool exists to avoid. The pinned -c option must outrank it.
+        #
+        # The rename has to be inexact and there have to be several of them: an
+        # identical blob is paired in the cheap exact stage whatever the limit says,
+        # so a plain `git mv` would pass this test against an unpinned tool.
+        for index in range(4):
+            self.write(f"src/wide{index}.cs", "".join(f"line {index}-{n}\n" for n in range(40)))
+        self.git("add", ".")
+        self.git("commit", "-m", "wide baseline")
+        for index in range(4):
+            self.git("mv", f"src/wide{index}.cs", f"src/wide-moved{index}.cs")
+            self.write(
+                f"src/wide-moved{index}.cs",
+                "".join(f"line {index}-{n}\n" for n in range(40)) + f"appended {index}\n",
+            )
+        self.git("add", "-A")
+        self.git("commit", "-m", "rename and edit together")
 
-        candidate = self.report()["candidates"][0]
+        def moved_row(report: dict[str, object]) -> dict[str, object]:
+            return next(
+                row for row in report["candidates"] if row["path"] == "src/wide-moved0.cs"
+            )
+
+        baseline = moved_row(self.report())
+        # Sanity: the pre-rename content is attributed to the moved path at all.
+        self.assertEqual(41, baseline["lines"])
+        self.assertEqual(2, baseline["touchingCommits"])
+
+        self.git("config", "diff.renameLimit", "1")
+        candidate = moved_row(self.report())
         self.assertEqual(baseline["churn"], candidate["churn"])
         self.assertEqual(baseline["touchingCommits"], candidate["touchingCommits"])
 
