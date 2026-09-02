@@ -26,7 +26,7 @@ no Participant entity. `Card.cs` has nine members and none of them is any of the
 
 | Id | Outcome | Depends on | Mode | Startable before predecessors merge? |
 | --- | --- | --- | --- | --- |
-| `WM-EST-01-estimate` | Nullable non-negative bounded estimate on the card path, domain validation, additive migration + down path, `CardDto` + `types/board.ts` field, audit of old/new | shared contract freeze only | contract-only | **Yes — this is the startable-now slice.** The estimate has **no assignment dependency**; it is one nullable scalar on `Card` and ADR-0062's gate is already satisfied |
+| `WM-EST-01-estimate` | Nullable non-negative bounded estimate on the card path, domain validation, additive migration + down path, `CardDto` + `types/board.ts` field, audit of old/new | estimate-unit ruling (time/minutes or relative size, including bounds) | contract-only | **No — record the estimate unit and bounds on `#2093` first.** The choice changes the persisted type, API meaning, audit text, UI label and roll-up arithmetic; an unlabeled scalar is not a safe contract |
 | `WM-EST-02-commands` | Set/clear estimate through the human API and through a proposal operation with preview == apply parity | 01 | implementation | No |
 | `WM-PART-01-reconcile` | Adopt the merged `#2240` assignment contract; publish the extension note | `#2240` | implementation | No — and today `#2240` is itself blocked on a ruling |
 | `WM-PART-02-participants` | The owner-or-access participant read surface — `GetBoardAccessListAsync` omits the owner | `#2240` | implementation | No |
@@ -62,7 +62,8 @@ rulings, the revocation acceptance criterion, and the v0.4 move that carved `#22
 whether the `#2240` fork has been ruled; if it was ruled **B**, fold `WM-ASSIGN-01` into this issue
 as its first slice.
 
-**Sequence.** `WM-EST-01` → `WM-EST-02` now; the participant and roll-up chain after `#2240`.
+**Sequence.** Record the estimate unit and bounds on `#2093`, then `WM-EST-01` → `WM-EST-02`;
+the participant and roll-up chain follows `#2240`.
 
 **Producer-owned paths:** `backend/src/Taskdeck.Application/WorkModel/RollUp*` (new),
 `backend/tests/Taskdeck.Application.Tests/WorkModel/` (new).

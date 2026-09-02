@@ -27,10 +27,11 @@ rule survives byte-for-byte.
 
 | Id | Outcome | Depends on | Mode | Startable before predecessors merge? |
 | --- | --- | --- | --- | --- |
-| `CF05-0-eligibility-gate` | The "is this LLM-eligible?" decision stops being `IsTranscriptSource(payload.Source)` and becomes a capability/modality question | — | implementation | **Yes — start here.** `CaptureTriageService.cs:173-174` is a single C# predicate, not SQL, and no one has named it in the issue. It can move to `SourceAsset.Modality` / a capability check without any job, run or representation. It is also the smallest honest step toward the acceptance box "a PDF/plaintext extraction reaches `semantic.extract` the same way a transcript does" |
+| `CF05-0-eligibility-seam` | Extract the existing `IsTranscriptSource(payload.Source)` eligibility decision behind a named seam with byte-identical behavior | — | implementation | **Yes — start here, with no routing change.** `CaptureTriageService` has only `CapturePayloadV1`; it has no selected capability or representation. Keep the transcript predicate until those inputs exist |
 | `CF05-1-processor-adapter` | `LlmCaptureTriageExtractor` + `TranscriptTriageChunker` wrapped as a `semantic.extract` processor, invoked in-process, with **no changed assertions** in the four golden test classes | 0, CF-03 | implementation | No — the adapter's caller is the runner |
 | `CF05-2-representation-input` | Input becomes a text/transcript representation resolved through `IRepresentationStore`, not `CapturePayloadV1.Text` | 1, CF-06 `#2260`, CF-01b `#2345` | implementation | No |
-| `CF05-3-lane-cutover` | `TranscriptTriageWorker` becomes the runner lane for long-running `semantic.extract` jobs; per-user sequential quota discipline (`#1313`) and `LlmQueueToProposalWorker`'s millisecond lane both unchanged; shadow-compare before the switch | 2 | implementation | No |
+| `CF05-2b-capability-eligibility` | Replace the retained transcript predicate only when the runner supplies both selected `semantic.extract` capability and a compatible text/transcript representation; modality alone is insufficient | 2, CF-03, CF-06 | implementation | No — ordinary typed captures and transcripts are both text, while a document modality does not prove an extracted representation exists |
+| `CF05-3-lane-cutover` | `TranscriptTriageWorker` becomes the runner lane for long-running `semantic.extract` jobs; per-user sequential quota discipline (`#1313`) and `LlmQueueToProposalWorker`'s millisecond lane both unchanged; shadow-compare before the switch | 2b | implementation | No |
 | `CF05-4-predicate-retirement` | Delete `TranscriptRequestTypeLike` and its six uses once no reader depends on them | 3 | cleanup | No |
 
 ## Architecture
@@ -40,7 +41,7 @@ rule survives byte-for-byte.
 | The extractor being wrapped | `LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor` | **exists** | `Application/Services/LlmCaptureTriageExtractor.cs`. Guardrail chain in order: kill switch → provider health → quota → completion → usage recording; every failure returned as an outcome, never thrown; provider/model reported only on success (`#1273`) |
 | Chunking | `TranscriptTriageChunker.Chunk(text, maxInputTokensPerChunk, chunkOverlapTokens)` | **exists** | File is `Application/Services/TranscriptTriageChunking.cs`; the **class** is `TranscriptTriageChunker` (the issue's acceptance names the *test* class `TranscriptTriageChunkingTests`) |
 | The input the extractor actually reads | `CapturePayloadV1 payload`, used as `payload.Text` at four sites (chunking, reservation estimate, the completion message, span sanitisation) | **exists** | This is the seam slice 02 replaces. Note the last one: `SanitizeTasks(rawTasks, payload.Text, sourceOffset)` computes evidence spans **against the payload text**, so changing the text source silently changes every anchor |
-| The LLM eligibility gate | `CaptureTriageService.cs:173` — `_llmExtractor is not null && CaptureRequestContract.IsTranscriptSource(payload.Source)`; `IsTranscriptSource` = `TranscriptPaste \| TranscriptFile` | **exists, and is the real routing bug** | Not a SQL predicate and not mentioned in the issue. A PDF extraction can never reach the LLM extractor today no matter what the queue lane does |
+| The LLM eligibility gate | `CaptureTriageService.cs:173` — `_llmExtractor is not null && CaptureRequestContract.IsTranscriptSource(payload.Source)`; `IsTranscriptSource` = `TranscriptPaste \| TranscriptFile` | **exists; preserve through slice 02** | Not a SQL predicate and not mentioned in the issue. It is too narrow for the final runner, but changing it before a selected capability and compatible representation exist can widen billable LLM work to ordinary text or route a document with no extracted input |
 | Capability-level routing | `CaptureRequestContract.ResolveRequestTypeForSource(CaptureSource)` → `inbox.capture.v1` \| `inbox.capture.transcript.v1` | **exists, capture-level** | Retires with CF-02, not here |
 | Transcript lane predicate | `LlmQueueRepository.TranscriptRequestTypeLike = "inbox.capture.transcript.%"` | **exists — 6 uses** | Definition (line 27), a doc cross-reference (29), the fetch/claim raw SQL (439, 715), the LINQ counterparts (474), and the capture lane's exclusion (619). Acceptance box 3 is exactly these |
 | Capture lane predicate | `CaptureRequestTypeLike = "inbox.capture.%"` | **exists — 14 uses in `LlmQueueRepository`, plus 4 in `EfCaptureBackfillStore`** | **Stays.** It is the GDPR export/delete, inbox listing and CF-01 backfill scope, deliberately nested so those queries keep matching transcripts (`CaptureContracts.cs:47-53`). Acceptance box 3 does not ask for its removal, and removing it would break CF-01's backfill store |
@@ -57,8 +58,8 @@ rule survives byte-for-byte.
 split, ADR-0065 §Decision 6, and `CaptureTriageService.TriageAsync` end to end. Confirm CF-03 and
 CF-06 merge state; confirm `#2345`'s decision about what still reads `CapturePayloadV1`.
 
-**Sequence.** 0 now; 1 → 2 → 3 → 4 after CF-03 and CF-06. Slice 4 is a pure deletion and must be a
-separate PR so the revert is a revert.
+**Sequence.** 0 now as a no-behavior-change seam; 1 → 2 → 2b → 3 → 4 after CF-03 and CF-06. Slice
+4 is a pure deletion and must be a separate PR so the revert is a revert.
 
 **Producer-owned paths:** `backend/src/Taskdeck.Application/Services/LlmCaptureTriageExtractor.cs`,
 `TranscriptTriageChunking.cs`, `CaptureTriageService.cs`, `backend/src/Taskdeck.Api/Workers/TranscriptTriageWorker.cs`,

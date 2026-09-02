@@ -8,8 +8,9 @@ Last Updated: 2026-09-02
 
 Move processing truth out of the `LlmRequest` row into a leased, capability-keyed `ProcessingJob`
 and an append-only `ProcessingRun` receipt that names the processor, model, configuration, usage and
-route — so a capture stays readable through every failure, a crash replays without re-billing, and
-`Capture.ProcessingSummary` becomes a projection over jobs rather than a status anyone can set.
+route — so a capture stays readable through every failure, duplicate-provider risk is observable,
+provider-supported idempotency can prevent re-billing, and `Capture.ProcessingSummary` becomes a
+projection over jobs rather than a status anyone can set.
 
 ## Live dependencies (verified 2026-09-02)
 
@@ -31,7 +32,7 @@ Grepped for `ProcessingJob`, `ProcessingRun`, `ProcessingPolicySnapshot` as type
 
 | Id | Outcome | Depends on | Mode | Startable before predecessors merge? |
 | --- | --- | --- | --- | --- |
-| `CF03-1-policy-snapshot` | Freeze the minimal `ProcessingPolicySnapshot` (egress class, allowed processors, diarisation/alignment flags, deadline, cost ceiling) **plus its canonical digest** — pinned field order, pinned number/date formatting, kebab-case enum spelling matching `StrictKebabCaseEnumConverterFactory` | — | contract-only | **Yes — start here.** A pure record + canonicalizer + tests. `ProcessingEgressClass` and `ProcessingProfilePreset` already exist as vocabulary, and the draft schema + digest fixture from the #2368 pass (`docs/analysis/2026-08-30-acceleration-bundles-v0.5-v0.6/v0.6/schemas/processing-policy-snapshot.schema.json`) give the shape. It touches no shipped writer |
+| `CF03-1-policy-snapshot` | Freeze the minimal `ProcessingPolicySnapshot` (egress class, allowed processors, diarisation/alignment flags, deadline, cost ceiling) **plus its canonical digest** — pinned field order, pinned number/date formatting, kebab-case enum spelling matching `StrictKebabCaseEnumConverterFactory` | PR `#2371` contract inputs | contract-only | **No — blocked until open PR `#2371` merges and this branch is rebased/revalidated.** The cited schema, fixture and checker exist only on that PR; they are absent from this head and base. Once present, this remains a pure record + canonicalizer + tests touching no shipped writer |
 | `CF03-2-schema-state-machine` | `ProcessingJob` + `ProcessingRun` entities, typed inputs, indexes, legal transitions, immutable completion | 01 | implementation | No — the job carries the snapshot digest, and a state machine frozen before the snapshot is refrozen after it |
 | `CF03-3-lease-repository` | Atomic claim / renew / abandon / expiry recovery, owner + capability filters | 02 | implementation | No — needs the table and a unique index |
 | `CF03-4-runner` | Deadline and cost-ceiling cancellation, heartbeat into the existing registry, run receipt, `Capture.ProcessingSummary` projection | 03, CF-01c `#2347` | implementation | No — this is the writer that stamps the aggregate |
@@ -63,7 +64,8 @@ sorted typed input ids + policy-snapshot digest + processor contract version. Tw
 canonicalization hazards: the input list must be sorted **and role-qualified** (order matters for
 `audio.align`), and the snapshot digest must be canonical per slice 01 — default
 `JsonSerializerOptions` silently changes the digest on a field reorder. A duplicate key returns the
-existing job; it never enqueues a second billable call.
+existing local job; it does not by itself prevent a replacement worker from making a second external
+provider call after the provider completed but before Taskdeck persisted the receipt.
 
 **Concurrency.** What prevents two workers running one job is a unique index plus a single
 conditional `UPDATE`, not the state machine. The state machine only makes the outcome legible.
@@ -71,9 +73,10 @@ conditional `UPDATE`, not the state machine. The state machine only makes the ou
 ## Implementation plan
 
 **Preflight.** Read `#2257` body *and* its 2026-09-02 comment (canonical digest + run-linked usage
-with price/currency — both are scope clarifications, not new scope). Read ADR-0065 §Decision 6 and
-§Amendments. Confirm `#2347`'s fix shape before slice 04, because the runner is a new writer on
-`Capture.UpdatedAt`.
+with price/currency — both are scope clarifications, not new scope). Confirm PR `#2371` has merged
+and revalidate its schema, fixture and checker on the resulting base before slice 01. Read ADR-0065
+§Decision 6 and §Amendments. Confirm `#2347`'s fix shape before slice 04, because the runner is a new
+writer on `Capture.UpdatedAt`.
 
 **Sequence.** 01 → 02 → 03 → 04 → 05 → 06. Slices 01–04 are the shippable core (jobs exist, lease
 correctly, project the summary honestly); 05 proves it on real work; 06 closes the money and export
@@ -106,7 +109,7 @@ stated in the PR.
 - [ ] Domain: the policy-snapshot digest is stable across property reorder and across `JsonSerializerOptions` instances, and changes when any field changes (one case per field)
 - [ ] Domain: an idempotency key over the same inputs in a different *order* matches; the same ids with different `Role`s does **not**
 - [ ] Application: two concurrent claims of one job yield exactly one winner (contention test against real SQLite, following the shipped `LlmQuota*ConcurrencyTests` pattern)
-- [ ] Application: crash between claim and completion → the lease expires, the job is re-leased, and the replay produces no second billable call — live acceptance box 1, workerless-factory pattern from `#1394`
+- [ ] Application: crash between claim and completion → the lease expires and the same local job is re-leased; assert no second billable provider call only when the request carries a provider-supported idempotency key backed by a durable request/response acknowledgement, otherwise record and expose the duplicate-provider-risk recovery — live acceptance box 1, workerless-factory pattern from `#1394`
 - [ ] Application: deadline exceeded and cost ceiling exceeded each fail **the job**, write a run recording the reason, and leave the capture readable — live acceptance box 2
 - [ ] Application: one failed asset in a multi-asset capture yields `ProcessingSummary = Partial`, not `Failed`
 - [ ] Application: no code path lets a run change `Capture.Disposition` (assert over the aggregate, and extend the source-tree assertion pattern used by `CaptureIntakeSingleWriterTests`)
@@ -119,9 +122,10 @@ stated in the PR.
 
 ## Edge cases
 
-- Worker crashes **after** an external side effect but **before** the ack — the idempotency key must
-  make the replay a no-op, and the usage that really happened must be recoverable, not dropped (the
-  `LlmUsageRecord.Reserved`/`ExpiresAt` precedent).
+- Worker crashes **after** an external side effect but **before** Taskdeck persists the acknowledgement.
+  The internal job key prevents a second local job, but at-most-once provider billing additionally
+  requires a provider-supported idempotency request key and a durable request/response acknowledgement.
+  Without both, recover and expose the duplicate-provider risk; do not claim the replay is a no-op.
 - Lease expires during a slow provider call while the worker is still alive — two workers on one job.
   Decide the grace/fencing rule explicitly; a bare `ExpiresAt > now` renew check loses the race.
 - Renew races the expiry sweeper; clock skew between the host and a sidecar.
@@ -145,7 +149,7 @@ stated in the PR.
 | SQL probes | `.../candidates/sql/context_fabric_migration_probes.sql` probes 9 and 10 | The two invariants worth asserting in migration tests: a terminal job has a run receipt; an active lease has token + owner + expiry together | Both query tables that do not exist, use `'Succeeded'` (not a shipped state) and compare enums as **strings** while EF persists them as `INTEGER`. Rewrite, do not run |
 | Blueprint | `.../architecture/CONTEXT_FABRIC_IMPLEMENTATION_BLUEPRINT.md` §4 transaction boundaries, §5 lease/idempotency, §6 index plan, §7 error codes | The clearest statement of what one transaction must contain, and the index candidates | Read its 2026-09-02 validation preface. §7's snake_case codes are **not** Taskdeck's vocabulary — shipped codes are the PascalCase constants in `Domain/Exceptions/DomainException.cs` (`ErrorCodes`) mapped by `Api/Extensions/ResultExtensions.ToHttpStatusCode` |
 | Testing doc | `.../testing/MIGRATION_PROOF_CHECKLIST.md` | The forward / backfill / export / down checklist for slices 02 and 06 | Generic floor |
-| Schema (v0.6 pass) | `docs/analysis/2026-08-30-acceleration-bundles-v0.5-v0.6/v0.6/schemas/processing-policy-snapshot.schema.json` + `.../fixtures/processing-policy-snapshot.example.json` | Slice 01's starting shape and a digest fixture, checked by `scripts/context_fabric/check_contract_drafts.py` | Draft, landed under PR `#2371`; not an accepted contract |
+| Schema (v0.6 pass) | `docs/analysis/2026-08-30-acceleration-bundles-v0.5-v0.6/v0.6/schemas/processing-policy-snapshot.schema.json` + `.../fixtures/processing-policy-snapshot.example.json` | Slice 01's proposed starting shape and a digest fixture, checked by `scripts/context_fabric/check_contract_drafts.py` | Draft proposed under open PR `#2371`; absent from this head/base and not an accepted contract |
 
 ## Corrections to the bundle
 

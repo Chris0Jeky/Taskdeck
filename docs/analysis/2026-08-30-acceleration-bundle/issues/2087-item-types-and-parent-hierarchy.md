@@ -14,7 +14,8 @@ identity, board/column placement, authority, or the review-first mutation path.
 
 | Issue / artefact | State | What it must supply first | Blocks |
 | --- | --- | --- | --- |
-| ADR-0060 `docs/decisions/ADR-0060-canonical-work-model-and-compatibility-path.md` | **Accepted** (line 3: "Status: Accepted (ratified … 2026-08-29 …)") | `first-item-types` = Task/Epic/Spike, `hierarchy-boundaries` = same board / one parent / depth cap 3 / server-side cycle check / type-agnostic, `parent-lifecycle` = detach-never-cascade, `compat-path` stages 1–3 | nothing — the blocker is gone |
+| ADR-0060 `docs/decisions/ADR-0060-canonical-work-model-and-compatibility-path.md` | **Accepted** (line 3: "Status: Accepted (ratified … 2026-08-29 …)") | `first-item-types` = Task/Epic/Spike, `hierarchy-boundaries` = same board / one parent / depth cap 3 / server-side cycle check / type-agnostic, `parent-lifecycle` = detach-never-cascade, `compat-path` stages 1–3 | item vocabulary and same-board/cycle contract; the depth validator still waits on the convention below |
+| `#2087` depth convention | **open ruling** | State whether the cap of 3 counts nodes or edges, with named boundary examples | `WM-TYPE-01` validator and every hierarchy write |
 | `#2185` archive-card proposal operation | **open**, v0.3 | A real card-archive state. `Card.cs` has **no** archive field (`IsBlocked` / `BlockReason` only), and `OperationHandlerRegistry.ArchiveCardAsync` still maps "archive" onto `Block` | the **archive** half of `parent-lifecycle` only (cascade-archive slice). Delete-side detach is not blocked |
 | `#2187` architecture review (multi-board identity + hierarchy boundaries) | **open**, no milestone | Nothing. ADR-0060 records that `hierarchy-boundaries` = A *holds until* that review is recorded as an ADR amendment | nothing today; it is a revisit trigger, not a gate |
 | `#2084` decision issue | **closed** | Already delivered ADR-0060 | nothing |
@@ -26,7 +27,7 @@ Nothing in the repository references `WorkItemType` or `ParentCardId` (0 files, 
 
 | Id | Outcome | Depends on | Mode | Startable before predecessors merge? |
 | --- | --- | --- | --- | --- |
-| `WM-TYPE-01-contract` | `WorkItemType` enum, `Card.ParentCardId`, additive migration + down path, pure hierarchy validator, `CardDto`/`frontend types/board.ts` fields | — | contract-only | **Yes — this is the startable-now slice.** It needs no undelivered predecessor; ADR-0060 already fixes every value it encodes |
+| `WM-TYPE-01-contract` | `WorkItemType` enum, `Card.ParentCardId`, additive migration + down path, pure hierarchy validator, `CardDto`/`frontend types/board.ts` fields | depth convention recorded on `#2087` | contract-only | **No — record whether the cap counts nodes or edges first.** The alternatives accept different persisted trees, so the validator and its boundary tests cannot choose silently |
 | `WM-TYPE-02-commands` | Direct-human `set-type` / `set-parent` / `detach-parent` through `CardService`, sharing one validator with proposal preview and apply | 01 | implementation | No — 01 owns `Card.cs` and the EF snapshot |
 | `WM-TYPE-03-delete-detach` | Deleting a parent detaches children, audited per child, one `boardMutation` event per affected card | 02 | implementation | No |
 | `WM-TYPE-04-export` | Parent/type round-trip. Requires a card-level stable key in the board JSON contract — `ImportCardDto` has none today | 01 | implementation | No — it is a change to a shipped serialization contract |
@@ -57,10 +58,12 @@ names before writing the validator; the blueprint itself demands "tests must spe
 ## Implementation plan
 
 **Preflight.** Read `#2087`'s two comments (the 2026-08-29 ruling comment and the 2026-08-29
-milestone move) and ADR-0060 "Decisions recorded (2026-08-29)". Confirm `#2185` is still open before
-planning anything on the archive side.
+milestone move) and ADR-0060 "Decisions recorded (2026-08-29)". Confirm the issue records whether
+depth 3 counts nodes or edges before slice 01, and confirm `#2185` is still open before planning
+anything on the archive side.
 
-**Sequence.** 01 → 02 → 03, then 04 and 06 in parallel; 05 last and only after `#2185`.
+**Sequence.** Record the depth convention, then 01 → 02 → 03, then 04 and 06 in parallel; 05 last
+and only after `#2185`.
 
 **Producer-owned paths (01).** `backend/src/Taskdeck.Domain/Enums/WorkItemType.cs` (new),
 `backend/src/Taskdeck.Domain/WorkModel/` (new, the pure validator),

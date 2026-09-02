@@ -17,7 +17,7 @@ writes against it.
 | Issue | State | Relationship | Note |
 | --- | --- | --- | --- |
 | CF-01 `#2255` | **closed** (PR `#2344`) | predecessor, delivered | The durable `Capture` with immutable `SourceAsset`s and an idempotent resumable backfill. What it did **not** deliver is a `SourceAsset` for any legacy artefact — see Architecture |
-| CF-03 `#2257` | open | predecessor for slices 04–05 | `RepresentationDescriptor.ProcessingRunId` and the runner write path have no `ProcessingRun` to reference. Grepped: only the `ProcessingJobState` enum exists |
+| CF-03 `#2257` | open | predecessor for slice 05 | `RepresentationDescriptor.ProcessingRunId` and the runner write path have no `ProcessingRun` to reference. Grepped: only the `ProcessingJobState` enum exists |
 | CF-02 `#2256` | open | sibling | `SourceAsset.Modality` and per-asset routing decide which asset a representation derives from |
 | CF-05 `#2259`, CF-07 `#2261` | open | consumers | Both are hard-blocked on this façade; CF-07 additionally needs a representation to exist for every transcript before it can migrate spans |
 | CF-08, CF-14 `#2268`, CF-18 `#2272` | open | consumers | Candidate evidence, WhisperX transcripts, OCR text all become representations |
@@ -37,8 +37,8 @@ explicitly: "no implementation registered").
 | `CF06-1b-legacy-asset-bridge` | Give every retained legacy `SourceArtefact` a `SourceAsset` via the already-shipped-but-uncalled `SourceAsset.FromLegacyArtefact`, and a backfilled `Capture` where none exists | 1 | implementation | No — but it must precede slice 02. Without it an `ArtefactExtraction` has **no parent of either legal kind**, so the parent-XOR invariant is unsatisfiable (see Architecture) |
 | `CF06-2-legacy-header-backfill` | Idempotent headers for every retained `Transcript` and `ArtefactExtraction`; content hash computed once | 1b | implementation | No |
 | `CF06-3-read-facade` | The typed bounded reads behind `IRepresentationStore`; legacy readers stay while parity is measured | 2 | implementation | No |
-| `CF06-4-runner-write-path` | Headers + typed payloads created transactionally from `ProcessorRepresentationOutput` (including `regions`) | 3, CF-03 `#2257` | implementation | No — the write path is the runner's |
-| `CF06-5-timing-export` | Additive `StartMs` / `EndMs` / char span per segment; export / delete / import / tested `Down` | 4 | implementation | No |
+| `CF06-4-timing-export` | Additive `StartMs` / `EndMs` / char span / confidence per segment; export / delete / import / tested `Down` | 3 | implementation | No — the rich segment shape must be durable before any runner writes it |
+| `CF06-5-runner-write-path` | Headers + typed payloads created transactionally from `ProcessorRepresentationOutput` (including `segments` and `regions`) | 4, CF-03 `#2257` | implementation | No — the write path is the runner's, and slice 04 must first make every protocol segment field lossless |
 
 ## Architecture
 
@@ -48,14 +48,14 @@ explicitly: "no implementation registered").
 | Façade | `IRepresentationStore.ListByCaptureAsync(captureId, userId, ct)` / `GetAsync(id, userId, ct)` | **exists, draft, unregistered** | Owner is a parameter, not inferred — keep that when implementing |
 | Kind / quality vocabulary | `RepresentationKind { NormalizedText, Transcript, OcrText, ImageDescription, DocumentStructure, StructuredEvent }`, `RepresentationQualityState { Provisional, Final, Verified, Superseded }` | **exists** | `Domain/Enums/`. The protocol validator already partitions text kinds from structured kinds (`WorkerProtocolValidator.TextRepresentationKinds`) |
 | Transcript payload | `Transcript` — `UserId`, `BoardId?`, `CaptureSource`, `Text` (≤200,000, LF-normalised, unpaired-surrogate rejected), `SegmentsJson` (≤1 MiB, ≤5,000 segments), `CreatedFromCaptureId?`, `SourceArtefactId?` | **exists** | Sole writer: `Api/Workers/TranscriptTriageWorker.cs:222` |
-| Transcript segments | `TranscriptSegment(StartLine, EndLine, Speaker?, TimestampMilliseconds?)` — zero-based, **inclusive**, line-indexed after LF normalisation; `ValidateWithinLineCount` is `internal` and asserts `EndLine < lineCount` | **exists** | Slice 05 adds `StartMs`/`EndMs`/char span **additively**; the line-indexed shape and `ValidateWithinLineCount` stay valid — that is an acceptance condition, not a style preference |
+| Transcript segments | `TranscriptSegment(StartLine, EndLine, Speaker?, TimestampMilliseconds?)` — zero-based, **inclusive**, line-indexed after LF normalisation; `ValidateWithinLineCount` is `internal` and asserts `EndLine < lineCount` | **exists** | Slice 04 adds `StartMs`/`EndMs`/char span/confidence **additively** before runner writes; the line-indexed shape and `ValidateWithinLineCount` stay valid — that is an acceptance condition, not a style preference |
 | Extraction payload | `ArtefactExtraction` — `SourceArtefactId`, `ExtractorName`, `ExtractorVersion`, `WarningsJson` (≤16 warnings), `ExtractedText` (≤102,400, LF only), `TextLength` | **exists** | Sole writer: `Application/Services/ArtefactExtractionService.cs:254`, which has **no production caller** — extraction is unwired pending `#1429` |
 | What both payloads lack | content hash, schema version, language, quality state, run link, supersession link | **missing** | Exactly the header. Also: `ArtefactExtraction` has **no `UserId` and no capture link at all** — ownership is reachable only through `SourceArtefact.UserId` |
 | Legacy artefact | `SourceArtefact` — `UserId`, `BoardId?`, `Kind`, `MimeType`, `FileName`, `ByteSize`, `Sha256`, `CaptureSource`, `CreatedFromCaptureId?` | **exists** | The only owner-bearing ancestor of an `ArtefactExtraction` |
 | New source model | `SourceAsset` — `CaptureId` (**non-null**), `Ordinal`, `Modality`, `MediaType`, `ContentHash`, `ByteSize`, `StorageKind`, `BlobReferenceId?`, `LegacyArtefactId?`, `SupersedesAssetId?`/`SupersededByAssetId?`, `TextPayload?` | **exists** | Note it has **no `UserId`** — ownership is via `Capture`. A representation's `UserId` therefore cannot be read off its parent asset |
 | **The legacy bridge is unwired** | `SourceAsset.FromLegacyArtefact(...)` sets `LegacyArtefactId` | **exists, no caller** | Grepped `FromLegacyArtefact` / `LegacyArtefactId` across `backend/src`: the factory, the entity property, and the migration column/index — and nothing else. The only asset factories with callers are `AddInlineTextSource` (`Capture.Create`) and `AddExternalReferenceSource` (`CaptureBackfillService.cs:293`). **Consequence: no `ArtefactExtraction` on `main` can satisfy "exactly one parent — a source asset or a representation".** Slice 1b exists because of this |
 | Supersession | `RepresentationQualityState.Superseded` + `SupersededByRepresentationId` | **exists as vocabulary** | The forward-link rule and its service are this issue's to define; CF-11 consumes them |
-| Runner write source | `ProcessorRepresentationOutput(Kind, SchemaVersion, Language, Text, Segments, Regions, Structured)`, `ProcessorSegmentOutput(CharStart, CharEnd, StartMs, EndMs, SpeakerLabel, Confidence)`, `ProcessorRegionOutput` | **exists** (wire contract) | Note the impedance mismatch: the protocol's segments are **char**-indexed and half-open; the shipped `TranscriptSegment` is **line**-indexed and inclusive. Slice 04 owns that translation and it must be lossless in both directions during the window |
+| Runner write source | `ProcessorRepresentationOutput(Kind, SchemaVersion, Language, Text, Segments, Regions, Structured)`, `ProcessorSegmentOutput(CharStart, CharEnd, StartMs, EndMs, SpeakerLabel, Confidence)`, `ProcessorRegionOutput` | **exists** (wire contract) | Note the impedance mismatch: the protocol's segments are **char**-indexed and half-open; the shipped `TranscriptSegment` is **line**-indexed and inclusive. Slice 04 first makes the rich fields durable; slice 05 then owns the lossless translation during the window |
 | Data-model doc | `docs/architecture/DATA_MODEL.md` | **exists** | Acceptance box 3 amends it, not creates it |
 | Transcript checkpoint commands | `docs/TESTING_GUIDE.md` §2026-08-16 REVIVAL-09 (lines 407–427): five `dotnet test --filter` commands incl. `TranscriptTests`, `TranscriptRepositoryIntegrationTests`, `MigrationBootstrapTests` | **exists** | Acceptance box 2 is these, green **unchanged** |
 
@@ -75,8 +75,9 @@ its 2026-08-30 Codex comment (the nullable-`CaptureId` decision, which the body'
 answers — take the amendment). Read ADR-0065 §Decision 3 and §Amendments item 6, and the descriptor's
 own XML doc, which is the most precise statement of the migration-window rule anywhere.
 
-**Sequence.** 1 → 1b → 2 → 3, then 4 and 5 after CF-03. Slices 1–3 are shippable without any job or
-run: they make every existing derived view addressable. Do **not** collapse 1b into 2 — creating
+**Sequence.** 1 → 1b → 2 → 3 → 4, then 5 after CF-03. Slices 1–4 are shippable without any job or
+run: they make every existing derived view addressable and make rich segment storage lossless before
+the runner writes. Do **not** collapse 1b into 2 — creating
 `SourceAsset`s for legacy artefacts is a data change with its own idempotency and rollback story.
 
 **Producer-owned paths** (to be created): `backend/src/Taskdeck.Domain/Entities/Representation.cs`,
@@ -86,7 +87,7 @@ run: they make every existing derived view addressable. Do **not** collapse 1b i
 `backend/tests/Taskdeck.Application.Tests/Representations/`.
 
 **Integration-owner seams:** `Application/Interfaces/IRepresentationStore.cs` (the draft this issue
-settles), `Domain/Entities/Transcript.cs` and `TranscriptSegment.cs` (slice 05, additive only),
+settles), `Domain/Entities/Transcript.cs` and `TranscriptSegment.cs` (slice 04, additive only),
 `Domain/Entities/SourceAsset.cs` (slice 1b calls its factory), `TaskdeckDbContext.cs`,
 `Migrations/TaskdeckDbContextModelSnapshot.cs`, `Infrastructure/DependencyInjection.cs`,
 `DataPortabilityDtos.cs`, `docs/architecture/DATA_MODEL.md`, `docs/architecture/CONTEXT_FABRIC.md`,
@@ -95,7 +96,7 @@ settles), `Domain/Entities/Transcript.cs` and `TranscriptSegment.cs` (slice 05, 
 **Rollout / rollback.** Headers are additive and unread until the façade is registered; registration
 is the switch. The payload tables are never moved, so rollback is dropping the header rows — say in
 the PR at which slice `Down` stops being lossless (it is slice 1b: a backfilled `Capture` and
-`SourceAsset` are new domain rows, not derived ones). The façade stays read-only until slice 04.
+`SourceAsset` are new domain rows, not derived ones). The façade stays read-only until slice 05.
 
 **Definition of done.** The six invariants proven by tests rather than asserted in prose — that is
 what "the contract is no longer a draft" means. Export includes headers; account deletion removes a
@@ -113,7 +114,7 @@ user's headers along with the payloads they front; `HasPendingModelChanges() == 
 - [ ] Application: lineage representation → source asset → capture resolves in **one** bounded read (assert the query count, not just the result)
 - [ ] Application: a header whose payload row is missing, and a payload row whose header is missing, are both detectable and reported, never silently rendered as empty text
 - [ ] Domain: additive timing — a segment with only `StartLine`/`EndLine` still validates; `ValidateWithinLineCount` behaviour is unchanged; a segment with `StartMs > EndMs` is rejected
-- [ ] Application: the protocol's char-indexed half-open `ProcessorSegmentOutput` round-trips to and from the line-indexed inclusive `TranscriptSegment` without loss (slice 04)
+- [ ] Application: after slice 04 persists every rich segment field, the protocol's char-indexed half-open `ProcessorSegmentOutput` round-trips to and from the line-indexed inclusive `TranscriptSegment` without loss through the slice-05 runner write path
 - [ ] Persistence: `MigrationBootstrapTests` green, `HasPendingModelChanges() == false`, `Down` tested; export includes headers; account deletion removes them
 - [ ] Regression: the five `docs/TESTING_GUIDE.md` REVIVAL-09 transcript checkpoint commands green **unchanged** — live acceptance box 2
 - [ ] Architecture: `dotnet test backend/tests/Taskdeck.Architecture.Tests/Taskdeck.Architecture.Tests.csproj -c Release -m:1`

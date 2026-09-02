@@ -32,7 +32,8 @@ P2 on this issue forbids.
 
 | Id | Outcome | Depends on | Mode | Startable before predecessors merge? |
 | --- | --- | --- | --- | --- |
-| `CF02-1-producer-stamping` | The authenticated principal decides `ProducerKind` / `ProducedByPrincipalId`; the MCP write path stamps `Agent` + agent-profile id, the connector path `Integration` + connector id, everything else `Human` + null | — | implementation | **Yes — start here.** The parameters already exist on `CaptureIntakeService.IntakeAsync`/`BuildCapture` with no callers; wiring them touches `Taskdeck.Api/Mcp/WriteTools.cs`, the connector intake and `CaptureService.CreateAsync` only. It needs nothing from `#2345` / `#2347` |
+| `CF02-0-agent-binding` | Associate each MCP API key and stdio transport with a server-resolved `AgentProfile`; an unbound transport continues to represent its authenticated user as `Human` + null | authenticated-binding ruling on `#2256` | implementation | **No — record the API-key and stdio binding contract first.** Current MCP authentication supplies only the user id and scopes; an API-key id is not an agent-profile id |
+| `CF02-1-producer-stamping` | The authenticated principal decides `ProducerKind` / `ProducedByPrincipalId`; a bound MCP transport stamps `Agent` + its real agent-profile id, the connector path `Integration` + connector id, and everything else (including unbound MCP) `Human` + null | 0 | implementation | **No.** The existing producer parameters are unwired, but using them safely for MCP depends on the server-owned binding from slice 00. It still needs nothing from `#2345` / `#2347` |
 | `CF02-2-conflict-contract` | `CreateCaptureItemDto` accepts optional explicit dimensions; a legacy `source` inconsistent with them is rejected with `ErrorCodes.ValidationError` (400); consistent pairs and source-only clients are unchanged | 01 | implementation | No — the reject rule must know how the producer is stamped, or a client can force a producer through the "explicit" door |
 | `CF02-3-additive-dtos` | `CaptureItemDto` / `CaptureItemSummaryDto` expose `PrimaryModality`, `OriginAdapter`, `ProducerKind`, `RequestedIntent`, `EffectiveIntent` additively; `Source` stays and stays correct | 02, CF-01b `#2345` | implementation | No — `#2345` decides where each capture field is read from; adding fields to the DTO first creates a second read-source problem to unwind |
 | `CF02-4-per-asset-routing` | `ResolveRequestTypeForSource` stops being the capture-level lane decision; routing consults each `SourceAsset.Modality` | 03, CF-05 `#2259`, CF-03 `#2257` | implementation | No — the job/run substrate that would carry a per-asset lane does not exist |
@@ -61,16 +62,18 @@ there, not in the body), ADR-0065 §Decision 2 and §Amendments, and `docs/archi
 § dimension table. Confirm `#2345` / `#2347` state — they change what a capture field's read source is,
 which is the same seam slice 03 edits.
 
-**Sequence.** 01 alone is a complete, shippable behaviour change with no predecessor. Then 02, then
-03 after `#2345`. 04 and 05 wait on CF-05 and CF-03.
+**Sequence.** Record and implement 00, then 01, then 02, then 03 after `#2345`. 04 and 05 wait on
+CF-05 and CF-03. Until 00 lands, the current user-authenticated MCP path remains `Human` + null; it
+must not substitute `McpApiKeyId` for an `AgentProfile` id or accept a client-supplied profile.
 
 **Slice 01 detail.** The rule from the issue comment, restated as code: a client-created capture is
 `Human` with `ProducedByPrincipalId = null`; `Agent` requires an agent-profile id (`AgentProfile`);
 `Integration` requires a connector identity (`IntegrationConnector`). Derive it from the
-authenticated principal — the MCP API-key claims (`ApiKeyMiddleware` sets
-`taskdeck:mcp:api-key-scopes` and an `McpApiKeyId` item) and the connector's own identity — never
-from `payload.Source`. Fail closed: a caller that asserts `Agent`/`Integration` without a resolvable
-principal is a 400, not a silent downgrade to `Human`.
+authenticated principal — the server-resolved API-key/stdio-to-`AgentProfile` association from
+slice 00 and the connector's own identity — never from `payload.Source`. `ApiKeyMiddleware`'s
+`taskdeck:mcp:api-key-scopes` claim and `McpApiKeyId` item identify the credential, not an agent.
+Fail closed when a path explicitly asserts `Agent`/`Integration` without a resolvable principal;
+an existing unbound MCP call makes no such assertion and remains `Human` + null.
 
 **Producer-owned paths:** `backend/src/Taskdeck.Api/Mcp/WriteTools.cs`,
 `backend/src/Taskdeck.Application/Services/CaptureService.cs` (create path only),
@@ -92,7 +95,7 @@ box 3 stays open here and is closed on CF-05 `#2259`.
 ## Test plan
 
 - [ ] Domain: `CaptureSourceMapping` round-trips every one of the twelve `CaptureSource` values and rejects an unknown token with `ErrorCodes.ValidationError` — already covered by `CaptureSourceMappingTests`; re-assert after any mapping edit. `dotnet test backend/tests/Taskdeck.Domain.Tests/Taskdeck.Domain.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CaptureSourceMapping"`
-- [ ] Application: an MCP-originated capture persists `ProducerKind = Agent` with a non-null `ProducedByPrincipalId`, and `LegacySourceSnapshot` still reads back the value the queue-row contract expects
+- [ ] Application: before an authenticated binding exists, an MCP-originated capture persists `ProducerKind = Human` with `ProducedByPrincipalId = null`; after binding, it persists `Agent` with the bound `AgentProfile.Id` (never `McpApiKeyId`), and `LegacySourceSnapshot` still reads back the value the queue-row contract expects
 - [ ] Application: a connector-originated capture persists `Integration` + connector id; a plain web capture persists `Human` + null
 - [ ] Application: a caller asserting `Agent`/`Integration` with no resolvable principal gets a stable 400 and **no** capture is written (fail closed, not downgrade)
 - [ ] Api: an existing client sending only `source` gets a byte-identical `CaptureItemDto` before and after each slice — the contract test that guards slices 02 and 03
