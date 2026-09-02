@@ -52,8 +52,9 @@ after each significant change.
 
 Use the proving-check table in root `CLAUDE.md` — the narrowest command per seam:
 
-- `.cs`: one layer — `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1`;
-  the full solution only for cross-layer changes.
+- `.cs`: one test project first — `dotnet test backend/tests/<Project>/<Project>.csproj -c Release -m:1`
+  (`Taskdeck.{Domain,Application,Api,Cli,Architecture,Integration}.Tests`); then, before opening the PR, the
+  `backend/AGENTS.md` required check once: `dotnet test backend/Taskdeck.sln -c Release -m:1`.
 - `.ts`/`.vue` (Bash): `cd frontend/taskdeck-web && npx vitest --run --maxWorkers=2 <path/to.spec.ts> && npm run typecheck`
   — `&&` so a failing spec stops the chain (in PowerShell use `;` plus an explicit `$LASTEXITCODE` check after each
   step). Bare `vitest --run` OOMs on this box.
