@@ -1,0 +1,58 @@
+{
+  "repository": "https://github.com/Chris0Jeky/Taskdeck",
+  "snapshot_date": "2026-08-30",
+  "inspected_main_commit": "221aa88c80f5b2c3265ac794edc2ade0edd70c72",
+  "milestone_5": {
+    "number": 5,
+    "title": "v0.4 — Hosted Open Beta + Work Model + Fabric Foundation",
+    "open_issues": 24
+  },
+  "milestone_4": {
+    "number": 4,
+    "title": "v0.3 — Accountable Agents + Downloadable Beta",
+    "open_count_observed": 61,
+    "closed_count_observed": 18
+  },
+  "important_paths": [
+    "AGENTS.md",
+    ".codex/memories/00_ACTIVE.md",
+    "autodoc/AGENT_INDEX.md",
+    "docs/architecture/CONTEXT_FABRIC.md",
+    "docs/security/BETA_THREAT_MODEL.md",
+    "docs/decisions/ADR-0060-canonical-work-model-and-compatibility-path.md",
+    "docs/decisions/ADR-0062-custom-fields-aggregates-and-threshold-rules.md",
+    "backend/src/Taskdeck.Domain/Entities/Capture.cs",
+    "backend/src/Taskdeck.Domain/Entities/SourceAsset.cs",
+    "backend/src/Taskdeck.Application/Services/CaptureIntakeService.cs",
+    "backend/src/Taskdeck.Application/Interfaces/IBlobStore.cs",
+    "backend/src/Taskdeck.Application/Interfaces/IRepresentationStore.cs",
+    "backend/src/Taskdeck.Application/Processing/Protocol/WorkerProtocol.cs",
+    "backend/src/Taskdeck.Domain/Entities/Card.cs"
+  ],
+  "known_open_prs_at_snapshot": [
+    {
+      "number": 2341,
+      "summary": "Smart CI ADR/baseline/human-action map"
+    },
+    {
+      "number": 2342,
+      "summary": "Smart CI shadow control plane policy/planner/gate/pin inventory/runner broker"
+    },
+    {
+      "number": 2340,
+      "summary": "Docs provenance shortcut"
+    },
+    {
+      "number": 2299,
+      "summary": "Batch triage polling"
+    },
+    {
+      "number": 2295,
+      "summary": "Paper review apply rate"
+    },
+    {
+      "number": 2291,
+      "summary": "nginx encoded route guard"
+    }
+  ]
+}

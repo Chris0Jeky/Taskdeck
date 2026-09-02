@@ -1,0 +1,27 @@
+digraph BlobLifecycle {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.7, fontname="Arial", label="Owner-scoped blob reference lifecycle", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  reserve [label="Reserve owner + modality quota\nfor declared size"];
+  stream [label="Stream to SQLite storage\ncompute SHA-256; reject growth"];
+  find [shape=diamond, label="Same owner + hash\nalready exists?"];
+  object [label="BlobObject\nowner-local bytes/hash/size"];
+  ref1 [label="BlobReference A"];
+  ref2 [label="BlobReference B"];
+  asset1 [label="SourceAsset A"];
+  asset2 [label="SourceAsset B"];
+  release [shape=diamond, label="Release owner-scoped ref\nlast reference?"];
+  delete [label="Delete bytes in ambient transaction"];
+  keep [label="Keep object"];
+
+  reserve -> stream -> find;
+  find -> object [label="no: create"];
+  find -> object [label="yes: reuse"];
+  object -> ref1 -> asset1;
+  object -> ref2 -> asset2;
+  ref1 -> release;
+  ref2 -> release;
+  release -> delete [label="yes"];
+  release -> keep [label="no"];
+}

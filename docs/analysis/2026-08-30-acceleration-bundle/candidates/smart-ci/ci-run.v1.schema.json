@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.local/ci/schemas/ci-run.v1.schema.json",
+  "title": "Taskdeck Smart CI run receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "repository",
+    "workflow",
+    "attempt",
+    "head_sha",
+    "policy",
+    "risk",
+    "selected",
+    "skipped",
+    "jobs",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[^/]+/[^/]+$"
+    },
+    "workflow": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "event": {
+      "type": "string"
+    },
+    "base_sha": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "head_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "created_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "trust"
+      ],
+      "properties": {
+        "class": {
+          "enum": [
+            "R0",
+            "R1",
+            "R2",
+            "R3"
+          ]
+        },
+        "trust": {
+          "enum": [
+            "trusted",
+            "untrusted",
+            "mixed"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "selected": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/laneDecision"
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/laneDecision"
+      }
+    },
+    "jobs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/job"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    }
+  },
+  "$defs": {
+    "laneDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lane",
+        "reason"
+      ],
+      "properties": {
+        "lane": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "lane",
+        "runner_class",
+        "hosted",
+        "result",
+        "queue_seconds",
+        "setup_seconds",
+        "test_seconds",
+        "total_seconds",
+        "rerun",
+        "artifact_bytes"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "lane": {
+          "type": "string"
+        },
+        "runner_class": {
+          "type": "string"
+        },
+        "hosted": {
+          "type": "boolean"
+        },
+        "result": {
+          "enum": [
+            "success",
+            "failure",
+            "cancelled",
+            "skipped",
+            "timed_out"
+          ]
+        },
+        "queue_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "setup_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "test_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "total_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "billable_minutes": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "tests_run": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "tests_failed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "tests_skipped": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "rerun": {
+          "type": "boolean"
+        },
+        "original_result": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cache_hit": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "artifact_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "critical_path_seconds",
+        "aggregate_runner_seconds",
+        "hosted_minutes",
+        "hosted_cost_estimate",
+        "self_hosted_wall_seconds",
+        "flake_detected",
+        "duplicate_qualification_detected"
+      ],
+      "properties": {
+        "critical_path_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "aggregate_runner_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hosted_minutes": {
+          "type": "number",
+          "minimum": 0
+        },
+        "hosted_cost_estimate": {
+          "type": "number",
+          "minimum": 0
+        },
+        "cost_currency": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "rate_table_version": {
+          "type": "string"
+        },
+        "self_hosted_wall_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "flake_detected": {
+          "type": "boolean"
+        },
+        "duplicate_qualification_detected": {
+          "type": "boolean"
+        },
+        "budget_warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+digraph HostedBeta {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.75, fontname="Arial", label="Hosted beta evidence gates", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  s0 [label="Stage 0\nDownloadable beta"];
+  g1 [shape=diamond, label="Backup/restore +\nkey verification?"];
+  s1 [label="Stage 1\nPrivate trusted instance"];
+  g2 [shape=diamond, label="Multi-user auth +\nops dogfood proven?"];
+  s2 [label="Stage 2\nSmall-team alpha"];
+  g3 [shape=diamond, label="Threat model reversed?\nSecrets + isolation + abuse + cost?"];
+  s3 [label="Stage 3\nControlled untrusted cohort"];
+  g4 [shape=diamond, label="Status/incident + RPO/RTO +\nlaunch claims/telemetry proven?"];
+  s4 [label="Stage 4\nOpen registration"];
+  rollback [shape=note, label="At every stage:\nclose registration, disable shared key,\npause processors, restore/rollback"];
+
+  s0 -> g1 -> s1 -> g2 -> s2 -> g3 -> s3 -> g4 -> s4;
+  rollback -> s1 [style=dashed];
+  rollback -> s2 [style=dashed];
+  rollback -> s3 [style=dashed];
+  rollback -> s4 [style=dashed];
+}
