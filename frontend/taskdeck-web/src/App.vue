@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import ToastContainer from './components/common/ToastContainer.vue'
 import PaperToastContainer from './components/paper/PaperToastContainer.vue'
 import SessionTimeoutWarning from './components/common/SessionTimeoutWarning.vue'
 import ErrorBoundary from './components/ErrorBoundary.vue'
 import { useSessionStore } from './store/sessionStore'
+import { installStaleBundleRecovery, clearStaleBundleRecoveryMarker } from './pwa/staleBundleRecovery'
 import { useFeatureFlagStore } from './store/featureFlagStore'
 import { usePaperThemeStore } from './store/paperThemeStore'
 
@@ -25,7 +26,13 @@ const showShell = computed(() => {
   return route.meta.requiresShell === true
 })
 
+// The API-cache migration can activate a replacement worker under a running page, so
+// a lazy route chunk from the previous build may no longer be fetchable.
+const stopStaleBundleRecovery = installStaleBundleRecovery()
+onUnmounted(stopStaleBundleRecovery)
+
 onMounted(async () => {
+  clearStaleBundleRecoveryMarker()
   const slowRestoreNotice = setTimeout(() => { restoreIsSlow.value = true }, SLOW_RESTORE_NOTICE_MS)
   try {
     await session.restoreSession()

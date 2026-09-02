@@ -21,6 +21,10 @@ describe('legacy API cache service-worker activation', () => {
         'taskdeck-share-target',
         'taskdeck-static-assets',
       ]),
+      // Required by the static-asset eviction step; without it that block throws and
+      // is swallowed, so this test would pass while asserting nothing about it.
+      has: vi.fn(async () => false),
+      open: vi.fn(),
       delete: vi.fn(async (cacheName: string) => {
         deleted.push(cacheName)
         return true
@@ -48,7 +52,7 @@ describe('legacy API cache service-worker activation', () => {
       skipWaiting: vi.fn(),
       clients: { claim: vi.fn(async () => undefined) },
     }
-    const caches = { keys: vi.fn().mockRejectedValue(new Error('storage unavailable')) }
+    const caches = { keys: vi.fn().mockRejectedValue(new Error('storage unavailable')), has: vi.fn(async () => false), open: vi.fn() }
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
     new Function('self', 'caches', workerScript)(self, caches)
@@ -70,6 +74,8 @@ describe('legacy API cache service-worker activation', () => {
     }
     const caches = {
       keys: vi.fn().mockResolvedValue(['taskdeck-api-cache-v2']),
+      has: vi.fn(async () => false),
+      open: vi.fn(),
       delete: vi.fn().mockRejectedValue(new Error('storage unavailable')),
     }
 

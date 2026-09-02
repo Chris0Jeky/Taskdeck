@@ -163,8 +163,9 @@ describe('legacy API cache worker retirement', () => {
   })
 
   it('accepts a replacement that claimed this page while the handshake was pending', async () => {
-    // Another tab's migration claims every client, so controllerchange can land
-    // mid-handshake. Missing it used to tear down a perfectly good registration.
+    // Another tab's migration claims every client, so the controller can change
+    // mid-handshake. This covers the re-read of navigator.serviceWorker.controller;
+    // the controllerchange latch itself is covered by the forced-activation cases.
     const legacy = worker({ retired: false })
     const replacement = worker({ retired: true })
     const registered = registration()

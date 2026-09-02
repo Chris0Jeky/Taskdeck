@@ -70,15 +70,27 @@ test('a worker without the retirement policy is replaced before a session is est
   const context = await browser.newContext({ serviceWorkers: 'allow' })
   const page = await context.newPage()
 
-  // Stand-in for a pre-#2350 installation: it controls the page and answers no
-  // policy query, exactly like the shipped worker whose NetworkFirst API route
-  // repopulated the authenticated cache after every page-side purge.
-  await context.route('**/legacy-sw.js', async (route) => {
+  // The stand-in has to be served AT /sw.js, not at a URL of its own. retire() drives
+  // the migration with registration.update(), which refetches the registration's own
+  // script — so a stub registered at /legacy-sw.js would simply be refetched
+  // unchanged, no updatefound would fire, and the test would prove nothing. Serving
+  // legacy bytes for the first fetch and then releasing the route reproduces the real
+  // deploy shape: the same script URL, different bytes on update.
+  let serveLegacyWorker = true
+  await context.route('**/sw.js', async (route) => {
+    if (!serveLegacyWorker) {
+      await route.fallback()
+      return
+    }
+    serveLegacyWorker = false
     await route.fulfill({
       contentType: 'text/javascript',
+      // No policy listener, and it claims clients so it really controls the page —
+      // exactly the pre-#2350 shape the page has to detect by silence.
       body: [
         "self.addEventListener('install', () => self.skipWaiting())",
         "self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))",
+        "self.addEventListener('fetch', () => {})",
       ].join('\n'),
     })
   })
@@ -86,24 +98,41 @@ test('a worker without the retirement policy is replaced before a session is est
   try {
     await page.goto('/login')
     await page.evaluate(async () => {
-      await navigator.serviceWorker.register('/legacy-sw.js')
+      await navigator.serviceWorker.register('/sw.js')
       await navigator.serviceWorker.ready
     })
-    await expect.poll(() => page.evaluate(() =>
-      navigator.serviceWorker.controller?.scriptURL.endsWith('/legacy-sw.js') === true,
-    )).toBe(true)
+    await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true)
+    // The legacy stand-in answers no policy query; prove it is the one in control.
+    expect(await page.evaluate(() => new Promise((resolve) => {
+      const channel = new MessageChannel()
+      const timer = setTimeout(() => resolve(false), 2_000)
+      channel.port1.onmessage = () => { clearTimeout(timer); resolve(true) }
+      navigator.serviceWorker.controller?.postMessage(
+        { type: 'taskdeck:api-cache-policy' },
+        [channel.port2],
+      )
+    }))).toBe(false)
 
     await page.getByLabel('Username or Email').fill(account.user.username)
     await page.getByLabel('Password').fill('E2ePassword123!')
     await page.getByRole('button', { name: 'Sign in' }).click()
-
-    // The identity switch is the proof: the legacy worker is no longer in control
-    // by the time the workspace renders, either replaced by the current build or
-    // removed outright.
     await page.waitForURL('**/workspace/home')
-    expect(await page.evaluate(() =>
-      navigator.serviceWorker.controller?.scriptURL.endsWith('/legacy-sw.js') === true,
-    )).toBe(false)
+
+    // The identity switch is the proof: whatever now controls the page answers the
+    // retirement policy, so it cannot be the worker that replays API responses.
+    expect(await page.evaluate(() => new Promise((resolve) => {
+      if (!navigator.serviceWorker.controller) { resolve(true); return }
+      const channel = new MessageChannel()
+      const timer = setTimeout(() => resolve(false), 2_000)
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timer)
+        resolve((event.data as { policy?: string }).policy === 'legacy-api-cache-retired')
+      }
+      navigator.serviceWorker.controller.postMessage(
+        { type: 'taskdeck:api-cache-policy' },
+        [channel.port2],
+      )
+    }))).toBe(true)
   } finally {
     await context.close()
   }

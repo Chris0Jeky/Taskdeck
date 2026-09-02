@@ -17,8 +17,24 @@ const ACTIVATION_TIMEOUT_MS = 6_000
  * Hard ceiling on the whole migration. Session restore and the router guard both
  * await it, so an unbounded step here would pin the app on its loading state with a
  * reload that re-enters the same wait.
+ *
+ * Every individual budget above is also clamped to what remains of this deadline. A
+ * ceiling that only bounded the *promise* would let `retire()` keep running after its
+ * caller was told the attempt failed - and then reach `unregister()` while a retry
+ * started by the next navigation was mid-handshake, tearing the registration out from
+ * under it and hard-blocking the user.
  */
 const RETIREMENT_DEADLINE_MS = 12_000
+
+/** Time budget shared by every step of one migration attempt. */
+function deadlineFrom(totalMs: number): { remaining: (budgetMs: number) => number; expired: () => boolean } {
+  const expiresAt = Date.now() + totalMs
+  const left = () => Math.max(0, expiresAt - Date.now())
+  return {
+    remaining: (budgetMs: number) => Math.min(budgetMs, left()),
+    expired: () => left() <= 0,
+  }
+}
 
 let activeRetirement: Promise<boolean> | null = null
 
@@ -73,7 +89,7 @@ function asksRetirementPolicy(worker: ServiceWorker, timeoutMs: number): Promise
  * can land while this tab is still mid-handshake; a listener attached later would
  * miss it and then tear down a perfectly good registration.
  */
-function controllerChangeLatch(): { fired: () => boolean; wait: (timeoutMs: number) => Promise<boolean>; dispose: () => void } {
+function controllerChangeLatch(): { wait: (timeoutMs: number) => Promise<boolean>; dispose: () => void } {
   let fired = false
   let notify: (() => void) | null = null
   const onChange = () => {
@@ -82,7 +98,6 @@ function controllerChangeLatch(): { fired: () => boolean; wait: (timeoutMs: numb
   }
   navigator.serviceWorker.addEventListener('controllerchange', onChange)
   return {
-    fired: () => fired,
     wait(timeoutMs: number) {
       if (fired) return Promise.resolve(true)
       return new Promise((resolve) => {
@@ -111,51 +126,60 @@ function sendSkipWaiting(worker: ServiceWorker | null): void {
 }
 
 /**
- * Resolves once a replacement worker has been told to skip waiting, or the wait
- * expires.
+ * Resolves true once a replacement worker exists and has been told to skip waiting
+ * (or is already past installing and may take over on its own), false when the wait
+ * expired without one appearing.
  *
  * `registration.update()` resolves as soon as the update job is *started* - the
  * spec resolves the job promise inside Install, before the install event's
  * lifetime promises settle - so `registration.waiting` is normally still null when
  * it returns and a one-shot read there would never deliver the message. The
  * replacement has to be followed through `updatefound` and `statechange` instead.
+ *
+ * The verdict matters as well as the wait: when no replacement is coming there is
+ * nothing for a `controllerchange` to announce, so the caller can stop waiting and
+ * spend its remaining budget on the cleanup instead.
  */
 function forceReplacementToActivate(
   registration: ServiceWorkerRegistration,
   timeoutMs: number,
-): Promise<void> {
+): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false
-    const finish = () => {
+    // Held so the worker's own listener is removed too: on a timeout it would otherwise
+    // outlive this promise and send skip-waiting to a migration already abandoned.
+    let followed: { worker: ServiceWorker; onStateChange: () => void } | null = null
+    const finish = (found: boolean) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       registration.removeEventListener('updatefound', onUpdateFound)
-      resolve()
+      followed?.worker.removeEventListener('statechange', followed.onStateChange)
+      followed = null
+      resolve(found)
     }
-    const timer = setTimeout(finish, timeoutMs)
+    const timer = setTimeout(() => finish(false), timeoutMs)
 
     const follow = (worker: ServiceWorker | null) => {
       if (!worker) return
       if (worker.state === 'installed') {
         sendSkipWaiting(worker)
-        finish()
+        finish(true)
+        return
+      }
+      if (worker.state !== 'installing') {
+        // Already 'activating', 'activated' or 'redundant': no further statechange is
+        // coming, so waiting out the budget would only eat the shared deadline.
+        finish(worker.state !== 'redundant')
         return
       }
       const onStateChange = () => {
-        if (worker.state === 'installed') {
-          sendSkipWaiting(worker)
-        } else if (worker.state !== 'installing') {
-          // 'activated' means it took over on its own; 'redundant' means it never will.
-          worker.removeEventListener('statechange', onStateChange)
-          finish()
-          return
-        } else {
-          return
-        }
-        worker.removeEventListener('statechange', onStateChange)
-        finish()
+        if (worker.state === 'installing') return
+        // 'activated' means it took over on its own; 'redundant' means it never will.
+        if (worker.state === 'installed') sendSkipWaiting(worker)
+        finish(worker.state !== 'redundant')
       }
+      followed = { worker, onStateChange }
       worker.addEventListener('statechange', onStateChange)
     }
 
@@ -166,14 +190,14 @@ function forceReplacementToActivate(
     // or installing (another tab started the same migration).
     if (registration.waiting) {
       sendSkipWaiting(registration.waiting)
-      finish()
+      finish(true)
       return
     }
     follow(registration.installing)
   })
 }
 
-async function retire(): Promise<boolean> {
+async function retire(deadline: ReturnType<typeof deadlineFrom>): Promise<boolean> {
   const controller = navigator.serviceWorker.controller
   // Nothing is intercepting this page's requests, so no worker can serve a
   // cached API response to it.
@@ -181,12 +205,16 @@ async function retire(): Promise<boolean> {
 
   const latch = controllerChangeLatch()
   try {
-    if (await asksRetirementPolicy(controller, HANDSHAKE_TIMEOUT_MS)) return true
+    if (await asksRetirementPolicy(controller, deadline.remaining(HANDSHAKE_TIMEOUT_MS))) return true
 
     // Another tab may have completed the migration while that handshake was
     // pending; the new worker claims every client, including this one.
     const claimed = navigator.serviceWorker.controller
-    if (claimed && claimed !== controller && (await asksRetirementPolicy(claimed, HANDSHAKE_TIMEOUT_MS))) {
+    if (
+      claimed
+      && claimed !== controller
+      && (await asksRetirementPolicy(claimed, deadline.remaining(HANDSHAKE_TIMEOUT_MS)))
+    ) {
       return true
     }
 
@@ -203,22 +231,33 @@ async function retire(): Promise<boolean> {
       return navigator.serviceWorker.controller === null
     }
 
-    const forced = forceReplacementToActivate(registration, ACTIVATION_TIMEOUT_MS)
+    const forced = forceReplacementToActivate(registration, deadline.remaining(ACTIVATION_TIMEOUT_MS))
     // Bounded: a stalled-but-open update fetch would otherwise never settle, and
     // every caller of the purge shares this one promise.
-    await withTimeout(registration.update(), UPDATE_TIMEOUT_MS, undefined)
-    await forced
+    await withTimeout(registration.update(), deadline.remaining(UPDATE_TIMEOUT_MS), undefined)
+    const foundReplacement = await forced
 
-    if (await latch.wait(ACTIVATION_TIMEOUT_MS)) {
+    // No replacement appeared, so there is nothing for a `controllerchange` to
+    // announce. Skipping that wait is what keeps the cleanup below inside the shared
+    // deadline instead of being starved by a wait that cannot succeed.
+    if (foundReplacement && (await latch.wait(deadline.remaining(ACTIVATION_TIMEOUT_MS)))) {
       const replacement = navigator.serviceWorker.controller
       if (!replacement) return true
-      if (await asksRetirementPolicy(replacement, HANDSHAKE_TIMEOUT_MS)) return true
+      if (await asksRetirementPolicy(replacement, deadline.remaining(HANDSHAKE_TIMEOUT_MS))) return true
     }
 
     if (registration.installing || registration.waiting) {
       // A replacement is on its way in. Unregistering would destroy it, and a
       // reload lets it take over, so fail closed without touching it.
-      logWarn('A replacement service worker is installed but not yet in control; reload before signing in.')
+      logWarn('A replacement service worker is installing or waiting; reload before signing in.')
+      return false
+    }
+
+    if (deadline.expired()) {
+      // Out of budget. Unregistering now would land after this attempt's caller has
+      // already been told it failed, and could pull the registration out from under a
+      // retry that the next navigation has already started.
+      logWarn('The service worker migration ran out of time; reload before signing in.')
       return false
     }
 
@@ -248,8 +287,12 @@ export function retireLegacyApiCacheWorker(): Promise<boolean> {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return Promise.resolve(true)
   if (activeRetirement) return activeRetirement
 
+  const deadline = deadlineFrom(RETIREMENT_DEADLINE_MS)
   activeRetirement = withTimeout(
-    retire().catch(() => false),
+    retire(deadline).catch(() => {
+      logWarn('The service worker migration failed unexpectedly; reload before signing in.')
+      return false
+    }),
     RETIREMENT_DEADLINE_MS,
     false,
   ).finally(() => {
