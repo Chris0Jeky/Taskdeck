@@ -162,3 +162,6 @@ frontend/*/reports/mutation/
 /filesAndResources/taskdeck_smart_ci_pack
 /filesAndResources/taskdeck-milestone-6-acceleration-bundle-2026-08-30
 /filesAndResources/taskdeck-v0.6-acceleration-bundle-2026-08-30
+
+# gh/GitHub JSON dumps from batch sessions belong in the session scratchpad, never the repo root
+/.tmp-*.json
