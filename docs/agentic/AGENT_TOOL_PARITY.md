@@ -8,12 +8,12 @@ Equality here means comparable outcomes and safety, not identical mechanics.
 
 Both agents must use the same project truth:
 
-1. `docs/STATUS.md`
-2. `AGENTS.md`
-3. `autodoc/AGENT_INDEX.md`
+1. `autodoc/AGENT_INDEX.md` (the seam map — orient here first)
+2. the relevant section of `docs/STATUS.md` (never end to end)
+3. `AGENTS.md` (Codex) / root `CLAUDE.md` plus path rules (Claude, auto-loaded)
 4. `docs/MCP_TOOLING_GUIDE.md`
 5. `docs/agentic/SKILL_REGISTRY.md`
-6. matching Taskdeck skill under `.codex/skills/` or `.claude/skills/`
+6. the matching Taskdeck skill: `.claude/skills/` is canonical, `.codex/skills/` is the Codex adapter
 
 Both agents must preserve:
 

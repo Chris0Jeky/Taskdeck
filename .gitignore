@@ -165,3 +165,4 @@ frontend/*/reports/mutation/
 
 # gh/GitHub JSON dumps from batch sessions belong in the session scratchpad, never the repo root
 /.tmp-*.json
+/filesAndResources/taskdeck-acceleration-bundle-2026-08-30

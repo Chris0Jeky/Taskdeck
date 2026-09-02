@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 import { globToRegExp, matchesGlob } from './lib/glob.mjs';
 import {
   PolicyError,
@@ -16,7 +20,7 @@ import {
   validatePlan,
   validatePolicy,
 } from './lib/plan.mjs';
-import { inputFromEvent, parseChangedFiles } from './plan.mjs';
+import { inputFromEvent, parseChangedFiles, requirePullRequestMergeBinding } from './plan.mjs';
 
 const policyText = readFileSync(new URL('../../../ci/policy.v1.json', import.meta.url), 'utf8');
 const policy = JSON.parse(policyText);
@@ -430,6 +434,7 @@ test('a plan that claims a self-hosted runner for a non-T1 or R4 change is inval
 
 test('inputFromEvent reads pull_request payloads without content and detects forks', () => {
   const event = {
+    action: 'synchronize',
     repository: { full_name: 'Chris0Jeky/Taskdeck', owner: { login: 'Chris0Jeky' } },
     pull_request: {
       number: 7,
@@ -444,21 +449,112 @@ test('inputFromEvent reads pull_request payloads without content and detects for
       labels: [{ name: 'ci:full' }],
     },
   };
-  const input = inputFromEvent({ ...event, sender: { login: 'someone', type: 'User' } }, 'pull_request_target', { changedFiles: ['docs/x.md'], changedFilesAvailable: true });
+  const fetchedMergeSha = 'f'.repeat(40);
+  const fetchedMergeTreeSha = 'd'.repeat(40);
+  const input = inputFromEvent({ ...event, sender: { login: 'someone', type: 'User' } }, 'pull_request_target', {
+    changedFiles: ['docs/x.md'],
+    changedFilesAvailable: true,
+    mergeSha: fetchedMergeSha,
+    mergeTreeSha: fetchedMergeTreeSha,
+  });
   assert.equal(input.isFork, true);
+  assert.equal(input.eventAction, 'synchronize');
   assert.equal(input.senderLogin, 'someone');
   assert.equal(input.repositoryOwnerLogin, 'Chris0Jeky');
   assert.equal(input.isDraft, true);
   assert.equal(input.pullRequestNumber, 7);
   assert.deepEqual(input.labels, ['ci:full']);
-  assert.equal(input.mergeSha, 'e'.repeat(40));
+  assert.equal(input.mergeSha, fetchedMergeSha);
+  assert.equal(input.mergeTreeSha, fetchedMergeTreeSha);
+  requirePullRequestMergeBinding(event, input);
+  assert.throws(
+    () => requirePullRequestMergeBinding(event, { ...input, mergeSha: null }),
+    /merge SHA and tree SHA from the same fetched merge ref/,
+  );
   const plan = buildPlan(input, policy, digest);
   assert.equal(plan.trust, 'T3');
+  assert.equal(plan.event.action, 'synchronize');
+  const missingAction = structuredClone(plan);
+  delete missingAction.event.action;
+  assert(validatePlan(missingAction).includes('event.action must be a string or null'));
   assert.ok(!JSON.stringify(plan).includes('secret title'));
   assert.ok(!JSON.stringify(plan).includes('secret body'));
   const push = inputFromEvent({ repository: { full_name: 'o/r', owner: { login: 'o' } }, before: BASE, after: HEAD, ref: 'refs/heads/main', sender: { login: 'o', type: 'User' } }, 'push', {});
   assert.equal(push.authorAssociation, 'OWNER');
   assert.equal(push.headSha, HEAD);
+});
+
+test('the shadow workflow records one exact merge-ref identity and fails closed on stale parents', () => {
+  const workflow = readFileSync(new URL('../../../.github/workflows/smart-ci-shadow.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /merge_sha="\$\(git rev-parse 'FETCH_HEAD\^\{commit\}'\)"/);
+  assert.match(workflow, /merge_tree="\$\(git rev-parse 'FETCH_HEAD\^\{tree\}'\)"/);
+  assert.match(workflow, /merge_base="\$\(git rev-parse 'FETCH_HEAD\^1'\)"/);
+  assert.match(workflow, /merge_head="\$\(git rev-parse 'FETCH_HEAD\^2'\)"/);
+  assert.match(workflow, /\[ "\$merge_base" != "\$EXPECTED_BASE" \] \|\| \[ "\$merge_head" != "\$EXPECTED_HEAD" \]/);
+  assert.match(workflow, /--merge-sha "\$\(cat artifacts\/merge-sha\.txt\)"/);
+  assert.match(workflow, /--merge-tree-sha "\$\(cat artifacts\/merge-tree-sha\.txt\)"/);
+});
+
+test('the shadow workflow fetch depth exposes both parents of a synthetic merge ref', () => {
+  const workflow = readFileSync(new URL('../../../.github/workflows/smart-ci-shadow.yml', import.meta.url), 'utf8');
+  const depthMatch = workflow.match(/fetch --no-tags --depth=(\d+) origin "refs\/pull\/\$\{PR_NUMBER\}\/merge"/);
+  assert.ok(depthMatch, 'the merge-ref fetch must declare a bounded depth');
+
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'taskdeck-smart-ci-merge-ref-'));
+  const origin = join(fixtureRoot, 'origin.git');
+  const source = join(fixtureRoot, 'source');
+  const checkout = join(fixtureRoot, 'checkout');
+  const gitEnvironment = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'Taskdeck Smart CI Test',
+    GIT_AUTHOR_EMAIL: 'smart-ci-test@example.invalid',
+    GIT_COMMITTER_NAME: 'Taskdeck Smart CI Test',
+    GIT_COMMITTER_EMAIL: 'smart-ci-test@example.invalid',
+  };
+  const git = (cwd, ...args) => execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    env: gitEnvironment,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim();
+
+  try {
+    git(fixtureRoot, 'init', '--bare', origin);
+    git(fixtureRoot, 'init', source);
+    git(source, 'config', 'user.name', gitEnvironment.GIT_AUTHOR_NAME);
+    git(source, 'config', 'user.email', gitEnvironment.GIT_AUTHOR_EMAIL);
+    writeFileSync(join(source, 'fixture.txt'), 'base\n');
+    git(source, 'add', 'fixture.txt');
+    git(source, 'commit', '-m', 'Create base');
+    git(source, 'branch', '-M', 'main');
+    const baseSha = git(source, 'rev-parse', 'HEAD');
+
+    git(source, 'switch', '-c', 'feature');
+    writeFileSync(join(source, 'fixture.txt'), 'head\n');
+    git(source, 'commit', '-am', 'Create head');
+    const headSha = git(source, 'rev-parse', 'HEAD');
+
+    git(source, 'switch', 'main');
+    git(source, 'merge', '--no-ff', '--no-edit', 'feature');
+    const mergeSha = git(source, 'rev-parse', 'HEAD');
+    const mergeTreeSha = git(source, 'rev-parse', 'HEAD^{tree}');
+    const originUrl = pathToFileURL(origin).href;
+    git(source, 'remote', 'add', 'origin', originUrl);
+    git(source, 'push', 'origin',
+      `${baseSha}:refs/heads/main`,
+      `${headSha}:refs/heads/feature`,
+      `${mergeSha}:refs/pull/1/merge`);
+
+    git(fixtureRoot, 'clone', '--no-checkout', '--depth=1', '--branch', 'main', originUrl, checkout);
+    git(checkout, 'fetch', '--no-tags', `--depth=${depthMatch[1]}`, 'origin', 'refs/pull/1/merge');
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^{commit}'), mergeSha);
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^1'), baseSha);
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^2'), headSha);
+    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^{tree}'), mergeTreeSha);
+    assert.equal(depthMatch[1], '2');
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
 });
 
 test('parseChangedFiles accepts plain lists and status/path/previous TSV', () => {

@@ -1,19 +1,21 @@
 ---
 name: docs-sweep
-description: "Update live documents (STATUS.md, IMPLEMENTATION_MASTERPLAN.md) after PR merges or batch work. Triggered after merges or manually."
+description: "Update live docs (STATUS, masterplan, REVIVAL_PLAN, OUTSTANDING_TASKS) after PR merges or batch work."
+argument-hint: "[#N-#M | update | audit #N-#M]"
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # Docs Sweep
 
-Update all live project documents to reflect current state after work completes.
+Update the live project documents to reflect current state after work completes.
 
 ## Arguments
 
 `$ARGUMENTS` is one of:
-- PR range (e.g., "#1048-#1052") — triggers full audit + docs update
-- "update" or empty — just refresh live docs from git state
-- "audit #N-#M" — write audit summary only
+- PR range (e.g., "#1048-#1052") — full audit + docs update
+- "update" or empty — refresh live docs from git state
+- "audit #N-#M" — write the audit summary only
 
 ## Phase 1: Gather State
 
@@ -23,42 +25,31 @@ gh pr list --state merged --limit 20 --json number,title,mergedAt,headRefName
 gh pr list --state open --json number,title,headRefName
 ```
 
-Read:
-- `docs/STATUS.md`
-- `docs/IMPLEMENTATION_MASTERPLAN.md`
+Then read **only the sections you will change** (find them via `autodoc/AGENT_INDEX.md` or grep — never
+end to end) in `docs/STATUS.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/REVIVAL_PLAN.md`, and
+`OUTSTANDING_TASKS.md`.
 
 ## Phase 2: Update Live Documents
 
-### 2.1 — `docs/STATUS.md`
-
-Update:
-- Feature completion status (what is now shipped)
-- Known gaps section (what was fixed, what remains)
-- Architecture state (new layers, services, entities added)
-
-### 2.2 — `docs/IMPLEMENTATION_MASTERPLAN.md`
-
-Update:
-- Delivery history (add rows for newly merged PRs)
-- Planned work (mark completed items, update sequencing)
-- Move "in progress" items that have landed to "shipped"
-
-### 2.3 — ADR Index (if architecture decisions were made)
-
-If any merged PRs introduced architecture decisions, verify `docs/decisions/INDEX.md` is current.
+- `docs/STATUS.md` — feature completion (what is now shipped), known gaps (fixed vs remaining),
+  architecture state (new layers, services, entities). Keep the exact `Last Updated: YYYY-MM-DD` line.
+- `docs/IMPLEMENTATION_MASTERPLAN.md` — delivery history rows for newly merged PRs; mark completed
+  planned items; move landed "in progress" items to shipped.
+- `docs/REVIVAL_PLAN.md` — the execution plan's milestone/wave state when a milestone or wave moved.
+- `OUTSTANDING_TASKS.md` — check off human items only when completion is directly verified; never infer
+  a human decision (global law 5). Add new human-only items surfaced by the merged work.
+- `docs/decisions/INDEX.md` — if any merged PR introduced an ADR, verify the index row exists.
 
 ## Phase 3: Verify
 
-Run consistency checks:
 ```bash
-dotnet build backend/Taskdeck.sln -c Release --nologo
+node scripts/check-docs-governance.mjs
 ```
 
-Ensure docs reference real files/features that exist in the codebase.
+Also run `node scripts/check-golden-principles.mjs` if `docs/GOLDEN_PRINCIPLES.md` changed. Ensure every
+file, feature, issue, or PR the docs now reference actually exists.
 
 ## Phase 4: Report
-
-Output a summary:
 
 ```
 ## Docs Sweep Complete
@@ -66,18 +57,22 @@ Output a summary:
 ### Updated
 - docs/STATUS.md: [what changed]
 - docs/IMPLEMENTATION_MASTERPLAN.md: [what changed]
+- docs/REVIVAL_PLAN.md / OUTSTANDING_TASKS.md: [what changed, or "no change"]
 
 ### Newly Shipped
-- [list of features/fixes now reflected in STATUS.md]
+- [features/fixes now reflected in STATUS.md]
 
 ### Open Work
-- [list of open PRs and their state]
+- [open PRs and their state]
+
+### Open human items
+- [count of `[ ]` items in OUTSTANDING_TASKS.md, and the ones this sweep touched]
 ```
 
 ## Rules
 
-- This is ONE continuous operation — do not pause between phases
-- Always update STATUS.md when shipped state changes (it is the source of truth)
-- Never delete historical delivery entries — add new ones
-- Verify that referenced files/features actually exist before documenting them
-- If no meaningful changes to document, report "no updates needed" and exit
+- ONE continuous operation — do not pause between phases.
+- Always update STATUS.md when shipped state changes (it is the source of truth).
+- Never delete historical delivery entries — add new ones.
+- Verify referenced files/features exist before documenting them.
+- If nothing meaningful changed, report "no updates needed" and exit.
