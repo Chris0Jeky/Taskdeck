@@ -51,11 +51,13 @@ sentence that cannot inherit one of these shipped sources.
 ## Listener and network-binding boundary
 
 Untouched packaged defaults are loopback-only; that statement does not survive
-an explicit or inherited listener override. `urls` or `ASPNETCORE_URLS`,
-`DOTNET_HTTP_PORTS` / `ASPNETCORE_HTTP_PORTS` (and their HTTPS equivalents),
-and `Kestrel:Endpoints` settings may expose Taskdeck. Do not use wildcard or
-non-loopback bindings unless exposure is intentional and the operator has
-reviewed the resulting network boundary.
+an explicit or inherited listener override. `urls` (including command-line
+`--urls`) or `ASPNETCORE_URLS`; bare `HTTP_PORTS` / `HTTPS_PORTS`;
+`DOTNET_HTTP_PORTS` / `DOTNET_HTTPS_PORTS`; their
+`ASPNETCORE_HTTP_PORTS` / `ASPNETCORE_HTTPS_PORTS` variants; and
+`Kestrel:Endpoints` settings may override packaged loopback selection and
+expose Taskdeck. Do not use wildcard or non-loopback bindings unless exposure
+is intentional and the operator has reviewed the resulting network boundary.
 
 ## Maintainer-voice drafts
 
@@ -98,8 +100,8 @@ and verifying the published SHA-256; do not turn SmartScreen off globally.
 Known limits are below. Questions and non-security bugs go to the
 [issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues). Suspected
 vulnerabilities must not be opened as a public issue, discussion, or PR; use
-the private route in [SECURITY.md](../../SECURITY.md) until coordinated
-disclosure.
+the private route in the [security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+until coordinated disclosure.
 
 ### Show HN
 
@@ -122,7 +124,8 @@ time; verify its SHA-256 before running it. Please use the
 [issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues) for questions
 and ordinary, non-security bugs. Suspected vulnerabilities must not be opened
 as a public issue, discussion, or PR; use the private route in
-[SECURITY.md](../../SECURITY.md) until coordinated disclosure.
+[the security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+until coordinated disclosure.
 
 **First comment:**
 
@@ -162,7 +165,8 @@ this workflow is useful, install it from the official release, verify the
 checksum, and use the [issue tracker](https://github.com/Chris0Jeky/Taskdeck/issues)
 to report ordinary, non-security problems. Suspected vulnerabilities must not
 be opened as a public issue, discussion, or PR; use the private route in
-[SECURITY.md](../../SECURITY.md) until coordinated disclosure.
+[the security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+until coordinated disclosure.
 
 ### awesome-selfhosted — do not submit yet
 
@@ -260,7 +264,8 @@ policy summary, not legal advice.
 > report reproducible non-security bugs with redacted steps; never post
 > secrets, keys, or private workspace data. Suspected vulnerabilities must not
 > be posted as a public issue, discussion, or PR; use the private
-> [SECURITY.md](../../SECURITY.md) route until coordinated disclosure. We
+> [security policy](https://github.com/Chris0Jeky/Taskdeck/security/policy)
+> route until coordinated disclosure. We
 > triage ordinary bugs to issues the same day, but do not promise every fix the
 > same day.
 
