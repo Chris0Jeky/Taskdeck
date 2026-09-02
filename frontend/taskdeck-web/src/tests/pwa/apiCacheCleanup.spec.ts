@@ -10,6 +10,8 @@ describe('legacy API cache service-worker activation', () => {
       addEventListener: vi.fn((type: string, listener: typeof activate) => {
         if (type === 'activate') activate = listener
       }),
+      skipWaiting: vi.fn(),
+      clients: { claim: vi.fn(async () => undefined) },
     }
     const caches = {
       keys: vi.fn().mockResolvedValue([
@@ -43,6 +45,8 @@ describe('legacy API cache service-worker activation', () => {
       addEventListener: vi.fn((type: string, listener: typeof activate) => {
         if (type === 'activate') activate = listener
       }),
+      skipWaiting: vi.fn(),
+      clients: { claim: vi.fn(async () => undefined) },
     }
     const caches = { keys: vi.fn().mockRejectedValue(new Error('storage unavailable')) }
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
@@ -61,6 +65,8 @@ describe('legacy API cache service-worker activation', () => {
       addEventListener: vi.fn((type: string, listener: typeof activate) => {
         if (type === 'activate') activate = listener
       }),
+      skipWaiting: vi.fn(),
+      clients: { claim: vi.fn(async () => undefined) },
     }
     const caches = {
       keys: vi.fn().mockResolvedValue(['taskdeck-api-cache-v2']),

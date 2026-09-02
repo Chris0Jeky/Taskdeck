@@ -198,9 +198,12 @@ describe('http interceptors (#725)', () => {
       expect(clearSpy).toHaveBeenCalled()
     })
 
-    it('clears credentials before waiting for purge and delays navigation until it completes', async () => {
+    it('clears credentials and starts the purge without holding the login redirect on CacheStorage', async () => {
       vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
       const clearSpy = vi.spyOn(tokenStorage, 'clearAll')
+      // A stalled CacheStorage must not keep a server-invalidated user on the
+      // protected screen: every path that establishes a new session awaits this
+      // same deduplicated purge before it can issue an authenticated read.
       let releasePurge: (result: boolean) => void = () => undefined
       cachePurgeMocks.purge.mockReturnValueOnce(new Promise<boolean>((resolve) => {
         releasePurge = resolve
@@ -212,17 +215,13 @@ describe('http interceptors (#725)', () => {
       })
       mock.onGet('/test').reply(401, { message: 'Unauthorized' })
 
-      const request = http.get('/test')
-      const completed = request.then(
-        () => { throw new Error('Expected the 401 request to reject.') },
-        () => undefined,
-      )
-      await vi.waitFor(() => expect(clearSpy).toHaveBeenCalled())
-      expect(window.location.href).toBe('')
+      await expect(http.get('/test')).rejects.toThrow()
+
+      expect(clearSpy).toHaveBeenCalled()
+      expect(cachePurgeMocks.purge).toHaveBeenCalled()
+      expect(window.location.href).toContain('/login?redirect=')
 
       releasePurge(true)
-      await completed
-      expect(window.location.href).toContain('/login?redirect=')
     })
 
     it('redirects to /login with return URL on 401', async () => {

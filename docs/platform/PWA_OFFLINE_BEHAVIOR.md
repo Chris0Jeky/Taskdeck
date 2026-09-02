@@ -16,7 +16,29 @@ All app shell assets (JS, CSS, HTML, icons, fonts) are precached on first load. 
 |----------|----------|-----|-------|
 | API responses (`/api/*`) | Network only | N/A | Never stored by the service worker or browser cache because responses may be identity-bound |
 | Lazy `it`/`es` locale chunks | StaleWhileRevalidate | Content-versioned | Cached after first use so the selected language remains available offline |
-| Same-origin static assets (images, bundled fonts, icons) | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
+| Static assets under `/assets/` and `/icons/` | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
+
+The static-asset route is anchored on the directories the build emits, not on the file extension.
+The API base is a deployment choice - `VITE_API_BASE_URL` may be prefixed, such as `/taskdeck/api` -
+so denying `/api` alone would not stop an authenticated `GET /taskdeck/api/users/by-username/alice.png`
+from being stored in the shared, cross-identity static cache. An unrecognised layout therefore loses
+runtime caching for a static asset; it never admits an API response.
+
+### Retiring the pre-#2350 worker
+
+An installation that predates this change still runs a worker with a NetworkFirst API route, and it
+repopulates the authenticated cache after any page-side purge. `registerType: 'prompt'` lets that
+worker wait indefinitely - the update banner is never shown on the public login route, and a user can
+dismiss it - so the migration is not left to the update UI.
+
+Before any session is established, the page asks the controlling worker for the retirement policy over
+a `MessageChannel` (`src/pwa/legacyApiCacheWorker.ts`). A pre-#2350 worker has no listener, so silence
+identifies it. The page then calls `registration.update()` and messages the waiting worker to skip
+waiting; the replacement claims open clients on activation, so the switch does not need a reload. If no
+replacement takes over within the bounded wait, the registration is unregistered and the attempt
+**fails closed**: the legacy worker still controls the current page, so session establishment is
+refused until the page is reloaded. Normal (non-security) updates still go through the
+`SwUpdatePrompt` banner.
 
 ### Navigation Fallback
 
@@ -57,6 +79,10 @@ When the browser transitions from offline to online:
 1. The **offline banner** (`OfflineBanner.vue`) disappears automatically via the `useOnlineStatus` composable.
 2. **SignalR** attempts automatic reconnection (handled by the existing `useBoardRealtime` composable).
 3. **API reads** fetch from the server; an offline or failed read surfaces the application's normal error state rather than replaying data from a previous identity.
+5. **Cache-boundary failures are reported by what already committed.** A failure before the credential
+   is sent asks the user to retry. A failure after the server has already created an account or issued
+   a token says so and asks for a reload and a fresh sign-in, because retrying the original call would
+   collide on a duplicate username or a consumed invite.
 4. **No automatic retry** of failed mutations. The user must re-trigger any write operations that failed while offline.
 
 ## Service Worker Updates

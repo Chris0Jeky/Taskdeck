@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "11111111-1111-1111-1111-111111111111",
+  "version": 1,
+  "name": "Balanced",
+  "preset": "balanced",
+  "egressClass": "approved-destinations",
+  "approvedProcessorIds": [
+    "taskdeck.whisperx",
+    "provider.cloud-speech"
+  ],
+  "approvedHosts": [
+    "api.example.com"
+  ],
+  "approvedRegions": [
+    "uk"
+  ],
+  "allowedDataClasses": [
+    "audio",
+    "metadata"
+  ],
+  "perCaptureCostCeiling": 1.5,
+  "deadlineMilliseconds": 600000,
+  "allowGpu": true,
+  "allowDiarisation": true,
+  "allowAlignment": true,
+  "allowOcrEscalation": false,
+  "preferences": [
+    {
+      "capability": "audio.transcribe",
+      "orderedProcessorIds": [
+        "taskdeck.whisperx",
+        "provider.cloud-speech"
+      ]
+    }
+  ]
+}

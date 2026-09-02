@@ -487,10 +487,14 @@ describe('PaperInboxView', () => {
 
   it('defaults nib captures to the active board', async () => {
     orchestratorState.activeBoardId.value = 'board-active'
+    orchestratorState.activeBoardName.value = 'Active board'
 
     const wrapper = mount(PaperInboxView)
     ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
     await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
+      .toBe('This capture lands in Inbox, linked to Active board, for triage.')
 
     const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
     await textarea.setValue('Quick note in board context')
@@ -500,6 +504,26 @@ describe('PaperInboxView', () => {
     expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
       boardId: 'board-active',
       text: 'Quick note in board context',
+      source: 'Typed',
+    })
+  })
+
+  it('labels a board-less nib request as board-less and submits no boardId', async () => {
+    const wrapper = mount(PaperInboxView)
+    ;(wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant('nib')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
+      .toBe('This capture lands in Inbox without a board, for triage.')
+
+    const textarea = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await textarea.setValue('Quick note without board context')
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: null,
+      text: 'Quick note without board context',
       source: 'Typed',
     })
   })

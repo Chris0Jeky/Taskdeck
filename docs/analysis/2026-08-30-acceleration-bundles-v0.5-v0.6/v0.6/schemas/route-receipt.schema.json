@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskdeck.route-receipt.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "jobId",
+    "captureId",
+    "ownerUserId",
+    "capability",
+    "policySnapshotId",
+    "policyDigest",
+    "registryDigest",
+    "evaluatedAt",
+    "cacheHit",
+    "forcedRerun",
+    "alternatives"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "jobId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "captureId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "ownerUserId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policySnapshotId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "policyDigest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "registryDigest": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "chosenProcessorId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "consentGrantId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "budgetReservationId": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid"
+    },
+    "cacheHit": {
+      "type": "boolean"
+    },
+    "forcedRerun": {
+      "type": "boolean"
+    },
+    "forcedRerunReason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "alternatives": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "processorId",
+          "processorVersion",
+          "executionMode",
+          "eligibility",
+          "reasonCodes"
+        ],
+        "properties": {
+          "processorId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "processorVersion": {
+            "type": "string",
+            "minLength": 1
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executionMode": {
+            "enum": [
+              "in-process",
+              "sidecar",
+              "remote"
+            ]
+          },
+          "eligibility": {
+            "enum": [
+              "eligible",
+              "ineligible",
+              "eligible-not-chosen",
+              "chosen"
+            ]
+          },
+          "reasonCodes": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "estimatedCost": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "currency": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Z]{3}$"
+          }
+        }
+      }
+    }
+  }
+}

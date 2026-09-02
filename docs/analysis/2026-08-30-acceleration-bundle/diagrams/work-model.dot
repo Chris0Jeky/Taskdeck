@@ -1,0 +1,27 @@
+digraph WorkModel {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.7, fontname="Arial", label="Minimal v0.4 work model", labelloc=t, fontsize=18];
+  node [shape=record, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  board [label="{Board|access + placement scope}"];
+  card [label="{Card / Work item|Task · Epic · Spike|ParentCardId? depth ≤3|EstimateMinutes?}"];
+  assignment [label="{Assignment|CardId + PrincipalId|does not grant access}"];
+  link [label="{WorkItemLink|relates · blocks · duplicates · spawned-from}"];
+  definition [label="{CustomFieldDefinition|board scope + type + constraints + retirement}"];
+  value [label="{CustomFieldValue|typed scalar only}"];
+  proposal [label="{Proposal operation|preview and apply share validators}"];
+  audit [label="{Audit|actor + old/new + origin}"];
+
+  board -> card [label="contains"];
+  card -> card [label="optional parent"];
+  card -> assignment [label="0..n"];
+  card -> link [label="endpoints"];
+  board -> definition [label="defines"];
+  card -> value [label="has"];
+  definition -> value [label="types"];
+  proposal -> card [label="mutates after revalidation"];
+  proposal -> assignment [style=dashed];
+  proposal -> link [style=dashed];
+  proposal -> value [style=dashed];
+  card -> audit [style=dashed];
+}

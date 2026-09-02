@@ -74,6 +74,13 @@ export default {
     metadataCompatibilityLead: 'Captura guardada sin fecha ni etiquetas.',
     metadataCompatibilityDetail: 'Esta versión del servidor ignoró esos metadatos. No lo intentes de nuevo: la captura ya está en el Inbox.',
   },
+  nib: {
+    eyebrow: 'Captura rapida · {shortcut}',
+    destinationWithBoard: 'Esta captura llega al Inbox vinculada a {board} para el triage.',
+    destinationWithoutBoard: 'Esta captura llega al Inbox sin tablero para el triage.',
+    selectedBoard: 'el tablero seleccionado',
+    submit: 'Capturar',
+  },
   scope: {
     board: 'Tablero: {board}',
     boardAndColumn: 'Tablero: {board} · Columna: {column}',

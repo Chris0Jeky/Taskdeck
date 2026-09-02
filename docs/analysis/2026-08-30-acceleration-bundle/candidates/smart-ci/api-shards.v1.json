@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "shards": [
+    {
+      "name": "api-core",
+      "tests": [
+        "Taskdeck.Api.IntegrationTests.CoreApiTests"
+      ]
+    },
+    {
+      "name": "auth-security",
+      "tests": [
+        "Taskdeck.Api.IntegrationTests.McpHttpAuthTests",
+        "Taskdeck.Api.IntegrationTests.McpHttpIsolationTests",
+        "Taskdeck.Api.IntegrationTests.McpHttpHostileWriteAuthTests"
+      ]
+    },
+    {
+      "name": "capture-proposal-executor",
+      "tests": [
+        "Taskdeck.Api.IntegrationTests.McpHttpProposalSurfaceTests"
+      ]
+    },
+    {
+      "name": "mcp-contract",
+      "tests": [
+        "Taskdeck.Api.IntegrationTests.McpContractTests"
+      ]
+    },
+    {
+      "name": "mcp-process-http",
+      "tests": [
+        "Taskdeck.Api.IntegrationTests.FirstRunMcpSmokeTests"
+      ]
+    },
+    {
+      "name": "journeys-realtime",
+      "tests": [
+        "Taskdeck.Api.IntegrationTests.ChatSseEndpointTests",
+        "Taskdeck.Api.IntegrationTests.AutomatedJourneyGapTests"
+      ]
+    },
+    {
+      "name": "persistence-migration",
+      "tests": [
+        "Taskdeck.Api.IntegrationTests.MigrationBootstrapTests"
+      ]
+    }
+  ]
+}

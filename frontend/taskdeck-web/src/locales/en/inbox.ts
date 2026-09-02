@@ -101,6 +101,13 @@ export default {
     metadataCompatibilityLead: 'Capture saved without its due date or labels.',
     metadataCompatibilityDetail: 'This server version ignored that metadata. Do not retry—the capture is already in Inbox.',
   },
+  nib: {
+    eyebrow: 'Quick capture · {shortcut}',
+    destinationWithBoard: 'This capture lands in Inbox, linked to {board}, for triage.',
+    destinationWithoutBoard: 'This capture lands in Inbox without a board, for triage.',
+    selectedBoard: 'the selected board',
+    submit: 'Capture',
+  },
   scope: {
     board: 'Board: {board}',
     boardAndColumn: 'Board: {board} · Column: {column}',

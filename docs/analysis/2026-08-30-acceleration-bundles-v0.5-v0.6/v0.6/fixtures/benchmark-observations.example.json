@@ -1,0 +1,38 @@
+[
+  {
+    "fixtureId": "voice-01",
+    "processorId": "local-whisper",
+    "wallTimeMs": 12000,
+    "peakRamMb": 650,
+    "estimatedCost": 0,
+    "wer": 0.11,
+    "der": null,
+    "alignmentErrorMs": 100,
+    "ocrAccuracy": null,
+    "outcome": "completed"
+  },
+  {
+    "fixtureId": "voice-01",
+    "processorId": "cloud-speech",
+    "wallTimeMs": 3300,
+    "peakRamMb": 120,
+    "estimatedCost": 0.02,
+    "wer": 0.08,
+    "der": null,
+    "alignmentErrorMs": 80,
+    "ocrAccuracy": null,
+    "outcome": "completed"
+  },
+  {
+    "fixtureId": "image-01",
+    "processorId": "local-ocr",
+    "wallTimeMs": 600,
+    "peakRamMb": 250,
+    "estimatedCost": 0,
+    "wer": null,
+    "der": null,
+    "alignmentErrorMs": null,
+    "ocrAccuracy": 0.93,
+    "outcome": "completed"
+  }
+]

@@ -1,0 +1,18 @@
+
+digraph G {
+  rankdir=LR;
+  graph [fontname="Arial", labelloc="t", label="Agent integration train"];
+  node [shape=box, fontname="Arial"];
+  Reconcile [label="Live reconciliation"];
+  Queue [label="Validated task queue"];
+  Claim [label="Atomic path claim"];
+  Worktree [label="One task / worktree"];
+  Producer [label="Producer implementation"];
+  Fragment [label="Integration fragment"];
+  Integrator [label="Integration owner"];
+  Review [label="Exact-head review + CI"];
+  Receipt [label="Machine-readable receipt"];
+  Tracker [label="Tracker sync after merge"];
+
+  Reconcile -> Queue -> Claim -> Worktree -> Producer -> Fragment -> Integrator -> Review -> Receipt -> Tracker;
+}

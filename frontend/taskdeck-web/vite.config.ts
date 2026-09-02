@@ -106,9 +106,15 @@ export default defineConfig({
             // CacheFirst for static assets (fonts, images, icons)
             // See the locale matcher above: this must remain self-contained
             // when vite-plugin-pwa serializes it into the service worker.
+            // Anchored on the directories the build emits, not on the file
+            // extension alone. The API base is a deployment choice - a prefixed
+            // `VITE_API_BASE_URL` such as `/taskdeck/api` is supported - so an
+            // authenticated `GET /taskdeck/api/users/by-username/alice.png` is not
+            // caught by the `/api` denial and would otherwise be stored in this
+            // shared, cross-identity cache. Mirrors src/pwa/runtimeCachePolicy.ts.
             urlPattern: ({ url }) =>
               !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
-              /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i.test(url.pathname),
+              /^\/(?:assets|icons)\/[^?#]*\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i.test(url.pathname),
             handler: 'CacheFirst',
             options: {
               cacheName: 'taskdeck-static-assets',

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "5f0b2a5e-2f1c-4c8e-9d3a-6a1e7c2b9f10",
+  "profileId": "11111111-1111-1111-1111-111111111111",
+  "profileVersion": 1,
+  "policyDigest": "sha256:ddd12c0c3cc15d587f98eb696df1f302da5ec9c5bbaadf9804700f7ff39b44ef",
+  "createdAt": "2026-09-02T09:00:00Z",
+  "policy": {
+    "schemaVersion": 1,
+    "id": "11111111-1111-1111-1111-111111111111",
+    "version": 1,
+    "name": "Balanced",
+    "preset": "balanced",
+    "egressClass": "approved-destinations",
+    "approvedProcessorIds": [
+      "taskdeck.whisperx",
+      "provider.cloud-speech"
+    ],
+    "approvedHosts": [
+      "api.example.com"
+    ],
+    "approvedRegions": [
+      "uk"
+    ],
+    "allowedDataClasses": [
+      "audio",
+      "metadata"
+    ],
+    "perCaptureCostCeiling": 1.5,
+    "deadlineMilliseconds": 600000,
+    "allowGpu": true,
+    "allowDiarisation": true,
+    "allowAlignment": true,
+    "allowOcrEscalation": false,
+    "preferences": [
+      {
+        "capability": "audio.transcribe",
+        "orderedProcessorIds": [
+          "taskdeck.whisperx",
+          "provider.cloud-speech"
+        ]
+      }
+    ]
+  }
+}

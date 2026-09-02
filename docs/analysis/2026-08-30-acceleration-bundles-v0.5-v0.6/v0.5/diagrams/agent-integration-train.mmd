@@ -1,0 +1,12 @@
+flowchart TB
+  Q[Validated task queue] --> C[Path claim]
+  C --> A1[Producer worktree A]
+  C --> A2[Producer worktree B]
+  C --> A3[Producer worktree C]
+  A1 --> F[Integration fragments]
+  A2 --> F
+  A3 --> F
+  F --> I[Integration owner serialises shared seams]
+  I --> V[Exact-head verification]
+  V --> M[Merge + issue truth-sync + receipt]
+  M --> Q

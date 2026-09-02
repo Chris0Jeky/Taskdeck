@@ -1,0 +1,21 @@
+
+digraph G {
+  rankdir=LR;
+  graph [fontname="Arial", labelloc="t", label="OCR-first image processing"];
+  node [shape=box, fontname="Arial"];
+  Image [label="Image SourceAsset"];
+  Inspect [label="content.inspect"];
+  Ocr [label="Local image.ocr sidecar"];
+  Rep [label="OcrText + ImageRegion anchors"];
+  Suff [label="Deterministic sufficiency"];
+  Semantic [label="semantic.extract"];
+  Consent [label="Remote image consent"];
+  Vision [label="image.describe escalation"];
+  Honest [label="Honest incomplete state"];
+
+  Image -> Inspect -> Ocr -> Rep -> Suff;
+  Suff -> Semantic [label="sufficient"];
+  Suff -> Consent [label="insufficient"];
+  Consent -> Vision [label="allowed"];
+  Consent -> Honest [label="denied / absent"];
+}

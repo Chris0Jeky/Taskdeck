@@ -107,13 +107,45 @@ public class LlmCaptureTriagePromptTests
         var newYearsEve = new DateOnly(2026, 12, 31);
 
         var parsed = LlmCaptureTriagePrompt.TryParseTasks(
-            BuildSingleTaskContent("2027-01-01"),
+            BuildSingleTaskContent("2027-01-01", "1 January"),
             newYearsEve,
             out var tasks,
             out var notes);
 
         parsed.Should().BeTrue();
         tasks[0].DueDateHint.Should().Be("2027-01-01");
+        notes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryParseTasks_ShouldKeepTheFirstFutureDecemberOccurrence_FromAJanuaryReferenceDay()
+    {
+        var newYearsDay = new DateOnly(2026, 1, 1);
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(
+            BuildSingleTaskContent("2026-12-31", "31 December"),
+            newYearsDay,
+            out var tasks,
+            out var notes);
+
+        parsed.Should().BeTrue();
+        tasks[0].DueDateHint.Should().Be("2026-12-31");
+        notes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryParseTasks_ShouldKeepAResolvedDate_OnTheOnOrAfterBoundary()
+    {
+        var referenceDay = new DateOnly(2026, 9, 1);
+
+        var parsed = LlmCaptureTriagePrompt.TryParseTasks(
+            BuildSingleTaskContent("2026-09-01", "1 September"),
+            referenceDay,
+            out var tasks,
+            out var notes);
+
+        parsed.Should().BeTrue();
+        tasks[0].DueDateHint.Should().Be("2026-09-01");
         notes.Should().BeEmpty();
     }
 
@@ -372,7 +404,9 @@ public class LlmCaptureTriagePromptTests
         tasks[0].DueDateHint.Should().BeNull();
     }
 
-    private static string BuildSingleTaskContent(string dueDateHint) =>
+    private static string BuildSingleTaskContent(
+        string dueDateHint,
+        string evidenceQuote = "Alice: I'll send the revised budget by Monday 1 September.") =>
         $$"""
         {
           "tasks": [
@@ -382,7 +416,7 @@ public class LlmCaptureTriagePromptTests
               "assigneeHint": "Alice",
               "dueDateHint": "{{dueDateHint}}",
               "confidence": 0.9,
-              "evidenceQuote": "Alice: I'll send the revised budget by Monday 1 September."
+              "evidenceQuote": "{{evidenceQuote}}"
             }
           ]
         }

@@ -64,3 +64,47 @@ test('a legacy response from user A is never replayed after switching to user B 
     await context.close()
   }
 })
+
+test('a worker without the retirement policy is replaced before a session is established @pwa-preview', async ({ browser, request }) => {
+  const account = await registerUserSession(request, 'pwa-cache-legacy')
+  const context = await browser.newContext({ serviceWorkers: 'allow' })
+  const page = await context.newPage()
+
+  // Stand-in for a pre-#2350 installation: it controls the page and answers no
+  // policy query, exactly like the shipped worker whose NetworkFirst API route
+  // repopulated the authenticated cache after every page-side purge.
+  await context.route('**/legacy-sw.js', async (route) => {
+    await route.fulfill({
+      contentType: 'text/javascript',
+      body: [
+        "self.addEventListener('install', () => self.skipWaiting())",
+        "self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))",
+      ].join('\n'),
+    })
+  })
+
+  try {
+    await page.goto('/login')
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.register('/legacy-sw.js')
+      await navigator.serviceWorker.ready
+    })
+    await expect.poll(() => page.evaluate(() =>
+      navigator.serviceWorker.controller?.scriptURL.endsWith('/legacy-sw.js') === true,
+    )).toBe(true)
+
+    await page.getByLabel('Username or Email').fill(account.user.username)
+    await page.getByLabel('Password').fill('E2ePassword123!')
+    await page.getByRole('button', { name: 'Sign in' }).click()
+
+    // The identity switch is the proof: the legacy worker is no longer in control
+    // by the time the workspace renders, either replaced by the current build or
+    // removed outright.
+    await page.waitForURL('**/workspace/home')
+    expect(await page.evaluate(() =>
+      navigator.serviceWorker.controller?.scriptURL.endsWith('/legacy-sw.js') === true,
+    )).toBe(false)
+  } finally {
+    await context.close()
+  }
+})

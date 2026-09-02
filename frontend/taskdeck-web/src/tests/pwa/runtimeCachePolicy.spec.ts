@@ -25,4 +25,20 @@ describe('PWA runtime cache policy', () => {
     expect(isLocaleCatalogRequest(request(url))).toBe(false)
     expect(isStaticAssetRequest(request(url))).toBe(false)
   })
+
+  it.each([
+    // A prefixed VITE_API_BASE_URL is a supported deployment shape, and a username
+    // may end in an image extension, so extension matching alone is not a boundary.
+    'https://taskdeck.example/taskdeck/api/users/by-username/alice.png',
+    'https://taskdeck.example/deploy/api/boards/1/cover.svg',
+    'https://taskdeck.example/uploads/alice.png',
+    'https://taskdeck.example/alice.png',
+  ])('admits only build-owned directories, whatever the API base: %s', (url) => {
+    expect(isStaticAssetRequest(request(url))).toBe(false)
+  })
+
+  it('still caches the assets the build emits', () => {
+    expect(isStaticAssetRequest(request('https://taskdeck.example/assets/avatar-a1b2.png'))).toBe(true)
+    expect(isStaticAssetRequest(request('https://taskdeck.example/icons/icon-192x192.png'))).toBe(true)
+  })
 })

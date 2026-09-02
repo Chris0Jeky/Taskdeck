@@ -33,4 +33,13 @@ describe('generated PWA worker runtime-cache contract', () => {
       expect(staticMatcher({ url: new URL(url) })).toBe(false)
     }
   })
+
+  it('excludes a prefixed API base that the /api denial cannot see', () => {
+    const [, staticMatcher] = loadGeneratedRuntimeMatchers()
+
+    expect(staticMatcher({
+      url: new URL('https://taskdeck.example/taskdeck/api/users/by-username/alice.png'),
+    })).toBe(false)
+    expect(staticMatcher({ url: new URL('https://taskdeck.example/icons/icon-192x192.png') })).toBe(true)
+  })
 })

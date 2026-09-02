@@ -16,6 +16,8 @@ const session = useSessionStore()
 const featureFlags = useFeatureFlagStore()
 const paperTheme = usePaperThemeStore()
 const sessionReady = ref(false)
+const restoreIsSlow = ref(false)
+const SLOW_RESTORE_NOTICE_MS = 5_000
 
 paperTheme.apply()
 
@@ -24,7 +26,12 @@ const showShell = computed(() => {
 })
 
 onMounted(async () => {
-  await session.restoreSession()
+  const slowRestoreNotice = setTimeout(() => { restoreIsSlow.value = true }, SLOW_RESTORE_NOTICE_MS)
+  try {
+    await session.restoreSession()
+  } finally {
+    clearTimeout(slowRestoreNotice)
+  }
   featureFlags.restore()
   sessionReady.value = true
 })
@@ -41,6 +48,15 @@ onMounted(async () => {
     <ErrorBoundary v-else-if="sessionReady">
       <router-view />
     </ErrorBoundary>
+    <!-- Session restoration enumerates and clears CacheStorage, which can be slow
+         or, on a stalled implementation, never settle. Say so rather than showing
+         an unexplained blank page with no way forward. -->
+    <div v-else class="td-session-restoring" role="status" aria-live="polite">
+      <p>Restoring your session…</p>
+      <p v-if="restoreIsSlow" class="td-session-restoring__hint">
+        This is taking longer than usual. Reload the page if it does not continue.
+      </p>
+    </div>
     <PaperToastContainer v-if="paperTheme.isOn" />
     <ToastContainer v-else />
     <SessionTimeoutWarning />
@@ -50,6 +66,22 @@ onMounted(async () => {
 <style scoped>
 #app {
   min-height: 100vh;
+}
+
+.td-session-restoring {
+  display: flex;
+  flex-direction: column;
+  gap: var(--td-space-2);
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: var(--td-space-4);
+  text-align: center;
+}
+
+.td-session-restoring__hint {
+  font-size: 0.875rem;
+  opacity: 0.75;
 }
 
 /* Skip-to-content link — visually hidden until focused */

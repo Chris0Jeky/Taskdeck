@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "event_name": "activation_snapshot",
+  "installation_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "app": {
+    "version": "0.4.0-beta.1",
+    "os_family": "windows",
+    "install_kind": "self-hosted"
+  },
+  "activation": {
+    "first_capture": true,
+    "first_proposal": true,
+    "first_apply": false
+  },
+  "feature_area": "capture-loop",
+  "outcome": "success"
+}

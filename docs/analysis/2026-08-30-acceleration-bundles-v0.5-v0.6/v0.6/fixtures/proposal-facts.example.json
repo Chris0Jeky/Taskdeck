@@ -1,0 +1,58 @@
+[
+  {
+    "proposalId": "p1",
+    "reviewed": true,
+    "approved": true,
+    "approvedUnchanged": true,
+    "rejected": false,
+    "targetCorrect": true,
+    "permissionCorrect": true,
+    "falseAction": false,
+    "correctNoAction": null,
+    "acceptedOperations": 2,
+    "attributableCost": 0.12,
+    "currency": "GBP"
+  },
+  {
+    "proposalId": "p2",
+    "reviewed": true,
+    "approved": true,
+    "approvedUnchanged": false,
+    "rejected": false,
+    "targetCorrect": true,
+    "permissionCorrect": true,
+    "falseAction": false,
+    "correctNoAction": null,
+    "acceptedOperations": 1,
+    "attributableCost": null,
+    "currency": null
+  },
+  {
+    "proposalId": "p3",
+    "reviewed": true,
+    "approved": false,
+    "approvedUnchanged": false,
+    "rejected": true,
+    "targetCorrect": false,
+    "permissionCorrect": true,
+    "falseAction": true,
+    "correctNoAction": null,
+    "acceptedOperations": 0,
+    "attributableCost": 0.05,
+    "currency": "GBP"
+  },
+  {
+    "proposalId": "p4",
+    "reviewed": true,
+    "approved": true,
+    "approvedUnchanged": true,
+    "rejected": false,
+    "targetCorrect": null,
+    "permissionCorrect": null,
+    "falseAction": null,
+    "correctNoAction": true,
+    "acceptedOperations": 1,
+    "attributableCost": 0.03,
+    "currency": "GBP"
+  }
+]

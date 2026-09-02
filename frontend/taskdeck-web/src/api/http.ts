@@ -95,7 +95,12 @@ http.interceptors.response.use(
       const skipAuth401 = (error.config as Record<string, unknown> | undefined)?.skipAuth401 === true
       if (error.response.status === 401 && !isDemoMode && !skipAuth401) {
         tokenStorage.clearAll()
-        await purgeLegacyApiCaches()
+        // Deliberately not awaited. Credential removal above is synchronous, and
+        // every path that establishes a new session awaits this same deduplicated
+        // purge before it can issue an authenticated read - so blocking the
+        // expiry notice and the navigation to login on CacheStorage would only
+        // keep a server-invalidated user looking at the protected screen longer.
+        void purgeLegacyApiCaches()
         const pathname = window.location.pathname
         const currentPath = `${pathname}${window.location.search}`
         if (!isAuthRoutePath(pathname)) {

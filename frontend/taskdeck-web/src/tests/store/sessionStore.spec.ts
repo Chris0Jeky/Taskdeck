@@ -365,6 +365,29 @@ describe('sessionStore', () => {
     expect(store.token).toBe(replacement.token)
   })
 
+  it('does not tell a user to retry a registration the server already committed', async () => {
+    vi.mocked(authApi.register).mockResolvedValue(makeAuthResponse(3600, 'account-a'))
+    // The account exists by the time setSession runs, so retrying would collide on
+    // the username or a consumed invite. The message must point at the recovery
+    // that works: reload, then sign in.
+    cachePurgeMocks.purge.mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    await expect(
+      store.register({ username: 'account-a', email: 'a@example.invalid', password: 'pass' }),
+    ).rejects.toThrow('Your account was created')
+    expect(store.isAuthenticated).toBe(false)
+  })
+
+  it('keeps the retry message for a token this client cannot use at all', async () => {
+    vi.mocked(authApi.login).mockResolvedValue({
+      ...makeAuthResponse(3600, 'account-a'),
+      token: 'not-a-jwt',
+    })
+
+    await expect(store.login({ usernameOrEmail: 'account-a', password: 'pass' }))
+      .rejects.toThrow('Unable to establish a session safely')
+  })
+
   it('rejects a same-user refresh when the legacy API cache purge fails', async () => {
     const first = makeAuthResponse(3600, 'account-a')
     const replacement = makeAuthResponse(7200, 'account-a')
@@ -373,7 +396,7 @@ describe('sessionStore', () => {
     await store.login({ usernameOrEmail: 'account-a', password: 'pass' })
     cachePurgeMocks.purge.mockResolvedValueOnce(false)
 
-    await expect(store.refreshSession()).rejects.toThrow('Unable to refresh the session safely')
+    await expect(store.refreshSession()).rejects.toThrow('could not clear a retired offline cache')
     expect(store.token).toBe(first.token)
   })
 

@@ -1,7 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
+import { createI18n } from 'vue-i18n'
 import PaperCaptureNib from '../../../../views/paper/inbox/PaperCaptureNib.vue'
+import en from '../../../../locales/en'
+
+type NibProps = {
+  bleeding?: boolean
+  submitting?: boolean
+  invalid?: boolean
+  errorId?: string | null
+  activeBoardId?: string | null
+  activeBoardName?: string | null
+}
+
+function mountNib(options: { attachTo?: HTMLElement; props?: NibProps } = {}) {
+  const i18n = createI18n({
+    legacy: false,
+    locale: 'en',
+    messages: { en },
+  })
+  return mount(PaperCaptureNib, {
+    ...options,
+    global: {
+      plugins: [i18n],
+    },
+  })
+}
 
 describe('PaperCaptureNib', () => {
   beforeEach(() => {
@@ -11,10 +36,11 @@ describe('PaperCaptureNib', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.unstubAllGlobals()
   })
 
   it('focuses the input on mount', async () => {
-    const wrapper = mount(PaperCaptureNib, { attachTo: document.body })
+    const wrapper = mountNib({ attachTo: document.body })
     await nextTick()
     const textarea = wrapper.find('textarea').element as HTMLTextAreaElement
     expect(document.activeElement).toBe(textarea)
@@ -22,7 +48,7 @@ describe('PaperCaptureNib', () => {
   })
 
   it('emits submit on Enter with the trimmed text', async () => {
-    const wrapper = mount(PaperCaptureNib)
+    const wrapper = mountNib()
     const textarea = wrapper.find('textarea')
     await textarea.setValue('  Look into local-first conflict resolution  ')
     await textarea.trigger('keydown', { key: 'Enter' })
@@ -35,7 +61,7 @@ describe('PaperCaptureNib', () => {
   })
 
   it('does not submit while creation is already in flight', async () => {
-    const wrapper = mount(PaperCaptureNib, { props: { submitting: true } })
+    const wrapper = mountNib({ props: { submitting: true } })
     const textarea = wrapper.find('textarea')
     await textarea.setValue('Do not duplicate this capture')
     await textarea.trigger('keydown', { key: 'Enter' })
@@ -45,7 +71,7 @@ describe('PaperCaptureNib', () => {
   })
 
   it('exposes resetDraft so the parent can clear after success', async () => {
-    const wrapper = mount(PaperCaptureNib)
+    const wrapper = mountNib()
     const textarea = wrapper.find('textarea')
     await textarea.setValue('Clear only after success')
 
@@ -56,7 +82,7 @@ describe('PaperCaptureNib', () => {
   })
 
   it('does not emit on Enter when the input is empty / whitespace-only', async () => {
-    const wrapper = mount(PaperCaptureNib)
+    const wrapper = mountNib()
     const textarea = wrapper.find('textarea')
     await textarea.setValue('   ')
     await textarea.trigger('keydown', { key: 'Enter' })
@@ -64,7 +90,7 @@ describe('PaperCaptureNib', () => {
   })
 
   it('inserts a newline on Shift+Enter and does NOT submit', async () => {
-    const wrapper = mount(PaperCaptureNib)
+    const wrapper = mountNib()
     const textarea = wrapper.find('textarea')
     await textarea.setValue('first line')
     // Shift+Enter — the component must not preventDefault, and must not emit.
@@ -75,7 +101,7 @@ describe('PaperCaptureNib', () => {
   })
 
   it('does not submit while IME composition is active', async () => {
-    const wrapper = mount(PaperCaptureNib)
+    const wrapper = mountNib()
     const textarea = wrapper.find('textarea')
     await textarea.setValue('input in progress')
     const event = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, isComposing: true })
@@ -86,7 +112,7 @@ describe('PaperCaptureNib', () => {
   })
 
   it('renders the static ember placeholder while bleeding (TODO: ink bleed)', async () => {
-    const wrapper = mount(PaperCaptureNib, { props: { bleeding: true } })
+    const wrapper = mountNib({ props: { bleeding: true } })
     expect(wrapper.find('[data-testid="paper-nib-bleed"]').exists()).toBe(true)
     expect(wrapper.find('textarea').exists()).toBe(false)
   })
@@ -96,7 +122,7 @@ describe('PaperCaptureNib', () => {
     // jsdom doesn't apply scoped styles, so we instead verify the contract
     // at the data layer: the textarea round-trips arbitrarily long content
     // back through the submit event without truncation.
-    const wrapper = mount(PaperCaptureNib)
+    const wrapper = mountNib()
     const textarea = wrapper.find('textarea')
     const long = 'a '.repeat(120).trim() // ~240 chars
     await textarea.setValue(long)
@@ -104,5 +130,68 @@ describe('PaperCaptureNib', () => {
     const events = wrapper.emitted('submit')
     expect(events).toBeDefined()
     expect((events?.[0]?.[0] as string).length).toBe(long.length)
+  })
+
+  it('submits the trimmed text from the visible Capture button', async () => {
+    const wrapper = mountNib()
+    const textarea = wrapper.find('textarea')
+    const button = wrapper.get('button')
+
+    expect(button.attributes('disabled')).toBeDefined()
+    await textarea.setValue('  Capture from the button  ')
+    expect(button.attributes('disabled')).toBeUndefined()
+    await button.trigger('click')
+
+    expect(wrapper.emitted('submit')?.[0]).toEqual(['Capture from the button'])
+  })
+
+  it('keeps the Capture button disabled for an empty or submitting nib', async () => {
+    const wrapper = mountNib()
+    const textarea = wrapper.find('textarea')
+    const button = wrapper.get('button')
+
+    await textarea.setValue('   ')
+    expect(button.attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ submitting: true })
+    await textarea.setValue('A capture already in flight')
+    expect(button.attributes('disabled')).toBeDefined()
+    await button.trigger('click')
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
+  it('states that board-less captures land in Inbox without a board', () => {
+    const wrapper = mountNib()
+
+    expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
+      .toBe('This capture lands in Inbox without a board, for triage.')
+  })
+
+  it('states that a board-scoped capture lands in Inbox linked to that board', () => {
+    const wrapper = mountNib({
+      props: { activeBoardId: 'board-active', activeBoardName: 'Active board' },
+    })
+
+    expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
+      .toBe('This capture lands in Inbox, linked to Active board, for triage.')
+  })
+
+  it('uses a safe board label when a scoped route has no board name', () => {
+    const wrapper = mountNib({ props: { activeBoardId: 'board-active' } })
+
+    expect(wrapper.get('[data-testid="paper-nib-destination"]').text())
+      .toBe('This capture lands in Inbox, linked to the selected board, for triage.')
+  })
+
+  it('renders the variant shortcut for Win32 without a Mac modifier glyph', () => {
+    vi.stubGlobal('navigator', {
+      userAgentData: { platform: 'Win32' },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+    })
+
+    const wrapper = mountNib()
+    const eyebrow = wrapper.get('.paper-nib__eyebrow').text()
+
+    expect(eyebrow).toContain('Ctrl+;')
+    expect(eyebrow).not.toContain('\u2318')
   })
 })

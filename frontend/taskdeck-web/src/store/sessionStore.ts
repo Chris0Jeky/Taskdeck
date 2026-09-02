@@ -11,6 +11,7 @@ import * as tokenStorage from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
 import { proposalDisplayNames } from '../composables/useProposalDisplayNames'
 import { purgeLegacyApiCaches } from '../pwa/legacyApiCache'
+import { getErrorDetails } from '../composables/useErrorMapper'
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -23,6 +24,7 @@ export const useSessionStore = defineStore('session', () => {
   const expiresAt = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  let loginFailureToastId: string | null = null
 
   const isDemo = ref(false)
 
@@ -51,16 +53,23 @@ export const useSessionStore = defineStore('session', () => {
     })
   }
 
-  async function setSession(data: AuthResponse): Promise<boolean> {
+  /**
+   * Why a session was not established. The caller needs the distinction: an
+   * unusable token and a browser that could not clear the retired offline cache
+   * have different recoveries.
+   */
+  type SetSessionOutcome = 'established' | 'invalid-token' | 'cache-boundary'
+
+  async function setSession(data: AuthResponse): Promise<SetSessionOutcome> {
     if (!tokenStorage.isValidJwtStructure(data.token)) {
       logWarn('Received token with invalid JWT structure — session not persisted.')
-      return false
+      return 'invalid-token'
     }
 
     // A replacement token is usable only after the legacy cache namespace is
     // gone, including a refresh for the same user.
     if (!(await purgeLegacyApiCaches())) {
-      return false
+      return 'cache-boundary'
     }
 
     if (userId.value !== data.user.id) proposalDisplayNames.reset()
@@ -78,7 +87,7 @@ export const useSessionStore = defineStore('session', () => {
       email: data.user.email,
       defaultRole: data.user.defaultRole,
     })
-    return true
+    return 'established'
   }
 
   function clearSession() {
@@ -97,9 +106,26 @@ export const useSessionStore = defineStore('session', () => {
     void purgeLegacyApiCaches()
   }
 
+  // Raised before a credential is sent, and for a token this client cannot use at
+  // all: nothing has committed yet, or nothing about the browser will change, so
+  // retrying is the right advice.
+  const SESSION_NOT_ESTABLISHED = 'Unable to establish a session safely. Please retry.'
+  // Raised only when the server has already acted and the browser could not clear
+  // the retired offline cache. Retrying the same call would fail on a duplicate
+  // username or a consumed invite, so the recovery is a reload and a sign-in.
+  const CACHE_BOUNDARY_AFTER_COMMIT =
+    'Signed in on the server, but this browser could not clear a retired offline cache. Reload the page and sign in again.'
+  const CACHE_BOUNDARY_AFTER_REGISTER =
+    'Your account was created, but this browser could not clear a retired offline cache. Reload the page and sign in.'
+
+  function requireEstablished(outcome: SetSessionOutcome, afterCommitMessage: string): void {
+    if (outcome === 'established') return
+    throw new Error(outcome === 'cache-boundary' ? afterCommitMessage : SESSION_NOT_ESTABLISHED)
+  }
+
   async function requireLegacyApiCachePurge(): Promise<void> {
     if (!await purgeLegacyApiCaches()) {
-      throw new Error('Unable to establish a session safely. Please retry.')
+      throw new Error(SESSION_NOT_ESTABLISHED)
     }
   }
 
@@ -178,19 +204,35 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function clearLoginFailureReceipt() {
+    if (!loginFailureToastId) return
+    toast.remove(loginFailureToastId)
+    loginFailureToastId = null
+  }
+
+  function replaceLoginFailureReceipt(message: string, cause: unknown) {
+    clearLoginFailureReceipt()
+
+    const details = getErrorDetails(cause)
+    loginFailureToastId = details
+      ? toast.error(message, 0, { details })
+      : toast.error(message)
+  }
+
   async function login(credentials: LoginRequest) {
     try {
       loading.value = true
       error.value = null
       await requireLegacyApiCachePurge()
       const response = await authApi.login(credentials)
-      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
+      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_COMMIT)
+      clearLoginFailureReceipt()
       toast.success('Logged in successfully')
       return response
     } catch (e: unknown) {
       const msg = getErrorMessage(e, 'Login failed')
       error.value = msg
-      toast.error(msg)
+      replaceLoginFailureReceipt(msg, e)
       throw e
     } finally {
       loading.value = false
@@ -203,7 +245,7 @@ export const useSessionStore = defineStore('session', () => {
       error.value = null
       await requireLegacyApiCachePurge()
       const response = await authApi.register(request)
-      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
+      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_REGISTER)
       toast.success('Registration successful')
       return response
     } catch (e: unknown) {
@@ -238,7 +280,7 @@ export const useSessionStore = defineStore('session', () => {
       error.value = null
       await requireLegacyApiCachePurge()
       const response = await authApi.exchangeOAuthCode(code)
-      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
+      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_COMMIT)
       toast.success('Signed in with GitHub')
       return response
     } catch (e: unknown) {
@@ -257,7 +299,7 @@ export const useSessionStore = defineStore('session', () => {
       error.value = null
       await requireLegacyApiCachePurge()
       const response = await authApi.exchangeOidcCode(code)
-      if (!await setSession(response)) throw new Error('Unable to establish a session safely. Please retry.')
+      requireEstablished(await setSession(response), CACHE_BOUNDARY_AFTER_COMMIT)
       toast.success('Signed in successfully')
       return response
     } catch (e: unknown) {
@@ -277,9 +319,10 @@ export const useSessionStore = defineStore('session', () => {
    */
   async function refreshSession(): Promise<void> {
     const response = await authApi.refreshToken()
-    if (!await setSession(response)) {
-      throw new Error('Unable to refresh the session safely. Please retry.')
-    }
+    requireEstablished(
+      await setSession(response),
+      'Refreshed on the server, but this browser could not clear a retired offline cache. Reload the page and sign in again.',
+    )
   }
 
   function logout() {
