@@ -3042,6 +3042,38 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('renders the degraded warning when repeated poll failures leave Paper empty', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.find('[data-testid="paper-review-queue-stale"]')
+      expect(stale.exists()).toBe(true)
+      expect(stale.text()).toContain('may be out of date')
+
+      const root = wrapper.get('[data-testid="paper-review-view"]')
+      const queue = wrapper.get('[data-testid="paper-review-queue-rail"]')
+      const empty = wrapper.get('[data-testid="paper-review-empty"]')
+      const right = wrapper.get('.paper-review-deep__rail-empty')
+      expect(stale.element.parentElement).toBe(empty.element)
+      expect(Array.from(root.element.children)).toEqual([
+        queue.element,
+        empty.element,
+        right.element,
+      ])
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {
