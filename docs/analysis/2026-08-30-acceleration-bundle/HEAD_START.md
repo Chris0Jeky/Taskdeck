@@ -97,7 +97,43 @@ Not startable without a ruling: `#2240` (assignment substrate fork), `#2094` (de
 
 ## Issue comments posted (2026-09-02)
 
-COMMENT_RECEIPT_PLACEHOLDER
+One comment per open target issue, each linking its curated file (32 posted; none on the closed `#2255`, `#2238`,
+`#2239` or on `#2351`, which the bundle adds nothing to).
+
+| Issue | Comment |
+| --- | --- |
+| `#1131` | [issuecomment-5503772981](https://github.com/Chris0Jeky/Taskdeck/issues/1131#issuecomment-5503772981) |
+| `#1308` | [issuecomment-5503773270](https://github.com/Chris0Jeky/Taskdeck/issues/1308#issuecomment-5503773270) |
+| `#1309` | [issuecomment-5503773559](https://github.com/Chris0Jeky/Taskdeck/issues/1309#issuecomment-5503773559) |
+| `#1310` | [issuecomment-5503773831](https://github.com/Chris0Jeky/Taskdeck/issues/1310#issuecomment-5503773831) |
+| `#1429` | [issuecomment-5503774105](https://github.com/Chris0Jeky/Taskdeck/issues/1429#issuecomment-5503774105) |
+| `#1644` | [issuecomment-5503774400](https://github.com/Chris0Jeky/Taskdeck/issues/1644#issuecomment-5503774400) |
+| `#1772` | [issuecomment-5503774686](https://github.com/Chris0Jeky/Taskdeck/issues/1772#issuecomment-5503774686) |
+| `#2087` | [issuecomment-5503774968](https://github.com/Chris0Jeky/Taskdeck/issues/2087#issuecomment-5503774968) |
+| `#2089` | [issuecomment-5503775304](https://github.com/Chris0Jeky/Taskdeck/issues/2089#issuecomment-5503775304) |
+| `#2092` | [issuecomment-5503775616](https://github.com/Chris0Jeky/Taskdeck/issues/2092#issuecomment-5503775616) |
+| `#2093` | [issuecomment-5503775930](https://github.com/Chris0Jeky/Taskdeck/issues/2093#issuecomment-5503775930) |
+| `#2094` | [issuecomment-5503776193](https://github.com/Chris0Jeky/Taskdeck/issues/2094#issuecomment-5503776193) |
+| `#2185` | [issuecomment-5503776475](https://github.com/Chris0Jeky/Taskdeck/issues/2185#issuecomment-5503776475) |
+| `#2193` | [issuecomment-5503776742](https://github.com/Chris0Jeky/Taskdeck/issues/2193#issuecomment-5503776742) |
+| `#2235` | [issuecomment-5503777053](https://github.com/Chris0Jeky/Taskdeck/issues/2235#issuecomment-5503777053) |
+| `#2236` | [issuecomment-5503777363](https://github.com/Chris0Jeky/Taskdeck/issues/2236#issuecomment-5503777363) |
+| `#2237` | [issuecomment-5503777675](https://github.com/Chris0Jeky/Taskdeck/issues/2237#issuecomment-5503777675) |
+| `#2240` | [issuecomment-5503777970](https://github.com/Chris0Jeky/Taskdeck/issues/2240#issuecomment-5503777970) |
+| `#2241` | [issuecomment-5503778289](https://github.com/Chris0Jeky/Taskdeck/issues/2241#issuecomment-5503778289) |
+| `#2242` | [issuecomment-5503778586](https://github.com/Chris0Jeky/Taskdeck/issues/2242#issuecomment-5503778586) |
+| `#2243` | [issuecomment-5503778931](https://github.com/Chris0Jeky/Taskdeck/issues/2243#issuecomment-5503778931) |
+| `#2256` | [issuecomment-5503779257](https://github.com/Chris0Jeky/Taskdeck/issues/2256#issuecomment-5503779257) |
+| `#2257` | [issuecomment-5503779565](https://github.com/Chris0Jeky/Taskdeck/issues/2257#issuecomment-5503779565) |
+| `#2258` | [issuecomment-5503779888](https://github.com/Chris0Jeky/Taskdeck/issues/2258#issuecomment-5503779888) |
+| `#2259` | [issuecomment-5503780167](https://github.com/Chris0Jeky/Taskdeck/issues/2259#issuecomment-5503780167) |
+| `#2260` | [issuecomment-5503780498](https://github.com/Chris0Jeky/Taskdeck/issues/2260#issuecomment-5503780498) |
+| `#2261` | [issuecomment-5503780805](https://github.com/Chris0Jeky/Taskdeck/issues/2261#issuecomment-5503780805) |
+| `#2276` | [issuecomment-5503781109](https://github.com/Chris0Jeky/Taskdeck/issues/2276#issuecomment-5503781109) |
+| `#2330` | [issuecomment-5503781428](https://github.com/Chris0Jeky/Taskdeck/issues/2330#issuecomment-5503781428) |
+| `#2334` | [issuecomment-5503781731](https://github.com/Chris0Jeky/Taskdeck/issues/2334#issuecomment-5503781731) |
+| `#2336` | [issuecomment-5503782034](https://github.com/Chris0Jeky/Taskdeck/issues/2336#issuecomment-5503782034) |
+| `#2339` | [issuecomment-5503782331](https://github.com/Chris0Jeky/Taskdeck/issues/2339#issuecomment-5503782331) |
 
 ## Candidate-code admission contract
 
