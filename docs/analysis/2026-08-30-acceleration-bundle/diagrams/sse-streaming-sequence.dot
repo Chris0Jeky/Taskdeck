@@ -1,0 +1,23 @@
+digraph SSEStreaming {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.7, fontname="Arial", label="True OpenAI-compatible SSE path", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  client [label="Browser/client"];
+  controller [label="ChatController SSE"];
+  application [label="Application stream contract"];
+  provider [label="OpenAI-compatible provider\nstream:true + headers-first"];
+  parser [label="Incremental SseEventParser"];
+  decoder [label="OpenAI delta decoder"];
+  endpoint [label="Compatible endpoint"];
+  fallback [shape=note, label="Known unsupported response before deltas:\none complete retry + explicit fallback metadata"];
+
+  client -> controller [label="chat request"];
+  controller -> application -> provider -> endpoint [label="HTTP"];
+  endpoint -> parser [label="byte chunks", dir=back];
+  parser -> decoder [label="events"];
+  decoder -> provider [label="deltas/finish/usage"];
+  provider -> application -> controller -> client [label="flush real deltas"];
+  endpoint -> fallback [style=dashed, label="rejects stream/response_format"];
+  fallback -> provider [style=dashed];
+}

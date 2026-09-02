@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "name": "numeric-enum",
+      "mutation": {
+        "capability": 1
+      },
+      "expect_error": "protocol_enum_invalid"
+    },
+    {
+      "name": "null-output-member",
+      "mutation": {
+        "outputs": [
+          null
+        ]
+      },
+      "expect_error": "protocol_output_null"
+    },
+    {
+      "name": "arbitrary-path",
+      "mutation": {
+        "inputs": [
+          {
+            "type": "path",
+            "path": "C:\\Users\\user\\secret"
+          }
+        ]
+      },
+      "expect_error": "protocol_input_type_invalid"
+    },
+    {
+      "name": "oversized-frame",
+      "mutation": {
+        "frame_bytes": 999999999
+      },
+      "expect_error": "protocol_frame_too_large"
+    },
+    {
+      "name": "wrong-session-proof",
+      "mutation": {
+        "proof": "invalid"
+      },
+      "expect_error": "processor_session_proof_invalid"
+    }
+  ]
+}

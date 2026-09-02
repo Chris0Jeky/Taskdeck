@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "run_id": "sample-1001",
+  "repository": "Chris0Jeky/Taskdeck",
+  "workflow": "Smart CI Gate",
+  "attempt": 1,
+  "event": "pull_request",
+  "base_sha": "0000000000000000000000000000000000000000",
+  "head_sha": "1111111111111111111111111111111111111111",
+  "created_at_utc": "2026-08-30T18:00:00Z",
+  "policy": {
+    "version": "1.0.0",
+    "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "risk": {
+    "class": "R2",
+    "trust": "untrusted",
+    "reasons": [
+      "backend-and-security-boundary"
+    ]
+  },
+  "selected": [
+    {
+      "lane": "auth-security",
+      "reason": "authorization boundary changed"
+    }
+  ],
+  "skipped": [
+    {
+      "lane": "frontend-visual",
+      "reason": "no frontend files changed"
+    }
+  ],
+  "jobs": [
+    {
+      "name": "auth-security-ubuntu",
+      "lane": "auth-security",
+      "runner_class": "ubuntu-latest",
+      "hosted": true,
+      "result": "success",
+      "queue_seconds": 4.2,
+      "setup_seconds": 32.0,
+      "test_seconds": 112.0,
+      "total_seconds": 148.2,
+      "billable_minutes": 3.0,
+      "tests_run": 48,
+      "tests_failed": 0,
+      "tests_skipped": 0,
+      "rerun": false,
+      "original_result": null,
+      "cache_hit": true,
+      "artifact_bytes": 1024
+    },
+    {
+      "name": "auth-security-windows",
+      "lane": "auth-security",
+      "runner_class": "windows-latest",
+      "hosted": true,
+      "result": "success",
+      "queue_seconds": 12.0,
+      "setup_seconds": 55.0,
+      "test_seconds": 205.0,
+      "total_seconds": 272.0,
+      "billable_minutes": 5.0,
+      "tests_run": 48,
+      "tests_failed": 0,
+      "tests_skipped": 0,
+      "rerun": false,
+      "original_result": null,
+      "cache_hit": false,
+      "artifact_bytes": 2048
+    }
+  ],
+  "summary": {
+    "critical_path_seconds": 272.0,
+    "aggregate_runner_seconds": 420.2,
+    "hosted_minutes": 8.0,
+    "hosted_cost_estimate": 0.64,
+    "cost_currency": "USD",
+    "rate_table_version": "sample-2026-08",
+    "self_hosted_wall_seconds": 0,
+    "flake_detected": false,
+    "duplicate_qualification_detected": false,
+    "budget_warnings": []
+  }
+}

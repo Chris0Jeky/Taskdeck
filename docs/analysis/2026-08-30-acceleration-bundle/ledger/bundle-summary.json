@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "repository": "Chris0Jeky/Taskdeck",
+  "snapshot_date": "2026-08-30",
+  "snapshot_commit": "221aa88c80f5b2c3265ac794edc2ade0edd70c72",
+  "milestone_5_issues": 24,
+  "milestone_5_tasks": 106,
+  "milestone_4_audited_issues": 10,
+  "milestone_4_residual_tasks": 10,
+  "ready_tasks": 9,
+  "design_ready_tasks": 15,
+  "dot_diagrams": 10,
+  "implementation_candidate_files": 35,
+  "rendered_diagram_files": 20,
+  "total_task_contracts": 116
+}

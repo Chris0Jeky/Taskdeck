@@ -1,0 +1,396 @@
+{
+  "schema_version": 1,
+  "nodes": [
+    {
+      "issue": 1308,
+      "title": "REVIVAL-12: Beta feedback + telemetry posture",
+      "stream": "hosted-beta",
+      "classification": "partially-ready"
+    },
+    {
+      "issue": 1310,
+      "title": "REVIVAL-14: Open-beta launch kit",
+      "stream": "hosted-beta",
+      "classification": "design-ready"
+    },
+    {
+      "issue": 1429,
+      "title": "Memory-capped extraction worker process",
+      "stream": "worker-containment",
+      "classification": "contract-ready"
+    },
+    {
+      "issue": 2087,
+      "title": "[Work model] Minimal item types and optional parent hierarchy",
+      "stream": "work-model",
+      "classification": "ready-after-contract-freeze"
+    },
+    {
+      "issue": 2089,
+      "title": "[Capture] Linked targets, disposition ledger and advanced lifecycle",
+      "stream": "context-fabric",
+      "classification": "design-ready-blocked"
+    },
+    {
+      "issue": 2092,
+      "title": "[Work model] Minimal typed work-item links",
+      "stream": "work-model",
+      "classification": "ready-after-contract-freeze"
+    },
+    {
+      "issue": 2093,
+      "title": "[Work model] Participants, multiple assignments, estimates and roll-ups",
+      "stream": "work-model",
+      "classification": "blocked-by-m4-slice"
+    },
+    {
+      "issue": 2094,
+      "title": "[Work model] Minimal typed custom-field foundation",
+      "stream": "work-model",
+      "classification": "ready-after-contract-freeze"
+    },
+    {
+      "issue": 2236,
+      "title": "[Tech debt] v0.4 refactoring pass",
+      "stream": "quality-performance",
+      "classification": "measurement-ready"
+    },
+    {
+      "issue": 2237,
+      "title": "[Performance] v0.4 benchmark and ranked improvements",
+      "stream": "quality-performance",
+      "classification": "harness-ready-baseline-blocked"
+    },
+    {
+      "issue": 2241,
+      "title": "[LLM] True SSE streaming for OpenAI-compatible endpoints",
+      "stream": "llm-runtime",
+      "classification": "implementation-ready"
+    },
+    {
+      "issue": 2243,
+      "title": "[Epic] Hosted open beta",
+      "stream": "hosted-beta",
+      "classification": "gated-epic"
+    },
+    {
+      "issue": 2255,
+      "title": "CF-01: Durable Capture aggregate",
+      "stream": "context-fabric",
+      "classification": "implementation-ready-critical-path"
+    },
+    {
+      "issue": 2256,
+      "title": "CF-02: Split capture dimensions",
+      "stream": "context-fabric",
+      "classification": "ready-after-cf01-contract"
+    },
+    {
+      "issue": 2257,
+      "title": "CF-03: ProcessingJob and ProcessingRun",
+      "stream": "context-fabric",
+      "classification": "ready-after-cf01"
+    },
+    {
+      "issue": 2258,
+      "title": "CF-04: Worker Protocol v1-alpha and processor hosts",
+      "stream": "worker-containment",
+      "classification": "split-required-after-cf03"
+    },
+    {
+      "issue": 2259,
+      "title": "CF-05: Transcript triage through semantic.extract",
+      "stream": "context-fabric",
+      "classification": "blocked-by-cf03-cf06"
+    },
+    {
+      "issue": 2260,
+      "title": "CF-06: Representation façade and headers",
+      "stream": "context-fabric",
+      "classification": "ready-after-cf01-cf03"
+    },
+    {
+      "issue": 2261,
+      "title": "CF-07: Typed EvidenceAnchor",
+      "stream": "context-fabric",
+      "classification": "ready-after-cf06"
+    },
+    {
+      "issue": 2276,
+      "title": "CF-23: IBlobStore and SQLite reference semantics",
+      "stream": "context-fabric",
+      "classification": "ready-after-cf01"
+    },
+    {
+      "issue": 2330,
+      "title": "CI-06: API behavioural shards and Windows process overhead",
+      "stream": "smart-ci",
+      "classification": "design-ready-blocked"
+    },
+    {
+      "issue": 2334,
+      "title": "CI-10: Nightly coordinator and clean-tag release qualification",
+      "stream": "smart-ci",
+      "classification": "design-ready-blocked"
+    },
+    {
+      "issue": 2336,
+      "title": "CI-12: CI receipts and weekly cost/flake report",
+      "stream": "smart-ci",
+      "classification": "design-ready-blocked"
+    },
+    {
+      "issue": 2339,
+      "title": "CI-15: Fail-visible flakes and expiring quarantine",
+      "stream": "smart-ci",
+      "classification": "design-ready-blocked"
+    }
+  ],
+  "edges": [
+    {
+      "from": 1308,
+      "to": 1310,
+      "kind": "unblocks"
+    },
+    {
+      "from": 1308,
+      "to": 2243,
+      "kind": "unblocks"
+    },
+    {
+      "from": 1308,
+      "to": 1310,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2243,
+      "to": 1310,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2257,
+      "to": 1429,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2258,
+      "to": 1429,
+      "kind": "depends-on"
+    },
+    {
+      "from": 1429,
+      "to": 2258,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2087,
+      "to": 2092,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2087,
+      "to": 2093,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2255,
+      "to": 2089,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2261,
+      "to": 2089,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2087,
+      "to": 2089,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2087,
+      "to": 2092,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2240,
+      "to": 2093,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2087,
+      "to": 2093,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2087,
+      "to": 2094,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2094,
+      "to": 2243,
+      "kind": "unblocks"
+    },
+    {
+      "from": 1772,
+      "to": 2243,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2238,
+      "to": 2243,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2239,
+      "to": 2243,
+      "kind": "depends-on"
+    },
+    {
+      "from": 1308,
+      "to": 2243,
+      "kind": "depends-on"
+    },
+    {
+      "from": 1310,
+      "to": 2243,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2255,
+      "to": 2256,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2255,
+      "to": 2257,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2255,
+      "to": 2260,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2255,
+      "to": 2276,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2255,
+      "to": 2256,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2256,
+      "to": 2259,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2255,
+      "to": 2257,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2257,
+      "to": 2258,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2257,
+      "to": 2259,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2257,
+      "to": 2260,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2257,
+      "to": 2258,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2258,
+      "to": 1429,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2257,
+      "to": 2259,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2260,
+      "to": 2259,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2255,
+      "to": 2260,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2257,
+      "to": 2260,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2260,
+      "to": 2259,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2260,
+      "to": 2261,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2260,
+      "to": 2261,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2261,
+      "to": 2089,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2255,
+      "to": 2276,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2276,
+      "to": 2243,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2324,
+      "to": 2330,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2324,
+      "to": 2334,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2324,
+      "to": 2336,
+      "kind": "depends-on"
+    },
+    {
+      "from": 2336,
+      "to": 2339,
+      "kind": "unblocks"
+    },
+    {
+      "from": 2336,
+      "to": 2339,
+      "kind": "depends-on"
+    }
+  ]
+}

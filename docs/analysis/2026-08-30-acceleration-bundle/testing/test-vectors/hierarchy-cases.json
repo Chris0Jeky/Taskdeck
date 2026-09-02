@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "maximum_depth": 3,
+  "cases": [
+    {
+      "name": "root-to-null",
+      "expect": "valid"
+    },
+    {
+      "name": "self-parent",
+      "expect_error": "work_parent_self"
+    },
+    {
+      "name": "cross-board",
+      "expect_error": "work_parent_scope_mismatch"
+    },
+    {
+      "name": "archived-parent",
+      "expect_error": "work_parent_archived"
+    },
+    {
+      "name": "two-node-cycle",
+      "expect_error": "work_parent_cycle"
+    },
+    {
+      "name": "deep-cycle-corrupt-existing",
+      "expect_error": "work_hierarchy_corrupt_cycle"
+    },
+    {
+      "name": "depth-three",
+      "expect": "valid"
+    },
+    {
+      "name": "depth-four",
+      "expect_error": "work_parent_depth_exceeded"
+    },
+    {
+      "name": "move-subtree-exceeds-depth",
+      "expect_error": "work_parent_depth_exceeded"
+    },
+    {
+      "name": "concurrent-reparent-stale-version",
+      "expect_error": "concurrency_conflict"
+    }
+  ]
+}

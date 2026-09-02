@@ -1,0 +1,26 @@
+digraph WorkerContainment {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.7, fontname="Arial", label="One supervised processor boundary", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  runner [label="CF-03 capability runner\nlease/deadline/cost/idempotency"];
+  registry [label="Processor registry\nmanifest + health + capability"];
+  host [label="IProcessorHost"];
+  inproc [label="In-process host"];
+  supervisor [label="Sidecar supervisor\nsession proof + framing + spool"];
+  remote [label="Remote host\nfuture/explicit auth"];
+  os [shape=component, label="OS boundary\nWindows Job Object / Linux cgroup\nmemory + pids + process-tree kill"];
+  processor [label="PdfPig / mock / WhisperX\nno domain mutation tools"];
+  validator [label="Conformance + output validator\nsize/schema/provenance"];
+  commit [label="Transactional run +\nrepresentation commit"];
+
+  runner -> registry -> host;
+  host -> inproc;
+  host -> supervisor;
+  host -> remote [style=dashed];
+  supervisor -> os -> processor;
+  inproc -> processor;
+  remote -> processor [style=dashed];
+  processor -> validator -> commit;
+  commit -> runner [label="terminal result", style=dashed];
+}
