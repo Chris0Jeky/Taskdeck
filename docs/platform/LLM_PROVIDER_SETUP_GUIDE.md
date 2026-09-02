@@ -1,6 +1,6 @@
 # LLM Provider Runtime and Demo Setup Guide
 
-Last Updated: 2026-08-24
+Last Updated: 2026-09-02
 Scope: Provider runtime setup for chat/capture automation and safe local demo operation.
 
 ## Purpose
@@ -136,9 +136,64 @@ Set:
 
 Optional:
 
-- `Llm__OpenAi__Model=<model_name>`
+- `Llm__OpenAi__Model=<model_name>` (the shipped default is `gpt-5.6-luna`)
 - `Llm__OpenAi__BaseUrl=https://api.openai.com/v1`
 - `Llm__OpenAi__TimeoutSeconds=30`
+
+## Windows Local Settings, Model Selection, and Verification
+
+Taskdeck reads the effective configuration of the process it starts. In
+particular, a Windows **user** environment variable becomes part of a newly
+started desktop/API process and overrides the checked-in and packaged
+`appsettings*.json` defaults. This is useful for a deliberate per-user model
+choice, but it can also leave an old model pin in effect after an upgrade.
+
+The supported hosted-provider route is OpenAI, and the shipped OpenAI model
+default is `gpt-5.6-luna`. The smallest persistent Windows setup is:
+
+```powershell
+[Environment]::SetEnvironmentVariable('Llm__Provider', 'OpenAI', 'User')
+[Environment]::SetEnvironmentVariable('Llm__EnableLiveProviders', 'true', 'User')
+[Environment]::SetEnvironmentVariable('Llm__AllowLiveProvidersInDevelopment', 'true', 'User')
+[Environment]::SetEnvironmentVariable('Llm__OpenAi__Model', 'gpt-5.6-luna', 'User')
+```
+
+Set `Llm__OpenAi__ApiKey` separately through your normal secret-management
+route; never paste a key into source-controlled JSON, an issue, a terminal
+transcript, or a screenshot. The model name is non-secret, so it is safe to
+inspect without exposing the key:
+
+```powershell
+[Environment]::GetEnvironmentVariable('Llm__OpenAi__Model', 'User')
+[Environment]::GetEnvironmentVariable('Llm__Provider', 'User')
+[Environment]::GetEnvironmentVariable('Llm__EnableLiveProviders', 'User')
+[Environment]::GetEnvironmentVariable('Llm__AllowLiveProvidersInDevelopment', 'User')
+```
+
+To stop overriding the shipped model altogether, remove only the model pin:
+
+```powershell
+[Environment]::SetEnvironmentVariable('Llm__OpenAi__Model', $null, 'User')
+```
+
+Either change affects **new processes only**. Fully quit and relaunch the
+Taskdeck desktop app or API after changing user environment variables; an
+already-running instance retains the environment it inherited at launch.
+Then open **Automation Chat**, choose **Refresh LLM Status**, and confirm the
+status identifies `OpenAI | gpt-5.6-luna`. Use **Verify LLM** only when you
+intend to make a small live provider call; it verifies reachability and
+consumes provider tokens.
+
+For troubleshooting, first compare the active model shown in Automation Chat
+with the non-secret user value above. If they differ after a full relaunch,
+look for a process-level launch override, command-line setting, or
+`appsettings.local.json`; higher-precedence settings can intentionally replace
+the default. Retired `Llm__Gemini__*` variables are not a supported provider
+configuration. Packaged v0.3.0-rc.1 ignores inherited retired values with a
+warning, but cleaning them up later is sensible once no other local tool uses
+them. See [the configuration reference](CONFIGURATION_REFERENCE.md#environment-variable-overrides)
+for the key-to-environment-variable mapping and [ADR-0055](../decisions/ADR-0055-openai-only-live-provider-surface.md)
+for the supported-provider policy.
 
 ## Demo Setup (Ollama)
 
