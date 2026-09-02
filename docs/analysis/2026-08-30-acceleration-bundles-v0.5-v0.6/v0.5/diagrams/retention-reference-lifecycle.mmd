@@ -1,0 +1,8 @@
+stateDiagram-v2
+  [*] --> Referenced
+  Referenced --> Eligible: age policy met
+  Eligible --> Retained: pinned / accepted evidence / active reference
+  Eligible --> Planned: dry-run sweep
+  Planned --> Released: owner-scoped reference release
+  Released --> Deleted: last reference removed transactionally
+  Released --> Referenced: object still has references

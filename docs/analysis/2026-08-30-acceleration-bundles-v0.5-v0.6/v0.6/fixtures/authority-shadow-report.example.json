@@ -1,0 +1,36 @@
+{
+  "authorizationRecommendation": "human-decision-required",
+  "boundaryViolationCount": 0,
+  "compensationSimulationSuccess": 2,
+  "correctNoAction": {
+    "denominator": 0,
+    "numerator": 0,
+    "unknown": 2
+  },
+  "eligibleCount": 1,
+  "falseActionAdjudication": {
+    "denominator": 2,
+    "numerator": 1,
+    "unknown": 0
+  },
+  "killSwitchFailureCount": 0,
+  "methodDate": "2026-08-30",
+  "permissionAccuracy": {
+    "denominator": 2,
+    "numerator": 2,
+    "unknown": 0
+  },
+  "sampleSize": 2,
+  "schemaVersion": 1,
+  "targetAccuracy": {
+    "denominator": 2,
+    "numerator": 1,
+    "unknown": 0
+  },
+  "unchangedAcceptance": {
+    "denominator": 2,
+    "numerator": 1,
+    "unknown": 0
+  },
+  "wouldAllowCount": 1
+}

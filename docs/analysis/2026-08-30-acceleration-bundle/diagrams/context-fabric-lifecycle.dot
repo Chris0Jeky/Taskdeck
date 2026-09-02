@@ -1,0 +1,30 @@
+digraph ContextFabric {
+  graph [rankdir=LR, bgcolor="white", pad=0.25, nodesep=0.45, ranksep=0.7, fontname="Arial", label="Context Fabric lifecycle and truth boundaries", labelloc=t, fontsize=18];
+  node [shape=box, style="rounded,filled", fillcolor="white", color="#555555", fontname="Arial", fontsize=10];
+  edge [color="#666666", arrowsize=0.7, fontname="Arial", fontsize=9];
+
+  intake [shape=oval, label="CaptureIntakeService\n(single writer)"];
+  capture [label="Capture\nDisposition | ProcessingSummary | ActionState"];
+  asset [label="Immutable SourceAsset\ninline | blob ref | external | legacy"];
+  job [label="ProcessingJob\ncapability + typed inputs + lease"];
+  run [label="ProcessingRun\nimmutable processor receipt"];
+  rep [label="Representation\nimmutable lineage header + typed payload"];
+  anchor [label="EvidenceAnchor\ntext | time | page | image | JSON | whole"];
+  proposal [label="Proposal / linked work\nreview-first change"];
+
+  intake -> capture [label="creates"];
+  intake -> asset [label="creates 1..32"];
+  capture -> asset [label="owns"];
+  asset -> job [label="input"];
+  rep -> job [label="input", style=dashed];
+  job -> run [label="attempt/run"];
+  run -> rep [label="produces"];
+  rep -> rep [label="derived/supersedes", style=dashed];
+  rep -> anchor [label="located by"];
+  anchor -> proposal [label="justifies"];
+  run -> capture [label="rewrites processing projection", style=dashed];
+
+  failure [shape=note, label="Processor failure\nnever makes Capture unreadable"];
+  job -> failure [style=dotted];
+  failure -> capture [style=dotted, label="capture retained"];
+}

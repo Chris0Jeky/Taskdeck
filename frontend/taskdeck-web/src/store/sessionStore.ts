@@ -10,6 +10,7 @@ import { isDemoMode, isDemoSessionActive, activateDemoSession, clearDemoSession,
 import * as tokenStorage from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
 import { proposalDisplayNames } from '../composables/useProposalDisplayNames'
+import { getErrorDetails } from '../composables/useErrorMapper'
 
 export const useSessionStore = defineStore('session', () => {
   const toast = useToastStore()
@@ -22,6 +23,7 @@ export const useSessionStore = defineStore('session', () => {
   const expiresAt = ref<string | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+  let loginFailureToastId: string | null = null
 
   const isDemo = ref(false)
 
@@ -156,18 +158,34 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
+  function clearLoginFailureReceipt() {
+    if (!loginFailureToastId) return
+    toast.remove(loginFailureToastId)
+    loginFailureToastId = null
+  }
+
+  function replaceLoginFailureReceipt(message: string, cause: unknown) {
+    clearLoginFailureReceipt()
+
+    const details = getErrorDetails(cause)
+    loginFailureToastId = details
+      ? toast.error(message, 0, { details })
+      : toast.error(message)
+  }
+
   async function login(credentials: LoginRequest) {
     try {
       loading.value = true
       error.value = null
       const response = await authApi.login(credentials)
       setSession(response)
+      clearLoginFailureReceipt()
       toast.success('Logged in successfully')
       return response
     } catch (e: unknown) {
       const msg = getErrorMessage(e, 'Login failed')
       error.value = msg
-      toast.error(msg)
+      replaceLoginFailureReceipt(msg, e)
       throw e
     } finally {
       loading.value = false

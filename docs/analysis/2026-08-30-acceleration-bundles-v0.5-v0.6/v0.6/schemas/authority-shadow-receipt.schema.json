@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "taskdeck.authority-shadow-receipt.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "policyId",
+    "policyVersion",
+    "proposalId",
+    "proposalRevisionId",
+    "evaluatedAt",
+    "result",
+    "reasonCodes",
+    "executionPerformed"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "policyId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "policyVersion": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "proposalId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "proposalRevisionId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "result": {
+      "enum": [
+        "ineligible",
+        "would-allow",
+        "would-deny"
+      ]
+    },
+    "reasonCodes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "executionPerformed": {
+      "const": false
+    }
+  }
+}

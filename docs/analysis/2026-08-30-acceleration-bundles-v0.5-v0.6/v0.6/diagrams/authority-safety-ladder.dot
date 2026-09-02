@@ -1,0 +1,15 @@
+
+digraph G {
+  rankdir=TB;
+  graph [fontname="Arial", labelloc="t", label="Authority safety ladder"];
+  node [shape=box, fontname="Arial"];
+  Contract [label="1. Records and validators"];
+  Shadow [label="2. Shadow evaluation\nzero writes"];
+  Report [label="3. Risk-based evidence report"];
+  Compensation [label="4. Compensation + kill-switch proof"];
+  Go [label="5. Explicit maintainer authorization", shape=diamond];
+  Canary [label="6. Stable canary"];
+  Expand [label="7. Separate expansion decision"];
+
+  Contract -> Shadow -> Report -> Compensation -> Go -> Canary -> Expand;
+}

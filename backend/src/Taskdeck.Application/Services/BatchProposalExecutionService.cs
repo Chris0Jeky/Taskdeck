@@ -8,6 +8,8 @@ namespace Taskdeck.Application.Services;
 /// <inheritdoc cref="IBatchProposalExecutionService"/>
 public sealed class BatchProposalExecutionService : IBatchProposalExecutionService
 {
+    private const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+
     private readonly IProposalExecutionAuthorizationSnapshotReader _snapshotReader;
     private readonly IAutomationExecutorService _executorService;
     private readonly IAuthorizationService _authorizationService;
@@ -61,7 +63,10 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 continue;
             }
 
-            var proposal = await _snapshotReader.FindAsync(selection.ProposalId, cancellationToken);
+            var proposal = await _snapshotReader.FindAsync(
+                selection.ProposalId,
+                callerUserId,
+                cancellationToken);
             if (proposal is not null)
                 proposals[selection.ProposalId] = proposal;
             else
@@ -93,7 +98,9 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
                 // would report a definite Forbidden the server never established.
                 return Result.Failure<BatchExecuteProposalsResultDto>(
                     writableResult.ErrorCode,
-                    writableResult.ErrorMessage);
+                    SanitizeUnexpectedErrorMessage(
+                        writableResult.ErrorCode,
+                        writableResult.ErrorMessage));
             }
 
             writableBoardIds = writableResult.Value;
@@ -109,7 +116,9 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             {
                 return Result.Failure<BatchExecuteProposalsResultDto>(
                     readableResult.ErrorCode,
-                    readableResult.ErrorMessage);
+                    SanitizeUnexpectedErrorMessage(
+                        readableResult.ErrorCode,
+                        readableResult.ErrorMessage));
             }
 
             readableBoardIds = readableResult.Value;
@@ -160,13 +169,12 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
         // Which failure row depends on what the caller may already SEE, because a batch is an
         // efficient oracle otherwise: 500 guessed ids in one request would separate "exists but is
         // not yours" from "does not exist" in a single round trip, enumerating other people's
-        // proposals. So an item on a board the caller cannot even read is reported exactly as a
-        // missing one - same code, same message, and neither reaches the executor. Response TIMING
-        // was not measured: the two paths do differ in work done (a resolved proposal has been read
-        // from the store, an unknown id has not), so a timing side channel is not ruled out here.
-        // Forbidden is reserved for a board the caller CAN read: they already
-        // know that proposal exists, so naming the real reason discloses nothing and telling them
-        // "not found" about a row on a board in front of them would be a lie.
+        // proposals. The snapshot reader filters unreadable proposals in the same database command
+        // used for a missing id. The NotFound branch here remains a defence for access revoked
+        // between that read and the batched ACL checks. Forbidden is reserved for a board the
+        // caller CAN read: they already know that proposal exists, so naming the real reason
+        // discloses nothing and telling them "not found" about a row on a board in front of them
+        // would be a lie.
         if (proposal.BoardId is Guid boardId)
         {
             if (!writableBoardIds.Contains(boardId))
@@ -209,12 +217,15 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
             cancellationToken);
         if (!receipt.IsSuccess)
         {
+            var errorMessage = SanitizeUnexpectedErrorMessage(
+                receipt.ErrorCode,
+                receipt.ErrorMessage);
             _logger?.LogWarning(
                 "Batch execute item failed for proposal {ProposalId}: {ErrorCode} {ErrorMessage}",
                 selection.ProposalId,
                 receipt.ErrorCode,
-                receipt.ErrorMessage);
-            return Failed(selection.ProposalId, receipt.ErrorCode, receipt.ErrorMessage);
+                errorMessage);
+            return Failed(selection.ProposalId, receipt.ErrorCode, errorMessage);
         }
 
         return receipt.Value.AlreadyApplied
@@ -233,7 +244,17 @@ public sealed class BatchProposalExecutionService : IBatchProposalExecutionServi
     }
 
     private static BatchExecuteProposalResultDto Failed(Guid proposalId, string errorCode, string errorMessage) =>
-        new(proposalId, BatchExecuteOutcome.Failed, errorCode, errorMessage, AppliedOperations: null);
+        new(
+            proposalId,
+            BatchExecuteOutcome.Failed,
+            errorCode,
+            SanitizeUnexpectedErrorMessage(errorCode, errorMessage),
+            AppliedOperations: null);
+
+    private static string SanitizeUnexpectedErrorMessage(string errorCode, string errorMessage) =>
+        errorCode == ErrorCodes.UnexpectedError
+            ? GenericUnexpectedErrorMessage
+            : errorMessage;
 
     /// <summary>
     /// The single not-found shape, used for a proposal that does not exist AND for one the caller

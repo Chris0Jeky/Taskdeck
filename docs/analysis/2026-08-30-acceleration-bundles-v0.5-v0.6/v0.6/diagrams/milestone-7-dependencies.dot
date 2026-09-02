@@ -1,0 +1,44 @@
+
+digraph G {
+  rankdir=LR;
+  graph [fontname="Arial", labelloc="t", label="Taskdeck v0.6 dependency graph"];
+  node [shape=box, fontname="Arial"];
+  edge [fontname="Arial"];
+
+  subgraph cluster_v04 {
+    label="v0.4 foundations";
+    CF03 [label="CF-03\nJobs / runs"];
+    CF04 [label="CF-04\nHost / registry"];
+    CF06 [label="CF-06\nRepresentations"];
+    CF07 [label="CF-07\nEvidence anchors"];
+  }
+  subgraph cluster_v05 {
+    label="v0.5 payoff";
+    CF08 [label="CF-08\nCandidates"];
+    CF09 [label="CF-09\nContext bindings"];
+    CF12 [label="CF-12\nAudio source"];
+    CF14 [label="CF-14\nWhisperX"];
+    CF21 [label="CF-21\nReview profiles"];
+    CF24A [label="CF-24A\nCorpus"];
+    GEN03 [label="GEN-03\nimage.describe"];
+    P2093 [label="#2093\nParticipants"];
+  }
+  subgraph cluster_v06 {
+    label="v0.6 — Under Your Rules";
+    CF10 [label="CF-10\nProfiles / router / receipts"];
+    CF11 [label="CF-11\nCache / escalation"];
+    CF15 [label="CF-15\nCloud speech"];
+    CF17 [label="CF-17\nMeeting understanding"];
+    CF18 [label="CF-18\nLocal OCR"];
+    CF24B [label="CF-24B\nRuntime metrics"];
+    CF22 [label="CF-22\nAuthority shadow"];
+  }
+
+  CF03 -> CF10; CF04 -> CF10;
+  CF03 -> CF11; CF06 -> CF11; CF10 -> CF11;
+  CF04 -> CF15; CF10 -> CF15; CF12 -> CF15; CF24A -> CF15;
+  CF08 -> CF17; CF09 -> CF17; CF14 -> CF17; CF21 -> CF17; P2093 -> CF17;
+  CF04 -> CF18; CF06 -> CF18; CF07 -> CF18; CF10 -> CF18; GEN03 -> CF18; CF24A -> CF18;
+  CF03 -> CF24B; CF08 -> CF24B; CF21 -> CF24B; CF24A -> CF24B;
+  CF08 -> CF22; CF09 -> CF22; CF21 -> CF22; CF24B -> CF22;
+}

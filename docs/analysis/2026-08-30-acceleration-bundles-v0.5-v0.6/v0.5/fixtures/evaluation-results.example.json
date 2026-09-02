@@ -1,0 +1,15 @@
+[
+  {
+    "fixtureId": "fixture-action-001",
+    "candidateKeys": [
+      "task:prepare-demo"
+    ]
+  },
+  {
+    "fixtureId": "fixture-decision-001",
+    "candidateKeys": [
+      "decision:retain-local-processing",
+      "task:document-choice"
+    ]
+  }
+]

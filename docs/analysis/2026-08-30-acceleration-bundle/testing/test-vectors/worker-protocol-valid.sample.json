@@ -1,0 +1,21 @@
+{
+  "jsonrpc": "2.0",
+  "id": "job-1",
+  "method": "processor.run",
+  "params": {
+    "protocolVersion": "v1-alpha",
+    "capability": "document.extract",
+    "inputs": [
+      {
+        "type": "source-asset",
+        "id": "00000000-0000-0000-0000-000000000001",
+        "mediaType": "application/pdf"
+      }
+    ],
+    "options": {
+      "extractText": true
+    },
+    "deadlineUtc": "2026-08-30T18:05:00Z",
+    "maximumOutputBytes": 1048576
+  }
+}

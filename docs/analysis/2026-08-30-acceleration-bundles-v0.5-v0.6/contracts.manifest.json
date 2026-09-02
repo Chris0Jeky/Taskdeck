@@ -1,0 +1,103 @@
+{
+  "comment": "Contract-draft manifest read by scripts/context_fabric/check_contract_drafts.py. Paths are relative to this file. Retire an entry when its schema moves next to shipping code.",
+  "lastUpdated": "2026-09-02",
+  "contracts": [
+    {
+      "id": "processing-profile",
+      "issue": 2264,
+      "wave": "CF-10",
+      "schema": "v0.6/schemas/processing-profile.schema.json",
+      "fixtures": [
+        "v0.6/fixtures/processing-profile.example.json"
+      ],
+      "semantic": []
+    },
+    {
+      "id": "processing-policy-snapshot",
+      "issue": 2264,
+      "wave": "CF-10 (minimal form owned by CF-03 #2257)",
+      "schema": "v0.6/schemas/processing-policy-snapshot.schema.json",
+      "fixtures": [
+        "v0.6/fixtures/processing-policy-snapshot.example.json"
+      ],
+      "semantic": [
+        "policy-snapshot-digest"
+      ]
+    },
+    {
+      "id": "route-receipt",
+      "issue": 2264,
+      "wave": "CF-10",
+      "schema": "v0.6/schemas/route-receipt.schema.json",
+      "fixtures": [
+        "v0.6/fixtures/route-receipt.example.json"
+      ],
+      "semantic": [
+        "route-receipt"
+      ]
+    },
+    {
+      "id": "processing-cache-key",
+      "issue": 2265,
+      "wave": "CF-11",
+      "schema": "v0.6/schemas/processing-cache-key.schema.json",
+      "fixtures": [
+        "v0.6/fixtures/processing-cache-key.example.json"
+      ],
+      "semantic": []
+    },
+    {
+      "id": "runtime-metrics-report",
+      "issue": 2277,
+      "wave": "CF-24B",
+      "schema": "v0.6/schemas/runtime-metrics-report.schema.json",
+      "fixtures": [
+        "v0.6/fixtures/runtime-metrics-report.example.json"
+      ],
+      "semantic": [
+        "content-free"
+      ]
+    },
+    {
+      "id": "authority-shadow-receipt",
+      "issue": 2275,
+      "wave": "CF-22 (shadow-only)",
+      "schema": "v0.6/schemas/authority-shadow-receipt.schema.json",
+      "fixtures": [
+        "v0.6/fixtures/authority-shadow-receipt.example.json"
+      ],
+      "semantic": [
+        "authority-shadow-receipt",
+        "content-free"
+      ]
+    },
+    {
+      "id": "benchmark-observations",
+      "issue": 2319,
+      "wave": "CF-24A (consumed by CF-15 #2269 / CF-18 #2272)",
+      "schema": "v0.6/schemas/benchmark-observations.schema.json",
+      "fixtures": [
+        "v0.6/fixtures/benchmark-observations.example.json"
+      ],
+      "semantic": []
+    },
+    {
+      "id": "evaluation-fixture",
+      "issue": 2319,
+      "wave": "CF-24A",
+      "schema": "v0.5/schemas/evaluation-fixture.schema.json",
+      "fixtures": [
+        "v0.5/fixtures/evaluation-fixtures.example.json"
+      ],
+      "semantic": []
+    }
+  ],
+  "unmappedFixtures": {
+    "v0.6/fixtures/authority-shadow-report.example.json": "output of candidates/python/shadow_canary_report.py",
+    "v0.6/fixtures/proposal-facts.example.json": "input of candidates/python/runtime_metrics.py",
+    "v0.6/fixtures/provider-benchmark-report.example.json": "output of candidates/python/provider_benchmark.py",
+    "v0.6/fixtures/shadow-observations.example.json": "input of candidates/python/shadow_canary_report.py",
+    "v0.5/fixtures/canary-events.example.json": "input of candidates/python/canary_report.py",
+    "v0.5/fixtures/evaluation-results.example.json": "input of candidates/python/score_fixtures.py"
+  }
+}

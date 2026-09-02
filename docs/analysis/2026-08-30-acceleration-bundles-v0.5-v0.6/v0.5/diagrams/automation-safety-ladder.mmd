@@ -1,0 +1,10 @@
+flowchart LR
+  A[Candidate persisted] --> B{Permission + evidence valid?}
+  B -- no --> X[Review only]
+  B -- yes --> C[Shadow evaluation]
+  C --> D{Parity + compensation + kill switch proved?}
+  D -- no --> X
+  D -- yes --> E[Stable tiny canary]
+  E --> F{No reversals and bounded human edits?}
+  F -- no --> G[Stop and investigate]
+  F -- yes --> H[Owner-authorised expansion]

@@ -10,6 +10,8 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationExecutorService : IAutomationExecutorService
 {
+    private const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutomationProposalService _proposalService;
     private readonly IAutomationPolicyEngine _policyEngine;
@@ -107,13 +109,16 @@ public class AutomationExecutorService : IAutomationExecutorService
         var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
         if (!proposalResult.IsSuccess)
         {
+            var errorMessage = SanitizeUnexpectedErrorMessage(
+                proposalResult.ErrorCode,
+                proposalResult.ErrorMessage);
             _logger?.LogWarning(
                 "Automation proposal execution failed for proposal {ProposalId} after {DurationMs}ms: {ErrorCode} {ErrorMessage}",
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 proposalResult.ErrorCode,
-                proposalResult.ErrorMessage);
-            return Result.Failure<ProposalExecutionReceipt>(proposalResult.ErrorCode, proposalResult.ErrorMessage);
+                errorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(proposalResult.ErrorCode, errorMessage);
         }
 
         var proposal = proposalResult.Value;
@@ -139,13 +144,16 @@ public class AutomationExecutorService : IAutomationExecutorService
 
             if (!callerPermission.IsSuccess)
             {
+                var errorMessage = SanitizeUnexpectedErrorMessage(
+                    callerPermission.ErrorCode,
+                    callerPermission.ErrorMessage);
                 _logger?.LogWarning(
                     "Automation proposal execution refused for proposal {ProposalId}: caller {CallerUserId} no longer has board write access",
                     proposalId,
                     requestCallerId);
                 return Result.Failure<ProposalExecutionReceipt>(
                     callerPermission.ErrorCode,
-                    callerPermission.ErrorMessage);
+                    errorMessage);
             }
         }
 
@@ -166,11 +174,14 @@ public class AutomationExecutorService : IAutomationExecutorService
             var syncResult = await SyncLinkedCaptureConversionAsync(proposal, cancellationToken);
             if (!syncResult.IsSuccess)
             {
+                var errorMessage = SanitizeUnexpectedErrorMessage(
+                    syncResult.ErrorCode,
+                    syncResult.ErrorMessage);
                 _logger?.LogWarning(
                     "Already-applied proposal {ProposalId} could not sync linked capture conversion: {ErrorCode} {ErrorMessage}",
                     proposalId,
                     syncResult.ErrorCode,
-                    syncResult.ErrorMessage);
+                    errorMessage);
             }
 
             _logger?.LogInformation(
@@ -194,13 +205,16 @@ public class AutomationExecutorService : IAutomationExecutorService
         var effectiveProposalResult = await MaterializeEffectiveProposalAsync(proposal, cancellationToken);
         if (!effectiveProposalResult.IsSuccess)
         {
+            var errorMessage = SanitizeUnexpectedErrorMessage(
+                effectiveProposalResult.ErrorCode,
+                effectiveProposalResult.ErrorMessage);
             _logger?.LogWarning(
                 "Automation proposal execution rejected for proposal {ProposalId} after {DurationMs}ms because revised payload is invalid: {ErrorCode} {ErrorMessage}",
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 effectiveProposalResult.ErrorCode,
-                effectiveProposalResult.ErrorMessage);
-            return Result.Failure<ProposalExecutionReceipt>(effectiveProposalResult.ErrorCode, effectiveProposalResult.ErrorMessage);
+                errorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(effectiveProposalResult.ErrorCode, errorMessage);
         }
 
         var effectiveProposal = effectiveProposalResult.Value;
@@ -209,13 +223,16 @@ public class AutomationExecutorService : IAutomationExecutorService
         var policyResult = _policyEngine.ValidatePolicy(effectiveProposal);
         if (!policyResult.IsSuccess)
         {
+            var errorMessage = SanitizeUnexpectedErrorMessage(
+                policyResult.ErrorCode,
+                policyResult.ErrorMessage);
             _logger?.LogWarning(
                 "Automation proposal execution policy validation failed for proposal {ProposalId} after {DurationMs}ms: {ErrorCode} {ErrorMessage}",
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 policyResult.ErrorCode,
-                policyResult.ErrorMessage);
-            return Result.Failure<ProposalExecutionReceipt>(policyResult.ErrorCode, policyResult.ErrorMessage);
+                errorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(policyResult.ErrorCode, errorMessage);
         }
 
         // Revalidate permissions. Execute is the mutation lane par excellence, so the requester
@@ -229,13 +246,16 @@ public class AutomationExecutorService : IAutomationExecutorService
             cancellationToken);
         if (!permissionResult.IsSuccess)
         {
+            var errorMessage = SanitizeUnexpectedErrorMessage(
+                permissionResult.ErrorCode,
+                permissionResult.ErrorMessage);
             _logger?.LogWarning(
                 "Automation proposal execution permission validation failed for proposal {ProposalId} after {DurationMs}ms: {ErrorCode} {ErrorMessage}",
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds,
                 permissionResult.ErrorCode,
-                permissionResult.ErrorMessage);
-            return Result.Failure<ProposalExecutionReceipt>(permissionResult.ErrorCode, permissionResult.ErrorMessage);
+                errorMessage);
+            return Result.Failure<ProposalExecutionReceipt>(permissionResult.ErrorCode, errorMessage);
         }
 
         try
@@ -248,7 +268,9 @@ public class AutomationExecutorService : IAutomationExecutorService
             if (!decisionGuard.IsSuccess)
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                return Result.Failure<ProposalExecutionReceipt>(decisionGuard.ErrorCode, decisionGuard.ErrorMessage);
+                return Result.Failure<ProposalExecutionReceipt>(
+                    decisionGuard.ErrorCode,
+                    SanitizeUnexpectedErrorMessage(decisionGuard.ErrorCode, decisionGuard.ErrorMessage));
             }
 
             // The caller's own bar, rechecked HERE - inside this item's transaction, after the
@@ -283,7 +305,9 @@ public class AutomationExecutorService : IAutomationExecutorService
                         callerId);
                     return Result.Failure<ProposalExecutionReceipt>(
                         callerPermission.ErrorCode,
-                        callerPermission.ErrorMessage);
+                        SanitizeUnexpectedErrorMessage(
+                            callerPermission.ErrorCode,
+                            callerPermission.ErrorMessage));
                 }
             }
 
@@ -300,7 +324,9 @@ public class AutomationExecutorService : IAutomationExecutorService
                 {
                     failedOperation = operation.Sequence;
                     failedResult = executionResult;
-                    failureReason = $"Operation {operation.Sequence} ({operation.ActionType} {operation.TargetType}) failed: {executionResult.ErrorMessage}";
+                    failureReason = executionResult.ErrorCode == ErrorCodes.UnexpectedError
+                        ? GenericUnexpectedErrorMessage
+                        : $"Operation {operation.Sequence} ({operation.ActionType} {operation.TargetType}) failed: {executionResult.ErrorMessage}";
                     break;
                 }
 
@@ -327,7 +353,9 @@ public class AutomationExecutorService : IAutomationExecutorService
                 {
                     return failedResult.ErrorCode == ErrorCodes.Conflict
                         ? Result.Failure<ProposalExecutionReceipt>(failedResult.ErrorCode, failureReason)
-                        : Result.Failure<ProposalExecutionReceipt>(updateResult.ErrorCode, updateResult.ErrorMessage);
+                        : Result.Failure<ProposalExecutionReceipt>(
+                            updateResult.ErrorCode,
+                            SanitizeUnexpectedErrorMessage(updateResult.ErrorCode, updateResult.ErrorMessage));
                 }
 
                 _logger?.LogWarning(
@@ -351,7 +379,9 @@ public class AutomationExecutorService : IAutomationExecutorService
             if (!markResult.IsSuccess)
             {
                 await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-                return Result.Failure<ProposalExecutionReceipt>(markResult.ErrorCode, markResult.ErrorMessage);
+                return Result.Failure<ProposalExecutionReceipt>(
+                    markResult.ErrorCode,
+                    SanitizeUnexpectedErrorMessage(markResult.ErrorCode, markResult.ErrorMessage));
             }
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
@@ -365,11 +395,14 @@ public class AutomationExecutorService : IAutomationExecutorService
                 cancellationToken);
             if (!captureSyncResult.IsSuccess)
             {
+                var errorMessage = SanitizeUnexpectedErrorMessage(
+                    captureSyncResult.ErrorCode,
+                    captureSyncResult.ErrorMessage);
                 _logger?.LogWarning(
                     "Applied proposal {ProposalId} could not sync linked capture conversion: {ErrorCode} {ErrorMessage}",
                     proposalId,
                     captureSyncResult.ErrorCode,
-                    captureSyncResult.ErrorMessage);
+                    errorMessage);
             }
 
             _logger?.LogInformation(
@@ -381,21 +414,42 @@ public class AutomationExecutorService : IAutomationExecutorService
                 AlreadyApplied: false,
                 AppliedOperationCount: orderedOperations.Count));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            await _unitOfWork.RollbackTransactionAsync(cancellationToken);
-            await UpdateProposalStatusAsync(
-                proposalId,
-                ProposalStatus.Failed,
-                ex.Message,
-                guardDecisionWrite: true,
-                cancellationToken);
+            try
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+            catch (Exception)
+            {
+                _logger?.LogError(
+                    "Automation proposal execution rollback encountered an unexpected internal error for proposal {ProposalId}",
+                    proposalId);
+            }
+
+            try
+            {
+                await UpdateProposalStatusAsync(
+                    proposalId,
+                    ProposalStatus.Failed,
+                    GenericUnexpectedErrorMessage,
+                    guardDecisionWrite: true,
+                    cancellationToken);
+            }
+            catch (Exception)
+            {
+                _logger?.LogError(
+                    "Automation proposal failure-status persistence encountered an unexpected internal error for proposal {ProposalId}",
+                    proposalId);
+            }
+
             _logger?.LogError(
-                ex,
-                "Automation proposal execution threw for proposal {ProposalId} after {DurationMs}ms",
+                "Automation proposal execution encountered an unexpected internal error for proposal {ProposalId} after {DurationMs}ms",
                 proposalId,
                 (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds);
-            return Result.Failure<ProposalExecutionReceipt>(ErrorCodes.UnexpectedError, $"Failed to execute proposal: {ex.Message}");
+            return Result.Failure<ProposalExecutionReceipt>(
+                ErrorCodes.UnexpectedError,
+                GenericUnexpectedErrorMessage);
         }
     }
 
@@ -523,11 +577,16 @@ public class AutomationExecutorService : IAutomationExecutorService
         {
             return Result.Failure(ex.ErrorCode, ex.Message);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return Result.Failure(ErrorCodes.UnexpectedError, ex.Message);
+            return Result.Failure(ErrorCodes.UnexpectedError, GenericUnexpectedErrorMessage);
         }
     }
+
+    private static string SanitizeUnexpectedErrorMessage(string errorCode, string errorMessage) =>
+        errorCode == ErrorCodes.UnexpectedError
+            ? GenericUnexpectedErrorMessage
+            : errorMessage;
 
     private async Task<Result> UpdateProposalStatusAsync(
         Guid proposalId,

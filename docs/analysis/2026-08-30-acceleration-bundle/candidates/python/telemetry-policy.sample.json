@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "allowed_paths": [
+    "schema_version",
+    "event_name",
+    "installation_id",
+    "app.version",
+    "app.os_family",
+    "app.install_kind",
+    "activation.first_capture",
+    "activation.first_proposal",
+    "activation.first_apply",
+    "feature_area",
+    "outcome"
+  ],
+  "denied_fragments": [
+    "address",
+    "api_key",
+    "apikey",
+    "body",
+    "clipboard",
+    "content",
+    "description",
+    "email",
+    "hostname",
+    "ip_address",
+    "message",
+    "password",
+    "path",
+    "phone",
+    "prompt",
+    "secret",
+    "source_url",
+    "text",
+    "title",
+    "token",
+    "username"
+  ]
+}

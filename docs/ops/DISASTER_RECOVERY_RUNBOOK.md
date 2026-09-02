@@ -1,371 +1,321 @@
 # Disaster Recovery Runbook
 
-Last Updated: 2026-04-01
-Issue: `#86` OPS-08 backup/restore automation and disaster-recovery drill playbook
-
----
+Last updated: 2026-08-31
+Issues: `#2238` encrypted container recovery and `#2239` connector verification
 
 ## Overview
 
-Taskdeck is a local-first application backed by a single SQLite database file. All boards,
-cards, columns, audit records, and automation state live in that file. This runbook covers:
+Taskdeck's supported Docker deployment stores application state in one SQLite database.
+The production images contain two recovery commands:
 
-- Backup automation (what the scripts do and when to run them)
-- Manual restore procedure (step-by-step)
-- RTO and RPO targets
-- DR drill schedule and evidence requirements
-- Access controls for backup artefacts
+- `taskdeck-backup` creates an application-consistent, authenticated, encrypted archive.
+- `taskdeck-restore` restores an archive into a clean target, checks SQLite integrity, and
+  verifies every stored connector credential before the API can be restarted.
 
----
+These commands are the production Docker recovery boundary. They do not run migrations,
+generate keys, start the API, or start connector providers.
 
-## RTO and RPO Targets
+## Recovery targets
 
-| Tier | Target | Notes |
+| Target | Objective | Notes |
 | --- | --- | --- |
-| RTO (local SQLite instance) | **< 30 minutes** | Time from decision-to-restore to API serving healthy requests |
-| RTO (Docker / hosted instance) | **< 60 minutes** | Includes container restart and volume reattachment |
-| RPO (default daily rotation) | **< 24 hours** | Maximum data loss under the default 7-backup daily schedule |
-| RPO (high-frequency rotation) | **< 1 hour** | Achievable by scheduling `backup.sh` hourly via cron |
+| Local SQLite RTO | Less than 30 minutes | From restore decision to a healthy API |
+| Docker or hosted RTO | Less than 60 minutes | Includes container restart and volume attachment |
+| Default RPO | Less than 24 hours | Requires an operator-approved daily schedule |
+| High-frequency RPO | Less than 1 hour | Requires an operator-approved higher-frequency schedule |
 
-These are targets for a single-operator local-first deployment. Cloud/multi-user deployments
-should tighten RPO by increasing backup frequency and consider continuous WAL shipping if
-eventual consistency is insufficient.
+These are objectives, not measured guarantees. Record actual backup age and restore duration
+in each drill or incident evidence package.
 
----
+## Key contract
 
-## Backup Automation
+The backup key and connector key have different purposes:
 
-### Scripts
-
-| Script | Platform | Location |
+| Key | Purpose | Accepted sources, in precedence order |
 | --- | --- | --- |
-| `backup.sh` | Linux / macOS / WSL | `scripts/backup.sh` |
-| `backup.ps1` | Windows PowerShell | `scripts/backup.ps1` |
-| `restore.sh` | Linux / macOS / WSL | `scripts/restore.sh` |
-| `restore.ps1` | Windows PowerShell | `scripts/restore.ps1` |
+| Backup key | Encrypts and authenticates `.tdbk` archives | `--key-file`, `TASKDECK_BACKUP_KEY_FILE`, `TASKDECK_BACKUP_KEY` |
+| Connector key | Decrypts credentials inside the restored database | `--connector-key-file`, `TASKDECK_CONNECTOR_KEY_FILE`, `TASKDECK_CONNECTORS__ENCRYPTIONKEY`, `Connectors__EncryptionKey` |
 
-### How backups work
-
-`backup.sh` (and the PS1 equivalent) uses `sqlite3 .backup` — SQLite's online backup API.
-This acquires a shared lock, flushes any pending WAL (write-ahead log) frames, and copies
-pages to the destination. It is **safe while the API is running and writing**. The fallback
-(`cp`) is explicitly unsafe with active writers and should only be used in development.
-
-### Quick start
+Each key is a base64-encoded 32-byte value. Use independent values. Do not reuse the
+connector key as the backup key, bake either key into an image, put a raw key on a command
+line, or store the backup key beside its archives. Prefer protected files mounted read-only:
 
 ```bash
-# Default paths (~/.taskdeck/taskdeck.db -> ~/.taskdeck/backups/)
-bash scripts/backup.sh
-
-# Explicit paths
-bash scripts/backup.sh \
-  --db-path /app/data/taskdeck.db \
-  --output-dir /backups/taskdeck
-
-# Keep 14 backups instead of the default 7
-bash scripts/backup.sh --retain 14
+chmod 600 /secure/taskdeck-backup.key
+chmod 600 /secure/taskdeck-connectors.key
 ```
 
-PowerShell (Windows):
+The environment-value forms exist for secret injection by a runtime. A mounted file avoids
+placing the raw value in local Docker container configuration.
 
-```powershell
-.\scripts\backup.ps1
-.\scripts\backup.ps1 -DbPath "C:\app\data\taskdeck.db" -OutputDir "D:\backups" -Retain 14
-```
+## Prepare an archive volume
 
-### Scheduling (cron / Task Scheduler)
-
-**Linux / macOS — daily at 02:00:**
-
-```cron
-0 2 * * * /path/to/repo/scripts/backup.sh \
-  --db-path /app/data/taskdeck.db \
-  --output-dir /backups/taskdeck \
-  >> /var/log/taskdeck-backup.log 2>&1
-```
-
-**Windows — Task Scheduler (run as the app-service account):**
-
-```powershell
-# Create a daily backup task
-$action  = New-ScheduledTaskAction -Execute "pwsh.exe" `
-             -Argument "-NonInteractive -File C:\taskdeck\scripts\backup.ps1"
-$trigger = New-ScheduledTaskTrigger -Daily -At "02:00"
-Register-ScheduledTask -TaskName "Taskdeck-Daily-Backup" `
-  -Action $action -Trigger $trigger -RunLevel Highest
-```
-
-### Docker volume backups
-
-The Docker Compose deployment mounts `taskdeck-db:/app/data`. To back up from the host:
+The split backend image runs as UID/GID `10001`; the single-container production image runs
+as UID/GID `1001`. Prepare a named archive volume once for the image in use:
 
 ```bash
-# Option A: exec into the container and run the backup script
-docker compose -f deploy/docker-compose.yml --profile baseline exec api \
-  bash /repo/scripts/backup.sh \
-  --db-path /app/data/taskdeck.db \
-  --output-dir /app/data/backups
+# Image built from deploy/docker/backend.Dockerfile
+docker volume create taskdeck-backups
+docker run --rm --entrypoint sh \
+  -v taskdeck-backups:/backups \
+  taskdeck-api:local \
+  -c 'chown -R 10001:10001 /backups'
 
-# Option B: copy the volume contents to the host (requires API to be stopped or paused)
-docker compose -f deploy/docker-compose.yml --profile baseline stop api
+# Image built from deploy/Dockerfile.production
+docker volume create taskdeck-production-backups
+docker run --rm --entrypoint sh \
+  -v taskdeck-production-backups:/backups \
+  taskdeck-prod:local \
+  -c 'chown -R 1001:1001 /backups'
+```
+
+Apply equivalent ownership to a bind-mounted archive directory. The normal image
+entrypoints prepare `/app/data`; they do not change an operator-supplied archive mount.
+
+## Create an encrypted backup
+
+`taskdeck-backup` uses SQLite's online backup API. The API may remain running while the
+backup is created. Committed WAL data is included without copying a live database file.
+The command validates a standalone snapshot, encrypts it with AES-256-GCM in bounded chunks,
+removes the plaintext scratch file, and only then promotes a `.tdbk` archive into the mounted
+output directory.
+
+For the Compose deployment:
+
+```bash
+docker compose -f deploy/docker-compose.yml --profile baseline run --rm --no-deps \
+  -v taskdeck-backups:/backups \
+  -v /secure/taskdeck-backup.key:/run/secrets/taskdeck-backup.key:ro \
+  -e TASKDECK_BACKUP_KEY_FILE=/run/secrets/taskdeck-backup.key \
+  api taskdeck-backup \
+  --database /app/data/taskdeck.db \
+  --output /backups
+```
+
+For the single-container production image, use the same command shape with its data and
+archive volumes:
+
+```bash
 docker run --rm \
-  -v taskdeck_taskdeck-db:/data \
-  -v "$(pwd)/local-backups:/backup" \
-  alpine:3 \
-  sh -c "cp /data/taskdeck.db /backup/taskdeck-$(date +%Y%m%d-%H%M%S).db"
-docker compose -f deploy/docker-compose.yml --profile baseline start api
-
-# Option C: add a dedicated backup sidecar (extend docker-compose.yml):
-#
-#   backup:
-#     profiles: ["backup"]
-#     image: alpine:3
-#     volumes:
-#       - taskdeck-db:/data:ro
-#       - ./backups:/backup
-#     command: >
-#       sh -c "cp /data/taskdeck.db /backup/taskdeck-$(date +%Y%m%d-%H%M%S).db
-#              && echo 'Backup done.'"
-#
-# Run one-off: docker compose --profile backup run --rm backup
+  -v taskdeck-production-data:/app/data \
+  -v taskdeck-production-backups:/backups \
+  -v /secure/taskdeck-backup.key:/run/secrets/taskdeck-backup.key:ro \
+  -e TASKDECK_BACKUP_KEY_FILE=/run/secrets/taskdeck-backup.key \
+  taskdeck-prod:local taskdeck-backup \
+  --database /app/data/taskdeck.db \
+  --output /backups
 ```
 
----
+Successful output contains only aggregate metadata:
 
-## Restore Procedure
+```text
+archive=/backups/taskdeck-backup-20260831T120000000Z-schema-<migration>-000001.tdbk
+schema=<migration>
+integrity=ok
+```
 
-Use this procedure whenever a database restore is required (corruption, accidental deletion,
-or rollback after a bad migration).
+The UTC timestamp and schema migration are authenticated archive metadata and appear in the
+filename. Treat the reported path as the exact artefact to verify and retain.
 
-### Pre-conditions
+## Restore an encrypted backup
 
-- You have a known-good backup file (`taskdeck-backup-YYYY-MM-DD-HHmmss.db`).
-- The Taskdeck API is stopped (or you are willing to restart it after restore).
-- You have write access to the directory containing the live database.
+Use this procedure for corruption, accidental deletion, or rollback after a bad migration.
 
-### Step 1 — Stop the API (recommended)
+### Preconditions
 
-Stopping the API avoids any writes racing with the restore. It is not strictly required
-(`restore.sh` uses `sqlite3 .restore` which acquires an exclusive lock), but stopping first
-eliminates all risk.
+- The selected `.tdbk` archive and its separate backup key are available.
+- The connector encryption key paired with that database is available.
+- The target directory and archive mount are accessible to the image's runtime UID.
+- The Taskdeck API, workers, scheduled jobs, and every other database writer are stopped.
+
+The stop-writers condition is mandatory. The command fails closed for key, archive,
+integrity, schema, connector-verification, and filesystem failures. It is not a distributed
+lock and cannot make an active external writer safe.
+
+### 1. Stop every writer
 
 ```bash
-# Docker Compose deployment
 docker compose -f deploy/docker-compose.yml --profile baseline stop api
-
-# Local dotnet run — send SIGTERM / Ctrl+C
-# systemd
-sudo systemctl stop taskdeck-api
 ```
 
-### Step 2 — Choose the backup to restore
+Keep the API stopped until restore and the deployment-specific data checks succeed.
+
+### 2. Select the exact archive
+
+List encrypted archives without renaming them. Choose the required UTC timestamp and schema,
+then record the exact filename in the recovery evidence:
 
 ```bash
-# List available backups, newest first
-ls -lt ~/.taskdeck/backups/taskdeck-backup-*.db
-
-# Or for Docker volume backups
-ls -lt ./local-backups/
+docker run --rm --entrypoint sh \
+  -v taskdeck-backups:/backups:ro \
+  taskdeck-api:local \
+  -c 'ls -lt /backups/taskdeck-backup-*.tdbk'
 ```
 
-Select the most recent backup before the incident, or a specific point-in-time backup if
-you know the target date.
+### 3. Run the packaged restore command
 
-### Step 3 — Run the restore script
+The Compose service normally supplies `Connectors__EncryptionKey`. Mount the independent
+backup key and archive volume:
 
 ```bash
-bash scripts/restore.sh \
-  --backup-file ~/.taskdeck/backups/taskdeck-backup-2026-04-01-120000.db
-
-# With explicit DB path (required for Docker or non-default paths)
-bash scripts/restore.sh \
-  --backup-file /backups/taskdeck/taskdeck-backup-2026-04-01-120000.db \
-  --db-path /app/data/taskdeck.db
-
-# Skip interactive confirmation (for automation)
-bash scripts/restore.sh \
-  --backup-file /backups/taskdeck-backup-2026-04-01-120000.db \
-  --yes
+docker compose -f deploy/docker-compose.yml --profile baseline run --rm --no-deps \
+  -v taskdeck-backups:/backups:ro \
+  -v /secure/taskdeck-backup.key:/run/secrets/taskdeck-backup.key:ro \
+  -e TASKDECK_BACKUP_KEY_FILE=/run/secrets/taskdeck-backup.key \
+  api taskdeck-restore \
+  --archive /backups/<exact-archive-name>.tdbk \
+  --database /app/data/taskdeck.db
 ```
 
-PowerShell (Windows):
+If the connector key is supplied as a file instead, also mount it read-only and set
+`TASKDECK_CONNECTOR_KEY_FILE=/run/secrets/taskdeck-connectors.key`.
 
-```powershell
-.\scripts\restore.ps1 `
-  -BackupFile "$env:USERPROFILE\.taskdeck\backups\taskdeck-backup-2026-04-01-120000.db"
+Before promotion, restore:
 
-.\scripts\restore.ps1 `
-  -BackupFile "D:\backups\taskdeck-backup-2026-04-01-120000.db" `
-  -DbPath "C:\app\data\taskdeck.db" `
-  -Yes
+1. Decrypts into a restricted staging file.
+2. Runs `PRAGMA integrity_check`.
+3. Compares authenticated schema metadata with the database migration.
+4. Calls the `#2239` connector verifier and requires `failed=0`.
+5. Creates an encrypted `taskdeck-pre-restore-*.tdbk` safety archive when a target exists.
+6. Removes stale `-wal`, `-shm`, and `-journal` sidecars before clean promotion.
+7. Repeats integrity, schema, and connector verification after promotion.
+
+If a post-promotion check fails, the command restores the previous standalone database when
+one existed, or removes a newly created target. The encrypted safety archive is retained.
+
+Successful output is:
+
+```text
+restored=/app/data/taskdeck.db
+schema=<migration>
+integrity=ok
+connectors ok=N failed=0
+safetyArchive=/app/data/taskdeck-pre-restore-...tdbk
 ```
 
-The script will:
-1. Verify the backup is a valid SQLite file (magic bytes + `PRAGMA integrity_check`).
-2. Check that the backup contains a `Boards` table (Taskdeck schema sanity check).
-3. Prompt for confirmation (skip with `--yes` / `-Yes`).
-4. Create a timestamped safety copy of the current live database.
-5. Restore the backup into the live path.
-6. Run a post-restore `PRAGMA integrity_check`.
+`safetyArchive` is present only when a target existed. `connectors ok=0 failed=0` means there
+were no stored connector credentials; it does not prove that the connector key is correct.
+Any failed credential prevents promotion. Wrong keys and damaged ciphertext are intentionally
+indistinguishable. Output never contains keys, plaintext, ciphertext, connector identifiers,
+or exception details.
 
-### Step 4 — Verify row counts
+| Exit | Meaning |
+| ---: | --- |
+| `0` | Recovery completed and all required checks passed. |
+| `1` | Input, key, archive, integrity, schema, connector, or filesystem failure. Keep the API stopped. |
+| `2` | Invalid command usage. Nothing was restored. |
 
-After restore, spot-check that the data volume is plausible:
+### 4. Verify expected data
+
+The restore command proves SQLite integrity and connector decryption. Also compare
+deployment-specific row counts or representative board and card records with the last
+known-good evidence. From a trusted host with `sqlite3` installed:
 
 ```bash
 sqlite3 /path/to/taskdeck.db <<'SQL'
-SELECT 'Boards'  AS tbl, COUNT(*) AS rows FROM Boards
-UNION ALL
-SELECT 'Columns', COUNT(*) FROM Columns
-UNION ALL
-SELECT 'Cards',   COUNT(*) FROM Cards
-UNION ALL
-SELECT 'Users',   COUNT(*) FROM Users;
+SELECT 'Boards' AS tbl, COUNT(*) AS rows FROM Boards
+UNION ALL SELECT 'Columns', COUNT(*) FROM Columns
+UNION ALL SELECT 'Cards', COUNT(*) FROM Cards
+UNION ALL SELECT 'Users', COUNT(*) FROM Users;
 SQL
 ```
 
-Compare against your last known-good row counts (see evidence log if available).
-
-### Step 5 — Start the API and verify health
+### 5. Start the API and verify health
 
 ```bash
-# Docker Compose deployment
 docker compose -f deploy/docker-compose.yml --profile baseline start api
 
-# Wait for health
-for i in $(seq 1 30); do
-  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/health/ready 2>/dev/null || true)
-  if [[ "$STATUS" == "200" ]]; then echo "API healthy."; break; fi
-  echo "Waiting... ($i/30)"
+for attempt in $(seq 1 30); do
+  status=$(curl -s -o /dev/null -w "%{http_code}" \
+    http://localhost:8080/health/ready 2>/dev/null || true)
+  if [ "$status" = "200" ]; then
+    echo "API healthy."
+    break
+  fi
   sleep 2
 done
-
-# Detailed health response
-curl -s http://localhost:5000/health/ready | python3 -m json.tool
 ```
 
-### Step 6 — Record the restore in the evidence log
+Use the deployment's actual public health endpoint if it differs from the baseline Compose
+port. Keep the API stopped and investigate if readiness does not become healthy.
 
-File an evidence entry in `docs/ops/rehearsals/` using the template in
-`docs/ops/EVIDENCE_TEMPLATE.md`. Tag it with `restore-event` rather than `rehearsal` if
-this was a real recovery.
+### 6. Record evidence
 
----
+File an evidence entry in `docs/ops/rehearsals/` using
+`docs/ops/EVIDENCE_TEMPLATE.md`. Use `restore-event` for a real recovery and `rehearsal` for
+a drill. Record the exact archive filename, schema, archive age, row-count comparison,
+connector counts, restore duration, API health result, and any retained safety archive.
 
-## Backup Verification
+## Verify an archive before an incident
 
-Run these checks after every backup to confirm it is usable for recovery. They can be
-automated in CI or a monitoring cron job.
+An encrypted archive cannot be checked with `sqlite3` directly. Restore the exact `.tdbk`
+into a fresh isolated volume with the packaged command. Do not rehearse over the live target.
+A successful run proves archive authentication, SQLite integrity, schema metadata, connector
+decryption, and clean-target promotion. Then perform the deployment-specific data check.
 
-```bash
-BACKUP_FILE="/path/to/latest.db"
+CI exercises the same seed, encrypted backup, fresh restore, row-count, integrity, connector,
+and no-sidecar path in `scripts/ci/run-container-backup-restore-smoke.sh`.
 
-# 1. Integrity check
-sqlite3 "$BACKUP_FILE" 'PRAGMA integrity_check;'
-# Expected: ok
+## Scheduling, retention, and custody
 
-# 2. Page count / file size sanity
-sqlite3 "$BACKUP_FILE" 'PRAGMA page_count; PRAGMA page_size;'
-# Should match or exceed the previous backup
+The packaged command creates one archive. It does not schedule runs, rotate or delete old
+archives, upload them, or select an off-platform custodian. Those policy decisions remain
+open under `OUTSTANDING_TASKS.md` item `CL-1`; this implementation does not close or infer
+them. Record the actual archive location, key custodian, schedule, retention, and deletion
+rule in each deployment's operating record. Losing the backup key makes every archive made
+with it unrecoverable.
 
-# 3. Schema presence
-sqlite3 "$BACKUP_FILE" '.tables'
-# Should contain: Boards Columns Cards Users AuditLogs AutomationProposals ...
+## Access controls
 
-# 4. Row count spot check
-sqlite3 "$BACKUP_FILE" 'SELECT COUNT(*) FROM Boards;'
-# Should be >= 0 (positive for non-empty deployments)
-
-# 5. Last write recency (check that the backup is not stale)
-sqlite3 "$BACKUP_FILE" "
-  SELECT MAX(UpdatedAt) AS last_write
-  FROM (
-    SELECT UpdatedAt FROM Boards
-    UNION ALL SELECT UpdatedAt FROM Cards
-  );
-"
-```
-
----
-
-## Access Controls
-
-| Artefact | Required permission | How enforced |
+| Artefact | Required access | Enforcement |
 | --- | --- | --- |
-| Backup directory (`~/.taskdeck/backups/`) | Owner read/write only | `chmod 700` (bash) / restricted ACL (PowerShell) |
-| Backup files (`taskdeck-backup-*.db`) | Owner read/write only | `chmod 600` (bash) / restricted ACL (PowerShell) |
-| Pre-restore safety copies | Owner read/write only | Same as backup files |
-| Live database (`taskdeck.db`) | Owner read/write only | Set after restore by restore scripts |
+| Live database | Application runtime and recovery operator only | Restricted Docker volume or host ACL |
+| `taskdeck-backup-*.tdbk` | Recovery operator only | Authenticated encryption; mode `0600` on Unix |
+| `taskdeck-pre-restore-*.tdbk` | Recovery operator only | Same backup key and mode `0600` on Unix |
+| Backup and connector key files | Designated custodian and recovery operator only | Separate protected read-only mounts |
+| Archive directory | Recovery operator and container runtime UID only | Mode `0700` or equivalent host ACL |
 
-On Linux/macOS: the scripts set `chmod 700` on the backup directory and `chmod 600` on each
-file. Verify with `ls -la ~/.taskdeck/backups/`.
+Encryption protects archive contents, not filenames and schema metadata. Restrict which
+containers and host users can mount both the database and archive volumes.
 
-On Windows: the scripts apply a restricted ACL granting FullControl to the current user only
-and removing inherited permissions. Verify with `Get-Acl <path> | Format-List`.
+## Legacy source-checkout scripts
 
-**For Docker deployments**: ensure the Docker volume is not world-readable. The named volume
-`taskdeck-db` is accessible only to containers with the volume mounted. Restrict host-level
-access to the volume directory if the host filesystem is shared.
+`scripts/backup.sh`, `scripts/backup.ps1`, `scripts/restore.sh`, and `scripts/restore.ps1`
+remain legacy local-development utilities. They produce or consume plaintext SQLite `.db`
+files, do not implement the encrypted `.tdbk` contract, and do not automatically verify
+connector credentials. Do not use them as the production Docker recovery boundary and do
+not pass a `.tdbk` archive to them.
 
----
+## Drill cadence and evidence
 
-## DR Drill Schedule
+| Drill | Cadence | Minimum evidence |
+| --- | --- | --- |
+| Exact-archive restore | Monthly | Archive identity, restore output, row-count comparison |
+| Full recovery drill | Quarterly | Exact-archive restore, API health, duration, retrospective |
 
-| Drill type | Cadence | Scope | Evidence required |
-| --- | --- | --- | --- |
-| Backup verification | Monthly (automated preferred) | Run `PRAGMA integrity_check` and row-count spot-check on the latest backup | Log entry in backup cron output |
-| Manual restore drill | Monthly | Full restore to a separate test directory; verify health | Evidence package in `docs/ops/rehearsals/` |
-| Full DR drill | Quarterly | Restore + API restart + user acceptance test | Evidence package + retrospective |
+Cadence aligns with `docs/ops/INCIDENT_REHEARSAL_CADENCE.md`. Use
+`docs/ops/rehearsal-scenarios/backup-restore-drill.md` as the scenario record, but use the
+packaged encrypted commands from this runbook for production-image evidence.
 
-Drill dates align with the cadence defined in `docs/ops/INCIDENT_REHEARSAL_CADENCE.md`.
-The backup-restore scenario should be added to the monthly rotation.
-
----
-
-## DR Drill Evidence Template
-
-For each manual restore drill, file an evidence package at:
-
-```
-docs/ops/rehearsals/YYYY-MM-DD_backup-restore-drill.md
-```
-
-Use this table as a minimum record:
-
-| Date | Operator | Backup Age | Backup File | Restore Duration | `integrity_check` | Row Count Match | Pass/Fail | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 2026-04-01 | @operator | 3h | taskdeck-backup-2026-04-01-090000.db | 4m 12s | ok | yes | Pass | Docker volume restore |
-| YYYY-MM-DD | @username | Xh | taskdeck-backup-YYYY-MM-DD-HHmmss.db | Xm Xs | ok/fail | yes/no | Pass/Fail | |
-
-Attach or inline:
-- `PRAGMA integrity_check` output
-- Row count query results (before and after restore)
-- API `/health/ready` response after restart
-- Any deviations from expected state
-
----
-
-## Escalation Path
+## Escalation
 
 | Condition | Action |
 | --- | --- |
-| `PRAGMA integrity_check` returns anything other than `ok` | Do NOT restore this backup. Try the next-oldest backup. File an issue tagged `P1`. |
-| Restore script fails with permission error | Check file ownership, ACLs, and whether the API process holds an exclusive lock. |
-| All available backups fail integrity check | Escalate to the project owner immediately. Check the live database — it may still be intact. |
-| Post-restore API health check returns non-200 | Inspect `/health/ready` response for which subsystem failed. Check for EF migration drift between backup schema and current binary. |
-| Data loss confirmed after restore | File a P1 incident issue. Document the RPO gap in the evidence package. Increase backup frequency. |
+| Archive authentication, integrity, or schema check fails | Keep the API stopped. Try a separately recorded known-good archive. |
+| Connector verification reports any failure | Keep the API stopped. Confirm the paired connector key and archive provenance. |
+| Automatic rollback cannot finish | Preserve the encrypted safety archive and restricted rollback file. Recover into a clean target. |
+| API readiness is non-200 after restore | Keep the service unavailable. Inspect readiness details and schema compatibility. |
+| Confirmed data loss or no usable archive | Open a P1 incident with `data-loss` or `data-risk` and notify the maintainer. |
 
-For this project, escalation means: create a GitHub issue with label `incident` and
-`data-loss` (or `data-risk`) and assign it to `@Chris0Jeky`.
+Do not include keys, credential values, ciphertext, or sensitive database contents in issue
+comments or evidence logs.
 
----
+## Related documents
 
-## Related Documents
-
-- `scripts/backup.sh` / `scripts/backup.ps1` — backup automation
-- `scripts/restore.sh` / `scripts/restore.ps1` — restore automation
-- `docs/ops/EVIDENCE_TEMPLATE.md` — evidence package format
-- `docs/ops/INCIDENT_REHEARSAL_CADENCE.md` — rehearsal schedule
-- `docs/ops/FAILURE_INJECTION_DRILLS.md` — automated failure-injection drills
-- `docs/ops/REHEARSAL_BACKOFF_RULES.md` — issue filing rules for drill findings
-- `docs/ops/rehearsal-scenarios/` — scenario library
+- `deploy/docker/taskdeck-backup` and `deploy/docker/taskdeck-restore`
+- `scripts/ci/run-container-backup-restore-smoke.sh`
+- `docs/ops/EVIDENCE_TEMPLATE.md`
+- `docs/ops/INCIDENT_REHEARSAL_CADENCE.md`
+- `docs/ops/rehearsal-scenarios/backup-restore-drill.md`
+- `docs/ops/FAILURE_INJECTION_DRILLS.md`
+- `docs/ops/REHEARSAL_BACKOFF_RULES.md`

@@ -1,0 +1,54 @@
+{
+  "cost": {
+    "acceptedOperations": 4,
+    "costPerAcceptedOperation": "0.05",
+    "currency": "GBP",
+    "knownCost": "0.20",
+    "unknownCostRecords": 1
+  },
+  "methodDate": "2026-08-30",
+  "metrics": [
+    {
+      "denominator": 4,
+      "minimum_cohort_met": true,
+      "name": "unchanged-acceptance",
+      "numerator": 2,
+      "unknown": 0,
+      "value": 0.5
+    },
+    {
+      "denominator": 3,
+      "minimum_cohort_met": true,
+      "name": "target-accuracy",
+      "numerator": 2,
+      "unknown": 1,
+      "value": 0.6666666666666666
+    },
+    {
+      "denominator": 3,
+      "minimum_cohort_met": true,
+      "name": "permission-accuracy",
+      "numerator": 3,
+      "unknown": 1,
+      "value": 1.0
+    },
+    {
+      "denominator": 3,
+      "minimum_cohort_met": true,
+      "name": "false-action-adjudication",
+      "numerator": 1,
+      "unknown": 1,
+      "value": 0.3333333333333333
+    },
+    {
+      "denominator": 1,
+      "minimum_cohort_met": true,
+      "name": "correct-no-action",
+      "numerator": 1,
+      "unknown": 3,
+      "value": 1.0
+    }
+  ],
+  "sampleSize": 4,
+  "schemaVersion": 1
+}

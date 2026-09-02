@@ -1,8 +1,17 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "includeCoAuthoredBy": false,
   "enableAllProjectMcpServers": true,
   "worktree": {
-    "symlinkDirectories": ["node_modules", "frontend/taskdeck-web/node_modules"]
+    "symlinkDirectories": [
+      "node_modules",
+      "frontend/taskdeck-web/node_modules"
+    ]
   },
   "permissions": {
     "defaultMode": "acceptEdits",
@@ -11,7 +20,11 @@
       "Bash(source scripts/worktree_guard.sh:*)",
       "Bash(bash scripts/worktree_guard.sh:*)",
       "Bash(powershell -File scripts/git/New-CodexIssueWorktree.ps1:*)",
-      "Bash(dotnet --version)",
+      "Bash(node scripts/check-docs-governance.mjs:*)",
+      "Bash(node scripts/check-golden-principles.mjs:*)",
+      "Bash(node scripts/check-github-ops-governance.mjs:*)",
+      "Bash(node --test:*)",
+      "Bash(py -3 -B:*)",
       "Bash(dotnet --version:*)",
       "Bash(dotnet clean:*)",
       "Bash(dotnet restore:*)",
@@ -52,13 +65,30 @@
       "Bash(git fetch:*)",
       "Bash(git remote:*)",
       "Bash(git push:*)",
-      "Bash(gh :*)",
+      "Bash(git worktree:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh api:*)",
+      "Bash(gh run:*)",
+      "Bash(gh workflow:*)",
+      "Bash(gh release:*)",
+      "Bash(gh project:*)",
+      "Bash(gh label:*)",
+      "Bash(gh search:*)",
+      "Bash(gh milestone:*)",
+      "Bash(rg:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)",
       "Bash(ls:*)",
       "Bash(pwd:*)",
       "Bash(docker compose:*)",
       "Bash(docker build:*)",
       "Bash(docker ps:*)",
-      "Bash(docker :*)",
+      "Bash(docker:*)",
       "Bash(taskkill:*)"
     ]
   }

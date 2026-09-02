@@ -1,7 +1,9 @@
 ---
 name: pre-merge-gate
-description: "Collect Taskdeck-local readiness evidence for the canonical review pipeline: tests, lint, type-check, build, diff inspection, comments, and exact-head CI."
+description: "Collect Taskdeck-local readiness evidence for review-and-ship: exact-head identity, seam tests, diff inspection, comments, CI."
+argument-hint: "[PR number]"
 user-invocable: true
+disable-model-invocation: true
 ---
 
 # Pre-Merge Gate
@@ -59,50 +61,53 @@ PR's exact-head worktree. If `pr_mergeable` is `CONFLICTING`, stop and report; d
 ## Step 2: Check bot comments
 
 Read ALL comments on the PR:
+
 ```bash
 gh api repos/{owner}/{repo}/pulls/{number}/comments
 gh api repos/{owner}/{repo}/issues/{number}/comments
 gh pr view $ARGUMENTS --comments
 ```
 
-Check for unaddressed findings from any source:
-- Human review comments not yet resolved
-- Dependabot alerts or suggestions
-- CodeQL / security scanning findings
-- CI bot failure messages
-- Previous adversarial review comments not yet resolved
+Look for unaddressed findings from any source: human review comments, Dependabot, CodeQL / security
+scanning, CI bot failures, previous adversarial review comments. Return the comment bodies and
+resolution state to the global pipeline for triage. If that pipeline directs a fix, rerun the checks
+affected by the fix before returning the updated packet.
 
-Return the comment bodies and resolution state to the global pipeline for triage. If that pipeline
-directs a fix, rerun the checks affected by the fix before returning the updated packet.
+## Step 3: Run the seam's local checks
 
-## Step 3: Run local checks
-
-Run ALL of these:
+Run the proving checks from the root `CLAUDE.md` table for every seam the diff touches — not the full
+backend solution plus the full frontend suite, which takes minutes and duplicates `ci-required`:
 
 ```bash
-dotnet build backend/Taskdeck.sln -c Release
-dotnet test backend/Taskdeck.sln -c Release -m:1
-cd frontend/taskdeck-web && npm run build && npx vitest --run --reporter=verbose
+git diff --name-only "$pr_base_oid"..HEAD
 ```
 
-Report any failures immediately and do not mark the local evidence packet complete.
+- `backend/src/<Layer>/**` or `backend/tests/<Layer>.Tests/**` → `dotnet test backend/tests/Taskdeck.<Layer>.Tests/Taskdeck.<Layer>.Tests.csproj -c Release -m:1`;
+  cross-layer changes → `dotnet build backend/Taskdeck.sln -c Release` then the full `dotnet test backend/Taskdeck.sln -c Release -m:1`.
+- `frontend/taskdeck-web/**` → `cd frontend/taskdeck-web && npm run typecheck && npm run build && npx vitest --run --maxWorkers=2 <touched specs>`
+  (bare `vitest --run` OOMs on this box; broaden to `npx vitest --run --maxWorkers=2` only for shared
+  store/router/api changes).
+- `docs/**`, root `*.md` → `node scripts/check-docs-governance.mjs`; `docs/GOLDEN_PRINCIPLES.md` → `node scripts/check-golden-principles.mjs`.
+- `ci/**`, `scripts/ci/smart-ci/**` → `node --test scripts/ci/smart-ci/*.test.mjs`.
+- `scripts/agent_hooks/**` → `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"`.
+- `scripts/agentic/**`, `scripts/git/**` → `powershell -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1`,
+  `powershell -File scripts/git/Test-New-CodexIssueWorktree.ps1`.
+
+Report any failure immediately and do not mark the local evidence packet complete.
 
 ## Step 4: Taskdeck diff inspection
 
-Read the full diff (`gh pr diff $ARGUMENTS`) and check for:
+Read the full diff (`git diff "$pr_base_oid"..HEAD`, not `gh pr diff` — API budget) and check for:
 
-- Secrets accidentally committed (.env, tokens, keys, connection strings)
-- Debug code left in (console.log, Console.WriteLine used for debugging, breakpoints)
-- TODO comments without issue references
-- Hardcoded values that violate conventions
-- Missing tests for behavior changes
-- Clean architecture violations (Domain referencing Infrastructure)
-- Agent safety violations (GP-06: no approve_proposal or direct board mutation)
-- HTTP semantics violations (wrong status codes)
-- Unused `using` statements or dead code
+- secrets (.env, tokens, keys, connection strings); debug leftovers (console.log, Console.WriteLine,
+  breakpoints); TODOs without issue references; hardcoded values that violate conventions
+- missing tests for behavior changes; weak assertions
+- clean-architecture violations (Domain referencing Infrastructure)
+- agent safety violations (GP-06: no approve_proposal or direct board mutation)
+- HTTP semantics (wrong status codes); unused `using` statements or dead code
 
-Return any issues as Taskdeck-lens findings to the global pipeline. If it directs a fix, commit and
-push the fix, then rerun the affected local checks before returning the updated packet.
+Return issues as Taskdeck-lens findings to the global pipeline. If it directs a fix, commit and push
+the fix, then rerun the affected local checks before returning the updated packet.
 
 ## Step 5: CI status
 
@@ -115,8 +120,6 @@ route diagnosis and recovery through `taskdeck-ci-conflict-recovery`.
 
 ## Step 6: Report
 
-Output a Taskdeck evidence summary:
-
 ```
 ## Taskdeck Evidence: PR #XXX
 
@@ -124,10 +127,7 @@ Output a Taskdeck evidence summary:
 - [ ] Exact-head worktree is clean: PASS/FAIL
 - [ ] Fetched base equals remote PR base OID: PASS/FAIL
 - [ ] Merge base equals current remote base OID: PASS/FAIL
-- [ ] Backend build: PASS/FAIL
-- [ ] Backend tests: PASS/FAIL (N passed, M failed)
-- [ ] Frontend build: PASS/FAIL
-- [ ] Frontend tests: PASS/FAIL
+- [ ] Seam checks run (list each command + result): PASS/FAIL
 - [ ] CI checks: GREEN/RED
 - [ ] Diff inspection: CLEAN/FINDINGS RETURNED
 - [ ] PR feedback surfaces: CAPTURED
