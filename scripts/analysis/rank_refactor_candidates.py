@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 FORMULA = "ln(1+lines) * ln(1+churn) * sqrt(max(1,touchingCommits))"
 DEFAULT_EXTENSIONS = frozenset(
     {".cjs", ".cs", ".css", ".js", ".mjs", ".ps1", ".py", ".scss", ".sh", ".ts", ".tsx", ".vue"}
@@ -73,7 +73,17 @@ def _run_git(
 ) -> subprocess.CompletedProcess[bytes]:
     try:
         result = subprocess.run(
-            ["git", "--no-replace-objects", "-C", os.fspath(repo), *args],
+            [
+                "git",
+                "--no-replace-objects",
+                # A contributor's global attributes file must not decide whether a source
+                # file is diffed as text, because that silently changes reported churn.
+                "-c",
+                "core.attributesFile=",
+                "-C",
+                os.fspath(repo),
+                *args,
+            ],
             check=False,
             input=input_data,
             stdout=subprocess.PIPE,
@@ -92,23 +102,32 @@ def _run_git(
     return result
 
 
-def _decode_git_path(raw: bytes) -> str:
+def _decode_git_path(raw: bytes) -> str | None:
+    """Decode one repository-relative Git path, or None when it is not valid UTF-8.
+
+    Git already emits repository-relative paths with forward slashes, so a backslash is a
+    literal filename character on POSIX and is preserved. A path that cannot be represented
+    is reported as None so the caller can exclude it instead of aborting the whole report.
+    """
+
     try:
         path = raw.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise AnalysisError("Git returned a path that is not valid UTF-8") from error
-    normalized = path.replace("\\", "/")
-    pure = PurePosixPath(normalized)
-    if not normalized or pure.is_absolute() or ".." in pure.parts or "\x00" in normalized:
+    except UnicodeDecodeError:
+        return None
+    pure = PurePosixPath(path)
+    if not path or pure.is_absolute() or ".." in pure.parts or "\x00" in path:
         raise AnalysisError("Git returned an unsafe repository-relative path")
-    return normalized
+    return path
 
 
 def resolve_repository(repo_argument: Path) -> Path:
     repo = repo_argument.expanduser().resolve()
     result = _run_git(repo, "rev-parse", "--show-toplevel")
     try:
-        reported = Path(result.stdout.decode("utf-8").strip()).resolve()
+        # Only the record terminator is removed: a repository directory may legitimately
+        # end in whitespace, and stripping it would reject a valid --repo argument.
+        decoded = result.stdout.decode("utf-8").removesuffix("\n").removesuffix("\r")
+        reported = Path(decoded).resolve()
     except UnicodeDecodeError as error:
         raise AnalysisError("Git repository root is not valid UTF-8") from error
     if reported != repo:
@@ -138,6 +157,24 @@ def resolve_commit(repo: Path, ref: str) -> str:
     return commit
 
 
+def classify_base_ref(repo: Path, ref: str) -> str:
+    """Report what kind of baseline was used, so an exploratory run is visibly exploratory.
+
+    A tag is the only baseline shape a milestone report may use; a branch or bare commit
+    is exploratory because it can move or was never released.
+    """
+
+    if ref == "HEAD":
+        return "head"
+    for namespace, kind in (("refs/tags/", "tag"), ("refs/heads/", "branch"), ("refs/remotes/", "remoteBranch")):
+        probe = _run_git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{namespace}{ref}", check=False)
+        if probe.returncode == 0:
+            return kind
+    if re.fullmatch(r"[0-9a-fA-F]{4,64}", ref):
+        return "commit"
+    return "other"
+
+
 def require_ancestor(repo: Path, base_commit: str, head_commit: str) -> None:
     result = _run_git(repo, "merge-base", "--is-ancestor", base_commit, head_commit, check=False)
     if result.returncode == 1:
@@ -152,9 +189,9 @@ def tracked_tree_is_clean(repo: Path) -> bool:
     return not result.stdout
 
 
-def tracked_tree_entries(repo: Path, commit: str) -> list[tuple[str, str, str, str, int | None]]:
+def tracked_tree_entries(repo: Path, commit: str) -> list[tuple[str | None, str, str, str, int | None]]:
     result = _run_git(repo, "ls-tree", "-r", "-z", "--long", "--full-tree", commit, "--")
-    entries: list[tuple[str, str, str, str, int | None]] = []
+    entries: list[tuple[str | None, str, str, str, int | None]] = []
     for record in result.stdout.split(b"\0"):
         if not record:
             continue
@@ -201,8 +238,7 @@ def parse_extensions(raw: str) -> frozenset[str]:
 
 
 def is_candidate(path: str, extensions: frozenset[str]) -> bool:
-    normalized = path.replace("\\", "/")
-    pure = PurePosixPath(normalized)
+    pure = PurePosixPath(path)
     lowered_parts = tuple(part.lower() for part in pure.parts)
     if any(part in EXCLUDED_DIRECTORY_SEGMENTS for part in lowered_parts[:-1]):
         return False
@@ -251,28 +287,79 @@ def count_physical_lines(data: bytes) -> int | None:
     return data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
 
 
-def parse_numstat_z(raw: bytes) -> list[tuple[int | None, int | None, str, str | None]]:
-    """Parse `git show --numstat -z`; return added, deleted, new/current path, old path."""
+CommitChange = tuple[str, str | None, int | None, int | None]
+"""Status letter, rename source path, added lines, deleted lines."""
+
+
+def parse_git_log_z(raw: bytes) -> list[tuple[str, dict[str, CommitChange]]]:
+    """Parse `git log --format=%x01%H --raw --numstat -z`.
+
+    Returns one `(commit, changes)` pair per commit, where `changes` is keyed by the
+    destination path. Git emits the raw status records for a commit before its numstat
+    records, so both sections are merged by destination path rather than by position.
+    Paths that are not valid UTF-8 are dropped: they can never match a ranked candidate,
+    and aborting on an unrelated historical path would make the tool unusable in an
+    otherwise supported repository.
+    """
 
     tokens = raw.split(b"\0")
     if tokens and tokens[-1] == b"":
         tokens.pop()
-    entries: list[tuple[int | None, int | None, str, str | None]] = []
+
+    commits: list[tuple[str, dict[str, CommitChange]]] = []
+    statuses: dict[str, tuple[str, str | None]] | None = None
+    counts: dict[str, tuple[int | None, int | None]] | None = None
+    pending: list[tuple[str, dict[str, tuple[str, str | None]], dict[str, tuple[int | None, int | None]]]] = []
+
     index = 0
     while index < len(tokens):
-        header = tokens[index]
+        token = tokens[index].lstrip(b"\n")
         index += 1
-        parts = header.split(b"\t", 2)
+        if not token:
+            continue
+
+        if token.startswith(b"\x01"):
+            commit = token[1:].decode("ascii", errors="replace").strip().lower()
+            if not re.fullmatch(r"[0-9a-f]{40,64}", commit):
+                raise AnalysisError("Git log returned an invalid commit identifier")
+            statuses = {}
+            counts = {}
+            pending.append((commit, statuses, counts))
+            continue
+
+        if statuses is None or counts is None:
+            raise AnalysisError("Git log emitted a change record before any commit header")
+
+        if token.startswith(b":"):
+            fields = token.split(b" ")
+            if len(fields) < 5:
+                raise AnalysisError("Git raw diff metadata was malformed")
+            status = fields[-1].decode("ascii", errors="replace").upper()[:1]
+            if not status:
+                raise AnalysisError("Git raw diff metadata was malformed")
+            path_count = 2 if status in {"C", "R"} else 1
+            if index + path_count > len(tokens):
+                raise AnalysisError("Git raw diff record was incomplete")
+            if path_count == 2:
+                old_path = _decode_git_path(tokens[index])
+                new_path = _decode_git_path(tokens[index + 1])
+            else:
+                old_path = None
+                new_path = _decode_git_path(tokens[index])
+            index += path_count
+            if new_path is not None:
+                statuses[new_path] = (status, old_path)
+            continue
+
+        parts = token.split(b"\t", 2)
         if len(parts) != 3:
             raise AnalysisError("Git numstat output was malformed")
         added_raw, deleted_raw, path_raw = parts
         if path_raw:
-            old_path = None
             new_path = _decode_git_path(path_raw)
         else:
             if index + 1 >= len(tokens):
                 raise AnalysisError("Git rename numstat output was incomplete")
-            old_path = _decode_git_path(tokens[index])
             new_path = _decode_git_path(tokens[index + 1])
             index += 2
 
@@ -282,46 +369,138 @@ def parse_numstat_z(raw: bytes) -> list[tuple[int | None, int | None, str, str |
             added, deleted = int(added_raw), int(deleted_raw)
         else:
             raise AnalysisError("Git numstat output contained an invalid line count")
-        entries.append((added, deleted, new_path, old_path))
-    return entries
+        if new_path is not None:
+            counts[new_path] = (added, deleted)
+
+    for commit, commit_statuses, commit_counts in pending:
+        changes: dict[str, CommitChange] = {}
+        for new_path, (status, old_path) in commit_statuses.items():
+            added, deleted = commit_counts.get(new_path, (None, None))
+            changes[new_path] = (status, old_path, added, deleted)
+        commits.append((commit, changes))
+    return commits
 
 
-def collect_churn(repo: Path, base_commit: str, head_commit: str) -> tuple[dict[str, int], dict[str, int]]:
+class _PathLineages:
+    """Order-independent file lineages keyed by `(path, generation)`.
+
+    Two problems drive this structure. First, `git log` linearises a DAG, so a sibling
+    branch may edit the old name either before or after the branch that renames it; a
+    forward-only alias map would strand the totals recorded under whichever name was
+    visited first. Renames are therefore recorded as undirected unions, which makes the
+    result independent of the traversal order. Second, a path can be deleted and then
+    reused by an unrelated file. Every event that creates a new occupant at an already
+    seen path opens a new generation, so the earlier occupant's history is not inherited.
+    """
+
+    def __init__(self) -> None:
+        self._generation: dict[str, int] = {}
+        self._parent: dict[tuple[str, int], tuple[str, int]] = {}
+
+    def _find(self, key: tuple[str, int]) -> tuple[str, int]:
+        root = self._parent.setdefault(key, key)
+        while root != self._parent[root]:
+            root = self._parent[root]
+        while self._parent[key] != root:
+            self._parent[key], key = root, self._parent[key]
+        return root
+
+    def _union(self, left: tuple[str, int], right: tuple[str, int]) -> None:
+        left_root, right_root = self._find(left), self._find(right)
+        if left_root != right_root:
+            self._parent[left_root] = right_root
+
+    def current(self, path: str) -> tuple[str, int]:
+        """The lineage key for the file occupying `path` right now."""
+
+        return (path, self._generation.setdefault(path, 0))
+
+    def create(self, path: str) -> tuple[str, int]:
+        """Open a lineage for a newly created occupant of `path`."""
+
+        if path in self._generation:
+            self._generation[path] += 1
+        else:
+            self._generation[path] = 0
+        key = (path, self._generation[path])
+        self._find(key)
+        return key
+
+    def rename(self, old_path: str, new_path: str) -> tuple[str, int]:
+        """Link the file leaving `old_path` to the new occupant of `new_path`."""
+
+        source = self.current(old_path)
+        target = self.create(new_path)
+        self._union(source, target)
+        return target
+
+    def root_for(self, key: tuple[str, int]) -> tuple[str, int]:
+        return self._find(key)
+
+
+def collect_churn(
+    repo: Path,
+    base_commit: str,
+    head_commit: str,
+    head_paths: Iterable[str],
+) -> tuple[dict[str, int], dict[str, int]]:
     revision_range = f"{base_commit}..{head_commit}"
-    commits_raw = _run_git(repo, "rev-list", "--no-merges", revision_range).stdout
-    try:
-        commits = [item for item in commits_raw.decode("ascii").splitlines() if item]
-    except UnicodeDecodeError as error:
-        raise AnalysisError("Git returned an invalid commit identifier") from error
+    result = _run_git(
+        repo,
+        "log",
+        "--no-merges",
+        "--reverse",
+        "--topo-order",
+        "--format=%x01%H",
+        "--raw",
+        "--numstat",
+        "-z",
+        "--find-renames",
+        "--no-ext-diff",
+        "--no-textconv",
+        revision_range,
+        "--",
+    )
 
-    churn: dict[str, int] = defaultdict(int)
-    touches: dict[str, set[str]] = defaultdict(set)
-    aliases: dict[str, str] = {}
+    lineages = _PathLineages()
+    churn: dict[tuple[str, int], int] = defaultdict(int)
+    touches: dict[tuple[str, int], set[str]] = defaultdict(set)
 
-    # rev-list is newest first. Mapping old names backwards preserves churn under the current path.
-    for commit in commits:
-        result = _run_git(
-            repo,
-            "show",
-            "--format=",
-            "--numstat",
-            "-z",
-            "--find-renames",
-            "--no-ext-diff",
-            "--no-textconv",
-            commit,
-            "--",
-        )
-        for added, deleted, new_path, old_path in parse_numstat_z(result.stdout):
-            canonical = aliases.get(new_path, new_path)
-            aliases[new_path] = canonical
-            if old_path is not None:
-                aliases[old_path] = canonical
-            touches[canonical].add(commit)
+    # Oldest first, and each commit's paths in a fixed order, so the same DAG always
+    # produces the same lineages regardless of how Git chose to linearise the branches.
+    for commit, changes in parse_git_log_z(result.stdout):
+        for new_path in sorted(changes):
+            status, old_path, added, deleted = changes[new_path]
+            if status == "R" and old_path is not None:
+                key = lineages.rename(old_path, new_path)
+            elif status in {"A", "C"}:
+                key = lineages.create(new_path)
+            else:
+                key = lineages.current(new_path)
+            touches[key].add(commit)
             if added is not None and deleted is not None:
-                churn[canonical] += added + deleted
+                churn[key] += added + deleted
 
-    return dict(churn), {path: len(commit_ids) for path, commit_ids in touches.items()}
+    # Totals are accumulated per key and grouped only once the whole range has been read,
+    # because a rename seen late must still collect what was recorded under the old name.
+    grouped_churn: dict[tuple[str, int], int] = defaultdict(int)
+    grouped_touches: dict[tuple[str, int], set[str]] = defaultdict(set)
+    for key, amount in churn.items():
+        grouped_churn[lineages.root_for(key)] += amount
+    for key, commit_ids in touches.items():
+        grouped_touches[lineages.root_for(key)].update(commit_ids)
+
+    resolved_churn: dict[str, int] = {}
+    resolved_touches: dict[str, int] = {}
+    for relative in head_paths:
+        root = lineages.root_for(lineages.current(relative))
+        total_churn = grouped_churn.get(root, 0)
+        total_touches = len(grouped_touches.get(root, ()))
+        if total_churn:
+            resolved_churn[relative] = total_churn
+        if total_touches:
+            resolved_touches[relative] = total_touches
+    return resolved_churn, resolved_touches
 
 
 def score(lines: int, churn: int, touching_commits: int) -> float:
@@ -362,6 +541,7 @@ def build_report(
     repo = resolve_repository(repo_argument)
     require_no_grafts(repo)
     base_commit = resolve_commit(repo, base_ref)
+    base_ref_kind = classify_base_ref(repo, base_ref)
     head_commit = resolve_commit(repo, "HEAD")
     require_ancestor(repo, base_commit, head_commit)
 
@@ -369,13 +549,16 @@ def build_report(
     if not clean and not allow_dirty:
         raise AnalysisError("Tracked files are dirty; commit/stage resolution is required or pass --allow-dirty")
 
-    churn, touches = collect_churn(repo, base_commit, head_commit)
     git_version = _run_git(repo, "--version").stdout.decode("ascii", errors="replace").strip()
     rows: list[dict[str, int | str]] = []
     excluded_unreadable = 0
+    excluded_undecodable_paths = 0
     candidate_files = 0
     eligible_entries: list[tuple[str, str]] = []
     for relative, mode, object_type, object_id, size in tracked_tree_entries(repo, head_commit):
+        if relative is None:
+            excluded_undecodable_paths += 1
+            continue
         if not is_candidate(relative, extensions):
             continue
         candidate_files += 1
@@ -384,6 +567,12 @@ def build_report(
             continue
         eligible_entries.append((relative, object_id))
 
+    churn, touches = collect_churn(
+        repo,
+        base_commit,
+        head_commit,
+        (relative for relative, _object_id in eligible_entries),
+    )
     blobs = read_blobs(repo, (object_id for _, object_id in eligible_entries))
     for relative, object_id in eligible_entries:
         lines = count_physical_lines(blobs[object_id])
@@ -413,7 +602,12 @@ def build_report(
         },
         "lineSource": "Git blobs from headCommit",
         "trackedTreeClean": clean,
-        "authoritative": clean,
+        # Only source-state provenance: it says the ranked numbers came from the exact
+        # headCommit objects with no tracked working-tree drift. Milestone authority also
+        # requires the baseline to be that milestone's final release tag, which this tool
+        # cannot decide - see docs/analysis/refactoring/README.md.
+        "sourceStateAuthoritative": clean,
+        "baseRefKind": base_ref_kind,
         "formula": FORMULA,
         "sort": ["score desc", "churn desc", "lines desc", "path asc"],
         "extensions": sorted(extensions),
@@ -428,6 +622,7 @@ def build_report(
             "trackedCandidateFiles": candidate_files,
             "rankedFiles": len(ranked),
             "excludedUnreadableBinarySymlinkOrOversize": excluded_unreadable,
+            "excludedUndecodableTrackedPaths": excluded_undecodable_paths,
             "returnedCandidates": min(top, len(ranked)),
         },
         "candidates": ranked[:top],
@@ -474,13 +669,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         extensions = parse_extensions(args.extensions)
+        json_out = args.json_out.expanduser().resolve() if args.json_out else None
+        csv_out = args.csv_out.expanduser().resolve() if args.csv_out else None
+        if json_out is not None and json_out == csv_out:
+            # Writing both to one path silently replaces the JSON receipt with the CSV.
+            raise AnalysisError("--json-out and --csv-out must resolve to different paths")
         report = build_report(args.repo, args.base, extensions, args.top, args.allow_dirty)
-        if args.json_out:
-            write_json(args.json_out, report)
+        if json_out is not None:
+            write_json(json_out, report)
         else:
             print(json.dumps(report, indent=2, sort_keys=True))
-        if args.csv_out:
-            write_csv(args.csv_out, report["candidates"])  # type: ignore[arg-type]
+        if csv_out is not None:
+            write_csv(csv_out, report["candidates"])  # type: ignore[arg-type]
     except AnalysisError as error:
         print(f"refactor-ranker: {error}", file=sys.stderr)
         return 2

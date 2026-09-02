@@ -44,8 +44,14 @@ class RefactorRankerUnitTests(unittest.TestCase):
         self.assertFalse(ranker.is_candidate("backend/BoardModelSnapshot.cs", extensions))
         self.assertFalse(ranker.is_candidate("frontend/package-lock.json", extensions))
 
-    def test_numstat_z_parser_handles_normal_rename_binary_spaces_and_tabs(self) -> None:
+    def test_log_parser_handles_normal_rename_binary_spaces_and_tabs(self) -> None:
+        commit = "a" * 40
         raw = (
+            b"\x01" + commit.encode("ascii") + b"\0"
+            b"\n:100644 100644 1111111 2222222 M\0dir/file with spaces.cs\0"
+            b":100644 100644 3333333 4444444 R100\0old.cs\0new.cs\0"
+            b":100644 100644 5555555 6666666 M\0image.bin\0"
+            b":000000 100644 0000000 7777777 A\0dir/file\twith-tab.ts\0"
             b"2\t1\tdir/file with spaces.cs\0"
             b"0\t0\t\0old.cs\0new.cs\0"
             b"-\t-\timage.bin\0"
@@ -53,13 +59,36 @@ class RefactorRankerUnitTests(unittest.TestCase):
         )
         self.assertEqual(
             [
-                (2, 1, "dir/file with spaces.cs", None),
-                (0, 0, "new.cs", "old.cs"),
-                (None, None, "image.bin", None),
-                (3, 4, "dir/file\twith-tab.ts", None),
+                (
+                    commit,
+                    {
+                        "dir/file with spaces.cs": ("M", None, 2, 1),
+                        "new.cs": ("R", "old.cs", 0, 0),
+                        "image.bin": ("M", None, None, None),
+                        "dir/file\twith-tab.ts": ("A", None, 3, 4),
+                    },
+                )
             ],
-            ranker.parse_numstat_z(raw),
+            ranker.parse_git_log_z(raw),
         )
+
+    def test_log_parser_skips_paths_that_are_not_valid_utf8(self) -> None:
+        commit = "b" * 40
+        raw = (
+            b"\x01" + commit.encode("ascii") + b"\0"
+            b"\n:000000 100644 0000000 1111111 A\0notes-\xff.txt\0"
+            b":000000 100644 0000000 2222222 A\0src/a.cs\0"
+            b"1\t0\tnotes-\xff.txt\0"
+            b"2\t0\tsrc/a.cs\0"
+        )
+        self.assertEqual([(commit, {"src/a.cs": ("A", None, 2, 0)})], ranker.parse_git_log_z(raw))
+
+    def test_literal_backslash_paths_are_not_rewritten(self) -> None:
+        self.assertEqual("src/a\\b.py", ranker._decode_git_path(b"src/a\\b.py"))
+
+    def test_unsafe_paths_are_still_rejected(self) -> None:
+        with self.assertRaises(ranker.AnalysisError):
+            ranker._decode_git_path(b"../escape.cs")
 
     def test_invalid_extension_is_rejected(self) -> None:
         with self.assertRaises(ranker.AnalysisError):
@@ -132,8 +161,14 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
         self.write("src/new.cs", "dirty\n")
         report = self.report(allow_dirty=True)
         self.assertFalse(report["trackedTreeClean"])
-        self.assertFalse(report["authoritative"])
+        self.assertFalse(report["sourceStateAuthoritative"])
         self.assertEqual(4, report["candidates"][0]["lines"])
+
+    def test_baseline_kind_separates_tags_from_exploratory_baselines(self) -> None:
+        self.assertEqual("tag", self.report()["baseRefKind"])
+        branch_report = ranker.build_report(self.repo, "main", frozenset({".cs"}), 20)
+        self.assertEqual("branch", branch_report["baseRefKind"])
+        self.assertTrue(branch_report["sourceStateAuthoritative"])
 
     def test_assume_unchanged_worktree_content_cannot_change_head_line_count(self) -> None:
         self.git("update-index", "--assume-unchanged", "src/new.cs")
@@ -151,7 +186,7 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
 
         report = self.report()
 
-        self.assertTrue(report["authoritative"])
+        self.assertTrue(report["sourceStateAuthoritative"])
         self.assertEqual(4, report["candidates"][0]["lines"])
         self.assertEqual("ignored", report["gitObjectPolicy"]["replacementObjects"])
 
@@ -177,6 +212,82 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
         candidate = self.report()["candidates"][0]
         self.assertEqual(3, candidate["churn"])
         self.assertEqual(4, candidate["touchingCommits"])
+
+    def _merge_sibling_edit_and_rename(self, rename_branch_is_second_parent: bool) -> dict[str, object]:
+        """Edit `src/new.cs` under its old name on one branch, rename it on another, merge."""
+
+        self.git("switch", "-c", "rename-branch")
+        self.git("mv", "src/new.cs", "src/renamed.cs")
+        self.git("commit", "-m", "rename on sibling branch")
+        self.git("switch", "main")
+        self.write("src/new.cs", "one\ntwo\nthree\nfour\nfive\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "edit old name on sibling branch")
+        if rename_branch_is_second_parent:
+            self.git("merge", "--no-ff", "rename-branch", "-m", "merge rename")
+        else:
+            self.git("switch", "rename-branch")
+            self.git("merge", "--no-ff", "main", "-m", "merge edit")
+        return self.report()
+
+    def test_sibling_branch_rename_and_edit_are_attributed_regardless_of_merge_side(self) -> None:
+        # The rename and the edit to the old name are incomparable commits, so Git may
+        # linearise either first. Both orders must report the same lineage totals.
+        report = self._merge_sibling_edit_and_rename(rename_branch_is_second_parent=True)
+        candidate = report["candidates"][0]
+        self.assertEqual("src/renamed.cs", candidate["path"])
+        self.assertEqual(3, candidate["churn"])
+        self.assertEqual(5, candidate["touchingCommits"])
+
+    def test_sibling_branch_attribution_is_identical_with_the_merge_taken_the_other_way(self) -> None:
+        report = self._merge_sibling_edit_and_rename(rename_branch_is_second_parent=False)
+        candidate = report["candidates"][0]
+        self.assertEqual("src/renamed.cs", candidate["path"])
+        self.assertEqual(3, candidate["churn"])
+        self.assertEqual(5, candidate["touchingCommits"])
+
+    def test_deleted_path_history_is_not_inherited_by_a_later_occupant(self) -> None:
+        self.git("rm", "src/new.cs")
+        self.git("commit", "-m", "delete new.cs")
+        self.write("src/unrelated.cs", "alpha\n")
+        self.git("add", ".")
+        self.git("commit", "-m", "add unrelated")
+        self.git("mv", "src/unrelated.cs", "src/new.cs")
+        self.git("commit", "-m", "reuse the deleted path")
+
+        candidate = self.report()["candidates"][0]
+        self.assertEqual("src/new.cs", candidate["path"])
+        # Only the unrelated file's own creation and its rename, never the deleted file's
+        # two earlier edits or its deletion.
+        self.assertEqual(1, candidate["churn"])
+        self.assertEqual(2, candidate["touchingCommits"])
+
+    def test_global_attributes_file_cannot_change_reported_churn(self) -> None:
+        baseline = self.report()["candidates"][0]
+        attributes = self.repo / "global.gitattributes"
+        attributes.write_text("*.cs binary\n", encoding="utf-8")
+        self.git("config", "core.attributesFile", str(attributes))
+
+        candidate = self.report()["candidates"][0]
+        self.assertEqual(baseline["churn"], candidate["churn"])
+        self.assertEqual(baseline["touchingCommits"], candidate["touchingCommits"])
+
+    def test_colliding_json_and_csv_destinations_are_rejected(self) -> None:
+        destination = self.repo / "artifacts" / "report.json"
+        exit_code = ranker.main(
+            [
+                "--repo",
+                str(self.repo),
+                "--base",
+                "baseline",
+                "--json-out",
+                str(destination),
+                "--csv-out",
+                str(destination),
+            ]
+        )
+        self.assertEqual(2, exit_code)
+        self.assertFalse(destination.exists())
 
     def test_unresolved_base_is_rejected(self) -> None:
         with self.assertRaises(ranker.AnalysisError):
