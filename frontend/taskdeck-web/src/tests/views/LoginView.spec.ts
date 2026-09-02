@@ -250,6 +250,41 @@ describe('LoginView', () => {
     expect(wrapper.find('[role="alert"]').text()).toContain('Login failed. Please try again.')
   })
 
+  it('replaces the inline error across retries and clears it after a successful login', async () => {
+    sessionMock.login
+      .mockImplementationOnce(async () => {
+        sessionMock.error = 'Invalid username or password'
+        throw new Error('invalid credentials')
+      })
+      .mockImplementationOnce(async () => {
+        sessionMock.error = 'Your account has been locked. Contact support.'
+        throw new Error('account locked')
+      })
+      .mockImplementationOnce(async () => {
+        sessionMock.error = null
+      })
+
+    const wrapper = mount(LoginView)
+    await waitForUi()
+    await wrapper.find('#login-username').setValue('alice')
+    await wrapper.find('#login-password').setValue('wrongpass')
+
+    await wrapper.find('form').trigger('submit')
+    await waitForUi()
+    expect(wrapper.find('[role="alert"]').text()).toBe('Invalid username or password')
+
+    await wrapper.find('form').trigger('submit')
+    await waitForUi()
+    expect(wrapper.findAll('[role="alert"]')).toHaveLength(1)
+    expect(wrapper.find('[role="alert"]').text()).toBe('Your account has been locked. Contact support.')
+
+    await wrapper.find('form').trigger('submit')
+    await waitForUi()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(routerMocks.push).toHaveBeenCalledWith('/workspace/home')
+    expect(sessionMock.login).toHaveBeenCalledTimes(3)
+  })
+
   it('disables submit button while submitting', async () => {
     let resolveLogin!: () => void
     sessionMock.login.mockReturnValue(
