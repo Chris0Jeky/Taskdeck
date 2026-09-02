@@ -4,21 +4,13 @@
       "type": "http",
       "url": "https://developers.openai.com/mcp"
     },
-    "github": {
-      "type": "http",
-      "url": "https://api.githubcopilot.com/mcp/"
-    },
-    "context7": {
-      "command": "cmd",
-      "args": ["/c", "npx", "-y", "@upstash/context7-mcp"]
-    },
     "playwright": {
       "command": "cmd",
       "args": ["/c", "npx", "-y", "@executeautomation/playwright-mcp-server"]
     },
     "chromeDevTools": {
       "command": "cmd",
-      "args": ["/c", "npx", "-y", "chrome-devtools-mcp@latest"]
+      "args": ["/c", "npx", "-y", "chrome-devtools-mcp@1.8.0"]
     }
   }
 }
