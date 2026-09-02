@@ -29,8 +29,9 @@ without its own separate gate**. The repository goes private for the v0.3.0 rele
 - Auto mode is the user-level default. `bypassPermissions` comes only from user settings, managed policy, or
   a launch flag — project files cannot grant it (2.1.257). The committed project default is `acceptEdits`.
 - The global floor hook runs on every Bash call in every mode. It refuses `$var`-built command names and
-  redirect targets it cannot inspect (a `->` followed by a backtick counts) — write literal commands and
-  put multi-line edits in a script file, not a heredoc.
+  paths, and it has refused heredocs whose body contained backticks ("dynamic redirect target cannot be
+  inspected") — write literal commands, `Write` multi-line edits to a scratchpad script and run it, and pass
+  PR bodies with `--body-file`.
 - `AGENTS.md` is Codex-facing and is **not** auto-loaded by Claude; read it only for Codex coordination.
 - Permission rules are prefix rules: `Bash(gh:*)`, never `Bash(gh :*)` — `:*` is a wildcard only at the end.
 
@@ -107,7 +108,10 @@ Retired Gemini selectors/settings fail startup with migration guidance — `docs
 Behavior changes ship with tests. Errors handled explicitly, never swallowed. Stable HTTP codes
 (400/401/403/404/409), claims-first identity, no cross-user leaks, never trust client input for identity.
 Backend: C# conventions, 4-space, layer purity. Frontend: `PascalCase.vue`, `<script setup>`.
-Canonical-doc sync and the ADR trigger list: `.claude/rules/docs.md`.
+Shipped reality changed → update `docs/STATUS.md`; sequencing or delivery history changed →
+`docs/IMPLEMENTATION_MASTERPLAN.md`; a choice between competing approaches, a project-wide constraint, or a
+hard-to-reverse change → an ADR in `docs/decisions/`. This applies to code-only PRs too — the mechanics live in
+`.claude/rules/docs.md`, which loads only when a doc is touched.
 
 ## Authority
 
