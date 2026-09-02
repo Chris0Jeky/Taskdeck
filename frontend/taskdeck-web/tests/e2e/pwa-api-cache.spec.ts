@@ -20,6 +20,9 @@ test('a legacy response from user A is never replayed after switching to user B 
     await page.getByRole('button', { name: 'Sign in' }).click()
     await page.waitForURL('**/workspace/home')
     await page.evaluate(() => navigator.serviceWorker.ready)
+    await page.reload()
+    await page.waitForURL('**/workspace/home')
+    await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true)
 
     // This simulates the namespace an older service worker populated under A.
     await page.evaluate(async (url) => {

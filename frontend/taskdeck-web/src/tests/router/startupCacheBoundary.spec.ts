@@ -35,5 +35,24 @@ describe('startup API-cache boundary', () => {
     release(true)
     await navigation
     expect(router.currentRoute.value.path).toBe('/workspace/home')
+
+    await router.push('/workspace/today')
+    expect(cachePurgeMocks.purge).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a failed startup purge before a later protected navigation', async () => {
+    cachePurgeMocks.purge
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+    tokenStorage.setToken(fakeJwt())
+    const { default: router } = await import('../../router')
+
+    await router.push('/workspace/home')
+    expect(router.currentRoute.value.path).toBe('/login')
+
+    tokenStorage.setToken(fakeJwt())
+    await router.push('/workspace/home')
+    expect(router.currentRoute.value.path).toBe('/workspace/home')
+    expect(cachePurgeMocks.purge).toHaveBeenCalledTimes(2)
   })
 })

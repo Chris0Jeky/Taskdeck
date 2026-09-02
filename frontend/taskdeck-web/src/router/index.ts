@@ -368,8 +368,15 @@ const routePerf = usePerformanceMark('route-transition')
 let startupCachePurge: Promise<boolean> | undefined
 
 function purgeLegacyApiCachesBeforeNavigation(): Promise<boolean> {
-  startupCachePurge ??= purgeLegacyApiCaches()
-  return startupCachePurge
+  const purge = startupCachePurge ??= purgeLegacyApiCaches()
+  return purge.then((succeeded) => {
+    // CacheStorage can be transiently unavailable. A failed attempt still
+    // fails the current navigation closed, but must not prevent a later safe
+    // retry once storage recovers. Preserve a resolved success and any shared
+    // in-flight attempt.
+    if (!succeeded && startupCachePurge === purge) startupCachePurge = undefined
+    return succeeded
+  })
 }
 
 // Navigation guard for auth and feature flags

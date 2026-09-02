@@ -1,7 +1,6 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
-import { isLocaleCatalogRequest, isStaticAssetRequest } from './src/pwa/runtimeCachePolicy.ts'
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -90,7 +89,12 @@ export default defineConfig({
           {
             // Lazy locale catalogs (excluded from precache above): cache on
             // first use so a user who picked it/es keeps their language offline.
-            urlPattern: isLocaleCatalogRequest,
+            // Workbox serializes this callback into sw.js. Keep every
+            // dependency inline: imported helpers become free identifiers in
+            // the generated worker.
+            urlPattern: ({ url }) =>
+              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
+              /^\/assets\/(?:it|es)-[\w-]+\.js$/.test(url.pathname),
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'taskdeck-locale-chunks',
@@ -100,7 +104,11 @@ export default defineConfig({
           },
           {
             // CacheFirst for static assets (fonts, images, icons)
-            urlPattern: isStaticAssetRequest,
+            // See the locale matcher above: this must remain self-contained
+            // when vite-plugin-pwa serializes it into the service worker.
+            urlPattern: ({ url }) =>
+              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
+              /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i.test(url.pathname),
             handler: 'CacheFirst',
             options: {
               cacheName: 'taskdeck-static-assets',
