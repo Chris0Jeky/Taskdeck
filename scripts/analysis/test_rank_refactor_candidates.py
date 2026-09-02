@@ -90,6 +90,63 @@ class RefactorRankerUnitTests(unittest.TestCase):
         with self.assertRaises(ranker.AnalysisError):
             ranker._decode_git_path(b"../escape.cs")
 
+    def _totals(
+        self,
+        events: list[tuple[str, str, str | None, str, int]],
+        head_path: str,
+    ) -> tuple[int, int]:
+        """Replay `(commit, status, old_path, new_path, churn)` events through the lineages."""
+
+        lineages = ranker._PathLineages()
+        churn: dict[tuple[str, int], int] = {}
+        touches: dict[tuple[str, int], set[str]] = {}
+        for commit, status, old_path, new_path, amount in events:
+            if status == "R" and old_path is not None:
+                key = lineages.rename(old_path, new_path)
+            elif status in {"A", "C", "R"}:
+                key = lineages.create(new_path)
+            else:
+                key = lineages.current(new_path)
+            churn[key] = churn.get(key, 0) + amount
+            touches.setdefault(key, set()).add(commit)
+
+        root = lineages.root_for(lineages.current(head_path))
+        total_churn = sum(value for key, value in churn.items() if lineages.root_for(key) == root)
+        seen: set[str] = set()
+        for key, commit_ids in touches.items():
+            if lineages.root_for(key) == root:
+                seen |= commit_ids
+        return total_churn, len(seen)
+
+    def test_lineage_totals_do_not_depend_on_the_order_events_are_replayed(self) -> None:
+        # The rename and the edit to the old name are incomparable commits, so Git may
+        # linearise either first. This drives both orders directly, without relying on
+        # Git's topo-order tie-break to actually differ between two merge shapes.
+        edit = ("c-edit", "M", None, "src/old.cs", 1)
+        rename = ("c-rename", "R", "src/old.cs", "src/new.cs", 0)
+
+        self.assertEqual((1, 2), self._totals([edit, rename], "src/new.cs"))
+        self.assertEqual((1, 2), self._totals([rename, edit], "src/new.cs"))
+
+    def test_a_reused_path_starts_a_new_lineage_in_either_order(self) -> None:
+        events = [
+            ("c1", "M", None, "src/reused.cs", 7),
+            ("c2", "D", None, "src/reused.cs", 2),
+            ("c3", "A", None, "src/fresh.cs", 1),
+            ("c4", "R", "src/fresh.cs", "src/reused.cs", 0),
+        ]
+        self.assertEqual((1, 2), self._totals(events, "src/reused.cs"))
+
+    def test_a_rename_with_an_undecodable_source_does_not_inherit_the_previous_occupant(self) -> None:
+        # `_decode_git_path` returns None for a non-UTF-8 path, so the rename arrives
+        # with no source. It still puts a new occupant at the destination.
+        events = [
+            ("c1", "M", None, "src/good.cs", 500),
+            ("c2", "D", None, "src/good.cs", 500),
+            ("c3", "R", None, "src/good.cs", 3),
+        ]
+        self.assertEqual((3, 1), self._totals(events, "src/good.cs"))
+
     def test_invalid_extension_is_rejected(self) -> None:
         with self.assertRaises(ranker.AnalysisError):
             ranker.parse_extensions(".cs,../secret")
@@ -271,6 +328,37 @@ class RefactorRankerRepositoryTests(unittest.TestCase):
         candidate = self.report()["candidates"][0]
         self.assertEqual(baseline["churn"], candidate["churn"])
         self.assertEqual(baseline["touchingCommits"], candidate["touchingCommits"])
+
+    def test_rename_limit_configuration_cannot_break_rename_attribution(self) -> None:
+        # A low diff.renameLimit makes Git report a rename as a delete plus an add,
+        # which is exactly the lineage break this tool exists to avoid. The pinned
+        # -c option must outrank it.
+        baseline = self.report()["candidates"][0]
+        self.git("config", "diff.renameLimit", "1")
+
+        candidate = self.report()["candidates"][0]
+        self.assertEqual(baseline["churn"], candidate["churn"])
+        self.assertEqual(baseline["touchingCommits"], candidate["touchingCommits"])
+
+    def test_diff_algorithm_configuration_cannot_change_reported_churn(self) -> None:
+        baseline = self.report()["candidates"][0]
+        self.git("config", "diff.algorithm", "histogram")
+
+        self.assertEqual(baseline["churn"], self.report()["candidates"][0]["churn"])
+
+    def test_repository_local_attributes_are_recorded_in_the_receipt(self) -> None:
+        # Neither -c nor an environment variable can disable info/attributes, and it is
+        # a legitimate local housekeeping file, so the receipt states whether one was in
+        # effect instead of the run being refused.
+        self.assertEqual("absent", self.report()["gitObjectPolicy"]["repositoryLocalAttributes"])
+
+        attributes_path = Path(
+            self.git("rev-parse", "--path-format=absolute", "--git-path", "info/attributes"),
+        )
+        attributes_path.parent.mkdir(parents=True, exist_ok=True)
+        attributes_path.write_text("/docs/example.md -text\n", encoding="utf-8")
+
+        self.assertEqual("present", self.report()["gitObjectPolicy"]["repositoryLocalAttributes"])
 
     def test_colliding_json_and_csv_destinations_are_rejected(self) -> None:
         destination = self.repo / "artifacts" / "report.json"

@@ -46,6 +46,7 @@ Run only what your change touches. Everything is seconds unless marked.
 | `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` |
 | `ci/**`, `scripts/ci/smart-ci/**`, the smart-ci shadow workflow | `node --test scripts/ci/smart-ci/*.test.mjs` |
 | Failure-ledger projection | `py -3 -B -m unittest discover -s scripts/agent_hooks -p "test_render_failure_ledger.py"` |
+| `scripts/analysis/**` refactoring ranker | `py -3 -B -m unittest discover -s scripts/analysis -p "test_rank_refactor_candidates.py"` |
 | `scripts/agentic/**`, the orchestrator guard recipe | `powershell -File scripts/agentic/Test-Assert-TaskdeckCheckoutFingerprint.ps1` |
 | One backend test project | `dotnet test backend/tests/<Project>/<Project>.csproj -c Release -m:1` — `Taskdeck.{Domain,Application,Api,Cli,Architecture,Integration}.Tests` (~30 s cold; Infrastructure is covered by Integration + Api) |
 | Backend, one class | add `--filter "FullyQualifiedName~MyTestClass"` |

@@ -59,6 +59,43 @@ MAX_SOURCE_BYTES = 10 * 1024 * 1024
 GIT_TIMEOUT_SECONDS = 120
 SAFE_EXTENSION = re.compile(r"^\.[a-z0-9]+$")
 
+# Local Git configuration must not decide the numbers in a receipt that claims to be
+# reproducible. Each of these changes churn or rename detection without changing the
+# repository state, so each is pinned rather than inherited:
+#   core.attributesFile / core.attributesfile - a global attributes file marking a
+#     source extension `binary` turns numeric churn into `-` and silently scores it 0
+#   diff.renameLimit - when exceeded, Git warns on stderr and reports a rename as a
+#     delete plus an add, which is exactly the lineage break this tool exists to avoid
+#   diff.algorithm - histogram/patience need not produce the same added/deleted counts
+#     as the default for a given blob pair
+#   core.bigFileThreshold - files above it are diffed as binary and score 0 churn
+GIT_DETERMINISM_OPTIONS = (
+    "-c", "core.attributesFile=",
+    "-c", "diff.renameLimit=0",
+    "-c", "diff.algorithm=myers",
+    "-c", "core.bigFileThreshold=512m",
+)
+# `-c` outranks every configuration source including `GIT_CONFIG_KEY_*`, so the pins
+# above do not need the surrounding config scrubbed - and scrubbing it would be wrong,
+# because system configuration also carries platform end-of-line settings that decide
+# whether a checkout reads as clean. Only pointers that would redirect Git away from
+# the repository under analysis, or supply an attributes file the pins do not cover,
+# are removed. `info/attributes` is per-clone and uncommitted, so it is rejected
+# outright rather than silently honoured as if it were repository policy.
+GIT_ENVIRONMENT_REMOVED = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_ATTRIBUTES_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+)
+
+
+def _git_environment() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if key not in GIT_ENVIRONMENT_REMOVED}
+
 
 class AnalysisError(RuntimeError):
     """A bounded, user-actionable analysis failure."""
@@ -73,18 +110,9 @@ def _run_git(
 ) -> subprocess.CompletedProcess[bytes]:
     try:
         result = subprocess.run(
-            [
-                "git",
-                "--no-replace-objects",
-                # A contributor's global attributes file must not decide whether a source
-                # file is diffed as text, because that silently changes reported churn.
-                "-c",
-                "core.attributesFile=",
-                "-C",
-                os.fspath(repo),
-                *args,
-            ],
+            ["git", "--no-replace-objects", *GIT_DETERMINISM_OPTIONS, "-C", os.fspath(repo), *args],
             check=False,
+            env=_git_environment(),
             input=input_data,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -133,6 +161,26 @@ def resolve_repository(repo_argument: Path) -> Path:
     if reported != repo:
         raise AnalysisError(f"--repo must be the exact Git root (Git reported {reported})")
     return repo
+
+
+def repository_local_attributes_present(repo: Path) -> bool:
+    """Report whether `info/attributes` exists - per-clone, uncommitted, attribute state.
+
+    It is recorded rather than rejected. `-c` cannot override it and no environment
+    variable disables it, but it is also a legitimate local housekeeping file: Taskdeck's
+    own checkout uses one to mark end-of-line handling for a handful of tracked files.
+    Refusing to run would make the tool unusable in the repository it exists for, so the
+    receipt states the fact and the reader decides whether two runs are comparable.
+    """
+
+    result = _run_git(repo, "rev-parse", "--path-format=absolute", "--git-path", "info/attributes")
+    try:
+        attributes_path = Path(result.stdout.decode("utf-8").removesuffix("\n").removesuffix("\r"))
+    except UnicodeDecodeError as error:
+        raise AnalysisError("Git attributes path is not valid UTF-8") from error
+    if not attributes_path.is_absolute():
+        attributes_path = repo / attributes_path
+    return attributes_path.exists()
 
 
 def require_no_grafts(repo: Path) -> None:
@@ -473,7 +521,10 @@ def collect_churn(
             status, old_path, added, deleted = changes[new_path]
             if status == "R" and old_path is not None:
                 key = lineages.rename(old_path, new_path)
-            elif status in {"A", "C"}:
+            elif status in {"A", "C", "R"}:
+                # A rename whose source path could not be decoded still puts a *new*
+                # occupant at the destination. Treating it as an edit would hand the
+                # previous occupant's history to an unrelated file.
                 key = lineages.create(new_path)
             else:
                 key = lineages.current(new_path)
@@ -540,6 +591,7 @@ def build_report(
         raise AnalysisError("--top must be greater than zero")
     repo = resolve_repository(repo_argument)
     require_no_grafts(repo)
+    local_attributes = repository_local_attributes_present(repo)
     base_commit = resolve_commit(repo, base_ref)
     base_ref_kind = classify_base_ref(repo, base_ref)
     head_commit = resolve_commit(repo, "HEAD")
@@ -599,6 +651,9 @@ def build_report(
         "gitObjectPolicy": {
             "replacementObjects": "ignored",
             "grafts": "rejected",
+            "repositoryLocalAttributes": "present" if local_attributes else "absent",
+            "systemAndGlobalAttributes": "ignored",
+            "pinnedDiffOptions": list(GIT_DETERMINISM_OPTIONS),
         },
         "lineSource": "Git blobs from headCommit",
         "trackedTreeClean": clean,

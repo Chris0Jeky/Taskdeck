@@ -21,15 +21,19 @@ Until the exact `v0.3.0` tag exists, runs against an RC, moving branch, or older
 
 The report carries two separate provenance facts, because neither can stand in for the other:
 
-- `sourceStateAuthoritative` is true when the tracked tree was clean, so every ranked number came
-  from the exact `headCommit` objects with no working-tree drift mixed in.
+- `sourceStateAuthoritative` is true when the tracked tree was clean. Every ranked number is read
+  from `headCommit` objects and committed history whether it is true or false, so this flag is not
+  what keeps working-tree content out of the receipt - it records that the checkout the operator ran
+  from matched the commit they are reporting. It is derived from `git status`, which does not report
+  files carrying the `assume-unchanged` or `skip-worktree` index bit, so it is a statement about the
+  index rather than about every byte in the working tree.
 - `baseRefKind` records what the baseline actually was (`tag`, `branch`, `remoteBranch`, `commit`,
   `head`, or `other`). A milestone measurement additionally requires `baseRefKind` to be `tag` and
   that tag to be the milestone's final release tag; the tool cannot decide which tag that is, so a
   clean run against a branch or an RC is a valid receipt of an exploratory measurement, never a
   milestone one.
 
-By default the command refuses tracked changes. `--allow-dirty` is available for local exploration; when tracked changes exist, the report sets `sourceStateAuthoritative: false`. Untracked files do not affect the tracked-source calculation and do not block a run.
+By default the command refuses tracked changes that `git status` reports. `--allow-dirty` is available for local exploration; when tracked changes exist, the report sets `sourceStateAuthoritative: false`. Untracked files do not affect the tracked-source calculation and do not block a run.
 
 `--json-out` and `--csv-out` must resolve to different paths; a shared destination is rejected before either file is written, so the JSON receipt cannot be silently replaced by the CSV.
 
@@ -56,9 +60,19 @@ Git happens to linearise that edit before or after the rename. Any event that cr
 at an already-seen path -- an add, a copy, or a rename onto it -- opens a new lineage, so a path that
 is deleted and later reused does not inherit the previous file's history.
 
-Every Git invocation neutralises `core.attributesFile`, so a contributor's global attributes cannot
-decide whether a source file is diffed as text and thereby change reported churn. In-tree
-`.gitattributes` remains in force because it is repository policy rather than local configuration.
+Every Git invocation pins the configuration that decides these numbers without changing the
+repository: `core.attributesFile` is neutralised, `diff.renameLimit` is unlimited, `diff.algorithm`
+is `myers`, and `core.bigFileThreshold` is raised. Command-line `-c` outranks every other
+configuration source, so a contributor's global, system, or environment settings cannot mark a
+source extension binary, suppress rename detection, or otherwise move churn. In-tree
+`.gitattributes` remains in force because it is repository policy. `info/attributes` is per-clone and
+uncommitted and cannot be overridden by `-c` or by the environment, so the receipt records whether
+one was in effect (`gitObjectPolicy.repositoryLocalAttributes`) rather than refusing to run - this
+repository legitimately keeps one for end-of-line handling. Two receipts are comparable only when
+that field matches. Pointers that would redirect Git away from the repository
+under analysis (`GIT_DIR`, `GIT_INDEX_FILE`, `GIT_ATTRIBUTES_FILE` and friends) are removed from the
+child environment; the rest of the environment is left alone, because system configuration also
+carries the platform end-of-line settings that decide whether a checkout reads as clean.
 
 Ties sort by churn, lines, then repository-relative path, so the same repository state produces byte-stable JSON when written with the same options. The report also records the Git version because rename detection can vary between Git releases.
 
@@ -68,10 +82,19 @@ The ranker includes common Taskdeck source extensions and excludes dependency, b
 
 Git rename detection is heuristic. Copy history is intentionally not followed. Merge commits are
 excluded from churn aggregation so their first-parent delta does not recount merged branch commits;
-conflict resolution authored only in the merge may therefore be absent. Lineage generations are
-assigned from the linearised commit order, so a path independently created on two branches and then
-merged keeps only the later-visited lineage; that shape is genuinely ambiguous in a DAG. Tracked
-paths that are not valid UTF-8 cannot be ranked and are counted in
+conflict resolution authored only in the merge may therefore be absent.
+
+Lineage generations are assigned from the linearised commit order, and that is the one place where
+the DAG is genuinely ambiguous. A rename resolves its source to whatever lineage most recently
+occupies the old path, so if a *different* file was moved onto that path on a parallel branch and is
+visited first, the rename joins the wrong lineage. Two unrelated current files can then share one
+lineage and each report the summed churn and the union of the touching commits of both. Resolving
+this needs per-commit ancestry rather than a linearisation, which this tool does not compute, so it
+is a documented boundary. It requires a delete or a rename onto a path on one branch plus a rename
+away from the same path on an incomparable branch - if a report shows two current files with
+identical churn and touching-commit counts, check for that shape before trusting either row.
+
+Tracked paths that are not valid UTF-8 cannot be ranked and are counted in
 `summary.excludedUndecodableTrackedPaths` instead of aborting the report. A large or frequently
 edited file can also be cohesive and healthy. These limits are why the score cannot establish a
 refactoring requirement by itself.
