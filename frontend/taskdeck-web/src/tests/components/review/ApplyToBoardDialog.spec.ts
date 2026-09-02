@@ -306,6 +306,26 @@ describe('ApplyToBoardDialog', () => {
       expect(wrapper.emitted('confirm')).toHaveLength(1)
     })
 
+    it('ignores modified Enter chords and remains armed for a plain Enter', async () => {
+      const wrapper = await openDialog()
+
+      for (const modifiers of [
+        { ctrlKey: true },
+        { metaKey: true },
+        { altKey: true },
+        { shiftKey: true },
+      ]) {
+        pressEnter(modifiers)
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.emitted('confirm')).toBeUndefined()
+
+      pressEnter()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.emitted('confirm')).toHaveLength(1)
+    })
+
     it('ignores an auto-repeat Enter — the approving keypress, still held', async () => {
       const wrapper = await openDialog()
       pressEnter({ repeat: true })
