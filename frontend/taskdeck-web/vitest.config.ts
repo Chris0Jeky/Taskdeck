@@ -8,7 +8,12 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: './src/tests/setup.ts',
-    exclude: [...configDefaults.exclude, 'tests/e2e/**', 'tests/visual/**'],
+    exclude: [
+      ...configDefaults.exclude,
+      'tests/e2e/**',
+      'tests/visual/**',
+      'tests/pwa-generated-worker.spec.ts',
+    ],
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,vue}'],
