@@ -2,13 +2,22 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-02
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## 2026-09-02 v0.3 post-RC integration wave
+
+- `#2386` / PR `#2387` / merge `dcd258af2`: the Dependabot and dependency-policy seam now caps `Microsoft.EntityFrameworkCore.SqlServer` at the coordinated EF8 major. The exact head completed 20/20 hosted checks successfully, including Linux/Windows backend and API suites, migration validation, container images, and E2E Smoke. This did not exercise or authorize an EF9 or live SQL Server upgrade.
+- PR `#2364` / merge `6aa97465b`: the 13-package frontend minor/patch group and Browserslist 4.28.7 advisory repair passed `npm ci`, high-severity audit with zero vulnerabilities, branding 4/4, coverage 5,318/5,318, typecheck, production build, scoped lint, and diff hygiene. All 36 hosted checks succeeded or were deliberately skipped, including E2E Smoke. No dedicated manual-browser or packaged-desktop journey was run.
+- `#2242` / PR `#2389` / merge `81a5921bc`: the launch-kit drafts passed docs governance, GitHub-operations governance, 50 local-link checks, external-link validation, diff hygiene, exact-head review, and hosted CI including E2E Smoke. No launch post, final tag/artifact, signing step, or visibility cutover was performed.
+- `#2390` / PR `#2392` / merge `982f40e8e`: the safety follow-up passed docs governance, GitHub-operations governance, 29 focused `DesktopRuntimeTests`, diff hygiene, exact-head review, and 20/20 hosted checks including E2E Smoke. Real anonymous public-home and SC-8 verification remain unperformed human gates.
+- `#1937` / PR `#2393` / merge `12ffc4e9f`: three quick-capture component specs passed 78 tests, the locale-catalog guard passed 19, and typecheck plus diff hygiene passed. All 36 hosted checks succeeded or were deliberately skipped, including E2E Smoke. A dedicated manual-browser/screen-reader pass was not run; Spanish accenting and duplicate test-local i18n setup remain LOW polish notes.
+- `#1983` / PR `#2396` / merge `125804d34`: targeted tests in `ApplyToBoardDialog.spec.ts` and `PaperReviewView.spec.ts` assert plain Enter confirmation, modifier chord rejection, and proposal-guarded focus restoration to the Request edit control on cancel and save. Typecheck, build, and hosted CI including E2E Smoke passed.
 
 ## 2026-08-30 Smart CI Fabric checks (ADR-0066, shadow phase)
 
