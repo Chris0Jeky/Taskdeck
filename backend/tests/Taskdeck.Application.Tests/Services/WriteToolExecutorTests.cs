@@ -249,9 +249,10 @@ public class WriteToolExecutorTests
     [Fact]
     public async Task ProposeArchiveCard_WithValidCard_CreatesProposal()
     {
+        CreateProposalDto? captured = null;
         var card = CreateCard("Old task");
         SetupBoardCards(card);
-        SetupProposalCreation(Guid.NewGuid());
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
 
         var executor = new ProposeArchiveCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
         var shortId = BoardContextBuilder.FormatShortId(card.Id);
@@ -262,6 +263,12 @@ public class WriteToolExecutorTests
 
         doc.RootElement.GetProperty("proposal_id").GetString().Should().NotBeNullOrEmpty();
         doc.RootElement.GetProperty("summary").GetString().Should().Contain("Archive");
+        captured.Should().NotBeNull();
+        captured!.Operations.Should().ContainSingle();
+        using var parameters = JsonDocument.Parse(captured.Operations![0].Parameters);
+        parameters.RootElement.EnumerateObject().Select(property => property.Name)
+            .Should().Equal("cardId");
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(card.Id);
     }
 
     [Fact]
