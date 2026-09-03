@@ -77,6 +77,7 @@ jobs:
           name: demo-director-smoke-artifacts
           path: frontend/taskdeck-web/demo-artifacts/ci-smoke
           if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload Playwright report
         if: failure()
@@ -85,6 +86,7 @@ jobs:
           name: demo-director-playwright-report
           path: frontend/taskdeck-web/playwright-report
           if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload Playwright test results
         if: failure()
@@ -93,3 +95,4 @@ jobs:
           name: demo-director-playwright-results
           path: frontend/taskdeck-web/test-results
           if-no-files-found: ignore
+          retention-days: 14

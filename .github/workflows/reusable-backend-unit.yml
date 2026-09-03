@@ -58,3 +58,4 @@ jobs:
           name: backend-unit-trx-${{ matrix.os }}
           path: backend/TestResults/backend-unit/${{ matrix.os }}
           if-no-files-found: ignore
+          retention-days: 14

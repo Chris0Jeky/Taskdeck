@@ -46,3 +46,4 @@ jobs:
           name: backend-architecture-trx
           path: backend/TestResults/architecture
           if-no-files-found: ignore
+          retention-days: 14

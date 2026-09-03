@@ -97,3 +97,4 @@ jobs:
           name: api-integration-trx-${{ matrix.os }}
           path: backend/TestResults/api-integration/${{ matrix.os }}/*.trx
           if-no-files-found: ignore
+          retention-days: 14

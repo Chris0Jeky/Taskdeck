@@ -77,3 +77,4 @@ jobs:
           name: container-integration-trx
           path: backend/TestResults/container-integration*
           if-no-files-found: ignore
+          retention-days: 14
