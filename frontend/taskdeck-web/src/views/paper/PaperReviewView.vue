@@ -1142,6 +1142,8 @@ const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
 let revisionReturnFocusEl: HTMLElement | null = null
 let revisionReturnFocusProposalId: string | null = null
+let revisionEditEpoch = 0
+let revisionReturnFocusEpoch: number | null = null
 
 // The rail's primary control, whichever it currently is: the decision button,
 // or the filing button the rail becomes once the proposal is applied and
@@ -1163,27 +1165,48 @@ function revisionRailFocusTarget(): HTMLElement | null {
  * The revision composer lives below the rail and moves focus into its first
  * field on entry. Capture the rail action before that move so both deliberate
  * exits (cancel and a successful save) return the reviewer to the control that
- * opened the editor. A proposal-id guard prevents a late save from moving focus
- * onto a different proposal after the queue selection changes.
+ * opened the editor. An edit-session epoch prevents a late save from moving
+ * focus into a new session after the queue selection changes, even when the
+ * reviewer returns to the same proposal.
  */
 function captureRevisionReturnFocus(proposalId: string) {
+  const epoch = ++revisionEditEpoch
   revisionReturnFocusEl = revisionRailFocusTarget()
   revisionReturnFocusProposalId = proposalId
+  revisionReturnFocusEpoch = epoch
+}
+
+function invalidateRevisionFocusSession() {
+  revisionEditEpoch += 1
+  revisionReturnFocusEl = null
+  revisionReturnFocusProposalId = null
+  revisionReturnFocusEpoch = null
 }
 
 function restoreRevisionFocus() {
   const captured = revisionReturnFocusEl
   const proposalId = revisionReturnFocusProposalId
+  const epoch = revisionReturnFocusEpoch
   revisionReturnFocusEl = null
   revisionReturnFocusProposalId = null
+  revisionReturnFocusEpoch = null
 
-  if (!proposalId) return
+  if (!proposalId || epoch === null || epoch !== revisionEditEpoch) return
   void nextTick(() => {
+    if (epoch !== revisionEditEpoch) return
     if (!proposalIdsEqual(activeProposal.value?.id, proposalId)) return
     const target = captured?.isConnected ? captured : revisionRailFocusTarget()
     if (target && isFocusable(target)) target.focus?.()
   })
 }
+
+watch(
+  () => activeProposal.value?.id ?? null,
+  (id, previousId) => {
+    if (previousId === undefined || proposalIdsEqual(id, previousId)) return
+    invalidateRevisionFocusSession()
+  },
+)
 
 watch(executeConfirmProposal, (pending, previous) => {
   // Only on close (open → closed), never on the open itself.
@@ -1681,6 +1704,7 @@ async function onPreviewDiff() {
 async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   if (isArchivedHistory.value) return
   const proposalId = activeProposal.value?.id
+  const saveEpoch = revisionEditEpoch
   await saveRevision(payload)
   // Saving an edit changes what Apply will execute, so a diff already on screen is
   // now stale — drop it so the "reflects your saved edit" note cannot certify a
@@ -1693,6 +1717,8 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   // only for that close and only if the reviewer is still on the same proposal.
   if (
     proposalId &&
+    saveEpoch === revisionEditEpoch &&
+    revisionReturnFocusEpoch === saveEpoch &&
     !revisionEditing.value &&
     proposalIdsEqual(activeProposal.value?.id, proposalId)
   ) {
@@ -1828,6 +1854,9 @@ onUnmounted(() => {
 
 function selectProposal(id: string) {
   // An explicit choice supersedes the #2215 A notice.
+  if (!proposalIdsEqual(activeProposal.value?.id, id)) {
+    invalidateRevisionFocusSession()
+  }
   activeProposalSettledElsewhere.value = null
   decisionReceipt.value = null
   explicitActiveId.value = id
