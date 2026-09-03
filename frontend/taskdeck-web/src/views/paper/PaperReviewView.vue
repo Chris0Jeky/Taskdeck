@@ -629,7 +629,10 @@ const {
   cancelEditing: cancelRevisionEditing,
   saveRevision,
   loadRevisionState,
-} = useProposalRevisions(activeProposal, { onRevisionSaved: invalidateQueueReads })
+} = useProposalRevisions(activeProposal, {
+  onRevisionSaved: invalidateQueueReads,
+  onRevisionStateUncertain: invalidateQueueReads,
+})
 
 watch(isArchivedHistory, (readOnly) => {
   if (!readOnly) return

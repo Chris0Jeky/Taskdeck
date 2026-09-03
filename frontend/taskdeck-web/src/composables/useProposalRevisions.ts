@@ -28,8 +28,15 @@ export function useProposalRevisions(
    * queue GET in flight at that moment still carries the pre-revision summary,
    * operations and latestRevisionId, and writing it would silently undo the
    * saved edit on screen (#2194 review round).
+   *
+   * `onRevisionStateUncertain` fires when a POST response does not prove whether
+   * the server committed. It invalidates the same pre-write queue reads without
+   * claiming a successful save or changing the editor's retryable draft.
    */
-  options?: { onRevisionSaved?: () => void },
+  options?: {
+    onRevisionSaved?: () => void
+    onRevisionStateUncertain?: () => void
+  },
 ) {
   const toast = useToastStore()
 
@@ -188,8 +195,12 @@ export function useProposalRevisions(
     } catch (e: unknown) {
       const current = gen === saveGeneration && activeProposal.value?.id === proposalId
       // A rejected POST can have committed before a timeout, network break, or
-      // 5xx reached the client. Its active proposal's revision metadata is then
-      // unknown, but the editor draft remains a separate concern for the view.
+      // 5xx reached the client. Invalidate queue reads synchronously even for a
+      // stale continuation: a pre-write answer can restore old operations after
+      // an unseen commit. This is uncertainty, not a success notification.
+      options?.onRevisionStateUncertain?.()
+      // Its active proposal's revision metadata is then unknown, but the editor
+      // draft remains a separate concern for the view.
       invalidateActiveRevisionMetadata(proposalId)
       if (current) {
         toast.error(getErrorDisplay(e, 'Failed to save revision').message)

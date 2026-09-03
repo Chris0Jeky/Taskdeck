@@ -3278,6 +3278,53 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('drops a pre-save queue read after an indeterminate revision save', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      let resolveQueueRead!: (proposals: Proposal[]) => void
+      const current = makeProposal({ id: 'uncertain-save', summary: 'Current review record' })
+      const stale = makeProposal({ id: 'uncertain-save', summary: 'Pre-save queue record' })
+      const wrapper = await mountView([current])
+
+      mocks.getProposals.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveQueueRead = resolve }),
+      )
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await Promise.resolve()
+      expect(mocks.getProposals).toHaveBeenCalledTimes(2)
+
+      mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after commit'))
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-reason"]').setValue('Keep this draft')
+      await wrapper.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+
+      // The failure does not claim success or discard the reviewer draft, but it
+      // makes the pre-save queue answer unsafe: the server may have committed.
+      expect(mocks.successToast).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+      expect(
+        (wrapper.get('[data-testid="revision-reason"]').element as HTMLInputElement).value,
+      ).toBe('Keep this draft')
+
+      // The draft remained available for inspection/retry. Once the reviewer
+      // explicitly cancels, the normal busy gate no longer masks a stale poll.
+      await wrapper.get('[data-testid="revision-cancel"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+
+      resolveQueueRead([stale])
+      await flushPromises()
+
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Current review record')
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).not.toContain('Pre-save queue record')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('waits for authoritative revision metadata before seeding the revision editor', async () => {
     let resolveEditLoad!: (revisions: unknown[]) => void
     mocks.getRevisions.mockImplementation(

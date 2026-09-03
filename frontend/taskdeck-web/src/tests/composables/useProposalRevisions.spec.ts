@@ -144,6 +144,28 @@ describe('useProposalRevisions', () => {
     expect(latestRevision.value).toEqual(newRevision)
   })
 
+  it('invalidates uncertain queue reads without claiming the save succeeded', async () => {
+    vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce(
+      new Error('Request timed out after commit'),
+    )
+    const onRevisionSaved = vi.fn()
+    const onRevisionStateUncertain = vi.fn()
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const { editing, revisionCount, revisionsLoaded, startEditing, saveRevision } =
+      useProposalRevisions(proposal, { onRevisionSaved, onRevisionStateUncertain })
+
+    startEditing()
+    await expect(
+      saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Timeout' }),
+    ).resolves.toEqual({ proposalId: 'p-1', outcome: 'indeterminate', current: true })
+
+    expect(onRevisionSaved).not.toHaveBeenCalled()
+    expect(onRevisionStateUncertain).toHaveBeenCalledOnce()
+    expect(editing.value).toBe(true)
+    expect(revisionCount.value).toBe(0)
+    expect(revisionsLoaded.value).toBe(false)
+  })
+
   it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
     // Codex review: a getRevisions request in flight when a save lands must not
     // overwrite the save's state when it resolves with the pre-save (empty) list.
