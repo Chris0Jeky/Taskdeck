@@ -46,6 +46,20 @@ export const STALE_PROPOSAL_MS = 24 * 60 * 60 * 1000
 export const REVIEW_QUEUE_REFRESH_MS = 15_000
 
 /**
+ * A background refresh should never occupy the review surface indefinitely.
+ * This is deliberately below the 15 s poll cadence, leaving each later tick a
+ * chance to recover instead of accumulating hung reads.
+ */
+export const REVIEW_QUEUE_REQUEST_DEADLINE_MS = 8_000
+
+/**
+ * One missed poll is not useful user-facing information. After three
+ * consecutive transient failures, retain the last trustworthy queue but say
+ * that it may no longer be current.
+ */
+export const REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD = 3
+
+/**
  * Decision rules shared by every review surface (Paper deep-review and the
  * Legacy card). These are pure functions so the prop-driven Legacy components
  * can reuse the exact same gating without importing the composable. The
@@ -117,6 +131,14 @@ function isForbiddenError(err: unknown): boolean {
   return (err as { response?: { status?: number } }).response?.status === 403
 }
 
+function isTransientQueueRefreshFailure(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } } | null)?.response?.status
+  // Network failures and deadline errors have no HTTP response. For HTTP,
+  // retain the usual retry-safe family rather than mislabelling a malformed
+  // request or another authoritative 4xx as a stale queue.
+  return status === undefined || status === 408 || status === 429 || status >= 500
+}
+
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
   // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
@@ -150,6 +172,9 @@ export function useReviewProposals() {
   // permission failure into a fresh false negative, which is the exact class
   // #2194 exists to remove.
   const queueAccessRevoked = ref(false)
+  // Unlike `queueAccessRevoked`, this is not an authority result. It means the
+  // last queue we could render is still shown while background reads retry.
+  const queueRefreshStale = ref(false)
   let latestProposalLoadRequestId = 0
   const availableBoards = ref<Board[]>([])
   const loadingBoards = ref(false)
@@ -490,6 +515,10 @@ export function useReviewProposals() {
       })
       if (requestId !== latestProposalLoadRequestId) return
       proposals.value = loadedProposals
+      // An explicit successful load is as trustworthy as a successful poll and
+      // clears any older degraded indication without changing load semantics.
+      consecutiveQueueRefreshFailures = 0
+      queueRefreshStale.value = false
       // An explicit load that succeeded is proof access is back.
       const accessWasRevoked = queueAccessRevoked.value
       queueAccessRevoked.value = false
@@ -511,6 +540,7 @@ export function useReviewProposals() {
 
   let refreshInterval: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
+  let consecutiveQueueRefreshFailures = 0
   // A 403 pauses the configured poll without making it forget how the owning
   // surface asked it to behave. Permanent stop/disposal clears this state so a
   // late successful explicit load cannot resurrect a surface that has left.
@@ -518,6 +548,51 @@ export function useReviewProposals() {
   let queueRefreshSuspendedForPermission = false
   let shouldRefreshNow: (() => boolean) | null = null
   let refreshAbort: AbortController | null = null
+
+  function recordQueueRefreshFailure() {
+    consecutiveQueueRefreshFailures += 1
+    if (consecutiveQueueRefreshFailures >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
+      queueRefreshStale.value = true
+    }
+  }
+
+  function recordQueueRefreshSuccess() {
+    consecutiveQueueRefreshFailures = 0
+    queueRefreshStale.value = false
+  }
+
+  /**
+   * Bounds one request in a background composite read. Relying on AbortSignal
+   * alone is insufficient: a transport or test double may ignore it and leave
+   * the poll in flight forever. Racing the deadline also makes a late response
+   * harmless because the shared controller is aborted before it can land.
+   */
+  async function awaitQueueRefreshRequest<T>(
+    request: Promise<T>,
+    controller: AbortController,
+    onDeadline: () => void,
+  ): Promise<T> {
+    let deadlineTimer: ReturnType<typeof setTimeout> | null = null
+    let rejectOnAbort: (() => void) | null = null
+    const deadline = new Promise<never>((_resolve, reject) => {
+      deadlineTimer = setTimeout(() => {
+        onDeadline()
+        controller.abort()
+        reject(new Error('Review queue background request exceeded its deadline.'))
+      }, REVIEW_QUEUE_REQUEST_DEADLINE_MS)
+    })
+    const aborted = new Promise<never>((_resolve, reject) => {
+      rejectOnAbort = () => reject(new Error('Review queue background request was aborted.'))
+      controller.signal.addEventListener('abort', rejectOnAbort, { once: true })
+    })
+
+    try {
+      return await Promise.race([request, deadline, aborted])
+    } finally {
+      if (deadlineTimer !== null) clearTimeout(deadlineTimer)
+      if (rejectOnAbort) controller.signal.removeEventListener('abort', rejectOnAbort)
+    }
+  }
   /**
    * Called synchronously immediately AFTER a background poll's answer has
    * replaced the queue (#2215 A). It is the only signal a surface has that the
@@ -601,6 +676,7 @@ export function useReviewProposals() {
     const requestedHash = route.hash
     const hashTargetId = getProposalIdFromHash(requestedHash)
     const controller = new AbortController()
+    let refreshTimedOut = false
     // A list refusal is scoped to the queue query, not to whichever proposal is
     // selected. Hash navigation must not erase authority from a current-board
     // 403, while a load or board change still supersedes it.
@@ -622,16 +698,20 @@ export function useReviewProposals() {
     refreshAbort = controller
     refreshInFlight = true
     try {
-      const loadedProposals = await automationApi.getProposals(
-        {
-          limit: 200,
-          boardId: activeBoardFilter.value || undefined,
-        },
-        // Fail fast and stay cancellable. The shared interceptor retries a
-        // transient failure three times with backoff, which would keep a dead
-        // poll running for seconds past the tick that asked for it and land its
-        // answer arbitrarily late; `stopQueueRefresh` aborts whatever is open.
-        { skipRetry: true, signal: controller.signal },
+      const loadedProposals = await awaitQueueRefreshRequest(
+        automationApi.getProposals(
+          {
+            limit: 200,
+            boardId: activeBoardFilter.value || undefined,
+          },
+          // Fail fast and stay cancellable. The shared interceptor retries a
+          // transient failure three times with backoff, which would keep a dead
+          // poll running for seconds past the tick that asked for it and land its
+          // answer arbitrarily late; `stopQueueRefresh` aborts whatever is open.
+          { skipRetry: true, signal: controller.signal },
+        ),
+        controller,
+        () => { refreshTimedOut = true },
       )
       if (!isCurrentRead()) return
       const next = [...loadedProposals]
@@ -641,12 +721,16 @@ export function useReviewProposals() {
         !next.some((proposal) => proposalIdsEqual(proposal.id, hashTargetId))
       ) {
         try {
-          const currentPinnedProposal = await automationApi.getProposal(
-            hashTargetId,
-            // This is part of the background poll, not an explicit navigation.
-            // Keep it in the same cancellation and fail-fast envelope as the
-            // list request so teardown cannot leave a retry chain behind.
-            { skipRetry: true, signal: controller.signal },
+          const currentPinnedProposal = await awaitQueueRefreshRequest(
+            automationApi.getProposal(
+              hashTargetId,
+              // This is part of the background poll, not an explicit navigation.
+              // Keep it in the same cancellation and fail-fast envelope as the
+              // list request so teardown cannot leave a retry chain behind.
+              { skipRetry: true, signal: controller.signal },
+            ),
+            controller,
+            () => { refreshTimedOut = true },
           )
           if (!isCurrentRead()) return
 
@@ -670,7 +754,11 @@ export function useReviewProposals() {
             else next.push(currentPinnedProposal)
           }
         } catch (e: unknown) {
-          if (!isCurrentRead()) return
+          // Teardown/supersession aborts are not failures. A deadline also
+          // aborts the controller, so let that path fall through to the
+          // transient accounting below.
+          if (controller.signal.aborted && !refreshTimedOut) return
+          if (!isCurrentRead() && !refreshTimedOut) return
           if (isForbiddenError(e) || isHttpNotFound(e)) {
             // The list itself succeeded, so only the pin is unavailable. Do not
             // turn a proposal-level refusal into whole-queue revocation.
@@ -678,6 +766,8 @@ export function useReviewProposals() {
           } else {
             // The composite read is incomplete. Preserve the exact queue and
             // availability state currently rendered; a later tick can retry.
+            if (isSupersededQueueRead()) return
+            if (isTransientQueueRefreshFailure(e)) recordQueueRefreshFailure()
             logError('Review deep-link background refresh failed:', e)
             return
           }
@@ -693,6 +783,7 @@ export function useReviewProposals() {
         }
       }
       proposals.value = next
+      recordQueueRefreshSuccess()
       // The queue moved under a reviewer who did not ask for it. Surfaces use
       // this to notice that the row they were rendering has just been dropped
       // or reordered away, instead of silently sliding onto another one
@@ -703,7 +794,7 @@ export function useReviewProposals() {
       if (!pinUnavailable) onQueueReplacedByPoll?.()
     } catch (e: unknown) {
       // An abort is this surface's own teardown, not a failure.
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted && !refreshTimedOut) return
       if (isForbiddenError(e)) {
         // Only trust a 403 that answers the question currently being asked.
         // Without this, a late refusal from a board the reviewer just left would
@@ -717,6 +808,10 @@ export function useReviewProposals() {
         suspendQueueRefreshForPermission()
         return
       }
+      // A read for a board the reviewer has already left, or one superseded by
+      // an explicit load, cannot make the current queue degraded.
+      if (isSupersededQueueRead()) return
+      if (isTransientQueueRefreshFailure(e)) recordQueueRefreshFailure()
       logError('Review queue background refresh failed:', e)
     } finally {
       refreshInFlight = false
@@ -931,6 +1026,7 @@ export function useReviewProposals() {
     proposalsLoading,
     unavailableProposalId,
     queueAccessRevoked,
+    queueRefreshStale,
     availableBoards,
     loadingBoards,
     boardFilterInput,
