@@ -87,6 +87,8 @@ vi.mock('../../utils/errorReporting', () => ({
 }))
 
 import {
+  REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+  REVIEW_QUEUE_REQUEST_DEADLINE_MS,
   REVIEW_QUEUE_REFRESH_MS,
   STALE_PROPOSAL_MS,
   isProposalApplyActionable,
@@ -1722,6 +1724,94 @@ describe('useReviewProposals', () => {
       await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
       expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-2'])
       rp.stopQueueRefresh()
+    })
+
+    it('bounds a hung poll and ignores the response that arrives after its deadline', async () => {
+      vi.useFakeTimers()
+      const current = makeProposal({ id: 'current' })
+      mockAutomationApi.getProposals.mockResolvedValueOnce([current])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      const hungRead = deferredProposals()
+      mockAutomationApi.getProposals.mockReturnValueOnce(hungRead.promise)
+      rp.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      const options = mockAutomationApi.getProposals.mock.calls.at(-1)?.[1] as {
+        signal?: AbortSignal
+      }
+      expect(options.signal?.aborted).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REQUEST_DEADLINE_MS)
+      expect(options.signal?.aborted).toBe(true)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['current'])
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      hungRead.release([makeProposal({ id: 'late' })])
+      await vi.advanceTimersByTimeAsync(0)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['current'])
+      rp.stopQueueRefresh()
+    })
+
+    it('marks consecutive transient failures as stale and clears the state after a successful poll', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      for (let failure = 1; failure <= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+        expect(rp.queueRefreshStale.value).toBe(
+          failure === REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+        )
+      }
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['current'])
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['recovered'])
+      rp.stopQueueRefresh()
+    })
+
+    it('does not count teardown or a superseded board read as a queue failure', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'a-1' })])
+      const stopped = useReviewProposals()
+      await stopped.loadProposals()
+      let rejectTeardownRead: (reason: unknown) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => { rejectTeardownRead = reject }),
+      )
+      stopped.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      stopped.stopQueueRefresh()
+      rejectTeardownRead(new Error('aborted during teardown'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(stopped.queueRefreshStale.value).toBe(false)
+
+      mockRoute.query = { boardId: 'board-a' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'a-2', boardId: 'board-a' })])
+      const superseded = useReviewProposals()
+      await superseded.loadProposals()
+      let rejectOldScopeRead: (reason: unknown) => void = () => {}
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => { rejectOldScopeRead = reject }),
+      )
+      superseded.startQueueRefresh()
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'b-1', boardId: 'board-b' })])
+      await superseded.loadProposals()
+      rejectOldScopeRead(new Error('old board became unavailable'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(superseded.queueRefreshStale.value).toBe(false)
+      expect(superseded.proposals.value.map((p: any) => p.id)).toEqual(['b-1'])
+      superseded.stopQueueRefresh()
     })
 
     it('opts out of the retry interceptor and cancels an in-flight read on stop', async () => {
