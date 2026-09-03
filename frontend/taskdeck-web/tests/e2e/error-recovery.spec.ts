@@ -14,6 +14,7 @@
  */
 
 import { expect, test } from '@playwright/test'
+import { apiRoutePath } from './support/apiRoutePath'
 import { API_BASE_URL, API_ORIGIN, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { createCaptureItem, waitForProposalCreated } from './support/captureFlow'
@@ -42,7 +43,7 @@ test('Paper board load failure should recover through one explicit Retry without
   await page.route((url) => (
     url.origin === API_ORIGIN &&
     targetBoardId !== null &&
-    url.pathname === `/api/boards/${targetBoardId}`
+    url.pathname === apiRoutePath(API_BASE_URL, `boards/${targetBoardId}`)
   ), async (route) => {
     if (route.request().method() !== 'GET') {
       await route.continue()
