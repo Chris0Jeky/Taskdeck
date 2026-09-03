@@ -73,6 +73,7 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 const boardId = ref(route.params.id as string)
 const boardLoadRetryInFlight = ref(false)
 const boardLoadError = ref<string | null>(null)
+let viewUnmounted = false
 let realtimeStarted = false
 const realtime = createBoardRealtimeController({
   fetchBoard: async (id: string) => {
@@ -98,13 +99,13 @@ const boardLoadErrorSummary = computed(() => boardStore.currentBoard
   : "We couldn't load this board.")
 
 function recordBoardLoadFailure(requestedBoardId: string, error: unknown) {
-  if (boardId.value !== requestedBoardId) return
+  if (viewUnmounted || boardId.value !== requestedBoardId) return
 
   boardLoadError.value = boardStore.error ?? getErrorMessage(error, 'Failed to fetch board')
 }
 
 async function retryBoardLoad() {
-  if (boardLoadRetryInFlight.value || boardStore.loading) return
+  if (viewUnmounted || boardLoadRetryInFlight.value || boardStore.loading) return
 
   const requestedBoardId = boardId.value
   if (!requestedBoardId) return
@@ -113,7 +114,7 @@ async function retryBoardLoad() {
 
   try {
     const committed = await boardStore.fetchBoard(requestedBoardId)
-    if (!committed || boardId.value !== requestedBoardId) return
+    if (viewUnmounted || !committed || boardId.value !== requestedBoardId) return
 
     boardLoadError.value = null
     try {
@@ -130,7 +131,7 @@ async function retryBoardLoad() {
     recordBoardLoadFailure(requestedBoardId, error)
     logError('Failed to retry board load:', error)
   } finally {
-    boardLoadRetryInFlight.value = false
+    if (!viewUnmounted) boardLoadRetryInFlight.value = false
   }
 }
 
@@ -240,7 +241,7 @@ onMounted(async () => {
     applyPresenceSeed()
     boardStore.setEditingCard(null)
     const committed = await boardStore.fetchBoard(requestedBoardId)
-    if (committed && boardId.value === requestedBoardId) {
+    if (!viewUnmounted && committed && boardId.value === requestedBoardId) {
       boardLoadError.value = null
       try {
         await realtime.start(requestedBoardId)
@@ -274,7 +275,7 @@ watch(
 
     try {
       const committed = await boardStore.fetchBoard(nextBoardId)
-      if (committed && boardId.value === nextBoardId) {
+      if (!viewUnmounted && committed && boardId.value === nextBoardId) {
         boardLoadError.value = null
         try {
           await realtime.switchBoard(nextBoardId)
@@ -298,6 +299,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  viewUnmounted = true
   presenceMembers.value = []
   boardStore.setBoardPresenceMembers([])
   boardStore.setEditingCard(null)

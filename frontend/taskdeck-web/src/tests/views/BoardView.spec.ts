@@ -548,6 +548,46 @@ describe('BoardView', () => {
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
   })
 
+  it('does not restart realtime when a pending Retry resolves after unmount', async () => {
+    const retryLoad = createDeferred<boolean>()
+    mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Network Error'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(() => retryLoad.promise)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="board-load-retry"]').trigger('click')
+    await nextTick()
+
+    wrapper.unmount()
+    retryLoad.resolve(true)
+    await flushPromises()
+
+    expect(realtimeMock.stop).toHaveBeenCalledTimes(1)
+    expect(realtimeMock.start).not.toHaveBeenCalled()
+    expect(realtimeMock.switchBoard).not.toHaveBeenCalled()
+  })
+
+  it('does not start realtime when the initial board load resolves after unmount', async () => {
+    const initialLoad = createDeferred<boolean>()
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => initialLoad.promise)
+
+    const wrapper = mountView()
+    await nextTick()
+    wrapper.unmount()
+
+    initialLoad.resolve(true)
+    await flushPromises()
+
+    expect(realtimeMock.stop).toHaveBeenCalledTimes(1)
+    expect(realtimeMock.start).not.toHaveBeenCalled()
+    expect(realtimeMock.switchBoard).not.toHaveBeenCalled()
+  })
+
   it('keeps the loaded Legacy board canvas mounted when an explicit retry also fails', async () => {
     const retryLoad = createDeferred<boolean>()
     mockBoardStore.fetchBoard
