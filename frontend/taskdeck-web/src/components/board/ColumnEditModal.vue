@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { useBoardStore } from '../../store/boardStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Column } from '../../types/board'
 import { logError } from '../../utils/errorReporting'
+import { useRealtimeSafeDialogDraft } from '../../composables/useRealtimeSafeDialogDraft'
 
 const props = defineProps<{
   column: Column
@@ -22,15 +23,35 @@ const boardStore = useBoardStore()
 const name = ref('')
 const wipLimit = ref<number | null>(null)
 const hasWipLimit = ref(false)
-
-// Watch for column changes
-watch(() => props.column, (newColumn) => {
-  if (newColumn) {
-    name.value = newColumn.name
-    wipLimit.value = newColumn.wipLimit
-    hasWipLimit.value = newColumn.wipLimit !== null
-  }
-}, { immediate: true })
+useRealtimeSafeDialogDraft({
+  isOpen: () => props.isOpen,
+  source: () => props.column,
+  sourceKey: (column) => column.id,
+  seed: (column) => {
+    name.value = column.name
+    wipLimit.value = column.wipLimit
+    hasWipLimit.value = column.wipLimit !== null
+  },
+  fields: [
+    {
+      sourceValue: (column) => column.name,
+      draftValue: () => name.value,
+      apply: (value) => { name.value = value as string },
+    },
+    {
+      sourceValue: (column) => ({
+        enabled: column.wipLimit !== null,
+        limit: column.wipLimit,
+      }),
+      draftValue: () => ({ enabled: hasWipLimit.value, limit: wipLimit.value }),
+      equals: (draft, source) => draft.enabled === source.enabled && draft.limit === source.limit,
+      apply: (value) => {
+        hasWipLimit.value = value.enabled
+        wipLimit.value = value.limit
+      },
+    },
+  ],
+})
 
 const isFormValid = () => {
   if (name.value.trim().length === 0) return false

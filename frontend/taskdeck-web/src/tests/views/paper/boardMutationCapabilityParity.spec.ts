@@ -68,7 +68,9 @@ const NON_BOARD_SURFACE_MUTATIONS: Record<string, string> = {
  * Action-group factories in `store/board/*` whose writes a board surface must
  * be able to drive. Structural, so a NEW action added to one of these groups
  * joins the required set automatically — a `duplicateColumn` would, and no name
- * heuristic could be trusted to guess that verb in advance.
+ * heuristic could be trusted to guess that verb in advance. A brand-new action
+ * group is NOT discovered automatically: it must be added here, or only actions
+ * whose names match `MUTATION_NAME` below will be covered.
  */
 const BOARD_SURFACE_GROUPS = ['boardCrud', 'columns', 'cards', 'comments']
 

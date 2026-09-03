@@ -116,6 +116,45 @@ describe('useKeyboardShortcuts', () => {
     wrapper.unmount()
   })
 
+  it('leaves Enter on an interactive control to the control', () => {
+    const action = vi.fn()
+    const wrapper = mountWithShortcuts([
+      { key: 'Enter', description: 'Open selected card', action },
+    ])
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+    const event = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    const preventDefault = vi.spyOn(event, 'preventDefault')
+
+    button.dispatchEvent(event)
+
+    expect(action).not.toHaveBeenCalled()
+    expect(preventDefault).not.toHaveBeenCalled()
+
+    button.remove()
+    wrapper.unmount()
+  })
+
+  it('keeps board navigation shortcuts available from a button', () => {
+    const action = vi.fn()
+    const wrapper = mountWithShortcuts([
+      { key: 'ArrowRight', description: 'Next column', action },
+    ])
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+
+    expect(action).toHaveBeenCalledTimes(1)
+
+    button.remove()
+    wrapper.unmount()
+  })
+
   it('should allow Escape key even when typing in an input', () => {
     const action = vi.fn()
     const wrapper = mountWithShortcuts([

@@ -74,6 +74,39 @@ function handleDragHandleMouseDown() {
   window.getSelection()?.removeAllRanges()
 }
 
+function handleCardClick(event: MouseEvent) {
+  // A click on a non-interactive card child does not reliably move focus to
+  // the tabindex-bearing card itself. Keep the card's click-to-open behavior,
+  // and make the following Enter target the same card. Action-bar controls
+  // stop propagation at their own boundary and retain native ownership.
+  const target = event.target instanceof Element ? event.target : null
+  if (target?.closest('button, a[href], input, textarea, select, [contenteditable="true"]')) {
+    return
+  }
+
+  if (event.currentTarget instanceof HTMLElement) {
+    event.currentTarget.focus()
+  }
+  emit('click', props.card)
+}
+
+function focusCardAfterDragHandleClick(event: MouseEvent) {
+  // The enlarged drag handle can be the center point Playwright and keyboard
+  // users reach when they activate the card surface. Keep its native button
+  // click inert, but return focus to the card so the next Enter is owned by
+  // the card opener rather than lost on the drag control.
+  const cardElement = event.currentTarget instanceof Element
+    ? event.currentTarget.closest<HTMLElement>('[data-card-id]')
+    : null
+  cardElement?.focus()
+}
+
+function handleCardKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter') return
+  event.preventDefault()
+  emit('click', props.card)
+}
+
 function formatDate(dateString: string | null): string {
   return formatCalendarDate(dateString)
 }
@@ -95,8 +128,8 @@ function isOverdue(dateString: string | null): boolean {
     ]"
     tabindex="0"
     :aria-selected="isSelected"
-    @click.stop="emit('click', card)"
-    @keydown.enter="emit('click', card)"
+    @click.stop="handleCardClick"
+    @keydown.capture="handleCardKeydown"
     @keydown.space.prevent="emit('click', card)"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
@@ -113,7 +146,7 @@ function isOverdue(dateString: string | null): boolean {
         class="td-card-drag-handle flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-on-surface/60 hover:bg-surface-bright hover:text-on-surface/70 cursor-grab active:cursor-grabbing"
         title="Drag Card"
         aria-label="Drag Card"
-        @click.stop
+        @click.stop="focusCardAfterDragHandleClick"
         @mousedown="handleDragHandleMouseDown"
       >
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

@@ -28,11 +28,21 @@ export interface ShortcutConfig {
  */
 export function useKeyboardShortcuts(shortcuts: ShortcutConfig[]) {
   const handleKeyDown = (event: KeyboardEvent) => {
-    // Ignore if typing in input/textarea (except Escape key)
-    const target = event.target as HTMLElement
-    const isTyping = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+    // Text-entry controls own every key except Escape. Other interactive
+    // controls own native activation keys, while board-navigation keys remain
+    // available from card/collapse buttons for the roving-focus model.
+    const target = event.target instanceof Element ? event.target : null
+    const isTextEntry = Boolean(target?.closest(
+      'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
+    ))
+    const isActivationControl = Boolean(target?.closest(
+      'button, a[href], [role="button"], [role="menuitem"], [role="option"], [role="tab"]',
+    ))
 
-    if (isTyping && event.key !== 'Escape') {
+    if (
+      (isTextEntry && event.key !== 'Escape') ||
+      (isActivationControl && (event.key === 'Enter' || event.key === ' '))
+    ) {
       return
     }
 

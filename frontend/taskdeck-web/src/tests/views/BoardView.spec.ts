@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
@@ -203,6 +203,8 @@ describe('BoardView', () => {
     mockBoardStore.currentBoardCards = []
     mockBoardStore.loading = false
     mockBoardStore.error = null
+    mockBoardStore.fetchBoard.mockReset()
+    mockBoardStore.fetchBoard.mockResolvedValue(true)
     addCardToggleMock.mockReset()
     usePaperThemeStore().disable()
   })
@@ -497,6 +499,204 @@ describe('BoardView', () => {
     const firstCall = mockBoardStore.setBoardPresenceMembers.mock.calls[0]
     expect(firstCall).toBeDefined()
     expect(firstCall[0]).toEqual([])
+  })
+
+  it('retries an initial board-load failure once, disables duplicate retries, and starts realtime after recovery', async () => {
+    const loadedBoard = mockBoardStore.currentBoard!
+    const retryLoad = createDeferred<boolean>()
+    mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Network Error'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(() => {
+        mockBoardStore.loading = true
+        mockBoardStore.error = null
+        return retryLoad.promise
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const errorAlert = wrapper.get('[data-testid="board-load-error"]')
+    expect(errorAlert.attributes('role')).toBe('alert')
+    expect(errorAlert.text()).toContain("We couldn't load this board")
+    expect(errorAlert.text()).toContain('Network Error')
+
+    const retry = errorAlert.get('[data-testid="board-load-retry"]')
+    expect(retry.attributes('disabled')).toBeUndefined()
+    await retry.trigger('click')
+    await nextTick()
+
+    expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
+    expect(mockBoardStore.fetchBoard).toHaveBeenLastCalledWith('board-1')
+    expect(wrapper.get('[data-testid="board-load-retry"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Network Error')
+
+    await wrapper.get('[data-testid="board-load-retry"]').trigger('click')
+    expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
+
+    mockBoardStore.currentBoard = loadedBoard
+    mockBoardStore.loading = false
+    retryLoad.resolve(true)
+    await flushPromises()
+
+    expect(realtimeMock.start).toHaveBeenCalledTimes(1)
+    expect(realtimeMock.start).toHaveBeenCalledWith('board-1')
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+  })
+
+  it('does not restart realtime when a pending Retry resolves after unmount', async () => {
+    const retryLoad = createDeferred<boolean>()
+    mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Network Error'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(() => retryLoad.promise)
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="board-load-retry"]').trigger('click')
+    await nextTick()
+
+    wrapper.unmount()
+    retryLoad.resolve(true)
+    await flushPromises()
+
+    expect(realtimeMock.stop).toHaveBeenCalledTimes(1)
+    expect(realtimeMock.start).not.toHaveBeenCalled()
+    expect(realtimeMock.switchBoard).not.toHaveBeenCalled()
+  })
+
+  it('does not start realtime when the initial board load resolves after unmount', async () => {
+    const initialLoad = createDeferred<boolean>()
+    mockBoardStore.fetchBoard.mockImplementationOnce(() => initialLoad.promise)
+
+    const wrapper = mountView()
+    await nextTick()
+    wrapper.unmount()
+
+    initialLoad.resolve(true)
+    await flushPromises()
+
+    expect(realtimeMock.stop).toHaveBeenCalledTimes(1)
+    expect(realtimeMock.start).not.toHaveBeenCalled()
+    expect(realtimeMock.switchBoard).not.toHaveBeenCalled()
+  })
+
+  it('keeps the loaded Legacy board canvas mounted when an explicit retry also fails', async () => {
+    const retryLoad = createDeferred<boolean>()
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(() => {
+        mockBoardStore.loading = true
+        mockBoardStore.error = null
+        return retryLoad.promise
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain(
+      'Your last loaded board is still shown',
+    )
+
+    await wrapper.get('[data-testid="board-load-retry"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+
+    mockBoardStore.loading = false
+    mockBoardStore.error = 'Board refresh still unavailable'
+    retryLoad.reject(new Error('still offline'))
+    await flushPromises()
+
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain(
+      'Board refresh still unavailable',
+    )
+  })
+
+  it('hides a cached board when the newly routed board fails to load', async () => {
+    mockBoardStore.fetchBoard
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(async () => {
+        mockBoardStore.loading = false
+        mockBoardStore.error = 'Board B unavailable'
+        throw new Error('board B unavailable')
+      })
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await flushPromises()
+
+    const errorAlert = wrapper.get('[data-testid="board-load-error"]')
+    expect(errorAlert.text()).toContain("We couldn't load this board")
+    expect(errorAlert.text()).not.toContain('Your last loaded board is still shown')
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(false)
+    expect(wrapper.find('[data-board-action-rail]').exists()).toBe(false)
+  })
+
+  it('reports mutation errors without presenting them as retryable board-load failures', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    mockBoardStore.error = 'Failed to create card'
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="board-error"]').text()).toBe('Failed to create card')
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-load-retry"]').exists()).toBe(false)
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+  })
+
+  it('does not let an old board Retry replace a newer route load error', async () => {
+    const oldBoardRetry = createDeferred<boolean>()
+    mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board A unavailable'
+        throw new Error('board A unavailable')
+      })
+      .mockImplementationOnce(() => {
+        mockBoardStore.loading = true
+        mockBoardStore.error = null
+        return oldBoardRetry.promise
+      })
+      .mockImplementationOnce(async () => {
+        mockBoardStore.loading = false
+        mockBoardStore.error = 'Board B unavailable'
+        throw new Error('board B unavailable')
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="board-load-retry"]').trigger('click')
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board B unavailable')
+
+    mockBoardStore.error = 'Stale Board A retry failure'
+    oldBoardRetry.reject(new Error('stale retry failed'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board B unavailable')
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).not.toContain(
+      'Stale Board A retry failure',
+    )
+    expect(realtimeMock.start).not.toHaveBeenCalled()
   })
 
   it('switches realtime only for the newest board load when A resolves after B', async () => {

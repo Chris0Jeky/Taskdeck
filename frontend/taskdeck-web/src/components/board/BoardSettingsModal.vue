@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import type { Board } from '../../types/board'
 import { logError } from '../../utils/errorReporting'
+import { useRealtimeSafeDialogDraft } from '../../composables/useRealtimeSafeDialogDraft'
 
 const props = defineProps<{
   board: Board
@@ -23,14 +24,28 @@ const router = useRouter()
 const name = ref('')
 const description = ref('')
 const lifecycleActionInProgress = ref(false)
-
-// Watch for board changes
-watch(() => props.board, (newBoard) => {
-  if (newBoard) {
-    name.value = newBoard.name
-    description.value = newBoard.description || ''
-  }
-}, { immediate: true })
+useRealtimeSafeDialogDraft({
+  isOpen: () => props.isOpen,
+  source: () => props.board,
+  sourceKey: (board) => board.id,
+  seed: (board) => {
+    name.value = board.name
+    description.value = board.description || ''
+  },
+  fields: [
+    {
+      sourceValue: (board) => board.name,
+      draftValue: () => name.value,
+      apply: (value) => { name.value = value as string },
+    },
+    {
+      sourceValue: (board) => board.description || '',
+      draftValue: () => description.value,
+      apply: (value) => { description.value = value as string },
+    },
+  ],
+  isBusy: () => lifecycleActionInProgress.value,
+})
 
 const lifecycleActionLabel = computed(() => {
   if (lifecycleActionInProgress.value) {
