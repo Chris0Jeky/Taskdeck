@@ -69,6 +69,28 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Planning update (2026-09-03, v0.3.0 readiness view and the clause-5 dependency chain)
+
+- **The v0.3 milestone count is not the v0.3.0 blocker count, and that is now written down.**
+  `docs/releases/V0_3_0_READINESS.md` holds the standing per-clause view of the five gate clauses in
+  `docs/REVIVAL_PLAN.md` §3. Measured 2026-09-03: clause 3 (launch kit `#2242`) is met, clause 4
+  (`main` green) held at the last completed run, `f59b854d6`, with the `98f3fbd14` run still in
+  progress at measurement time, clause 1 is only measurable at a final tag head, and clauses 2
+  and 5 are open. Of the 50 open v0.3 issues, 16 carry `dogfooding`, 14 carry `ci`, 3 are
+  `human-action` and 2 are trackers; the rest are ordinary backlog with no gate clause behind them.
+- **Clause 5 has an ordered dependency chain that was not previously recorded.** The cutover needs
+  `Smart CI / Required Gate` enforced; registering it is human action SC-4, whose condition is at
+  least 20 PRs of observation without a false red. Branch protection on `main` was measured on
+  2026-09-03 to require exactly three contexts, all security, so the Smart CI gate is not enforced
+  today. `#2401` is producing the false reds that stop that window from accumulating: PRs `#2408`
+  (run `33736889079`) and `#2421` (run `33754458696`) both failed the gate on `base-sha-mismatch`
+  plus `trust-mismatch` after `main` moved under a queued `pull_request_target` event, not on branch
+  content. Order is therefore `#2401`, then `#2327`, then SC-4, then the `#2337` cutover, with
+  `#2333` and `#2335` handing off to SC-2 and SC-5 alongside.
+- **Clause 2 needs a ruling, not fifty closures.** "Milestone closed or explicitly re-ruled" is
+  satisfied by an explicit decision moving families out of v0.3 as much as by closing them. Section 5
+  of the readiness file states that as one question for the maintainer and does not pre-empt it.
+
 ## Planning update (2026-09-02, v0.5 / v0.6 acceleration bundles unbundled)
 
 - **Two more bundles were validated and unbundled, not copied** (tracker `#2368`; record
