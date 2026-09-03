@@ -20,7 +20,7 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. State measured 20
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
 | 2 | Milestone closed or explicitly re-ruled | **Not met.** 50 open | Sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
-| 4 | `main` green | **Last completed run green** at `f59b854d6`; the `98f3fbd14` run was still in progress when this was measured | Two known intermittent reds, section 2 |
+| 4 | `main` green | **Green** at `98f3fbd14`; the `01d77faf3` run was still in progress when this was measured | Two known intermittent reds, section 2 |
 | 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
 
 Clause 2 does not require every open issue to close. "Explicitly re-ruled" means each one either closes
@@ -93,7 +93,14 @@ Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and m
 | SC-5 flip `sha_pinning_required` after CI-11 | `#2335` | Follows `#2335` |
 | SC-6 change repository visibility to private | `#2337` | The release-defining action |
 | SC-7 register the isolated runners after cutover | `#2328`, `#2337` | Post-cutover |
-| SC-8 public-asset and launch-kit decision | `#2337`, `#2242` | Wording decision |
+| SC-8 public-asset and launch-kit decision | `#2337`, `#2242` | **Ruled 2026-09-03**, see below |
+
+**SC-8 is answered.** The maintainer ruled on 2026-09-03: a **private development repository plus a
+public release and source mirror**. Development, CI, issues and the control plane go private for
+v0.3.0; Releases, checksums and provenance, and the GPL-3.0-only source stay public through a mirror,
+with GitHub Pages still publishing from the private repository. CI-16 `#2439` implements it and
+serves checklist section A, which puts it inside the SC-6 A-to-I prerequisite set. The launch kit and
+any `awesome-selfhosted` wording point at the mirror, not the private repository.
 
 `#1772` (private shared instance) carries human decision CL-1 and is the one non-CI human-gated issue
 still on the milestone. RT-1/2/3 (signing), BEN-1 and DIST-1 are in `OUTSTANDING_TASKS.md` but are not
@@ -117,29 +124,33 @@ the ones that already have a gate clause behind them from the ones that do not. 
   `#2009`, `#2008`, `#2007`, `#2004`, `#1999`, `#1987`, `#1984`, `#1972`, `#1968`, `#1961`, `#1949`,
   `#1940`, `#1936`. Three of these are Priority I (`#2004`, `#1949`, `#1940`) and three carry
   `decision` (`#2004`, `#1972`, `#1936`), so they need a ruling before they can be moved wholesale.
-- 14 carry `ci`, and almost none of them are residuals; they split across this file:
+- 15 carry `ci`, and almost none of them are residuals; they split across this file:
   - 10 are section 2: the clause-5 chain `#2401`, `#2327`, `#2326`, the cutover-checklist owners
     `#2333` (B), `#2329`, `#2331`, `#2332` (E) and `#2335` (G), plus the clause-4 intermittent reds
     `#2425` and `#2378`.
   - 2 more are section 3 human gates in their own right: `#2337` and `#2328` (checklist F).
     (`#2333`, `#2335` and `#2327` also hand off to SC-2, SC-5 and SC-4, but are counted above.)
   - 1 is the section 4 tracker `#2324` (checklist A).
+  - 1 is CI-16 `#2439`, which implements the 2026-09-03 SC-8 ruling and also serves checklist
+    section A, so it is gate work rather than backlog.
   - **1** has no v0.3.0 gate clause behind it: `#2250`, the release-composer follow-ups.
-- 20 carry neither label. Three of them appear earlier in this file: `#2235` is the section 4
+- 19 carry neither label. Three of them appear earlier in this file: `#2235` is the section 4
   tracker, `#1772` is the section 3 human gate, and `#2399` is the section 2 clause-4 flake. The
-  other 17 are ordinary backend, frontend and security backlog with no gate clause behind them:
-  `#2315`, `#2305`, `#2304`, `#2303`, `#2302`, `#2301`, `#2240`, `#2230`, `#2215`, `#2214`, `#2391`,
+  other 16 are ordinary backend, frontend and security backlog with no gate clause behind them:
+  `#2315`, `#2305`, `#2304`, `#2303`, `#2302`, `#2301`, `#2240`, `#2215`, `#2214`, `#2391`,
   `#1866`, `#1640`, `#1309`, `#1307`, `#1284`, `#1131`.
 
-The three label sets are disjoint and closed: 16 + 14 + 20 = 50. If that arithmetic stops holding,
-this section is stale and the milestone should be re-counted before the file is trusted.
+The three label sets are disjoint and closed: 16 + 15 + 19 = 50. If that arithmetic stops holding,
+this section is stale and the milestone should be re-counted before the file is trusted. It has
+already moved once since this file was drafted: `#2230` closed on PR `#2421` and CI-16 `#2439` was
+seeded the same afternoon, which kept the total at 50 while changing what is in it.
 
-**The split that matters.** 16 of the 50 have a gate clause behind them and are not re-ruling
-candidates at all: the 13 `ci` issues above other than `#2250`, plus `#2235`, `#1772` and `#2399`.
-The other **34** have no gate clause: the 16 `dogfooding` issues, the 17 ordinary backlog issues, and
+**The split that matters.** 17 of the 50 have a gate clause behind them and are not re-ruling
+candidates at all: the 14 `ci` issues above other than `#2250`, plus `#2235`, `#1772` and `#2399`.
+The other **33** have no gate clause: the 16 `dogfooding` issues, the 16 ordinary backlog issues, and
 `#2250`.
 
-So the question this section puts to the maintainer is one question about those 34, not fifty:
+So the question this section puts to the maintainer is one question about those 33, not fifty:
 **which of them ship inside v0.3.0 and which are re-ruled to v0.4?** Until that is answered, agents
 keep finishing them in dependency order and nothing here is silently dropped.
 
