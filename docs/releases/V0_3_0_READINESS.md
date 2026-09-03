@@ -1,6 +1,6 @@
 # v0.3.0 release readiness
 
-Last Updated: 2026-09-03
+Last Updated: 2026-09-03 (measured against `main` `a09d986c0`)
 
 **What this file is.** A standing view of what actually stands between `main` and the final `v0.3.0`
 tag, so the open v0.3 milestone count is never mistaken for the blocker count. It classifies work into
@@ -18,9 +18,9 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. State measured 20
 | # | Gate clause | State | What it waits on |
 |---|---|---|---|
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
-| 2 | Milestone closed or explicitly re-ruled | **Not met.** 50 open | Sections 2 to 5 below |
+| 2 | Milestone closed or explicitly re-ruled | **Not met.** 49 open | Sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
-| 4 | `main` green | **Green** at `98f3fbd14`; the `01d77faf3` run was still in progress when this was measured | Two known intermittent reds, section 2 |
+| 4 | `main` green | **Green** at `01d77faf3`; the `a09d986c0` run had not reported when this was measured | Two known intermittent reds, section 2 |
 | 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
 
 Clause 2 does not require every open issue to close. "Explicitly re-ruled" means each one either closes
@@ -36,18 +36,23 @@ Everything else in the milestone is section 4 or section 5.
 on `main` today requires exactly three contexts, all security: `Dependency Security / Dependency
 Security Signals`, `SAST Scan / SAST Scan (Semgrep)`, `Secret Scan / Gitleaks Scan`. Registering the
 Smart CI gate is human action SC-4, and SC-4's own condition is at least 20 PRs of observation without
-a false red. That condition is currently not accumulating:
+a false red. What stands between here and that condition:
 
-1. **`#2401`** (Priority I) is producing those false reds now. Both `#2408` (run `33736889079`,
-   09:05Z) and `#2421` (run `33754458696`, 12:18Z) failed `Smart CI / Required Gate` on
+0. **`#2401` is fixed and closed** (PR `#2440`, merge `a09d986c0`), which unblocks the count rather
+   than completing it. It had produced two false reds the same day: `#2408` (run `33736889079`,
+   09:05Z) and `#2421` (run `33754458696`, 12:18Z) both failed `Smart CI / Required Gate` on
    `base-sha-mismatch` plus `trust-mismatch` after `main` moved under a queued
-   `pull_request_target` event, not on branch content. Until `#2401` lands, the SC-4 observation
-   window cannot be claimed clean, so `#2401` is the first blocker on clause 5.
-2. **`#2327`** (CI-03, Priority I) owns the stable gate contract, branch-current behaviour, the
+   `pull_request_target` event, not on branch content. The cause was in `plan.mjs`:
+   `requirePullRequestMergeBinding` ran *before* the `--base-sha` override was applied, so a
+   fail-closed planner escalation built its `errorPlan` from the stale event base and the
+   event-derived trust level. The fix moves that check after the override. **The SC-4 window still
+   has to accumulate**: 20 PRs of observation without a false red is a forward-looking count that
+   starts from a clean planner, so the clock effectively restarts here.
+1. **`#2327`** (CI-03, Priority I) owns the stable gate contract, branch-current behaviour, the
    landed-commit verifier and event topology. Its own residuals are recorded on the issue; the
    verifier does not exist yet and cancellation provenance cannot yet separate a manual cancel from a
-   concurrency supersede.
-3. **`#2326`** (CI-02, Priority I) remains an observation gate. Selective execution is not shipped and
+   concurrency supersede. With `#2401` closed, this is the first open technical blocker on clause 5.
+2. **`#2326`** (CI-02, Priority I) remains an observation gate. Selective execution is not shipped and
    must not be described as shipped or authorized before its evidence conditions are met.
 
 **The cutover checklist is also a clause-5 prerequisite, and it is wider than the chain above.**
@@ -137,10 +142,10 @@ the ones that already have a gate clause behind them from the ones that do not. 
   `#2009`, `#2008`, `#2007`, `#2004`, `#1999`, `#1987`, `#1984`, `#1972`, `#1968`, `#1961`, `#1949`,
   `#1940`, `#1936`. Three of these are Priority I (`#2004`, `#1949`, `#1940`) and three carry
   `decision` (`#2004`, `#1972`, `#1936`), so they need a ruling before they can be moved wholesale.
-- 15 carry `ci`, and almost none of them are residuals; they split across this file:
-  - 10 are section 2: the clause-5 chain `#2401`, `#2327`, `#2326`, the cutover-checklist owners
-    `#2333` (B), `#2329`, `#2331`, `#2332` (E) and `#2335` (G), plus the clause-4 intermittent reds
-    `#2425` and `#2378`.
+- 14 carry `ci`, and almost none of them are residuals; they split across this file:
+  - 9 are section 2: the clause-5 chain `#2327` and `#2326`, the cutover-checklist owners `#2333`
+    (B), `#2329`, `#2331`, `#2332` (E) and `#2335` (G), plus the clause-4 intermittent reds `#2425`
+    and `#2378`. (`#2401` was the tenth until PR `#2440` closed it.)
   - 2 more are section 3 human gates in their own right: `#2337` and `#2328` (checklist F).
     (`#2333`, `#2335` and `#2327` also hand off to SC-2, SC-5 and SC-4, but are counted above.)
   - 1 is the section 4 tracker `#2324` (checklist A).
@@ -153,17 +158,17 @@ the ones that already have a gate clause behind them from the ones that do not. 
   `#2315`, `#2305`, `#2304`, `#2303`, `#2302`, `#2301`, `#2240`, `#2215`, `#2214`, `#2391`,
   `#1866`, `#1640`, `#1309`, `#1307`, `#1284`, `#1131`.
 
-The three label sets are disjoint and closed: 16 + 15 + 19 = 50. If that arithmetic stops holding,
+The three label sets are disjoint and closed: 16 + 14 + 19 = 49. If that arithmetic stops holding,
 this section is stale and the milestone should be re-counted before the file is trusted. It has
-already moved once since this file was drafted: `#2230` closed on PR `#2421` and CI-16 `#2439` was
-seeded the same afternoon, which kept the total at 50 while changing what is in it.
+already moved twice since this file was drafted: `#2230` closed on PR `#2421` and CI-16 `#2439` was
+seeded the same afternoon, then `#2401` closed on PR `#2440`.
 
-**The split that matters.** 17 of the 50 have a gate clause behind them and are not re-ruling
-candidates at all: the 14 `ci` issues above other than `#2250`, plus `#2235`, `#1772` and `#2399`.
+**The split that matters.** 16 of the 49 have a gate clause behind them and are not re-ruling
+candidates at all: the 13 `ci` issues above other than `#2250`, plus `#2235`, `#1772` and `#2399`.
 The other **33** have no gate clause: the 16 `dogfooding` issues, the 16 ordinary backlog issues, and
 `#2250`.
 
-So the question this section puts to the maintainer is one question about those 33, not fifty:
+So the question this section puts to the maintainer is one question about those 33, not forty-nine:
 **which of them ship inside v0.3.0 and which are re-ruled to v0.4?** Until that is answered, agents
 keep finishing them in dependency order and nothing here is silently dropped.
 
