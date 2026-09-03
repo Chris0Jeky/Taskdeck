@@ -436,6 +436,16 @@ describe('PaperBoardView — column settings', () => {
       .toBe(true)
     expect((wrapper.get('[data-testid="paper-column-dialog-wip"]').element as HTMLInputElement).value)
       .toBe('3')
+
+    mockBoardStore.updateColumn.mockClear()
+    await wrapper.get('[data-testid="paper-column-dialog-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.updateColumn).toHaveBeenCalledWith('board-1', 'col-today', {
+      name: 'My draft column',
+      wipLimit: 3,
+      position: null,
+    })
   })
 
   it('refuses to delete a column that still holds cards, and says why', async () => {
@@ -718,6 +728,16 @@ describe('PaperBoardView — board settings', () => {
       (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
         .value,
     ).toBe('Busy server description')
+
+    mockBoardStore.updateBoard.mockClear()
+    await wrapper.get('[data-testid="paper-board-dialog-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
   })
 
   it('renames the board through boardStore.updateBoard and closes', async () => {

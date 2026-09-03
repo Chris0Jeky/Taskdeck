@@ -349,6 +349,19 @@ describe('BoardSettingsModal', () => {
       'Busy server description',
     )
 
+    mockStore.updateBoard.mockClear()
+    await wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Save Changes'))
+      ?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(mockStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
+
     confirmSpy.mockRestore()
   })
 
