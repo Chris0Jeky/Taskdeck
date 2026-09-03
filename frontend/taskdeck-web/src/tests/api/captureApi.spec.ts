@@ -23,6 +23,22 @@ describe('captureApi', () => {
     expect(http.get).toHaveBeenCalledWith('/capture/items?status=Triaging&limit=20')
   })
 
+  it('forwards abortable fail-fast options only for background capture reads', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: [] })
+    const controller = new AbortController()
+    const options = { signal: controller.signal, skipRetry: true }
+
+    await captureApi.listItems({ boardId: 'board-1', limit: 200 }, options)
+    await captureApi.getItem('capture-42', options)
+
+    expect(http.get).toHaveBeenNthCalledWith(
+      1,
+      '/capture/items?boardId=board-1&limit=200',
+      options,
+    )
+    expect(http.get).toHaveBeenNthCalledWith(2, '/capture/items/capture-42', options)
+  })
+
   it('creates a capture item', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'capture-1' } })
 
