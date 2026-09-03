@@ -86,6 +86,10 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npm ci
 
+      - name: Generate and validate PWA worker
+        working-directory: frontend/taskdeck-web
+        run: npm run test:pwa-generated-worker
+
       - name: Run frontend coverage
         working-directory: frontend/taskdeck-web
         run: npm run test:coverage
