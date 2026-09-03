@@ -59,6 +59,7 @@ const CONSUMED_LAYERS = ['store/', 'api/', 'types/', 'i18n/', 'locales/', 'utils
 const NON_BOARD_SURFACE_MUTATIONS: Record<string, string> = {
   createBoard: 'boards LIST surface (BoardsListView), not an open board',
   updateFilters: 'client-side view state, no server write; Legacy-only FilterPanel',
+  cancelBackgroundBoardFetch: 'client-side board-read lifecycle cancellation; no server write',
   createLabel: 'label management modal — a Legacy-only surface, tracked separately',
   updateLabel: 'label management modal — a Legacy-only surface, tracked separately',
   deleteLabel: 'label management modal — a Legacy-only surface, tracked separately',
