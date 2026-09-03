@@ -4304,6 +4304,69 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('does not restore focus from a stale save after switching A to B and back to A', async () => {
+      let resolveSave!: (value: unknown) => void
+      mocks.createRevision.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveSave = resolve }),
+      )
+      const wrapper = await mountView([
+        makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ], '/workspace/review', [], [], { attachTo: true })
+
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      const opener = wrapper.get('[data-testid="decision-edit"]')
+      await opener.trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-reason"]').setValue('Stale save')
+      await wrapper.get('[data-testid="revision-save"]').trigger('click')
+
+      await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      const currentAOpener = wrapper.get('[data-testid="decision-edit"]').element as HTMLButtonElement
+      const queueRow = wrapper.find('[data-serial="#AAA-"]').element as HTMLButtonElement
+      queueRow.focus()
+
+      resolveSave({
+        id: 'stale-revision',
+        proposalId: 'aaa-1',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{}',
+        revisedAt: new Date().toISOString(),
+        reason: 'Stale save',
+        createdAt: new Date().toISOString(),
+      })
+      await flushPromises()
+      await nextTick()
+
+      expect(document.activeElement).toBe(queueRow)
+      expect(document.activeElement).not.toBe(currentAOpener)
+      wrapper.unmount()
+    })
+
+    it('keeps the revision editor open and focus inside it when save fails', async () => {
+      mocks.createRevision.mockRejectedValueOnce(new Error('save failed'))
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      await editor.get('[data-testid="revision-reason"]').setValue('Will fail')
+      await editor.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+      expect(editor.element.contains(document.activeElement)).toBe(true)
+      expect(mocks.errorToast).toHaveBeenCalledWith('save failed')
+      wrapper.unmount()
+    })
+
     it('states on the rail why the decisions are disabled, and offers the exit there', async () => {
       const wrapper = await mountView([makeProposal()])
 
