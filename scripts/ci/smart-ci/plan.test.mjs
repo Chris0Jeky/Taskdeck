@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { globToRegExp, matchesGlob } from './lib/glob.mjs';
 import {
   PolicyError,
@@ -517,6 +517,58 @@ test('inputFromEvent reads pull_request payloads without content and detects for
   const push = inputFromEvent({ repository: { full_name: 'o/r', owner: { login: 'o' } }, before: BASE, after: HEAD, ref: 'refs/heads/main', sender: { login: 'o', type: 'User' } }, 'push', {});
   assert.equal(push.authorAssociation, 'OWNER');
   assert.equal(push.headSha, HEAD);
+});
+
+test('a merge-binding error receipt keeps trusted CLI identity overrides', () => {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'taskdeck-smart-ci-error-receipt-'));
+  const eventPath = join(fixtureRoot, 'event.json');
+  const changedFilesPath = join(fixtureRoot, 'changed-files.tsv');
+  const planPath = join(fixtureRoot, 'ci-plan.json');
+  const staleEventBase = 'c'.repeat(40);
+
+  try {
+    writeFileSync(eventPath, `${JSON.stringify({
+      action: 'synchronize',
+      repository: { full_name: 'Chris0Jeky/Taskdeck', owner: { login: 'Chris0Jeky' } },
+      sender: { login: 'Chris0Jeky', type: 'User' },
+      pull_request: {
+        number: 2401,
+        draft: false,
+        changed_files: 1,
+        base: { sha: staleEventBase, ref: 'main', repo: { full_name: 'Chris0Jeky/Taskdeck' } },
+        head: { sha: HEAD, repo: { full_name: 'Chris0Jeky/Taskdeck' } },
+        user: { login: 'Chris0Jeky', type: 'User' },
+        author_association: 'OWNER',
+        labels: [],
+      },
+    })}\n`);
+    writeFileSync(changedFilesPath, 'modified\tdocs/x.md\t\n');
+
+    execFileSync(process.execPath, [
+      fileURLToPath(new URL('./plan.mjs', import.meta.url)),
+      '--policy', fileURLToPath(new URL('../../../ci/policy.v1.json', import.meta.url)),
+      '--event', eventPath,
+      '--event-name', 'pull_request_target',
+      '--base-sha', BASE,
+      '--changed-files', changedFilesPath,
+      '--changed-files-expected', '1',
+      '--execution-mode', 'hosted',
+      '--out', planPath,
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+    const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+    assert.match(plan.plannerError.message, /merge SHA and tree SHA from the same fetched merge ref/);
+    assert.equal(plan.baseSha, BASE);
+    assert.notEqual(plan.baseSha, staleEventBase);
+    assert.ok(!JSON.stringify(plan).includes(staleEventBase));
+    assert.equal(plan.headSha, HEAD);
+    assert.equal(plan.trust, 'T3');
+    assert.equal(plan.risk, 'R4');
+    assert.equal(plan.executionMode.effective, 'hosted');
+    assert.deepEqual(plan.escalationReasons, ['planner-error']);
+  } finally {
+    rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+  }
 });
 
 test('the shadow workflow binds resolver, planner, and gate to fixed control identities', () => {
