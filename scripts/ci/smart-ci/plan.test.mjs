@@ -21,6 +21,7 @@ import {
   validatePolicy,
 } from './lib/plan.mjs';
 import { inputFromEvent, parseChangedFiles, requirePullRequestMergeBinding } from './plan.mjs';
+import { observeMergeRef } from './resolve-merge-ref.mjs';
 
 const policyText = readFileSync(new URL('../../../ci/policy.v1.json', import.meta.url), 'utf8');
 const policy = JSON.parse(policyText);
@@ -484,20 +485,26 @@ test('inputFromEvent reads pull_request payloads without content and detects for
   assert.equal(push.headSha, HEAD);
 });
 
-test('the shadow workflow records one exact merge-ref identity and fails closed on stale parents', () => {
+test('the shadow workflow binds resolver, planner, and gate to fixed control identities', () => {
   const workflow = readFileSync(new URL('../../../.github/workflows/smart-ci-shadow.yml', import.meta.url), 'utf8');
-  assert.match(workflow, /merge_sha="\$\(git rev-parse 'FETCH_HEAD\^\{commit\}'\)"/);
-  assert.match(workflow, /merge_tree="\$\(git rev-parse 'FETCH_HEAD\^\{tree\}'\)"/);
-  assert.match(workflow, /merge_base="\$\(git rev-parse 'FETCH_HEAD\^1'\)"/);
-  assert.match(workflow, /merge_head="\$\(git rev-parse 'FETCH_HEAD\^2'\)"/);
-  assert.match(workflow, /\[ "\$merge_base" != "\$EXPECTED_BASE" \] \|\| \[ "\$merge_head" != "\$EXPECTED_HEAD" \]/);
+  assert.match(workflow, /CONTROL_BASE: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /CONTROL_HEAD: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/);
+  assert.match(workflow, /node scripts\/ci\/smart-ci\/resolve-merge-ref\.mjs/);
+  assert.match(workflow, /--base "\$CONTROL_BASE"/);
+  assert.match(workflow, /--head "\$CONTROL_HEAD"/);
+  assert.match(workflow, /--merge-out artifacts\/merge-sha\.txt/);
+  assert.match(workflow, /--tree-out artifacts\/merge-tree-sha\.txt/);
+  assert.match(workflow, /--base-sha "\$CONTROL_BASE"/);
+  assert.match(workflow, /EXPECTED_BASE: \$\{\{ env\.CONTROL_BASE \}\}/);
+  assert.match(workflow, /EXPECTED_HEAD: \$\{\{ env\.CONTROL_HEAD \}\}/);
   assert.match(workflow, /--merge-sha "\$\(cat artifacts\/merge-sha\.txt\)"/);
   assert.match(workflow, /--merge-tree-sha "\$\(cat artifacts\/merge-tree-sha\.txt\)"/);
+  assert.doesNotMatch(workflow, /auth_header=/);
 });
 
-test('the shadow workflow fetch depth exposes both parents of a synthetic merge ref', () => {
-  const workflow = readFileSync(new URL('../../../.github/workflows/smart-ci-shadow.yml', import.meta.url), 'utf8');
-  const depthMatch = workflow.match(/fetch --no-tags --depth=(\d+) origin "refs\/pull\/\$\{PR_NUMBER\}\/merge"/);
+test('the shadow workflow fetch depth exposes both parents of a synthetic merge ref', async () => {
+  const resolver = readFileSync(new URL('./resolve-merge-ref.mjs', import.meta.url), 'utf8');
+  const depthMatch = resolver.match(/['"]--depth=(\d+)['"]/);
   assert.ok(depthMatch, 'the merge-ref fetch must declare a bounded depth');
 
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'taskdeck-smart-ci-merge-ref-'));
@@ -546,12 +553,11 @@ test('the shadow workflow fetch depth exposes both parents of a synthetic merge 
       `${mergeSha}:refs/pull/1/merge`);
 
     git(fixtureRoot, 'clone', '--no-checkout', '--depth=1', '--branch', 'main', originUrl, checkout);
-    git(checkout, 'fetch', '--no-tags', `--depth=${depthMatch[1]}`, 'origin', 'refs/pull/1/merge');
-    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^{commit}'), mergeSha);
-    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^1'), baseSha);
-    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^2'), headSha);
-    assert.equal(git(checkout, 'rev-parse', 'FETCH_HEAD^{tree}'), mergeTreeSha);
     assert.equal(depthMatch[1], '2');
+    assert.deepEqual(
+      await observeMergeRef({ pullRequestNumber: 1, token: 'synthetic-fixture-token', cwd: checkout }),
+      { mergeSha, baseSha, headSha, treeSha: mergeTreeSha },
+    );
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
