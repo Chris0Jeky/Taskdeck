@@ -1,0 +1,185 @@
+# v0.3.0 release readiness
+
+Last Updated: 2026-09-03 (measured against `main` `a09d986c0`)
+
+**What this file is.** A standing view of what actually stands between `main` and the final `v0.3.0`
+tag, so the open v0.3 milestone count is never mistaken for the blocker count. It classifies work into
+gate clauses, technical blockers, human gates, trackers and milestone residuals.
+
+**What this file is not.** It is not shipped reality (`docs/STATUS.md`), not the plan
+(`docs/REVIVAL_PLAN.md`), and not a go/no-go. The release decision is the maintainer's; ADR-0051 and
+`.agent-harness/tier.json` cover only the mechanics once a ruling exists. Live GitHub outranks the
+issue numbers below.
+
+## 1. The gate
+
+The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. State measured 2026-09-03.
+
+| # | Gate clause | State | What it waits on |
+|---|---|---|---|
+| 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
+| 2 | Milestone closed or explicitly re-ruled | **Not met.** 49 open | Sections 2 to 5 below |
+| 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
+| 4 | `main` green | **Green** at `01d77faf3`; the `a09d986c0` run had not reported when this was measured | Two known intermittent reds, section 2 |
+| 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
+
+Clause 2 does not require every open issue to close. "Explicitly re-ruled" means each one either closes
+on evidence or carries a recorded decision moving it out of v0.3. Section 5 is the proposal for that
+ruling; it is not itself the ruling.
+
+## 2. Technical blockers on the gate
+
+These are the issues whose state a Codex lane can change and that a gate clause actually depends on.
+Everything else in the milestone is section 4 or section 5.
+
+**The clause-5 chain, in order.** Clause 5 needs `Smart CI / Required Gate` enforced. Branch protection
+on `main` today requires exactly three contexts, all security: `Dependency Security / Dependency
+Security Signals`, `SAST Scan / SAST Scan (Semgrep)`, `Secret Scan / Gitleaks Scan`. Registering the
+Smart CI gate is human action SC-4, and SC-4's own condition is at least 20 PRs of observation without
+a false red. What stands between here and that condition:
+
+0. **`#2401` is fixed and closed** (PR `#2440`, merge `a09d986c0`), which unblocks the count rather
+   than completing it. It had produced two false reds the same day: `#2408` (run `33736889079`,
+   09:05Z) and `#2421` (run `33754458696`, 12:18Z) both failed `Smart CI / Required Gate` on
+   `base-sha-mismatch` plus `trust-mismatch` after `main` moved under a queued
+   `pull_request_target` event, not on branch content. The cause was in `plan.mjs`:
+   `requirePullRequestMergeBinding` ran *before* the `--base-sha` override was applied, so a
+   fail-closed planner escalation built its `errorPlan` from the stale event base and the
+   event-derived trust level. The fix moves that check after the override. **The SC-4 window still
+   has to accumulate**: 20 PRs of observation without a false red is a forward-looking count that
+   starts from a clean planner, so the clock effectively restarts here.
+1. **`#2327`** (CI-03, Priority I) owns the stable gate contract, branch-current behaviour, the
+   landed-commit verifier and event topology. Its own residuals are recorded on the issue; the
+   verifier does not exist yet and cancellation provenance cannot yet separate a manual cancel from a
+   concurrency supersede. With `#2401` closed, this is the first open technical blocker on clause 5.
+2. **`#2326`** (CI-02, Priority I) remains an observation gate. Selective execution is not shipped and
+   must not be described as shipped or authorized before its evidence conditions are met.
+
+**The cutover checklist is also a clause-5 prerequisite, and it is wider than the chain above.**
+`OUTSTANDING_TASKS.md` SC-6 permits the visibility change only after sections A to I of
+`docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` are complete. Those sections name their owners, so every
+one of them is gate work:
+
+| Section | Owner | State |
+|---|---|---|
+| A. Decisions (maintainer) | `#2324`, `#2337` | Human, section 3 |
+| B. Measure before changing | CI-01 `#2325`, CI-09 `#2333` | `#2325` closed; `#2333` open |
+| C. Planner and gate | CI-02 `#2326`, CI-03 `#2327` | Both open, above |
+| D. Event topology | CI-03 `#2327` | Open, above |
+| E. Test right-sizing | CI-05 `#2329`, CI-07 `#2331`, CI-08 `#2332` | All three open |
+| F. Runners | CI-04 `#2328` | Open. **Mostly agent work**, see below |
+| G. Supply chain | CI-11 `#2335` | Open, hands off to SC-5 |
+| H. Nightly and release | CI-10 `#2334` | **Open and on the v0.4 milestone** |
+| I. Rehearsal while still public | CI-13 `#2337` (checklist header) | Open, evidence recorded on `#2337` |
+
+**Section F is not a human gate, despite SC-7.** Its four boxes are isolated VMs, no host mounts or
+personal credentials with one job per host, a tested hosted override and offline-runner behaviour,
+and tested workspace/Docker/cache cleanup with a documented VM reset and revocation path. All of that
+is agent-preparable and must happen *before* cutover. Only the registration tokens and the GitHub
+association are human, and those are SC-7, which runs *after*. Treating `#2328` as wholly human would
+send required pre-cutover engineering out of the technical queue and let SC-6 look ready while
+section F is unbuilt.
+
+One inconsistency remains in that table and needs a decision rather than an assumption:
+
+- **`#2334` is a v0.3.0 gate prerequisite sitting on the v0.4 milestone.** Either section H is not
+  truly required before cutover, or `#2334` belongs in v0.3. It cannot be both.
+
+**Clause-4 risks.** Two known intermittent reds can take `main` red without a code defect:
+**`#2425`** (Windows worktree helper scenario 28, the forced 5s timeout lands in the checkout phase)
+and **`#2399`** (Windows batch command-shape sample contamination, seen again on PR `#2432`). Neither
+is a product defect; both are noise in clause 4 and in the SC-4 observation window.
+**`#2378`** (Priority I) is the same class for the Windows Frontend Unit launcher timeout.
+
+## 3. Human gates
+
+Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and map to issues:
+
+| Item | Issue | Nature |
+|---|---|---|
+| SC-1 confirm or overturn the nine CI-00 delegated rulings | `#2324` | One reply |
+| SC-2 authorize the one-time artifact deletion, or accept the spend | `#2333`, `#2337` | Destructive, agents do not run it unasked |
+| SC-3 confirm the plan and set a spend ceiling | `#2337` | Billing |
+| SC-4 register the stable gate in branch protection | `#2327`, `#2337` | Blocked by section 2 |
+| SC-5 flip `sha_pinning_required` after CI-11 | `#2335` | Follows `#2335` |
+| SC-6 change repository visibility to private | `#2337` | The release-defining action |
+| SC-7 register the isolated runners after cutover | `#2328`, `#2337` | Post-cutover |
+| SC-8 public-asset and launch-kit decision | `#2337`, `#2242` | **Ruled 2026-09-03**, see below |
+
+**SC-8 is answered.** The maintainer ruled on 2026-09-03: a **private development repository plus a
+public release and source mirror**. Development, CI, issues and the control plane go private for
+v0.3.0; Releases, checksums and provenance, and the GPL-3.0-only source stay public through a mirror,
+with GitHub Pages still publishing from the private repository. CI-16 `#2439` implements it and
+serves checklist section A, which puts it inside the SC-6 A-to-I prerequisite set. The launch kit and
+any `awesome-selfhosted` wording point at the mirror, not the private repository.
+
+`#1772` (private shared instance) carries human decision CL-1 and is the one non-CI human-gated issue
+still on the milestone. RT-1/2/3 (signing), BEN-1 and DIST-1 are in `OUTSTANDING_TASKS.md` but are not
+v0.3.0 gate items: the 2026-08-29 q-5 ruling is that signing gates no release *before* v0.3.x, and
+v0.2.0 shipped unsigned. That defers signing past v0.3.0, not past the maintenance line; the release
+programme still targets it at the first v0.3.x release.
+
+**The 2026-09-03 decision packet is landing separately in PR `#2442`,** which owns
+`OUTSTANDING_TASKS.md`, the checklist annotations and the ADRs for that packet. SC-3 was ruled there
+too (a $10/month hard Actions ceiling, with the setting itself still to be applied). This file does
+not restate those records or check off their tracker boxes; it reads them.
+
+## 4. Trackers
+
+Trackers do not close by doing work; they close when their children do, or by a ruling.
+
+- **`#2324`** CI-00, the Smart CI Fabric and private-repository decision tracker (ADR-0066).
+- **`#2235`** v0.3 spring cleaning. This is the reconciliation pass that clause 2 depends on, and this
+  readiness file is one of its outputs.
+
+## 5. Where the 50 open issues actually sit
+
+Clause 2's content is deciding which of these ship inside v0.3.0 and which are re-ruled out, and that
+split is a maintainer ruling, not an agent decision. The useful thing this section does is separate
+the ones that already have a gate clause behind them from the ones that do not. Measured 2026-09-03:
+
+- 16 carry `dogfooding`, the product-polish family seeded from real use: `#2193`, `#2141`, `#2090`,
+  `#2009`, `#2008`, `#2007`, `#2004`, `#1999`, `#1987`, `#1984`, `#1972`, `#1968`, `#1961`, `#1949`,
+  `#1940`, `#1936`. Three of these are Priority I (`#2004`, `#1949`, `#1940`) and three carry
+  `decision` (`#2004`, `#1972`, `#1936`), so they need a ruling before they can be moved wholesale.
+- 14 carry `ci`, and almost none of them are residuals; they split across this file:
+  - 9 are section 2: the clause-5 chain `#2327` and `#2326`, the cutover-checklist owners `#2333`
+    (B), `#2329`, `#2331`, `#2332` (E) and `#2335` (G), plus the clause-4 intermittent reds `#2425`
+    and `#2378`. (`#2401` was the tenth until PR `#2440` closed it.)
+  - 2 more are section 3 human gates in their own right: `#2337` and `#2328` (checklist F).
+    (`#2333`, `#2335` and `#2327` also hand off to SC-2, SC-5 and SC-4, but are counted above.)
+  - 1 is the section 4 tracker `#2324` (checklist A).
+  - 1 is CI-16 `#2439`, which implements the 2026-09-03 SC-8 ruling and also serves checklist
+    section A, so it is gate work rather than backlog.
+  - **1** has no v0.3.0 gate clause behind it: `#2250`, the release-composer follow-ups.
+- 19 carry neither label. Three of them appear earlier in this file: `#2235` is the section 4
+  tracker, `#1772` is the section 3 human gate, and `#2399` is the section 2 clause-4 flake. The
+  other 16 are ordinary backend, frontend and security backlog with no gate clause behind them:
+  `#2315`, `#2305`, `#2304`, `#2303`, `#2302`, `#2301`, `#2240`, `#2215`, `#2214`, `#2391`,
+  `#1866`, `#1640`, `#1309`, `#1307`, `#1284`, `#1131`.
+
+The three label sets are disjoint and closed: 16 + 14 + 19 = 49. If that arithmetic stops holding,
+this section is stale and the milestone should be re-counted before the file is trusted. It has
+already moved twice since this file was drafted: `#2230` closed on PR `#2421` and CI-16 `#2439` was
+seeded the same afternoon, then `#2401` closed on PR `#2440`.
+
+**The split that matters.** 16 of the 49 have a gate clause behind them and are not re-ruling
+candidates at all: the 13 `ci` issues above other than `#2250`, plus `#2235`, `#1772` and `#2399`.
+The other **33** have no gate clause: the 16 `dogfooding` issues, the 16 ordinary backlog issues, and
+`#2250`.
+
+So the question this section puts to the maintainer is one question about those 33, not forty-nine:
+**which of them ship inside v0.3.0 and which are re-ruled to v0.4?** Until that is answered, agents
+keep finishing them in dependency order and nothing here is silently dropped.
+
+## 6. Keeping this current
+
+Refresh at each coordination cycle, from live state and not from this file:
+
+1. Re-read the v0.3 row of `docs/REVIVAL_PLAN.md` for the gate clauses.
+2. Re-read branch protection for the required contexts. Do not infer that the Smart CI gate is
+   enforced from a green check.
+3. Re-read `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` sections A to I and their named owners. SC-6
+   makes that whole list clause-5 work, so an issue moving in or out of it changes this file.
+4. Re-count the milestone and re-check the section 2 chain.
+5. Move anything that becomes shipped reality into `docs/STATUS.md`, not into this file.
