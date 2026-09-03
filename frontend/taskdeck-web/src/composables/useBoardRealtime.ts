@@ -30,7 +30,7 @@ function getAccessToken(): string {
 }
 
 export interface BoardRealtimeControllerOptions {
-  fetchBoard: (boardId: string) => Promise<void>
+  fetchBoard: (boardId: string, options: { intent: 'background' }) => Promise<void>
   onPresenceChanged?: (snapshot: BoardPresenceSnapshot) => void
 }
 
@@ -70,7 +70,7 @@ export function createBoardRealtimeController(
         return
       }
 
-      void options.fetchBoard(boardId).catch(() => {
+      void options.fetchBoard(boardId, { intent: 'background' }).catch(() => {
         // Keep fallback resilient; fetch failures are already surfaced by store-level handling.
       })
     }, FALLBACK_POLL_INTERVAL_MS)
@@ -106,9 +106,14 @@ export function createBoardRealtimeController(
 
       const boardId = subscribedBoardId
       refreshInFlight = true
-      void options.fetchBoard(boardId).finally(() => {
-        refreshInFlight = false
-      })
+      void options
+        .fetchBoard(boardId, { intent: 'background' })
+        .catch(() => {
+          // Background refresh failures must not escape the realtime loop.
+        })
+        .finally(() => {
+          refreshInFlight = false
+        })
     }, MUTATION_DEBOUNCE_MS)
   }
 

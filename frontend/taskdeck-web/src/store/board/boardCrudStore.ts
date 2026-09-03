@@ -16,10 +16,31 @@ import type { BoardHelpers } from './boardStoreHelpers'
 // succession; the throttle guard prevents duplicate network round-trips.
 const FETCH_BOARDS_THROTTLE_MS = 5000
 
+export type BoardFetchIntent = 'explicit' | 'background'
+
+export interface BoardFetchOptions {
+  intent?: BoardFetchIntent
+}
+
+interface ActiveBoardFetch {
+  boardId: string
+  intent: BoardFetchIntent
+  generation: number
+  controller: AbortController
+  promise: Promise<boolean>
+}
+
+interface QueuedBackgroundBoardFetch {
+  boardId: string
+  promise: Promise<boolean>
+  resolve: (committed: boolean) => void
+}
+
 export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
   let lastFetchBoardsAt = 0
   let boardFetchGeneration = 0
-  let activeBoardFetchController: AbortController | null = null
+  let activeBoardFetch: ActiveBoardFetch | null = null
+  let queuedBackgroundBoardFetch: QueuedBackgroundBoardFetch | null = null
 
   async function fetchBoards(search?: string, includeArchived = false) {
     const now = Date.now()
@@ -60,78 +81,188 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     }
   }
 
-  async function fetchBoard(id: string): Promise<boolean> {
-    const requestGeneration = ++boardFetchGeneration
-    activeBoardFetchController?.abort()
-    const controller = new AbortController()
-    activeBoardFetchController = controller
+  function settleQueuedBackgroundBoardFetch(committed = false) {
+    const queued = queuedBackgroundBoardFetch
+    queuedBackgroundBoardFetch = null
+    queued?.resolve(committed)
+  }
 
-    if (helpers.isDemoMode) {
-      state.loading.value = true
-      state.error.value = null
-      const demo = buildDemoBoardDetail(id)
-      if (requestGeneration === boardFetchGeneration) {
+  function queueBackgroundBoardFetch(id: string): Promise<boolean> {
+    if (queuedBackgroundBoardFetch?.boardId === id) {
+      return queuedBackgroundBoardFetch.promise
+    }
+
+    settleQueuedBackgroundBoardFetch()
+    let resolve!: (committed: boolean) => void
+    const promise = new Promise<boolean>((innerResolve) => {
+      resolve = innerResolve
+    })
+    queuedBackgroundBoardFetch = { boardId: id, promise, resolve }
+    return promise
+  }
+
+  function drainQueuedBackgroundBoardFetch(completedFetch: ActiveBoardFetch) {
+    const queued = queuedBackgroundBoardFetch
+    if (!queued || queued.boardId !== completedFetch.boardId) {
+      return
+    }
+
+    queuedBackgroundBoardFetch = null
+    void startBoardFetch(queued.boardId, 'background').then(queued.resolve, () => {
+      queued.resolve(false)
+    })
+  }
+
+  function cancelBackgroundBoardFetch(boardId?: string) {
+    if (
+      queuedBackgroundBoardFetch &&
+      (boardId === undefined || queuedBackgroundBoardFetch.boardId === boardId)
+    ) {
+      settleQueuedBackgroundBoardFetch()
+    }
+
+    const active = activeBoardFetch
+    if (
+      active?.intent === 'background' &&
+      (boardId === undefined || active.boardId === boardId)
+    ) {
+      boardFetchGeneration++
+      active.controller.abort()
+      if (activeBoardFetch === active) {
+        activeBoardFetch = null
+      }
+    }
+  }
+
+  function fetchBoard(id: string, options: BoardFetchOptions = {}): Promise<boolean> {
+    const intent = options.intent ?? 'explicit'
+
+    if (intent === 'background' && activeBoardFetch) {
+      if (activeBoardFetch.boardId !== id) {
+        return Promise.resolve(false)
+      }
+
+      if (activeBoardFetch.intent === 'explicit') {
+        return queueBackgroundBoardFetch(id)
+      }
+
+      return activeBoardFetch.promise
+    }
+
+    if (intent === 'explicit') {
+      // A route load or Retry includes all mutations observed before it began,
+      // so it supersedes any older queued background refresh.
+      settleQueuedBackgroundBoardFetch()
+    }
+
+    return startBoardFetch(id, intent)
+  }
+
+  function startBoardFetch(id: string, intent: BoardFetchIntent): Promise<boolean> {
+    const requestGeneration = ++boardFetchGeneration
+    activeBoardFetch?.controller.abort()
+    const controller = new AbortController()
+    const mutationEpoch = helpers.getBoardDetailMutationEpoch(id)
+    const request = {
+      boardId: id,
+      intent,
+      generation: requestGeneration,
+      controller,
+      promise: Promise.resolve(false),
+    } satisfies ActiveBoardFetch
+
+    const isCurrentGeneration = () => requestGeneration === boardFetchGeneration
+    const isCommitEligible = () =>
+      isCurrentGeneration() && helpers.getBoardDetailMutationEpoch(id) === mutationEpoch
+
+    const performFetch = async (): Promise<boolean> => {
+      if (helpers.isDemoMode) {
+        if (intent === 'explicit') {
+          state.loading.value = true
+          state.error.value = null
+        }
+        const demo = buildDemoBoardDetail(id)
+        if (!isCommitEligible()) {
+          return false
+        }
+
         state.currentBoard.value = demo.board
         state.currentBoardCards.value = demo.cards
         state.currentBoardLabels.value = []
         state.cardCommentsByCardId.value = {}
-        state.loading.value = false
-        activeBoardFetchController = null
+        if (intent === 'explicit') {
+          state.loading.value = false
+        }
         return true
       }
 
-      return false
-    }
+      try {
+        if (intent === 'explicit') {
+          state.loading.value = true
+          state.error.value = null
+        }
+        const readOptions: BoardReadOptions = {
+          signal: controller.signal,
+          timeout: BOARD_REQUEST_TIMEOUT_MS,
+          skipRetry: true,
+        }
+        const [board, cards, labels] = await Promise.all([
+          boardsApi.getBoard(id, readOptions),
+          cardsApi.getCards(id, undefined, readOptions),
+          labelsApi.getLabels(id, readOptions),
+        ])
 
-    try {
-      state.loading.value = true
-      state.error.value = null
-      const readOptions: BoardReadOptions = {
-        signal: controller.signal,
-        timeout: BOARD_REQUEST_TIMEOUT_MS,
-        skipRetry: true,
-      }
-      const [board, cards, labels] = await Promise.all([
-        boardsApi.getBoard(id, readOptions),
-        cardsApi.getCards(id, undefined, readOptions),
-        labelsApi.getLabels(id, readOptions),
-      ])
+        if (!isCommitEligible()) {
+          return false
+        }
 
-      if (requestGeneration !== boardFetchGeneration) {
-        return false
-      }
+        const cardCounts = cards.reduce((counts, card) => {
+          counts.set(card.columnId, (counts.get(card.columnId) ?? 0) + 1)
+          return counts
+        }, new Map<string, number>())
+        board.columns.forEach((column) => {
+          column.cardCount = cardCounts.get(column.id) ?? 0
+        })
 
-      const cardCounts = cards.reduce((counts, card) => {
-        counts.set(card.columnId, (counts.get(card.columnId) ?? 0) + 1)
-        return counts
-      }, new Map<string, number>())
-      board.columns.forEach((column) => {
-        column.cardCount = cardCounts.get(column.id) ?? 0
-      })
+        state.currentBoard.value = board
+        state.currentBoardCards.value = cards
+        state.currentBoardLabels.value = labels
+        state.cardCommentsByCardId.value = {}
+        return true
+      } catch (e: unknown) {
+        // Ensure held-open siblings are cancelled before exposing a current
+        // explicit failure or silently dropping stale/background work.
+        controller.abort()
+        if (!isCommitEligible() || axios.isCancel(e)) {
+          return false
+        }
 
-      state.currentBoard.value = board
-      state.currentBoardCards.value = cards
-      state.currentBoardLabels.value = labels
-      state.cardCommentsByCardId.value = {}
-      return true
-    } catch (e: unknown) {
-      if (requestGeneration !== boardFetchGeneration || axios.isCancel(e)) {
-        return false
-      }
+        if (intent === 'background') {
+          return false
+        }
 
-      // Ensure held-open siblings are cancelled before exposing the failure to
-      // the caller. The next explicit Retry starts a new generation.
-      controller.abort()
-      helpers.handleApiError(e, 'Failed to fetch board')
-      throw e
-    } finally {
-      if (requestGeneration === boardFetchGeneration) {
-        state.loading.value = false
-        if (activeBoardFetchController === controller) {
-          activeBoardFetchController = null
+        helpers.handleApiError(e, 'Failed to fetch board')
+        throw e
+      } finally {
+        if (intent === 'explicit' && isCurrentGeneration()) {
+          state.loading.value = false
         }
       }
     }
+
+    const promise = performFetch().finally(() => {
+      if (activeBoardFetch !== request) {
+        return
+      }
+
+      activeBoardFetch = null
+      if (request.intent === 'explicit') {
+        drainQueuedBackgroundBoardFetch(request)
+      }
+    })
+    request.promise = promise
+    activeBoardFetch = request
+    return promise
   }
 
   async function createBoard(board: CreateBoardDto) {
@@ -222,6 +353,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
   return {
     fetchBoards,
     fetchBoard,
+    cancelBackgroundBoardFetch,
     createBoard,
     updateBoard,
     deleteBoard,

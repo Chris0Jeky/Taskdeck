@@ -54,7 +54,9 @@ const realtimeMock = {
 // Captures the onPresenceChanged callback passed by BoardView so tests can
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
-let capturedRealtimeFetchBoard: ((boardId: string) => Promise<void>) | undefined
+let capturedRealtimeFetchBoard:
+  | ((boardId: string, options: { intent: 'background' }) => Promise<void>)
+  | undefined
 
 const mockBoardStore = reactive({
   currentBoard: {
@@ -575,7 +577,7 @@ describe('BoardView', () => {
     expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
 
     expect(capturedRealtimeFetchBoard).toBeDefined()
-    await capturedRealtimeFetchBoard!('board-1')
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
     expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(3, 'board-1', {
       intent: 'background',
     })
@@ -781,7 +783,7 @@ describe('BoardView', () => {
     expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(2, 'board-2')
 
     expect(capturedRealtimeFetchBoard).toBeDefined()
-    await capturedRealtimeFetchBoard!('board-1')
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
     expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
 
     boardBLoad.resolve(true)
