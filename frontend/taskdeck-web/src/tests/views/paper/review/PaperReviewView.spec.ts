@@ -4986,6 +4986,78 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('retains the barrier when the same proposal revision moves during selector refresh', async () => {
+      const now = new Date().toISOString()
+      const original = makeProposal({ id: 'same-id-drift' })
+      const refreshed = makeProposal({
+        id: 'same-id-drift',
+        latestRevisionId: 'rev-drift-1',
+      })
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-drift-1',
+        proposalId: 'same-id-drift',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'Review the exact revision',
+        createdAt: now,
+      })
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({
+          id: 'same-id-drift',
+          status: 'Approved',
+          approvedRevisionId: 'rev-drift-2',
+        }),
+      )
+      const wrapper = await mountView([original])
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        reason: 'Review the exact revision',
+      })
+      await flushPromises()
+
+      mocks.getProposals.mockResolvedValueOnce([refreshed])
+      let resolveHistory!: (rows: unknown[]) => void
+      mocks.getHistory.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveHistory = resolve }),
+      )
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await vi.waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2))
+
+      // A collaborator saves a second revision while this exact-key selector
+      // batch is held. The same proposal object remains active, so identity
+      // alone cannot detect the drift at the post-await decision boundary.
+      refreshed.latestRevisionId = 'rev-drift-2'
+      resolveHistory([])
+      await flushPromises()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).not.toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+
+      // The failed revalidation must retain the epoch. A fresh review of rev-2
+      // consumes the next action too; only the following explicit action may
+      // approve it.
+      mocks.getProposals.mockResolvedValueOnce([refreshed])
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledOnce()
+      expect(mocks.approveProposal).toHaveBeenCalledWith('same-id-drift')
+      wrapper.unmount()
+    })
+
     it('does not approve either proposal when selector refresh is superseded by a queue choice', async () => {
       const now = new Date().toISOString()
       const proposalA = makeProposal({ id: 'aaa-switch', summary: 'First proposal' })
