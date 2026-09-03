@@ -147,8 +147,9 @@ The wave map and dependency order for v0.4–v0.6 live on tracker CF-00 `#2254` 
 Tracked as `decision`-labelled issues; none may be converted into implementation without an
 explicit maintainer ruling or Accepted ADR:
 
-1. Commercial/licensing model (proprietary vs open-core vs managed-service). The contribution
-   audit is delivered on `#2012`; the model choice itself remains open.
+1. Commercial/licensing model — **ruled 2026-09-03** (maintainer decision packet, ADR-0067):
+   open-core + managed hosting/services; external contributions stay paused until a
+   relicensing-capable CLA/grant exists. `#2012` closed; no longer open.
 2. Beta Observability Mode telemetry scope (inside `#1308`).
 3. Victory/progress dossier product shape (relation to GEN-07 `#1321`).
 4. The remaining decision-studio advanced questions (38 recorded with provisional recommendations

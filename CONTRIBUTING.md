@@ -1,9 +1,12 @@
 # Contributing to Taskdeck
 
-> **External code contributions are paused (maintainer decision, 2026-08-24).** The maintainer is
-> evaluating the project's long-term licensing, including the possibility that future versions —
-> or a product derived from this codebase — are offered under a commercial/proprietary license.
-> Until that is settled and stated here, **all external code pull requests — solicited or not,
+> **External code contributions are paused (maintainer decision, 2026-08-24; reaffirmed 2026-09-03).**
+> The commercial model is decided as open-core with managed hosting and services
+> ([ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md)): the core
+> stays GPL-3.0-only, while future paid surfaces or a product derived from this codebase may be
+> offered under a commercial/proprietary license. Contributions reopen only once a
+> relicensing-capable contributor licence agreement or contribution grant is in place and stated
+> here. Until then, **all external code pull requests — solicited or not,
 > issue-backed or not — will be closed without review**; no exception is implied by any
 > contribution-process text below, which is retained for the maintainer's own workflow and for a
 > possible future reopening.

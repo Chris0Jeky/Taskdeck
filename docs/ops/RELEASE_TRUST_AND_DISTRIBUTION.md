@@ -28,7 +28,7 @@ signing/notarization, and Linux package channels are deferred. They are not hidd
 
 | Order | Issue | Outcome | Initial Project state |
 | --- | --- | --- | --- |
-| 1 | [#2148](https://github.com/Chris0Jeky/Taskdeck/issues/2148) | Decide publisher/product/domain identity and primary/fallback signing route. | Blocked on maintainer/legal decision |
+| 1 | [#2148](https://github.com/Chris0Jeky/Taskdeck/issues/2148) | Decide publisher/product/domain identity and primary/fallback signing route. | Partly decided 2026-09-03 (Microsoft Artifact Signing primary, SignPath fallback, dedicated Taskdeck domain posture, no v0.3 gate); the legal owner and publisher string are deferred pending professional advice |
 | 2 | [#2149](https://github.com/Chris0Jeky/Taskdeck/issues/2149) | Provision the signing identity and protected CI boundary. | Blocked on #2148 and human enrolment |
 | 3 | [#2150](https://github.com/Chris0Jeky/Taskdeck/issues/2150) | Authenticode-sign, timestamp, and fail closed before packaging. | Blocked on #2149 |
 | 4 | [#2151](https://github.com/Chris0Jeky/Taskdeck/issues/2151) | Publish a signed user-grade installer with stable metadata. | Blocked on #2150 |
@@ -119,9 +119,9 @@ owns visual identity and release artwork only.
 
 Distribution work does not create a public SaaS plan. [ADR-0061](../decisions/ADR-0061-trusted-shared-instance-and-managed-saas-boundary.md)
 (Accepted as direction only, evidence pending — maintainer ruling 2026-08-29) and [#1772](https://github.com/Chris0Jeky/Taskdeck/issues/1772)
-define the maximum boundary for a possible trusted private instance. Deployment remains blocked until the maintainer supplies the three
-pending CL-1 values (the collaborator's handle, the monthly ceiling and alert threshold, the off-platform retention window), names the
-collaborator and authorizes any account or billing, and the Stage 1 prerequisites tracked on `#1772` are closed (backup tooling present in the production
+define the maximum boundary for a possible trusted private instance. Deployment remains blocked until the maintainer authorizes any account or
+billing (the three CL-1 values — one named collaborator held privately, a £20/month ceiling with a £10 alert, 12 weekly off-platform
+copies — were supplied on 2026-09-03) and the Stage 1 prerequisites tracked on `#1772` are closed (backup tooling present in the production
 image or a sidecar/host procedure; a non-secret-exposing connector-decrypt verification seam for the restore drill); MFA stays disabled on
 that instance until `#1653` lands. If authorized, the proof is limited to
 one application instance, one SQLite volume, a few known users, private access, InviteOnly onboarding, exact-image evidence, SignalR/reconnect
@@ -140,8 +140,8 @@ These are planning inputs, not purchases or quotes. Re-verify them immediately b
 
 | Route or service | 2026-08-27 planning input | Gate or risk |
 | --- | --- | --- |
-| Microsoft Artifact Signing | Basic is listed at USD 9.99/account/month for 5,000 signatures, plus overage. | Paid Azure subscription, identity/region eligibility, renewal and cost owner; student/sponsored subscriptions are unsupported. |
-| SignPath Foundation | Free of charge for accepted open-source projects. | Eligibility and acceptance are not guaranteed; its Foundation is the certificate publisher and its OSS conditions bind the project. |
+| Microsoft Artifact Signing | Basic is listed at USD 9.99/account/month for 5,000 signatures, plus overage. | Paid Azure subscription, identity/region eligibility, renewal and cost owner; student/sponsored subscriptions are unsupported. **Primary route by maintainer ruling 2026-09-03 (`#2148`); enrolment waits on the legal-owner decision.** |
+| SignPath Foundation | Free of charge for accepted open-source projects. | Eligibility and acceptance are not guaranteed; its Foundation is the certificate publisher and its OSS conditions bind the project. **Fallback route since 2026-09-03.** |
 | Traditional public-trust CA | Fallback quote required. | Identity validation, hardware/provider key custody, annual renewal, and CI integration vary by CA. |
 | GitHub artifact attestations | Available for public repositories on current GitHub plans. | Requires least-privilege OIDC/attestation permissions and consumer verification. |
 | Render private shared instance | Repository default is one paid `starter` service plus a 1 GB persistent disk; the programme's dated floor is roughly USD 7/month plus storage/egress. | Confirm the current dashboard quote, spend alerts, downtime-with-disk behaviour, backups, and exit path before activation. |

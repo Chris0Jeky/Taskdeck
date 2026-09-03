@@ -27,9 +27,10 @@ code contributions are currently paused** (maintainer decision effective
 2026-08-24; see the notice in
 [CONTRIBUTING.md](CONTRIBUTING.md) and issue `#2012`); while they were
 accepted, contributions to the core came in under the same GPL-3.0-only terms
-(inbound equals outbound), and any future reopening will first state the
-inbound-rights instrument (DCO alone does not preserve relicensing
-flexibility). Taskdeck uses the Developer Certificate of Origin rather than a
+(inbound equals outbound), and any future reopening will first put a
+relicensing-capable inbound-rights instrument in place (maintainer ruling
+2026-09-03, [ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md);
+DCO alone does not preserve relicensing flexibility). Taskdeck uses the Developer Certificate of Origin rather than a
 contributor licence agreement; its enforcement is paused (see
 [CONTRIBUTING.md](CONTRIBUTING.md)).
 
