@@ -2856,6 +2856,46 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('re-reads revision metadata before Apply after an indeterminate zero-op save', async () => {
+    const now = new Date().toISOString()
+    const savedRevision = {
+      id: 'rev-server-committed',
+      proposalId: 'noop-indeterminate-save',
+      revisionNumber: 1,
+      editorUserId: 'u-1',
+      revisedPayload: '{"operations":[{"actionType":"CreateCard"}]}',
+      revisedAt: now,
+      reason: 'Server committed before the response failed',
+      createdAt: now,
+    }
+    mocks.getRevisions.mockResolvedValueOnce([])
+    mocks.getRevisions.mockResolvedValueOnce([savedRevision])
+    mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after commit'))
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id: 'noop-indeterminate-save', status: 'Approved', operations: [] }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'noop-indeterminate-save', diffPreview: null, operations: [] }),
+    ])
+
+    await wrapper.find('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="revision-reason"]').setValue('Server committed before the response failed')
+    await wrapper.get('[data-testid="revision-save"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="decision-cancel-edit"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+    expect(mocks.approveProposal).toHaveBeenCalledWith('noop-indeterminate-save')
+    expect(mocks.infoToast).not.toHaveBeenCalledWith(expect.stringContaining('no operations'))
+    wrapper.unmount()
+  })
+
   it('discloses a revision on the recorded-operations fallback when no stored preview was captured (#1397 MEDIUM-2 / #1414)', async () => {
     // A revised-then-settled proposal that never captured a diffPreview renders
     // the recorded-operations fallback, not a stored preview — so the disclosure

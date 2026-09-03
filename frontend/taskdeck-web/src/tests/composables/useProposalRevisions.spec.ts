@@ -161,6 +161,47 @@ describe('useProposalRevisions', () => {
     expect(onRevisionSaved).not.toHaveBeenCalled()
   })
 
+  it('invalidates a deferred revision load when the save response is indeterminate', async () => {
+    let resolveLoad!: (revisions: ProposalRevision[]) => void
+    vi.mocked(proposalRevisionsApi.getRevisions).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveLoad = resolve }),
+    )
+    vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce(
+      new Error('Request timed out after the server may have committed'),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const onRevisionSaved = vi.fn()
+    const {
+      editing,
+      revisionCount,
+      latestRevision,
+      revisionsLoaded,
+      startEditing,
+      saveRevision,
+    } = useProposalRevisions(proposal, { onRevisionSaved })
+    await nextTick()
+
+    startEditing()
+    const result = await saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
+
+    expect(result).toEqual({ proposalId: 'p-1', outcome: 'indeterminate', current: true })
+    expect(editing.value).toBe(true)
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+    expect(onRevisionSaved).not.toHaveBeenCalled()
+
+    // This GET began before the save and returns an empty list after the
+    // rejected POST. It must not certify that empty list as server truth.
+    resolveLoad([])
+    await flushMicrotasks()
+
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+  })
+
   it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
     // Codex review: a getRevisions request in flight when a save lands must not
     // overwrite the save's state when it resolves with the pre-save (empty) list.

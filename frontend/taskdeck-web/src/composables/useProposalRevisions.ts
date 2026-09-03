@@ -166,7 +166,16 @@ export function useProposalRevisions(
       return { proposalId, outcome: 'persisted', current: true }
     } catch (e: unknown) {
       const current = gen === saveGeneration && activeProposal.value?.id === proposalId
-      if (current) toast.error(getErrorDisplay(e, 'Failed to save revision').message)
+      if (current) {
+        // The rejected POST may have committed, so any revision GET that was
+        // already in flight is not authoritative. Invalidate its generation
+        // and expose an unknown state rather than certifying stale metadata.
+        loadGeneration += 1
+        revisionCount.value = 0
+        latestRevision.value = null
+        revisionsLoaded.value = false
+        toast.error(getErrorDisplay(e, 'Failed to save revision').message)
+      }
       // A rejected POST only tells us that no response was received. The server
       // may have committed before a timeout, network break, or 5xx reached the
       // client, so never certify non-persistence here.
