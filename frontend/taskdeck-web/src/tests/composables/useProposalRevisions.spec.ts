@@ -202,6 +202,77 @@ describe('useProposalRevisions', () => {
     expect(revisionsLoaded.value).toBe(false)
   })
 
+  it('invalidates reloaded A metadata when its stale save rejects after A to B to A', async () => {
+    let rejectSave!: (reason?: unknown) => void
+    let resolveReopenedA!: (revisions: ProposalRevision[]) => void
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([makeRevision({ proposalId: 'p-1' })])
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-b', proposalId: 'p-2' })])
+      .mockImplementationOnce(
+        () => new Promise((resolve) => { resolveReopenedA = resolve }),
+      )
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
+      () => new Promise((_, reject) => { rejectSave = reject }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { editing, revisionCount, latestRevision, revisionsLoaded, startEditing, saveRevision } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() => expect(revisionCount.value).toBe(1))
+
+    startEditing()
+    const savePromise = saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
+    await nextTick()
+
+    proposal.value = makeProposal({ id: 'p-2' })
+    await vi.waitFor(() => expect(latestRevision.value?.proposalId).toBe('p-2'))
+    proposal.value = makeProposal({ id: 'p-1' })
+    await nextTick()
+    // The reopened A GET reports an empty list before the stale POST rejection,
+    // which would incorrectly become authoritative without the invalidation.
+    await vi.waitFor(() => expect(resolveReopenedA).toBeTypeOf('function'))
+    resolveReopenedA([])
+    await flushMicrotasks()
+    expect(revisionsLoaded.value).toBe(true)
+
+    rejectSave(new Error('Request timed out after commit'))
+    const result = await savePromise
+
+    expect(result).toEqual({ proposalId: 'p-1', outcome: 'indeterminate', current: false })
+    expect(editing.value).toBe(false)
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+  })
+
+  it('keeps B metadata authoritative when a stale A save rejects while B is active', async () => {
+    let rejectSave!: (reason?: unknown) => void
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-b', proposalId: 'p-2' })])
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
+      () => new Promise((_, reject) => { rejectSave = reject }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { revisionCount, latestRevision, revisionsLoaded, startEditing, saveRevision } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+
+    startEditing()
+    const savePromise = saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
+    proposal.value = makeProposal({ id: 'p-2' })
+    await vi.waitFor(() => expect(latestRevision.value?.proposalId).toBe('p-2'))
+
+    rejectSave(new Error('Request timed out after commit'))
+    const result = await savePromise
+
+    expect(result).toEqual({ proposalId: 'p-1', outcome: 'indeterminate', current: false })
+    expect(revisionCount.value).toBe(1)
+    expect(latestRevision.value?.proposalId).toBe('p-2')
+    expect(revisionsLoaded.value).toBe(true)
+  })
+
   it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
     // Codex review: a getRevisions request in flight when a save lands must not
     // overwrite the save's state when it resolves with the pre-save (empty) list.
