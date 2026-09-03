@@ -3278,6 +3278,100 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('keeps proposal B diff visible when a stale proposal A save resolves', async () => {
+    let resolveSave!: (value: unknown) => void
+    mocks.createRevision.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve }),
+    )
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Second proposal preview"')
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="revision-reason"]').setValue('Stale save')
+    await wrapper.get('[data-testid="revision-save"]').trigger('click')
+
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    expect(wrapper.get('[data-testid="paper-review-diff-pre"]').text()).toContain(
+      'Second proposal preview',
+    )
+
+    resolveSave({
+      id: 'stale-revision',
+      proposalId: 'aaa-1',
+      revisionNumber: 1,
+      editorUserId: 'u-1',
+      revisedPayload: '{}',
+      revisedAt: new Date().toISOString(),
+      reason: 'Stale save',
+      createdAt: new Date().toISOString(),
+    })
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-diff-pre"]').text()).toContain(
+      'Second proposal preview',
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps a reopened proposal A editor and diff when its previous save resolves', async () => {
+    let resolveSave!: (value: unknown) => void
+    mocks.createRevision.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve }),
+    )
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Reopened proposal preview"')
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="revision-reason"]').setValue('Previous save')
+    await wrapper.get('[data-testid="revision-save"]').trigger('click')
+
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-review-diff-pre"]').text()).toContain(
+      'Reopened proposal preview',
+    )
+
+    resolveSave({
+      id: 'stale-revision',
+      proposalId: 'aaa-1',
+      revisionNumber: 1,
+      editorUserId: 'u-1',
+      revisedPayload: '{}',
+      revisedAt: new Date().toISOString(),
+      reason: 'Previous save',
+      createdAt: new Date().toISOString(),
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-review-diff-pre"]').text()).toContain(
+      'Reopened proposal preview',
+    )
+    wrapper.unmount()
+  })
+
   it('surfaces an error (not an empty diff) when a 404 occurs for an operations-bearing proposal', async () => {
     // A proposal with operations bypasses the no-op guard and fetches; a 404 here
     // means the proposal was deleted/dismissed elsewhere, so it must error rather
