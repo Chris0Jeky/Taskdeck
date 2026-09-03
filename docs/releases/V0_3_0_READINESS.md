@@ -20,7 +20,7 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. State measured 20
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
 | 2 | Milestone closed or explicitly re-ruled | **Not met.** 49 open | Sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
-| 4 | `main` green | **Green** at `01d77faf3`; the `a09d986c0` run had not reported when this was measured | Two known intermittent reds, section 2 |
+| 4 | `main` green | **Not measured at the advertised head.** Last completed green run is `01d77faf3`; the `0ad8f71a6` and `a80995eef` runs were cancelled by concurrency supersession and the `7d8deef12` run was still in progress when this was measured | The `7d8deef12` run reporting, plus two known intermittent reds, section 2 |
 | 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
 
 Clause 2 does not require every open issue to close. "Explicitly re-ruled" means each one either closes
