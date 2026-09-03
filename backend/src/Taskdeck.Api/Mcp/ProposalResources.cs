@@ -40,7 +40,8 @@ public class ProposalResources
 
         var result = await _proposalService.GetProposalsAsync(new ProposalFilterDto(UserId: userId));
         if (!result.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to list proposals: {result.ErrorMessage}");
+            throw new InvalidOperationException(
+                $"MCP: failed to list proposals: {PublicFailureMessage(result)}");
 
         var proposals = result.Value.Select(p => new
         {
@@ -77,7 +78,8 @@ public class ProposalResources
 
         var result = await _proposalService.GetProposalByIdAsync(proposalGuid);
         if (!result.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to get proposal: {result.ErrorMessage}");
+            throw new InvalidOperationException(
+                $"MCP: failed to get proposal: {PublicFailureMessage(result)}");
 
         var p = result.Value;
 
@@ -99,11 +101,10 @@ public class ProposalResources
             ? await _proposalService.GetTerminalProposalStoredPreviewAsync(p.Id)
             : await _proposalService.GetProposalDiffAsync(p.Id);
 
-        // Surface the service's own error message exactly as the GetProposalByIdAsync failure
-        // above and the MCP write tools do (WriteTools/ProposalTools raise result.ErrorMessage) —
-        // no new MCP error shape is invented for the gate denial.
+        // Keep known domain failures specific, but never carry an unexpected service failure's
+        // raw message across the public MCP boundary.
         if (!previewResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: {previewResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: {PublicFailureMessage(previewResult)}");
 
         var operations = p.Operations.Select(op => new
         {
@@ -146,4 +147,7 @@ public class ProposalResources
             or ProposalStatus.Failed
             or ProposalStatus.Expired
             or ProposalStatus.Dismissed;
+
+    private static string PublicFailureMessage(Result result) =>
+        SensitiveDataRedactor.SanitizeLlmFailureMessage(result.ErrorCode, result.ErrorMessage);
 }
