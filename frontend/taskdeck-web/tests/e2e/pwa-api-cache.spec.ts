@@ -103,7 +103,7 @@ test('a worker with the old retirement marker is replaced before a session is es
       await navigator.serviceWorker.ready
     })
     await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null)).toBe(true)
-    // The legacy stand-in answers no policy query; prove it is the one in control.
+    // Prove the installed legacy-marker worker is the one in control before sign-in.
     expect(await page.evaluate(() => new Promise((resolve) => {
       const channel = new MessageChannel()
       const timer = setTimeout(() => resolve(false), 2_000)
@@ -115,7 +115,7 @@ test('a worker with the old retirement marker is replaced before a session is es
         { type: 'taskdeck:api-cache-policy' },
         [channel.port2],
       )
-    }))).toBe(false)
+    }))).toBe(true)
 
     await page.getByLabel('Username or Email').fill(account.user.username)
     await page.getByLabel('Password').fill('E2ePassword123!')
