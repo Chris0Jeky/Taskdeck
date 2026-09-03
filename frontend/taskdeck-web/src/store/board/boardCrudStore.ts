@@ -5,6 +5,7 @@ import { boardsApi } from '../../api/boardsApi'
 import { cardsApi } from '../../api/cardsApi'
 import { labelsApi } from '../../api/labelsApi'
 import axios from 'axios'
+import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import type { BoardState } from './boardState'
@@ -85,7 +86,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     try {
       state.loading.value = true
       state.error.value = null
-      const readOptions = { signal: controller.signal }
+      const readOptions: BoardReadOptions = {
+        signal: controller.signal,
+        timeout: BOARD_REQUEST_TIMEOUT_MS,
+        skipRetry: true,
+      }
       const [board, cards, labels] = await Promise.all([
         boardsApi.getBoard(id, readOptions),
         cardsApi.getCards(id, undefined, readOptions),

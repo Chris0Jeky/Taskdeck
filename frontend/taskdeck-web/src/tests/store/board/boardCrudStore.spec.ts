@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
 import axios from 'axios'
+import { BOARD_REQUEST_TIMEOUT_MS } from '../../../api/http'
 
 const { mockBoardsApi } = vi.hoisted(() => ({
   mockBoardsApi: {
@@ -267,16 +268,28 @@ describe('boardCrudStore', () => {
 
       expect(mockBoardsApi.getBoard).toHaveBeenCalledWith(
         'board-1',
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+          timeout: BOARD_REQUEST_TIMEOUT_MS,
+          skipRetry: true,
+        }),
       )
       expect(mockCardsApi.getCards).toHaveBeenCalledWith(
         'board-1',
         undefined,
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+          timeout: BOARD_REQUEST_TIMEOUT_MS,
+          skipRetry: true,
+        }),
       )
       expect(mockLabelsApi.getLabels).toHaveBeenCalledWith(
         'board-1',
-        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+          timeout: BOARD_REQUEST_TIMEOUT_MS,
+          skipRetry: true,
+        }),
       )
       expect(state.currentBoard.value).toEqual(boardDetail)
       expect(state.currentBoardCards.value).toEqual(cards)

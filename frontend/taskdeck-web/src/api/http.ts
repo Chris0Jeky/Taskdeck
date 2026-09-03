@@ -18,6 +18,8 @@ import {
 // sites (a misspelled key becomes a compile error instead of silently no-op).
 declare module 'axios' {
   interface AxiosRequestConfig {
+    /** Opt out of the shared retry interceptor for bounded read operations. */
+    skipRetry?: boolean
     /**
      * Error statuses that are an expected part of this endpoint's contract
      * (e.g. a 404 from the optional card-provenance lookup for manual cards).
@@ -31,15 +33,17 @@ declare module 'axios' {
 const REQUEST_ID_HEADER = 'X-Request-Id'
 
 /**
- * Maximum time a board read may occupy the UI before the caller receives a
- * terminal error. This is applied only to GETs under `/boards`; long-running
- * APIs keep Axios's existing unbounded default unless they opt into a bound.
+ * Maximum time a board load read may occupy the UI before the caller receives
+ * a terminal error. The board-load caller supplies this explicitly so nested
+ * board APIs such as provenance and comments retain their normal defaults.
  */
 export const BOARD_REQUEST_TIMEOUT_MS = 10_000
 
 /** Optional cancellation controls for board-scoped read wrappers. */
 export interface BoardReadOptions {
   signal?: AbortSignal
+  timeout?: number
+  skipRetry?: boolean
 }
 
 function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
@@ -61,18 +65,6 @@ const http = axios.create({
 http.interceptors.request.use(
   (config) => {
     ensureRequestIdHeader(config)
-
-    // Board loads fan out across board, card, and label reads. Give that
-    // bounded user-facing operation a finite deadline and let its caller own
-    // recovery via an explicit Retry action rather than entering the shared
-    // retry/backoff loop. Other APIs retain their existing configuration.
-    const retryConfig = config as InternalAxiosRequestConfig & RetryableRequestConfig
-    if (config.method?.toUpperCase() === 'GET' && /^\/boards(?:\/|\?|$)/.test(config.url ?? '')) {
-      if (retryConfig.timeout == null || retryConfig.timeout === 0) {
-        retryConfig.timeout = BOARD_REQUEST_TIMEOUT_MS
-      }
-      retryConfig.skipRetry ??= true
-    }
 
     const token = tokenStorage.getToken()
     if (token) {
