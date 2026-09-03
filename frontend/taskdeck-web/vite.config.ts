@@ -1,10 +1,45 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { normalizeApiBasePath } from './src/pwa/runtimeCachePolicy.ts'
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function encodedApiPathPattern(path: string, caseInsensitive = true): string {
+  return [...path]
+    .map((character) => {
+      if (character === '/') return '(?:\\/|%2[fF])+'
+      const encoded = character.charCodeAt(0).toString(16).padStart(2, '0')
+      const upperCase = character.toUpperCase()
+      const variants = [escapeRegex(character), `%${encoded}`]
+      if (caseInsensitive) {
+        variants.push(escapeRegex(upperCase))
+        variants.push(`%${upperCase.charCodeAt(0).toString(16).padStart(2, '0')}`)
+      }
+      return `(?:${variants.join('|')})`
+    })
+    .join('')
+}
+
+function runtimeCachePattern(apiBaseUrl: string | undefined, assetPattern: string, flags = 'i'): RegExp {
+  const apiBasePath = normalizeApiBasePath(apiBaseUrl)
+  if (apiBasePath === null) return /a^/
+
+  const apiPatterns = [encodedApiPathPattern('/api')]
+  if (apiBasePath !== '') apiPatterns.push(encodedApiPathPattern(apiBasePath, flags.includes('i')))
+
+  const apiBoundary = `(?:${apiPatterns.join('|')})(?=[/?#]|%2[fF]|$)`
+  return new RegExp(`^https?:\\/\\/[^/]+(?!${apiBoundary})${assetPattern}(?:[?#].*)?$`, flags)
+}
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+
+  return {
+    plugins: [
     vue(),
     VitePWA({
       // 'prompt' prevents the new SW from auto-activating; SwUpdatePrompt.vue
@@ -83,8 +118,6 @@ export default defineConfig({
           /^(?:\/|%2[fF])+(?:h|%68|%48)(?:u|%75|%55)(?:b|%62|%42)(?:s|%73|%53)(?:[/?]|%2[fF]|$)/i,
           /^(?:\/|%2[fF])+(?:m|%6d|%4d)(?:c|%63|%43)(?:p|%70|%50)(?:[/?]|%2[fF]|$)/i,
         ],
-        // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
-        // retain cached responses. Fresh data is always preferred when online.
         runtimeCaching: [
           {
             // Lazy locale catalogs (excluded from precache above): cache on
@@ -92,9 +125,11 @@ export default defineConfig({
             // Workbox serializes this callback into sw.js. Keep every
             // dependency inline: imported helpers become free identifiers in
             // the generated worker.
-            urlPattern: ({ url }) =>
-              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
-              /^\/assets\/(?:it|es)-[\w-]+\.js$/.test(url.pathname),
+            urlPattern: runtimeCachePattern(
+              env.VITE_API_BASE_URL,
+              '/assets/(?:it|es)-[\\w-]+\\.js',
+              '',
+            ),
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'taskdeck-locale-chunks',
@@ -112,9 +147,10 @@ export default defineConfig({
             // authenticated `GET /taskdeck/api/users/by-username/alice.png` is not
             // caught by the `/api` denial and would otherwise be stored in this
             // shared, cross-identity cache. Mirrors src/pwa/runtimeCachePolicy.ts.
-            urlPattern: ({ url }) =>
-              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
-              /^\/(?:assets|icons)\/[^?#]*\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i.test(url.pathname),
+            urlPattern: runtimeCachePattern(
+              env.VITE_API_BASE_URL,
+              '/(?:assets|icons)/[^?#]*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)',
+            ),
             handler: 'CacheFirst',
             options: {
               cacheName: 'taskdeck-static-assets',
@@ -227,4 +263,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })
