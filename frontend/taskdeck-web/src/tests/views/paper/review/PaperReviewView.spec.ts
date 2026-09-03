@@ -3278,6 +3278,48 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('waits for authoritative revision metadata before seeding the revision editor', async () => {
+    let resolveEditLoad!: (revisions: unknown[]) => void
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { resolveEditLoad = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'delayed-edit-seed',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'delayed-edit-seed' }],
+      }),
+    ])
+    await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await Promise.resolve()
+
+    // Opening the editor with the fallback original payload would let a later
+    // revision GET silently overwrite the base the reviewer meant to edit.
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+
+    resolveEditLoad([
+      {
+        id: 'rev-current',
+        proposalId: 'delayed-edit-seed',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"headline":"Current revision"}',
+        revisedAt: new Date().toISOString(),
+        reason: 'Latest server edit',
+        createdAt: new Date().toISOString(),
+      },
+    ])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+    expect(
+      (wrapper.get('[data-testid="revision-field-headline"]').element as HTMLTextAreaElement).value,
+    ).toBe('Current revision')
+    wrapper.unmount()
+  })
+
   it('surfaces an error (not an empty diff) when a 404 occurs for an operations-bearing proposal', async () => {
     // A proposal with operations bypasses the no-op guard and fetches; a 404 here
     // means the proposal was deleted/dismissed elsewhere, so it must error rather
@@ -4364,6 +4406,99 @@ describe('PaperReviewView', () => {
       expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
       expect(editor.element.contains(document.activeElement)).toBe(true)
       expect(mocks.errorToast).toHaveBeenCalledWith('save failed')
+      wrapper.unmount()
+    })
+
+    it('keeps every typed draft field after an indeterminate save clears revision metadata', async () => {
+      const now = new Date().toISOString()
+      mocks.getRevisions.mockResolvedValueOnce([
+        {
+          id: 'rev-draft-1',
+          proposalId: 'proposal-001',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"headline":"Revision one","notes":"Original notes","details":{"state":"original"}}',
+          revisedAt: now,
+          reason: 'First revision',
+          createdAt: now,
+        },
+      ])
+      mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after commit'))
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+      await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      await editor.get('[data-testid="revision-field-headline"]').setValue('Reviewer headline')
+      await editor.get('[data-testid="revision-field-notes"]').setValue('Reviewer notes')
+      await editor.get('[data-testid="revision-field-details"]').setValue('{"state":"reviewer"}')
+      await editor.get('[data-testid="revision-reason"]').setValue('Second revision')
+      await editor.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+
+      const stillOpen = wrapper.get('[data-testid="revision-editor"]')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-headline"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer headline')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-notes"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer notes')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-details"]').element as HTMLTextAreaElement).value,
+      ).toBe('{"state":"reviewer"}')
+      expect(
+        (stillOpen.get('[data-testid="revision-reason"]').element as HTMLInputElement).value,
+      ).toBe('Second revision')
+      wrapper.unmount()
+    })
+
+    it('does not let a stale A1 save clear a newer A2 editor seed', async () => {
+      let resolveA1Save!: (value: unknown) => void
+      mocks.createRevision.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveA1Save = resolve }),
+      )
+      const wrapper = await mountView([
+        makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ])
+
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-field-operations"]').setValue('{"session":"A1"}')
+      await wrapper.get('[data-testid="revision-reason"]').setValue('A1 save')
+      await wrapper.get('[data-testid="revision-save"]').trigger('click')
+
+      await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-field-operations"]').setValue('{"session":"A2"}')
+      await wrapper.get('[data-testid="revision-reason"]').setValue('A2 draft')
+
+      resolveA1Save({
+        id: 'rev-a1',
+        proposalId: 'aaa-1',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: new Date().toISOString(),
+        reason: 'A1 save',
+        createdAt: new Date().toISOString(),
+      })
+      await flushPromises()
+
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      expect((editor.get('[data-testid="revision-field-operations"]').element as HTMLTextAreaElement).value)
+        .toBe('{"session":"A2"}')
+      expect((editor.get('[data-testid="revision-reason"]').element as HTMLInputElement).value)
+        .toBe('A2 draft')
       wrapper.unmount()
     })
 

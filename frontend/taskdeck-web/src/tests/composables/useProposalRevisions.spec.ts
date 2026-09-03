@@ -175,6 +175,84 @@ describe('useProposalRevisions', () => {
     expect(revisionsLoaded.value).toBe(true)
   })
 
+  it('invalidates re-entered A metadata and its pending GET before a stale A save succeeds', async () => {
+    let resolveReopenedA!: (revisions: ProposalRevision[]) => void
+    let resolveSave!: (revision: ProposalRevision) => void
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-a', proposalId: 'p-1' })])
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-b', proposalId: 'p-2' })])
+      .mockImplementationOnce(
+        () => new Promise((resolve) => { resolveReopenedA = resolve }),
+      )
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { revisionCount, latestRevision, revisionsLoaded, startEditing, saveRevision } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() => expect(latestRevision.value?.proposalId).toBe('p-1'))
+
+    startEditing()
+    const savePromise = saveRevision({ revisedPayload: '{"title":"Saved"}', reason: 'Save A' })
+    proposal.value = makeProposal({ id: 'p-2' })
+    await vi.waitFor(() => expect(latestRevision.value?.proposalId).toBe('p-2'))
+    proposal.value = makeProposal({ id: 'p-1' })
+    await vi.waitFor(() => expect(resolveReopenedA).toBeTypeOf('function'))
+
+    resolveSave(makeRevision({ id: 'rev-saved', proposalId: 'p-1', revisionNumber: 2 }))
+    await expect(savePromise).resolves.toEqual({
+      proposalId: 'p-1',
+      outcome: 'persisted',
+      current: false,
+    })
+
+    // The response belongs to an old edit session, but it still persisted for
+    // the currently re-entered A. Empty metadata and the pending A GET can no
+    // longer certify that A has no revisions.
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+
+    resolveReopenedA([])
+    await flushMicrotasks()
+
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+  })
+
+  it('keeps B metadata authoritative when a stale A save succeeds while B is active', async () => {
+    let resolveSave!: (revision: ProposalRevision) => void
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-b', proposalId: 'p-2' })])
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { revisionCount, latestRevision, revisionsLoaded, startEditing, saveRevision } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+
+    startEditing()
+    const savePromise = saveRevision({ revisedPayload: '{"title":"Saved"}', reason: 'Save A' })
+    proposal.value = makeProposal({ id: 'p-2' })
+    await vi.waitFor(() => expect(latestRevision.value?.proposalId).toBe('p-2'))
+
+    resolveSave(makeRevision({ id: 'rev-saved', proposalId: 'p-1' }))
+    await expect(savePromise).resolves.toEqual({
+      proposalId: 'p-1',
+      outcome: 'persisted',
+      current: false,
+    })
+
+    expect(revisionCount.value).toBe(1)
+    expect(latestRevision.value?.proposalId).toBe('p-2')
+    expect(revisionsLoaded.value).toBe(true)
+  })
+
   it('resets editing when proposal changes', async () => {
     vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
     const proposal = ref<ApiProposal | null>(makeProposal())

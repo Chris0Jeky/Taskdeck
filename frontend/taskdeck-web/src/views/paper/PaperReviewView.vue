@@ -693,6 +693,20 @@ const editablePayload = computed(() => {
   })
 })
 
+/**
+ * Pin the editor's initial payload for exactly one edit session. Revision
+ * metadata can correctly become unknown while a save is still indeterminate;
+ * that must not replace fields the reviewer has already typed into the open
+ * editor.
+ */
+const revisionEditorPayload = ref<string | null>(null)
+let revisionEditorPayloadEpoch: number | null = null
+
+function clearRevisionEditorPayload() {
+  revisionEditorPayload.value = null
+  revisionEditorPayloadEpoch = null
+}
+
 // --- Queue rail data ---------------------------------------------------
 
 const awaitingCount = computed(() => {
@@ -1204,6 +1218,7 @@ watch(
   () => activeProposal.value?.id ?? null,
   (id, previousId) => {
     if (previousId === undefined || proposalIdsEqual(id, previousId)) return
+    clearRevisionEditorPayload()
     invalidateRevisionFocusSession()
   },
 )
@@ -1443,7 +1458,7 @@ function onReject() {
   requestRejectProposal(p.id)
 }
 
-function onRequestEdit() {
+async function onRequestEdit() {
   if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
@@ -1452,13 +1467,38 @@ function onRequestEdit() {
     toast.info(t('review.toast.notEditable'))
     return
   }
+  // A not-yet-loaded list must not be treated as an empty one: a saved revision
+  // is the editor's correct base. Wait for a fresh authoritative answer before
+  // pinning the payload, and leave the editor closed if that answer is unknown.
+  if (!revisionsLoaded.value) {
+    await loadRevisionState(p.id)
+    if (!proposalIdsEqual(activeProposal.value?.id, p.id) || !revisionsLoaded.value) return
+    const current = activeProposal.value
+    if (
+      !current ||
+      normalizeProposalStatus(current.status) !== 'PendingReview' ||
+      isProposalExpired(current)
+    ) return
+  }
   captureRevisionReturnFocus(p.id)
+  revisionEditorPayload.value = editablePayload.value
+  revisionEditorPayloadEpoch = revisionEditEpoch
   startRevisionEditing()
 }
 
 function onCancelRevision() {
+  clearRevisionEditorPayload()
   cancelRevisionEditing()
   restoreRevisionFocus()
+}
+
+function retainRevisionEditorFocus() {
+  void nextTick(() => {
+    const editor = mainColRef.value?.querySelector<HTMLElement>('[data-testid="revision-editor"]')
+    if (!editor || editor.contains(document.activeElement)) return
+    const target = editor.querySelector<HTMLElement>('textarea, input')
+    if (target && isFocusable(target)) target.focus()
+  })
 }
 
 async function onDefer() {
@@ -1705,23 +1745,47 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   if (isArchivedHistory.value) return
   const proposalId = activeProposal.value?.id
   const saveEpoch = revisionEditEpoch
-  await saveRevision(payload)
-  // Saving an edit changes what Apply will execute, so a diff already on screen is
-  // now stale — drop it so the "reflects your saved edit" note cannot certify a
-  // pre-revision preview (#1235). Re-opening the diff fetches the revision-aware one.
-  if (previewDiffProposalId.value) {
-    latestDiffRequestId += 1
-    clearPreviewDiff()
+  const saveResult = await saveRevision(payload)
+  if (!saveResult) return
+  if (saveResult.outcome === 'indeterminate') {
+    // A rejected POST may still have committed. Clear only a preview of the
+    // matching proposal; preserve the editor pin and every typed draft field.
+    if (proposalIdsEqual(previewDiffProposalId.value, saveResult.proposalId)) {
+      latestDiffRequestId += 1
+      clearPreviewDiff()
+    }
+    if (
+      saveResult.current &&
+      proposalIdsEqual(activeProposal.value?.id, saveResult.proposalId) &&
+      revisionEditorPayloadEpoch === saveEpoch
+    ) {
+      retainRevisionEditorFocus()
+    }
+    return
   }
-  // Failed saves leave the editor open. A successful save closes it; restore
-  // only for that close and only if the reviewer is still on the same proposal.
-  if (
-    proposalId &&
+  const savedCurrentSession =
+    saveResult.current &&
+    !!proposalId &&
     saveEpoch === revisionEditEpoch &&
     revisionReturnFocusEpoch === saveEpoch &&
     !revisionEditing.value &&
     proposalIdsEqual(activeProposal.value?.id, proposalId)
-  ) {
+  // Saving an edit changes what Apply will execute, so a diff already on screen is
+  // now stale — drop it so the "reflects your saved edit" note cannot certify a
+  // pre-revision preview (#1235). A stale A1 response may still persist, so
+  // clear only a matching A preview and preserve an unrelated B preview.
+  if (proposalIdsEqual(previewDiffProposalId.value, saveResult.proposalId)) {
+    latestDiffRequestId += 1
+    clearPreviewDiff()
+  }
+  // An A1 completion must never release an A2 pin merely because the reviewer
+  // navigated A -> B -> A. The edit epoch, not proposal identity, owns the seed.
+  if (revisionEditorPayloadEpoch === saveEpoch) {
+    clearRevisionEditorPayload()
+  }
+  // Failed saves leave the editor open. A successful save closes it; restore
+  // only for that close and only if the reviewer is still on the same proposal.
+  if (savedCurrentSession) {
     restoreRevisionFocus()
   }
 }
@@ -2121,7 +2185,7 @@ async function onClearBoardScope() {
       </section>
       <ReviewRevisionEditor
         v-if="revisionEditing && !isArchivedHistory"
-        :operations-payload="editablePayload"
+        :operations-payload="revisionEditorPayload ?? editablePayload"
         :saving="revisionSaving"
         @save="onSaveRevision"
         @cancel="onCancelRevision"
