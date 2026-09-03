@@ -13,6 +13,26 @@ const API_PATH = /^\/api(?:\/|$)/i
 const LOCALE_CATALOG_PATH = /^\/assets\/(?:it|es)-[\w-]+\.js$/
 const STATIC_ASSET_PATH = /^\/(?:assets|icons)\/[^?#]*\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function encodedApiPathPattern(path: string, caseInsensitive = true): string {
+  return [...path]
+    .map((character) => {
+      if (character === '/') return '(?:\\/|%2[fF])+'
+      const encoded = character.charCodeAt(0).toString(16).padStart(2, '0')
+      const upperCase = character.toUpperCase()
+      const variants = [escapeRegex(character), `%${encoded}`]
+      if (caseInsensitive) {
+        variants.push(escapeRegex(upperCase))
+        variants.push(`%${upperCase.charCodeAt(0).toString(16).padStart(2, '0')}`)
+      }
+      return `(?:${variants.join('|')})`
+    })
+    .join('')
+}
+
 /**
  * Returns the normalized path portion of a configured API base.
  *
@@ -41,6 +61,33 @@ export function normalizeApiBasePath(apiBaseUrl?: string): string | null {
   } catch {
     return null
   }
+}
+
+function runtimeCachePattern(apiBaseUrl: string | undefined, assetPath: RegExp): RegExp {
+  const apiBasePath = normalizeApiBasePath(apiBaseUrl)
+  if (apiBasePath === null) return /a^/
+
+  const apiPatterns = [encodedApiPathPattern('/api')]
+  if (apiBasePath !== '') {
+    apiPatterns.push(encodedApiPathPattern(apiBasePath, assetPath.flags.includes('i')))
+  }
+
+  const apiBoundary = `(?:${apiPatterns.join('|')})(?=[/?#]|%2[fF]|$)`
+  const assetPathSource = assetPath.source.replace(/^\^/, '').replace(/\$$/, '')
+  return new RegExp(
+    `^https?:\\/\\/[^/]+(?!${apiBoundary})${assetPathSource}(?:[?#].*)?$`,
+    assetPath.flags,
+  )
+}
+
+/** Build-time factory whose RegExp result is serialized into the generated worker. */
+export function createLocaleCatalogRuntimePattern(apiBaseUrl?: string): RegExp {
+  return runtimeCachePattern(apiBaseUrl, LOCALE_CATALOG_PATH)
+}
+
+/** Build-time factory whose RegExp result is serialized into the generated worker. */
+export function createStaticAssetRuntimePattern(apiBaseUrl?: string): RegExp {
+  return runtimeCachePattern(apiBaseUrl, STATIC_ASSET_PATH)
 }
 
 /** Runtime cache predicates must never admit an API path, whatever its origin. */

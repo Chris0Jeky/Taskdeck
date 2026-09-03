@@ -4,14 +4,16 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * `src/pwa/runtimeCachePolicy.ts` is not imported by any shipping module: Workbox
- * serializes the `urlPattern` callbacks out of `vite.config.ts`, so the inline copies
- * there are what actually reaches the service worker. Without this check a security
- * fix applied to the policy module alone would ship nothing while its own spec stayed
- * green. `tests/pwa-generated-worker.spec.ts` proves the emitted worker; this proves
- * the two sources cannot drift apart in the first place.
+ * `vite.config.ts` evaluates the policy factories at build time and hands Workbox
+ * their RegExp results. Workbox serializes those results, not the imported functions,
+ * so `sw.js` remains self-contained while the source policy and build configuration
+ * share one implementation. `tests/pwa-generated-worker.spec.ts` proves the emitted
+ * worker; this test proves the build still consumes the shared factories.
  */
-const MATCHERS = ['API_PATH', 'LOCALE_CATALOG_PATH', 'STATIC_ASSET_PATH'] as const
+const RUNTIME_MATCHER_FACTORIES = [
+  'createLocaleCatalogRuntimePattern',
+  'createStaticAssetRuntimePattern',
+] as const
 
 function read(relative: string): string {
   const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
@@ -25,16 +27,14 @@ function declaredPattern(source: string, name: string): string {
 }
 
 describe('runtime cache policy parity', () => {
-  it('ships the exact matchers the policy module and its spec exercise', () => {
-    const policy = read('src/pwa/runtimeCachePolicy.ts')
+  it('builds each runtime route from the shared policy factory', () => {
     const viteConfig = read('vite.config.ts')
 
-    for (const name of MATCHERS) {
-      const pattern = declaredPattern(policy, name)
-      expect(pattern.startsWith('/')).toBe(true)
+    expect(viteConfig).toContain("from './src/pwa/runtimeCachePolicy.ts'")
+    for (const factory of RUNTIME_MATCHER_FACTORIES) {
       expect(
-        viteConfig.includes(pattern),
-        `vite.config.ts must inline ${name} verbatim: ${pattern}`,
+        new RegExp(`urlPattern:\\s*${factory}\\(\\s*env\\.VITE_API_BASE_URL\\s*\\)`).test(viteConfig),
+        `vite.config.ts must build a runtime route with ${factory}`,
       ).toBe(true)
     }
   })

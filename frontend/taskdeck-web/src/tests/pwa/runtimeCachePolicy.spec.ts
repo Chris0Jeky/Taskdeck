@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isLocaleCatalogRequest, isStaticAssetRequest } from '../../pwa/runtimeCachePolicy'
+import {
+  createLocaleCatalogRuntimePattern,
+  createStaticAssetRuntimePattern,
+  isLocaleCatalogRequest,
+  isStaticAssetRequest,
+} from '../../pwa/runtimeCachePolicy'
 
 function request(url: string) {
   return { url: new URL(url) }
@@ -63,6 +68,14 @@ describe('PWA runtime cache policy', () => {
     expect(isStaticAssetRequest(url, '/assets/api?tenant=one')).toBe(false)
     expect(isLocaleCatalogRequest(url, '/äpi')).toBe(false)
     expect(isStaticAssetRequest(url, '/äpi')).toBe(false)
+  })
+
+  it('builds match-nothing worker patterns for malformed API bases', () => {
+    const staticPattern = createStaticAssetRuntimePattern('assets/api')
+    const localePattern = createLocaleCatalogRuntimePattern('/assets/api?tenant=one')
+
+    expect(staticPattern.test('https://taskdeck.example/assets/avatar.png')).toBe(false)
+    expect(localePattern.test('https://taskdeck.example/assets/it-a.js')).toBe(false)
   })
 
   it('still caches the assets the build emits', () => {

@@ -1,38 +1,10 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
-import { normalizeApiBasePath } from './src/pwa/runtimeCachePolicy.ts'
-
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function encodedApiPathPattern(path: string, caseInsensitive = true): string {
-  return [...path]
-    .map((character) => {
-      if (character === '/') return '(?:\\/|%2[fF])+'
-      const encoded = character.charCodeAt(0).toString(16).padStart(2, '0')
-      const upperCase = character.toUpperCase()
-      const variants = [escapeRegex(character), `%${encoded}`]
-      if (caseInsensitive) {
-        variants.push(escapeRegex(upperCase))
-        variants.push(`%${upperCase.charCodeAt(0).toString(16).padStart(2, '0')}`)
-      }
-      return `(?:${variants.join('|')})`
-    })
-    .join('')
-}
-
-function runtimeCachePattern(apiBaseUrl: string | undefined, assetPattern: string, flags = 'i'): RegExp {
-  const apiBasePath = normalizeApiBasePath(apiBaseUrl)
-  if (apiBasePath === null) return /a^/
-
-  const apiPatterns = [encodedApiPathPattern('/api')]
-  if (apiBasePath !== '') apiPatterns.push(encodedApiPathPattern(apiBasePath, flags.includes('i')))
-
-  const apiBoundary = `(?:${apiPatterns.join('|')})(?=[/?#]|%2[fF]|$)`
-  return new RegExp(`^https?:\\/\\/[^/]+(?!${apiBoundary})${assetPattern}(?:[?#].*)?$`, flags)
-}
+import {
+  createLocaleCatalogRuntimePattern,
+  createStaticAssetRuntimePattern,
+} from './src/pwa/runtimeCachePolicy.ts'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -122,14 +94,9 @@ export default defineConfig(({ mode }) => {
           {
             // Lazy locale catalogs (excluded from precache above): cache on
             // first use so a user who picked it/es keeps their language offline.
-            // Workbox serializes this callback into sw.js. Keep every
-            // dependency inline: imported helpers become free identifiers in
-            // the generated worker.
-            urlPattern: runtimeCachePattern(
-              env.VITE_API_BASE_URL,
-              '/assets/(?:it|es)-[\\w-]+\\.js',
-              '',
-            ),
+            // The shared factory executes at build time. Workbox serializes its
+            // RegExp result, so the generated worker has no free identifiers.
+            urlPattern: createLocaleCatalogRuntimePattern(env.VITE_API_BASE_URL),
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'taskdeck-locale-chunks',
@@ -139,18 +106,15 @@ export default defineConfig(({ mode }) => {
           },
           {
             // CacheFirst for static assets (fonts, images, icons)
-            // See the locale matcher above: this must remain self-contained
-            // when vite-plugin-pwa serializes it into the service worker.
+            // See the locale matcher above: the generated RegExp must remain
+            // self-contained when vite-plugin-pwa serializes it.
             // Anchored on the directories the build emits, not on the file
             // extension alone. The API base is a deployment choice - a prefixed
             // `VITE_API_BASE_URL` such as `/taskdeck/api` is supported - so an
             // authenticated `GET /taskdeck/api/users/by-username/alice.png` is not
             // caught by the `/api` denial and would otherwise be stored in this
             // shared, cross-identity cache. Mirrors src/pwa/runtimeCachePolicy.ts.
-            urlPattern: runtimeCachePattern(
-              env.VITE_API_BASE_URL,
-              '/(?:assets|icons)/[^?#]*\\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)',
-            ),
+            urlPattern: createStaticAssetRuntimePattern(env.VITE_API_BASE_URL),
             handler: 'CacheFirst',
             options: {
               cacheName: 'taskdeck-static-assets',
