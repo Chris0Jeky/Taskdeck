@@ -28,6 +28,7 @@ const {
   visibleProposals,
   summaryCards,
   queueAccessRevoked,
+  queueRefreshStale,
   dismissableProposalIds,
   isProposalExpired,
   clearProposalDeepLink,
@@ -288,6 +289,18 @@ onUnmounted(() => {
     <p class="sr-only" role="status" aria-live="polite" data-testid="review-queue-live">
       {{ awaitingAnnouncement }}
     </p>
+
+    <div
+      v-if="queueRefreshStale && !queueAccessRevoked"
+      class="td-panel"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="review-queue-stale"
+    >
+      <p>This review queue may be out of date.</p>
+      <p>Showing the last available proposals while Taskdeck retries.</p>
+    </div>
 
     <div
       v-if="queueAccessRevoked"
