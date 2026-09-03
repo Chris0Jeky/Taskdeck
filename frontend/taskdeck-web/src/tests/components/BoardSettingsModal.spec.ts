@@ -81,6 +81,31 @@ describe('BoardSettingsModal', () => {
     expect(wrapper.text()).toContain('Active')
   })
 
+  it('preserves in-progress edits when realtime replaces the board object', async () => {
+    const wrapper = mount(BoardSettingsModal, {
+      props: {
+        board,
+        isOpen: true,
+      },
+    })
+
+    await wrapper.get('#board-name').setValue('My draft board')
+    await wrapper.get('#board-description').setValue('My draft description')
+    await wrapper.setProps({
+      board: {
+        ...board,
+        name: 'Server refresh',
+        description: 'Server description',
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'My draft description',
+    )
+  })
+
   it('should emit close event when close button is clicked', async () => {
     const wrapper = mount(BoardSettingsModal, {
       props: {

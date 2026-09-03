@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useBoardStore } from '../../../store/boardStore'
@@ -7,6 +7,7 @@ import PaperBoardDialogShell from './PaperBoardDialogShell.vue'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import type { Board } from '../../../types/board'
 import { logError } from '../../../utils/errorReporting'
+import { useRealtimeSafeDialogDraft } from '../../../composables/useRealtimeSafeDialogDraft'
 
 /**
  * PaperBoardSettingsDialog — Paper-skinned board rename / description /
@@ -45,18 +46,27 @@ const description = ref('')
 const confirmingArchive = ref(false)
 const busy = ref(false)
 const error = ref<string | null>(null)
+let seededName = ''
+let seededDescription = ''
 
-watch(
-  [() => props.board, () => props.isOpen],
-  ([board, isOpen]) => {
-    if (!board || !isOpen) return
+useRealtimeSafeDialogDraft({
+  isOpen: () => props.isOpen,
+  source: () => props.board,
+  sourceKey: (board) => board.id,
+  seed: (board) => {
     name.value = board.name
     description.value = board.description ?? ''
+    seededName = name.value
+    seededDescription = description.value
     confirmingArchive.value = false
     error.value = null
   },
-  { immediate: true },
-)
+  isDirty: () =>
+    busy.value ||
+    confirmingArchive.value ||
+    name.value !== seededName ||
+    description.value !== seededDescription,
+})
 
 const isValid = computed(() => name.value.trim().length > 0)
 
@@ -107,7 +117,9 @@ async function confirmArchive() {
     await boardStore.deleteBoard(props.board.id)
   } catch (e) {
     logError('Failed to archive board (paper):', e)
-    error.value = t('boardDetail.boardDialog.archiveError')
+    // The route transition intentionally unmounts this dialog before the store
+    // mutation (#519), so inline copy cannot be reached. deleteBoard already
+    // owns the visible error toast that survives that transition.
   } finally {
     busy.value = false
     confirmingArchive.value = false

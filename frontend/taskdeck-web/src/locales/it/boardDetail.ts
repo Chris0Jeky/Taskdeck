@@ -82,7 +82,6 @@ export default {
     archiveConfirmCancel: 'Lasciala qui',
     restore: 'Ripristina la bacheca',
     saveError: 'Non è stato possibile salvare la bacheca. Riprova.',
-    archiveError: 'Non è stato possibile archiviare la bacheca. Riprova.',
     restoreError: 'Non è stato possibile ripristinare la bacheca. Riprova.',
   },
 }
