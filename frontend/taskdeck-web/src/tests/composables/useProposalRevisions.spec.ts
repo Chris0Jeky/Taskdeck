@@ -133,7 +133,7 @@ describe('useProposalRevisions', () => {
     startEditing()
     expect(editing.value).toBe(true)
 
-    await saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
+    const result = await saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
 
     expect(proposalRevisionsApi.createRevision).toHaveBeenCalledWith('p-1', {
       revisedPayload: '{"title":"Edited"}',
@@ -142,6 +142,21 @@ describe('useProposalRevisions', () => {
     expect(editing.value).toBe(false)
     expect(revisionCount.value).toBe(1)
     expect(latestRevision.value).toEqual(newRevision)
+    expect(result).toEqual({ proposalId: 'p-1', persisted: true, current: true })
+  })
+
+  it('reports a failed current save without changing the editor state', async () => {
+    vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce(new Error('save failed'))
+
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const { editing, startEditing, saveRevision } = useProposalRevisions(proposal)
+
+    startEditing()
+    const result = await saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
+
+    expect(result).toEqual({ proposalId: 'p-1', persisted: false, current: true })
+    expect(editing.value).toBe(true)
+    expect(toastMocks.error).toHaveBeenCalledWith('save failed')
   })
 
   it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
@@ -210,6 +225,7 @@ describe('useProposalRevisions', () => {
   })
 
   it('ignores stale save responses after switching proposals', async () => {
+    const onRevisionSaved = vi.fn()
     let resolveSave!: (revision: ProposalRevision) => void
     vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
       () => new Promise((resolve) => {
@@ -219,7 +235,7 @@ describe('useProposalRevisions', () => {
 
     const proposal = ref<ApiProposal | null>(makeProposal())
     const { saving, revisionCount, latestRevision, startEditing, saveRevision } =
-      useProposalRevisions(proposal)
+      useProposalRevisions(proposal, { onRevisionSaved })
 
     startEditing()
     const savePromise = saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
@@ -233,10 +249,12 @@ describe('useProposalRevisions', () => {
     expect(saving.value).toBe(false)
 
     resolveSave(makeRevision({ proposalId: 'p-1' }))
-    await savePromise
+    const result = await savePromise
 
     expect(revisionCount.value).toBe(0)
     expect(latestRevision.value).toBeNull()
+    expect(result).toEqual({ proposalId: 'p-1', persisted: true, current: false })
+    expect(onRevisionSaved).toHaveBeenCalledOnce()
   })
 
   it('suppresses the failure toast for a silent load while keeping the state non-authoritative (#1397 round 3)', async () => {

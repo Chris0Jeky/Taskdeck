@@ -1705,23 +1705,30 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   if (isArchivedHistory.value) return
   const proposalId = activeProposal.value?.id
   const saveEpoch = revisionEditEpoch
-  await saveRevision(payload)
+  const saveResult = await saveRevision(payload)
+  if (!saveResult?.persisted) return
+  const savedCurrentSession =
+    saveResult.current &&
+    !!proposalId &&
+    saveEpoch === revisionEditEpoch &&
+    revisionReturnFocusEpoch === saveEpoch &&
+    !revisionEditing.value &&
+    proposalIdsEqual(activeProposal.value?.id, proposalId)
   // Saving an edit changes what Apply will execute, so a diff already on screen is
   // now stale — drop it so the "reflects your saved edit" note cannot certify a
-  // pre-revision preview (#1235). Re-opening the diff fetches the revision-aware one.
-  if (previewDiffProposalId.value) {
+  // pre-revision preview (#1235). Clear it for the saved proposal even when
+  // this continuation is stale: a preview reopened after A -> B -> A may still
+  // predate the persisted revision. The proposal identity keeps an unrelated B
+  // preview intact (#2215).
+  if (
+    proposalIdsEqual(previewDiffProposalId.value, saveResult.proposalId)
+  ) {
     latestDiffRequestId += 1
     clearPreviewDiff()
   }
   // Failed saves leave the editor open. A successful save closes it; restore
   // only for that close and only if the reviewer is still on the same proposal.
-  if (
-    proposalId &&
-    saveEpoch === revisionEditEpoch &&
-    revisionReturnFocusEpoch === saveEpoch &&
-    !revisionEditing.value &&
-    proposalIdsEqual(activeProposal.value?.id, proposalId)
-  ) {
+  if (savedCurrentSession) {
     restoreRevisionFocus()
   }
 }

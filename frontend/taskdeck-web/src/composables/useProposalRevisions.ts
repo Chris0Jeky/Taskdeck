@@ -12,6 +12,14 @@ import {
   proposalRevisionMoved,
 } from '../utils/proposalIdentity'
 
+export type SaveRevisionResult = {
+  proposalId: string
+  /** The API accepted the revision, even when this continuation is stale. */
+  persisted: boolean
+  /** The active proposal/save generation still owns this continuation. */
+  current: boolean
+}
+
 export function useProposalRevisions(
   activeProposal: Ref<ApiProposal | null>,
   /**
@@ -128,16 +136,21 @@ export function useProposalRevisions(
     editing.value = false
   }
 
-  async function saveRevision(payload: CreateRevisionPayload) {
+  async function saveRevision(payload: CreateRevisionPayload): Promise<SaveRevisionResult | null> {
     const proposal = activeProposal.value
-    if (!proposal) return
+    if (!proposal) return null
 
     const proposalId = proposal.id
     const gen = ++saveGeneration
     try {
       saving.value = true
       const revision = await proposalRevisionsApi.createRevision(proposalId, payload)
-      if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
+      const current = gen === saveGeneration && activeProposal.value?.id === proposalId
+      // This callback invalidates queue reads that could otherwise restore a
+      // pre-save summary. A persisted response still needs that protection
+      // when the UI continuation is stale after a proposal switch.
+      options?.onRevisionSaved?.()
+      if (!current) return { proposalId, persisted: true, current: false }
       // Invalidate any in-flight revision load so a pre-save (stale, empty) list
       // can't overwrite this save's state when it resolves after the save.
       loadGeneration += 1
@@ -145,15 +158,16 @@ export function useProposalRevisions(
       // would restore the pre-revision proposal. Called synchronously here, in
       // the same continuation as the POST, so no queue answer can slip between
       // the save landing and the invalidation.
-      options?.onRevisionSaved?.()
       latestRevision.value = revision
       revisionCount.value += 1
       revisionsLoaded.value = true
       editing.value = false
       toast.success('Revision saved')
+      return { proposalId, persisted: true, current: true }
     } catch (e: unknown) {
-      if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
-      toast.error(getErrorDisplay(e, 'Failed to save revision').message)
+      const current = gen === saveGeneration && activeProposal.value?.id === proposalId
+      if (current) toast.error(getErrorDisplay(e, 'Failed to save revision').message)
+      return { proposalId, persisted: false, current }
     } finally {
       if (gen === saveGeneration && activeProposal.value?.id === proposalId) {
         saving.value = false
