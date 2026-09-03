@@ -1705,8 +1705,10 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   if (isArchivedHistory.value) return
   const proposalId = activeProposal.value?.id
   const saveEpoch = revisionEditEpoch
-  await saveRevision(payload)
+  const saveResult = await saveRevision(payload)
+  if (!saveResult?.persisted) return
   const savedCurrentSession =
+    saveResult.current &&
     !!proposalId &&
     saveEpoch === revisionEditEpoch &&
     revisionReturnFocusEpoch === saveEpoch &&
@@ -1714,12 +1716,12 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
     proposalIdsEqual(activeProposal.value?.id, proposalId)
   // Saving an edit changes what Apply will execute, so a diff already on screen is
   // now stale — drop it so the "reflects your saved edit" note cannot certify a
-  // pre-revision preview (#1235). Bind cleanup to that edit session: a stale
-  // continuation must not clear another proposal's preview, or a fresh preview
-  // opened after the reviewer returns to this proposal (#2215).
+  // pre-revision preview (#1235). Clear it for the saved proposal even when
+  // this continuation is stale: a preview reopened after A -> B -> A may still
+  // predate the persisted revision. The proposal identity keeps an unrelated B
+  // preview intact (#2215).
   if (
-    savedCurrentSession &&
-    proposalIdsEqual(previewDiffProposalId.value, proposalId)
+    proposalIdsEqual(previewDiffProposalId.value, saveResult.proposalId)
   ) {
     latestDiffRequestId += 1
     clearPreviewDiff()

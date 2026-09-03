@@ -3322,7 +3322,7 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('keeps a reopened proposal A editor and diff when its previous save resolves', async () => {
+  it('keeps a reopened proposal A editor but clears its diff when its previous save resolves', async () => {
     let resolveSave!: (value: unknown) => void
     mocks.createRevision.mockImplementationOnce(
       () => new Promise((resolve) => { resolveSave = resolve }),
@@ -3349,9 +3349,10 @@ describe('PaperReviewView', () => {
     await wrapper.get('[data-testid="decision-edit"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="paper-review-diff-pre"]').text()).toContain(
-      'Reopened proposal preview',
-    )
+    // The old save was persisted for A, so this preview may predate that commit
+    // even though the reviewer has since reopened a newer A edit session. Keep
+    // the newer editor open, but force a fresh revision-aware preview.
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(true)
 
     resolveSave({
       id: 'stale-revision',
@@ -3366,9 +3367,7 @@ describe('PaperReviewView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="paper-review-diff-pre"]').text()).toContain(
-      'Reopened proposal preview',
-    )
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
