@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-02
+Last Updated: 2026-09-03
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -522,9 +522,9 @@ Overnight substrate + correctness wave — **11 PRs merged** (per-PR gate: indep
 - Every issue must carry exactly one priority label (`Priority I` through `Priority V`).
 - Out-of-code and configuration work (containerization, deployment, security posture, observability, DR) must be tracked as first-class backlog items.
 
-## Current Cycle Outcome (Completed)
+## Cycle outcome: revival + generalist-expansion wave (2026-07-13 to 2026-07-17, completed)
 
-Delivered in the latest cycle:
+Delivered in that cycle:
 
 REVIVAL-02 — fake undo timeline removed (2026-07-17, `#1298`, Phase 1 truth + safety): the Paper review UI no longer advertises an undo window/countdown, an undo keyboard shortcut, or undo-rate copy — **no revert endpoint exists anywhere in the backend**, so the affordance was a lie. The stable side-effect `reversibility` wire shape (`summary`/`description`/`windowMs`) is preserved for GP-03 contract compatibility (assumption C6-01: a future *real* undo gets a deliberately versioned API, not this field), but the frontend maps it to factual apply-risk guidance ("Apply considerations") and the visible confidence label renders **"Operation safety"** while keeping the `/confidence` transport key unchanged (assumption C6-02: label copy only, no wire change). `PaperUndoTimeline` component + spec deleted; the countdown/undo-rate/shortcut promises removed in favour of factual elapsed age / apply considerations; executor/apply behavior untouched; truthful undo-adjacent language (destructive-action "cannot be undone" warnings, reversible archive restore, transaction rollback, parser negation handling) deliberately preserved. Proven by backend + frontend + Paper-review E2E gates.
 

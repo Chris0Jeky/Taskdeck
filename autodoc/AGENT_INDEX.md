@@ -21,7 +21,7 @@ It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name)
   (`.github/**`, `ci/**`, `scripts/ci/**`) and `.claude/rules/docs.md` (`docs/**`, root `*.md`).
   Read those, not the whole repo.
 - Current shipped state: `docs/STATUS.md` (source of truth) — read the relevant section, it is
-  935 lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (2068
+  964 lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (2068
   lines — also section-read only, never bulk-read). Human-action file: `OUTSTANDING_TASKS.md`.
   Strategy spine: `docs/strategy/PRODUCT_DIRECTION.md` → `docs/REVIVAL_PLAN.md`. Decisions:
   `docs/decisions/INDEX.md`.
