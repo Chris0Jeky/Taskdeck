@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
@@ -486,6 +486,21 @@ function detailPanelId(item: CaptureItemSummary): string {
 }
 
 /**
+ * Collapse a stalled read-only load without cancelling its request. The parent
+ * already rejects a late payload by item id; this component restores focus to
+ * the disclosure that remains after the loading panel is removed.
+ */
+async function closeLoadingDetail(itemId: string, event: MouseEvent) {
+  const opener = (event.currentTarget as HTMLElement | null)
+    ?.closest('.paper-triage__row')
+    ?.querySelector<HTMLButtonElement>('.paper-triage__open')
+
+  emit('open', itemId)
+  await nextTick()
+  opener?.focus()
+}
+
+/**
  * The loaded detail, but only while it still belongs to the expanded row.
  * The parent loads asynchronously, so between "row B opened" and "row B's
  * detail arrived" the stale row-A payload must not render under row B.
@@ -646,9 +661,18 @@ function recordedOr(value: string | null | undefined): string {
           class="paper-triage__history-detail"
           data-testid="capture-history-detail"
         >
-          <p v-if="detailLoading && !activeDetail" class="tk-body" role="status">
-            {{ t('inbox.history.detail.loading') }}
-          </p>
+          <template v-if="detailLoading && !activeDetail">
+            <p class="tk-body" role="status">
+              {{ t('inbox.history.detail.loading') }}
+            </p>
+            <PaperHLBtn
+              class="paper-triage__history-close"
+              :label="t('inbox.history.detail.close')"
+              variant="ghost"
+              data-testid="capture-history-loading-close"
+              @click="closeLoadingDetail(item.id, $event)"
+            />
+          </template>
           <p
             v-else-if="detailError"
             class="tk-body paper-triage__history-error"
@@ -1111,6 +1135,9 @@ function recordedOr(value: string | null | undefined): string {
 }
 .paper-triage__history-error {
   color: var(--overdue);
+}
+.paper-triage__history-close {
+  align-self: flex-start;
 }
 .paper-triage__history-meta {
   display: grid;
