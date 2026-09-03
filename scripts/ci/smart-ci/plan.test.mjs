@@ -25,6 +25,7 @@ import { observeMergeRef } from './resolve-merge-ref.mjs';
 
 const policyText = readFileSync(new URL('../../../ci/policy.v1.json', import.meta.url), 'utf8');
 const policy = JSON.parse(policyText);
+const runReceiptSchema = JSON.parse(readFileSync(new URL('../../../ci/schemas/ci-run.v1.schema.json', import.meta.url), 'utf8'));
 const digest = policyDigest(policyText);
 const BASE = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
@@ -232,6 +233,39 @@ test('the gate fails closed on missing, mismatched or errored plans in both mode
   assert.ok(errored.failures.some((failure) => failure.code === 'planner-error'));
   const planJobFailed = evaluateGate(plan, { mode: 'shadow', planJobResult: 'failure' });
   assert.equal(planJobFailed.ok, false);
+});
+
+test('a superseded cancelled plan is non-red only in shadow mode', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+
+  const shadow = evaluateGate(plan, { mode: 'shadow', planJobResult: 'cancelled' });
+  assert.equal(shadow.ok, true);
+  assert.equal(shadow.wouldFail, true);
+  assert.deepEqual(shadow.plannerFailures, []);
+  assert.ok(shadow.failures.some((failure) => failure.code === 'plan-job-cancelled'));
+  const receiptFailureCodes = new Set(runReceiptSchema.properties.failures.items.properties.code.enum);
+  assert.ok(shadow.failures.every((failure) => receiptFailureCodes.has(failure.code)), 'every emitted failure code must satisfy ci-run.v1');
+  assert.ok(shadow.notes.some((note) => note.includes('superseded')));
+  const summary = renderGateSummary(shadow, plan);
+  assert.match(summary, /would FAIL in enforce mode/);
+  assert.match(summary, /superseded plan cancellation is excluded from observation evidence/);
+
+  const cancelledBeforeReceipt = evaluateGate(null, { mode: 'shadow', planJobResult: 'cancelled' });
+  assert.equal(cancelledBeforeReceipt.ok, true);
+  assert.equal(cancelledBeforeReceipt.wouldFail, true);
+  assert.deepEqual(cancelledBeforeReceipt.plannerFailures, []);
+  assert.ok(cancelledBeforeReceipt.failures.some((failure) => failure.code === 'plan-job-cancelled'));
+
+  const enforcePlan = { ...plan, mode: 'enforce' };
+  const enforce = evaluateGate(enforcePlan, { mode: 'enforce', planJobResult: 'cancelled', results: {} });
+  assert.equal(enforce.ok, false);
+  assert.ok(enforce.failures.some((failure) => failure.code === 'plan-job-failed'));
+
+  for (const planJobResult of ['failure', 'timed_out', 'skipped']) {
+    const ordinaryFailure = evaluateGate(plan, { mode: 'shadow', planJobResult });
+    assert.equal(ordinaryFailure.ok, false, `${planJobResult} must stay red in shadow mode`);
+    assert.ok(ordinaryFailure.failures.some((failure) => failure.code === 'plan-job-failed'));
+  }
 });
 
 test('the gate distinguishes shadow (report) from enforce (block) for job evidence', () => {
