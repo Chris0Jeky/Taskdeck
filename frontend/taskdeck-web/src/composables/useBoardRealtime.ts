@@ -52,6 +52,7 @@ export function createBoardRealtimeController(
   let editingCardId: string | null = null
   let fallbackTimer: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
+  let pendingMutationRefreshBoardId: string | null = null
   let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
   const stopFallbackPolling = () => {
@@ -83,6 +84,33 @@ export function createBoardRealtimeController(
     }
   }
 
+  const startMutationRefresh = (boardId: string) => {
+    if (subscribedBoardId !== boardId || requestedBoardId !== boardId) {
+      return
+    }
+
+    if (refreshInFlight) {
+      pendingMutationRefreshBoardId = boardId
+      return
+    }
+
+    refreshInFlight = true
+    void options
+      .fetchBoard(boardId, { intent: 'background' })
+      .catch(() => {
+        // Background refresh failures must not escape the realtime loop.
+      })
+      .finally(() => {
+        refreshInFlight = false
+        const pendingBoardId = pendingMutationRefreshBoardId
+        pendingMutationRefreshBoardId = null
+
+        if (pendingBoardId) {
+          startMutationRefresh(pendingBoardId)
+        }
+      })
+  }
+
   const handleBoardMutation = (event: BoardRealtimeEvent) => {
     if (
       !subscribedBoardId ||
@@ -98,22 +126,11 @@ export function createBoardRealtimeController(
     mutationDebounceTimer = setTimeout(() => {
       mutationDebounceTimer = null
 
-      // Skip if a refresh is already in-flight (started by a previous debounced
-      // call that hasn't resolved yet).
-      if (refreshInFlight || !subscribedBoardId || subscribedBoardId !== requestedBoardId) {
+      if (!subscribedBoardId || subscribedBoardId !== requestedBoardId) {
         return
       }
 
-      const boardId = subscribedBoardId
-      refreshInFlight = true
-      void options
-        .fetchBoard(boardId, { intent: 'background' })
-        .catch(() => {
-          // Background refresh failures must not escape the realtime loop.
-        })
-        .finally(() => {
-          refreshInFlight = false
-        })
+      startMutationRefresh(subscribedBoardId)
     }, MUTATION_DEBOUNCE_MS)
   }
 
@@ -239,6 +256,7 @@ export function createBoardRealtimeController(
     // Cancel any debounced mutation fetch from the previous board as soon as
     // navigation changes intent, rather than waiting for the connection move.
     cancelMutationDebounce()
+    pendingMutationRefreshBoardId = null
     return queueBoardSubscription(boardId, generation)
   }
 
@@ -265,6 +283,7 @@ export function createBoardRealtimeController(
     subscriptionGeneration++
     stopFallbackPolling()
     cancelMutationDebounce()
+    pendingMutationRefreshBoardId = null
     editingCardId = null
 
     if (!connection) {
