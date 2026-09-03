@@ -15,6 +15,7 @@ import type { BoardHelpers } from './boardStoreHelpers'
 // ActivityView, ReviewView, etc.) can call fetchBoards on mount in quick
 // succession; the throttle guard prevents duplicate network round-trips.
 const FETCH_BOARDS_THROTTLE_MS = 5000
+const BOARD_ACCESS_REVOKED_MESSAGE = 'You no longer have access to this board'
 
 export type BoardFetchIntent = 'explicit' | 'background'
 
@@ -238,6 +239,13 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         }
 
         if (intent === 'background') {
+          const status = (e as { response?: { status?: number } } | null)?.response?.status
+          if (status === 403) {
+            helpers.handleApiError(
+              new Error(BOARD_ACCESS_REVOKED_MESSAGE),
+              BOARD_ACCESS_REVOKED_MESSAGE,
+            )
+          }
           return false
         }
 

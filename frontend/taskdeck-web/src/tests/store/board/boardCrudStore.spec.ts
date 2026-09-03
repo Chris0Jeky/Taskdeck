@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
 import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS } from '../../../api/http'
+import { getErrorMessage } from '../../../utils/errorMessage'
 
 const { mockBoardsApi } = vi.hoisted(() => ({
   mockBoardsApi: {
@@ -581,6 +582,62 @@ describe('boardCrudStore', () => {
       ])
       expect(state.error.value).toBeNull()
       expect(helpers.handleApiError).not.toHaveBeenCalled()
+    })
+
+    it('surfaces a current background 403 without replacing cached board state', async () => {
+      const forbidden = {
+        message: 'Request failed with status code 403',
+        response: { status: 403 },
+      }
+      state.currentBoard.value = { id: 'board-1', name: 'Cached board' }
+      state.currentBoardCards.value = [{ id: 'cached-card' }]
+      state.currentBoardLabels.value = [{ id: 'cached-label' }]
+      state.cardCommentsByCardId.value = { 'cached-card': [{ text: 'Cached comment' }] }
+      mockBoardsApi.getBoard.mockRejectedValueOnce(forbidden)
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
+      helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
+        state.error.value = getErrorMessage(error, fallback)
+      })
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      await expect(fetchBoard('board-1', { intent: 'background' })).resolves.toBe(false)
+
+      expect(helpers.handleApiError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'You no longer have access to this board' }),
+        'You no longer have access to this board',
+      )
+      expect(state.error.value).toBe('You no longer have access to this board')
+      expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Cached board' })
+      expect(state.currentBoardCards.value).toEqual([{ id: 'cached-card' }])
+      expect(state.currentBoardLabels.value).toEqual([{ id: 'cached-label' }])
+      expect(state.cardCommentsByCardId.value).toEqual({
+        'cached-card': [{ text: 'Cached comment' }],
+      })
+    })
+
+    it('suppresses a background 403 after a newer generation commits', async () => {
+      const staleBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const forbidden = {
+        message: 'Request failed with status code 403',
+        response: { status: 403 },
+      }
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(staleBoard.promise)
+        .mockResolvedValueOnce({ id: 'board-1', name: 'Current board', columns: [] })
+      mockCardsApi.getCards.mockResolvedValue([])
+      mockLabelsApi.getLabels.mockResolvedValue([])
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const stale = fetchBoard('board-1', { intent: 'background' })
+      const current = fetchBoard('board-1')
+
+      await expect(current).resolves.toBe(true)
+      staleBoard.reject(forbidden)
+      await expect(stale).resolves.toBe(false)
+
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.currentBoard.value).toMatchObject({ name: 'Current board' })
     })
 
     it('discards a queued background refresh when an explicit route load changes boards', async () => {
