@@ -20,6 +20,11 @@ import type {
   CardHistoryStatusWireValue,
   SimilarPastResultDto,
 } from '../api/proposalDeepReviewApi'
+import {
+  proposalIdsEqual,
+  proposalRevisionIdentity,
+  proposalRevisionMoved,
+} from '../utils/proposalIdentity'
 
 export type ProvenanceWeight = 'primary' | 'contextual' | 'excluded' | 'inferred'
 
@@ -192,6 +197,14 @@ function identifiersEqual(left: string | null | undefined, right: string | null 
   const normalizedLeft = meaningfulWireValue(left)?.toLowerCase()
   const normalizedRight = meaningfulWireValue(right)?.toLowerCase()
   return normalizedLeft !== undefined && normalizedLeft === normalizedRight
+}
+
+function nullableIdentifiersEqual(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): boolean {
+  if (left == null || right == null) return left == null && right == null
+  return identifiersEqual(left, right)
 }
 
 /**
@@ -392,13 +405,62 @@ export function usePaperReviewSelectors(
 
   let fetchGeneration = 0
   let abortController: AbortController | null = null
+  let captureLookup: {
+    reference: string
+    request: Promise<CaptureItem | null>
+    controller: AbortController
+  } | null = null
+
+  function discardCaptureLookup() {
+    captureLookup?.controller.abort()
+    captureLookup = null
+  }
+
+  function getCaptureLookup(
+    reference: string,
+    reuseExisting: boolean,
+  ): Promise<CaptureItem | null> {
+    if (reuseExisting && captureLookup && identifiersEqual(captureLookup.reference, reference)) {
+      return captureLookup.request
+    }
+
+    discardCaptureLookup()
+    const controller = new AbortController()
+    const request = captureApi.getItem(reference, { signal: controller.signal })
+    captureLookup = { reference, request, controller }
+    return request
+  }
 
   watch(
     [
       () => activeProposal.value?.id,
       () => captureSourceReference(activeProposal.value),
+      () => proposalRevisionIdentity(activeProposal.value),
     ],
-    async ([proposalId, captureReference]) => {
+    async (
+      [proposalId, captureReference, revisionIdentity],
+      previousValues,
+    ) => {
+      const [previousProposalId, previousCaptureReference, previousRevisionIdentity] =
+        previousValues ?? []
+      const initialLoad = previousValues === undefined
+      const proposalChanged = initialLoad
+        ? true
+        : previousProposalId == null || proposalId == null
+          ? previousProposalId !== proposalId
+          : !proposalIdsEqual(previousProposalId, proposalId)
+      const captureChanged = initialLoad
+        ? true
+        : !nullableIdentifiersEqual(previousCaptureReference, captureReference)
+      const revisionChanged = initialLoad
+        ? true
+        : proposalRevisionMoved(previousRevisionIdentity ?? null, revisionIdentity ?? null)
+
+      // Vue also invokes this watcher when a raw revision field changes but its
+      // effective identity does not (for example approve pins latest -> null).
+      // Keep the current review data in that terminal transition.
+      if (!initialLoad && !proposalChanged && !captureChanged && !revisionChanged) return
+
       // Invalidate every older continuation, including when selection becomes empty.
       const generation = ++fetchGeneration
 
@@ -407,6 +469,11 @@ export function usePaperReviewSelectors(
         abortController.abort()
         abortController = null
       }
+
+      // A changed source cannot reuse the prior optional lookup. Revision-only
+      // refreshes leave this cache intact so metadata can be recomputed without
+      // issuing a duplicate capture request.
+      if (captureChanged) discardCaptureLookup()
 
       if (!proposalId) {
         isLoading.value = false
@@ -430,7 +497,7 @@ export function usePaperReviewSelectors(
       provenanceMetadataData.value = null
 
       const captureRequest: Promise<CaptureItem | null> = captureReference
-        ? captureApi.getItem(captureReference, { signal })
+        ? getCaptureLookup(captureReference, !proposalChanged && !captureChanged)
         : Promise.resolve(null)
       // Attach rejection handling immediately, but do not let this optional lookup hold
       // the six core review responses behind the HTTP client's retry window.
@@ -510,6 +577,7 @@ export function usePaperReviewSelectors(
       abortController.abort()
       abortController = null
     }
+    discardCaptureLookup()
   })
 
   const loading = computed(() => isLoading.value)
