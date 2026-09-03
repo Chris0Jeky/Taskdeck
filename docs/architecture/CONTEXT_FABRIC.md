@@ -116,7 +116,7 @@ manifest that declares an in-process capability.
 | 5 registry + routing | CF-04 `#2258` — v0.4 because the ADR-0048 worker `#1429` is its first sidecar; umbrella, split before `Now`; the protocol stays v1-alpha until PdfPig **and** WhisperX pass conformance; CF-10 `#2264`, CF-11 `#2265`, CF-15 `#2269`, CF-18 `#2272`, GEN-03 `#1317` | v0.4 → v0.6 |
 | 6 Universal Capture + resolver + review | CF-09 `#2263`, CF-20 `#2273` (umbrella; hosts CF-16's `VoiceCapturePanel`), CF-21 `#2274` | v0.5 |
 | voice vertical | CF-12 `#2266`, CF-13 `#2267` (fixtures from CF-24A `#2319`; the **accessible** route the v0.5 gate needs), CF-14 `#2268` (explicit per-run configuration, no CF-10 dependency), CF-16 `#2270` (reusable `useVoiceRecording` + `VoiceCapturePanel`), CF-17 `#2271` | v0.5 / v0.6 |
-| 7 delegated authority | CF-22 `#2275` — **stretch / blocked, release-blocker = false** | v0.6 |
+| 7 delegated authority | CF-22 `#2275` — **stretch, release-blocker = false; build authorized 2026-09-03, real execution only on the ADR-0065 ruling-6 evidence report** | v0.6 |
 | 8 hosted scale | object-store `IBlobStore`, durable queue, GPU workers | v0.9, only on measured demand (ADR-0061 stage 3) |
 
 **The first credible vertical (valid order):**
