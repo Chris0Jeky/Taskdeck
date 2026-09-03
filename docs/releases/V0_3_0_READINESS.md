@@ -95,11 +95,21 @@ of the 50 open issues, measured 2026-09-03:
   `#2009`, `#2008`, `#2007`, `#2004`, `#1999`, `#1987`, `#1984`, `#1972`, `#1968`, `#1961`, `#1949`,
   `#1940`, `#1936`. Three of these are Priority I (`#2004`, `#1949`, `#1940`) and three carry
   `decision` (`#2004`, `#1972`, `#1936`), so they need a ruling before they can be moved wholesale.
-- 14 carry `ci`. Four are section 2, three are section 3 or 4; the rest (`#2332`, `#2331`, `#2329`,
-  `#2250`) are CI-fabric improvements with no v0.3.0 gate clause behind them.
-- The balance is backend, frontend and security work already outside the gate: `#2315`, `#2305`,
-  `#2304`, `#2303`, `#2302`, `#2301`, `#2240`, `#2230`, `#2215`, `#2214`, `#1866`, `#1640`, `#1309`,
-  `#1307`, `#1284`, `#1131`, `#2391`.
+- 14 carry `ci`, and they do not form one bucket; they split across this file:
+  - 7 are section 2: the clause-5 chain `#2401`, `#2327`, `#2326`, `#2333`, `#2335`, plus the
+    clause-4 intermittent reds `#2425` and `#2378`.
+  - 2 more are section 3 human gates in their own right: `#2337` and `#2328`. (`#2333`, `#2335` and
+    `#2327` also hand off to SC-2, SC-5 and SC-4, but are already counted in section 2.)
+  - 1 is the section 4 tracker `#2324`.
+  - 4 have no v0.3.0 gate clause behind them: `#2332`, `#2331`, `#2329`, `#2250`.
+- 20 carry neither label. Three of them appear earlier in this file: `#2235` is the section 4
+  tracker, `#1772` is the section 3 human gate, and `#2399` is the section 2 clause-4 flake. The
+  other 17 are ordinary backend, frontend and security backlog with no gate clause behind them:
+  `#2315`, `#2305`, `#2304`, `#2303`, `#2302`, `#2301`, `#2240`, `#2230`, `#2215`, `#2214`, `#2391`,
+  `#1866`, `#1640`, `#1309`, `#1307`, `#1284`, `#1131`.
+
+The three sets are disjoint and closed: 16 + 14 + 20 = 50. If that arithmetic stops holding, this
+section is stale and the milestone should be re-counted before the file is trusted.
 
 The question this section exists to put to the maintainer is one question, not fifty: **which of these
 families ship inside v0.3.0 and which are re-ruled to v0.4?** Until that is answered, agents keep
