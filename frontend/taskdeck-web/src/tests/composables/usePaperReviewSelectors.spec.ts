@@ -645,6 +645,43 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.provenance.value.some((row) => row.key === 'stale')).toBe(false)
   })
 
+  it('supersedes an active B batch when returning to already-settled A', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValueOnce([
+      { icon: 'a', key: 'proposal-a', value: 'A', weight: 'Primary' },
+    ])
+    const proposal = ref<ApiProposal | null>(
+      makeProposal({ id: 'proposal-a', latestRevisionId: 'rev-a' }),
+    )
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    let resolveB!: (rows: ProvenanceRowDto[]) => void
+    let bSignal: AbortSignal | undefined
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockImplementationOnce((_id, options) => {
+      bSignal = options?.signal
+      return new Promise<ProvenanceRowDto[]>((resolve) => {
+        resolveB = resolve
+      })
+    })
+    proposal.value = makeProposal({ id: 'proposal-b', latestRevisionId: 'rev-b' })
+    await nextTick()
+    const bBatch = selectors.waitForCoreBatch('proposal-b', 'rev-b')
+    expect(selectors.loading.value).toBe(true)
+
+    proposal.value = makeProposal({ id: 'proposal-a', latestRevisionId: 'rev-a' })
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    expect(bSignal?.aborted).toBe(true)
+    await expect(bBatch).resolves.toBe('superseded')
+    expect(selectors.loading.value).toBe(false)
+    expect(selectors.provenance.value[0]?.key).toBe('proposal-a')
+
+    resolveB([{ icon: 'b', key: 'proposal-b', value: 'B', weight: 'Primary' }])
+    await nextTick()
+    expect(selectors.provenance.value[0]?.key).toBe('proposal-a')
+  })
+
   it('reuses an already-settled exact selector batch without duplicate requests', async () => {
     mockAllEndpointsEmpty()
     const proposal = ref<ApiProposal | null>(

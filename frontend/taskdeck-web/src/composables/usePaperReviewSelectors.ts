@@ -436,6 +436,10 @@ export function usePaperReviewSelectors(
   let fetchGeneration = 0
   let abortController: AbortController | null = null
   let settledCoreKey: SelectorKey | null = null
+  let settledCaptureMetadata: {
+    key: SelectorKey
+    value: ProvenanceMetadata | null
+  } | null = null
   let activeCoreBatch: {
     key: SelectorKey
     generation: number
@@ -493,7 +497,22 @@ export function usePaperReviewSelectors(
     if (!selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)) {
       return Promise.resolve('unavailable')
     }
-    if (selectorKeysEqual(settledCoreKey, key)) return Promise.resolve('settled')
+    if (selectorKeysEqual(settledCoreKey, key)) {
+      // A can already be the rendered settled batch while B is still loading.
+      // Returning B -> A must cancel B before taking this cache fast path;
+      // otherwise B's ignored continuation leaves `loading` true and its
+      // transport work continues after the reviewer has left it.
+      if (activeCoreBatch && !selectorKeysEqual(activeCoreBatch.key, key)) {
+        invalidateCoreBatch()
+        discardCaptureLookup()
+      }
+      isLoading.value = false
+      provenanceMetadataData.value =
+        settledCaptureMetadata && selectorKeysEqual(settledCaptureMetadata.key, key)
+          ? settledCaptureMetadata.value
+          : null
+      return Promise.resolve('settled')
+    }
     if (activeCoreBatch && selectorKeysEqual(activeCoreBatch.key, key)) {
       return activeCoreBatch.promise
     }
@@ -573,7 +592,7 @@ export function usePaperReviewSelectors(
           generation !== fetchGeneration ||
           !selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)
         ) return
-        provenanceMetadataData.value =
+        const metadata =
           key.captureReference && capture?.status === 'fulfilled' && capture.value
             ? mapProvenanceMetadata(
                 capture.value,
@@ -582,6 +601,8 @@ export function usePaperReviewSelectors(
                 mappedConfidence,
               )
             : null
+        settledCaptureMetadata = { key, value: metadata }
+        provenanceMetadataData.value = metadata
       })
 
       return 'settled'
@@ -647,6 +668,7 @@ export function usePaperReviewSelectors(
       if (!proposalId) {
         invalidateCoreBatch()
         settledCoreKey = null
+        settledCaptureMetadata = null
         discardCaptureLookup()
         isLoading.value = false
         clearSelectorData()
