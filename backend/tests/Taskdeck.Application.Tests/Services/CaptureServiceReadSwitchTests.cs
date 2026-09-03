@@ -296,6 +296,186 @@ public sealed class CaptureServiceReadSwitchTests
         _unitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Theory]
+    [InlineData(CaptureDisposition.Kept)]
+    [InlineData(CaptureDisposition.Archived)]
+    public async Task SetDispositionAsync_ShouldReconcileQueueTextBeforeStampingTheDurableCapture(
+        CaptureDisposition disposition)
+    {
+        // CF-01c (#2347): the queue row can be newer after an out-of-band edit. Keep/Archive both
+        // Touch the aggregate, so applying the disposition first would mask the stale durable text
+        // from both the read guard and the reconcile backlog forever.
+        var row = QueueRow("first draft");
+        var durable = DurableFor(row, "first draft");
+        var originalAsset = durable.SourceAssets.Should().ContainSingle().Subject;
+        var correctedPayload = CaptureRequestContract.ParseStoredPayload(row.Payload) with
+        {
+            Text = "corrected draft"
+        };
+        row.UpdatePayload(CaptureRequestContract.SerializePayload(correctedPayload));
+
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(row);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                row.Id,
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<RequestStatus>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _proposals
+            .Setup(repository => repository.GetBySourceReferenceAsync(
+                It.IsAny<ProposalSourceType>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AutomationProposal?)null);
+        _captureStore
+            .Setup(store => store.GetByIdForUpdateAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+        _captureStore
+            .Setup(store => store.GetByIdForUserAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+
+        var service = CreateService();
+        var mutation = disposition == CaptureDisposition.Kept
+            ? await service.KeepAsync(_userId, row.Id)
+            : await service.ArchiveAsync(_userId, row.Id);
+        var reread = await service.GetByIdAsync(_userId, row.Id);
+
+        mutation.IsSuccess.Should().BeTrue(mutation.ErrorMessage);
+        mutation.Value!.RawText.Should().Be("corrected draft");
+        reread.IsSuccess.Should().BeTrue(reread.ErrorMessage);
+        reread.Value!.RawText.Should().Be("corrected draft");
+        durable.CurrentText.Should().Be("corrected draft");
+        durable.Disposition.Should().Be(CaptureUserDispositionMapping.FromLegacy(disposition));
+        durable.SourceAssets.Should().HaveCount(2, "the correction supersedes rather than rewriting lineage");
+        originalAsset.IsActive.Should().BeFalse();
+        durable.SourceAssets[1].SupersedesAssetId.Should().Be(originalAsset.Id);
+    }
+
+    [Fact]
+    public async Task ArchiveAsync_WhenDurableTextCannotBeRepaired_ShouldKeepTheQueueFallbackAndStampUnchanged()
+    {
+        var row = QueueRow("first draft");
+        var durable = DurableFor(row, "first draft");
+        durable.Archive();
+        var archivedStamp = durable.UpdatedAt;
+        var correctedPayload = CaptureRequestContract.ParseStoredPayload(row.Payload) with
+        {
+            Text = "corrected draft"
+        };
+        row.UpdatePayload(CaptureRequestContract.SerializePayload(correctedPayload));
+
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(row);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                row.Id,
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<RequestStatus>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _proposals
+            .Setup(repository => repository.GetBySourceReferenceAsync(
+                It.IsAny<ProposalSourceType>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AutomationProposal?)null);
+        _captureStore
+            .Setup(store => store.GetByIdForUpdateAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+        _captureStore
+            .Setup(store => store.GetByIdForUserAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+
+        var service = CreateService();
+        var mutation = await service.ArchiveAsync(_userId, row.Id);
+        var reread = await service.GetByIdAsync(_userId, row.Id);
+
+        mutation.IsSuccess.Should().BeTrue(mutation.ErrorMessage);
+        mutation.Value!.RawText.Should().Be("corrected draft", "the accepted queue write remains readable");
+        reread.Value!.RawText.Should().Be("corrected draft");
+        durable.CurrentText.Should().Be("first draft");
+        durable.UpdatedAt.Should().Be(archivedStamp, "a failed repair must not fabricate freshness");
+        _captureStore.Verify(
+            store => store.UpdateAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task KeepAsync_IdempotentRetryThatLosesTheQueueCas_ShouldNotOverwriteNewerDurableText()
+    {
+        var row = QueueRow("stale retry text");
+        var keptPayload = CaptureRequestContract.ParseStoredPayload(row.Payload) with
+        {
+            Disposition = new CaptureDispositionV1(
+                CaptureDisposition.Kept,
+                DateTimeOffset.UtcNow,
+                _userId)
+        };
+        row.UpdatePayload(CaptureRequestContract.SerializePayload(keptPayload));
+        var durable = DurableFor(row, "stale retry text");
+        durable.Keep();
+        durable.SupersedeInlineTextSource("newer correction");
+        var newerStamp = durable.UpdatedAt;
+
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(row);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                row.Id,
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<RequestStatus>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _captureStore
+            .Setup(store => store.GetByIdForUpdateAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+
+        var result = await CreateService().KeepAsync(_userId, row.Id);
+
+        result.IsSuccess.Should().BeFalse("a stale retry must lose before touching the aggregate");
+        result.ErrorCode.Should().Be(Taskdeck.Domain.Exceptions.ErrorCodes.Conflict);
+        durable.CurrentText.Should().Be("newer correction");
+        durable.UpdatedAt.Should().Be(newerStamp);
+        _captureStore.Verify(
+            store => store.UpdateAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CancelAsync_WhenTheQueueCasLoses_ShouldNotOverwriteOrArchiveNewerDurableText()
+    {
+        var row = QueueRow("stale cancel text");
+        var durable = DurableFor(row, "stale cancel text");
+        durable.SupersedeInlineTextSource("newer correction");
+        var newerStamp = durable.UpdatedAt;
+
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(row);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                row.Id,
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<RequestStatus>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        _captureStore
+            .Setup(store => store.GetByIdForUpdateAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+
+        var result = await CreateService().CancelAsync(_userId, row.Id);
+
+        result.IsSuccess.Should().BeFalse("a stale cancellation must lose before touching the aggregate");
+        result.ErrorCode.Should().Be(Taskdeck.Domain.Exceptions.ErrorCodes.Conflict);
+        durable.CurrentText.Should().Be("newer correction");
+        durable.Disposition.Should().Be(CaptureUserDisposition.Active);
+        durable.UpdatedAt.Should().Be(newerStamp);
+        _captureStore.Verify(
+            store => store.UpdateAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     [Fact]
     public async Task GetByIdAsync_ShouldReadTheTextAndSourceFromTheAggregate()
     {
