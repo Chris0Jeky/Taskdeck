@@ -296,6 +296,33 @@ public sealed class CaptureBackfillServiceTests
     }
 
     [Fact]
+    public async Task RunAsync_ShouldLeaveAnArchivedTextDivergenceOutstandingWithoutAdvancingItsStamp()
+    {
+        // CF-01c (#2347): archived is terminal for disposition, not proof that stale source text was
+        // repaired. If the aggregate cannot accept the correction, the row must remain in the
+        // backlog and readable through the queue fallback rather than receive a false stamp.
+        var request = SeedLegacyRow(text: "first draft");
+        await CreateService().RunAsync();
+        var capture = _captureStore.All.Should().ContainSingle().Subject;
+        capture.Archive();
+        var archivedStamp = capture.UpdatedAt;
+
+        EditQueuePayloadOnly(request, "corrected draft");
+
+        var result = await CreateService().RunAsync();
+
+        result.Migrated.Should().Be(0);
+        result.Reconciled.Should().Be(0);
+        result.Skipped.Should().Be(1);
+        result.Remaining.Should().Be(1, "the unrepaired row must retain queue-text fallback safety");
+        result.Complete.Should().BeFalse();
+        capture.CurrentText.Should().Be("first draft");
+        capture.UpdatedAt.Should().Be(archivedStamp, "no reconciliation stamp was earned");
+        capture.SourceAssets.Should().ContainSingle("immutable lineage must not be rewritten");
+        _backfillStore.SavedState!.SkippedCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task RunAsync_ShouldReconcileATitleAndAnExternalReferenceAddedAfterTheCaptureWasBuilt()
     {
         var request = SeedLegacyRow(text: "clip me");
