@@ -4524,6 +4524,60 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    // A rejected save invalidates revision state, so the view's editablePayload
+    // computed flips from revision R1's payload back to the proposal's ORIGINAL
+    // operations. The editor watches that prop and reparses wholesale, so before
+    // the seed pin the reviewer's unsaved draft was replaced by pre-revision
+    // content while `reason` stayed filled — a natural retry would then persist a
+    // revision that silently reverted R1.
+    it('keeps the reviewer draft in the editor when a save rejects on an already-revised proposal', async () => {
+      const now = new Date().toISOString()
+      mocks.getRevisions.mockReset()
+      mocks.getRevisions.mockResolvedValue([
+        {
+          id: 'rev-draft-1',
+          proposalId: 'proposal-001',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"headline":"Revision one headline"}',
+          revisedAt: now,
+          reason: 'First revision',
+          createdAt: now,
+        },
+      ])
+      mocks.createRevision.mockRejectedValueOnce(new Error('save rejected'))
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      // The editor is seeded from the stored revision, not the original operations.
+      const field = editor.get('[data-testid="revision-field-headline"]')
+      expect((field.element as HTMLTextAreaElement).value).toBe('Revision one headline')
+
+      await field.setValue('Reviewer typed replacement')
+      await editor.get('[data-testid="revision-reason"]').setValue('Second revision')
+      await editor.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+      await nextTick()
+
+      expect(mocks.createRevision).toHaveBeenCalledTimes(1)
+      const stillOpen = wrapper.get('[data-testid="revision-editor"]')
+      // The draft survives: same field, reviewer's text, reason intact — and the
+      // original operations payload has NOT replaced the form.
+      expect(stillOpen.find('[data-testid="revision-field-operations"]').exists()).toBe(false)
+      expect(
+        (stillOpen.get('[data-testid="revision-field-headline"]').element as HTMLTextAreaElement)
+          .value,
+      ).toBe('Reviewer typed replacement')
+      expect(
+        (stillOpen.get('[data-testid="revision-reason"]').element as HTMLInputElement).value,
+      ).toBe('Second revision')
+      wrapper.unmount()
+    })
+
     it('states on the rail why the decisions are disabled, and offers the exit there', async () => {
       const wrapper = await mountView([makeProposal()])
 

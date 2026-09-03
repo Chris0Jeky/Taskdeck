@@ -693,6 +693,17 @@ const editablePayload = computed(() => {
   })
 })
 
+/**
+ * The payload the open revision editor was seeded with. A rejected save
+ * invalidates revision state (latestRevision -> null), which flips
+ * editablePayload back to the proposal's original operations; the editor
+ * watches that prop and would replace the reviewer's unsaved draft with
+ * pre-revision content, so a retry could silently revert the stored revision.
+ * Pinning the seed for the life of one edit session keeps the draft intact.
+ * Null whenever no edit session is open.
+ */
+const revisionEditorPayload = ref<string | null>(null)
+
 // --- Queue rail data ---------------------------------------------------
 
 const awaitingCount = computed(() => {
@@ -1204,6 +1215,8 @@ watch(
   () => activeProposal.value?.id ?? null,
   (id, previousId) => {
     if (previousId === undefined || proposalIdsEqual(id, previousId)) return
+    // A new proposal is a new edit session: the pinned seed belonged to the old one.
+    revisionEditorPayload.value = null
     invalidateRevisionFocusSession()
   },
 )
@@ -1453,10 +1466,12 @@ function onRequestEdit() {
     return
   }
   captureRevisionReturnFocus(p.id)
+  revisionEditorPayload.value = editablePayload.value
   startRevisionEditing()
 }
 
 function onCancelRevision() {
+  revisionEditorPayload.value = null
   cancelRevisionEditing()
   restoreRevisionFocus()
 }
@@ -1748,6 +1763,12 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   ) {
     latestDiffRequestId += 1
     clearPreviewDiff()
+  }
+  // The persisted revision is now the seed for any later edit of this proposal,
+  // so release the pin. Identity-guarded: a stale continuation must not clear a
+  // seed that already belongs to a different proposal's open editor.
+  if (proposalIdsEqual(activeProposal.value?.id, saveResult.proposalId)) {
+    revisionEditorPayload.value = null
   }
   // Failed saves leave the editor open. A successful save closes it; restore
   // only for that close and only if the reviewer is still on the same proposal.
@@ -2151,7 +2172,7 @@ async function onClearBoardScope() {
       </section>
       <ReviewRevisionEditor
         v-if="revisionEditing && !isArchivedHistory"
-        :operations-payload="editablePayload"
+        :operations-payload="revisionEditorPayload ?? editablePayload"
         :saving="revisionSaving"
         @save="onSaveRevision"
         @cancel="onCancelRevision"
