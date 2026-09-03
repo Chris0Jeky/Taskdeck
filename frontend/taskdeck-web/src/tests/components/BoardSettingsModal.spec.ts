@@ -106,6 +106,22 @@ describe('BoardSettingsModal', () => {
     )
   })
 
+  it('reconciles an untouched sibling field while preserving the dirty field', async () => {
+    const wrapper = mount(BoardSettingsModal, {
+      props: { board, isOpen: true },
+    })
+
+    await wrapper.get('#board-name').setValue('My draft board')
+    await wrapper.setProps({
+      board: { ...board, name: 'Server name', description: 'Server description' },
+    })
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'Server description',
+    )
+  })
+
   it('should emit close event when close button is clicked', async () => {
     const wrapper = mount(BoardSettingsModal, {
       props: {

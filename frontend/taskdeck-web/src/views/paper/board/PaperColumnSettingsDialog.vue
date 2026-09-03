@@ -47,10 +47,6 @@ const wipLimit = ref<number | null>(null)
 const confirmingDelete = ref(false)
 const busy = ref(false)
 const error = ref<string | null>(null)
-let seededName = ''
-let seededHasWipLimit = false
-let seededWipLimit: number | null = null
-
 /**
  * Opening or switching targets always seeds the latest values. A same-column
  * realtime replacement only re-seeds while the user has not changed the draft.
@@ -63,18 +59,27 @@ useRealtimeSafeDialogDraft({
     name.value = column.name
     hasWipLimit.value = column.wipLimit != null && column.wipLimit > 0
     wipLimit.value = column.wipLimit
-    seededName = name.value
-    seededHasWipLimit = hasWipLimit.value
-    seededWipLimit = wipLimit.value
     confirmingDelete.value = false
     error.value = null
   },
-  isDirty: () =>
-    busy.value ||
-    confirmingDelete.value ||
-    name.value !== seededName ||
-    hasWipLimit.value !== seededHasWipLimit ||
-    wipLimit.value !== seededWipLimit,
+  fields: [
+    {
+      sourceValue: (column) => column.name,
+      draftValue: () => name.value,
+      apply: (value) => { name.value = value as string },
+    },
+    {
+      sourceValue: (column) => column.wipLimit,
+      draftValue: () => wipLimit.value,
+      apply: (value) => { wipLimit.value = value as number | null },
+    },
+    {
+      sourceValue: (column) => column.wipLimit != null && column.wipLimit > 0,
+      draftValue: () => hasWipLimit.value,
+      apply: (value) => { hasWipLimit.value = value as boolean },
+    },
+  ],
+  isBusy: () => busy.value || confirmingDelete.value,
 })
 
 const canDelete = computed(() => props.cardCount === 0)

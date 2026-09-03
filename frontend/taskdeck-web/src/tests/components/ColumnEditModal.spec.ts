@@ -93,6 +93,21 @@ describe('ColumnEditModal', () => {
     expect((wrapper.get('#column-name').element as HTMLInputElement).value).toBe('My draft name')
   })
 
+  it('reconciles untouched WIP fields while preserving a dirty name', async () => {
+    const wrapper = mount(ColumnEditModal, {
+      props: { column, isOpen: true, boardId: 'board-1' },
+    })
+
+    await wrapper.get('#column-name').setValue('My draft name')
+    await wrapper.setProps({
+      column: { ...column, name: 'Server name', wipLimit: 3 },
+    })
+
+    expect((wrapper.get('#column-name').element as HTMLInputElement).value).toBe('My draft name')
+    expect((wrapper.get('#column-has-wip-limit').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('#wip-limit').element as HTMLInputElement).value).toBe('3')
+  })
+
   it('seeds the latest values when a cancelled dialog is reopened', async () => {
     const wrapper = mount(ColumnEditModal, {
       props: {

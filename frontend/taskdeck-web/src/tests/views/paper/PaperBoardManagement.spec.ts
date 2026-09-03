@@ -309,6 +309,28 @@ describe('PaperBoardView — column settings', () => {
     ).toBe('My draft column')
   })
 
+  it('reconciles an untouched column field while preserving a dirty Paper draft', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[1]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-name"]').setValue('My draft column')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-today' ? { ...column, name: 'Server column', wipLimit: 3 } : column,
+      ),
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-column-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft column')
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').element as HTMLInputElement).checked)
+      .toBe(true)
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip"]').element as HTMLInputElement).value)
+      .toBe('3')
+  })
+
   it('renames a column through boardStore.updateColumn and closes', async () => {
     const wrapper = mountView()
 
@@ -604,6 +626,27 @@ describe('PaperBoardView — board settings', () => {
           .element as HTMLTextAreaElement
       ).value,
     ).toBe('My draft description')
+  })
+
+  it('reconciles an untouched board field while preserving a dirty Paper draft', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-dialog-name"]').setValue('My draft board')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'Server board',
+      description: 'Server description',
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft board')
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe('Server description')
   })
 
   it('renames the board through boardStore.updateBoard and closes', async () => {

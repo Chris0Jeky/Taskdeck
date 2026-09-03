@@ -24,9 +24,6 @@ const router = useRouter()
 const name = ref('')
 const description = ref('')
 const lifecycleActionInProgress = ref(false)
-let seededName = ''
-let seededDescription = ''
-
 useRealtimeSafeDialogDraft({
   isOpen: () => props.isOpen,
   source: () => props.board,
@@ -34,13 +31,20 @@ useRealtimeSafeDialogDraft({
   seed: (board) => {
     name.value = board.name
     description.value = board.description || ''
-    seededName = name.value
-    seededDescription = description.value
   },
-  isDirty: () =>
-    lifecycleActionInProgress.value ||
-    name.value !== seededName ||
-    description.value !== seededDescription,
+  fields: [
+    {
+      sourceValue: (board) => board.name,
+      draftValue: () => name.value,
+      apply: (value) => { name.value = value as string },
+    },
+    {
+      sourceValue: (board) => board.description || '',
+      draftValue: () => description.value,
+      apply: (value) => { description.value = value as string },
+    },
+  ],
+  isBusy: () => lifecycleActionInProgress.value,
 })
 
 const lifecycleActionLabel = computed(() => {

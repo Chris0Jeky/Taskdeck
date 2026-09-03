@@ -23,10 +23,6 @@ const boardStore = useBoardStore()
 const name = ref('')
 const wipLimit = ref<number | null>(null)
 const hasWipLimit = ref(false)
-let seededName = ''
-let seededWipLimit: number | null = null
-let seededHasWipLimit = false
-
 useRealtimeSafeDialogDraft({
   isOpen: () => props.isOpen,
   source: () => props.column,
@@ -35,14 +31,24 @@ useRealtimeSafeDialogDraft({
     name.value = column.name
     wipLimit.value = column.wipLimit
     hasWipLimit.value = column.wipLimit !== null
-    seededName = name.value
-    seededWipLimit = wipLimit.value
-    seededHasWipLimit = hasWipLimit.value
   },
-  isDirty: () =>
-    name.value !== seededName ||
-    wipLimit.value !== seededWipLimit ||
-    hasWipLimit.value !== seededHasWipLimit,
+  fields: [
+    {
+      sourceValue: (column) => column.name,
+      draftValue: () => name.value,
+      apply: (value) => { name.value = value as string },
+    },
+    {
+      sourceValue: (column) => column.wipLimit,
+      draftValue: () => wipLimit.value,
+      apply: (value) => { wipLimit.value = value as number | null },
+    },
+    {
+      sourceValue: (column) => column.wipLimit !== null,
+      draftValue: () => hasWipLimit.value,
+      apply: (value) => { hasWipLimit.value = value as boolean },
+    },
+  ],
 })
 
 const isFormValid = () => {

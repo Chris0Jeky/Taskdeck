@@ -46,9 +46,6 @@ const description = ref('')
 const confirmingArchive = ref(false)
 const busy = ref(false)
 const error = ref<string | null>(null)
-let seededName = ''
-let seededDescription = ''
-
 useRealtimeSafeDialogDraft({
   isOpen: () => props.isOpen,
   source: () => props.board,
@@ -56,16 +53,22 @@ useRealtimeSafeDialogDraft({
   seed: (board) => {
     name.value = board.name
     description.value = board.description ?? ''
-    seededName = name.value
-    seededDescription = description.value
     confirmingArchive.value = false
     error.value = null
   },
-  isDirty: () =>
-    busy.value ||
-    confirmingArchive.value ||
-    name.value !== seededName ||
-    description.value !== seededDescription,
+  fields: [
+    {
+      sourceValue: (board) => board.name,
+      draftValue: () => name.value,
+      apply: (value) => { name.value = value as string },
+    },
+    {
+      sourceValue: (board) => board.description ?? '',
+      draftValue: () => description.value,
+      apply: (value) => { description.value = value as string },
+    },
+  ],
+  isBusy: () => busy.value || confirmingArchive.value,
 })
 
 const isValid = computed(() => name.value.trim().length > 0)
