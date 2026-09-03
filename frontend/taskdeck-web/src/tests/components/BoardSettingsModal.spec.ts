@@ -318,6 +318,40 @@ describe('BoardSettingsModal', () => {
     confirmSpy.mockRestore()
   })
 
+  it('reconciles an untouched field when a busy restore fails without another refresh', async () => {
+    const archivedBoard = { ...board, isArchived: true }
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let rejectUpdate!: (error: Error) => void
+    mockStore.updateBoard.mockImplementationOnce(
+      () => new Promise((_, reject) => { rejectUpdate = reject }),
+    )
+
+    const wrapper = mount(BoardSettingsModal, {
+      props: { board: archivedBoard, isOpen: true },
+    })
+
+    await wrapper.get('#board-name').setValue('My draft board')
+    const restoreButton = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Restore Board'))
+    void restoreButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.setProps({
+      board: { ...archivedBoard, name: 'Busy server name', description: 'Busy server description' },
+    })
+    rejectUpdate(new Error('restore failed'))
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'Busy server description',
+    )
+
+    confirmSpy.mockRestore()
+  })
+
   it('should show restore action when board is archived', () => {
     const archivedBoard = { ...board, isArchived: true }
 

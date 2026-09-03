@@ -412,6 +412,32 @@ describe('PaperBoardView — column settings', () => {
     expect(mockBoardStore.deleteColumn).not.toHaveBeenCalled()
   })
 
+  it('reconciles an untouched column field when delete confirmation is cancelled without another refresh', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[1]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-name"]').setValue('My draft column')
+    await wrapper.get('[data-testid="paper-column-dialog-delete"]').trigger('click')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-today'
+          ? { ...column, name: 'Busy server column', wipLimit: 3 }
+          : column,
+      ),
+    }
+    await nextTick()
+    await wrapper.get('[data-testid="paper-column-dialog-delete-confirm-no"]').trigger('click')
+
+    expect((wrapper.get('[data-testid="paper-column-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft column')
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').element as HTMLInputElement).checked)
+      .toBe(true)
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip"]').element as HTMLInputElement).value)
+      .toBe('3')
+  })
+
   it('refuses to delete a column that still holds cards, and says why', async () => {
     const wrapper = mountView()
 
@@ -668,6 +694,30 @@ describe('PaperBoardView — board settings', () => {
       (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
         .value,
     ).toBe('Server description')
+  })
+
+  it('reconciles an untouched board field when archive confirmation is cancelled without another refresh', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-dialog-name"]').setValue('My draft board')
+    await wrapper.get('[data-testid="paper-board-dialog-archive"]').trigger('click')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'Busy server name',
+      description: 'Busy server description',
+    }
+    await nextTick()
+    await wrapper.get('[data-testid="paper-board-dialog-archive-confirm-no"]').trigger('click')
+
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value,
+    ).toBe('My draft board')
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe('Busy server description')
   })
 
   it('renames the board through boardStore.updateBoard and closes', async () => {

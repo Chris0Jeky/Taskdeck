@@ -39,7 +39,7 @@ export function useRealtimeSafeDialogDraft<T>(options: RealtimeSafeDialogDraftOp
     options.fields.map((field) => field.sourceValue(source))
 
   watch(
-    () => [options.source(), options.isOpen()] as const,
+    () => [options.source(), options.isOpen(), options.isBusy?.() ?? false] as const,
     ([source, isOpen], previous) => {
       const wasOpen = previous?.[1] ?? false
       if (!isOpen) {

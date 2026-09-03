@@ -62,9 +62,8 @@ describe('useRealtimeSafeDialogDraft', () => {
     expect(state.description.value).toBe('Remote description')
 
     state.isBusy.value = false
-    state.source.value = { id: 'board-1', name: 'After failure name', description: 'After failure description' }
     await nextTick()
     expect(state.name.value).toBe('Local name')
-    expect(state.description.value).toBe('After failure description')
+    expect(state.description.value).toBe('Busy remote description')
   })
 })
