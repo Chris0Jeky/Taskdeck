@@ -18,6 +18,8 @@ import {
 // sites (a misspelled key becomes a compile error instead of silently no-op).
 declare module 'axios' {
   interface AxiosRequestConfig {
+    /** Opt out of the shared retry interceptor for bounded read operations. */
+    skipRetry?: boolean
     /**
      * Error statuses that are an expected part of this endpoint's contract
      * (e.g. a 404 from the optional card-provenance lookup for manual cards).
@@ -29,6 +31,20 @@ declare module 'axios' {
 }
 
 const REQUEST_ID_HEADER = 'X-Request-Id'
+
+/**
+ * Maximum time a board load read may occupy the UI before the caller receives
+ * a terminal error. The board-load caller supplies this explicitly so nested
+ * board APIs such as provenance and comments retain their normal defaults.
+ */
+export const BOARD_REQUEST_TIMEOUT_MS = 10_000
+
+/** Optional cancellation controls for board-scoped read wrappers. */
+export interface BoardReadOptions {
+  signal?: AbortSignal
+  timeout?: number
+  skipRetry?: boolean
+}
 
 function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
   const headers = AxiosHeaders.from(config.headers)
