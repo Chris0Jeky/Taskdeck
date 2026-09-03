@@ -279,6 +279,171 @@ test('review view should display multiple pending proposals for the same board',
   await expect(proposalQueueItem(page, proposalId2 as string, cardTitle2)).toBeVisible({ timeout: 15_000 })
 })
 
+test('saved revision decision lock consumes the first Apply until authoritative reads settle', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000)
+
+  const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+  const boardId = await createBoardWithColumn(request, auth, seed, {
+    boardNamePrefix: 'Revision Truth Barrier',
+    description: 'post-revision decision lock regression',
+    columnNamePrefix: 'Todo',
+  })
+  const cardTitle = `Revision truth barrier ${seed}`
+  const capture = await createCaptureItem(request, auth, boardId, `- [ ] ${cardTitle}`)
+  await triageCaptureItem(request, auth, capture.id)
+  const triaged = await waitForProposalCreated(request, auth, capture.id)
+  const proposalId = triaged.provenance?.proposalId
+  expect(proposalId).toBeTruthy()
+
+  const proposalPath = `${new URL(API_BASE_URL).pathname}/automation/proposals/${encodeURIComponent(proposalId!)}`
+  const collectionPath = `${new URL(API_BASE_URL).pathname}/automation/proposals`
+  const selectorSuffixes = [
+    'provenance',
+    'confidence',
+    'side-effects',
+    'conflicts',
+    'history',
+    'similar-past',
+  ]
+  let holdAuthoritativeReads = false
+  let approveRequests = 0
+  let executeRequests = 0
+  let signalQueueHeld!: () => void
+  let releaseQueue!: () => void
+  let signalSelectorsHeld!: () => void
+  let releaseSelectors!: () => void
+  const queueHeld = new Promise<void>((resolve) => { signalQueueHeld = resolve })
+  const queueRelease = new Promise<void>((resolve) => { releaseQueue = resolve })
+  const selectorsHeld = new Promise<void>((resolve) => { signalSelectorsHeld = resolve })
+  const selectorsRelease = new Promise<void>((resolve) => { releaseSelectors = resolve })
+  const heldSelectorSuffixes = new Set<string>()
+
+  page.on('request', (outgoing) => {
+    if (outgoing.method() !== 'POST') return
+    const path = new URL(outgoing.url()).pathname
+    if (path === `${proposalPath}/approve`) approveRequests += 1
+    if (path === `${proposalPath}/execute`) executeRequests += 1
+  })
+
+  await page.route('**/api/automation/proposals**', async (route) => {
+    const outgoing = route.request()
+    if (outgoing.method() !== 'GET' || !holdAuthoritativeReads) {
+      await route.continue()
+      return
+    }
+
+    const path = new URL(outgoing.url()).pathname
+    if (path === collectionPath) {
+      const response = await route.fetch()
+      signalQueueHeld()
+      await queueRelease
+      await route.fulfill({ response })
+      return
+    }
+
+    const selectorSuffix = selectorSuffixes.find(
+      (suffix) => path === `${proposalPath}/${suffix}`,
+    )
+    if (selectorSuffix) {
+      const response = await route.fetch()
+      heldSelectorSuffixes.add(selectorSuffix)
+      if (heldSelectorSuffixes.size === selectorSuffixes.length) signalSelectorsHeld()
+      await selectorsRelease
+      await route.fulfill({ response })
+      return
+    }
+
+    await route.continue()
+  })
+
+  const initialSelectorReads = Promise.all(
+    selectorSuffixes.map((suffix) =>
+      page.waitForResponse((response) =>
+        response.request().method() === 'GET'
+        && new URL(response.url()).pathname === `${proposalPath}/${suffix}`),
+    ),
+  )
+  await page.goto(`/workspace/review?boardId=${boardId}#proposal-${proposalId}`)
+  const queueItem = proposalQueueItem(page, proposalId!, cardTitle)
+  await expect(queueItem).toBeVisible({ timeout: 15_000 })
+  await expect(queueItem).toHaveAttribute('aria-pressed', 'true')
+  await initialSelectorReads
+
+  await page.getByTestId('decision-edit').click()
+  const operationsField = page.getByTestId('revision-field-operations')
+  await expect(operationsField).toBeVisible()
+  const revisedOperations = JSON.parse(await operationsField.inputValue()) as Array<{
+    idempotencyKey: string
+  }>
+  expect(revisedOperations.length).toBeGreaterThan(0)
+  revisedOperations[0]!.idempotencyKey = `revision-lock-${seed}`
+  await operationsField.fill(JSON.stringify(revisedOperations))
+  await page.getByTestId('revision-reason').fill('Re-check the saved operation before approval')
+  const revisionResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `${proposalPath}/revisions`)
+  await page.getByTestId('revision-save').click()
+  await assertOk(await revisionResponse, `save revision for proposal ${proposalId}`)
+  await expect(page.getByTestId('revision-editor')).toHaveCount(0)
+  await expect(page.getByTestId('revision-badge')).toBeVisible()
+
+  holdAuthoritativeReads = true
+  const apply = page.getByTestId('decision-apply')
+  await apply.focus()
+  await apply.click()
+
+  // The collection response has reached the real backend, but the browser has
+  // not received it. The whole rail and keymap stay inert under one visible lock.
+  await queueHeld
+  const lock = page.getByTestId('decision-lock-note')
+  await expect(lock).toBeVisible()
+  for (const testId of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+    await expect(page.getByTestId(testId)).toBeDisabled()
+  }
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(100)
+  expect(approveRequests).toBe(0)
+  expect(executeRequests).toBe(0)
+
+  // Once the refreshed proposal lands, hold every exact-key selector response.
+  // Apply must remain locked until the slowest core evidence read settles.
+  releaseQueue()
+  await selectorsHeld
+  expect([...heldSelectorSuffixes].sort()).toEqual([...selectorSuffixes].sort())
+  await expect(lock).toBeVisible()
+  await expect(apply).toBeDisabled()
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(100)
+  expect(approveRequests).toBe(0)
+  expect(executeRequests).toBe(0)
+
+  releaseSelectors()
+  await expect(lock).toHaveCount(0)
+  await expect(apply).toBeEnabled()
+  await expect(apply).toBeFocused()
+  expect(approveRequests).toBe(0)
+  expect(executeRequests).toBe(0)
+  await expect(page.getByTestId('paper-review-decision-receipt')).toHaveCount(0)
+
+  // The first action was consumed by review refresh. Only this second explicit
+  // click records approval, and it still does not execute the board write.
+  holdAuthoritativeReads = false
+  const approveResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname === `${proposalPath}/approve`)
+  await apply.click()
+  await assertOk(await approveResponse, `approve revised proposal ${proposalId}`)
+  await expect(page.getByTestId('paper-review-decision-receipt')).toHaveAttribute(
+    'data-decision',
+    'approved',
+  )
+  expect(approveRequests).toBe(1)
+  expect(executeRequests).toBe(0)
+})
+
 test('held Enter on batch confirmation keeps receipts open until keyup', async ({ page, request }) => {
   test.setTimeout(90_000)
 
