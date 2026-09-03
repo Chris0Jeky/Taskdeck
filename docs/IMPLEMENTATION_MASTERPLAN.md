@@ -74,10 +74,12 @@ behaviour.
 - **The v0.3 milestone count is not the v0.3.0 blocker count, and that is now written down.**
   `docs/releases/V0_3_0_READINESS.md` holds the standing per-clause view of the five gate clauses in
   `docs/REVIVAL_PLAN.md` §3. Measured 2026-09-03: clause 3 (launch kit `#2242`) is met, clause 4
-  (`main` green) held at the last completed run, `f59b854d6`, with the `98f3fbd14` run still in
-  progress at measurement time, clause 1 is only measurable at a final tag head, and clauses 2
-  and 5 are open. Of the 50 open v0.3 issues, 16 carry `dogfooding`, 14 carry `ci`, 3 are
-  `human-action` and 2 are trackers; the rest are ordinary backlog with no gate clause behind them.
+  (`main` green) held at `98f3fbd14` with the `01d77faf3` run still in progress at measurement time,
+  clause 1 is only measurable at a final tag head, and clauses 2 and 5 are open. Of the 50 open v0.3
+  issues, 16 carry `dogfooding`, 15 carry `ci` and 19 carry neither; 17 of the 50 have a gate clause
+  behind them and the other 33 do not. Those counts moved once during the same afternoon (`#2230`
+  closed on PR `#2421`, CI-16 `#2439` was seeded), so the readiness file, not this block, is the
+  place to read them.
 - **Clause 5 has an ordered dependency chain that was not previously recorded.** The cutover needs
   `Smart CI / Required Gate` enforced; registering it is human action SC-4, whose condition is at
   least 20 PRs of observation without a false red. Branch protection on `main` was measured on

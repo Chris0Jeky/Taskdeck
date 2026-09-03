@@ -62,17 +62,23 @@ one of them is gate work:
 | C. Planner and gate | CI-02 `#2326`, CI-03 `#2327` | Both open, above |
 | D. Event topology | CI-03 `#2327` | Open, above |
 | E. Test right-sizing | CI-05 `#2329`, CI-07 `#2331`, CI-08 `#2332` | All three open |
-| F. Runners | CI-04 `#2328` | Open, human, section 3 |
+| F. Runners | CI-04 `#2328` | Open. **Mostly agent work**, see below |
 | G. Supply chain | CI-11 `#2335` | Open, hands off to SC-5 |
 | H. Nightly and release | CI-10 `#2334` | **Open and on the v0.4 milestone** |
-| I. Rehearsal while still public | no issue owner named | **Unowned** |
+| I. Rehearsal while still public | CI-13 `#2337` (checklist header) | Open, evidence recorded on `#2337` |
 
-Two inconsistencies fall out of that table and need a decision rather than an assumption:
+**Section F is not a human gate, despite SC-7.** Its four boxes are isolated VMs, no host mounts or
+personal credentials with one job per host, a tested hosted override and offline-runner behaviour,
+and tested workspace/Docker/cache cleanup with a documented VM reset and revocation path. All of that
+is agent-preparable and must happen *before* cutover. Only the registration tokens and the GitHub
+association are human, and those are SC-7, which runs *after*. Treating `#2328` as wholly human would
+send required pre-cutover engineering out of the technical queue and let SC-6 look ready while
+section F is unbuilt.
+
+One inconsistency remains in that table and needs a decision rather than an assumption:
 
 - **`#2334` is a v0.3.0 gate prerequisite sitting on the v0.4 milestone.** Either section H is not
   truly required before cutover, or `#2334` belongs in v0.3. It cannot be both.
-- **Section I, the pre-cutover rehearsal matrix, has no issue owner at all.** Eleven rehearsal
-  scenarios are listed with no one accountable for running them.
 
 **Clause-4 risks.** Two known intermittent reds can take `main` red without a code defect:
 **`#2425`** (Windows worktree helper scenario 28, the forced 5s timeout lands in the checkout phase)
@@ -104,7 +110,14 @@ any `awesome-selfhosted` wording point at the mirror, not the private repository
 
 `#1772` (private shared instance) carries human decision CL-1 and is the one non-CI human-gated issue
 still on the milestone. RT-1/2/3 (signing), BEN-1 and DIST-1 are in `OUTSTANDING_TASKS.md` but are not
-v0.3.0 gate items: the 2026-08-29 q-5 ruling put signing after v0.3.x and v0.2.0 shipped unsigned.
+v0.3.0 gate items: the 2026-08-29 q-5 ruling is that signing gates no release *before* v0.3.x, and
+v0.2.0 shipped unsigned. That defers signing past v0.3.0, not past the maintenance line; the release
+programme still targets it at the first v0.3.x release.
+
+**The 2026-09-03 decision packet is landing separately in PR `#2442`,** which owns
+`OUTSTANDING_TASKS.md`, the checklist annotations and the ADRs for that packet. SC-3 was ruled there
+too (a $10/month hard Actions ceiling, with the setting itself still to be applied). This file does
+not restate those records or check off their tracker boxes; it reads them.
 
 ## 4. Trackers
 
