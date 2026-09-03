@@ -82,7 +82,6 @@ const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
-const visibleBoardLoadError = computed(() => props.boardLoadError ?? boardStore.error)
 const boardLoadErrorSummary = computed(() => boardStore.currentBoard
   ? "We couldn't refresh this board. Your last loaded board is still shown."
   : "We couldn't load this board.")
@@ -769,19 +768,19 @@ async function addStarterColumns() {
         `v-if` chain as the lanes, so ANY store error — including a rejected
         direct add-card, which sets `state.error` before it rethrows — unmounted
         every lane and took the user's half-typed draft with it (GH-1959). It
-        now renders above whatever follows. A local empty-board column failure
-        keeps its own error beside that form; otherwise a board-load failure
-        remains retryable above the empty state.
+        now renders above whatever follows. Only BoardView-owned fetch failures
+        offer Retry; mutation errors retain their original text. A local
+        empty-board column failure keeps its own error beside that form.
       -->
       <section
-        v-if="visibleBoardLoadError && (!isEmptyBoard || !columnError)"
+        v-if="props.boardLoadError"
         class="paper-board-view__error"
         role="alert"
         data-testid="paper-board-load-error"
       >
         <div class="paper-board-view__error-copy">
           <p class="paper-board-view__error-summary">{{ boardLoadErrorSummary }}</p>
-          <p class="paper-board-view__error-detail">{{ visibleBoardLoadError }}</p>
+          <p class="paper-board-view__error-detail">{{ props.boardLoadError }}</p>
         </div>
         <PaperHLBtn
           label="Retry"
@@ -789,6 +788,15 @@ async function addStarterColumns() {
           data-testid="paper-board-load-retry"
           @click="emit('retry-board-load')"
         />
+      </section>
+
+      <section
+        v-else-if="boardStore.error && !isEmptyBoard"
+        class="paper-board-view__error"
+        role="alert"
+        data-testid="paper-board-error"
+      >
+        {{ boardStore.error }}
       </section>
 
       <section

@@ -21,6 +21,7 @@ import type { Card } from '../types/board'
 import type { BoardPresenceMember } from '../types/realtime'
 import type { CardFilters } from '../store/boardStore'
 import { isClientOnboardingDemoBoardName } from '../utils/boardDemo'
+import { getErrorMessage } from '../utils/errorMessage'
 import { logError } from '../utils/errorReporting'
 
 const route = useRoute()
@@ -71,7 +72,7 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 
 const boardId = ref(route.params.id as string)
 const boardLoadRetryInFlight = ref(false)
-const retainedBoardLoadError = ref<string | null>(null)
+const boardLoadError = ref<string | null>(null)
 let realtimeStarted = false
 const realtime = createBoardRealtimeController({
   fetchBoard: async (id: string) => {
@@ -92,12 +93,15 @@ const realtime = createBoardRealtimeController({
   },
 })
 
-const boardLoadError = computed(
-  () => boardStore.error ?? (boardLoadRetryInFlight.value ? retainedBoardLoadError.value : null),
-)
 const boardLoadErrorSummary = computed(() => boardStore.currentBoard
   ? "We couldn't refresh this board. Your last loaded board is still shown."
   : "We couldn't load this board.")
+
+function recordBoardLoadFailure(requestedBoardId: string, error: unknown) {
+  if (boardId.value !== requestedBoardId) return
+
+  boardLoadError.value = boardStore.error ?? getErrorMessage(error, 'Failed to fetch board')
+}
 
 async function retryBoardLoad() {
   if (boardLoadRetryInFlight.value || boardStore.loading) return
@@ -105,24 +109,28 @@ async function retryBoardLoad() {
   const requestedBoardId = boardId.value
   if (!requestedBoardId) return
 
-  retainedBoardLoadError.value = boardStore.error
   boardLoadRetryInFlight.value = true
 
   try {
     const committed = await boardStore.fetchBoard(requestedBoardId)
     if (!committed || boardId.value !== requestedBoardId) return
 
-    if (realtimeStarted) {
-      await realtime.switchBoard(requestedBoardId)
-    } else {
-      await realtime.start(requestedBoardId)
+    boardLoadError.value = null
+    try {
+      if (realtimeStarted) {
+        await realtime.switchBoard(requestedBoardId)
+      } else {
+        await realtime.start(requestedBoardId)
+      }
+      realtimeStarted = true
+    } catch (error) {
+      logError('Failed to resume board realtime after retry:', error)
     }
-    realtimeStarted = true
   } catch (error) {
+    recordBoardLoadFailure(requestedBoardId, error)
     logError('Failed to retry board load:', error)
   } finally {
     boardLoadRetryInFlight.value = false
-    if (!boardStore.error) retainedBoardLoadError.value = null
   }
 }
 
@@ -233,10 +241,16 @@ onMounted(async () => {
     boardStore.setEditingCard(null)
     const committed = await boardStore.fetchBoard(requestedBoardId)
     if (committed && boardId.value === requestedBoardId) {
-      await realtime.start(requestedBoardId)
-      realtimeStarted = true
+      boardLoadError.value = null
+      try {
+        await realtime.start(requestedBoardId)
+        realtimeStarted = true
+      } catch (error) {
+        logError('Failed to start board realtime:', error)
+      }
     }
   } catch (error) {
+    recordBoardLoadFailure(requestedBoardId, error)
     logError('Failed to load board:', error)
   } finally {
     boardLoadPerf.end()
@@ -252,6 +266,7 @@ watch(
     }
 
     boardId.value = nextBoardId
+    boardLoadError.value = null
     resetSelection()
     // Seed with current user on board switch for the same reason as onMounted.
     applyPresenceSeed()
@@ -260,10 +275,16 @@ watch(
     try {
       const committed = await boardStore.fetchBoard(nextBoardId)
       if (committed && boardId.value === nextBoardId) {
-        await realtime.switchBoard(nextBoardId)
-        realtimeStarted = true
+        boardLoadError.value = null
+        try {
+          await realtime.switchBoard(nextBoardId)
+          realtimeStarted = true
+        } catch (error) {
+          logError('Failed to switch board realtime:', error)
+        }
       }
     } catch (error) {
+      recordBoardLoadFailure(nextBoardId, error)
       logError('Failed to switch board:', error)
     }
   }
@@ -556,7 +577,7 @@ useKeyboardShortcuts([
       @toggle="toggleFilterPanel"
     />
 
-    <!-- Board errors report alongside already-loaded content so a failed refresh never hides it. -->
+    <!-- Board-load errors report alongside already-loaded content so a failed refresh never hides it. -->
     <section
       v-if="boardLoadError"
       class="max-w-7xl mx-auto px-4 py-8"
@@ -578,8 +599,20 @@ useKeyboardShortcuts([
       </div>
     </section>
 
+    <!-- Other operation errors stay truthful and never imply that reloading is their recovery. -->
+    <section
+      v-else-if="boardStore.error"
+      class="max-w-7xl mx-auto px-4 py-8"
+      role="alert"
+      data-testid="board-error"
+    >
+      <div class="bg-error-container/20 border border-error/20 rounded-lg p-4 text-error">
+        {{ boardStore.error }}
+      </div>
+    </section>
+
     <!-- Loading State -->
-    <div v-if="boardStore.loading && !boardStore.currentBoard && !boardLoadError" class="td-board-skeleton" aria-live="polite" role="status">
+    <div v-if="boardStore.loading && !boardStore.currentBoard && !boardLoadError && !boardStore.error" class="td-board-skeleton" aria-live="polite" role="status">
       <span class="sr-only">Loading board...</span>
       <div class="td-board-skeleton__toolbar">
         <TdSkeleton width="200px" height="24px" />
