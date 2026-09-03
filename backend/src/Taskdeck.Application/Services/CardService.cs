@@ -221,6 +221,12 @@ public class CardService
             else if (!dto.IsBlocked.Value && oldIsBlocked)
                 parts.Add("Unblocked");
         }
+        else if (dto.IsBlocked == true &&
+                 !string.IsNullOrEmpty(dto.BlockReason) &&
+                 !string.Equals(dto.BlockReason, oldBlockReason, StringComparison.Ordinal))
+        {
+            parts.Add($"Block reason: '{oldBlockReason}' -> '{dto.BlockReason}'");
+        }
         if (dto.LabelIds != null)
         {
             var newLabelIds = dto.LabelIds.OrderBy(id => id).ToList();

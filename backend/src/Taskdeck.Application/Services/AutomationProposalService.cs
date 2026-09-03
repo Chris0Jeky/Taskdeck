@@ -1522,6 +1522,7 @@ public class AutomationProposalService : IAutomationProposalService
         foreach (var operation in orderedOperations)
         {
             descriptions.Add(DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames));
+            ApplyPreviewCreatedCardState(operation, cardTitles, cardStates);
             ApplyPreviewCardArchiveState(operation, cardStates);
         }
 
@@ -1788,6 +1789,25 @@ public class AutomationProposalService : IAutomationProposalService
         string Parameters);
 
     private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason);
+
+    private static void ApplyPreviewCreatedCardState(
+        DiffOperationView operation,
+        IDictionary<Guid, string> cardTitles,
+        IDictionary<Guid, CardDiffState> cardStates)
+    {
+        if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+            !operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase) ||
+            !Guid.TryParse(operation.TargetId, out var plannedCardId))
+        {
+            return;
+        }
+
+        var title = ExtractStringParameter(operation.Parameters, "title");
+        if (title is not null)
+            cardTitles[plannedCardId] = title;
+
+        cardStates[plannedCardId] = new CardDiffState(false, null);
+    }
 
     private static void ApplyPreviewCardArchiveState(
         DiffOperationView operation,

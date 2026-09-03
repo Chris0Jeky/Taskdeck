@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
@@ -624,6 +626,24 @@ public class McpToolsTests : IDisposable
         var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
         var proposal = await proposalService.GetProposalByIdAsync(proposalId);
         proposal.Value.RiskLevel.Should().Be(RiskLevel.High);
+        proposal.Value.Operations.Should().ContainSingle();
+        using var parameters = JsonDocument.Parse(proposal.Value.Operations[0].Parameters);
+        parameters.RootElement.EnumerateObject().Select(property => property.Name)
+            .Should().BeEquivalentTo("boardId", "cardId");
+        parameters.RootElement.GetProperty("boardId").GetGuid().Should().Be(boardId);
+        parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(card.Value.Id);
+    }
+
+    [Fact]
+    public void ArchiveCard_DescriptionExplainsApprovedBlockOutcome()
+    {
+        var method = typeof(WriteTools).GetMethod(nameof(WriteTools.ArchiveCard));
+        var description = method!.GetCustomAttribute<DescriptionAttribute>();
+
+        description.Should().NotBeNull();
+        description!.Description.Should().Contain("explicit review and approval");
+        description.Description.Should().Contain("Apply marks the card blocked");
+        description.Description.Should().Contain("Archived by an approved proposal.");
     }
 
     [Fact]

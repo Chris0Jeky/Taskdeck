@@ -328,16 +328,18 @@ public class WriteTools
     }
 
     /// <summary>
-    /// Creates a PROPOSAL to archive a card. The card is NOT archived immediately --
-    /// the proposal must be approved. Returns the proposal ID.
+    /// Creates a PROPOSAL to mark a card blocked. Nothing changes immediately.
+    /// After explicit review and approval, Apply marks the card blocked with the
+    /// generated reason "Archived by an approved proposal." Returns the proposal ID.
     /// </summary>
     [McpServerTool(Name = "archive_card"), Description(
-        "Creates a PROPOSAL to archive a card. The card is NOT archived immediately -- " +
-        "the proposal must be approved. Returns the proposal ID.")]
+        "Creates a PROPOSAL to mark a card blocked. Nothing changes immediately. " +
+        "After explicit review and approval, Apply marks the card blocked with the generated reason " +
+        "'Archived by an approved proposal.' Returns the proposal ID.")]
     public async Task<string> ArchiveCard(
         [Description("Board ID (UUID)")]
         string board_id,
-        [Description("Card ID to archive (UUID)")]
+        [Description("Card ID to mark blocked after approval (UUID)")]
         string card_id)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
@@ -375,7 +377,9 @@ public class WriteTools
         if (!result.IsSuccess)
             return Error(result.ErrorMessage);
 
-        return ProposalCreated(result.Value.Id, "Proposal created. Review and approve in Taskdeck to archive the card.");
+        return ProposalCreated(
+            result.Value.Id,
+            "Proposal created. Review and approve in Taskdeck; Apply will mark the card blocked with reason 'Archived by an approved proposal.'");
     }
 
     /// <summary>

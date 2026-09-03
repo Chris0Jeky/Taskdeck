@@ -68,6 +68,9 @@ public class WriteToolSchemasTests
         var schema = WriteToolSchemas.ProposeArchiveCard();
         schema.Name.Should().Be("propose_archive_card");
         schema.Required.Should().Contain("card_id");
+        schema.Description.Should().Contain("explicit review and approval");
+        schema.Description.Should().Contain("Apply marks the card blocked");
+        schema.Description.Should().Contain("Archived by an approved proposal.");
     }
 
     [Fact]
