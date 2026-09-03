@@ -7,8 +7,9 @@ export interface RealtimeSafeDialogDraftOptions<T> {
   seed: (source: T) => void
   /**
    * Fields whose local draft should win over a same-entity realtime refresh.
-   * While a dialog action is busy, the source snapshot is held so a failed
-   * save or cancellation can resume reconciliation from the last draft state.
+   * Each field's accepted source baseline advances only when that field adopts
+   * a refresh. While a dialog action is busy, every baseline is held so a
+   * failed save or cancellation can resume from the last draft state.
    */
   fields: RealtimeSafeDialogDraftField<T, any>[]
   /** Dialog actions such as save/archive may temporarily own all fields. */
@@ -27,7 +28,9 @@ export interface RealtimeSafeDialogDraftField<T, V = unknown> {
  *
  * Opening the dialog and switching to a different entity always use the latest
  * source. A same-entity reference replacement (for example a realtime board
- * refresh) updates only fields that still match their last server snapshot.
+ * refresh) updates only fields that still match their last accepted server
+ * value. A dirty field retains that baseline even when a later server value
+ * happens to equal its draft, so a subsequent refresh cannot erase the edit.
  * Each dialog supplies field-specific draft accessors so an untouched sibling
  * can follow the collaborator while a locally edited field remains intact.
  */
@@ -59,17 +62,18 @@ export function useRealtimeSafeDialogDraft<T>(options: RealtimeSafeDialogDraftOp
       const nextSourceSnapshot = readSourceSnapshot(source)
       if (options.isBusy?.()) return
 
+      const acceptedSourceSnapshot = sourceSnapshot
       options.fields.forEach((field, index) => {
-        const previousSourceValue = sourceSnapshot?.[index] as never
+        const previousSourceValue = acceptedSourceSnapshot[index] as never
         const sourceValue = nextSourceSnapshot[index] as never
         const draftValue = field.draftValue() as never
         if (field.equals
           ? field.equals(draftValue, previousSourceValue)
           : Object.is(draftValue, previousSourceValue)) {
           field.apply(sourceValue)
+          acceptedSourceSnapshot[index] = sourceValue
         }
       })
-      sourceSnapshot = nextSourceSnapshot
     },
     { immediate: true },
   )

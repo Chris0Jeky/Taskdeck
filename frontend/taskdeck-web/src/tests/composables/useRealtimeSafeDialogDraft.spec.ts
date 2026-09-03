@@ -45,6 +45,23 @@ function mountHarness() {
 }
 
 describe('useRealtimeSafeDialogDraft', () => {
+  it('keeps an edited field dirty when realtime briefly matches its draft', async () => {
+    const state = mountHarness()
+    state.isOpen.value = true
+    await nextTick()
+
+    state.name.value = 'Local name'
+    state.source.value = { id: 'board-1', name: 'Local name', description: 'First remote description' }
+    await nextTick()
+    expect(state.name.value).toBe('Local name')
+    expect(state.description.value).toBe('First remote description')
+
+    state.source.value = { id: 'board-1', name: 'Later remote name', description: 'Later remote description' }
+    await nextTick()
+    expect(state.name.value).toBe('Local name')
+    expect(state.description.value).toBe('Later remote description')
+  })
+
   it('resumes untouched-field reconciliation after a busy refresh is followed by a failed action', async () => {
     const state = mountHarness()
     state.isOpen.value = true

@@ -685,7 +685,7 @@ describe('PaperBoardView — board settings', () => {
     ).toBe('My draft description')
   })
 
-  it('reconciles an untouched board field while preserving a dirty Paper draft', async () => {
+  it('saves a dirty Paper field after realtime briefly matches it and keeps its sibling current', async () => {
     const wrapper = mountView()
 
     await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
@@ -693,8 +693,8 @@ describe('PaperBoardView — board settings', () => {
 
     mockBoardStore.currentBoard = {
       ...board,
-      name: 'Server board',
-      description: 'Server description',
+      name: 'My draft board',
+      description: 'First server description',
     }
     await nextTick()
 
@@ -703,7 +703,31 @@ describe('PaperBoardView — board settings', () => {
     expect(
       (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
         .value,
-    ).toBe('Server description')
+    ).toBe('First server description')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'Later server board',
+      description: 'Latest server description',
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft board')
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe('Latest server description')
+
+    mockBoardStore.updateBoard.mockClear()
+    await wrapper.get('[data-testid="paper-board-dialog-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
   })
 
   it('reconciles an untouched board field when archive confirmation is cancelled without another refresh', async () => {

@@ -106,20 +106,41 @@ describe('BoardSettingsModal', () => {
     )
   })
 
-  it('reconciles an untouched sibling field while preserving the dirty field', async () => {
+  it('saves a dirty field after realtime briefly matches it and keeps its sibling current', async () => {
     const wrapper = mount(BoardSettingsModal, {
       props: { board, isOpen: true },
     })
 
     await wrapper.get('#board-name').setValue('My draft board')
     await wrapper.setProps({
-      board: { ...board, name: 'Server name', description: 'Server description' },
+      board: { ...board, name: 'My draft board', description: 'First server description' },
     })
 
     expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
     expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
-      'Server description',
+      'First server description',
     )
+
+    await wrapper.setProps({
+      board: { ...board, name: 'Later server name', description: 'Latest server description' },
+    })
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'Latest server description',
+    )
+
+    mockStore.updateBoard.mockClear()
+    const saveButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Save Changes'))
+    await saveButton?.trigger('click')
+
+    expect(mockStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
   })
 
   it('should emit close event when close button is clicked', async () => {
