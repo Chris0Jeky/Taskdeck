@@ -18,14 +18,16 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. State measured 20
 | # | Gate clause | State | What it waits on |
 |---|---|---|---|
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
-| 2 | Milestone closed or explicitly re-ruled | **Not met.** 52 open | Sections 2 to 5 below |
+| 2 | Milestone closed or explicitly re-ruled | **Not met.** 52 open. **Ruled 2026-09-03: nothing is re-ruled out; all 52 ship in v0.3.0** | Every open issue closing on evidence, sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
 | 4 | `main` green | **Green** at `cca2db22f` (`ci-required` 2026-09-03 21:15Z) | Two known intermittent reds, section 2 |
 | 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
 
-Clause 2 does not require every open issue to close. "Explicitly re-ruled" means each one either closes
-on evidence or carries a recorded decision moving it out of v0.3. Section 5 is the proposal for that
-ruling; it is not itself the ruling.
+Clause 2 does not by itself require every open issue to close. "Explicitly re-ruled" means each one
+either closes on evidence or carries a recorded decision moving it out of v0.3. **The maintainer ruled
+on 2026-09-03 that none of the un-gated issues move: v0.3.0 tags only when the whole milestone is
+closed.** Section 5 records the split that ruling was made over. Issues seeded onto the milestone
+after the ruling inherit it unless their seeding says otherwise.
 
 ## 2. Technical blockers on the gate
 
@@ -179,9 +181,13 @@ candidates at all: the 14 `ci` issues above other than `#2250`, plus `#2235`, `#
 The other **35** have no gate clause: the 16 `dogfooding` issues, the 18 ordinary backlog issues, and
 `#2250`.
 
-So the question this section puts to the maintainer is one question about those 35, not fifty-two:
-**which of them ship inside v0.3.0 and which are re-ruled to v0.4?** Until that is answered, agents
-keep finishing them in dependency order and nothing here is silently dropped.
+The question this section put to the maintainer was one question about those 35, not fifty-two:
+which of them ship inside v0.3.0 and which are re-ruled to v0.4? **Ruled 2026-09-03: all 35 stay.**
+The options declined were gate-work-only (all 35 to v0.4), Priority I plus security-labelled only
+(`#2004`, `#1949`, `#1940`, `#1866`, `#1131`, `#1987`, `#1309` stay, 28 move), and dogfooding-only
+(16 stay, 19 move). Agents keep finishing the 35 in dependency order; the three that carry `decision`
+(`#2004`, `#1972`, `#1936`) still need their own product rulings before they can close, and the
+milestone count is the blocker count until it reaches zero.
 
 ## 6. Keeping this current
 
