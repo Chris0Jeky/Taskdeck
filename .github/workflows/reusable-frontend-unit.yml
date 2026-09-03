@@ -53,6 +53,10 @@ jobs:
         working-directory: frontend/taskdeck-web
         run: npx vite build
 
+      - name: Validate generated PWA worker
+        working-directory: frontend/taskdeck-web
+        run: npm run test:pwa-generated-worker:built
+
       - name: Run frontend tests with coverage thresholds
         working-directory: frontend/taskdeck-web
         run: npm run test:coverage

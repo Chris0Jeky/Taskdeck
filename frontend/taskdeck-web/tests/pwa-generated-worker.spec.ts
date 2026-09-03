@@ -5,9 +5,13 @@ import { describe, expect, it } from 'vitest'
 
 type RuntimeMatcher = (context: { url: URL }) => boolean
 
-function loadGeneratedRuntimeMatchers(): RuntimeMatcher[] {
+function loadGeneratedWorker(): string {
   const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
-  const worker = readFileSync(resolve(projectRoot, 'dist', 'sw.js'), 'utf8')
+  return readFileSync(resolve(projectRoot, 'dist', 'sw.js'), 'utf8')
+}
+
+function loadGeneratedRuntimeMatchers(): RuntimeMatcher[] {
+  const worker = loadGeneratedWorker()
   const sources = [...worker.matchAll(
     /registerRoute\((\(\{url:\w+\}\)=>.+?),new \w+\.(?:StaleWhileRevalidate|CacheFirst)/g,
   )].map((match) => match[1])
@@ -17,6 +21,13 @@ function loadGeneratedRuntimeMatchers(): RuntimeMatcher[] {
 }
 
 describe('generated PWA worker runtime-cache contract', () => {
+  it('does not generate any NetworkFirst strategy or legacy API cache', () => {
+    const worker = loadGeneratedWorker()
+
+    expect(worker).not.toMatch(/new\s+[$\w]+\.NetworkFirst\s*\(/)
+    expect(worker).not.toContain('taskdeck-api-cache')
+  })
+
   it('serializes self-contained matchers that still reject every API spelling', () => {
     const [localeMatcher, staticMatcher] = loadGeneratedRuntimeMatchers()
 

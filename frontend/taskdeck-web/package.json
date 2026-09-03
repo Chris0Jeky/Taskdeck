@@ -24,6 +24,8 @@
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "node -e \"require('fs').mkdirSync('test-results',{recursive:true})\" && vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=./test-results/vitest.coverage.junit.xml",
+    "test:pwa-generated-worker": "vite build && npm run test:pwa-generated-worker:built",
+    "test:pwa-generated-worker:built": "vitest run --config vitest.pwa-generated-worker.config.ts --maxWorkers=2",
     "test:e2e": "playwright test",
     "test:e2e:audit:headed": "node -e \"process.env.TASKDECK_RUN_AUDIT='1';require('child_process').execSync('npx playwright test tests/e2e/manual-audit.spec.ts --headed --reporter=line',{stdio:'inherit',env:process.env})\"",
     "test:e2e:concurrency": "playwright test tests/e2e/concurrency.spec.ts --reporter=line",
