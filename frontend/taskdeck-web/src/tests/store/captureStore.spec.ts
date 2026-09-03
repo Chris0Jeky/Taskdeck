@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { captureApi } from '../../api/captureApi'
-import { useCaptureStore } from '../../store/captureStore'
+import {
+  BATCH_TRIAGE_POLL_MAX_DURATION_MS,
+  useCaptureStore,
+} from '../../store/captureStore'
 
 const toastMocks = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
+  warning: vi.fn(),
 }))
 
 const workspaceMocks = vi.hoisted(() => ({
@@ -1597,6 +1601,7 @@ describe('captureStore', () => {
 
       await vi.advanceTimersByTimeAsync(9_000)
       expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+      expect(toastMocks.error).not.toHaveBeenCalled()
     })
 
     it('retries a terminal detail reconciliation after a transient detail failure', async () => {
@@ -1812,22 +1817,68 @@ describe('captureStore', () => {
       expect(captureApi.listItems).toHaveBeenCalledTimes(1)
     })
 
-    it('aborts and stops at the 60-second deadline', async () => {
+    it('aborts and reports one persistent receipt at the 60-second deadline when tracked ids remain unresolved', async () => {
       vi.useFakeTimers()
-      const store = useCaptureStore()
-      vi.mocked(captureApi.listItems).mockResolvedValue([
-        { id: 'c-live', userId: 'u1', boardId: null, status: 'Triaging', source: 'Typed',
-          textExcerpt: 'still working', createdAt: new Date().toISOString(), processedAt: null } as never,
-      ])
+      try {
+        const store = useCaptureStore()
+        const trackedIds = Array.from({ length: 50 }, (_, index) => `c-live-${index}`)
+        vi.mocked(captureApi.listItems).mockResolvedValue(
+          trackedIds.map((id) => ({
+            id,
+            userId: 'u1',
+            boardId: null,
+            status: 'Triaging',
+            source: 'Typed',
+            textExcerpt: 'still working',
+            createdAt: new Date().toISOString(),
+            processedAt: null,
+          })) as never,
+        )
 
-      store.pollBatchTriageCompletion(['c-live'])
-      await vi.advanceTimersByTimeAsync(60_000)
-      const callsAtDeadline = vi.mocked(captureApi.listItems).mock.calls.length
+        store.pollBatchTriageCompletion(trackedIds)
+        await vi.advanceTimersByTimeAsync(BATCH_TRIAGE_POLL_MAX_DURATION_MS)
 
-      expect(callsAtDeadline).toBeGreaterThan(0)
-      expect(callsAtDeadline).toBeLessThanOrEqual(20)
-      await vi.advanceTimersByTimeAsync(9_000)
-      expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtDeadline)
+        const callsAtDeadline = vi.mocked(captureApi.listItems).mock.calls.length
+        expect(callsAtDeadline).toBeGreaterThan(0)
+        expect(callsAtDeadline).toBeLessThanOrEqual(20)
+        expect(store.batchError).toBe(
+          'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
+        )
+        expect(toastMocks.warning).toHaveBeenCalledTimes(1)
+        expect(toastMocks.warning).toHaveBeenCalledWith(
+          'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
+          0,
+        )
+        expect(toastMocks.error).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(9_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtDeadline)
+        expect(toastMocks.warning).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps an explicit stop quiet before the deadline', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          { id: 'c-live', userId: 'u1', boardId: null, status: 'Triaging', source: 'Typed',
+            textExcerpt: 'still working', createdAt: new Date().toISOString(), processedAt: null } as never,
+        ])
+
+        const stop = store.pollBatchTriageCompletion(['c-live'])
+        stop()
+        await vi.advanceTimersByTimeAsync(BATCH_TRIAGE_POLL_MAX_DURATION_MS)
+
+        expect(store.batchError).toBeNull()
+        expect(toastMocks.error).not.toHaveBeenCalled()
+        expect(toastMocks.warning).not.toHaveBeenCalled()
+        expect(captureApi.listItems).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 
