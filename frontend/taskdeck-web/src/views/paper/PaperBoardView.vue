@@ -610,9 +610,12 @@ const columnError = ref<string | null>(null)
 /** A loaded board that has no columns. */
 const isEmptyBoard = computed(() => Boolean(boardStore.currentBoard) && sortedColumns.value.length === 0)
 
-// Column creation owns its local recovery copy. A board-load error remains in
-// the additive Retry alert above, including when this empty state is visible.
-const emptyStateError = computed(() => columnError.value)
+// Column creation owns its local recovery copy. Other mutation errors retain
+// the existing empty-state fallback, while an explicit board-load error stays
+// in the additive Retry alert above instead of being rendered twice.
+const emptyStateError = computed(
+  () => columnError.value ?? (props.boardLoadError ? null : boardStore.error),
+)
 
 const canSubmitFirstColumn = computed(
   () => firstColumnName.value.trim().length > 0 && !creatingColumns.value,
