@@ -39,8 +39,18 @@ const props = withDefaults(
     selectedCardId?: string | null
     /** Lane currently targeted by BoardView's keyboard model. */
     selectedColumnId?: string | null
+    /** Stable error copy retained by BoardView while an explicit retry is in flight. */
+    boardLoadError?: string | null
+    /** BoardView owns the actual load and realtime subscription transition. */
+    boardLoadRetrying?: boolean
   }>(),
-  { cardVariant: 'index', selectedCardId: null, selectedColumnId: null },
+  {
+    cardVariant: 'index',
+    selectedCardId: null,
+    selectedColumnId: null,
+    boardLoadError: null,
+    boardLoadRetrying: false,
+  },
 )
 
 const emit = defineEmits<{
@@ -61,6 +71,8 @@ const emit = defineEmits<{
   (event: 'collapsed-columns-change', columnIds: string[]): void
   /** Keeps BoardView's logical lane selection aligned with a focused lane control. */
   (event: 'column-select', columnId: string): void
+  /** Requests a fresh load from BoardView, which also owns realtime startup/switching. */
+  (event: 'retry-board-load'): void
 }>()
 
 const route = useRoute()
@@ -70,6 +82,10 @@ const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
+const visibleBoardLoadError = computed(() => props.boardLoadError ?? boardStore.error)
+const boardLoadErrorSummary = computed(() => boardStore.currentBoard
+  ? "We couldn't refresh this board. Your last loaded board is still shown."
+  : "We couldn't load this board.")
 const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
 const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
@@ -592,14 +608,12 @@ const firstColumnName = ref('')
 const creatingColumns = ref(false)
 const columnError = ref<string | null>(null)
 
-/**
- * A loaded board that has no columns. The empty state takes precedence over the
- * generic board error banner here so a failed column create keeps the recovery
- * affordance on screen instead of replacing it with a bare error.
- */
+/** A loaded board that has no columns. */
 const isEmptyBoard = computed(() => Boolean(boardStore.currentBoard) && sortedColumns.value.length === 0)
 
-const emptyStateError = computed(() => columnError.value ?? boardStore.error)
+// Column creation owns its local recovery copy. A board-load error remains in
+// the additive Retry alert above, including when this empty state is visible.
+const emptyStateError = computed(() => columnError.value)
 
 const canSubmitFirstColumn = computed(
   () => firstColumnName.value.trim().length > 0 && !creatingColumns.value,
@@ -755,16 +769,26 @@ async function addStarterColumns() {
         `v-if` chain as the lanes, so ANY store error — including a rejected
         direct add-card, which sets `state.error` before it rethrows — unmounted
         every lane and took the user's half-typed draft with it (GH-1959). It
-        now renders above whatever follows. The empty state still wins where it
-        applies: it owns `emptyStateError`, so `!isEmptyBoard` keeps the banner
-        out of its way.
+        now renders above whatever follows. A local empty-board column failure
+        keeps its own error beside that form; otherwise a board-load failure
+        remains retryable above the empty state.
       -->
       <section
-        v-if="boardStore.error && !isEmptyBoard"
+        v-if="visibleBoardLoadError && (!isEmptyBoard || !columnError)"
         class="paper-board-view__error"
         role="alert"
+        data-testid="paper-board-load-error"
       >
-        {{ boardStore.error }}
+        <div class="paper-board-view__error-copy">
+          <p class="paper-board-view__error-summary">{{ boardLoadErrorSummary }}</p>
+          <p class="paper-board-view__error-detail">{{ visibleBoardLoadError }}</p>
+        </div>
+        <PaperHLBtn
+          label="Retry"
+          :disabled="props.boardLoadRetrying || boardStore.loading"
+          data-testid="paper-board-load-retry"
+          @click="emit('retry-board-load')"
+        />
       </section>
 
       <section
@@ -1086,6 +1110,11 @@ async function addStarterColumns() {
 }
 
 .paper-board-view__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   border: 1px solid var(--ember);
   background: var(--ember-tint);
   color: var(--ember-ink);
@@ -1093,6 +1122,20 @@ async function addStarterColumns() {
   border-radius: var(--r-2);
   font-family: var(--mono);
   font-size: 11px;
+}
+
+.paper-board-view__error-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.paper-board-view__error-summary,
+.paper-board-view__error-detail {
+  margin: 0;
+}
+
+.paper-board-view__error-summary {
+  font-weight: 700;
 }
 
 .paper-board-view__loading,

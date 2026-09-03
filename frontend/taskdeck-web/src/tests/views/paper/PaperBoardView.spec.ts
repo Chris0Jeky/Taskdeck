@@ -840,13 +840,52 @@ describe('PaperBoardView — empty board (#1765)', () => {
     )
   })
 
-  it('still shows the board error banner when the board itself failed to load', () => {
+  it('shows a specific accessible load alert and emits an explicit Retry request', async () => {
     mockBoardStore.currentBoard = null
     mockBoardStore.error = 'Board not found'
 
-    const wrapper = mountView()
+    const wrapper = mountView({ boardLoadError: 'Board not found' })
 
-    expect(wrapper.get('.paper-board-view__error').text()).toBe('Board not found')
+    const alert = wrapper.get('[data-testid="paper-board-load-error"]')
+    expect(alert.attributes('role')).toBe('alert')
+    expect(alert.text()).toContain("We couldn't load this board")
+    expect(alert.text()).toContain('Board not found')
+    const retry = alert.get('[data-testid="paper-board-load-retry"]')
+    expect(retry.attributes('disabled')).toBeUndefined()
+
+    await retry.trigger('click')
+    expect(wrapper.emitted('retry-board-load')).toHaveLength(1)
+
+    mockBoardStore.error = null
+    await wrapper.setProps({ boardLoadRetrying: true })
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain('Board not found')
+    expect(wrapper.get('[data-testid="paper-board-load-retry"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(false)
+  })
+
+  it('keeps loaded Paper lanes visible beside a board refresh error', () => {
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    mockBoardStore.error = 'Board refresh failed'
+
+    const wrapper = mountView({ boardLoadError: 'Board refresh failed' })
+
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      'Your last loaded board is still shown',
+    )
+    expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
+  })
+
+  it('keeps empty-board setup visible beside a retryable refresh error', () => {
+    mockBoardStore.error = 'Board refresh failed'
+
+    const wrapper = mountView({ boardLoadError: 'Board refresh failed' })
+
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-board-load-retry"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      'Your last loaded board is still shown',
+    )
   })
 })

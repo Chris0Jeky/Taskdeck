@@ -70,6 +70,9 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 }
 
 const boardId = ref(route.params.id as string)
+const boardLoadRetryInFlight = ref(false)
+const retainedBoardLoadError = ref<string | null>(null)
+let realtimeStarted = false
 const realtime = createBoardRealtimeController({
   fetchBoard: async (id: string) => {
     if (id !== boardId.value) {
@@ -88,6 +91,40 @@ const realtime = createBoardRealtimeController({
     boardStore.setBoardPresenceMembers(normalized)
   },
 })
+
+const boardLoadError = computed(
+  () => boardStore.error ?? (boardLoadRetryInFlight.value ? retainedBoardLoadError.value : null),
+)
+const boardLoadErrorSummary = computed(() => boardStore.currentBoard
+  ? "We couldn't refresh this board. Your last loaded board is still shown."
+  : "We couldn't load this board.")
+
+async function retryBoardLoad() {
+  if (boardLoadRetryInFlight.value || boardStore.loading) return
+
+  const requestedBoardId = boardId.value
+  if (!requestedBoardId) return
+
+  retainedBoardLoadError.value = boardStore.error
+  boardLoadRetryInFlight.value = true
+
+  try {
+    const committed = await boardStore.fetchBoard(requestedBoardId)
+    if (!committed || boardId.value !== requestedBoardId) return
+
+    if (realtimeStarted) {
+      await realtime.switchBoard(requestedBoardId)
+    } else {
+      await realtime.start(requestedBoardId)
+    }
+    realtimeStarted = true
+  } catch (error) {
+    logError('Failed to retry board load:', error)
+  } finally {
+    boardLoadRetryInFlight.value = false
+    if (!boardStore.error) retainedBoardLoadError.value = null
+  }
+}
 
 // Sort columns by position
 const sortedColumns = computed(() => {
@@ -197,6 +234,7 @@ onMounted(async () => {
     const committed = await boardStore.fetchBoard(requestedBoardId)
     if (committed && boardId.value === requestedBoardId) {
       await realtime.start(requestedBoardId)
+      realtimeStarted = true
     }
   } catch (error) {
     logError('Failed to load board:', error)
@@ -223,6 +261,7 @@ watch(
       const committed = await boardStore.fetchBoard(nextBoardId)
       if (committed && boardId.value === nextBoardId) {
         await realtime.switchBoard(nextBoardId)
+        realtimeStarted = true
       }
     } catch (error) {
       logError('Failed to switch board:', error)
@@ -427,9 +466,12 @@ useKeyboardShortcuts([
     v-if="paperOn"
     :selected-card-id="selectedCardId"
     :selected-column-id="selectedColumnId"
+    :board-load-error="boardLoadError"
+    :board-load-retrying="boardLoadRetryInFlight"
     @collapsed-columns-change="handlePaperCollapsedColumnsChange"
     @column-select="handlePaperColumnSelect"
     @dialog-open-change="paperDialogOpen = $event"
+    @retry-board-load="retryBoardLoad"
   />
   <div v-else class="min-h-screen bg-surface">
     <!-- Header -->
@@ -514,8 +556,30 @@ useKeyboardShortcuts([
       @toggle="toggleFilterPanel"
     />
 
+    <!-- Board errors report alongside already-loaded content so a failed refresh never hides it. -->
+    <section
+      v-if="boardLoadError"
+      class="max-w-7xl mx-auto px-4 py-8"
+      role="alert"
+      data-testid="board-load-error"
+    >
+      <div class="bg-error-container/20 border border-error/20 rounded-lg p-4 text-error">
+        <p class="font-medium">{{ boardLoadErrorSummary }}</p>
+        <p class="mt-1">{{ boardLoadError }}</p>
+        <button
+          type="button"
+          class="td-btn td-btn--secondary td-btn--sm mt-3"
+          :disabled="boardLoadRetryInFlight || boardStore.loading"
+          data-testid="board-load-retry"
+          @click="retryBoardLoad"
+        >
+          Retry
+        </button>
+      </div>
+    </section>
+
     <!-- Loading State -->
-    <div v-if="boardStore.loading && !boardStore.currentBoard" class="td-board-skeleton" aria-live="polite" role="status">
+    <div v-if="boardStore.loading && !boardStore.currentBoard && !boardLoadError" class="td-board-skeleton" aria-live="polite" role="status">
       <span class="sr-only">Loading board...</span>
       <div class="td-board-skeleton__toolbar">
         <TdSkeleton width="200px" height="24px" />
@@ -538,16 +602,9 @@ useKeyboardShortcuts([
       </div>
     </div>
 
-    <!-- Error State -->
-    <div v-else-if="boardStore.error" class="max-w-7xl mx-auto px-4 py-8">
-      <div class="bg-error-container/20 border border-error/20 rounded-lg p-4 text-error" role="alert">
-        {{ boardStore.error }}
-      </div>
-    </div>
-
     <!-- Board Content -->
     <BoardCanvas
-      v-else-if="boardStore.currentBoard"
+      v-if="boardStore.currentBoard"
       :sorted-columns="sortedColumns"
       :cards-by-column="boardStore.cardsByColumn"
       :labels="boardStore.currentBoardLabels"
