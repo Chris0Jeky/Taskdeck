@@ -126,6 +126,8 @@ export interface SimilarPastRow {
   date: string
 }
 
+export type CoreSelectorBatchOutcome = 'settled' | 'superseded' | 'unavailable'
+
 export interface PaperReviewSelectors {
   provenance: ComputedRef<ProvenanceRow[]>
   provenanceMetadata: ComputedRef<ProvenanceMetadata | null>
@@ -137,6 +139,10 @@ export interface PaperReviewSelectors {
   similarPast: ComputedRef<SimilarPastRow[]>
   similarPastApplyRate: ComputedRef<{ applied: number; total: number; ratio: number }>
   loading: ComputedRef<boolean>
+  waitForCoreBatch: (
+    proposalId: string,
+    revisionIdentity: string | null,
+  ) => Promise<CoreSelectorBatchOutcome>
 }
 
 const EMPTY_PROVENANCE: ProvenanceRow[] = Object.freeze([] as ProvenanceRow[]) as ProvenanceRow[]
@@ -205,6 +211,30 @@ function nullableIdentifiersEqual(
 ): boolean {
   if (left == null || right == null) return left == null && right == null
   return identifiersEqual(left, right)
+}
+
+interface SelectorKey {
+  proposalId: string
+  captureReference: string | null
+  revisionIdentity: string | null
+}
+
+function selectorKeyForProposal(proposal: ApiProposal | null): SelectorKey | null {
+  if (!proposal?.id) return null
+  return {
+    proposalId: proposal.id,
+    captureReference: captureSourceReference(proposal),
+    revisionIdentity: proposalRevisionIdentity(proposal),
+  }
+}
+
+function selectorKeysEqual(left: SelectorKey | null, right: SelectorKey | null): boolean {
+  if (!left || !right) return left === right
+  return (
+    proposalIdsEqual(left.proposalId, right.proposalId) &&
+    nullableIdentifiersEqual(left.captureReference, right.captureReference) &&
+    nullableIdentifiersEqual(left.revisionIdentity, right.revisionIdentity)
+  )
 }
 
 /**
@@ -405,6 +435,13 @@ export function usePaperReviewSelectors(
 
   let fetchGeneration = 0
   let abortController: AbortController | null = null
+  let settledCoreKey: SelectorKey | null = null
+  let activeCoreBatch: {
+    key: SelectorKey
+    generation: number
+    promise: Promise<CoreSelectorBatchOutcome>
+    supersede: () => void
+  } | null = null
   let captureLookup: {
     reference: string
     request: Promise<CaptureItem | null>
@@ -429,6 +466,152 @@ export function usePaperReviewSelectors(
     const request = captureApi.getItem(reference, { signal: controller.signal })
     captureLookup = { reference, request, controller }
     return request
+  }
+
+  function clearSelectorData() {
+    provenanceData.value = EMPTY_PROVENANCE
+    provenanceMetadataData.value = null
+    evidenceLinksData.value = EMPTY_EVIDENCE_LINKS
+    sideEffectsData.value = null
+    confidenceData.value = EMPTY_CONFIDENCE
+    conflictsData.value = EMPTY_CONFLICTS
+    historyData.value = EMPTY_HISTORY
+    similarPastData.value = EMPTY_SIMILAR
+  }
+
+  function invalidateCoreBatch() {
+    fetchGeneration += 1
+    activeCoreBatch?.supersede()
+    activeCoreBatch = null
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+  }
+
+  function ensureCoreBatch(key: SelectorKey): Promise<CoreSelectorBatchOutcome> {
+    if (!selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)) {
+      return Promise.resolve('unavailable')
+    }
+    if (selectorKeysEqual(settledCoreKey, key)) return Promise.resolve('settled')
+    if (activeCoreBatch && selectorKeysEqual(activeCoreBatch.key, key)) {
+      return activeCoreBatch.promise
+    }
+
+    const previousKey = activeCoreBatch?.key ?? settledCoreKey
+    const proposalChanged =
+      !previousKey || !proposalIdsEqual(previousKey.proposalId, key.proposalId)
+    const captureChanged =
+      !previousKey ||
+      !nullableIdentifiersEqual(previousKey.captureReference, key.captureReference)
+
+    invalidateCoreBatch()
+    const generation = fetchGeneration
+    if (proposalChanged || captureChanged) discardCaptureLookup()
+
+    const controller = new AbortController()
+    abortController = controller
+    const signal = controller.signal
+    isLoading.value = true
+    // Never show the previous proposal's producer while the active capture is loading.
+    provenanceMetadataData.value = null
+
+    const captureRequest: Promise<CaptureItem | null> = key.captureReference
+      ? getCaptureLookup(key.captureReference, !proposalChanged && !captureChanged)
+      : Promise.resolve(null)
+    // Attach rejection handling immediately, but keep optional capture metadata
+    // outside the core waiter. Apply is gated on the six proposal selectors,
+    // not on an owner-only provenance embellishment that may retry for longer.
+    const captureSettlement = Promise.allSettled([captureRequest])
+
+    let resolveSuperseded!: (outcome: CoreSelectorBatchOutcome) => void
+    const superseded = new Promise<CoreSelectorBatchOutcome>((resolve) => {
+      resolveSuperseded = resolve
+    })
+    const work = (async (): Promise<CoreSelectorBatchOutcome> => {
+      const results = await Promise.allSettled([
+        proposalDeepReviewApi.getProvenance(key.proposalId, { signal }),
+        proposalDeepReviewApi.getConfidence(key.proposalId, { signal }),
+        proposalDeepReviewApi.getSideEffects(key.proposalId, { signal }),
+        proposalDeepReviewApi.getConflicts(key.proposalId, { signal }),
+        proposalDeepReviewApi.getHistory(key.proposalId, { signal }),
+        proposalDeepReviewApi.getSimilarPast(key.proposalId, { signal }),
+      ])
+
+      if (
+        generation !== fetchGeneration ||
+        !selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)
+      ) return 'superseded'
+
+      const [prov, conf, side, confl, hist, sim] = results
+
+      provenanceData.value =
+        prov.status === 'fulfilled' ? prov.value.map(mapProvenanceRow) : EMPTY_PROVENANCE
+
+      evidenceLinksData.value =
+        prov.status === 'fulfilled' ? mapEvidenceLinks(prov.value) : EMPTY_EVIDENCE_LINKS
+
+      const mappedConfidence =
+        conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
+      confidenceData.value = mappedConfidence
+
+      sideEffectsData.value = side.status === 'fulfilled' ? mapSideEffects(side.value) : null
+
+      conflictsData.value =
+        confl.status === 'fulfilled' ? mapConflicts(confl.value) : EMPTY_CONFLICTS
+
+      historyData.value = hist.status === 'fulfilled' ? mapHistory(hist.value) : EMPTY_HISTORY
+
+      similarPastData.value =
+        sim.status === 'fulfilled' ? mapSimilarPast(sim.value) : EMPTY_SIMILAR
+
+      settledCoreKey = key
+      isLoading.value = false
+
+      void captureSettlement.then(([capture]) => {
+        if (
+          generation !== fetchGeneration ||
+          !selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)
+        ) return
+        provenanceMetadataData.value =
+          key.captureReference && capture?.status === 'fulfilled' && capture.value
+            ? mapProvenanceMetadata(
+                capture.value,
+                key.proposalId,
+                key.captureReference,
+                mappedConfidence,
+              )
+            : null
+      })
+
+      return 'settled'
+    })()
+
+    const promise = Promise.race([work, superseded])
+    const batch = {
+      key,
+      generation,
+      promise,
+      supersede: () => resolveSuperseded('superseded'),
+    }
+    activeCoreBatch = batch
+    void promise.then(() => {
+      if (activeCoreBatch === batch) activeCoreBatch = null
+    })
+    return promise
+  }
+
+  function waitForCoreBatch(
+    proposalId: string,
+    revisionIdentity: string | null,
+  ): Promise<CoreSelectorBatchOutcome> {
+    const key = selectorKeyForProposal(activeProposal.value)
+    if (
+      !key ||
+      !proposalIdsEqual(key.proposalId, proposalId) ||
+      !nullableIdentifiersEqual(key.revisionIdentity, revisionIdentity)
+    ) return Promise.resolve('unavailable')
+    return ensureCoreBatch(key)
   }
 
   watch(
@@ -461,90 +644,17 @@ export function usePaperReviewSelectors(
       // Keep the current review data in that terminal transition.
       if (!initialLoad && !proposalChanged && !captureChanged && !revisionChanged) return
 
-      // Invalidate every older continuation, including when selection becomes empty.
-      const generation = ++fetchGeneration
-
-      // Abort any in-flight requests from the previous watcher invocation
-      if (abortController) {
-        abortController.abort()
-        abortController = null
-      }
-
-      // A changed source cannot reuse the prior optional lookup. Revision-only
-      // refreshes leave this cache intact so metadata can be recomputed without
-      // issuing a duplicate capture request.
-      if (captureChanged) discardCaptureLookup()
-
       if (!proposalId) {
+        invalidateCoreBatch()
+        settledCoreKey = null
+        discardCaptureLookup()
         isLoading.value = false
-        provenanceData.value = EMPTY_PROVENANCE
-        provenanceMetadataData.value = null
-        evidenceLinksData.value = EMPTY_EVIDENCE_LINKS
-        sideEffectsData.value = null
-        confidenceData.value = EMPTY_CONFIDENCE
-        conflictsData.value = EMPTY_CONFLICTS
-        historyData.value = EMPTY_HISTORY
-        similarPastData.value = EMPTY_SIMILAR
+        clearSelectorData()
         return
       }
 
-      const controller = new AbortController()
-      abortController = controller
-      const signal = controller.signal
-
-      isLoading.value = true
-      // Never show the previous proposal's producer while the active capture is loading.
-      provenanceMetadataData.value = null
-
-      const captureRequest: Promise<CaptureItem | null> = captureReference
-        ? getCaptureLookup(captureReference, !proposalChanged && !captureChanged)
-        : Promise.resolve(null)
-      // Attach rejection handling immediately, but do not let this optional lookup hold
-      // the six core review responses behind the HTTP client's retry window.
-      const captureSettlement = Promise.allSettled([captureRequest])
-
-      const results = await Promise.allSettled([
-        proposalDeepReviewApi.getProvenance(proposalId, { signal }),
-        proposalDeepReviewApi.getConfidence(proposalId, { signal }),
-        proposalDeepReviewApi.getSideEffects(proposalId, { signal }),
-        proposalDeepReviewApi.getConflicts(proposalId, { signal }),
-        proposalDeepReviewApi.getHistory(proposalId, { signal }),
-        proposalDeepReviewApi.getSimilarPast(proposalId, { signal }),
-      ])
-
-      if (generation !== fetchGeneration) return
-
-      isLoading.value = false
-
-      const [prov, conf, side, confl, hist, sim] = results
-
-      provenanceData.value =
-        prov.status === 'fulfilled' ? prov.value.map(mapProvenanceRow) : EMPTY_PROVENANCE
-
-      evidenceLinksData.value =
-        prov.status === 'fulfilled' ? mapEvidenceLinks(prov.value) : EMPTY_EVIDENCE_LINKS
-
-      const mappedConfidence =
-        conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
-      confidenceData.value = mappedConfidence
-
-      sideEffectsData.value = side.status === 'fulfilled' ? mapSideEffects(side.value) : null
-
-      conflictsData.value =
-        confl.status === 'fulfilled' ? mapConflicts(confl.value) : EMPTY_CONFLICTS
-
-      historyData.value = hist.status === 'fulfilled' ? mapHistory(hist.value) : EMPTY_HISTORY
-
-      similarPastData.value =
-        sim.status === 'fulfilled' ? mapSimilarPast(sim.value) : EMPTY_SIMILAR
-
-      const capture = (await captureSettlement)[0]
-      if (generation !== fetchGeneration || !capture) return
-
-      provenanceMetadataData.value =
-        captureReference && capture.status === 'fulfilled' && capture.value
-          ? mapProvenanceMetadata(capture.value, proposalId, captureReference, mappedConfidence)
-          : null
+      const key = selectorKeyForProposal(activeProposal.value)
+      if (key) void ensureCoreBatch(key)
     },
     { immediate: true },
   )
@@ -572,11 +682,7 @@ export function usePaperReviewSelectors(
     // continuation short-circuits at the `generation !== fetchGeneration`
     // guard instead of writing reactive state after the scope is gone.
     // (Promise.allSettled resolves even when its inner requests are aborted.)
-    fetchGeneration++
-    if (abortController) {
-      abortController.abort()
-      abortController = null
-    }
+    invalidateCoreBatch()
     discardCaptureLookup()
   })
 
@@ -593,5 +699,6 @@ export function usePaperReviewSelectors(
     similarPast,
     similarPastApplyRate,
     loading,
+    waitForCoreBatch,
   }
 }
