@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useVisualViewport } from '../../composables/useVisualViewport'
+import { useDialogFocusManagement } from '../../composables/useDialogFocusManagement'
 
 const props = withDefaults(
   defineProps<{
@@ -22,7 +23,6 @@ const emit = defineEmits<{
 }>()
 
 const dialogRef = ref<HTMLElement | null>(null)
-let previouslyFocusedElement: HTMLElement | null = null
 let unregisterEscape: (() => void) | null = null
 
 // The backdrop teleports to <body>, so no ancestor can constrain it — a software
@@ -45,51 +45,19 @@ function handleBackdropClick() {
   }
 }
 
-function trapFocus(event: KeyboardEvent) {
-  if (event.key !== 'Tab' || !dialogRef.value) {
-    return
-  }
-
-  const focusableSelector =
-    'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-  const focusableElements = Array.from(
-    dialogRef.value.querySelectorAll<HTMLElement>(focusableSelector),
-  )
-
-  if (focusableElements.length === 0) {
-    event.preventDefault()
-    return
-  }
-
-  const first = focusableElements[0]!
-  const last = focusableElements[focusableElements.length - 1]!
-
-  if (event.shiftKey) {
-    if (document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    }
-  } else {
-    if (document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
-  }
-}
+const { trapFocus } = useDialogFocusManagement({
+  isOpen: () => props.open,
+  dialogRef,
+})
 
 watch(
   () => props.open,
-  async (isOpen) => {
+  (isOpen) => {
     if (isOpen) {
-      previouslyFocusedElement = document.activeElement as HTMLElement | null
       unregisterEscape = registerEscapeHandler(requestClose)
-      await nextTick()
-      dialogRef.value?.focus()
     } else {
       unregisterEscape?.()
       unregisterEscape = null
-      previouslyFocusedElement?.focus()
-      previouslyFocusedElement = null
     }
   },
   { immediate: true },
@@ -98,8 +66,6 @@ watch(
 onUnmounted(() => {
   unregisterEscape?.()
   unregisterEscape = null
-  previouslyFocusedElement?.focus()
-  previouslyFocusedElement = null
 })
 </script>
 

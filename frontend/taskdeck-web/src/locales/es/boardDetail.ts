@@ -82,7 +82,6 @@ export default {
     archiveConfirmCancel: 'Déjalo aquí',
     restore: 'Restaurar el tablero',
     saveError: 'No se pudo guardar el tablero. Inténtalo de nuevo.',
-    archiveError: 'No se pudo archivar el tablero. Inténtalo de nuevo.',
     restoreError: 'No se pudo restaurar el tablero. Inténtalo de nuevo.',
   },
 }

@@ -40,10 +40,14 @@ const props = withDefaults(
     selectedCardId?: string | null
     /** When true the column shows the drop-target highlight. */
     isDragOver?: boolean
+    /** True when BoardView's keyboard model targets this lane. */
+    selected?: boolean
     /** False for the leftmost column — disables its move-left control. */
     canMoveLeft?: boolean
     /** False for the rightmost column — disables its move-right control. */
     canMoveRight?: boolean
+    /** Prevent duplicate reorder requests while one is in flight. */
+    reorderBusy?: boolean
     /** True while this column's inline card composer is open. */
     composerOpen?: boolean
     composerBusy?: boolean
@@ -54,8 +58,10 @@ const props = withDefaults(
     collapsed: false,
     selectedCardId: null,
     isDragOver: false,
+    selected: false,
     canMoveLeft: false,
     canMoveRight: false,
+    reorderBusy: false,
     composerOpen: false,
     composerBusy: false,
     composerError: null,
@@ -121,12 +127,12 @@ function onSelect() {
 }
 
 function onMoveLeft() {
-  if (!props.canMoveLeft) return
+  if (props.reorderBusy || !props.canMoveLeft) return
   emit('move', props.column, 'left')
 }
 
 function onMoveRight() {
-  if (!props.canMoveRight) return
+  if (props.reorderBusy || !props.canMoveRight) return
   emit('move', props.column, 'right')
 }
 
@@ -175,11 +181,13 @@ function onCardDragOver(card: Card, e: DragEvent) {
     :class="{
       'paper-board-column--drag-over': isDragOver,
       'paper-board-column--collapsed': collapsed,
+      'paper-board-column--selected': selected,
     }"
     :data-column-id="column.id"
     :data-collapsed="collapsed"
     role="group"
     :aria-label="`Column ${column.name}`"
+    :aria-current="selected ? 'true' : undefined"
   >
     <header class="paper-board-column__header">
       <div
@@ -222,7 +230,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
           class="paper-board-column__ctl paper-board-column__ctl--flip"
           :aria-label="t('boardDetail.column.moveLeft')"
           :title="t('boardDetail.column.moveLeft')"
-          :disabled="!canMoveLeft"
+          :disabled="reorderBusy || !canMoveLeft"
           data-testid="paper-column-move-left"
           @click="onMoveLeft"
         >
@@ -233,7 +241,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
           class="paper-board-column__ctl"
           :aria-label="t('boardDetail.column.moveRight')"
           :title="t('boardDetail.column.moveRight')"
-          :disabled="!canMoveRight"
+          :disabled="reorderBusy || !canMoveRight"
           data-testid="paper-column-move-right"
           @click="onMoveRight"
         >
@@ -333,6 +341,11 @@ function onCardDragOver(card: Card, e: DragEvent) {
   color: var(--ink);
   min-height: 240px;
   transition: border-color var(--d-quick) var(--ease-paper);
+}
+
+.paper-board-column--selected {
+  border-color: var(--ink-deep);
+  box-shadow: 0 0 0 1px var(--ink-deep), var(--shadow-press);
 }
 
 .paper-board-column--drag-over {

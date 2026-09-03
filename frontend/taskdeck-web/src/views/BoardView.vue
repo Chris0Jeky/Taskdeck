@@ -146,6 +146,10 @@ const {
   (columnId) => !paperOn.value || !paperCollapsedColumnIds.value.has(columnId),
 )
 
+const selectedColumnId = computed(
+  () => sortedColumns.value[selectedColumnIndex.value]?.id ?? null,
+)
+
 function handlePaperCollapsedColumnsChange(columnIds: string[]) {
   paperCollapsedColumnIds.value = new Set(columnIds)
 
@@ -422,6 +426,7 @@ useKeyboardShortcuts([
   <PaperBoardView
     v-if="paperOn"
     :selected-card-id="selectedCardId"
+    :selected-column-id="selectedColumnId"
     @collapsed-columns-change="handlePaperCollapsedColumnsChange"
     @column-select="handlePaperColumnSelect"
     @dialog-open-change="paperDialogOpen = $event"
