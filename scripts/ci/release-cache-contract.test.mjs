@@ -78,7 +78,7 @@ function annotateYamlLines(source) {
       structural
       && trimmed !== ''
       && !trimmed.startsWith('#')
-      && /:\s*[>|][+-]?\s*$/.test(uncommented)
+      && /:\s*[>|](?:[1-9][+-]?|[+-][1-9]?)?\s*$/.test(uncommented)
     ) {
       const sequenceProperty = /^( *)-\s+/.exec(uncommented)
       blockScalarParentIndent = sequenceProperty?.[0].length ?? indent
@@ -117,7 +117,7 @@ function usesEntries(source, workflowPath, violations) {
       continue
     }
     if (
-      /(?:^(?:-\s+)?|[\[{,]\s*)!(?:![^\s[\]{},]+|<[^>\r\n]+>|[^\s[\]{},]+)?\s+(?:&[^\s[\]{},]+\s+)?(?:uses|"uses"|'uses'|\*[^\s[\]{},:]+|"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*")\s*:/.test(trimmed)
+      /(?:^(?:-\s+)?|[\[{,]\s*)!(?:![^\s[\]{},]+|<[^>\r\n]+>|[^\s[\]{},]+)?\s+(?:&[^\s[\]{},]+\s+)?(?:[^\s[\]{},:"']+|"(?:[^"\\]|\\.)*"|'(?:[^']|'')*')\s*:/.test(trimmed)
     ) {
       violations.add(
         `${workflowPath}:${line.lineNumber}: YAML tags in mapping keys are unsupported by the release cache scanner`,
@@ -235,8 +235,12 @@ function readSiblingWithInputs(lines, usesIndex, propertyIndent, location, viola
 
     const key = (match[1] ?? match[2] ?? match[3]).toLowerCase()
     let value = cleanScalar(match[4])
+    if (/^!/.test(value)) {
+      violations.add(`${location}: YAML tags in with input values are unsupported by the release cache scanner`)
+      continue
+    }
 
-    if (/^[>|][+-]?$/.test(value)) {
+    if (/^[>|](?:[1-9][+-]?|[+-][1-9]?)?$/.test(value)) {
       const blockValues = []
       for (let blockIndex = index + 1; blockIndex < lines.length; blockIndex += 1) {
         const blockLine = lines[blockIndex]
@@ -1039,4 +1043,60 @@ jobs:
     () => enforceReleaseCacheContract(cyclicSources),
     /release workflow cycle: .*ci-release\.yml.*reusable-release-build\.yml.*ci-release\.yml/,
   )
+})
+
+test('tagged with keys cannot hide cross-run artifact inputs', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/download-artifact@v8
+        with:
+          name: release-input`,
+      `      - uses: actions/download-artifact@v8
+        !!str with:
+          name: release-input
+          run-id: 123`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML tags in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('tagged with input values cannot satisfy the cache-dependency-path contract', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      "          cache-dependency-path: package-lock.json",
+      "          cache-dependency-path: !!str ''",
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML tags in with input values are unsupported by the release cache scanner/,
+  )
+})
+
+test('block scalars with indentation indicators are parsed before the cache-dependency-path check', () => {
+  for (const header of ['|2', '|2-', '|-2', '>1+']) {
+    const sources = validSyntheticClosure()
+    sources.set(
+      `${workflowPrefix}reusable-release-build.yml`,
+      sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+        "          cache-dependency-path: package-lock.json",
+        `          cache-dependency-path: ${header}`,
+      ),
+    )
+
+    assert.throws(
+      () => enforceReleaseCacheContract(sources),
+      /cache must declare a non-empty cache-dependency-path/,
+      `header ${header} should not read as a non-empty path`,
+    )
+  }
 })
