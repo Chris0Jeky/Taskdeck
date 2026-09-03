@@ -426,8 +426,9 @@ try {
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("config", "user.name", "Taskdeck Test")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("config", "user.email", "taskdeck-test@example.invalid")
     Set-Content -LiteralPath (Join-Path $seedPath ".gitignore") -Value @(".worktrees/", ".claude/settings.local.json") -Encoding Ascii
+    Set-Content -LiteralPath (Join-Path $seedPath ".gitattributes") -Value "tracked.txt filter=taskdeck-timeout-gate" -Encoding Ascii
     Set-Content -LiteralPath (Join-Path $seedPath "tracked.txt") -Value "committed" -Encoding Ascii
-    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitignore", "tracked.txt")
+    $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitattributes", ".gitignore", "tracked.txt")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Seed pre-helper fixture")
     $preHelperCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("tag", "pre-helper-base", $preHelperCommit)
@@ -440,7 +441,62 @@ try {
     $seedGitScriptsPath = Join-Path $seedScriptsPath "git"
     New-Item -ItemType Directory -Path $seedGitScriptsPath | Out-Null
     Copy-Item -LiteralPath $initializerPath -Destination (Join-Path $seedGitScriptsPath "Initialize-CodexIssueWorktree.ps1")
-    Copy-Item -LiteralPath $helperPath -Destination (Join-Path $seedGitScriptsPath "New-CodexIssueWorktree.ps1")
+    $fixtureHelperPath = Join-Path $seedGitScriptsPath "New-CodexIssueWorktree.ps1"
+    Copy-Item -LiteralPath $helperPath -Destination $fixtureHelperPath
+
+    # The five-second post-registration timeout cases must start their constrained timer only
+    # after the disposable fixture's post-checkout hook has established the state under test.
+    # Instrument only the committed fixture copy; the production helper keeps its normal timeout.
+    $fixtureHelperContent = [System.IO.File]::ReadAllText($fixtureHelperPath)
+    $fixtureTimeoutAnchor = '        $timedOut = -not $process.WaitForExit($GitCommandTimeoutSeconds * 1000)'
+    $fixtureTimeoutNewline = if ($fixtureHelperContent.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $fixtureTimeoutContext = @'
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $timedOut = -not $process.WaitForExit($GitCommandTimeoutSeconds * 1000)
+'@
+    $fixtureTimeoutContext = $fixtureTimeoutContext -replace "`r?`n", $fixtureTimeoutNewline
+    $fixtureTimeoutContextIndex = $fixtureHelperContent.IndexOf(
+        $fixtureTimeoutContext,
+        [System.StringComparison]::Ordinal)
+    Assert-True ($fixtureTimeoutContextIndex -ge 0) "Fixture helper worktree-add timeout context was not found."
+    Assert-Equal $fixtureTimeoutContextIndex ($fixtureHelperContent.LastIndexOf(
+            $fixtureTimeoutContext,
+            [System.StringComparison]::Ordinal)) "Fixture helper worktree-add timeout context was ambiguous."
+    $fixtureTimeoutAnchorIndex = $fixtureTimeoutContextIndex + $fixtureTimeoutContext.LastIndexOf(
+        $fixtureTimeoutAnchor,
+        [System.StringComparison]::Ordinal)
+    $fixtureTimeoutControl = @'
+        $testWorktreeAddDeferredPath = [System.Environment]::GetEnvironmentVariable("TASKDECK_TEST_WORKTREE_ADD_TIMER_DEFERRED", "Process")
+        $testWorktreeAddReadyPath = [System.Environment]::GetEnvironmentVariable("TASKDECK_TEST_WORKTREE_ADD_READY", "Process")
+        $testWorktreeAddArmedPath = [System.Environment]::GetEnvironmentVariable("TASKDECK_TEST_WORKTREE_ADD_TIMER_ARMED", "Process")
+        $deferTestWorktreeAddTimer =
+            $Arguments.Count -ge 2 -and
+            $Arguments[0] -ceq "worktree" -and
+            $Arguments[1] -ceq "add" -and
+            -not [string]::IsNullOrWhiteSpace($testWorktreeAddDeferredPath) -and
+            -not [string]::IsNullOrWhiteSpace($testWorktreeAddReadyPath) -and
+            -not [string]::IsNullOrWhiteSpace($testWorktreeAddArmedPath)
+        if ($deferTestWorktreeAddTimer) {
+            [System.IO.File]::WriteAllText($testWorktreeAddDeferredPath, "deferred")
+            $testReadyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(45)
+            while (-not (Test-Path -LiteralPath $testWorktreeAddReadyPath -PathType Leaf) -and
+                -not $process.WaitForExit(50) -and
+                [DateTimeOffset]::UtcNow -lt $testReadyDeadline) {
+            }
+            if (Test-Path -LiteralPath $testWorktreeAddReadyPath -PathType Leaf) {
+                [System.IO.File]::WriteAllText($testWorktreeAddArmedPath, "armed")
+            }
+        }
+'@
+    $fixtureTimeoutControl = $fixtureTimeoutControl -replace "`r?`n", $fixtureTimeoutNewline
+    $fixtureHelperContent = $fixtureHelperContent.Insert(
+        $fixtureTimeoutAnchorIndex,
+        "$fixtureTimeoutControl$fixtureTimeoutNewline")
+    [System.IO.File]::WriteAllText(
+        $fixtureHelperPath,
+        $fixtureHelperContent,
+        [System.Text.UTF8Encoding]::new($false))
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", "scripts/git/Initialize-CodexIssueWorktree.ps1", "scripts/git/New-CodexIssueWorktree.ps1")
     $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Add worktree helper and initializer")
     $helperArtifactCommit = Invoke-Git -WorkingDirectory $seedPath -Arguments @("rev-parse", "HEAD")
@@ -1910,12 +1966,14 @@ finally {
         $timeoutHookDirectory = Join-Path $testRoot "worktree-add-timeout-hook"
         New-Item -ItemType Directory -Path $timeoutHookDirectory | Out-Null
         $timeoutHookPath = Join-Path $timeoutHookDirectory "post-checkout"
-        $timeoutHookStartedPath = Join-Path $timeoutHookDirectory "started.txt"
-        $timeoutHookStartedArgument = $timeoutHookStartedPath.Replace('\', '/')
+        $timeoutTimerDeferredPath = Join-Path $timeoutHookDirectory "timer-deferred.txt"
+        $timeoutFilterReleasedPath = Join-Path $timeoutHookDirectory "filter-released.txt"
+        $timeoutHookReadyPath = Join-Path $timeoutHookDirectory "ready.txt"
+        $timeoutTimerArmedPath = Join-Path $timeoutHookDirectory "timer-armed.txt"
+        $timeoutHookReadyArgument = $timeoutHookReadyPath.Replace('\', '/')
         $timeoutGitArgument = $gitExecutable.Replace('\', '/')
         $timeoutHookContent = @'
 #!/bin/sh
-printf started > "__STARTED_PATH__"
 if [ "$TASKDECK_DIRTY_TIMEOUT_HOOK" = "1" ]; then
     printf '\n# dirty timeout hook canary\n' >> scripts/worktree_guard.ps1
 fi
@@ -1931,8 +1989,9 @@ if [ "$TASKDECK_HIDDEN_TIMEOUT_HOOK" = "fsmonitor" ]; then
     "__GIT_EXECUTABLE__" update-index --fsmonitor-valid -- scripts/worktree_guard.ps1
     printf '\n# hidden timeout hook canary fsmonitor\n' >> scripts/worktree_guard.ps1
 fi
+printf ready > "__READY_PATH__"
 sleep 30
-'@.Replace('__STARTED_PATH__', $timeoutHookStartedArgument).Replace('__GIT_EXECUTABLE__', $timeoutGitArgument)
+'@.Replace('__READY_PATH__', $timeoutHookReadyArgument).Replace('__GIT_EXECUTABLE__', $timeoutGitArgument)
         [System.IO.File]::WriteAllText(
             $timeoutHookPath,
             $timeoutHookContent,
@@ -1949,9 +2008,43 @@ sleep 30
             "#!/bin/sh`nprintf 'taskdeck-fsmonitor-fixture\000'`nexit 0`n",
             [System.Text.UTF8Encoding]::new($false))
 
-        $timedOutWorktree = Join-Path $callerPath ".worktrees/codex-499-git-add-timeout"
-        $timedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
-        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
+        # Block one ordinary tracked file during checkout until the disposable helper copy confirms
+        # that its worktree-add timer is deferred. Without that handshake the five-second timer
+        # expires before post-checkout, deterministically reproducing the original wrong phase.
+        $timeoutSmudgeFilterPath = Join-Path $timeoutHookDirectory "timeout-smudge-filter.ps1"
+        Set-Content -LiteralPath $timeoutSmudgeFilterPath -Encoding Ascii -Value @(
+            '$inputStream = [Console]::OpenStandardInput()',
+            '$memory = [System.IO.MemoryStream]::new()',
+            '$inputStream.CopyTo($memory)',
+            '$deadline = [DateTimeOffset]::UtcNow.AddSeconds(30)',
+            'while (-not (Test-Path -LiteralPath $env:TASKDECK_TEST_WORKTREE_ADD_TIMER_DEFERRED -PathType Leaf) -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }',
+            'if (-not (Test-Path -LiteralPath $env:TASKDECK_TEST_WORKTREE_ADD_TIMER_DEFERRED -PathType Leaf)) { exit 86 }',
+            '[System.IO.File]::WriteAllText($env:TASKDECK_TEST_WORKTREE_ADD_FILTER_RELEASED, ''released'')',
+            '$bytes = $memory.ToArray()',
+            '$outputStream = [Console]::OpenStandardOutput()',
+            '$outputStream.Write($bytes, 0, $bytes.Length)'
+        )
+        $timeoutFilterPowerShell = $powerShellExecutable.Replace('\', '/')
+        $timeoutFilterScriptArgument = $timeoutSmudgeFilterPath.Replace('\', '/')
+        $timeoutSmudgeFilterCommand = "`"$timeoutFilterPowerShell`" -NoLogo -NoProfile -NonInteractive -File `"$timeoutFilterScriptArgument`""
+
+        $timeoutControlEnvironment = @{
+            TASKDECK_TEST_WORKTREE_ADD_TIMER_DEFERRED = $timeoutTimerDeferredPath
+            TASKDECK_TEST_WORKTREE_ADD_FILTER_RELEASED = $timeoutFilterReleasedPath
+            TASKDECK_TEST_WORKTREE_ADD_READY = $timeoutHookReadyPath
+            TASKDECK_TEST_WORKTREE_ADD_TIMER_ARMED = $timeoutTimerArmedPath
+        }
+        $previousTimeoutControlEnvironment = @{}
+        foreach ($environmentName in $timeoutControlEnvironment.Keys) {
+            $previousTimeoutControlEnvironment[$environmentName] = [System.Environment]::GetEnvironmentVariable($environmentName, "Process")
+            [System.Environment]::SetEnvironmentVariable($environmentName, $timeoutControlEnvironment[$environmentName], "Process")
+        }
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-timeout-gate.clean", "cat")
+        $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "filter.taskdeck-timeout-gate.smudge", $timeoutSmudgeFilterCommand)
+        try {
+            $timedOutWorktree = Join-Path $callerPath ".worktrees/codex-499-git-add-timeout"
+            $timedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.hooksPath", $timeoutHookDirectory)
         try {
             $timedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
                 "-IssueNumber", "499",
@@ -1965,7 +2058,10 @@ sleep 30
                 $normalizedTimedOutAdd.Contains("Git command timed out after 5 seconds; its helper-owned process tree was terminated and reaped.") -or
                 $normalizedTimedOutAdd.Contains("Git stderr drain did not finish within 5000 ms after its process exited.")
             Assert-True $reportedBoundedTermination "Timed-out worktree-add diagnostic omitted its bounded termination result."
-            Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Post-checkout timeout fixture did not start."
+            Assert-True (Test-Path -LiteralPath $timeoutTimerDeferredPath -PathType Leaf) "Worktree-add timeout timer was not deferred before checkout continued."
+            Assert-True (Test-Path -LiteralPath $timeoutFilterReleasedPath -PathType Leaf) "Checkout did not pass through the timeout-gated smudge filter after timer deferral."
+            Assert-True (Test-Path -LiteralPath $timeoutHookReadyPath -PathType Leaf) "Post-checkout timeout fixture did not establish its ready-to-hang state before the timer started."
+            Assert-True (Test-Path -LiteralPath $timeoutTimerArmedPath -PathType Leaf) "Worktree-add timeout timer was not armed after the hook became ready."
             Assert-True (-not (Test-Path -LiteralPath $timedOutWorktree)) "Timed-out worktree add left its populated target behind."
             $timedOutRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
             Assert-Equal $timedOutRegistrationsBefore $timedOutRegistrationsAfter "Timed-out worktree add left stale registration metadata."
@@ -1975,6 +2071,7 @@ sleep 30
         }
 
         $dirtyTimedOutWorktree = Join-Path $callerPath ".worktrees/codex-500-dirty-git-add-timeout"
+        Remove-Item -LiteralPath $timeoutTimerDeferredPath, $timeoutFilterReleasedPath, $timeoutHookReadyPath, $timeoutTimerArmedPath -Force -ErrorAction SilentlyContinue
         $dirtyTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
         $previousDirtyTimeoutHook = [System.Environment]::GetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", "Process")
         [System.Environment]::SetEnvironmentVariable("TASKDECK_DIRTY_TIMEOUT_HOOK", "1", "Process")
@@ -1986,6 +2083,10 @@ sleep 30
                 "-GitCommandTimeoutSeconds", "5"
             )
             Assert-True ($dirtyTimedOutAdd.ExitCode -ne 0) "A dirty timed-out git worktree add must fail closed."
+            Assert-True (Test-Path -LiteralPath $timeoutTimerDeferredPath -PathType Leaf) "Dirty worktree-add timeout timer was not deferred before checkout continued."
+            Assert-True (Test-Path -LiteralPath $timeoutFilterReleasedPath -PathType Leaf) "Dirty checkout did not pass through the timeout-gated smudge filter after timer deferral."
+            Assert-True (Test-Path -LiteralPath $timeoutHookReadyPath -PathType Leaf) "Dirty timeout fixture did not establish its ready-to-hang state before the timer started."
+            Assert-True (Test-Path -LiteralPath $timeoutTimerArmedPath -PathType Leaf) "Dirty worktree-add timeout timer was not armed after the hook became ready."
             Assert-NormalizedContains $dirtyTimedOutAdd.Output "Refusing to remove partially created worktree" "Dirty partial-registration cleanup did not explain its preservation decision."
             Assert-True (Test-Path -LiteralPath $dirtyTimedOutWorktree -PathType Container) "Dirty partial-registration cleanup deleted the populated target."
             $dirtyGuardPath = Join-Path $dirtyTimedOutWorktree "scripts/worktree_guard.ps1"
@@ -2022,9 +2123,7 @@ sleep 30
                     # core.fsmonitor is disabled, so the scenario only exists with it enabled.
                     $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.fsmonitor", $fsmonitorQueryHookArgument)
                 }
-                if (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) {
-                    Remove-Item -LiteralPath $timeoutHookStartedPath -Force
-                }
+                Remove-Item -LiteralPath $timeoutTimerDeferredPath, $timeoutFilterReleasedPath, $timeoutHookReadyPath, $timeoutTimerArmedPath -Force -ErrorAction SilentlyContinue
                 try {
                     $hiddenTimedOutAdd = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
                         "-IssueNumber", $scenario.Issue,
@@ -2032,8 +2131,11 @@ sleep 30
                         "-GitCommandTimeoutSeconds", "5"
                     )
                     Assert-True ($hiddenTimedOutAdd.ExitCode -ne 0) "An index-hidden dirty timed-out git worktree add must fail closed."
+                    Assert-True (Test-Path -LiteralPath $timeoutTimerDeferredPath -PathType Leaf) "Index-hidden worktree-add timeout timer was not deferred before checkout continued."
+                    Assert-True (Test-Path -LiteralPath $timeoutFilterReleasedPath -PathType Leaf) "Index-hidden checkout did not pass through the timeout-gated smudge filter after timer deferral."
+                    Assert-True (Test-Path -LiteralPath $timeoutHookReadyPath -PathType Leaf) "Index-hidden timeout fixture did not establish its ready-to-hang state before the timer started."
+                    Assert-True (Test-Path -LiteralPath $timeoutTimerArmedPath -PathType Leaf) "Index-hidden worktree-add timeout timer was not armed after the hook became ready."
                     Assert-NormalizedContains $hiddenTimedOutAdd.Output "index contains assume-unchanged, skip-worktree, or fsmonitor-valid entries that can hide modified data" "Index-hidden partial-registration cleanup did not explain its preservation decision."
-                    Assert-True (Test-Path -LiteralPath $timeoutHookStartedPath -PathType Leaf) "Index-hidden timeout fixture did not start."
                     Assert-True (Test-Path -LiteralPath $hiddenTimedOutWorktree -PathType Container) "Index-hidden partial-registration cleanup deleted the populated target."
                     $hiddenGuardPath = Join-Path $hiddenTimedOutWorktree "scripts/worktree_guard.ps1"
                     Assert-NormalizedContains (Get-Content -Raw -LiteralPath $hiddenGuardPath) "hidden timeout hook canary $($scenario.Flag)" "Index-hidden timeout hook did not preserve its modified bytes."
@@ -2069,6 +2171,14 @@ sleep 30
         finally {
             [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $previousHiddenTimeoutHook, "Process")
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.hooksPath")
+        }
+        }
+        finally {
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-timeout-gate.clean")
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "filter.taskdeck-timeout-gate.smudge")
+            foreach ($environmentName in $timeoutControlEnvironment.Keys) {
+                [System.Environment]::SetEnvironmentVariable($environmentName, $previousTimeoutControlEnvironment[$environmentName], "Process")
+            }
         }
 
         $gitFailureTarget = Join-Path $callerPath ".worktrees/codex-431-git-failure"
