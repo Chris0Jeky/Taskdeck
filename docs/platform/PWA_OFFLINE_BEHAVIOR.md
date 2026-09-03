@@ -14,26 +14,21 @@ All app shell assets (JS, CSS, HTML, icons, fonts) are precached on first load. 
 
 | Resource | Strategy | TTL | Notes |
 |----------|----------|-----|-------|
-| API responses (`/api/*`) | Network only | N/A | Not stored by the service worker: no runtime route matches a path starting with `/api`, and `ApiCacheControlMiddleware` stamps `no-store, private` on every `/api` response so the browser cache does not hold it either. See the boundary caveat below - this is not unconditional for an API base nested under `/assets/` or `/icons/` |
+| API responses (default `/api/*` or the configured API base) | Network only | N/A | Not stored by the service worker: runtime routes reject both the default and configured API paths, and `ApiCacheControlMiddleware` stamps `no-store, private` on every `/api` response so the browser cache does not hold it either. |
 | Lazy `it`/`es` locale chunks | StaleWhileRevalidate | Content-versioned | Cached after first use so the selected language remains available offline |
 | Static assets under `/assets/` and `/icons/` | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
 
 The static-asset route is anchored on the directories the build emits, not on the file extension.
-The API base is a deployment choice - `VITE_API_BASE_URL` may be prefixed, such as `/taskdeck/api` -
-so denying `/api` alone would not stop an authenticated `GET /taskdeck/api/users/by-username/alice.png`
-from being stored in the shared, cross-identity static cache. Anchoring on the emitted directories
-closes that case: an unrecognised layout loses runtime caching for a static asset.
+The API base is a deployment choice: `VITE_API_BASE_URL` may be prefixed, such as `/taskdeck/api`,
+or nested under an emitted directory, such as `/assets/api`. The build normalizes that configured
+path and serializes both it and the default `/api` boundary into each runtime matcher. A malformed
+or ambiguous configured base produces a match-nothing predicate, so runtime caching fails closed.
 
-**The boundary is directory-anchored, not absolute, and it is not origin-anchored.** Two limits are
-load-bearing and were previously overstated here:
-
-- The deny test matches only a path *starting* with `/api`, while the admit test accepts `/assets/` or
-  `/icons/` followed by any nested path ending in a media or font extension. An API base nested under
-  either directory is therefore still admitted: `/assets/api/users/by-username/alice.png` is cached.
-  Do not deploy an API base under `/assets/` or `/icons/`. Tracked as `#2411`.
-- The predicates test `url.pathname` only, and `cacheableResponse` is `{ statuses: [0, 200] }`, so an
-  opaque third-party response under a matching path is admitted too. Nothing identity-bound leaks, but
-  `taskdeck-static-assets` is not first-party-only.
+**The boundary is configuration-aware but not origin-anchored.** The generated regular expressions
+match the complete request URL but deliberately allow any HTTP or HTTPS authority. Together with
+`cacheableResponse` statuses `[0, 200]`, this means an opaque third-party response under a matching
+static path can still be admitted. Nothing identity-bound leaks because both API path boundaries are
+excluded, but `taskdeck-static-assets` is not first-party-only.
 
 ### Retiring the pre-#2350 worker
 
