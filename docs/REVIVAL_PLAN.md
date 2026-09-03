@@ -179,7 +179,7 @@ release blocker.
 | CF-15 cloud speech adapter + benchmark harness | `#2269` | v0.6 | CF-04, CF-10, CF-12, CF-24A fixtures |
 | CF-17 meeting understanding bundle | `#2271` | v0.6 | CF-08, CF-09, CF-14, CF-21 |
 | CF-18 local OCR sidecar (amends ADR-0046 d5) | `#2272` | v0.6 | CF-04, CF-06, CF-07, CF-10 |
-| CF-22 authority-policy evaluation v1 (ADR-0057 first slice, own gate) — **stretch / blocked, not a release blocker** | `#2275` | v0.6 | CF-08, CF-09, CF-21, CF-24A |
+| CF-22 authority-policy evaluation v1 (ADR-0057 first slice, own gate) — **stretch, not a release blocker; build authorized 2026-09-03 (maintainer go on `#2275`), real execution enabled only on ADR-0065's ruling-6 evidence report** | `#2275` | v0.6 | CF-08, CF-09, CF-21, CF-24A |
 | CF-24A benchmark corpus + reproducible benchmark command | `#2319` | v0.5 | CF-03 |
 | CF-24B runtime outcome metrics + Control dashboard | `#2277` | v0.6 | CF-03, CF-08, CF-24A |
 
@@ -252,7 +252,7 @@ GEN-06 (`#1320`) is wave-authorized as the Paper UX over that approved intake pi
 
 **Phase-5 additions (ADR-0065, accepted under delegation 2026-08-30; tracker CF-00 `#2254`):** the durable `Capture` aggregate and its ID-preserving backfill (CF-01/02) and the general `SourceAsset` model (typed and pasted text as immutable inline assets; audio, image, document and structured assets as CF-12/CF-18/CF-20 add them), `ProcessingJob`/`ProcessingRun` and the capability runner (CF-03), the Worker Protocol host, processor registry and sidecar supervisor (CF-04 — one supervisor shared with the ADR-0048 worker `#1429`), representation and evidence-anchor tables (CF-06/07), `IBlobStore` (CF-23), persisted semantic candidates (CF-08), the context resolver (CF-09), audio source assets with a playback endpoint and retention jobs (CF-12), the transcription sidecars and one cloud speech adapter (CF-13/14/15), processing profiles and route receipts (CF-10/11), the local OCR sidecar (CF-18), Universal Capture and capture-centred review (CF-20/21), the meeting bundle (CF-17), and the evaluation read model (CF-24A benchmark corpus, CF-24B runtime outcome metrics). **CF-22** (the first delegated-authority operation class) is authorised in shape only and keeps ADR-0057's own separate evidence gate. New processors beyond those named enter as manifests behind the registry, not as new lanes; new `CaptureSource` values and new request-type lane predicates are explicitly not authorised.
 
-Not authorized without a plan amendment: the twin generalist application (GEN-12 `#1326` is the evidence gate), other new views/dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens), object-store blob storage before ADR-0061 stage 3, and utility-scored routing before the CF-24A corpus exists.
+Not authorized without a plan amendment: the twin generalist application (the GEN-12 `#1326` gate was closed 2026-09-03 — *stay one application*; a new decision issue plus an ADR-0046 amendment is the only route back), other new views/dashboards, new connector types, real undo (post-beta candidate), Postgres runtime (post-checkpoint candidate if hosted tier happens), object-store blob storage before ADR-0061 stage 3, and utility-scored routing before the CF-24A corpus exists.
 
 ## 8. Metrics and the checkpoint
 

@@ -29,7 +29,7 @@ billing, visibility and runner-registration actions.
 - [ ] Shadow planner running on every PR; recall report over ≥20 PRs shows the plan would have selected every lane that actually failed.
 - [ ] `Smart CI / Required Gate` in observation mode with zero false reds over ≥20 PRs; receipts bound to the exact SHA, merge tree and policy digest.
 - [ ] Landed verifier proven: normal merge → bounded path; direct-push simulation → full escalation; base moved → re-qualification.
-- [ ] **Maintainer:** register the gate as required; set `strict: true`; keep the three security contexts; decide `enforce_admins` or document break-glass. (CI-03 supplies the exact `gh api` commands.)
+- [ ] **Maintainer:** register the gate as required; keep the three security contexts; decide on the observation evidence — not in advance (SC-4 ruling 2026-09-03) — whether to set `strict: true` and `enforce_admins` or to document break-glass. (CI-03 supplies the exact `gh api` commands.)
 
 ## D. Event topology (CI-03)
 
@@ -76,7 +76,7 @@ billing, visibility and runner-registration actions.
 
 1. Pause merges briefly.
 2. Capture current required-check and Actions settings (`gh api repos/Chris0Jeky/Taskdeck/branches/main/protection`, `…/actions/permissions`, `…/actions/permissions/workflow`).
-3. Register the gate + `strict: true` (C); flip `sha_pinning_required` (G).
+3. Register the gate and apply the SC-4 evidence-based `strict` / `enforce_admins` decision (C); flip `sha_pinning_required` (G).
 4. Verify public assets that must remain public have a separate home (A).
 5. **Change repository visibility to private.**
 6. Re-check Actions permissions, fork-PR approval policy, Dependabot, Pages/package/release visibility, runner association, collaborator list.
