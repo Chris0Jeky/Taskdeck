@@ -9,6 +9,15 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public interface IProposalConflictDetector
 {
+    /// <summary>
+    /// Detects conflicts using the server-authoritative, revision-resolved proposal snapshot
+    /// already authorized by the API boundary.
+    /// </summary>
+    Task<Result<IReadOnlyList<ConflictRowDto>>> DetectConflictsAsync(
+        ProposalDto effectiveProposal,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task<Result<IReadOnlyList<ConflictRowDto>>> DetectConflictsAsync(
         Guid proposalId,
         Guid userId,

@@ -10,6 +10,15 @@ namespace Taskdeck.Application.Services;
 public interface ISimilarDecisionService
 {
     /// <summary>
+    /// Gets similar past decisions using the server-authoritative, revision-resolved
+    /// proposal snapshot already authorized by the API boundary.
+    /// </summary>
+    Task<Result<SimilarPastResultDto>> GetSimilarPastAsync(
+        ProposalDto effectiveProposal,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets the most recent similar past decisions for a proposal,
     /// matching on the proposal's primary action class.
     /// </summary>

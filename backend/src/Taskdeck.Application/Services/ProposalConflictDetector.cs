@@ -32,6 +32,24 @@ public class ProposalConflictDetector : IProposalConflictDetector
         if (proposal is null)
             return Result.Failure<IReadOnlyList<ConflictRowDto>>(ErrorCodes.NotFound, "Proposal not found");
 
+        return await DetectConflictsAsync(ToContext(proposal), userId, cancellationToken);
+    }
+
+    public Task<Result<IReadOnlyList<ConflictRowDto>>> DetectConflictsAsync(
+        ProposalDto effectiveProposal,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(effectiveProposal);
+        return DetectConflictsAsync(ToContext(effectiveProposal), userId, cancellationToken);
+    }
+
+    private async Task<Result<IReadOnlyList<ConflictRowDto>>> DetectConflictsAsync(
+        ProposalConflictContext proposal,
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+
         // Authorization: board-scoped proposals require current board read access,
         // even for the original proposal owner, matching controller-level read paths.
         var authResult = await AuthorizeAccessAsync(proposal, userId, cancellationToken);
@@ -80,7 +98,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     }
 
     private async Task<Result> AuthorizeAccessAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         Guid userId,
         CancellationToken cancellationToken)
     {
@@ -104,7 +122,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Skips create operations since those cards don't exist yet.
     /// </summary>
     private async Task CheckStaleDataAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedCardIds,
         Dictionary<Guid, Card?> cardCache,
@@ -142,7 +160,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Checks operations that move or create cards into a column.
     /// </summary>
     private async Task CheckWipLimitAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedColumnIds,
         Dictionary<Guid, Column?> columnCache,
@@ -188,7 +206,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Queries for ANY pending proposals on the target card, not just the latest.
     /// </summary>
     private async Task CheckDuplicatePendingProposalsAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows,
         CancellationToken cancellationToken)
     {
@@ -215,7 +233,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Warn: proposal risk level is High or Critical.
     /// </summary>
     private static void CheckHighRiskOperations(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows)
     {
         if (proposal.RiskLevel is RiskLevel.High or RiskLevel.Critical)
@@ -231,7 +249,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Info: proposal will trigger outbound webhooks.
     /// </summary>
     private async Task CheckOutboundWebhooksAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows,
         CancellationToken cancellationToken)
     {
@@ -259,7 +277,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Info: target card has active comments/discussion.
     /// </summary>
     private async Task CheckActiveCommentsAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows,
         CancellationToken cancellationToken)
     {
@@ -283,7 +301,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Info: multiple operations in the proposal affect the same card.
     /// </summary>
     private static void CheckMultipleOperationsOnSameCard(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows)
     {
         var cardOps = proposal.Operations
@@ -308,7 +326,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Reuses cached entities to avoid redundant DB lookups.
     /// </summary>
     private async Task AddPositiveSignalsAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         List<ConflictRow> rows,
         HashSet<Guid> flaggedCardIds,
         HashSet<Guid> flaggedColumnIds,
@@ -358,7 +376,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Excludes create operations since those cards don't exist yet and would
     /// produce false stale/missing warnings.
     /// </summary>
-    private static List<Guid> GetDistinctCardTargetIds(AutomationProposal proposal, bool includeCreate)
+    private static List<Guid> GetDistinctCardTargetIds(ProposalConflictContext proposal, bool includeCreate)
     {
         return proposal.Operations
             .Where(op => op.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)
@@ -375,7 +393,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// Existing cards moved within their current column do not increase projected WIP.
     /// </summary>
     private async Task<IReadOnlyDictionary<Guid, ColumnProjection>> GetProjectedColumnChangesAsync(
-        AutomationProposal proposal,
+        ProposalConflictContext proposal,
         Dictionary<Guid, Card?> cardCache,
         CancellationToken cancellationToken)
     {
@@ -429,7 +447,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
     /// parameters are still detected. Parses JSON parameters for "columnId" or
     /// "targetColumnId" fields when present.
     /// </summary>
-    private static Guid? TryGetTargetColumnId(AutomationProposalOperation op)
+    private static Guid? TryGetTargetColumnId(ProposalOperationDto op)
     {
         // Target columns for column-targeted card movement/creation operations.
         if (op.TargetType.Equals("column", StringComparison.OrdinalIgnoreCase)
@@ -470,7 +488,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
         return null;
     }
 
-    private static bool AddsCardToColumn(AutomationProposalOperation operation)
+    private static bool AddsCardToColumn(ProposalOperationDto operation)
     {
         return operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)
             || operation.ActionType.Equals("move", StringComparison.OrdinalIgnoreCase);
@@ -478,7 +496,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
 
     private readonly record struct ColumnProjection(int Delta, bool ReceivesCards);
 
-    private static IReadOnlyList<string> GetWebhookEventTypes(AutomationProposal proposal)
+    private static IReadOnlyList<string> GetWebhookEventTypes(ProposalConflictContext proposal)
     {
         return proposal.Operations
             .Select(ToWebhookEventType)
@@ -488,7 +506,7 @@ public class ProposalConflictDetector : IProposalConflictDetector
             .ToList();
     }
 
-    private static string? ToWebhookEventType(AutomationProposalOperation operation)
+    private static string? ToWebhookEventType(ProposalOperationDto operation)
     {
         if (string.IsNullOrWhiteSpace(operation.TargetType) || string.IsNullOrWhiteSpace(operation.ActionType))
             return null;
@@ -537,4 +555,37 @@ public class ProposalConflictDetector : IProposalConflictDetector
         cache[columnId] = column;
         return column;
     }
+
+    private static ProposalConflictContext ToContext(AutomationProposal proposal) => new(
+        proposal.Id,
+        proposal.BoardId,
+        proposal.RequestedByUserId,
+        proposal.RiskLevel,
+        proposal.CreatedAt,
+        proposal.Operations.Select(operation => new ProposalOperationDto(
+            operation.Id,
+            operation.ProposalId,
+            operation.Sequence,
+            operation.ActionType,
+            operation.TargetType,
+            operation.TargetId,
+            operation.Parameters,
+            operation.IdempotencyKey,
+            operation.ExpectedVersion)).ToList());
+
+    private static ProposalConflictContext ToContext(ProposalDto proposal) => new(
+        proposal.Id,
+        proposal.BoardId,
+        proposal.RequestedByUserId,
+        proposal.RiskLevel,
+        proposal.CreatedAt,
+        proposal.Operations);
+
+    private sealed record ProposalConflictContext(
+        Guid Id,
+        Guid? BoardId,
+        Guid RequestedByUserId,
+        RiskLevel RiskLevel,
+        DateTimeOffset CreatedAt,
+        IReadOnlyList<ProposalOperationDto> Operations);
 }
