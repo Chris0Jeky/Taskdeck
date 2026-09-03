@@ -1963,6 +1963,15 @@ finally {
     }
 
     if (Test-CaseSelected "git-add-failure") {
+        $timeoutAttributesPath = Join-Path $seedPath ".gitattributes"
+        Set-Content -LiteralPath $timeoutAttributesPath -Value "tracked.txt filter=taskdeck-timeout-gate" -Encoding Ascii
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitattributes")
+        $stagedTimeoutAttributes = Invoke-Git -WorkingDirectory $seedPath -Arguments @("diff", "--cached", "--name-only", "--", ".gitattributes")
+        if (-not [string]::IsNullOrWhiteSpace($stagedTimeoutAttributes)) {
+            $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("commit", "-m", "Restore timeout gate fixture")
+        }
+        $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("push", "origin", "HEAD:refs/heads/main")
+
         $timeoutHookDirectory = Join-Path $testRoot "worktree-add-timeout-hook"
         New-Item -ItemType Directory -Path $timeoutHookDirectory | Out-Null
         $timeoutHookPath = Join-Path $timeoutHookDirectory "post-checkout"
