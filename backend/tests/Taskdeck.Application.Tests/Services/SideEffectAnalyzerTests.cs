@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Moq;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
@@ -78,6 +79,24 @@ public class SideEffectAnalyzerTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Rows.Should().HaveCount(7);
+    }
+
+    [Fact]
+    public async Task AnalyzeAsync_UsesEffectiveOperationSnapshot()
+    {
+        var effectiveProposal = new ProposalDto(
+            Guid.NewGuid(), ProposalSourceType.Chat, null, null, Guid.NewGuid(), ProposalStatus.PendingReview,
+            RiskLevel.Low, "Effective proposal", null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+            DateTime.UtcNow.AddDays(1), null, null, null, null, Guid.NewGuid().ToString(),
+            new List<ProposalOperationDto>
+            {
+                new(Guid.NewGuid(), Guid.NewGuid(), 0, "create", "card", null, "{}", Guid.NewGuid().ToString(), null)
+            });
+
+        var result = await _analyzer.AnalyzeAsync(effectiveProposal);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Rows.Single(row => row.Key == "Cards").Tone.Should().Be("active");
     }
 
     [Fact]
