@@ -39,6 +39,34 @@ public class CardHistoryService : ICardHistoryService
             return Result.Failure<IReadOnlyList<CardHistoryRowDto>>(
                 ErrorCodes.NotFound, $"Proposal with ID {proposalId} not found");
 
+        return await GetCardHistoryForProposalAsync(
+            new ProposalCardHistoryContext(
+                proposal.Id,
+                proposal.Summary,
+                proposal.CreatedAt,
+                proposal.Operations.Select(ToDto).ToList()),
+            cancellationToken);
+    }
+
+    public Task<Result<IReadOnlyList<CardHistoryRowDto>>> GetCardHistoryForProposalAsync(
+        ProposalDto effectiveProposal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(effectiveProposal);
+        return GetCardHistoryForProposalAsync(
+            new ProposalCardHistoryContext(
+                effectiveProposal.Id,
+                effectiveProposal.Summary,
+                effectiveProposal.CreatedAt,
+                effectiveProposal.Operations),
+            cancellationToken);
+    }
+
+    private async Task<Result<IReadOnlyList<CardHistoryRowDto>>> GetCardHistoryForProposalAsync(
+        ProposalCardHistoryContext proposal,
+        CancellationToken cancellationToken)
+    {
+
         // Extract distinct card IDs from the proposal's operations.
         // Operations target cards when TargetType is "Card" and TargetId is a valid GUID.
         // Single-pass: TryParse both validates and produces the Guid, avoiding double parsing.
@@ -86,7 +114,7 @@ public class CardHistoryService : ICardHistoryService
 
         // Find proposals that targeted the same cards (applied proposals get 'applied' status).
         // Track seen proposal IDs to avoid duplicates when multiple cards share the same related proposal.
-        var seenProposalIds = new HashSet<Guid> { proposalId };
+        var seenProposalIds = new HashSet<Guid> { proposal.Id };
         foreach (var cardId in affectedCardIds)
         {
             var relatedProposal = await _unitOfWork.AutomationProposals
@@ -135,7 +163,7 @@ public class CardHistoryService : ICardHistoryService
     }
 
     private List<CardHistoryRowDto> BuildPendingOperationRows(
-        AutomationProposal proposal, DateTimeOffset now)
+        ProposalCardHistoryContext proposal, DateTimeOffset now)
     {
         var rows = new List<CardHistoryRowDto>(proposal.Operations.Count);
         for (var i = 0; i < proposal.Operations.Count; i++)
@@ -249,7 +277,7 @@ public class CardHistoryService : ICardHistoryService
         return $"{entityType} updated";
     }
 
-    private static string FormatOperationEvent(AutomationProposalOperation op)
+    private static string FormatOperationEvent(ProposalOperationDto op)
     {
         var action = op.ActionType.ToLowerInvariant();
         var target = op.TargetType;
@@ -283,4 +311,21 @@ public class CardHistoryService : ICardHistoryService
     }
 
     private sealed record HistoryEntry(DateTimeOffset Timestamp, string Event, CardHistoryStatus Status);
+
+    private sealed record ProposalCardHistoryContext(
+        Guid Id,
+        string Summary,
+        DateTimeOffset CreatedAt,
+        IReadOnlyList<ProposalOperationDto> Operations);
+
+    private static ProposalOperationDto ToDto(AutomationProposalOperation operation) => new(
+        operation.Id,
+        operation.ProposalId,
+        operation.Sequence,
+        operation.ActionType,
+        operation.TargetType,
+        operation.TargetId,
+        operation.Parameters,
+        operation.IdempotencyKey,
+        operation.ExpectedVersion);
 }
