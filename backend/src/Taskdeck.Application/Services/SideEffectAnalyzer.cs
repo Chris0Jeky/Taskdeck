@@ -134,6 +134,18 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         IReadOnlyList<AutomationProposalOperation> operations,
         RiskLevel riskLevel)
     {
+        return ComputeApplyRiskPostureForCount(operations.Count, riskLevel);
+    }
+
+    internal static Reversibility ComputeApplyRiskPosture(
+        IReadOnlyList<ProposalOperationDto> operations,
+        RiskLevel riskLevel)
+    {
+        return ComputeApplyRiskPostureForCount(operations.Count, riskLevel);
+    }
+
+    private static Reversibility ComputeApplyRiskPostureForCount(int operationCount, RiskLevel riskLevel)
+    {
         // WindowMs is retained for the stable side-effect endpoint contract. It is a legacy
         // review-attention horizon, not an undo or recovery guarantee.
         long windowMs = Reversibility.DefaultWindowMs;
@@ -165,55 +177,6 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
             case RiskLevel.Low:
             default:
                 summary = "Low risk · confirm before apply";
-                description = "Low-risk operations still change board state. " +
-                              "Confirm the affected items before applying.";
-                break;
-        }
-
-        if (operations.Count == 0)
-        {
-            summary = "No operations to apply";
-            description = "This proposal contains no operations and will have no effect.";
-            windowMs = Reversibility.DefaultWindowMs;
-        }
-
-        return new Reversibility(summary, description, windowMs);
-    }
-
-    internal static Reversibility ComputeApplyRiskPosture(
-        IReadOnlyList<ProposalOperationDto> operations,
-        RiskLevel riskLevel)
-    {
-        var result = ComputeApplyRiskPostureForCount(operations.Count, riskLevel);
-        return result;
-    }
-
-    private static Reversibility ComputeApplyRiskPostureForCount(int operationCount, RiskLevel riskLevel)
-    {
-        var windowMs = Reversibility.DefaultWindowMs;
-        string summary;
-        string description;
-
-        switch (riskLevel)
-        {
-            case RiskLevel.Critical:
-                windowMs /= 2;
-                summary = "Critical risk Â· manual recovery";
-                description = "Critical-risk operations may remove data or trigger downstream effects. " +
-                              "Inspect every operation before applying; recovery may require manual intervention.";
-                break;
-            case RiskLevel.High:
-                summary = "High risk Â· inspect every change";
-                description = "High-risk operations can affect multiple records or external systems. " +
-                              "Review targets and downstream effects before applying.";
-                break;
-            case RiskLevel.Medium:
-                summary = "Medium risk Â· review affected items";
-                description = "Medium-risk operations change board state. " +
-                              "Review the affected items before applying.";
-                break;
-            default:
-                summary = "Low risk Â· confirm before apply";
                 description = "Low-risk operations still change board state. " +
                               "Confirm the affected items before applying.";
                 break;
