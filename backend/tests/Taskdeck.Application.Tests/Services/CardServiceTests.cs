@@ -474,6 +474,74 @@ public class CardServiceTests
     }
 
     [Fact]
+    public async Task UpdateCardAsync_ShouldAuditBlockReasonTransition_WhenCardIsAlreadyBlocked()
+    {
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(
+            board.Id,
+            column.Id,
+            "Task",
+            isBlocked: true,
+            blockReason: "Waiting for reviewer");
+        AuditLog? persistedAudit = null;
+        _cardRepoMock.Setup(repository => repository.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        _boardRepoMock.Setup(repository => repository.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _auditLogRepoMock
+            .Setup(repository => repository.AddAsync(It.IsAny<AuditLog>(), default))
+            .Callback<AuditLog, CancellationToken>((audit, _) => persistedAudit = audit)
+            .ReturnsAsync((AuditLog audit, CancellationToken _) => audit);
+        var service = new CardService(
+            _unitOfWorkMock.Object,
+            historyService: new HistoryService(_unitOfWorkMock.Object));
+        var dto = new UpdateCardDto(
+            null,
+            null,
+            null,
+            true,
+            "Archived by an approved proposal.",
+            null);
+
+        var result = await service.UpdateCardAsync(card.Id, dto);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        persistedAudit.Should().NotBeNull();
+        persistedAudit!.Changes.Should().Be(
+            "Block reason: 'Waiting for reviewer' -> 'Archived by an approved proposal.'");
+    }
+
+    [Fact]
+    public async Task UpdateCardAsync_ShouldAuditNoFieldsChanged_WhenBlockReasonIsUnchanged()
+    {
+        const string blockReason = "Archived by an approved proposal.";
+        var board = TestDataBuilder.CreateBoard();
+        var column = TestDataBuilder.CreateColumn(board.Id, "To Do");
+        var card = TestDataBuilder.CreateCard(
+            board.Id,
+            column.Id,
+            "Task",
+            isBlocked: true,
+            blockReason: blockReason);
+        AuditLog? persistedAudit = null;
+        _cardRepoMock.Setup(repository => repository.GetByIdWithLabelsAsync(card.Id, default)).ReturnsAsync(card);
+        _boardRepoMock.Setup(repository => repository.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _auditLogRepoMock
+            .Setup(repository => repository.AddAsync(It.IsAny<AuditLog>(), default))
+            .Callback<AuditLog, CancellationToken>((audit, _) => persistedAudit = audit)
+            .ReturnsAsync((AuditLog audit, CancellationToken _) => audit);
+        var service = new CardService(
+            _unitOfWorkMock.Object,
+            historyService: new HistoryService(_unitOfWorkMock.Object));
+        var dto = new UpdateCardDto(null, null, null, true, blockReason, null);
+
+        var result = await service.UpdateCardAsync(card.Id, dto);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        persistedAudit.Should().NotBeNull();
+        persistedAudit!.Changes.Should().Be("no fields changed");
+    }
+
+    [Fact]
     public async Task UpdateCardAsync_ShouldUnblockCard_WhenBlockedIsFalse()
     {
         // Arrange

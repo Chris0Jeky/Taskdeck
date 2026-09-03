@@ -375,6 +375,116 @@ public class ContextFabricCaptureBackfillTests : IClassFixture<TestWebApplicatio
         second.Remaining.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData("keep", CaptureUserDisposition.Kept)]
+    [InlineData("archive", CaptureUserDisposition.Archived)]
+    public async Task Disposition_ShouldPreserveAQueueTextCorrectionThroughResponseReadAndBackfill(
+        string action,
+        CaptureUserDisposition expectedDisposition)
+    {
+        // CF-01c (#2347) verifier repro against the real queue CAS and SQLite stores.
+        var user = await ApiTestHarness.AuthenticateAsync(_client, $"cf01-disposition-{action}");
+        var created = (await (await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "first draft", "typed")))
+            .Content.ReadFromJsonAsync<CaptureItemDto>())!;
+        await RunBackfillAsync();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(row => row.Id == created.Id);
+            var payload = CaptureRequestContract.ParseStoredPayload(request.Payload);
+            request.UpdatePayload(CaptureRequestContract.SerializePayload(payload with { Text = "corrected draft" }));
+            await db.SaveChangesAsync();
+        }
+
+        var whileDiverged = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        whileDiverged!.RawText.Should().Be("corrected draft", "the queue row is the newer writer before disposition");
+
+        var response = await _client.PostAsync($"/api/capture/items/{created.Id}/{action}", null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var mutated = await response.Content.ReadFromJsonAsync<CaptureItemDto>();
+        mutated!.RawText.Should().Be("corrected draft");
+
+        var reread = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{created.Id}");
+        reread!.RawText.Should().Be("corrected draft");
+
+        var backfill = await RunBackfillAsync();
+        backfill.Remaining.Should().Be(0, "the disposition repair must leave no masked divergence");
+
+        using var inspected = _factory.Services.CreateScope();
+        var store = inspected.ServiceProvider.GetRequiredService<ICaptureStore>();
+        var capture = (await store.GetByIdForUserAsync(created.Id, user.UserId))!;
+        capture.CurrentText.Should().Be("corrected draft");
+        capture.Disposition.Should().Be(expectedDisposition);
+        capture.SourceAssets.Should().HaveCount(2, "the original source remains as immutable lineage");
+        capture.SourceAssets[0].TextPayload!.Text.Should().Be("first draft");
+        capture.SourceAssets[0].IsActive.Should().BeFalse();
+        capture.SourceAssets[1].SupersedesAssetId.Should().Be(capture.SourceAssets[0].Id);
+    }
+
+    [Fact]
+    public async Task Backfill_ShouldKeepAnArchivedTextMismatchReadableAndOutstandingWithoutStampingIt()
+    {
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "cf01-archived-divergence");
+        Guid captureId = Guid.Empty;
+        try
+        {
+            var created = (await (await _client.PostAsJsonAsync(
+                "/api/capture/items",
+                new CreateCaptureItemDto(null, "first draft", "typed")))
+                .Content.ReadFromJsonAsync<CaptureItemDto>())!;
+            captureId = created.Id;
+            await RunBackfillAsync();
+
+            var archive = await _client.PostAsync($"/api/capture/items/{captureId}/archive", null);
+            archive.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            DateTimeOffset archivedStamp;
+            using (var before = _factory.Services.CreateScope())
+            {
+                var store = before.ServiceProvider.GetRequiredService<ICaptureStore>();
+                archivedStamp = (await store.GetByIdForUserAsync(captureId, user.UserId))!.UpdatedAt;
+            }
+
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+                var request = await db.LlmRequests.SingleAsync(row => row.Id == captureId);
+                var payload = CaptureRequestContract.ParseStoredPayload(request.Payload);
+                request.UpdatePayload(CaptureRequestContract.SerializePayload(payload with { Text = "corrected draft" }));
+                await db.SaveChangesAsync();
+            }
+
+            var result = await RunBackfillAsync();
+
+            result.Skipped.Should().BeGreaterThan(0);
+            result.Remaining.Should().BeGreaterThan(0);
+            result.Complete.Should().BeFalse();
+            var reread = await _client.GetFromJsonAsync<CaptureItemDto>($"/api/capture/items/{captureId}");
+            reread!.RawText.Should().Be("corrected draft", "the queue fallback owns the unrepaired mismatch");
+
+            using var inspected = _factory.Services.CreateScope();
+            var inspectedStore = inspected.ServiceProvider.GetRequiredService<ICaptureStore>();
+            var capture = (await inspectedStore.GetByIdForUserAsync(captureId, user.UserId))!;
+            capture.CurrentText.Should().Be("first draft");
+            capture.UpdatedAt.Should().Be(archivedStamp, "the failed reconciliation earned no stamp");
+            capture.SourceAssets.Should().ContainSingle();
+        }
+        finally
+        {
+            if (captureId != Guid.Empty)
+            {
+                // The intentionally outstanding row must not poison this shared fixture's later tests.
+                using var cleanup = _factory.Services.CreateScope();
+                var db = cleanup.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+                await db.Captures.Where(capture => capture.Id == captureId).ExecuteDeleteAsync();
+                await db.LlmRequests.Where(row => row.Id == captureId).ExecuteDeleteAsync();
+            }
+        }
+    }
+
     [Fact]
     public async Task Backfill_ShouldStepOverUnmappableRowsAndReportAnHonestMarker()
     {

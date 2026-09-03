@@ -82,7 +82,7 @@ public static class WriteToolSchemas
 
     public static TaskdeckToolSchema ProposeArchiveCard() => new(
         Name: "propose_archive_card",
-        Description: "Create a proposal to archive a card. The proposal must be reviewed before it takes effect.",
+        Description: "Create a proposal to mark a card blocked. Nothing changes immediately. After explicit review and approval, Apply marks the card blocked with the generated reason 'Archived by an approved proposal.'",
         ParametersSchema: ParseSchema("""
             {
                 "type": "object",

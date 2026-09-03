@@ -5,7 +5,10 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import type { CaptureItem } from '../../../../types/capture'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
-import { REVIEW_QUEUE_REFRESH_MS } from '../../../../composables/useReviewProposals'
+import {
+  REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+  REVIEW_QUEUE_REFRESH_MS,
+} from '../../../../composables/useReviewProposals'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 
@@ -3002,6 +3005,75 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('renders and politely announces a degraded retained queue after repeated poll failures', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.find('[data-testid="paper-review-queue-stale"]')
+      expect(stale.exists()).toBe(true)
+      expect(stale.attributes('role')).toBe('status')
+      expect(stale.attributes('aria-live')).toBe('polite')
+      expect(stale.text()).toContain('may be out of date')
+      expect(wrapper.text()).toContain('Split "dark mode" into 3 cards')
+      const root = wrapper.get('[data-testid="paper-review-view"]')
+      const queue = wrapper.get('[data-testid="paper-review-queue-rail"]')
+      const main = wrapper.get('.paper-review-deep__main-col')
+      const right = wrapper.get('[data-testid="paper-review-right-rail"]')
+      expect(stale.element.parentElement).toBe(main.element)
+      expect(queue.element.parentElement).toBe(root.element)
+      expect(main.element.parentElement).toBe(root.element)
+      expect(right.element.parentElement).toBe(root.element)
+      expect(Array.from(root.element.children)).toEqual([
+        queue.element,
+        main.element,
+        right.element,
+      ])
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders the degraded warning when repeated poll failures leave Paper empty', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.find('[data-testid="paper-review-queue-stale"]')
+      expect(stale.exists()).toBe(true)
+      expect(stale.text()).toContain('may be out of date')
+
+      const root = wrapper.get('[data-testid="paper-review-view"]')
+      const queue = wrapper.get('[data-testid="paper-review-queue-rail"]')
+      const empty = wrapper.get('[data-testid="paper-review-empty"]')
+      const right = wrapper.get('.paper-review-deep__rail-empty')
+      expect(stale.element.parentElement).toBe(empty.element)
+      expect(Array.from(root.element.children)).toEqual([
+        queue.element,
+        empty.element,
+        right.element,
+      ])
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {
@@ -3283,10 +3355,9 @@ describe('PaperReviewView', () => {
       const wrapper = await mountView([makeProposal({ id: 'pending' })])
 
       expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
-      // The rail still shows the honest apply-rate empty state beneath the heading.
-      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').text()).toBe(
-        'No decisions yet',
-      )
+      expect(wrapper.find('[data-testid="paper-review-apply-rate"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('No decisions yet')
     })
 
     it('scopes the cadence to the active board filter', async () => {
