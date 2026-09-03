@@ -14,15 +14,26 @@ All app shell assets (JS, CSS, HTML, icons, fonts) are precached on first load. 
 
 | Resource | Strategy | TTL | Notes |
 |----------|----------|-----|-------|
-| API responses (`/api/*`) | Network only | N/A | Never stored by the service worker or browser cache because responses may be identity-bound |
+| API responses (`/api/*`) | Network only | N/A | Not stored by the service worker: no runtime route matches a path starting with `/api`, and `ApiCacheControlMiddleware` stamps `no-store, private` on every `/api` response so the browser cache does not hold it either. See the boundary caveat below - this is not unconditional for an API base nested under `/assets/` or `/icons/` |
 | Lazy `it`/`es` locale chunks | StaleWhileRevalidate | Content-versioned | Cached after first use so the selected language remains available offline |
 | Static assets under `/assets/` and `/icons/` | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
 
 The static-asset route is anchored on the directories the build emits, not on the file extension.
 The API base is a deployment choice - `VITE_API_BASE_URL` may be prefixed, such as `/taskdeck/api` -
 so denying `/api` alone would not stop an authenticated `GET /taskdeck/api/users/by-username/alice.png`
-from being stored in the shared, cross-identity static cache. An unrecognised layout therefore loses
-runtime caching for a static asset; it never admits an API response.
+from being stored in the shared, cross-identity static cache. Anchoring on the emitted directories
+closes that case: an unrecognised layout loses runtime caching for a static asset.
+
+**The boundary is directory-anchored, not absolute, and it is not origin-anchored.** Two limits are
+load-bearing and were previously overstated here:
+
+- The deny test matches only a path *starting* with `/api`, while the admit test accepts `/assets/` or
+  `/icons/` followed by any nested path ending in a media or font extension. An API base nested under
+  either directory is therefore still admitted: `/assets/api/users/by-username/alice.png` is cached.
+  Do not deploy an API base under `/assets/` or `/icons/`. Tracked as `#2411`.
+- The predicates test `url.pathname` only, and `cacheableResponse` is `{ statuses: [0, 200] }`, so an
+  opaque third-party response under a matching path is admitted too. Nothing identity-bound leaks, but
+  `taskdeck-static-assets` is not first-party-only.
 
 ### Retiring the pre-#2350 worker
 
@@ -37,7 +48,9 @@ identifies it. The page then calls `registration.update()` and follows the repla
 `updatefound` and `statechange` until it reaches `installed`, at which point it is messaged to skip
 waiting. Following it matters: `registration.update()` resolves inside Install, *before* the install
 event's lifetime promises settle, so `registration.waiting` is normally still null when it returns and
-a one-shot read there would never deliver the message. The replacement claims open clients on
+a single read taken *at that moment* would not deliver the message. The code still reads
+`registration.waiting` once up front, deliberately, for the case where a replacement is already
+waiting because the user dismissed the update banner; that read is not the anti-pattern. The replacement claims open clients on
 activation, so the switch does not need a reload.
 
 Every step is bounded, and the whole migration has a hard 12-second ceiling, because session restore
