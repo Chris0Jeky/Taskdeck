@@ -80,13 +80,18 @@ function usesEntries(source, workflowPath, violations) {
       continue
     }
 
+    const propertyIndent = match[1].length + (match[2]?.length ?? 0)
+    if (!match[2] && hasPrecedingSiblingWith(lines, index, propertyIndent)) {
+      violations.add(`${workflowPath}:${line.lineNumber}: with must follow uses in an action step`)
+    }
+
     entries.push({
       action: cleanScalar(match[3]),
       index,
       inputMap: readSiblingWithInputs(
         lines,
         index,
-        match[1].length + (match[2] ? 2 : 0),
+        propertyIndent,
         `${workflowPath}:${line.lineNumber}`,
         violations,
       ),
@@ -95,6 +100,26 @@ function usesEntries(source, workflowPath, violations) {
   }
 
   return entries
+}
+
+function hasPrecedingSiblingWith(lines, usesIndex, propertyIndent) {
+  for (let index = usesIndex - 1; index >= 0; index -= 1) {
+    const line = lines[index]
+    if (!line.structural || line.raw.trim() === '' || line.raw.trim().startsWith('#')) continue
+
+    if (line.indent === propertyIndent && /^\s*(?:with|"with"|'with')\s*:/.test(line.raw)) {
+      return true
+    }
+
+    const itemStart = /^( *)(-\s+)(?:([A-Za-z0-9_-]+)|"([A-Za-z0-9_-]+)"|'([A-Za-z0-9_-]+)')\s*:/.exec(line.raw)
+    if (itemStart && itemStart[1].length + itemStart[2].length === propertyIndent) {
+      return (itemStart[3] ?? itemStart[4] ?? itemStart[5]).toLowerCase() === 'with'
+    }
+
+    if (line.indent < propertyIndent) return false
+  }
+
+  return false
 }
 
 function readSiblingWithInputs(lines, usesIndex, propertyIndent, location, violations) {
@@ -436,6 +461,50 @@ test('unsafe artifact promotion mutations fail closed', () => {
   assert.throws(
     () => enforceReleaseCacheContract(thirdPartySources),
     /third-party artifact download action dawidd6\/action-download-artifact is forbidden/,
+  )
+})
+
+test('with-before-uses cannot hide cross-run artifact inputs', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/download-artifact@v8
+        with:
+          name: release-input`,
+      `      - with:
+          name: release-input
+          github-token: attacker-controlled
+          repository: attacker/repository
+          run-id: 123
+        uses: actions/download-artifact@v8`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /with must follow uses in an action step/,
+  )
+})
+
+test('irregular valid sequence whitespace cannot hide cross-run artifact inputs', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/download-artifact@v8
+        with:
+          name: release-input`,
+      `      -  uses: actions/download-artifact@v8
+         with:
+           name: release-input
+           run-id: 123`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /actions\/download-artifact may not declare cross-run input run-id/,
   )
 })
 
