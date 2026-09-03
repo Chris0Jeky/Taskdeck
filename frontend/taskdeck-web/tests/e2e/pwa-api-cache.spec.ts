@@ -65,7 +65,7 @@ test('a legacy response from user A is never replayed after switching to user B 
   }
 })
 
-test('a worker without the retirement policy is replaced before a session is established @pwa-preview', async ({ browser, request }) => {
+test('a worker with the old retirement marker is replaced before a session is established @pwa-preview', async ({ browser, request }) => {
   const account = await registerUserSession(request, 'pwa-cache-legacy')
   const context = await browser.newContext({ serviceWorkers: 'allow' })
   const page = await context.newPage()
@@ -85,9 +85,10 @@ test('a worker without the retirement policy is replaced before a session is est
     serveLegacyWorker = false
     await route.fulfill({
       contentType: 'text/javascript',
-      // No policy listener, and it claims clients so it really controls the page —
-      // exactly the pre-#2350 shape the page has to detect by silence.
+      // This is the installed #2350 worker: it claims clients and answers with
+      // the old marker that the v2 page must reject.
       body: [
+        "self.addEventListener('message', (event) => { if (event.data?.type === 'taskdeck:api-cache-policy' && event.ports?.[0]) event.ports[0].postMessage({ policy: 'legacy-api-cache-retired' }) })",
         "self.addEventListener('install', () => self.skipWaiting())",
         "self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))",
         "self.addEventListener('fetch', () => {})",
@@ -106,7 +107,10 @@ test('a worker without the retirement policy is replaced before a session is est
     expect(await page.evaluate(() => new Promise((resolve) => {
       const channel = new MessageChannel()
       const timer = setTimeout(() => resolve(false), 2_000)
-      channel.port1.onmessage = () => { clearTimeout(timer); resolve(true) }
+      channel.port1.onmessage = (event) => {
+        clearTimeout(timer)
+        resolve((event.data as { policy?: string }).policy === 'legacy-api-cache-retired')
+      }
       navigator.serviceWorker.controller?.postMessage(
         { type: 'taskdeck:api-cache-policy' },
         [channel.port2],
@@ -126,7 +130,7 @@ test('a worker without the retirement policy is replaced before a session is est
       const timer = setTimeout(() => resolve(false), 2_000)
       channel.port1.onmessage = (event) => {
         clearTimeout(timer)
-        resolve((event.data as { policy?: string }).policy === 'legacy-api-cache-retired')
+        resolve((event.data as { policy?: string }).policy === 'taskdeck-api-cache-policy-v2')
       }
       navigator.serviceWorker.controller.postMessage(
         { type: 'taskdeck:api-cache-policy' },

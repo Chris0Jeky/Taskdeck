@@ -20,12 +20,6 @@ function read(relative: string): string {
   return readFileSync(resolve(projectRoot, relative), 'utf8')
 }
 
-function declaredPattern(source: string, name: string): string {
-  const match = new RegExp(`^const ${name} =\\s*\\n?\\s*(.+)$`, 'm').exec(source)
-  if (!match) throw new Error(`runtimeCachePolicy.ts no longer declares ${name}`)
-  return match[1].trim()
-}
-
 describe('runtime cache policy parity', () => {
   it('builds each runtime route from the shared policy factory', () => {
     const viteConfig = read('vite.config.ts')
@@ -43,12 +37,14 @@ describe('runtime cache policy parity', () => {
     const module = read('src/pwa/legacyApiCacheWorker.ts')
     const worker = read('public/api-cache-cleanup.js')
 
-    for (const literal of ['taskdeck:api-cache-policy', 'legacy-api-cache-retired', 'taskdeck:skip-waiting']) {
+    for (const literal of ['taskdeck:api-cache-policy', 'taskdeck-api-cache-policy-v2', 'taskdeck:skip-waiting']) {
       expect(module.includes(`'${literal}'`)).toBe(true)
       expect(worker.includes(`'${literal}'`)).toBe(true)
     }
 
-    // The activation hook evicts against the same static-asset rule the route admits.
-    expect(worker.includes(declaredPattern(read('src/pwa/runtimeCachePolicy.ts'), 'STATIC_ASSET_PATH'))).toBe(true)
+    // The public worker cannot reconstruct the build-time API base, so it must
+    // invalidate the whole static runtime cache instead of copying a partial matcher.
+    expect(worker).toContain('await caches.delete(TASKDECK_STATIC_ASSET_CACHE)')
+    expect(worker).not.toContain('TASKDECK_STATIC_ASSET_PATH')
   })
 })

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import workerScript from '../../../public/api-cache-cleanup.js?raw'
 
 describe('legacy API cache service-worker activation', () => {
-  it('deletes every API cache version while preserving share-target and static caches', async () => {
+  it('deletes every API cache version and the static cache while preserving share-target', async () => {
     let activate: ((event: { waitUntil: (promise: Promise<unknown>) => void }) => void) | undefined
     const deleted: string[] = []
     let activation: Promise<unknown> | undefined
@@ -21,8 +21,6 @@ describe('legacy API cache service-worker activation', () => {
         'taskdeck-share-target',
         'taskdeck-static-assets',
       ]),
-      // Required by the static-asset eviction step; without it that block throws and
-      // is swallowed, so this test would pass while asserting nothing about it.
       has: vi.fn(async () => false),
       open: vi.fn(),
       delete: vi.fn(async (cacheName: string) => {
@@ -39,10 +37,11 @@ describe('legacy API cache service-worker activation', () => {
       'taskdeck-api-cache',
       'taskdeck-api-cache-v2',
       'taskdeck-api-cache-future',
+      'taskdeck-static-assets',
     ])
   })
 
-  it('does not block service-worker activation when cache storage rejects', async () => {
+  it('rejects service-worker activation when cache storage rejects', async () => {
     let activate: ((event: { waitUntil: (promise: Promise<unknown>) => void }) => void) | undefined
     let activation: Promise<unknown> | undefined
     const self = {
@@ -52,17 +51,17 @@ describe('legacy API cache service-worker activation', () => {
       skipWaiting: vi.fn(),
       clients: { claim: vi.fn(async () => undefined) },
     }
-    const caches = { keys: vi.fn().mockRejectedValue(new Error('storage unavailable')), has: vi.fn(async () => false), open: vi.fn() }
+    const caches = { keys: vi.fn().mockRejectedValue(new Error('storage unavailable')), delete: vi.fn() }
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
     new Function('self', 'caches', workerScript)(self, caches)
     activate!({ waitUntil: (promise) => { activation = promise } })
 
-    await expect(activation).resolves.toBeUndefined()
+    await expect(activation).rejects.toThrow('Legacy API cache cleanup failed.')
     expect(warning).toHaveBeenCalledWith('Unable to remove legacy API caches during activation.')
   })
 
-  it('does not block service-worker activation when deleting a legacy cache rejects', async () => {
+  it('rejects service-worker activation when deleting a legacy cache rejects', async () => {
     let activate: ((event: { waitUntil: (promise: Promise<unknown>) => void }) => void) | undefined
     let activation: Promise<unknown> | undefined
     const self = {
@@ -82,6 +81,6 @@ describe('legacy API cache service-worker activation', () => {
     new Function('self', 'caches', workerScript)(self, caches)
     activate!({ waitUntil: (promise) => { activation = promise } })
 
-    await expect(activation).resolves.toBeUndefined()
+    await expect(activation).rejects.toThrow('Legacy API cache cleanup failed.')
   })
 })

@@ -38,8 +38,10 @@ worker wait indefinitely - the update banner is never shown on the public login 
 dismiss it - so the migration is not left to the update UI.
 
 Before any session is established, the page asks the controlling worker for the retirement policy over
-a `MessageChannel` (`src/pwa/legacyApiCacheWorker.ts`). A pre-#2350 worker has no listener, so silence
-identifies it. The page then calls `registration.update()` and follows the replacement through
+a `MessageChannel` (`src/pwa/legacyApiCacheWorker.ts`). A pre-#2350 worker has no listener, while the
+#2350 worker reports an older policy marker whose static-asset rule is not configuration-aware. The page
+accepts only the current versioned marker, so either installed predecessor causes
+`registration.update()`. It then follows the replacement through
 `updatefound` and `statechange` until it reaches `installed`, at which point it is messaged to skip
 waiting. Following it matters: `registration.update()` resolves inside Install, *before* the install
 event's lifetime promises settle, so `registration.waiting` is normally still null when it returns and
@@ -62,9 +64,12 @@ stays refused until reload - and a *missing* registration is not treated as succ
 non-answering controller is still intercepting, because `unregister()` never releases a page the
 worker already controls.
 
-Activation also evicts any entry in `taskdeck-static-assets` that the current route would refuse.
-The pre-#2350 extension-only matcher could have stored an authenticated response there under a
-prefixed API base, where it would otherwise survive an account switch for 30 days.
+Activation invalidates the whole `taskdeck-static-assets` runtime cache rather than trying to
+reconstruct the build-time API base inside the public worker script. The old extension-only matcher
+could have stored an authenticated response there under a prefixed API base, where it would otherwise
+survive an account switch for 30 days. Cache cleanup failure rejects activation, so a worker cannot
+control the page and report the current policy marker from a partially cleaned state. Normal assets
+are cached again on their next successful request; the share-target queue is preserved.
 
 Normal (non-security) updates still go through the `SwUpdatePrompt` banner: only this migration sends
 skip-waiting.

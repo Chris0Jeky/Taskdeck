@@ -7,7 +7,9 @@ import { logWarn } from '../utils/errorReporting'
  * the real worker source.
  */
 export const API_CACHE_POLICY_QUERY = 'taskdeck:api-cache-policy'
-export const API_CACHE_POLICY_RETIRED = 'legacy-api-cache-retired'
+// The #2350 acknowledgement 'legacy-api-cache-retired' is intentionally not
+// accepted: an installed worker with that marker still needs this migration.
+export const API_CACHE_POLICY_RETIRED = 'taskdeck-api-cache-policy-v2'
 export const API_CACHE_SKIP_WAITING = 'taskdeck:skip-waiting'
 
 const HANDSHAKE_TIMEOUT_MS = 1_500
@@ -66,9 +68,9 @@ function asksRetirementPolicy(worker: ServiceWorker, timeoutMs: number): Promise
       }
       resolve(retired)
     }
-    // A pre-#2350 worker has no handler for this message, so silence is the
-    // answer that matters: absence of the policy means the worker can still
-    // replay authenticated API responses.
+    // A pre-#2350 worker has no handler for this message, and the #2350 worker's
+    // old acknowledgement is rejected below. Silence or an unknown marker means
+    // the worker can still replay authenticated API responses.
     const timer = setTimeout(() => finish(false), timeoutMs)
     channel.port1.onmessage = (event: MessageEvent) => {
       clearTimeout(timer)

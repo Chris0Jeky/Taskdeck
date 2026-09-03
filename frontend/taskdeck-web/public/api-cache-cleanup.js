@@ -6,18 +6,16 @@ const TASKDECK_LEGACY_API_CACHE_PREFIX = 'taskdeck-api-cache'
 // The pre-#2350 static-asset route matched on file extension alone, so a
 // deployment with a prefixed API base could have stored an authenticated response
 // such as `/taskdeck/api/users/by-username/alice.png` in this cache, where it
-// survives an account switch for 30 days. The current route can no longer serve
-// it, but the stored response is still user A's data sitting in user B's browser,
-// so every entry the current policy would refuse is evicted on activation.
+// survives an account switch for 30 days. Invalidate the whole runtime cache on
+// activation instead of trying to reconstruct the build-time API base here.
 const TASKDECK_STATIC_ASSET_CACHE = 'taskdeck-static-assets'
-const TASKDECK_STATIC_ASSET_PATH =
-  /^\/(?:assets|icons)\/[^?#]*\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i
 
 // Handshake shared with src/pwa/legacyApiCacheWorker.ts. A pre-#2350 worker has
-// no listener for the query, so the page can tell a retired worker from one that
-// still replays authenticated API responses, and can force this one to activate.
+// no listener for the query, and the #2350 worker's old acknowledgement is not
+// accepted, so the page can force this one to activate before sign-in.
 const TASKDECK_API_CACHE_POLICY_QUERY = 'taskdeck:api-cache-policy'
-const TASKDECK_API_CACHE_POLICY_RETIRED = 'legacy-api-cache-retired'
+// The old acknowledgement 'legacy-api-cache-retired' is deliberately not reused.
+const TASKDECK_API_CACHE_POLICY_RETIRED = 'taskdeck-api-cache-policy-v2'
 const TASKDECK_API_CACHE_SKIP_WAITING = 'taskdeck:skip-waiting'
 
 self.addEventListener('message', (event) => {
@@ -46,24 +44,15 @@ self.addEventListener('activate', (event) => {
           .map((cacheName) => caches.delete(cacheName)),
       )
     } catch {
-      // Do not leave a newly deployed worker stuck activating because browser
-      // cache storage is temporarily unavailable. Identity transitions still
-      // fail closed in the page before accepting a replacement session.
       console.warn('Unable to remove legacy API caches during activation.')
+      throw new Error('Legacy API cache cleanup failed.')
     }
 
     try {
-      if (await caches.has(TASKDECK_STATIC_ASSET_CACHE)) {
-        const cache = await caches.open(TASKDECK_STATIC_ASSET_CACHE)
-        const requests = await cache.keys()
-        await Promise.all(
-          requests
-            .filter((request) => !TASKDECK_STATIC_ASSET_PATH.test(new URL(request.url).pathname))
-            .map((request) => cache.delete(request)),
-        )
-      }
+      await caches.delete(TASKDECK_STATIC_ASSET_CACHE)
     } catch {
-      console.warn('Unable to evict non-asset entries from the static asset cache during activation.')
+      console.warn('Unable to invalidate the static asset cache during activation.')
+      throw new Error('Static asset cache cleanup failed.')
     }
 
     try {
