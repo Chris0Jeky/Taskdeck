@@ -90,6 +90,22 @@ function handleCardClick(event: MouseEvent) {
   emit('click', props.card)
 }
 
+function focusCardAfterDragHandleClick(event: MouseEvent) {
+  // The enlarged drag handle can be the center point Playwright and keyboard
+  // users reach when they activate the card surface. Keep its native button
+  // click inert, but return focus to the card so the next Enter is owned by
+  // the card opener rather than lost on the drag control.
+  const cardElement = event.currentTarget instanceof Element
+    ? event.currentTarget.closest<HTMLElement>('[data-card-id]')
+    : null
+  cardElement?.focus()
+}
+
+function handleCardKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter') return
+  emit('click', props.card)
+}
+
 function formatDate(dateString: string | null): string {
   return formatCalendarDate(dateString)
 }
@@ -112,7 +128,8 @@ function isOverdue(dateString: string | null): boolean {
     tabindex="0"
     :aria-selected="isSelected"
     @click.stop="handleCardClick"
-    @keydown.enter="emit('click', card)"
+    @keydown.capture="handleCardKeydown"
+    @keyup.enter="handleCardKeydown"
     @keydown.space.prevent="emit('click', card)"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
@@ -129,7 +146,7 @@ function isOverdue(dateString: string | null): boolean {
         class="td-card-drag-handle flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-on-surface/60 hover:bg-surface-bright hover:text-on-surface/70 cursor-grab active:cursor-grabbing"
         title="Drag Card"
         aria-label="Drag Card"
-        @click.stop
+        @click.stop="focusCardAfterDragHandleClick"
         @mousedown="handleDragHandleMouseDown"
       >
         <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

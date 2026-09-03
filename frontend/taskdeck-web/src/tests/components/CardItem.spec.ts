@@ -133,7 +133,7 @@ describe('CardItem keyboard activation', () => {
     await wrapper.get('.td-board-card__title').trigger('click')
     expect(document.activeElement).toBe(wrapper.get('[data-card-id]').element)
 
-    await wrapper.get('[data-card-id]').trigger('keydown.enter')
+    await wrapper.get('[data-card-id]').trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('click')).toHaveLength(2)
 
     wrapper.unmount()
@@ -147,7 +147,23 @@ describe('CardItem keyboard activation', () => {
 
     await wrapper.get('[data-action="drag-card-handle"]').trigger('click')
     expect(wrapper.emitted('click')).toBeUndefined()
+    expect(document.activeElement).toBe(wrapper.get('[data-card-id]').element)
 
+    await wrapper.get('[data-card-id]').trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('click')).toHaveLength(1)
+
+    wrapper.unmount()
+  })
+
+  it('activates from Enter keyup when a global keydown owner consumes the first event', async () => {
+    const wrapper = mount(CardItem, {
+      attachTo: document.body,
+      props: { card: createCard() },
+    })
+
+    await wrapper.get('[data-card-id]').trigger('keyup', { key: 'Enter' })
+
+    expect(wrapper.emitted('click')).toHaveLength(1)
     wrapper.unmount()
   })
 })
