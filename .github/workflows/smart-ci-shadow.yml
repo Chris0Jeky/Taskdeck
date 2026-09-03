@@ -50,6 +50,8 @@ concurrency:
 
 env:
   NODE_VERSION: 24.13.1
+  CONTROL_BASE: ${{ github.sha }}
+  CONTROL_HEAD: ${{ github.event.pull_request.head.sha }}
 
 jobs:
   plan:
@@ -91,7 +93,7 @@ jobs:
       - name: Resolve the head commit identities (author + committer logins; metadata only)
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ env.CONTROL_HEAD }}
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/commits/${HEAD_SHA}" \
@@ -104,27 +106,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          # The checkout kept no credentials; authenticate this one read-only fetch with the job
-          # token so the merge ref still resolves once the repository is private.
-          auth_header="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          if git -c "http.extraheader=${auth_header}" fetch --no-tags --depth=2 origin "refs/pull/${PR_NUMBER}/merge"; then
-            merge_sha="$(git rev-parse 'FETCH_HEAD^{commit}')"
-            merge_base="$(git rev-parse 'FETCH_HEAD^1')"
-            merge_head="$(git rev-parse 'FETCH_HEAD^2')"
-            merge_tree="$(git rev-parse 'FETCH_HEAD^{tree}')"
-            if [ "$merge_base" != "$EXPECTED_BASE" ] || [ "$merge_head" != "$EXPECTED_HEAD" ]; then
-              echo "merge ref parents do not match the event base/head - the planner fails closed" >&2
-              exit 1
-            fi
-            printf '%s\n' "$merge_sha" > artifacts/merge-sha.txt
-            printf '%s\n' "$merge_tree" > artifacts/merge-tree-sha.txt
-          else
-            echo "merge ref unavailable (conflict, or not computed yet) - the planner fails closed" >&2
-          fi
+          node scripts/ci/smart-ci/resolve-merge-ref.mjs \
+            --pr "$PR_NUMBER" \
+            --base "$CONTROL_BASE" \
+            --head "$CONTROL_HEAD" \
+            --merge-out artifacts/merge-sha.txt \
+            --tree-out artifacts/merge-tree-sha.txt
 
       - name: Plan
         env:
@@ -143,6 +132,7 @@ jobs:
             --policy ci/policy.v1.json \
             --event "$GITHUB_EVENT_PATH" \
             --event-name "$GITHUB_EVENT_NAME" \
+            --base-sha "$CONTROL_BASE" \
             --changed-files artifacts/changed-files.tsv \
             --changed-files-expected "$EXPECTED_CHANGED_FILES" \
             --execution-mode "$CI_EXECUTION_MODE" \
@@ -192,8 +182,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PLAN_RESULT: ${{ needs.plan.result }}
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-          EXPECTED_BASE: ${{ github.event.pull_request.base.sha }}
+          EXPECTED_HEAD: ${{ env.CONTROL_HEAD }}
+          EXPECTED_BASE: ${{ env.CONTROL_BASE }}
         run: |
           set -euo pipefail
           head_actors="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${EXPECTED_HEAD}" --jq '[.author.login, .committer.login] | map(select(. != null)) | unique | join(",")' || true)"

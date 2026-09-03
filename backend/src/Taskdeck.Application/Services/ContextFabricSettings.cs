@@ -21,11 +21,7 @@ public sealed class ContextFabricSettings
     /// durable write that fails is not retried inline. Re-enabling therefore does not simply resume:
     /// the next <see cref="CaptureBackfillService"/> pass has to bring the window's captures in and
     /// reconcile anything that drifted, and until it has, the read path serves whichever of the two
-    /// wrote last. Nothing a user sees goes backwards at any point in that sequence - provided no
-    /// disposition change (keep, archive, reactivate) intervenes before the next reconcile pass.
-    /// Such a write stamps the aggregate newer than the queue row that moved past it, which defeats
-    /// both the divergence guard and the reconcile pass and masks the divergence until
-    /// <c>#2347</c> lands.
+    /// wrote last. Nothing a user sees goes backwards at any point in that sequence.
     /// </para>
     /// </summary>
     public bool DualWriteCaptures { get; set; } = true;

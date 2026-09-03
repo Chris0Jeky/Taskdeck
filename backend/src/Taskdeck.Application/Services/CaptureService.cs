@@ -890,12 +890,7 @@ public class CaptureService : ICaptureService
         {
             // The durable side must never be the reason an operation the queue row accepted fails.
             // The aggregate is now behind its queue row. The divergence guard on the read path
-            // detects that and the reconcile pass repairs it on the next start -- PROVIDED no
-            // disposition change intervenes first. Keep, Archive and Reactivate all Touch the
-            // aggregate, which stamps it newer than the queue row that moved past it and defeats
-            // both the read guard and the divergence join, masking the divergence indefinitely.
-            // Tracked as #2347; until that lands, a divergence followed by a disposition write stays
-            // hidden.
+            // detects that and the reconcile pass repairs it on the next start.
             _logger?.LogWarning(
                 ex,
                 "Context Fabric: could not record a superseding source for capture {CaptureId}; " +
@@ -923,25 +918,73 @@ public class CaptureService : ICaptureService
         if (item.UserId != userId)
             return Result.Failure(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
-        if (item.Status == RequestStatus.Cancelled)
-            return Result.Success();
-
+        var transactionOpen = false;
         try
         {
+            // Cancellation changes both the queue row and the durable aggregate. Use the same
+            // optimistic queue guard as Keep/Archive so a stale request cannot project an older
+            // payload into a capture that a concurrent edit has already corrected.
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            transactionOpen = true;
+
+            var expectedStatus = item.Status;
+            var expectedUpdatedAt = item.UpdatedAt;
             item.Cancel();
+            var updated = await _unitOfWork.LlmQueue.TrySetCaptureDispositionAsync(
+                item.Id,
+                expectedStatus,
+                expectedUpdatedAt,
+                item.Status,
+                item.Payload,
+                cancellationToken);
+            if (!updated)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                transactionOpen = false;
+                return Result.Failure(
+                    ErrorCodes.Conflict,
+                    "Capture item changed while it was being cancelled");
+            }
+
+            var persistedPayload = ParsePayload(item);
 
             // The user's disposition is a durable column now, not JSON on the queue row: putting a
             // capture away records Archived on the aggregate's disposition axis in the same unit of
             // work. Processing and action outcomes are deliberately left standing -- archiving is a
             // decision about the Inbox, not an erasure of what was produced (ADR-0065 Decision 1).
-            await ApplyDurableDispositionAsync(userId, item.Id, CaptureDisposition.Archived, cancellationToken);
+            var durable = await ApplyDurableDispositionAsync(
+                userId,
+                item.Id,
+                CaptureDisposition.Archived,
+                persistedPayload.Text,
+                item.UpdatedAt,
+                cancellationToken);
+            if (durable is not null)
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+            }
 
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            transactionOpen = false;
             return Result.Success();
         }
         catch (DomainException ex)
         {
+            if (transactionOpen)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
             return Result.Failure(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            if (transactionOpen)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
+            throw;
         }
     }
 
@@ -954,6 +997,8 @@ public class CaptureService : ICaptureService
         Guid userId,
         Guid captureId,
         CaptureDisposition disposition,
+        string queueText,
+        DateTimeOffset queueUpdatedAt,
         CancellationToken cancellationToken)
     {
         // Not gated on DualWriteCaptures, for the same reason as SupersedeDurableTextAsync: the flag
@@ -971,6 +1016,16 @@ public class CaptureService : ICaptureService
 
         try
         {
+            // CF-01c (#2347): this is the exact queue text the disposition CAS wrote. Repair any
+            // out-of-band divergence before Keep/Archive/Reactivate touches UpdatedAt; applying the
+            // disposition first would make stale durable text look newer than its queue row and
+            // hide it from both the read guard and reconcile backlog forever. Sources stay
+            // immutable: reconciliation appends a superseding asset.
+            if (!string.Equals(capture.CurrentText, queueText, StringComparison.Ordinal))
+            {
+                capture.SupersedeInlineTextSource(queueText);
+            }
+
             switch (CaptureUserDispositionMapping.FromLegacy(disposition))
             {
                 case CaptureUserDisposition.Archived:
@@ -983,6 +1038,8 @@ public class CaptureService : ICaptureService
                     capture.Reactivate();
                     break;
             }
+
+            capture.RecordLegacyReconciliation(queueUpdatedAt);
         }
         catch (DomainException ex)
         {
@@ -1019,43 +1076,29 @@ public class CaptureService : ICaptureService
 
         var payload = ParsePayload(item);
         var status = ResolveCaptureStatus(item, payload);
-
-        if (payload.Disposition?.Kind == disposition &&
+        var isIdempotentDisposition = payload.Disposition?.Kind == disposition &&
             (status is CaptureStatus.New or CaptureStatus.Failed ||
-             disposition == CaptureDisposition.Archived && status == CaptureStatus.Ignored))
-        {
-            // The idempotent return still repairs the aggregate. The queue row already carries this
-            // disposition, so a durable row that does not is the residue of an interrupted attempt --
-            // and this early exit is the path every retry takes, so it has to be the path that heals.
-            var repaired = await ApplyDurableDispositionAsync(userId, item.Id, disposition, cancellationToken);
-            if (repaired is not null)
-            {
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-            }
+             disposition == CaptureDisposition.Archived && status == CaptureStatus.Ignored);
 
-            return Result.Success(MapToDetailDto(
-                item,
-                payload,
-                effectiveBoardId: null,
-                await ReadableMaterialAsync(repaired, cancellationToken)));
-        }
-
-        if (status is not CaptureStatus.New and not CaptureStatus.Failed)
+        if (!isIdempotentDisposition && status is not CaptureStatus.New and not CaptureStatus.Failed)
         {
             return Result.Failure<CaptureItemDto>(
                 ErrorCodes.Conflict,
                 $"Capture item cannot be {disposition.ToString().ToLowerInvariant()} from {status}");
         }
 
-        var existingProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
-            ProposalSourceType.Queue,
-            item.Id.ToString(),
-            cancellationToken);
-        if (existingProposal?.Status is ProposalStatus.PendingReview or ProposalStatus.Approved or ProposalStatus.Applied)
+        if (!isIdempotentDisposition)
         {
-            return Result.Failure<CaptureItemDto>(
-                ErrorCodes.Conflict,
-                "Capture item already has a proposal in review or applied work");
+            var existingProposal = await _unitOfWork.AutomationProposals.GetBySourceReferenceAsync(
+                ProposalSourceType.Queue,
+                item.Id.ToString(),
+                cancellationToken);
+            if (existingProposal?.Status is ProposalStatus.PendingReview or ProposalStatus.Approved or ProposalStatus.Applied)
+            {
+                return Result.Failure<CaptureItemDto>(
+                    ErrorCodes.Conflict,
+                    "Capture item already has a proposal in review or applied work");
+            }
         }
 
         var transactionOpen = false;
@@ -1069,14 +1112,16 @@ public class CaptureService : ICaptureService
 
             var expectedStatus = item.Status;
             var expectedUpdatedAt = item.UpdatedAt;
-            var updatedPayload = payload with
-            {
-                Disposition = new CaptureDispositionV1(
-                    disposition,
-                    DateTimeOffset.UtcNow,
-                    userId,
-                    item.BoardId)
-            };
+            var updatedPayload = isIdempotentDisposition
+                ? payload
+                : payload with
+                {
+                    Disposition = new CaptureDispositionV1(
+                        disposition,
+                        DateTimeOffset.UtcNow,
+                        userId,
+                        item.BoardId)
+                };
             var targetStatus = disposition == CaptureDisposition.Archived
                 ? RequestStatus.Cancelled
                 : item.Status;
@@ -1101,9 +1146,17 @@ public class CaptureService : ICaptureService
                     "Capture item changed while its disposition was being recorded");
             }
 
+            var persistedPayload = ParsePayload(item);
+
             // Only after the conditional queue-row update actually won: a lost race must not leave
             // the durable disposition axis ahead of the row it describes.
-            var durable = await ApplyDurableDispositionAsync(userId, item.Id, disposition, cancellationToken);
+            var durable = await ApplyDurableDispositionAsync(
+                userId,
+                item.Id,
+                disposition,
+                persistedPayload.Text,
+                item.UpdatedAt,
+                cancellationToken);
             if (durable is not null)
             {
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -1114,7 +1167,7 @@ public class CaptureService : ICaptureService
 
             return Result.Success(MapToDetailDto(
                 item,
-                updatedPayload,
+                persistedPayload,
                 effectiveBoardId: null,
                 await ReadableMaterialAsync(durable, cancellationToken)));
         }

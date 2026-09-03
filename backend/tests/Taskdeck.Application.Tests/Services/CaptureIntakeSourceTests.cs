@@ -178,6 +178,14 @@ public sealed class CaptureIntakeSourceTests
             processingSummary: CaptureProcessingSummary.Ready,
             actionState: CaptureActionState.Acted);
         _queue.Setup(repository => repository.GetByIdAsync(request.Id, It.IsAny<CancellationToken>())).ReturnsAsync(request);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                request.Id,
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                RequestStatus.Cancelled,
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
         _captureStore
             .Setup(store => store.GetByIdForUpdateAsync(request.Id, _userId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(durable);
