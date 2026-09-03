@@ -3355,10 +3355,9 @@ describe('PaperReviewView', () => {
       const wrapper = await mountView([makeProposal({ id: 'pending' })])
 
       expect(wrapper.find('[data-testid="paper-review-mini-cadence"]').exists()).toBe(false)
-      // The rail still shows the honest apply-rate empty state beneath the heading.
-      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').text()).toBe(
-        'No decisions yet',
-      )
+      expect(wrapper.find('[data-testid="paper-review-apply-rate"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-review-apply-rate-empty"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('No decisions yet')
     })
 
     it('scopes the cadence to the active board filter', async () => {
