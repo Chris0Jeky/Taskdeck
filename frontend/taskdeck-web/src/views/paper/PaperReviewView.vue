@@ -1180,6 +1180,7 @@ let revisionEditEpoch = 0
 let revisionReturnFocusEpoch: number | null = null
 let revisionReviewEpoch = 0
 const revisionReviewRefreshEpochs = new Map<string, number>()
+const revisionReviewUnavailableKeys = ref<Set<string>>(new Set())
 
 function revisionReviewKey(proposalId: string): string {
   return proposalId.toLowerCase()
@@ -1191,6 +1192,26 @@ function requireRevisionReviewRefresh(proposalId: string) {
     ++revisionReviewEpoch,
   )
 }
+
+function setRevisionReviewUnavailable(proposalId: string, unavailable: boolean) {
+  const key = revisionReviewKey(proposalId)
+  const next = new Set(revisionReviewUnavailableKeys.value)
+  if (unavailable) next.add(key)
+  else next.delete(key)
+  revisionReviewUnavailableKeys.value = next
+}
+
+const activeRevisionReviewUnavailable = computed(() => {
+  const proposalId = activeProposal.value?.id
+  return !!proposalId && revisionReviewUnavailableKeys.value.has(revisionReviewKey(proposalId))
+})
+
+const reviewMainDescriptionIds = computed(() => {
+  const ids: string[] = []
+  if (revisionReviewRefreshBusy.value) ids.push('paper-review-revision-refresh-lock')
+  if (activeRevisionReviewUnavailable.value) ids.push('paper-review-evidence-unavailable-note')
+  return ids.join(' ') || undefined
+})
 
 function revisionIdentitiesEqual(
   left: string | null,
@@ -1353,6 +1374,11 @@ async function refreshRevisionReviewBeforeApply(
       refreshed.id,
       revisionIdentity,
     )
+    if (selectorOutcome === 'failed') {
+      setRevisionReviewUnavailable(proposal.id, true)
+      toast.error(t('review.toast.revisionReviewUnavailable'))
+      return
+    }
     if (selectorOutcome !== 'settled') return
 
     const verified = activeProposal.value
@@ -1370,6 +1396,7 @@ async function refreshRevisionReviewBeforeApply(
     const key = revisionReviewKey(proposal.id)
     if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return
     revisionReviewRefreshEpochs.delete(key)
+    setRevisionReviewUnavailable(proposal.id, false)
     toast.info(t('review.toast.revisionReviewRefreshed'))
   } finally {
     revisionReviewRefreshBusy.value = false
@@ -2173,12 +2200,21 @@ async function onClearBoardScope() {
       >
         {{ $t('review.decisionRail.refreshLock') }}
       </p>
+      <p
+        v-if="activeRevisionReviewUnavailable"
+        id="paper-review-evidence-unavailable-note"
+        class="paper-review-deep__queue-stale tk-meta"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="paper-review-evidence-unavailable"
+      >
+        {{ $t('review.toast.revisionReviewUnavailable') }}
+      </p>
       <ReviewMain
         ref="reviewMainRef"
         :key="activeProposal.id"
-        :aria-describedby="
-          revisionReviewRefreshBusy ? 'paper-review-revision-refresh-lock' : undefined
-        "
+        :aria-describedby="reviewMainDescriptionIds"
         :serial="headerSerial"
         :meta="headerMeta"
         :title-parts="titleParts"
@@ -2198,6 +2234,7 @@ async function onClearBoardScope() {
         :side-effects="selectors.sideEffects.value"
         :conflicts="selectors.conflicts.value"
         :history="selectors.history.value"
+        :evidence-unavailable="activeRevisionReviewUnavailable"
         :dismissable="activeDismissable"
         :apply-phase="applyPhase"
         :edit-lock="editLock"
@@ -2437,6 +2474,7 @@ async function onClearBoardScope() {
       :breakdown="selectors.confidenceBreakdown.value"
       :similar-past="selectors.similarPast.value"
       :similar-past-apply-rate="selectors.similarPastApplyRate.value"
+      :evidence-unavailable="activeRevisionReviewUnavailable"
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"
       :receipt-active="activeDecisionReceipt !== null"

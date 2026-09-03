@@ -4824,6 +4824,79 @@ describe('PaperReviewView', () => {
       expect(mocks.approveProposal).toHaveBeenCalledOnce()
     })
 
+    it('keeps the barrier and marks evidence unavailable when a required selector refresh fails', async () => {
+      const now = new Date().toISOString()
+      const original = makeProposal({ id: 'selector-failure' })
+      const refreshed = makeProposal({
+        id: 'selector-failure',
+        latestRevisionId: 'rev-selector-1',
+      })
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-selector-1',
+        proposalId: 'selector-failure',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'Require complete evidence',
+        createdAt: now,
+      })
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({
+          id: 'selector-failure',
+          status: 'Approved',
+          approvedRevisionId: 'rev-selector-1',
+        }),
+      )
+      const wrapper = await mountView([original])
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        reason: 'Require complete evidence',
+      })
+      await flushPromises()
+
+      mocks.getProposals.mockResolvedValue([refreshed])
+      mocks.getHistory.mockRejectedValueOnce(new Error('history unavailable'))
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).not.toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+      expect(mocks.errorToast).toHaveBeenCalledWith(
+        'Review evidence could not be refreshed. No decision was made. Choose the current action again to retry.',
+      )
+      expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
+        'Review evidence could not be refreshed',
+      )
+      expect(wrapper.text()).not.toContain('Nothing flagged.')
+      expect(wrapper.text()).not.toContain('No history recorded.')
+      expect(wrapper.text()).not.toContain('No comparable past decisions.')
+
+      // The next action retries the exact failed key. Even after that full
+      // batch succeeds, the recovery action is consumed and cannot approve.
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.getHistory).toHaveBeenCalledTimes(3)
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+      expect(mocks.infoToast).toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledOnce()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
     it('does not let a pre-save background poll overwrite the refreshed revision DTO', async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
       try {

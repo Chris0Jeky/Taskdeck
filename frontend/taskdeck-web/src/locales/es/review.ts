@@ -607,6 +607,8 @@ export default {
       'Esta propuesta no contiene operaciones que aplicar — la aplicación la rechazará. Recházala o archívala.',
     revisionReviewRefreshed:
       'La revisión se actualizó después del intento de guardado. Comprueba las pruebas actuales y vuelve a elegir la acción.',
+    revisionReviewUnavailable:
+      'No se pudieron actualizar las pruebas de revisión. No se tomó ninguna decisión. Vuelve a elegir la acción actual para reintentarlo.',
     notRejectable:
       'Esta propuesta ya no se puede rechazar. Actualiza la revisión para ver el estado actual.',
     notEditable: 'Esta propuesta ya no se puede editar.',

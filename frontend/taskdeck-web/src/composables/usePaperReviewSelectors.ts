@@ -126,7 +126,7 @@ export interface SimilarPastRow {
   date: string
 }
 
-export type CoreSelectorBatchOutcome = 'settled' | 'superseded' | 'unavailable'
+export type CoreSelectorBatchOutcome = 'settled' | 'failed' | 'superseded' | 'unavailable'
 
 export interface PaperReviewSelectors {
   provenance: ComputedRef<ProvenanceRow[]>
@@ -599,25 +599,35 @@ export function usePaperReviewSelectors(
 
       const [prov, conf, side, confl, hist, sim] = results
 
-      provenanceData.value =
-        prov.status === 'fulfilled' ? prov.value.map(mapProvenanceRow) : EMPTY_PROVENANCE
+      if (
+        prov.status === 'rejected' ||
+        conf.status === 'rejected' ||
+        side.status === 'rejected' ||
+        confl.status === 'rejected' ||
+        hist.status === 'rejected' ||
+        sim.status === 'rejected'
+      ) {
+        // These six reads form one evidence snapshot. Publishing successful
+        // siblings would turn unavailable evidence into affirmative empty
+        // states and let this revision key masquerade as fully refreshed.
+        isLoading.value = false
+        return 'failed'
+      }
 
-      evidenceLinksData.value =
-        prov.status === 'fulfilled' ? mapEvidenceLinks(prov.value) : EMPTY_EVIDENCE_LINKS
+      provenanceData.value = prov.value.map(mapProvenanceRow)
 
-      const mappedConfidence =
-        conf.status === 'fulfilled' ? mapConfidence(conf.value) : EMPTY_CONFIDENCE
+      evidenceLinksData.value = mapEvidenceLinks(prov.value)
+
+      const mappedConfidence = mapConfidence(conf.value)
       confidenceData.value = mappedConfidence
 
-      sideEffectsData.value = side.status === 'fulfilled' ? mapSideEffects(side.value) : null
+      sideEffectsData.value = mapSideEffects(side.value)
 
-      conflictsData.value =
-        confl.status === 'fulfilled' ? mapConflicts(confl.value) : EMPTY_CONFLICTS
+      conflictsData.value = mapConflicts(confl.value)
 
-      historyData.value = hist.status === 'fulfilled' ? mapHistory(hist.value) : EMPTY_HISTORY
+      historyData.value = mapHistory(hist.value)
 
-      similarPastData.value =
-        sim.status === 'fulfilled' ? mapSimilarPast(sim.value) : EMPTY_SIMILAR
+      similarPastData.value = mapSimilarPast(sim.value)
 
       settledCoreKey = key
       isLoading.value = false
@@ -651,8 +661,11 @@ export function usePaperReviewSelectors(
       supersede: () => resolveSuperseded('superseded'),
     }
     activeCoreBatch = batch
-    void promise.then(() => {
-      if (activeCoreBatch === batch) activeCoreBatch = null
+    void promise.then((outcome) => {
+      // Preserve a failed automatic batch long enough for the next explicit
+      // Apply waiter to observe it. That action reports the failure and clears
+      // this entry; only a later deliberate action starts the retry.
+      if (outcome !== 'failed' && activeCoreBatch === batch) activeCoreBatch = null
     })
     return promise
   }
@@ -667,7 +680,18 @@ export function usePaperReviewSelectors(
       !proposalIdsEqual(key.proposalId, proposalId) ||
       !nullableIdentifiersEqual(key.revisionIdentity, revisionIdentity)
     ) return Promise.resolve('unavailable')
-    return ensureCoreBatch(key)
+    const promise = ensureCoreBatch(key)
+    return promise.then((outcome) => {
+      if (
+        outcome === 'failed' &&
+        activeCoreBatch &&
+        selectorKeysEqual(activeCoreBatch.key, key) &&
+        activeCoreBatch.promise === promise
+      ) {
+        activeCoreBatch = null
+      }
+      return outcome
+    })
   }
 
   watch(

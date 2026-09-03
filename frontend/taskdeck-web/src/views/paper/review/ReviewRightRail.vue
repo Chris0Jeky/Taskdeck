@@ -32,14 +32,23 @@ withDefaults(
     receiptActive?: boolean
     /** Historical Applied records never expose live decision key hints. */
     appliedRecord?: boolean
+    /** Required evidence could not be refreshed for the active saved revision. */
+    evidenceUnavailable?: boolean
   }>(),
-  { applyPhase: 'approve', applyOnly: false, receiptActive: false, appliedRecord: false },
+  {
+    applyPhase: 'approve',
+    applyOnly: false,
+    receiptActive: false,
+    appliedRecord: false,
+    evidenceUnavailable: false,
+  },
 )
 </script>
 
 <template>
   <aside class="paper-review-right" data-testid="paper-review-right-rail">
     <ReviewAuthorCard
+      v-if="!evidenceUnavailable"
       :author-name="authorName"
       :author-meta="authorMeta"
       :proposed-date="proposedDate"
@@ -48,7 +57,11 @@ withDefaults(
       :breakdown="breakdown"
     />
     <ReviewWhyNow :body="whyNowBody" />
-    <ReviewSimilarPast :rows="similarPast" :apply-rate="similarPastApplyRate" />
+    <ReviewSimilarPast
+      v-if="!evidenceUnavailable"
+      :rows="similarPast"
+      :apply-rate="similarPastApplyRate"
+    />
     <ReviewKeysCard
       v-if="!appliedRecord && (!receiptActive || applyOnly)"
       :apply-phase="applyPhase"

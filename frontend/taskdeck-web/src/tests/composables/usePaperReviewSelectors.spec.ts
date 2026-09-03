@@ -538,22 +538,49 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.similarPastApplyRate.value.ratio).toBeCloseTo(0.667, 2)
   })
 
-  it('gracefully handles individual endpoint failures', async () => {
+  it('fails an exact batch and retries it instead of caching partial evidence as settled', async () => {
     mockAllEndpointsEmpty()
-    vi.mocked(proposalDeepReviewApi.getProvenance).mockRejectedValue(new Error('fail'))
-    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValue(new Error('fail'))
-
-    const proposal = ref<ApiProposal | null>(makeProposal())
+    vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValueOnce([
+      { tone: 0, key: 'existing-warning', value: 'Review this first' },
+    ])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
     const activeProposal = computed(() => proposal.value)
     const selectors = usePaperReviewSelectors(activeProposal)
 
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-1')).resolves.toBe('settled')
+    expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
+
+    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValueOnce(new Error('fail'))
+    proposal.value = makeProposal({ latestRevisionId: 'rev-2' })
+    await nextTick()
+
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('failed')
+    expect(selectors.loading.value).toBe(false)
+    // A partial rev-2 answer is not published as measured-empty evidence. Keep
+    // the last coherent batch visible until a complete current-key retry lands.
+    expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(2)
+
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(3)
+    expect(selectors.conflicts.value).toEqual([])
+  })
+
+  it('does not publish successful siblings from an incomplete automatic batch', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockRejectedValue(new Error('fail'))
+
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
     await vi.waitFor(() => {
-      expect(selectors.confidenceBreakdown.value.overall).toBe(0.5)
+      expect(selectors.loading.value).toBe(false)
     })
 
     expect(selectors.provenance.value).toEqual([])
     expect(selectors.history.value).toEqual([])
     expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
   })
 
   it('discards stale responses when proposal changes rapidly', async () => {

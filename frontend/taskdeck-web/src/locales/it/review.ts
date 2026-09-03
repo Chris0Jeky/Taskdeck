@@ -610,6 +610,8 @@ export default {
       'Questa proposta non contiene operazioni da applicare — l’applicazione la rifiuterà. Rifiutala o archiviala.',
     revisionReviewRefreshed:
       'Revisione aggiornata dopo il tentativo di salvataggio. Controlla le prove correnti, quindi scegli di nuovo l’azione.',
+    revisionReviewUnavailable:
+      'Non è stato possibile aggiornare le prove della revisione. Non è stata presa alcuna decisione. Scegli di nuovo l’azione corrente per riprovare.',
     notRejectable:
       'Questa proposta non può più essere rifiutata. Aggiorna la revisione per vedere lo stato attuale.',
     notEditable: 'Questa proposta non può più essere modificata.',
