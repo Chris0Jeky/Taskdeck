@@ -15,6 +15,8 @@ import {
 
 const MAX_BATCH_APPROVAL_COUNT = 500
 
+export type BatchApproveOutcome = 'success' | 'failure'
+
 interface CapturedBatchSelection extends BatchApproveProposalSelection {
   reviewFingerprint: string
 }
@@ -79,6 +81,7 @@ export function useBatchApproveProposals(
   currentUserId: Ref<string | null>,
   nowMs: Ref<number>,
   loadProposals: () => Promise<void>,
+  onSettled?: (outcome: BatchApproveOutcome) => void,
 ) {
   const toast = useToastStore()
   const t = i18n.global.t
@@ -202,6 +205,7 @@ export function useBatchApproveProposals(
     const ids = submitted.map((selection) => selection.id)
     confirmationOpen.value = false
     busy.value = true
+    let outcome: BatchApproveOutcome | null = null
 
     try {
       const result = await automationApi.approveProposals(submitted)
@@ -211,6 +215,7 @@ export function useBatchApproveProposals(
 
       replaceSelection([])
       if (!receiptMatches) {
+        outcome = 'failure'
         await refreshProposalsBestEffort()
         toast.error(t('review.batchApprove.receiptMismatch'))
         return
@@ -227,6 +232,7 @@ export function useBatchApproveProposals(
         undefined,
         { label: 'approved' },
       )
+      outcome = 'success'
       await refreshProposalsBestEffort()
     } catch (error: unknown) {
       // A server-side drift/conflict is authoritative. Refresh before reporting it so the queue does
@@ -234,8 +240,10 @@ export function useBatchApproveProposals(
       replaceSelection([])
       await refreshProposalsBestEffort()
       toast.error(getErrorDisplay(error, t('review.batchApprove.failed')).message)
+      outcome = 'failure'
     } finally {
       busy.value = false
+      if (outcome) onSettled?.(outcome)
     }
   }
 

@@ -143,11 +143,13 @@ describe('useBatchApproveProposals', () => {
 
   it('prunes selection drift and refuses the POST from an open confirmation', async () => {
     const proposals = ref([makeProposal()])
+    const onSettled = vi.fn()
     const actions = useBatchApproveProposals(
       proposals,
       ref('u-1'),
       ref(NOW),
       vi.fn().mockResolvedValue(undefined),
+      onSettled,
     )
     actions.toggleSelection('p-1')
     actions.requestConfirmation()
@@ -159,6 +161,47 @@ describe('useBatchApproveProposals', () => {
     expect(actions.selectedCount.value).toBe(0)
     expect(automationApi.approveProposals).not.toHaveBeenCalled()
     expect(automationApi.executeProposal).not.toHaveBeenCalled()
+    expect(onSettled).not.toHaveBeenCalled()
+  })
+
+  it('calls the settle callback exactly once after a submitted approval succeeds', async () => {
+    const proposals = ref([makeProposal()])
+    const onSettled = vi.fn()
+    vi.mocked(automationApi.approveProposals).mockResolvedValue({ approvedIds: ['p-1'] })
+    const actions = useBatchApproveProposals(
+      proposals,
+      ref('u-1'),
+      ref(NOW),
+      vi.fn().mockResolvedValue(undefined),
+      onSettled,
+    )
+    actions.toggleSelection('p-1')
+    actions.requestConfirmation()
+
+    await actions.confirmApproval()
+
+    expect(onSettled).toHaveBeenCalledOnce()
+    expect(onSettled).toHaveBeenCalledWith('success')
+  })
+
+  it('calls the settle callback exactly once after a submitted approval is rejected', async () => {
+    const proposals = ref([makeProposal()])
+    const onSettled = vi.fn()
+    vi.mocked(automationApi.approveProposals).mockRejectedValue(new Error('approval unavailable'))
+    const actions = useBatchApproveProposals(
+      proposals,
+      ref('u-1'),
+      ref(NOW),
+      vi.fn().mockResolvedValue(undefined),
+      onSettled,
+    )
+    actions.toggleSelection('p-1')
+    actions.requestConfirmation()
+
+    await actions.confirmApproval()
+
+    expect(onSettled).toHaveBeenCalledOnce()
+    expect(onSettled).toHaveBeenCalledWith('failure')
   })
 
   it('invalidates confirmation when only part of the selected set drifts', async () => {
@@ -300,9 +343,10 @@ describe('useBatchApproveProposals', () => {
 
   it('never leaves stale content Approved or execute-ready when the follow-up refresh fails', async () => {
     const proposals = ref([makeProposal()])
+    const onSettled = vi.fn()
     const loadProposals = vi.fn().mockRejectedValue(new Error('refresh unavailable'))
     vi.mocked(automationApi.approveProposals).mockResolvedValue({ approvedIds: ['p-1'] })
-    const actions = useBatchApproveProposals(proposals, ref('u-1'), ref(NOW), loadProposals)
+    const actions = useBatchApproveProposals(proposals, ref('u-1'), ref(NOW), loadProposals, onSettled)
     actions.toggleSelection('p-1')
     actions.requestConfirmation()
 
@@ -313,6 +357,8 @@ describe('useBatchApproveProposals', () => {
     expect(toast.success).toHaveBeenCalled()
     expect(toast.error).not.toHaveBeenCalled()
     expect(automationApi.executeProposal).not.toHaveBeenCalled()
+    expect(onSettled).toHaveBeenCalledOnce()
+    expect(onSettled).toHaveBeenCalledWith('success')
   })
 
   it('does not mutate proposal status when the server receipt is incomplete', async () => {
