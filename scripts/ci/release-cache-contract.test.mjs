@@ -8,6 +8,34 @@ const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const workflowsDirectory = join(repoRoot, '.github', 'workflows')
 const workflowPrefix = '.github/workflows/'
 
+function stripYamlComment(sourceLine) {
+  let quote = null
+
+  for (let index = 0; index < sourceLine.length; index += 1) {
+    const character = sourceLine[index]
+
+    if (quote === '"') {
+      if (character === '\\') index += 1
+      else if (character === '"') quote = null
+      continue
+    }
+    if (quote === "'") {
+      if (character === "'" && sourceLine[index + 1] === "'") index += 1
+      else if (character === "'") quote = null
+      continue
+    }
+    if (character === '"' || character === "'") {
+      quote = character
+      continue
+    }
+    if (character === '#' && (index === 0 || /\s/.test(sourceLine[index - 1]))) {
+      return sourceLine.slice(0, index).trimEnd()
+    }
+  }
+
+  return sourceLine
+}
+
 function workflowSourcesFromDisk() {
   const sources = new Map()
 
@@ -44,7 +72,7 @@ function annotateYamlLines(source) {
       structural
       && trimmed !== ''
       && !trimmed.startsWith('#')
-      && /:\s*[>|][+-]?\s*(?:#.*)?$/.test(raw)
+      && /:\s*[>|][+-]?\s*$/.test(stripYamlComment(raw))
     ) {
       blockScalarParentIndent = indent
     }
@@ -72,7 +100,9 @@ function usesEntries(source, workflowPath, violations) {
   for (const [index, line] of lines.entries()) {
     if (!line.structural || line.raw.trim() === '' || line.raw.trim().startsWith('#')) continue
 
-    const trimmed = line.raw.trim()
+    const uncommented = stripYamlComment(line.raw)
+    const trimmed = uncommented.trim()
+    if (trimmed === '') continue
     const mappingKeyDelimiter = trimmed.indexOf(':')
     const mappingKeyPrefix = mappingKeyDelimiter === -1
       ? trimmed
@@ -83,7 +113,7 @@ function usesEntries(source, workflowPath, violations) {
       )
       continue
     }
-    if (/^(?:-\s+)?\?\s+/.test(trimmed)) {
+    if (/(?:^(?:-\s+)?|[{,]\s*)\?\s+/.test(trimmed)) {
       violations.add(
         `${workflowPath}:${line.lineNumber}: explicit YAML mapping keys are unsupported by the release cache scanner`,
       )
@@ -96,9 +126,9 @@ function usesEntries(source, workflowPath, violations) {
       continue
     }
 
-    const match = /^( *)(-\s+)?(?:uses|"uses"|'uses')\s*:\s*(.*?)\s*$/.exec(line.raw)
+    const match = /^( *)(-\s+)?(?:uses|"uses"|'uses')\s*:\s*(.*?)\s*$/.exec(uncommented)
     if (!match) {
-      if (/(?:^|[{,]\s*)(?:uses|"uses"|'uses')\s*:/.test(line.raw.trim())) {
+      if (/(?:^|[{,]\s*)(?:uses|"uses"|'uses')\s*:/.test(trimmed)) {
         violations.add(`${workflowPath}:${line.lineNumber}: uses must use a static block-mapping scalar`)
       }
       continue
@@ -593,6 +623,54 @@ test('encoded and explicit action keys cannot hide cross-run artifact inputs', (
       testCase.label,
     )
   }
+})
+
+test('escaped explicit keys in flow mappings cannot hide cross-run artifact inputs', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/download-artifact@v8
+        with:
+          name: release-input`,
+      '      - { ? "\\u0075ses" : actions/download-artifact@v8, with: {name: release-input, run-id: 123}}',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /explicit YAML mapping keys are unsupported by the release cache scanner/,
+  )
+
+  const commentSources = validSyntheticClosure()
+  commentSources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    commentSources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      '          name: release-input',
+      '          name: release-input # { ? "\\u0075ses" : ignored }',
+    ),
+  )
+  assert.doesNotThrow(() => enforceReleaseCacheContract(commentSources))
+})
+
+test('plain-scalar comments cannot disguise action lines as block-scalar content', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      `      - name: disguise # : |
+        uses: actions/cache@v5`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /actions\/cache may not restore or publish caches/,
+  )
 })
 
 test('a violation hidden in a transitive reusable workflow fails closed', () => {
