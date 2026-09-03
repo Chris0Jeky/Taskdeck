@@ -4460,6 +4460,30 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('invalidates the preview but keeps the editor focused when a save response is indeterminate', async () => {
+      mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Preview before uncertain save"')
+      mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after the server may have committed'))
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+      await flushPromises()
+      expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(true)
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      await editor.get('[data-testid="revision-reason"]').setValue('Retry after uncertain save')
+      await editor.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+      expect(editor.element.contains(document.activeElement)).toBe(true)
+      wrapper.unmount()
+    })
+
     it('states on the rail why the decisions are disabled, and offers the exit there', async () => {
       const wrapper = await mountView([makeProposal()])
 

@@ -142,21 +142,23 @@ describe('useProposalRevisions', () => {
     expect(editing.value).toBe(false)
     expect(revisionCount.value).toBe(1)
     expect(latestRevision.value).toEqual(newRevision)
-    expect(result).toEqual({ proposalId: 'p-1', persisted: true, current: true })
+    expect(result).toEqual({ proposalId: 'p-1', outcome: 'persisted', current: true })
   })
 
   it('reports a failed current save without changing the editor state', async () => {
     vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce(new Error('save failed'))
 
     const proposal = ref<ApiProposal | null>(makeProposal())
-    const { editing, startEditing, saveRevision } = useProposalRevisions(proposal)
+    const onRevisionSaved = vi.fn()
+    const { editing, startEditing, saveRevision } = useProposalRevisions(proposal, { onRevisionSaved })
 
     startEditing()
     const result = await saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Fix' })
 
-    expect(result).toEqual({ proposalId: 'p-1', persisted: false, current: true })
+    expect(result).toEqual({ proposalId: 'p-1', outcome: 'indeterminate', current: true })
     expect(editing.value).toBe(true)
     expect(toastMocks.error).toHaveBeenCalledWith('save failed')
+    expect(onRevisionSaved).not.toHaveBeenCalled()
   })
 
   it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
@@ -253,7 +255,7 @@ describe('useProposalRevisions', () => {
 
     expect(revisionCount.value).toBe(0)
     expect(latestRevision.value).toBeNull()
-    expect(result).toEqual({ proposalId: 'p-1', persisted: true, current: false })
+    expect(result).toEqual({ proposalId: 'p-1', outcome: 'persisted', current: false })
     expect(onRevisionSaved).toHaveBeenCalledOnce()
   })
 

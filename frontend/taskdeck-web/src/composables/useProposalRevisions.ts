@@ -14,8 +14,8 @@ import {
 
 export type SaveRevisionResult = {
   proposalId: string
-  /** The API accepted the revision, even when this continuation is stale. */
-  persisted: boolean
+  /** Whether the API response confirmed persistence or left it unknown. */
+  outcome: 'persisted' | 'indeterminate'
   /** The active proposal/save generation still owns this continuation. */
   current: boolean
 }
@@ -150,7 +150,7 @@ export function useProposalRevisions(
       // pre-save summary. A persisted response still needs that protection
       // when the UI continuation is stale after a proposal switch.
       options?.onRevisionSaved?.()
-      if (!current) return { proposalId, persisted: true, current: false }
+      if (!current) return { proposalId, outcome: 'persisted', current: false }
       // Invalidate any in-flight revision load so a pre-save (stale, empty) list
       // can't overwrite this save's state when it resolves after the save.
       loadGeneration += 1
@@ -163,11 +163,14 @@ export function useProposalRevisions(
       revisionsLoaded.value = true
       editing.value = false
       toast.success('Revision saved')
-      return { proposalId, persisted: true, current: true }
+      return { proposalId, outcome: 'persisted', current: true }
     } catch (e: unknown) {
       const current = gen === saveGeneration && activeProposal.value?.id === proposalId
       if (current) toast.error(getErrorDisplay(e, 'Failed to save revision').message)
-      return { proposalId, persisted: false, current }
+      // A rejected POST only tells us that no response was received. The server
+      // may have committed before a timeout, network break, or 5xx reached the
+      // client, so never certify non-persistence here.
+      return { proposalId, outcome: 'indeterminate', current }
     } finally {
       if (gen === saveGeneration && activeProposal.value?.id === proposalId) {
         saving.value = false

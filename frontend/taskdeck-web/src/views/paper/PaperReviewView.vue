@@ -1461,6 +1461,15 @@ function onCancelRevision() {
   restoreRevisionFocus()
 }
 
+function retainRevisionEditorFocus() {
+  void nextTick(() => {
+    const editor = mainColRef.value?.querySelector<HTMLElement>('[data-testid="revision-editor"]')
+    if (!editor || editor.contains(document.activeElement)) return
+    const target = editor.querySelector<HTMLElement>('textarea, input')
+    if (target && isFocusable(target)) target.focus()
+  })
+}
+
 async function onDefer() {
   if (isArchivedHistory.value) return
   const p = activeProposal.value
@@ -1706,7 +1715,21 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   const proposalId = activeProposal.value?.id
   const saveEpoch = revisionEditEpoch
   const saveResult = await saveRevision(payload)
-  if (!saveResult?.persisted) return
+  if (!saveResult) return
+  // A rejected POST may have committed before the client observed its timeout,
+  // network failure, or 5xx. Invalidate only the matching preview so the UI
+  // cannot certify pre-save content, while leaving the editor and its focus in
+  // place for a deliberate retry or inspection.
+  if (saveResult.outcome === 'indeterminate') {
+    if (proposalIdsEqual(previewDiffProposalId.value, saveResult.proposalId)) {
+      latestDiffRequestId += 1
+      clearPreviewDiff()
+    }
+    if (saveResult.current && proposalIdsEqual(activeProposal.value?.id, saveResult.proposalId)) {
+      retainRevisionEditorFocus()
+    }
+    return
+  }
   const savedCurrentSession =
     saveResult.current &&
     !!proposalId &&
