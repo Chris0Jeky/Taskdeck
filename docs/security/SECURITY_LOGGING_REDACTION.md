@@ -39,6 +39,10 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   `UnexpectedError` with the same stable generic failure message before returning tool output or
   throwing a resource error. Known domain result messages stay specific, and diagnostic logging
   remains owned by the service and MCP operation boundaries.
+- MCP capture and board resources apply the same boundary rule to every interpolated failed
+  `Result`: `UnexpectedError` becomes the stable generic failure message, while known domain
+  messages remain specific. Persisted `CaptureItemDto.ErrorMessage` values, invalid caller IDs, and
+  arbitrary thrown exceptions are separate contracts and are not rewritten by this rule.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for
