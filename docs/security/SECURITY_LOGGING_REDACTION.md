@@ -31,10 +31,12 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
 - Persisted queue/webhook failure messages are redacted or generalized before they are saved for later inspection.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
-- The web host fixes `Microsoft.AspNetCore.Hosting.Diagnostics` at `Warning`. Its Information-level
-  request start/finish events render the complete request target, so allowing the development-wide
-  ASP.NET Core Information setting to reach this exact category would expose SignalR bearer tokens.
-  Other ASP.NET Core categories retain their configured levels.
+- The web host enforces `Warning` as the minimum for
+  `Microsoft.AspNetCore.Hosting.Diagnostics`. Its Information-level request start/finish events
+  render the complete request target, so allowing the development-wide ASP.NET Core Information
+  setting to reach this exact category would expose SignalR bearer tokens. The post-configuration
+  guard also covers provider-specific rules and configuration reloads. Other ASP.NET Core
+  categories retain their configured levels, and stricter thresholds remain effective.
 
 ## Operator Guidance
 

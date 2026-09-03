@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Taskdeck.Api.Tests.Support;
 using Xunit;
 
@@ -32,6 +33,8 @@ public class LoggingProviderConfigurationTests : IClassFixture<TestWebApplicatio
     public async Task Host_SuppressesSignalRBearerTokenFromHostingDiagnosticsLogs()
     {
         using var provider = new AllLevelRecordingLoggerProvider();
+        var providerName = typeof(AllLevelRecordingLoggerProvider).FullName
+            ?? throw new InvalidOperationException("Recording logger provider must have a full type name.");
         using var factory = _factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, configuration) =>
@@ -39,7 +42,7 @@ public class LoggingProviderConfigurationTests : IClassFixture<TestWebApplicatio
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Logging:LogLevel:Microsoft.AspNetCore"] = "Information",
-                    ["Logging:LogLevel:Microsoft.AspNetCore.Hosting.Diagnostics"] = "Trace"
+                    [$"Logging:{providerName}:LogLevel:Microsoft.AspNetCore.Hosting.Diagnostics"] = "Trace"
                 });
             });
             builder.ConfigureLogging(logging =>
@@ -58,6 +61,14 @@ public class LoggingProviderConfigurationTests : IClassFixture<TestWebApplicatio
         var loggerFactory = factory.Services.GetRequiredService<ILoggerFactory>();
         var safeLogger = loggerFactory.CreateLogger(safeCategory);
         var hostingLogger = loggerFactory.CreateLogger("Microsoft.AspNetCore.Hosting.Diagnostics");
+        var filterOptions = factory.Services.GetRequiredService<IOptions<LoggerFilterOptions>>().Value;
+        var providerSpecificTraceRuleConfigured = filterOptions.Rules.Any(rule =>
+            string.Equals(rule.ProviderName, providerName, StringComparison.Ordinal)
+            && string.Equals(
+                rule.CategoryName,
+                "Microsoft.AspNetCore.Hosting.Diagnostics",
+                StringComparison.Ordinal)
+            && rule.LogLevel == LogLevel.Trace);
 
         safeLogger.LogInformation("Safe logging provider probe {Marker}", safeMarker);
         var hostingInformationEnabled = hostingLogger.IsEnabled(LogLevel.Information);
@@ -65,13 +76,18 @@ public class LoggingProviderConfigurationTests : IClassFixture<TestWebApplicatio
         using var response = await client.GetAsync(
             $"/hubs/boards?id=synthetic-connection&access_token={Uri.EscapeDataString(user.Token)}");
 
-        provider.Entries.Should().Contain(
+        var safeInformationCount = provider.Entries.Count(
             entry => entry.Category == safeCategory
                 && entry.Level == LogLevel.Information
-                && entry.Message.Contains(safeMarker, StringComparison.Ordinal),
+                && entry.Message.Contains(safeMarker, StringComparison.Ordinal));
+        var tokenOccurrenceCount = provider.Entries.Count(
+            entry => entry.Message.Contains(user.Token, StringComparison.Ordinal));
+
+        providerSpecificTraceRuleConfigured.Should().BeTrue(
+            "the regression must exercise a provider-specific rule that outranks provider-agnostic rules");
+        safeInformationCount.Should().BeGreaterThan(0,
             "the recording provider must prove that unrelated ASP.NET Core Information logs remain active");
-        provider.Entries.Should().NotContain(
-            entry => entry.Message.Contains(user.Token, StringComparison.Ordinal),
+        tokenOccurrenceCount.Should().Be(0,
             "a SignalR query-string bearer token must never reach any configured logging provider");
         hostingInformationEnabled.Should().BeFalse(
             "Hosting.Diagnostics renders the raw request target, including SignalR access_token values");
