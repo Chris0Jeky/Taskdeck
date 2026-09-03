@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -11,6 +12,7 @@ public class OpsCliService : IOpsCliService
 {
     private const int MaxOutputPreviewLength = 1000;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<OpsCliService> _logger;
 
     private static readonly Dictionary<string, CommandTemplateDto> _templates = new()
     {
@@ -21,9 +23,10 @@ public class OpsCliService : IOpsCliService
         ["health.check"] = new CommandTemplateDto("health.check", "Run health check", "ReadOnly", 30, "editor", new List<string>())
     };
 
-    public OpsCliService(IUnitOfWork unitOfWork)
+    public OpsCliService(IUnitOfWork unitOfWork, ILogger<OpsCliService> logger)
     {
         _unitOfWork = unitOfWork;
+        _logger = logger;
     }
 
     public async Task<Result<CommandRunDto>> RunCommandAsync(
@@ -106,10 +109,29 @@ public class OpsCliService : IOpsCliService
                 commandRun.AddLog(new CommandRunLog(commandRun.Id, "Error", "OpsCliService", $"Command '{dto.TemplateName}' timed out"));
                 commandRun.Timeout();
             }
+            catch (DomainException ex)
+            {
+                commandRun.AddLog(new CommandRunLog(
+                    commandRun.Id,
+                    "Error",
+                    "OpsCliService",
+                    $"Command '{dto.TemplateName}' failed: {ex.Message}"));
+                commandRun.Fail(ex.Message);
+            }
             catch (Exception ex)
             {
-                commandRun.AddLog(new CommandRunLog(commandRun.Id, "Error", "OpsCliService", $"Command '{dto.TemplateName}' failed: {ex.Message}"));
-                commandRun.Fail(ex.Message);
+                _logger.LogError(
+                    ex,
+                    "Ops CLI template {TemplateName} failed unexpectedly for command run {CommandRunId} with correlation {CorrelationId}",
+                    dto.TemplateName,
+                    commandRun.Id,
+                    commandRun.CorrelationId);
+                commandRun.AddLog(new CommandRunLog(
+                    commandRun.Id,
+                    "Error",
+                    "OpsCliService",
+                    SensitiveDataRedactor.GenericUnexpectedFailureMessage));
+                commandRun.Fail(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
             }
 
             await _unitOfWork.SaveChangesAsync(ct);
