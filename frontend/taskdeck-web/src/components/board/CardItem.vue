@@ -74,6 +74,22 @@ function handleDragHandleMouseDown() {
   window.getSelection()?.removeAllRanges()
 }
 
+function handleCardClick(event: MouseEvent) {
+  // A click on a non-interactive card child does not reliably move focus to
+  // the tabindex-bearing card itself. Keep the card's click-to-open behavior,
+  // and make the following Enter target the same card. Action-bar controls
+  // stop propagation at their own boundary and retain native ownership.
+  const target = event.target instanceof Element ? event.target : null
+  if (target?.closest('button, a[href], input, textarea, select, [contenteditable="true"]')) {
+    return
+  }
+
+  if (event.currentTarget instanceof HTMLElement) {
+    event.currentTarget.focus()
+  }
+  emit('click', props.card)
+}
+
 function formatDate(dateString: string | null): string {
   return formatCalendarDate(dateString)
 }
@@ -95,7 +111,7 @@ function isOverdue(dateString: string | null): boolean {
     ]"
     tabindex="0"
     :aria-selected="isSelected"
-    @click.stop="emit('click', card)"
+    @click.stop="handleCardClick"
     @keydown.enter="emit('click', card)"
     @keydown.space.prevent="emit('click', card)"
     @dragstart="handleDragStart"
