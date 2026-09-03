@@ -886,6 +886,13 @@ class).
 | `Logging:LogLevel:Default` | `string` | `Information` | `Debug` | Default minimum log level. | No |
 | `Logging:LogLevel:Microsoft.AspNetCore` | `string` | `Warning` | `Information` | Minimum level for ASP.NET Core framework logs. | No |
 
+The web host enforces `Warning` as the minimum for the exact
+`Microsoft.AspNetCore.Hosting.Diagnostics` category, including when a provider-specific rule or a
+configuration reload requests a lower level. That category's Information events render the complete
+request target, while supported SignalR clients transport bearer credentials in an `access_token`
+query parameter. This boundary suppresses those routine request start/finish events without raising
+the configured level for other ASP.NET Core categories; stricter thresholds remain effective.
+
 ## Environment variable overrides
 
 Standard ASP.NET Core conventions apply — any configuration key may be
