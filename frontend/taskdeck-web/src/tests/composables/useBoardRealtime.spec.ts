@@ -140,7 +140,7 @@ describe('createBoardRealtimeController', () => {
     // The handler debounces the refresh — advance past the debounce window.
     await vi.advanceTimersByTimeAsync(300)
 
-    expect(fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
     vi.useRealTimers()
   })
 
@@ -177,9 +177,103 @@ describe('createBoardRealtimeController', () => {
     // Advance past the debounce — only one fetch should fire for the burst.
     await vi.advanceTimersByTimeAsync(300)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
-    expect(fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
 
     vi.useRealTimers()
+    await controller.stop()
+  })
+
+  it('drains one coalesced mutation refresh after the active refresh succeeds', async () => {
+    vi.useFakeTimers()
+    const firstRefresh = createDeferred<void>()
+    const fetchBoard = vi
+      .fn()
+      .mockImplementationOnce(() => firstRefresh.promise)
+      .mockResolvedValueOnce(undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+
+    firstRefresh.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(fetchBoard).toHaveBeenCalledTimes(2)
+    expect(fetchBoard).toHaveBeenLastCalledWith('board-1', { intent: 'background' })
+
+    await controller.stop()
+  })
+
+  it('clears a retained mutation refresh on route switch and stop', async () => {
+    vi.useFakeTimers()
+    const firstRefresh = createDeferred<void>()
+    const secondRefresh = createDeferred<void>()
+    const fetchBoard = vi
+      .fn()
+      .mockImplementationOnce(() => firstRefresh.promise)
+      .mockImplementationOnce(() => secondRefresh.promise)
+      .mockResolvedValue(undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    await vi.advanceTimersByTimeAsync(300)
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    await vi.advanceTimersByTimeAsync(300)
+
+    await controller.switchBoard('board-2')
+    firstRefresh.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+
+    callbacks.boardMutation?.({ boardId: 'board-2' })
+    await vi.advanceTimersByTimeAsync(300)
+    callbacks.boardMutation?.({ boardId: 'board-2' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(fetchBoard).toHaveBeenCalledTimes(2)
+
+    await controller.stop()
+    secondRefresh.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(fetchBoard).toHaveBeenCalledTimes(2)
+  })
+
+  it('contains a failed background refresh and allows the next mutation to refresh', async () => {
+    vi.useFakeTimers()
+    const firstRefresh = createDeferred<void>()
+    const fetchBoard = vi
+      .fn()
+      .mockImplementationOnce(() => firstRefresh.promise)
+      .mockResolvedValueOnce(undefined)
+    const controller = createBoardRealtimeController({ fetchBoard })
+
+    await controller.start('board-1')
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(fetchBoard).toHaveBeenCalledTimes(1)
+
+    firstRefresh.reject(new Error('background unavailable'))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    callbacks.boardMutation?.({ boardId: 'board-1' })
+    await vi.advanceTimersByTimeAsync(300)
+    expect(fetchBoard).toHaveBeenCalledTimes(2)
+    expect(fetchBoard).toHaveBeenLastCalledWith('board-1', { intent: 'background' })
+
     await controller.stop()
   })
 
@@ -261,7 +355,7 @@ describe('createBoardRealtimeController', () => {
 
     await vi.advanceTimersByTimeAsync(30000)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
-    expect(fetchBoard).toHaveBeenCalledWith('board-b')
+    expect(fetchBoard).toHaveBeenCalledWith('board-b', { intent: 'background' })
 
     mockConnection.state = 'Connected'
     await callbacks.reconnected?.()
@@ -310,7 +404,7 @@ describe('createBoardRealtimeController', () => {
     await controller.start('board-1')
 
     await vi.advanceTimersByTimeAsync(30000)
-    expect(fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
 
     await controller.stop()
   })
@@ -334,7 +428,7 @@ describe('createBoardRealtimeController', () => {
     await controller.setEditingCard('card-1')
     await callbacks.reconnecting?.()
     await vi.advanceTimersByTimeAsync(30000)
-    expect(fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
 
     fetchBoard.mockClear()
     await callbacks.reconnected?.()

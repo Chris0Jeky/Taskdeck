@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
 import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS } from '../../../api/http'
+import { getErrorMessage } from '../../../utils/errorMessage'
 
 const { mockBoardsApi } = vi.hoisted(() => ({
   mockBoardsApi: {
@@ -70,11 +71,19 @@ function createMockState() {
 }
 
 function createMockHelpers(overrides: { isDemoMode?: boolean } = {}) {
+  const boardDetailMutationEpochs = new Map<string, number>()
+
   return {
     guardDemoMutation: vi.fn(),
     handleApiError: vi.fn(),
     isDemoMode: overrides.isDemoMode ?? false,
     toast: { success: vi.fn(), error: vi.fn() },
+    getBoardDetailMutationEpoch: vi.fn(
+      (boardId: string) => boardDetailMutationEpochs.get(boardId) ?? 0,
+    ),
+    markBoardDetailMutation: vi.fn((boardId: string) => {
+      boardDetailMutationEpochs.set(boardId, (boardDetailMutationEpochs.get(boardId) ?? 0) + 1)
+    }),
   }
 }
 
@@ -485,6 +494,208 @@ describe('boardCrudStore', () => {
       expect(helpers.handleApiError).not.toHaveBeenCalled()
       expect(state.error.value).toBeNull()
       expect(state.loading.value).toBe(false)
+    })
+
+    it('queues and coalesces background refreshes behind an explicit board load', async () => {
+      const explicitBoard = createDeferred<{ id: string; name: string; columns: Array<{ id: string; cardCount: number }> }>()
+      const explicitCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const explicitLabels = createDeferred<Array<{ id: string; name: string }>>()
+      const backgroundBoard = createDeferred<{ id: string; name: string; columns: Array<{ id: string; cardCount: number }> }>()
+      const backgroundCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const backgroundLabels = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(explicitBoard.promise)
+        .mockReturnValueOnce(backgroundBoard.promise)
+      mockCardsApi.getCards
+        .mockReturnValueOnce(explicitCards.promise)
+        .mockReturnValueOnce(backgroundCards.promise)
+      mockLabelsApi.getLabels
+        .mockReturnValueOnce(explicitLabels.promise)
+        .mockReturnValueOnce(backgroundLabels.promise)
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const explicit = fetchBoard('board-1')
+      const queuedFirst = fetchBoard('board-1', { intent: 'background' })
+      const queuedSecond = fetchBoard('board-1', { intent: 'background' })
+
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+      expect(mockCardsApi.getCards).toHaveBeenCalledTimes(1)
+      expect(mockLabelsApi.getLabels).toHaveBeenCalledTimes(1)
+
+      explicitBoard.resolve({
+        id: 'board-1',
+        name: 'Recovered board',
+        columns: [{ id: 'column-1', cardCount: 0 }],
+      })
+      explicitCards.resolve([{ id: 'card-explicit', columnId: 'column-1' }])
+      explicitLabels.resolve([{ id: 'label-explicit', name: 'Explicit' }])
+      await expect(explicit).resolves.toBe(true)
+
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      expect(mockCardsApi.getCards).toHaveBeenCalledTimes(2)
+      expect(mockLabelsApi.getLabels).toHaveBeenCalledTimes(2)
+
+      backgroundBoard.resolve({
+        id: 'board-1',
+        name: 'Realtime board',
+        columns: [{ id: 'column-1', cardCount: 0 }],
+      })
+      backgroundCards.resolve([{ id: 'card-background', columnId: 'column-1' }])
+      backgroundLabels.resolve([{ id: 'label-background', name: 'Background' }])
+
+      await expect(queuedFirst).resolves.toBe(true)
+      await expect(queuedSecond).resolves.toBe(true)
+      expect(state.currentBoard.value).toMatchObject({ name: 'Realtime board' })
+      expect(state.currentBoardCards.value).toEqual([
+        { id: 'card-background', columnId: 'column-1' },
+      ])
+    })
+
+    it('keeps a recovered board and clean error state when its queued background refresh fails', async () => {
+      const explicitBoard = createDeferred<{ id: string; name: string; columns: Array<{ id: string; cardCount: number }> }>()
+      const explicitCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const explicitLabels = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(explicitBoard.promise)
+        .mockRejectedValueOnce(new Error('background unavailable'))
+      mockCardsApi.getCards
+        .mockReturnValueOnce(explicitCards.promise)
+        .mockResolvedValueOnce([])
+      mockLabelsApi.getLabels
+        .mockReturnValueOnce(explicitLabels.promise)
+        .mockResolvedValueOnce([])
+      state.error.value = 'Previous board load failed'
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const explicit = fetchBoard('board-1')
+      const queued = fetchBoard('board-1', { intent: 'background' })
+
+      explicitBoard.resolve({ id: 'board-1', name: 'Recovered board', columns: [] })
+      explicitCards.resolve([{ id: 'card-recovered', columnId: 'column-1' }])
+      explicitLabels.resolve([{ id: 'label-recovered', name: 'Recovered' }])
+
+      await expect(explicit).resolves.toBe(true)
+      await expect(queued).resolves.toBe(false)
+      expect(state.currentBoard.value).toMatchObject({ name: 'Recovered board' })
+      expect(state.currentBoardCards.value).toEqual([
+        { id: 'card-recovered', columnId: 'column-1' },
+      ])
+      expect(state.error.value).toBeNull()
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+    })
+
+    it('surfaces a current background 403 without replacing cached board state', async () => {
+      const forbidden = {
+        message: 'Request failed with status code 403',
+        response: { status: 403 },
+      }
+      state.currentBoard.value = { id: 'board-1', name: 'Cached board' }
+      state.currentBoardCards.value = [{ id: 'cached-card' }]
+      state.currentBoardLabels.value = [{ id: 'cached-label' }]
+      state.cardCommentsByCardId.value = { 'cached-card': [{ text: 'Cached comment' }] }
+      mockBoardsApi.getBoard.mockRejectedValueOnce(forbidden)
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
+      helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
+        state.error.value = getErrorMessage(error, fallback)
+      })
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      await expect(fetchBoard('board-1', { intent: 'background' })).resolves.toBe(false)
+
+      expect(helpers.handleApiError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'You no longer have access to this board' }),
+        'You no longer have access to this board',
+      )
+      expect(state.error.value).toBe('You no longer have access to this board')
+      expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Cached board' })
+      expect(state.currentBoardCards.value).toEqual([{ id: 'cached-card' }])
+      expect(state.currentBoardLabels.value).toEqual([{ id: 'cached-label' }])
+      expect(state.cardCommentsByCardId.value).toEqual({
+        'cached-card': [{ text: 'Cached comment' }],
+      })
+    })
+
+    it('suppresses a background 403 after a newer generation commits', async () => {
+      const staleBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const forbidden = {
+        message: 'Request failed with status code 403',
+        response: { status: 403 },
+      }
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(staleBoard.promise)
+        .mockResolvedValueOnce({ id: 'board-1', name: 'Current board', columns: [] })
+      mockCardsApi.getCards.mockResolvedValue([])
+      mockLabelsApi.getLabels.mockResolvedValue([])
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const stale = fetchBoard('board-1', { intent: 'background' })
+      const current = fetchBoard('board-1')
+
+      await expect(current).resolves.toBe(true)
+      staleBoard.reject(forbidden)
+      await expect(stale).resolves.toBe(false)
+
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.currentBoard.value).toMatchObject({ name: 'Current board' })
+    })
+
+    it('discards a queued background refresh when an explicit route load changes boards', async () => {
+      const boardA = createDeferred<{ id: string; name: string; columns: [] }>()
+      const cardsA = createDeferred<Array<{ id: string; columnId: string }>>()
+      const labelsA = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(boardA.promise)
+        .mockResolvedValueOnce({ id: 'board-b', name: 'Board B', columns: [] })
+      mockCardsApi.getCards
+        .mockReturnValueOnce(cardsA.promise)
+        .mockResolvedValueOnce([])
+      mockLabelsApi.getLabels
+        .mockReturnValueOnce(labelsA.promise)
+        .mockResolvedValueOnce([])
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const first = fetchBoard('board-a')
+      const queued = fetchBoard('board-a', { intent: 'background' })
+
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+
+      const next = fetchBoard('board-b')
+      await expect(next).resolves.toBe(true)
+      await expect(queued).resolves.toBe(false)
+
+      boardA.resolve({ id: 'board-a', name: 'Board A', columns: [] })
+      cardsA.resolve([])
+      labelsA.resolve([])
+      await expect(first).resolves.toBe(false)
+
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      expect(state.currentBoard.value).toMatchObject({ id: 'board-b' })
+    })
+
+    it('discards queued background work when the board view unmounts', async () => {
+      const explicitBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const explicitCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const explicitLabels = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard.mockReturnValueOnce(explicitBoard.promise)
+      mockCardsApi.getCards.mockReturnValueOnce(explicitCards.promise)
+      mockLabelsApi.getLabels.mockReturnValueOnce(explicitLabels.promise)
+
+      const { fetchBoard, cancelBackgroundBoardFetch } = createBoardCrudActions(
+        state as any,
+        helpers as any,
+      )
+      const explicit = fetchBoard('board-1')
+      const queued = fetchBoard('board-1', { intent: 'background' })
+
+      cancelBackgroundBoardFetch('board-1')
+      explicitBoard.resolve({ id: 'board-1', name: 'Recovered board', columns: [] })
+      explicitCards.resolve([])
+      explicitLabels.resolve([])
+
+      await expect(explicit).resolves.toBe(true)
+      await expect(queued).resolves.toBe(false)
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
     })
   })
 

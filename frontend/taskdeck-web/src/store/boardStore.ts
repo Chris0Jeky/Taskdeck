@@ -9,6 +9,7 @@ import {
   createLabelActions,
   createCardFilterActions,
   createBoardUiActions,
+  type BoardFetchOptions,
 } from './board'
 
 // Re-export the CardFilters type so existing consumers keep working
@@ -31,8 +32,8 @@ export const useBoardStore = defineStore('board', () => {
   const ui = createBoardUiActions(state)
 
   // Detail loads commit board, cards, and labels together in boardCrud.
-  async function fetchBoard(id: string) {
-    return boardCrud.fetchBoard(id)
+  async function fetchBoard(id: string, options?: BoardFetchOptions) {
+    return boardCrud.fetchBoard(id, options)
   }
 
   return {
@@ -57,6 +58,7 @@ export const useBoardStore = defineStore('board', () => {
     // Actions — board CRUD
     fetchBoards: boardCrud.fetchBoards,
     fetchBoard,
+    cancelBackgroundBoardFetch: boardCrud.cancelBackgroundBoardFetch,
     createBoard: boardCrud.createBoard,
     updateBoard: boardCrud.updateBoard,
     deleteBoard: boardCrud.deleteBoard,
