@@ -2401,6 +2401,7 @@ Nightly quality workflow: `.github/workflows/nightly-quality.yml`
   - Domain coverage (`Taskdeck.Domain.Tests` with XPlat Code Coverage)
   - Application coverage (`Taskdeck.Application.Tests` with XPlat Code Coverage)
 - frontend coverage artifacts:
+  - `npm run test:pwa-generated-worker` first builds and validates the generated service worker from a fresh checkout; the artifact-dependent contract is excluded from the ordinary coverage suite
   - `npm run test:coverage` output (`coverage/` + `test-results/`)
 - dependency/security signal artifacts:
   - `dotnet list package --vulnerable --include-transitive` output + exit code
