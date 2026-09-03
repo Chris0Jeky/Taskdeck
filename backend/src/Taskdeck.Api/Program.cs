@@ -396,6 +396,12 @@ if (!DesktopRuntime.IsPackagedDesktop)
     builder.Logging.AddDebug();
 }
 
+// Hosting.Diagnostics renders the raw request target at Information. SignalR transports bearer
+// tokens in the access_token query string, so this exact category must never emit routine request
+// start/finish events to any provider. Keep every other ASP.NET Core category at its configured
+// level so development diagnostics remain available without exposing replayable credentials.
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+
 // ---- First-run bootstrap (must run before services are registered) ----------
 // Registers appsettings.local.json so previously generated secrets are loaded,
 // then generates a JWT secret if none is configured.
