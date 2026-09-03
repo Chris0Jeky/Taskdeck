@@ -19,7 +19,7 @@
         "additionalProperties": false,
         "required": ["code", "detail"],
         "properties": {
-          "code": { "enum": ["plan-missing", "plan-invalid", "planner-error", "plan-job-failed", "head-sha-mismatch", "base-sha-mismatch", "policy-digest-mismatch", "trust-mismatch", "labels-mismatch", "mode-mismatch", "evidence-unavailable", "selected-evidence-missing", "selected-not-success", "evidence-sha-missing", "evidence-wrong-sha", "skipped-without-reason"] },
+          "code": { "enum": ["plan-missing", "plan-invalid", "planner-error", "plan-job-failed", "plan-job-cancelled", "head-sha-mismatch", "base-sha-mismatch", "policy-digest-mismatch", "trust-mismatch", "labels-mismatch", "mode-mismatch", "evidence-unavailable", "selected-evidence-missing", "selected-not-success", "evidence-sha-missing", "evidence-wrong-sha", "skipped-without-reason"] },
           "detail": { "type": "string" }
         }
       }
