@@ -78,6 +78,31 @@ describe('TdDialog', () => {
     wrapper.unmount()
   })
 
+  it('traps forward and backward Tab movement inside the dialog', async () => {
+    const wrapper = mount(TdDialog, {
+      props: { open: true },
+      slots: {
+        default: '<button data-testid="first">First</button>',
+        footer: '<button data-testid="last">Last</button>',
+      },
+      attachTo: document.body,
+    })
+    await nextTick()
+    const first = document.querySelector('[data-testid="first"]') as HTMLElement
+    const last = document.querySelector('[data-testid="last"]') as HTMLElement
+
+    last.focus()
+    last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }))
+    expect(document.activeElement).toBe(first)
+
+    first.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }),
+    )
+    expect(document.activeElement).toBe(last)
+
+    wrapper.unmount()
+  })
+
   it('registers escape handler when opened', async () => {
     const wrapper = mount(TdDialog, {
       props: { open: false },

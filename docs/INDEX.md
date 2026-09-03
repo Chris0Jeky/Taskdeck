@@ -75,6 +75,10 @@ Stable reference material belongs in topical subfolders.
   - Deployment, observability, human operator runbooks, and session-start checklists.
 - `platform/`
   - Provider, import-adapter, and starter-pack platform or reference docs.
+- `releases/`
+  - Release-facing material: `releases/V0_3_0_READINESS.md` (the standing v0.3.0 gate view: clauses,
+    technical blockers, human gates, trackers, and the milestone residuals awaiting a re-ruling), the
+    packaged Windows quick start, and per-tag notes under `releases/notes/`.
 - `security/`
   - Active security and abuse-protection policies or baselines.
 - `ci/`

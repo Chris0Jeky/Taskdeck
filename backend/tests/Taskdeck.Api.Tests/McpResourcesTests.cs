@@ -112,6 +112,62 @@ public class McpResourcesTests : IDisposable
     }
 
     [Fact]
+    public async Task ProposalResources_ListProposals_IsolatesRequesters()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var userA = await CreateBoardScopedUserAsync(scope, "list-user-a");
+        var userB = await CreateBoardScopedUserAsync(scope, "list-user-b");
+        var (proposalA, _) = await CreateBoardScopedProposalAsync(scope, userA);
+        var (proposalB, _) = await CreateBoardScopedProposalAsync(scope, userB);
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+
+        var resourcesA = new ProposalResources(
+            proposalService,
+            new McpBoardResourcesTests.FixedUserContextProvider(userA));
+        var resourcesB = new ProposalResources(
+            proposalService,
+            new McpBoardResourcesTests.FixedUserContextProvider(userB));
+
+        var idsForA = ReadProposalIds(await resourcesA.ListProposals());
+        var idsForB = ReadProposalIds(await resourcesB.ListProposals());
+
+        idsForA.Should().Equal(proposalA);
+        idsForB.Should().Equal(proposalB);
+    }
+
+    [Fact]
+    public async Task ProposalResources_GetProposalDetail_IsolatesRequesters()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var userA = await CreateBoardScopedUserAsync(scope, "detail-user-a");
+        var userB = await CreateBoardScopedUserAsync(scope, "detail-user-b");
+        var (proposalA, _) = await CreateBoardScopedProposalAsync(scope, userA);
+        var (proposalB, _) = await CreateBoardScopedProposalAsync(scope, userB);
+        var proposalService = scope.ServiceProvider.GetRequiredService<IAutomationProposalService>();
+
+        var resourcesA = new ProposalResources(
+            proposalService,
+            new McpBoardResourcesTests.FixedUserContextProvider(userA));
+        var resourcesB = new ProposalResources(
+            proposalService,
+            new McpBoardResourcesTests.FixedUserContextProvider(userB));
+
+        using var ownDocumentA = JsonDocument.Parse(
+            await resourcesA.GetProposalDetail(proposalA.ToString()));
+        using var ownDocumentB = JsonDocument.Parse(
+            await resourcesB.GetProposalDetail(proposalB.ToString()));
+        ownDocumentA.RootElement.GetProperty("id").GetGuid().Should().Be(proposalA);
+        ownDocumentB.RootElement.GetProperty("id").GetGuid().Should().Be(proposalB);
+
+        var readAAsB = () => resourcesB.GetProposalDetail(proposalA.ToString());
+        var readBAsA = () => resourcesA.GetProposalDetail(proposalB.ToString());
+        (await readAAsB.Should().ThrowAsync<InvalidOperationException>()).Which.Message
+            .Should().Be("MCP: proposal not found or access denied");
+        (await readBAsA.Should().ThrowAsync<InvalidOperationException>()).Which.Message
+            .Should().Be("MCP: proposal not found or access denied");
+    }
+
+    [Fact]
     public async Task ProposalResources_GetProposalDetail_ReturnsOperations()
     {
         using var scope = _serviceProvider.CreateScope();
@@ -228,6 +284,16 @@ public class McpResourcesTests : IDisposable
             }));
         created.IsSuccess.Should().BeTrue();
         return (created.Value.Id, board.Value.Id);
+    }
+
+    private static Guid[] ReadProposalIds(string json)
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement
+            .GetProperty("proposals")
+            .EnumerateArray()
+            .Select(proposal => proposal.GetProperty("id").GetGuid())
+            .ToArray();
     }
 
     private async Task MakeTerminalWithStoredPreviewAsync(IServiceScope scope, Guid userId, Guid proposalId, string preview)

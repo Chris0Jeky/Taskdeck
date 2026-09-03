@@ -626,6 +626,18 @@ describe('PaperBoardView', () => {
     expect(dragStart.defaultPrevented).toBe(false)
   })
 
+  it('cancels a drop when no column drag is active', async () => {
+    const wrapper = mountView()
+    const targetLane = wrapper.get('[data-column-dnd-id="col-today"]')
+    const drop = makeDragEvent('drop')
+
+    targetLane.element.dispatchEvent(drop)
+    await nextTick()
+
+    expect(drop.defaultPrevented).toBe(true)
+    expect(mockBoardStore.reorderColumns).not.toHaveBeenCalled()
+  })
+
   it('keeps a collapsed target lane as a coherent card drop surface', async () => {
     window.localStorage.setItem('td.paper.board-collapsed-columns.v1', JSON.stringify(['col-today']))
     const wrapper = mountView()
@@ -741,6 +753,7 @@ describe('PaperBoardView — empty board (#1765)', () => {
   beforeEach(() => {
     routerMock.push.mockClear()
     mockBoardStore.createColumn.mockClear()
+    routeMock.params.id = 'board-1'
     mockBoardStore.currentBoard = emptyBoard
     mockBoardStore.currentBoardCards = []
     mockBoardStore.cardsByColumn = new Map()
@@ -828,13 +841,93 @@ describe('PaperBoardView — empty board (#1765)', () => {
     )
   })
 
-  it('still shows the board error banner when the board itself failed to load', () => {
+  it('shows a specific accessible load alert and emits an explicit Retry request', async () => {
     mockBoardStore.currentBoard = null
     mockBoardStore.error = 'Board not found'
 
+    const wrapper = mountView({ boardLoadError: 'Board not found' })
+
+    const alert = wrapper.get('[data-testid="paper-board-load-error"]')
+    expect(alert.attributes('role')).toBe('alert')
+    expect(alert.text()).toContain("We couldn't load this board")
+    expect(alert.text()).toContain('Board not found')
+    const retry = alert.get('[data-testid="paper-board-load-retry"]')
+    expect(retry.attributes('disabled')).toBeUndefined()
+
+    await retry.trigger('click')
+    expect(wrapper.emitted('retry-board-load')).toHaveLength(1)
+
+    mockBoardStore.error = null
+    await wrapper.setProps({ boardLoadRetrying: true })
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain('Board not found')
+    expect(wrapper.get('[data-testid="paper-board-load-retry"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(false)
+  })
+
+  it('keeps loaded Paper lanes visible beside a board refresh error', () => {
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    mockBoardStore.error = 'Board refresh failed'
+
+    const wrapper = mountView({ boardLoadError: 'Board refresh failed' })
+
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      'Your last loaded board is still shown',
+    )
+    expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
+  })
+
+  it('hides cached Paper lanes when they belong to a different routed board', () => {
+    routeMock.params.id = 'board-2'
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    mockBoardStore.error = 'Board B unavailable'
+
+    const wrapper = mountView({ boardLoadError: 'Board B unavailable' })
+
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      "We couldn't load this board",
+    )
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).not.toContain(
+      'Your last loaded board is still shown',
+    )
+    expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(false)
+    expect(wrapper.findComponent(PaperBoardColumn).exists()).toBe(false)
+  })
+
+  it('reports mutation errors without a board-load summary or Retry action', () => {
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    mockBoardStore.error = 'Failed to create card'
+
     const wrapper = mountView()
 
-    expect(wrapper.get('.paper-board-view__error').text()).toBe('Board not found')
-    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-board-error"]').text()).toBe('Failed to create card')
+    expect(wrapper.find('[data-testid="paper-board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-board-load-retry"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
+  })
+
+  it('keeps empty-board setup and its local error visible beside a retryable refresh error', async () => {
+    mockBoardStore.error = 'Board refresh failed'
+    mockBoardStore.createColumn.mockRejectedValueOnce(new Error('column unavailable'))
+
+    const wrapper = mountView({ boardLoadError: 'Board refresh failed' })
+
+    await wrapper.get('[data-testid="paper-board-empty-column-name"]').setValue('Backlog')
+    await wrapper.get('form.paper-board-view__empty-form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-board-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="paper-board-empty-error"]').text()).toContain(
+      'Could not create the column',
+    )
+    expect(wrapper.get('[data-testid="paper-board-load-retry"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      'Your last loaded board is still shown',
+    )
   })
 })

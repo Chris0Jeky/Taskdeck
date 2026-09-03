@@ -8,6 +8,7 @@ import type { BoardState } from './boardState'
 
 export function createBoardHelpers(state: BoardState) {
   const toast = useToastStore()
+  const boardDetailMutationEpochs = new Map<string, number>()
 
   const handleApiError = (err: unknown, fallback: string) => {
     const message = getErrorMessage(err, fallback)
@@ -42,6 +43,13 @@ export function createBoardHelpers(state: BoardState) {
     column.cardCount = Math.max(0, nextCount)
   }
 
+  const getBoardDetailMutationEpoch = (boardId: string) =>
+    boardDetailMutationEpochs.get(boardId) ?? 0
+
+  const markBoardDetailMutation = (boardId: string) => {
+    boardDetailMutationEpochs.set(boardId, getBoardDetailMutationEpoch(boardId) + 1)
+  }
+
   return {
     toast,
     handleApiError,
@@ -49,6 +57,8 @@ export function createBoardHelpers(state: BoardState) {
     isHttpNotFound,
     isHttpConflict,
     updateColumnCardCount,
+    getBoardDetailMutationEpoch,
+    markBoardDetailMutation,
     isDemoMode,
   }
 }

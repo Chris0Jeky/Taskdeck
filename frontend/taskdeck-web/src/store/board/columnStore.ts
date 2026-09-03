@@ -13,6 +13,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       const newColumn = await columnsApi.createColumn(boardId, column)
+      helpers.markBoardDetailMutation(boardId)
 
       if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
         // A realtime refresh can install the new column before this request resolves.
@@ -42,6 +43,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       const updatedColumn = await columnsApi.updateColumn(boardId, columnId, column)
+      helpers.markBoardDetailMutation(boardId)
 
       // Update column in current board
       if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
@@ -67,6 +69,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       await columnsApi.deleteColumn(boardId, columnId)
+      helpers.markBoardDetailMutation(boardId)
 
       // Remove column from current board
       if (state.currentBoard.value && state.currentBoard.value.id === boardId) {
@@ -95,6 +98,7 @@ export function createColumnActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       const reorderedColumns = await columnsApi.reorderColumns(boardId, columnIds)
+      helpers.markBoardDetailMutation(boardId)
 
       // Update columns in current board with reordered list
       if (state.currentBoard.value && state.currentBoard.value.id === boardId) {

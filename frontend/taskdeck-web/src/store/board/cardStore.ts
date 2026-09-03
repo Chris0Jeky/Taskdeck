@@ -39,6 +39,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       const newCard = await cardsApi.createCard(boardId, card)
+      helpers.markBoardDetailMutation(boardId)
       state.currentBoardCards.value.push(newCard)
       helpers.updateColumnCardCount(newCard.columnId, 1)
       helpers.toast.success(`Card "${newCard.title.trim()}" created successfully`)
@@ -62,6 +63,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
         expectedUpdatedAt: card.expectedUpdatedAt ?? existingCard?.updatedAt ?? null,
       }
       const updatedCard = await cardsApi.updateCard(boardId, cardId, request)
+      helpers.markBoardDetailMutation(boardId)
 
       // Update the card in the store
       const index = state.currentBoardCards.value.findIndex((c) => c.id === cardId)
@@ -90,6 +92,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
       state.error.value = null
       const existingCard = state.currentBoardCards.value.find((card) => card.id === cardId)
       await cardsApi.deleteCard(boardId, cardId)
+      helpers.markBoardDetailMutation(boardId)
 
       // Remove the card from the store
       state.currentBoardCards.value = state.currentBoardCards.value.filter((c) => c.id !== cardId)
@@ -130,6 +133,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
         targetColumnId,
         targetPosition,
       })
+      helpers.markBoardDetailMutation(boardId)
 
       if (existingCardIndex !== -1) {
         state.currentBoardCards.value.splice(existingCardIndex, 1)

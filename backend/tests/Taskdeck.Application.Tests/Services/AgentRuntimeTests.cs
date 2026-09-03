@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -6,6 +7,7 @@ using Taskdeck.Application.Services;
 using Taskdeck.Domain.Agents;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Exceptions;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -258,6 +260,58 @@ public class AgentRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_UnexpectedException_PersistsAndReturnsGenericFailureWhileLoggingOriginalOnce()
+    {
+        var profile = CreateProfile();
+        _profileRepo.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(profile);
+        _runRepo.Setup(r => r.GetActiveByUserIdAsync(_userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Enumerable.Empty<AgentRun>());
+
+        AgentRun? capturedRun = null;
+        _runRepo.Setup(r => r.AddAsync(It.IsAny<AgentRun>(), It.IsAny<CancellationToken>()))
+            .Callback<AgentRun, CancellationToken>((run, _) => capturedRun = run)
+            .ReturnsAsync((AgentRun run, CancellationToken _) => run);
+
+        var logger = new CapturingLogger();
+        var runtime = new AgentRuntime(
+            _unitOfWork.Object,
+            _agentPolicy,
+            _policyEvaluator.Object,
+            logger);
+        var hostileMessage =
+            "token=sk-test-secret path=C:\\Users\\private\\taskdeck.db " +
+            "SQLITE_CONSTRAINT_UNIQUE provider=https://provider.internal/v1";
+        var exception = new InvalidOperationException(hostileMessage);
+
+        var result = await runtime.RunAsync(
+            profile.Id, _userId, "will fail unexpectedly",
+            new[] { "inbox.triage" },
+            (run, step, ct) => throw exception);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().Be(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+
+        capturedRun.Should().NotBeNull();
+        capturedRun!.Status.Should().Be(AgentRunStatus.Failed);
+        capturedRun.FailureReason.Should().Be(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+        capturedRun.FailureReason.Should().NotContainAny(
+            "sk-test-secret",
+            "C:\\Users\\private\\taskdeck.db",
+            "SQLITE_CONSTRAINT_UNIQUE",
+            "provider.internal");
+
+        var originalExceptionLogs = logger.Entries
+            .Where(entry => ReferenceEquals(entry.Exception, exception))
+            .ToList();
+        originalExceptionLogs.Should().ContainSingle();
+        originalExceptionLogs[0].Level.Should().Be(LogLevel.Error);
+        originalExceptionLogs[0].Message.Should().Contain(capturedRun.Id.ToString());
+        logger.Entries.Should().OnlyContain(entry => !entry.Message.Contains(hostileMessage, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task RunAsync_RecordsEvents()
     {
         var profile = CreateProfile();
@@ -288,5 +342,35 @@ public class AgentRuntimeTests
         AgentRuntime.DefaultMaxStepsPerRun.Should().BeGreaterThan(0);
         AgentRuntime.DefaultMaxTokensPerRun.Should().BeGreaterThan(0);
         AgentRuntime.DefaultMaxConcurrentRunsPerUser.Should().BeGreaterThan(0);
+    }
+
+    private sealed class CapturingLogger : ILogger<AgentRuntime>
+    {
+        public List<LogEntry> Entries { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add(new LogEntry(logLevel, exception, formatter(state, exception)));
+        }
+
+        public sealed record LogEntry(LogLevel Level, Exception? Exception, string Message);
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+
+            public void Dispose()
+            {
+            }
+        }
     }
 }

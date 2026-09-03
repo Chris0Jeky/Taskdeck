@@ -40,6 +40,7 @@ function createMockHelpers() {
     guardDemoMutation: vi.fn(),
     handleApiError: vi.fn(),
     toast: { success: vi.fn(), error: vi.fn() },
+    markBoardDetailMutation: vi.fn(),
   }
 }
 
@@ -62,6 +63,7 @@ describe('columnStore', () => {
       expect(result).toEqual(newCol)
       expect(state.currentBoard.value!.columns).toHaveLength(3)
       expect(state.currentBoard.value!.columns[2]).toEqual(newCol)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(helpers.toast.success).toHaveBeenCalled()
       expect(state.loading.value).toBe(false)
     })
@@ -153,10 +155,14 @@ describe('columnStore', () => {
     it('updates column in current board', async () => {
       const updated = { id: 'col-1', name: 'Backlog' }
       mockColumnsApi.updateColumn.mockResolvedValueOnce(updated)
+      helpers.markBoardDetailMutation.mockImplementationOnce(() => {
+        expect(state.currentBoard.value!.columns[0].name).toBe('Todo')
+      })
       const { updateColumn } = createColumnActions(state as any, helpers as any)
       const result = await updateColumn('board-1', 'col-1', { name: 'Backlog' } as any)
       expect(result).toEqual(updated)
       expect(state.currentBoard.value!.columns[0]).toEqual(updated)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(helpers.toast.success).toHaveBeenCalled()
     })
 
@@ -186,6 +192,7 @@ describe('columnStore', () => {
       expect(state.currentBoard.value!.columns[0].id).toBe('col-2')
       expect(state.currentBoardCards.value).toHaveLength(1)
       expect(state.currentBoardCards.value[0].id).toBe('card-2')
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(helpers.toast.success).toHaveBeenCalled()
     })
 
@@ -208,6 +215,7 @@ describe('columnStore', () => {
       const result = await reorderColumns('board-1', ['col-2', 'col-1'])
       expect(result).toEqual(reordered)
       expect(state.currentBoard.value!.columns).toEqual(reordered)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(helpers.toast.success).toHaveBeenCalled()
     })
 

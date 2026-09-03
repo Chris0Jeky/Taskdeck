@@ -6,8 +6,18 @@ import { cardsApi } from '../../api/cardsApi'
 import { cardCommentsApi } from '../../api/cardCommentsApi'
 import { columnsApi } from '../../api/columnsApi'
 import { labelsApi } from '../../api/labelsApi'
-import type { Board, Card, Column, Label } from '../../types/board'
+import type { Board, BoardDetail, Card, Column, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((innerResolve, innerReject) => {
+    resolve = innerResolve
+    reject = innerReject
+  })
+  return { promise, resolve, reject }
+}
 
 // Mock all API modules
 vi.mock('../../api/boardsApi', () => ({
@@ -107,6 +117,117 @@ describe('boardStore', () => {
       expect(store.boards).toEqual([])
       expect(store.error).toBe(errorMessage)
       expect(store.loading).toBe(false)
+    })
+  })
+
+  describe('board detail read arbitration', () => {
+    const timestamp = '2026-09-03T10:00:00Z'
+    const column: Column = {
+      id: 'column-1',
+      boardId: 'board-1',
+      name: 'Todo',
+      position: 0,
+      wipLimit: null,
+      cardCount: 1,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+    const loadedBoard: BoardDetail = {
+      id: 'board-1',
+      name: 'Loaded board',
+      description: null,
+      isArchived: false,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      columns: [column],
+    }
+    const localCard: Card = {
+      id: 'card-1',
+      boardId: 'board-1',
+      columnId: 'column-1',
+      title: 'Local card',
+      description: '',
+      dueDate: null,
+      isBlocked: false,
+      blockReason: null,
+      position: 0,
+      labels: [],
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
+
+    it('rejects a delayed fan-out whose cards resolved before a successful card write', async () => {
+      const boardRead = createDeferred<BoardDetail>()
+      const labelsRead = createDeferred<Label[]>()
+      const staleNetworkCard = { ...localCard, title: 'Stale network card' }
+      const updatedCard = {
+        ...localCard,
+        title: 'Locally updated card',
+        updatedAt: '2026-09-03T10:01:00Z',
+      }
+      store.currentBoard = structuredClone(loadedBoard)
+      store.currentBoardCards = [localCard]
+      vi.mocked(boardsApi.getBoard).mockReturnValueOnce(boardRead.promise)
+      vi.mocked(cardsApi.getCards).mockResolvedValueOnce([staleNetworkCard])
+      vi.mocked(labelsApi.getLabels).mockReturnValueOnce(labelsRead.promise)
+      vi.mocked(cardsApi.updateCard).mockResolvedValueOnce(updatedCard)
+
+      const delayedRead = store.fetchBoard('board-1')
+      await Promise.resolve()
+      await Promise.resolve()
+
+      await store.updateCard('board-1', 'card-1', {
+        title: updatedCard.title,
+        description: updatedCard.description,
+        dueDate: updatedCard.dueDate,
+        isBlocked: updatedCard.isBlocked,
+        blockReason: updatedCard.blockReason,
+      })
+      expect(store.currentBoardCards).toEqual([updatedCard])
+
+      boardRead.resolve({ ...structuredClone(loadedBoard), name: 'Delayed stale board' })
+      labelsRead.resolve([])
+
+      await expect(delayedRead).resolves.toBe(false)
+      expect(store.currentBoardCards).toEqual([updatedCard])
+      expect(store.currentBoard?.name).toBe('Loaded board')
+    })
+
+    it('rejects a delayed fan-out after a successful column write commits locally', async () => {
+      const boardRead = createDeferred<BoardDetail>()
+      const labelsRead = createDeferred<Label[]>()
+      const updatedColumn = {
+        ...column,
+        name: 'Doing',
+        updatedAt: '2026-09-03T10:02:00Z',
+      }
+      store.currentBoard = structuredClone(loadedBoard)
+      store.currentBoardCards = [localCard]
+      vi.mocked(boardsApi.getBoard).mockReturnValueOnce(boardRead.promise)
+      vi.mocked(cardsApi.getCards).mockResolvedValueOnce([localCard])
+      vi.mocked(labelsApi.getLabels).mockReturnValueOnce(labelsRead.promise)
+      vi.mocked(columnsApi.updateColumn).mockResolvedValueOnce(updatedColumn)
+
+      const delayedRead = store.fetchBoard('board-1')
+      await Promise.resolve()
+      await Promise.resolve()
+
+      await store.updateColumn('board-1', 'column-1', {
+        name: updatedColumn.name,
+        wipLimit: updatedColumn.wipLimit,
+      })
+      expect(store.currentBoard?.columns[0]).toEqual(updatedColumn)
+
+      boardRead.resolve({
+        ...structuredClone(loadedBoard),
+        name: 'Delayed stale board',
+        columns: [{ ...column, name: 'Stale column' }],
+      })
+      labelsRead.resolve([])
+
+      await expect(delayedRead).resolves.toBe(false)
+      expect(store.currentBoard?.columns[0]).toEqual(updatedColumn)
+      expect(store.currentBoard?.name).toBe('Loaded board')
     })
   })
 
