@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import type { CaptureItem } from '../../../../types/capture'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
+import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
 import {
   REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
   REVIEW_QUEUE_REFRESH_MS,
@@ -3364,6 +3365,68 @@ describe('PaperReviewView', () => {
     expect(
       (wrapper.get('[data-testid="revision-field-headline"]').element as HTMLTextAreaElement).value,
     ).toBe('Current revision')
+    wrapper.unmount()
+  })
+
+  it('locks decision actions and the keymap while revision metadata is opening', async () => {
+    const revisionLoadResolvers: Array<(revisions: unknown[]) => void> = []
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { revisionLoadResolvers.push(resolve) }),
+    )
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'delayed-edit-lock',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'delayed-edit-lock' }],
+      }),
+    ])
+    await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await Promise.resolve()
+
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+    for (const testid of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+      expect(wrapper.get(`[data-testid="${testid}"]`).attributes('disabled')).toBeDefined()
+    }
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+    await flushPromises()
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+    revisionLoadResolvers[1]!([])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('does not let a cancelled revision metadata load mount the editor late', async () => {
+    const revisionLoadResolvers: Array<(revisions: unknown[]) => void> = []
+    mocks.getRevisions.mockImplementation(
+      () => new Promise((resolve) => { revisionLoadResolvers.push(resolve) }),
+    )
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'cancelled-edit-open',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'cancelled-edit-open' }],
+      }),
+    ])
+    await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await Promise.resolve()
+    expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+
+    // Cancelling the rail's pending edit opening invalidates its continuation,
+    // not merely an editor that has already been mounted.
+    wrapper.findComponent(ReviewMain).vm.$emit('cancel-edit')
+    await nextTick()
+    revisionLoadResolvers[1]!([])
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 

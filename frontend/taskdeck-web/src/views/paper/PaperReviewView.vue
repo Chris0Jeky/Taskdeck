@@ -634,8 +634,21 @@ const {
   onRevisionStateUncertain: invalidateQueueReads,
 })
 
+// Opening waits for authoritative revision metadata before there is an editor
+// to hold the existing edit lock. Give that await the same decision/keymap lock
+// and a separate owner so a cancelled or superseded continuation cannot mount
+// an editor after its context has gone away.
+const revisionOpening = ref(false)
+let revisionOpenGeneration = 0
+
+function invalidateRevisionOpening() {
+  revisionOpenGeneration += 1
+  revisionOpening.value = false
+}
+
 watch(isArchivedHistory, (readOnly) => {
   if (!readOnly) return
+  invalidateRevisionOpening()
   clearBatchSelection()
   cancelExecuteProposal()
   cancelRejectProposal()
@@ -1053,7 +1066,9 @@ const whyNowBody = computed(() => {
 
 // --- Action wiring -----------------------------------------------------
 
-const revisionBusy = computed(() => revisionEditing.value || revisionSaving.value)
+const revisionBusy = computed(
+  () => revisionOpening.value || revisionEditing.value || revisionSaving.value,
+)
 // #1414 round 4 P2-A: the zero-op apply guard's revision-load await participates
 // in the SHARED decision lock. While it is in flight the whole rail (buttons via
 // :busy, keymap via its !busy gate) is disabled — otherwise a Defer/Reject
@@ -1086,7 +1101,7 @@ const busy = computed(
  */
 const editLock = computed<EditLock>(() => {
   if (revisionSaving.value) return 'saving'
-  return revisionEditing.value ? 'editing' : 'off'
+  return revisionOpening.value || revisionEditing.value ? 'editing' : 'off'
 })
 
 // True once the active proposal is settled (Applied/Rejected/Failed/Expired/
@@ -1221,8 +1236,23 @@ watch(
   () => activeProposal.value?.id ?? null,
   (id, previousId) => {
     if (previousId === undefined || proposalIdsEqual(id, previousId)) return
+    invalidateRevisionOpening()
     clearRevisionEditorPayload()
     invalidateRevisionFocusSession()
+  },
+)
+
+watch(
+  () => {
+    const proposal = activeProposal.value
+    return (
+      !!proposal &&
+      normalizeProposalStatus(proposal.status) === 'PendingReview' &&
+      !isProposalExpired(proposal)
+    )
+  },
+  (editable, previousEditable) => {
+    if (previousEditable && !editable) invalidateRevisionOpening()
   },
 )
 
@@ -1465,31 +1495,48 @@ async function onRequestEdit() {
   if (isArchivedHistory.value) return
   const p = activeProposal.value
   if (!p) return
-  if (revisionSaving.value) return
+  // An editor that is already open or saving must not be re-seeded. A later
+  // invocation while metadata is still opening deliberately supersedes the
+  // earlier request with the generation captured below.
+  if (revisionEditing.value || revisionSaving.value) return
   if (normalizeProposalStatus(p.status) !== 'PendingReview' || isProposalExpired(p)) {
     toast.info(t('review.toast.notEditable'))
     return
   }
-  // A not-yet-loaded list must not be treated as an empty one: a saved revision
-  // is the editor's correct base. Wait for a fresh authoritative answer before
-  // pinning the payload, and leave the editor closed if that answer is unknown.
-  if (!revisionsLoaded.value) {
-    await loadRevisionState(p.id)
-    if (!proposalIdsEqual(activeProposal.value?.id, p.id) || !revisionsLoaded.value) return
+  const request = ++revisionOpenGeneration
+  revisionOpening.value = true
+  try {
+    // A not-yet-loaded list must not be treated as an empty one: a saved revision
+    // is the editor's correct base. Wait for a fresh authoritative answer before
+    // pinning the payload, and leave the editor closed if that answer is unknown.
+    if (!revisionsLoaded.value) {
+      await loadRevisionState(p.id)
+    }
     const current = activeProposal.value
     if (
+      request !== revisionOpenGeneration ||
+      isArchivedHistory.value ||
       !current ||
+      !proposalIdsEqual(current.id, p.id) ||
+      !revisionsLoaded.value ||
       normalizeProposalStatus(current.status) !== 'PendingReview' ||
-      isProposalExpired(current)
+      isProposalExpired(current) ||
+      revisionEditing.value ||
+      revisionSaving.value
     ) return
+    captureRevisionReturnFocus(p.id)
+    revisionEditorPayload.value = editablePayload.value
+    revisionEditorPayloadEpoch = revisionEditEpoch
+    startRevisionEditing()
+  } finally {
+    // A later open, cancel, proposal switch, or read-only transition owns the
+    // state now. Its lock must never be cleared by this stale continuation.
+    if (request === revisionOpenGeneration) revisionOpening.value = false
   }
-  captureRevisionReturnFocus(p.id)
-  revisionEditorPayload.value = editablePayload.value
-  revisionEditorPayloadEpoch = revisionEditEpoch
-  startRevisionEditing()
 }
 
 function onCancelRevision() {
+  invalidateRevisionOpening()
   clearRevisionEditorPayload()
   cancelRevisionEditing()
   restoreRevisionFocus()
@@ -1922,6 +1969,7 @@ onUnmounted(() => {
 function selectProposal(id: string) {
   // An explicit choice supersedes the #2215 A notice.
   if (!proposalIdsEqual(activeProposal.value?.id, id)) {
+    invalidateRevisionOpening()
     invalidateRevisionFocusSession()
   }
   activeProposalSettledElsewhere.value = null
