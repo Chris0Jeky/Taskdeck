@@ -54,7 +54,9 @@ const realtimeMock = {
 // Captures the onPresenceChanged callback passed by BoardView so tests can
 // simulate incoming SignalR presence snapshots.
 let capturedOnPresenceChanged: ((snapshot: BoardPresenceSnapshot) => void) | undefined
-let capturedRealtimeFetchBoard: ((boardId: string) => Promise<void>) | undefined
+let capturedRealtimeFetchBoard:
+  | ((boardId: string, options: { intent: 'background' }) => Promise<void>)
+  | undefined
 
 const mockBoardStore = reactive({
   currentBoard: {
@@ -92,6 +94,7 @@ const mockBoardStore = reactive({
   filteredCardCount: 0,
   totalCardCount: 0,
   fetchBoard: vi.fn(async () => true),
+  cancelBackgroundBoardFetch: vi.fn(),
   setBoardPresenceMembers: vi.fn(),
   setEditingCard: vi.fn(),
   createColumn: vi.fn(async () => {}),
@@ -548,6 +551,44 @@ describe('BoardView', () => {
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
   })
 
+  it('keeps Retry authoritative while realtime refreshes queue as background work', async () => {
+    const retryLoad = createDeferred<boolean>()
+    mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Network Error'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(() => retryLoad.promise)
+      .mockResolvedValueOnce(false)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    // A concurrent card or column mutation may own the legacy shared loading
+    // flag. It must not prevent the board-specific Retry from starting.
+    mockBoardStore.loading = true
+    await nextTick()
+    const retry = wrapper.get('[data-testid="board-load-retry"]')
+    expect(retry.attributes('disabled')).toBeUndefined()
+
+    await retry.trigger('click')
+    await nextTick()
+    expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
+
+    expect(capturedRealtimeFetchBoard).toBeDefined()
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(3, 'board-1', {
+      intent: 'background',
+    })
+
+    wrapper.unmount()
+    expect(mockBoardStore.cancelBackgroundBoardFetch).toHaveBeenCalledWith('board-1')
+
+    retryLoad.resolve(true)
+    await flushPromises()
+  })
+
   it('does not restart realtime when a pending Retry resolves after unmount', async () => {
     const retryLoad = createDeferred<boolean>()
     mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
@@ -742,7 +783,7 @@ describe('BoardView', () => {
     expect(mockBoardStore.fetchBoard).toHaveBeenNthCalledWith(2, 'board-2')
 
     expect(capturedRealtimeFetchBoard).toBeDefined()
-    await capturedRealtimeFetchBoard!('board-1')
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
     expect(mockBoardStore.fetchBoard).toHaveBeenCalledTimes(2)
 
     boardBLoad.resolve(true)
