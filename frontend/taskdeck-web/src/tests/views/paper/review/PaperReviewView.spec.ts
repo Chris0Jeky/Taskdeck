@@ -4668,6 +4668,376 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('refreshes saved revision truth under one shared lock and consumes the first Approve', async () => {
+      const now = new Date().toISOString()
+      const original = makeProposal({ id: 'truth-barrier' })
+      const refreshed = makeProposal({
+        id: 'truth-barrier',
+        latestRevisionId: 'rev-truth-1',
+        summary: 'Server revision summary',
+      })
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-truth-1',
+        proposalId: 'truth-barrier',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'Make the action exact',
+        createdAt: now,
+      })
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({
+          id: 'truth-barrier',
+          status: 'Approved',
+          latestRevisionId: null,
+          approvedRevisionId: 'rev-truth-1',
+        }),
+      )
+      const wrapper = await mountView([original], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        reason: 'Make the action exact',
+      })
+      await flushPromises()
+
+      mocks.getProposals.mockResolvedValueOnce([refreshed])
+      let resolveHistory!: (rows: unknown[]) => void
+      mocks.getHistory.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveHistory = resolve }),
+      )
+      const apply = wrapper.get('[data-testid="decision-apply"]')
+      ;(apply.element as HTMLButtonElement).focus()
+      await apply.trigger('click')
+      await vi.waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2))
+
+      expect(wrapper.get('[data-testid="decision-lock-note"]').text()).toContain(
+        'Refreshing this proposal',
+      )
+      expect(wrapper.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
+        .toBe('paper-review-revision-refresh-lock')
+      for (const testid of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+        expect(wrapper.get(`[data-testid="${testid}"]`).attributes('disabled')).toBeDefined()
+      }
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+      await nextTick()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      resolveHistory([])
+      await flushPromises()
+      await nextTick()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+      expect(wrapper.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
+        .toBeUndefined()
+      expect(document.activeElement).toBe(
+        wrapper.get('[data-testid="decision-apply"]').element,
+      )
+
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledOnce()
+      expect(mocks.approveProposal).toHaveBeenCalledWith('truth-barrier')
+    })
+
+    it('consumes one Approve after an indeterminate save even when the revision key is unchanged', async () => {
+      const original = makeProposal({ id: 'uncertain-truth' })
+      mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after commit'))
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({ id: 'uncertain-truth', status: 'Approved' }),
+      )
+      const wrapper = await mountView([original])
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-reason"]').setValue('Uncertain save')
+      await wrapper.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-cancel"]').trigger('click')
+      await flushPromises()
+
+      mocks.getProposals.mockResolvedValueOnce([original])
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledOnce()
+    })
+
+    it('retains the saved-revision barrier when the authoritative queue load fails', async () => {
+      const now = new Date().toISOString()
+      const original = makeProposal({ id: 'retry-truth' })
+      const refreshed = makeProposal({ id: 'retry-truth', latestRevisionId: 'rev-retry-1' })
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-retry-1',
+        proposalId: 'retry-truth',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'Retry truth',
+        createdAt: now,
+      })
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({
+          id: 'retry-truth',
+          status: 'Approved',
+          approvedRevisionId: 'rev-retry-1',
+        }),
+      )
+      const wrapper = await mountView([original])
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        reason: 'Retry truth',
+      })
+      await flushPromises()
+
+      mocks.getProposals.mockRejectedValueOnce(new Error('queue unavailable'))
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      mocks.getProposals.mockResolvedValueOnce([refreshed])
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledOnce()
+    })
+
+    it('does not let a pre-save background poll overwrite the refreshed revision DTO', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        const now = new Date().toISOString()
+        const original = makeProposal({ id: 'poll-truth', summary: 'Original summary' })
+        const refreshed = makeProposal({
+          id: 'poll-truth',
+          latestRevisionId: 'rev-poll-1',
+          summary: 'Refreshed revision summary',
+        })
+        let resolvePoll!: (proposals: Proposal[]) => void
+        mocks.createRevision.mockResolvedValueOnce({
+          id: 'rev-poll-1',
+          proposalId: 'poll-truth',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+          revisedAt: now,
+          reason: 'Poll truth',
+          createdAt: now,
+        })
+        mocks.approveProposal.mockResolvedValueOnce(
+          makeProposal({
+            id: 'poll-truth',
+            status: 'Approved',
+            approvedRevisionId: 'rev-poll-1',
+          }),
+        )
+        const wrapper = await mountView([original])
+
+        mocks.getProposals.mockImplementationOnce(
+          () => new Promise((resolve) => { resolvePoll = resolve }),
+        )
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await Promise.resolve()
+
+        await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+        await flushPromises()
+        wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+          revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+          reason: 'Poll truth',
+        })
+        await flushPromises()
+
+        mocks.getProposals.mockResolvedValueOnce([refreshed])
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+        expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain(
+          'Refreshed revision summary',
+        )
+
+        resolvePoll([original])
+        await flushPromises()
+
+        expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain(
+          'Refreshed revision summary',
+        )
+        expect(wrapper.get('[data-testid="paper-review-main"]').text()).not.toContain(
+          'Original summary',
+        )
+
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.approveProposal).toHaveBeenCalledOnce()
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not clear a later same-proposal save epoch with an older preflight', async () => {
+      const now = new Date().toISOString()
+      const proposalA = makeProposal({ id: 'aaa-epoch', summary: 'First proposal' })
+      const proposalB = makeProposal({ id: 'bbb-epoch', summary: 'Second proposal' })
+      const revisionOne = {
+        id: 'rev-epoch-1',
+        proposalId: 'aaa-epoch',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'First save',
+        createdAt: now,
+      }
+      let resolveLaterSave!: (revision: typeof revisionOne) => void
+      mocks.createRevision
+        .mockResolvedValueOnce(revisionOne)
+        .mockImplementationOnce(
+          () => new Promise((resolve) => { resolveLaterSave = resolve }),
+        )
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({
+          id: 'aaa-epoch',
+          status: 'Approved',
+          approvedRevisionId: 'rev-epoch-2',
+        }),
+      )
+      const wrapper = await mountView([proposalA, proposalB])
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: revisionOne.revisedPayload,
+        reason: revisionOne.reason,
+      })
+      await flushPromises()
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="revision-reason"]').setValue('Later stale save')
+      await wrapper.get('[data-testid="revision-save"]').trigger('click')
+      await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+      await flushPromises()
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+
+      let resolvePreflight!: (proposals: Proposal[]) => void
+      mocks.getProposals.mockImplementationOnce(
+        () => new Promise((resolve) => { resolvePreflight = resolve }),
+      )
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await Promise.resolve()
+
+      const revisionTwo = {
+        ...revisionOne,
+        id: 'rev-epoch-2',
+        revisionNumber: 2,
+        reason: 'Later stale save',
+      }
+      resolveLaterSave(revisionTwo)
+      await flushPromises()
+
+      const refreshed = makeProposal({
+        id: 'aaa-epoch',
+        summary: 'First proposal',
+        latestRevisionId: 'rev-epoch-2',
+      })
+      resolvePreflight([refreshed, proposalB])
+      await flushPromises()
+
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).not.toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+
+      mocks.getProposals.mockResolvedValueOnce([refreshed, proposalB])
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledOnce()
+      wrapper.unmount()
+    })
+
+    it('does not approve either proposal when selector refresh is superseded by a queue choice', async () => {
+      const now = new Date().toISOString()
+      const proposalA = makeProposal({ id: 'aaa-switch', summary: 'First proposal' })
+      const proposalB = makeProposal({ id: 'bbb-switch', summary: 'Second proposal' })
+      const refreshedA = makeProposal({
+        id: 'aaa-switch',
+        summary: 'First proposal refreshed',
+        latestRevisionId: 'rev-switch-1',
+      })
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-switch-1',
+        proposalId: 'aaa-switch',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'Switch truth',
+        createdAt: now,
+      })
+      const wrapper = await mountView([proposalA, proposalB])
+      await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+      await flushPromises()
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        reason: 'Switch truth',
+      })
+      await flushPromises()
+
+      mocks.getProposals.mockResolvedValueOnce([refreshedA, proposalB])
+      let resolveAHistory!: (rows: unknown[]) => void
+      mocks.getHistory.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveAHistory = resolve }),
+      )
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await vi.waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(2))
+
+      await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      resolveAHistory([])
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.infoToast).not.toHaveBeenCalledWith(
+        'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
+      )
+      wrapper.unmount()
+    })
+
     it('clears the lock when the reviewer switches to another proposal', async () => {
       // The persistence half of GH-1964: the proposal-switch watcher in
       // useProposalRevisions must actually drop `editing`, so re-entering the

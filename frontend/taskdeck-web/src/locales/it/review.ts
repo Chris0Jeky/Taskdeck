@@ -230,6 +230,8 @@ export default {
       label: 'Archivia',
       ariaLabel: 'Archivia la proposta',
     },
+    refreshLock:
+      'Aggiornamento delle prove della proposta dopo il tentativo di salvataggio. Le decisioni riprendono quando la revisione corrente è pronta.',
     editLock: {
       editing: 'Stai modificando questa proposta qui sotto: le decisioni riprendono quando salvi o annulli la modifica.',
       saving: 'Salvataggio della modifica: le decisioni riprendono quando è completato.',
@@ -606,6 +608,8 @@ export default {
       'Questa proposta non contiene operazioni — applicarla alla bacheca verrà rifiutato.',
     zeroOpPending:
       'Questa proposta non contiene operazioni da applicare — l’applicazione la rifiuterà. Rifiutala o archiviala.',
+    revisionReviewRefreshed:
+      'Revisione aggiornata dopo il tentativo di salvataggio. Controlla le prove correnti, quindi scegli di nuovo l’azione.',
     notRejectable:
       'Questa proposta non può più essere rifiutata. Aggiorna la revisione per vedere lo stato attuale.',
     notEditable: 'Questa proposta non può più essere modificata.',

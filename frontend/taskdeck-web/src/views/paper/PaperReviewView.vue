@@ -91,6 +91,7 @@ const {
   isStaleProposal,
   clearProposalDeepLink,
   loadProposals,
+  loadProposalsWithOutcome,
   invalidateQueueReads,
   loadBoardOptions,
   availableBoards,
@@ -1075,6 +1076,7 @@ const revisionBusy = computed(
 // during the await, with the #proposal- hash carve-out keeping selection
 // stable, could change the proposal's state under the resumed Apply.
 const applyGuardBusy = ref(false)
+const revisionReviewRefreshBusy = ref(false)
 const busy = computed(
   () =>
     proposalActionBusyId.value !== null ||
@@ -1176,6 +1178,27 @@ let revisionReturnFocusEl: HTMLElement | null = null
 let revisionReturnFocusProposalId: string | null = null
 let revisionEditEpoch = 0
 let revisionReturnFocusEpoch: number | null = null
+let revisionReviewEpoch = 0
+const revisionReviewRefreshEpochs = new Map<string, number>()
+
+function revisionReviewKey(proposalId: string): string {
+  return proposalId.toLowerCase()
+}
+
+function requireRevisionReviewRefresh(proposalId: string) {
+  revisionReviewRefreshEpochs.set(
+    revisionReviewKey(proposalId),
+    ++revisionReviewEpoch,
+  )
+}
+
+function revisionIdentitiesEqual(
+  left: string | null,
+  right: string | null,
+): boolean {
+  if (left === null || right === null) return left === right
+  return proposalIdsEqual(left, right)
+}
 
 // The rail's primary control, whichever it currently is: the decision button,
 // or the filing button the rail becomes once the proposal is applied and
@@ -1303,6 +1326,64 @@ function restoreApplyFocus(captured: HTMLElement | null) {
   })
 }
 
+async function refreshRevisionReviewBeforeApply(
+  proposal: ApiProposal,
+  requiredEpoch: number,
+) {
+  const captured = applyReturnFocusEl
+  applyGuardBusy.value = true
+  revisionReviewRefreshBusy.value = true
+  try {
+    const queueOutcome = await loadProposalsWithOutcome()
+    if (queueOutcome !== 'landed') return
+
+    const refreshed = activeProposal.value
+    if (
+      !refreshed ||
+      !proposalIdsEqual(refreshed.id, proposal.id) ||
+      !isApplyActionable(refreshed) ||
+      isProposalDeferred(refreshed)
+    ) return
+
+    const status = normalizeProposalStatus(refreshed.status)
+    const revisionIdentity = proposalRevisionIdentity(refreshed)
+    const expiresAt = refreshed.expiresAt ?? null
+    const deferredUntil = refreshed.deferredUntil ?? null
+    const selectorOutcome = await selectors.waitForCoreBatch(
+      refreshed.id,
+      revisionIdentity,
+    )
+    if (selectorOutcome !== 'settled') return
+
+    const verified = activeProposal.value
+    if (
+      !verified ||
+      !proposalIdsEqual(verified.id, proposal.id) ||
+      normalizeProposalStatus(verified.status) !== status ||
+      !revisionIdentitiesEqual(proposalRevisionIdentity(verified), revisionIdentity) ||
+      (verified.expiresAt ?? null) !== expiresAt ||
+      (verified.deferredUntil ?? null) !== deferredUntil ||
+      !isApplyActionable(verified) ||
+      isProposalDeferred(verified)
+    ) return
+
+    const key = revisionReviewKey(proposal.id)
+    if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return
+    revisionReviewRefreshEpochs.delete(key)
+    toast.info(t('review.toast.revisionReviewRefreshed'))
+  } finally {
+    revisionReviewRefreshBusy.value = false
+    applyGuardBusy.value = false
+    applyReturnFocusEl = null
+    // The preflight consumes this action unconditionally. Return focus only
+    // after the shared lock releases, so a keyboard reviewer can inspect the
+    // refreshed evidence and deliberately invoke the current action again.
+    void nextTick(() => {
+      restoreApplyFocus(captured)
+    })
+  }
+}
+
 async function onFileAway() {
   if (isArchivedHistory.value) return
   const p = activeProposal.value
@@ -1353,6 +1434,13 @@ async function onApply() {
   }
   if (!isApplyActionable(p)) {
     toast.info(t('review.toast.notApplyable'))
+    return
+  }
+  const requiredRevisionReviewEpoch = revisionReviewRefreshEpochs.get(
+    revisionReviewKey(p.id),
+  )
+  if (requiredRevisionReviewEpoch !== undefined) {
+    await refreshRevisionReviewBeforeApply(p, requiredRevisionReviewEpoch)
     return
   }
   // #1397 P2-A: SEAM INVARIANT — a zero-operation proposal is only approved (or
@@ -1797,6 +1885,11 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   const saveEpoch = revisionEditEpoch
   const saveResult = await saveRevision(payload)
   if (!saveResult) return
+  // A rejected response may still have committed, so both confirmed and
+  // indeterminate saves require the same later read barrier. Record it before
+  // branching on the editor outcome, including for stale A continuations that
+  // finish while another proposal is active.
+  requireRevisionReviewRefresh(saveResult.proposalId)
   if (saveResult.outcome === 'indeterminate') {
     // A rejected POST may still have committed. Clear only a preview of the
     // matching proposal; preserve the editor pin and every typed draft field.
@@ -2069,9 +2162,23 @@ async function onClearBoardScope() {
       >
         {{ revisionBadge }}
       </div>
+      <p
+        v-if="revisionReviewRefreshBusy"
+        id="paper-review-revision-refresh-lock"
+        class="paper-review-deep__queue-stale tk-meta"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="decision-lock-note"
+      >
+        {{ $t('review.decisionRail.refreshLock') }}
+      </p>
       <ReviewMain
         ref="reviewMainRef"
         :key="activeProposal.id"
+        :aria-describedby="
+          revisionReviewRefreshBusy ? 'paper-review-revision-refresh-lock' : undefined
+        "
         :serial="headerSerial"
         :meta="headerMeta"
         :title-parts="titleParts"

@@ -274,6 +274,8 @@ export default {
     // GH-1964: the rail names the lock and carries its exit. The note is the
     // accessible description of the four disabled buttons, so it must say what
     // is holding them AND what ends it — not just "busy".
+    refreshLock:
+      'Refreshing this proposal\'s evidence after your save attempt. Decisions resume when the current review is ready.',
     editLock: {
       editing: 'Editing this proposal below — decisions resume when you save or cancel the edit.',
       saving: 'Saving your edit — decisions resume when it lands.',
@@ -699,6 +701,8 @@ export default {
     zeroOpApproved: 'This proposal contains no operations — applying it to the board will be rejected.',
     zeroOpPending:
       'This proposal contains no operations to apply — Apply will reject it. Reject or file it away instead.',
+    revisionReviewRefreshed:
+      'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
     notRejectable: 'This proposal can no longer be rejected. Refresh review to see current status.',
     notEditable: 'This proposal can no longer be edited.',
     notDeferrable: 'This proposal can no longer be deferred.',
