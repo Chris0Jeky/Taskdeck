@@ -449,14 +449,23 @@ export function evaluateGate(plan, context) {
   const mode = requestedMode ?? planMode ?? 'shadow';
   const failures = [];
   const notes = [];
+  const shadowPlanCancellation = mode === 'shadow' && context.planJobResult === 'cancelled';
+  const recordShadowPlanCancellation = () => {
+    failures.push({ code: 'plan-job-cancelled', detail: 'plan job was cancelled by a superseding control-plane run' });
+    notes.push('superseded plan cancellation is excluded from observation evidence and remains blocking in enforce mode');
+  };
   if (plan && requestedMode && planMode && requestedMode !== planMode) failures.push({ code: 'mode-mismatch', detail: `gate invoked in ${requestedMode} mode but the plan was produced under policy mode ${planMode}` });
   if (!plan) {
-    failures.push({ code: 'plan-missing', detail: 'no plan receipt was produced' });
+    if (shadowPlanCancellation) recordShadowPlanCancellation();
+    else failures.push({ code: 'plan-missing', detail: 'no plan receipt was produced' });
   } else {
     const planErrors = validatePlan(plan, context.policy ?? null);
     if (planErrors.length > 0) failures.push({ code: 'plan-invalid', detail: planErrors.join('; ') });
     if (plan.plannerError) failures.push({ code: 'planner-error', detail: `${plan.plannerError.name}: ${plan.plannerError.message}` });
-    if (context.planJobResult && context.planJobResult !== 'success') failures.push({ code: 'plan-job-failed', detail: `plan job result: ${context.planJobResult}` });
+    if (context.planJobResult && context.planJobResult !== 'success') {
+      if (shadowPlanCancellation) recordShadowPlanCancellation();
+      else failures.push({ code: 'plan-job-failed', detail: `plan job result: ${context.planJobResult}` });
+    }
     if (context.expectedHeadSha && plan.headSha !== context.expectedHeadSha) failures.push({ code: 'head-sha-mismatch', detail: `plan ${plan.headSha} vs event ${context.expectedHeadSha}` });
     if (context.expectedBaseSha && plan.baseSha !== context.expectedBaseSha) failures.push({ code: 'base-sha-mismatch', detail: `plan ${plan.baseSha} vs event ${context.expectedBaseSha}` });
     if (context.expectedPolicyDigest && plan.policyDigest !== context.expectedPolicyDigest) failures.push({ code: 'policy-digest-mismatch', detail: `plan ${plan.policyDigest} vs policy ${context.expectedPolicyDigest}` });

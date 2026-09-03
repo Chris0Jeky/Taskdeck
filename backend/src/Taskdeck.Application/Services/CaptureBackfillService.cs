@@ -275,8 +275,19 @@ public sealed class CaptureBackfillService
     {
         var legacyState = ResolveLegacyState(request, payload);
 
-        // An archived capture is terminal: it rejects edits and projections alike, and the queue row
-        // has nothing left to teach it beyond the stamp.
+        // Archived is terminal for disposition, not evidence that source text agrees. The aggregate
+        // cannot accept a superseding asset once archived, so leave a mismatch outstanding and let
+        // the run's normal skip path retain queue-row fallback instead of stamping stale text away.
+        if (capture.Disposition == CaptureUserDisposition.Archived &&
+            !string.Equals(capture.CurrentText, payload.Text, StringComparison.Ordinal))
+        {
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                "Cannot reconcile source text on an archived capture");
+        }
+
+        // An archived capture whose text already agrees rejects the remaining projections; only its
+        // queue reconciliation stamp may move forward.
         if (capture.Disposition != CaptureUserDisposition.Archived)
         {
             if (!string.IsNullOrWhiteSpace(payload.Text) &&

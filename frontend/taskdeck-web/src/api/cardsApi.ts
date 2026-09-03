@@ -1,14 +1,19 @@
-import http from './http'
+import http, { type BoardReadOptions } from './http'
 import type { Card, CardCaptureProvenance, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
 
 export const cardsApi = {
-  async getCards(boardId: string, params?: { search?: string; labelId?: string; columnId?: string }): Promise<Card[]> {
+  async getCards(
+    boardId: string,
+    params?: { search?: string; labelId?: string; columnId?: string },
+    options?: BoardReadOptions,
+  ): Promise<Card[]> {
     const searchParams = new URLSearchParams()
     if (params?.search) searchParams.append('search', params.search)
     if (params?.labelId) searchParams.append('labelId', params.labelId)
     if (params?.columnId) searchParams.append('columnId', params.columnId)
 
-    const { data } = await http.get<Card[]>(`/boards/${boardId}/cards?${searchParams}`)
+    const url = `/boards/${boardId}/cards?${searchParams}`
+    const { data } = options ? await http.get<Card[]>(url, options) : await http.get<Card[]>(url)
     return data
   },
 

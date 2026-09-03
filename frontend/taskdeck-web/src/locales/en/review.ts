@@ -69,10 +69,6 @@ export default {
     empty: 'Nothing in this filter.',
     cadence: {
       heading: 'This week',
-      // Rendered as `{label} <b>{percentage}</b>` — the value carries its own
-      // emphasis in the template, so this label must not end with punctuation.
-      applyRateLabel: 'Apply rate',
-      applyRateEmpty: 'No decisions yet',
     },
   },
 
