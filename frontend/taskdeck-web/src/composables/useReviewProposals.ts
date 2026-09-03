@@ -549,7 +549,14 @@ export function useReviewProposals() {
   let shouldRefreshNow: (() => boolean) | null = null
   let refreshAbort: AbortController | null = null
 
-  function recordQueueRefreshFailure() {
+  function recordQueueRefreshFailure(err: unknown) {
+    if (!isTransientQueueRefreshFailure(err)) {
+      // A non-transient failure breaks the uninterrupted transient run, but it
+      // does not prove that the retained queue is fresh enough to clear a
+      // visible degraded indication.
+      consecutiveQueueRefreshFailures = 0
+      return
+    }
     consecutiveQueueRefreshFailures += 1
     if (consecutiveQueueRefreshFailures >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
       queueRefreshStale.value = true
@@ -767,7 +774,7 @@ export function useReviewProposals() {
             // The composite read is incomplete. Preserve the exact queue and
             // availability state currently rendered; a later tick can retry.
             if (isSupersededQueueRead()) return
-            if (isTransientQueueRefreshFailure(e)) recordQueueRefreshFailure()
+            recordQueueRefreshFailure(e)
             logError('Review deep-link background refresh failed:', e)
             return
           }
@@ -811,7 +818,7 @@ export function useReviewProposals() {
       // A read for a board the reviewer has already left, or one superseded by
       // an explicit load, cannot make the current queue degraded.
       if (isSupersededQueueRead()) return
-      if (isTransientQueueRefreshFailure(e)) recordQueueRefreshFailure()
+      recordQueueRefreshFailure(e)
       logError('Review queue background refresh failed:', e)
     } finally {
       refreshInFlight = false

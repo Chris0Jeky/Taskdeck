@@ -29,7 +29,7 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 **The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. ADR-0044 Decision 3 was superseded by ADR-0050 on 2026-08-12: copies already received under MIT retain those grants, while the current core is GPL-3.0-only.
 
-The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is not built — the GEN-12 `#1326` gate closed 2026-09-03, *stay one application*), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
 
 Goals, in order:
 
@@ -68,6 +68,30 @@ behaviour.
 > These are the delivery, governance, and correction records, newest first. They were hoisted below
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
+
+## Planning update (2026-09-03, v0.3.0 readiness view and the clause-5 dependency chain)
+
+- **The v0.3 milestone count is not the v0.3.0 blocker count, and that is now written down.**
+  `docs/releases/V0_3_0_READINESS.md` holds the standing per-clause view of the five gate clauses in
+  `docs/REVIVAL_PLAN.md` §3. Measured 2026-09-03: clause 3 (launch kit `#2242`) is met, clause 4
+  (`main` green) held at `98f3fbd14` with the `01d77faf3` run still in progress at measurement time,
+  clause 1 is only measurable at a final tag head, and clauses 2 and 5 are open. Of the 50 open v0.3
+  issues, 16 carry `dogfooding`, 15 carry `ci` and 19 carry neither; 17 of the 50 have a gate clause
+  behind them and the other 33 do not. Those counts moved once during the same afternoon (`#2230`
+  closed on PR `#2421`, CI-16 `#2439` was seeded), so the readiness file, not this block, is the
+  place to read them.
+- **Clause 5 has an ordered dependency chain that was not previously recorded.** The cutover needs
+  `Smart CI / Required Gate` enforced; registering it is human action SC-4, whose condition is at
+  least 20 PRs of observation without a false red. Branch protection on `main` was measured on
+  2026-09-03 to require exactly three contexts, all security, so the Smart CI gate is not enforced
+  today. `#2401` is producing the false reds that stop that window from accumulating: PRs `#2408`
+  (run `33736889079`) and `#2421` (run `33754458696`) both failed the gate on `base-sha-mismatch`
+  plus `trust-mismatch` after `main` moved under a queued `pull_request_target` event, not on branch
+  content. Order is therefore `#2401`, then `#2327`, then SC-4, then the `#2337` cutover, with
+  `#2333` and `#2335` handing off to SC-2 and SC-5 alongside.
+- **Clause 2 needs a ruling, not fifty closures.** "Milestone closed or explicitly re-ruled" is
+  satisfied by an explicit decision moving families out of v0.3 as much as by closing them. Section 5
+  of the readiness file states that as one question for the maintainer and does not pre-empt it.
 
 ## Planning update (2026-09-02, v0.5 / v0.6 acceleration bundles unbundled)
 
