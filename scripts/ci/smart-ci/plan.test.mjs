@@ -25,6 +25,7 @@ import { observeMergeRef } from './resolve-merge-ref.mjs';
 
 const policyText = readFileSync(new URL('../../../ci/policy.v1.json', import.meta.url), 'utf8');
 const policy = JSON.parse(policyText);
+const runReceiptSchema = JSON.parse(readFileSync(new URL('../../../ci/schemas/ci-run.v1.schema.json', import.meta.url), 'utf8'));
 const digest = policyDigest(policyText);
 const BASE = 'a'.repeat(40);
 const HEAD = 'b'.repeat(40);
@@ -242,6 +243,8 @@ test('a superseded cancelled plan is non-red only in shadow mode', () => {
   assert.equal(shadow.wouldFail, true);
   assert.deepEqual(shadow.plannerFailures, []);
   assert.ok(shadow.failures.some((failure) => failure.code === 'plan-job-cancelled'));
+  const receiptFailureCodes = new Set(runReceiptSchema.properties.failures.items.properties.code.enum);
+  assert.ok(shadow.failures.every((failure) => receiptFailureCodes.has(failure.code)), 'every emitted failure code must satisfy ci-run.v1');
   assert.ok(shadow.notes.some((note) => note.includes('superseded')));
   const summary = renderGateSummary(shadow, plan);
   assert.match(summary, /would FAIL in enforce mode/);
