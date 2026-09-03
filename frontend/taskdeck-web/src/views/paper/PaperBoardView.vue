@@ -516,9 +516,9 @@ async function createCardInColumn(column: Column, title: string) {
 const columnReorderBusy = ref(false)
 
 async function onColumnDrop(column: Column, event: DragEvent) {
+  event.preventDefault()
   if (!draggedColumn.value) return
   if (columnReorderBusy.value) {
-    event.preventDefault()
     handleColumnDragLeave()
     return
   }

@@ -626,6 +626,18 @@ describe('PaperBoardView', () => {
     expect(dragStart.defaultPrevented).toBe(false)
   })
 
+  it('cancels a drop when no column drag is active', async () => {
+    const wrapper = mountView()
+    const targetLane = wrapper.get('[data-column-dnd-id="col-today"]')
+    const drop = makeDragEvent('drop')
+
+    targetLane.element.dispatchEvent(drop)
+    await nextTick()
+
+    expect(drop.defaultPrevented).toBe(true)
+    expect(mockBoardStore.reorderColumns).not.toHaveBeenCalled()
+  })
+
   it('keeps a collapsed target lane as a coherent card drop surface', async () => {
     window.localStorage.setItem('td.paper.board-collapsed-columns.v1', JSON.stringify(['col-today']))
     const wrapper = mountView()

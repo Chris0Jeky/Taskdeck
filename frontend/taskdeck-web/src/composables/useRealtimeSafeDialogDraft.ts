@@ -7,11 +7,10 @@ export interface RealtimeSafeDialogDraftOptions<T> {
   seed: (source: T) => void
   /**
    * Fields whose local draft should win over a same-entity realtime refresh.
-   * The source snapshot is advanced after every refresh, including while a
-   * dialog is busy, so a later refresh is compared with the latest server
-   * value rather than with an older snapshot.
+   * While a dialog action is busy, the source snapshot is held so a failed
+   * save or cancellation can resume reconciliation from the last draft state.
    */
-  fields: RealtimeSafeDialogDraftField<T>[]
+  fields: RealtimeSafeDialogDraftField<T, any>[]
   /** Dialog actions such as save/archive may temporarily own all fields. */
   isBusy?: () => boolean
 }
@@ -20,6 +19,7 @@ export interface RealtimeSafeDialogDraftField<T, V = unknown> {
   sourceValue: (source: T) => V
   draftValue: () => V
   apply: (value: V) => void
+  equals?: (draftValue: V, sourceValue: V) => boolean
 }
 
 /**
@@ -57,13 +57,18 @@ export function useRealtimeSafeDialogDraft<T>(options: RealtimeSafeDialogDraftOp
       }
 
       const nextSourceSnapshot = readSourceSnapshot(source)
-      if (!options.isBusy?.()) {
-        options.fields.forEach((field, index) => {
-          if (Object.is(field.draftValue(), sourceSnapshot?.[index])) {
-            field.apply(nextSourceSnapshot[index])
-          }
-        })
-      }
+      if (options.isBusy?.()) return
+
+      options.fields.forEach((field, index) => {
+        const previousSourceValue = sourceSnapshot?.[index] as never
+        const sourceValue = nextSourceSnapshot[index] as never
+        const draftValue = field.draftValue() as never
+        if (field.equals
+          ? field.equals(draftValue, previousSourceValue)
+          : Object.is(draftValue, previousSourceValue)) {
+          field.apply(sourceValue)
+        }
+      })
       sourceSnapshot = nextSourceSnapshot
     },
     { immediate: true },

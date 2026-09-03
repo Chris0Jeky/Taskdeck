@@ -331,6 +331,27 @@ describe('PaperBoardView — column settings', () => {
       .toBe('3')
   })
 
+  it('keeps a locally edited WIP pair when realtime clears the remote limit', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[0]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').setValue(true)
+    await wrapper.get('[data-testid="paper-column-dialog-wip"]').setValue(5)
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-backlog' ? { ...column, wipLimit: null } : column,
+      ),
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').element as HTMLInputElement).checked)
+      .toBe(true)
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip"]').element as HTMLInputElement).value)
+      .toBe('5')
+  })
+
   it('renames a column through boardStore.updateColumn and closes', async () => {
     const wrapper = mountView()
 

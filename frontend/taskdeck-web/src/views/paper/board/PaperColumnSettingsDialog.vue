@@ -69,14 +69,16 @@ useRealtimeSafeDialogDraft({
       apply: (value) => { name.value = value as string },
     },
     {
-      sourceValue: (column) => column.wipLimit,
-      draftValue: () => wipLimit.value,
-      apply: (value) => { wipLimit.value = value as number | null },
-    },
-    {
-      sourceValue: (column) => column.wipLimit != null && column.wipLimit > 0,
-      draftValue: () => hasWipLimit.value,
-      apply: (value) => { hasWipLimit.value = value as boolean },
+      sourceValue: (column) => ({
+        enabled: column.wipLimit != null && column.wipLimit > 0,
+        limit: column.wipLimit,
+      }),
+      draftValue: () => ({ enabled: hasWipLimit.value, limit: wipLimit.value }),
+      equals: (draft, source) => draft.enabled === source.enabled && draft.limit === source.limit,
+      apply: (value) => {
+        hasWipLimit.value = value.enabled
+        wipLimit.value = value.limit
+      },
     },
   ],
   isBusy: () => busy.value || confirmingDelete.value,

@@ -108,6 +108,18 @@ describe('ColumnEditModal', () => {
     expect((wrapper.get('#wip-limit').element as HTMLInputElement).value).toBe('3')
   })
 
+  it('keeps a locally edited WIP pair when realtime clears the remote limit', async () => {
+    const wrapper = mount(ColumnEditModal, {
+      props: { column: { ...column, wipLimit: 3 }, isOpen: true, boardId: 'board-1' },
+    })
+
+    await wrapper.get('#wip-limit').setValue(5)
+    await wrapper.setProps({ column: { ...column, wipLimit: null } })
+
+    expect((wrapper.get('#column-has-wip-limit').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('#wip-limit').element as HTMLInputElement).value).toBe('5')
+  })
+
   it('seeds the latest values when a cancelled dialog is reopened', async () => {
     const wrapper = mount(ColumnEditModal, {
       props: {
