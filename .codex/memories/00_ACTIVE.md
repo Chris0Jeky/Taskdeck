@@ -4,7 +4,7 @@ Last updated: 2026-09-03
 
 This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
-**This file is a pointer, not a record.** It carries routing, standing constraints, and unpushed-work protection only. Delivery history, release state, milestone counts, PR status, and CI colour belong in `docs/STATUS.md` and live GitHub, which outrank anything written here. If you are about to add a dated delivery narrative to this file, put it in `docs/STATUS.md` instead.
+**This file is a pointer, not a record.** It carries routing, standing constraints, and unpushed-work protection only. Shipped reality belongs in `docs/STATUS.md`; delivery history and roadmap sequencing belong in `docs/IMPLEMENTATION_MASTERPLAN.md`, the split that `.codex/README.md` and that file both declare; release state, milestone counts, PR status, and CI colour come from live GitHub. All three outrank anything written here. If you are about to add a dated delivery narrative to this file, put it in `docs/IMPLEMENTATION_MASTERPLAN.md` instead.
 
 ## Current Authority
 
@@ -42,9 +42,9 @@ The architecture for "speak, type, paste, or drop" is `docs/decisions/ADR-0065-c
 
 ## Unpushed work protection
 
-One saved slice exists with no PR. Do not delete the branch and do not recreate the work from scratch:
+No saved head currently holds unshipped work. Record one here the moment a slice is parked without a PR, and say what it contains and how to resume it.
 
-- The `#1940` provenance-shortcut slice is `origin/issue-1940/provenance-shortcut@c9135fef3b64da5d6c578bd4d9c76fe4fdb7eb65`, with no PR. It is deliberately incomplete and test-only. Recreate an isolated worktree from that remote head, install locked frontend dependencies, prove the new regression red, then wire the smallest controlled `ReviewProvenance` to `ReviewMain` to `PaperReviewView` seam while preserving key guards, manual activation, independent disclosures, proposal reset, and decision/receipt behavior. Verified present 2026-09-03; `#1940` is still open.
+- Retired, do not resume: `origin/issue-1940/provenance-shortcut@c9135fef3b64da5d6c578bd4d9c76fe4fdb7eb65`. The ref still exists and is not an ancestor of `main`, but the slice it held shipped as PR `#2323` (merge `221aa88c8`), recorded in `docs/STATUS.md`. Recreating a worktree from it would redo landed work. `#1940` stays open for the two MEDIUM residuals named on the issue, not for this branch.
 
 ## Start of session
 
