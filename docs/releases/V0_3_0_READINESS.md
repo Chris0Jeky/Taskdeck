@@ -1,6 +1,6 @@
 # v0.3.0 release readiness
 
-Last Updated: 2026-09-03 (measured against `main` `a09d986c0`)
+Last Updated: 2026-09-03 (measured against `main` `7d8deef12`)
 
 **What this file is.** A standing view of what actually stands between `main` and the final `v0.3.0`
 tag, so the open v0.3 milestone count is never mistaken for the blocker count. It classifies work into
@@ -80,7 +80,7 @@ association are human, and those are SC-7, which runs *after*. Treating `#2328` 
 send required pre-cutover engineering out of the technical queue and let SC-6 look ready while
 section F is unbuilt.
 
-One inconsistency remains in that table and needs a decision rather than an assumption:
+One inconsistency remains in that table and needs a decision rather than an assumption (an agent recommendation, split section H into a v0.3 release-qualification child and a v0.4 nightly-consolidation remainder, is posted on `#2337` as Q1 and is not a ruling):
 
 - **`#2334` is a v0.3.0 gate prerequisite sitting on the v0.4 milestone.** Either section H is not
   truly required before cutover, or `#2334` belongs in v0.3. It cannot be both.
@@ -89,7 +89,7 @@ One inconsistency remains in that table and needs a decision rather than an assu
 **`#2425`** (Windows worktree helper scenario 28, the forced 5s timeout lands in the checkout phase)
 and **`#2399`** (Windows batch command-shape sample contamination, seen again on PR `#2432`). Neither
 is a product defect; both are noise in clause 4 and in the SC-4 observation window.
-**`#2378`** (Priority I) is the same class for the Windows Frontend Unit launcher timeout.
+**`#2378`** (Priority I) is the same class for the Windows Frontend Unit launcher timeout. PR `#2427` (merge `7d8deef12`) removed that leg from the required E2E prerequisites, so its timeout can no longer leave `E2E Smoke` skipped; the launcher timeout itself is still open.
 
 ## 3. Human gates
 
@@ -145,7 +145,7 @@ the ones that already have a gate clause behind them from the ones that do not. 
 - 14 carry `ci`, and almost none of them are residuals; they split across this file:
   - 9 are section 2: the clause-5 chain `#2327` and `#2326`, the cutover-checklist owners `#2333`
     (B), `#2329`, `#2331`, `#2332` (E) and `#2335` (G), plus the clause-4 intermittent reds `#2425`
-    and `#2378`. (`#2401` was the tenth until PR `#2440` closed it.)
+    and `#2378`. (`#2401` was the tenth until PR `#2440` closed it; `#2378` stays open after PR `#2427`.)
   - 2 more are section 3 human gates in their own right: `#2337` and `#2328` (checklist F).
     (`#2333`, `#2335` and `#2327` also hand off to SC-2, SC-5 and SC-4, but are counted above.)
   - 1 is the section 4 tracker `#2324` (checklist A).
