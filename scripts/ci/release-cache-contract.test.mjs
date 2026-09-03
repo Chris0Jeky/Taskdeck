@@ -8,6 +8,11 @@ const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 const workflowsDirectory = join(repoRoot, '.github', 'workflows')
 const workflowPrefix = '.github/workflows/'
 
+function quotedScalarStartsAt(sourceLine, index) {
+  const prefix = sourceLine.slice(0, index)
+  return /(?:^\s*(?:-\s+)?|[:?,[{]\s*|(?:^|[\s:[{,?])(?:&[^\s[\]{},]+|![^\s[\]{},]+)\s+)$/.test(prefix)
+}
+
 function stripYamlComment(sourceLine) {
   let quote = null
 
@@ -24,7 +29,7 @@ function stripYamlComment(sourceLine) {
       else if (character === "'") quote = null
       continue
     }
-    if (character === '"' || character === "'") {
+    if ((character === '"' || character === "'") && quotedScalarStartsAt(sourceLine, index)) {
       quote = character
       continue
     }
@@ -68,13 +73,15 @@ function annotateYamlLines(source) {
     const record = { raw, indent, lineNumber: index + 1, structural }
     records.push(record)
 
+    const uncommented = stripYamlComment(raw)
     if (
       structural
       && trimmed !== ''
       && !trimmed.startsWith('#')
-      && /:\s*[>|][+-]?\s*$/.test(stripYamlComment(raw))
+      && /:\s*[>|][+-]?\s*$/.test(uncommented)
     ) {
-      blockScalarParentIndent = indent
+      const sequenceProperty = /^( *)-\s+/.exec(uncommented)
+      blockScalarParentIndent = sequenceProperty?.[0].length ?? indent
     }
   }
 
@@ -103,23 +110,33 @@ function usesEntries(source, workflowPath, violations) {
     const uncommented = stripYamlComment(line.raw)
     const trimmed = uncommented.trim()
     if (trimmed === '') continue
-    const mappingKeyDelimiter = trimmed.indexOf(':')
-    const mappingKeyPrefix = mappingKeyDelimiter === -1
-      ? trimmed
-      : trimmed.slice(0, mappingKeyDelimiter)
-    if (/(?:^|\s)&[^\s[\]{},]+(?:\s|$)/.test(mappingKeyPrefix)) {
+    if (/(?:^(?:-\s+)?|[\[{,]\s*)&[^\s[\]{},]+(?:\s|$)/.test(trimmed)) {
       violations.add(
         `${workflowPath}:${line.lineNumber}: YAML anchors in mapping keys are unsupported by the release cache scanner`,
       )
       continue
     }
-    if (/(?:^(?:-\s+)?|[{,]\s*)\?\s+/.test(trimmed)) {
+    if (
+      /(?:^(?:-\s+)?|[\[{,]\s*)!(?:![^\s[\]{},]+|<[^>\r\n]+>|[^\s[\]{},]+)?\s+(?:&[^\s[\]{},]+\s+)?(?:uses|"uses"|'uses'|\*[^\s[\]{},:]+|"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*")\s*:/.test(trimmed)
+    ) {
+      violations.add(
+        `${workflowPath}:${line.lineNumber}: YAML tags in mapping keys are unsupported by the release cache scanner`,
+      )
+      continue
+    }
+    if (/(?:^(?:-\s+)?|[\[{,]\s*)\*[^\s[\]{},:]+\s*:/.test(trimmed)) {
+      violations.add(
+        `${workflowPath}:${line.lineNumber}: YAML aliases in mapping keys are unsupported by the release cache scanner`,
+      )
+      continue
+    }
+    if (/(?:^(?:-\s+)?|[\[{,]\s*)\?(?:\s+|$)/.test(trimmed)) {
       violations.add(
         `${workflowPath}:${line.lineNumber}: explicit YAML mapping keys are unsupported by the release cache scanner`,
       )
       continue
     }
-    if (/(?:^(?:-\s+)?|[{,]\s*)"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*"\s*:/.test(trimmed)) {
+    if (/(?:^(?:-\s+)?|[\[{,]\s*)"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*"\s*:/.test(trimmed)) {
       violations.add(
         `${workflowPath}:${line.lineNumber}: escaped YAML mapping keys are unsupported by the release cache scanner`,
       )
@@ -128,7 +145,7 @@ function usesEntries(source, workflowPath, violations) {
 
     const match = /^( *)(-\s+)?(?:uses|"uses"|'uses')\s*:\s*(.*?)\s*$/.exec(uncommented)
     if (!match) {
-      if (/(?:^|[{,]\s*)(?:uses|"uses"|'uses')\s*:/.test(trimmed)) {
+      if (/(?:^|[\[{,]\s*)(?:uses|"uses"|'uses')\s*:/.test(trimmed)) {
         violations.add(`${workflowPath}:${line.lineNumber}: uses must use a static block-mapping scalar`)
       }
       continue
@@ -583,6 +600,83 @@ test('anchored action mappings cannot hide cross-run artifact inputs', () => {
   )
 })
 
+test('anchored keys after flow-mapping entries cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      '      - {name: build, &unsafe uses: actions/cache@v5}',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML anchors in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('anchored flow-sequence mapping pairs cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `    steps:
+      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      '    steps: [&unsafe uses: actions/cache@v5]',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML anchors in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('tagged keys after flow-mapping entries cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      '      - {name: build, !!str "uses": actions/cache@v5}',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML tags in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('tags before anchored keys cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      '      - !!str &unsafe uses: actions/cache@v5',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML tags in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
 test('encoded and explicit action keys cannot hide cross-run artifact inputs', () => {
   const cases = [
     {
@@ -653,6 +747,66 @@ test('escaped explicit keys in flow mappings cannot hide cross-run artifact inpu
   assert.doesNotThrow(() => enforceReleaseCacheContract(commentSources))
 })
 
+test('literal action keys in flow-sequence mapping pairs fail closed', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `    steps:
+      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      '    steps: [uses: actions/cache@v5]',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /uses must use a static block-mapping scalar/,
+  )
+})
+
+test('escaped action keys in flow-sequence mapping pairs fail closed', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `    steps:
+      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      '    steps: ["\\u0075ses": actions/cache@v5]',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /escaped YAML mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('explicit action keys in flow-sequence mapping pairs fail closed', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `    steps:
+      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      '    steps: [? uses : actions/cache@v5]',
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /explicit YAML mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
 test('plain-scalar comments cannot disguise action lines as block-scalar content', () => {
   const sources = validSyntheticClosure()
   sources.set(
@@ -663,6 +817,167 @@ test('plain-scalar comments cannot disguise action lines as block-scalar content
           cache: npm
           cache-dependency-path: package-lock.json`,
       `      - name: disguise # : |
+        uses: actions/cache@v5`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /actions\/cache may not restore or publish caches/,
+  )
+})
+
+test('sequence-item block scalars end before sibling action keys', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      `      - name: |
+          multiline label
+        uses: actions/cache@v5`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /actions\/cache may not restore or publish caches/,
+  )
+})
+
+test('multiline explicit mapping keys cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      `      - ?
+          uses
+        : actions/cache@v5`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /explicit YAML mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('aliases used as mapping keys cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`)
+      .replace(
+        'on: workflow_call',
+        `on: workflow_call
+env:
+  ACTION_KEY: &uses uses`,
+      )
+      .replace(
+        `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+        '      - *uses: actions/cache@v5',
+      ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML aliases in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('aliases after flow-mapping entries cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`)
+      .replace(
+        'on: workflow_call',
+        `on: workflow_call
+env:
+  ACTION_KEY: &uses uses`,
+      )
+      .replace(
+        `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+        '      - {name: build, *uses: actions/cache@v5}',
+      ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML aliases in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('aliases in flow-sequence mapping pairs cannot hide action names', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`)
+      .replace(
+        'on: workflow_call',
+        `on: workflow_call
+env:
+  ACTION_KEY: &uses uses`,
+      )
+      .replace(
+        `    steps:
+      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+        '    steps: [*uses: actions/cache@v5]',
+      ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /YAML aliases in mapping keys are unsupported by the release cache scanner/,
+  )
+})
+
+test('apostrophes in plain scalars do not hide following action keys', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      `      - name: it's disguised # : |
+        uses: actions/cache@v5`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /actions\/cache may not restore or publish caches/,
+  )
+})
+
+test('quotes after commas in plain scalars do not hide following action keys', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json`,
+      `      - name: plain, "unterminated # : |
         uses: actions/cache@v5`,
     ),
   )
