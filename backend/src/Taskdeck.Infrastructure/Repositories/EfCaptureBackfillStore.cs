@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
@@ -58,10 +59,12 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
             // gives the Inbox listing. The NOT EXISTS clause is the divergence join: a row leaves the
             // backlog only once a capture exists for it AND that capture is at least as fresh as the
             // queue row. Oldest first, so the backlog drains in intake order.
-            // Rows this run has already failed on are excluded here rather than filtered afterwards,
-            // so a poisoned head cannot consume the whole batch on every iteration.
-            // FromSqlInterpolated parameterises every hole; the exclusion list is bounded by the
-            // number of distinct failures in one run, so it is fetched generously and trimmed below.
+            // Rows this run has already failed on are excluded by SQLite before LIMIT, so a poisoned
+            // head cannot consume the whole batch and no more than batchSize payloads are materialized.
+            // json_each carries every id in one collection parameter rather than one parameter per id,
+            // so a large poisoned set cannot hit SQLite's bound-variable ceiling.
+            var excludedJson = JsonSerializer.Serialize(
+                excluded.Select(id => id.ToString("D").ToUpperInvariant()));
             FormattableString sql =
                 $"""
                 SELECT * FROM LlmRequests
@@ -70,19 +73,14 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
                         SELECT 1 FROM Captures
                         WHERE Captures.Id = LlmRequests.Id
                           AND Captures.UpdatedAt >= LlmRequests.UpdatedAt)
+                  AND Id NOT IN (SELECT value FROM json_each({excludedJson}))
                 ORDER BY CreatedAt, Id
-                LIMIT {batchSize + excluded.Count}
+                LIMIT {batchSize}
                 """;
-            var rows = await _context.LlmRequests
+            return await _context.LlmRequests
                 .FromSqlInterpolated(sql)
                 .AsNoTracking()
                 .ToListAsync(cancellationToken);
-            return rows
-                .Where(request => !excluded.Contains(request.Id))
-                .OrderBy(request => request.CreatedAt)
-                .ThenBy(request => request.Id.ToString(), StringComparer.Ordinal)
-                .Take(batchSize)
-                .ToList();
         }
 
         var query = Backlog;
