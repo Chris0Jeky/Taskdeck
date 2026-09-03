@@ -624,6 +624,29 @@ describe('BoardView', () => {
     )
   })
 
+  it('hides a cached board when the newly routed board fails to load', async () => {
+    mockBoardStore.fetchBoard
+      .mockResolvedValueOnce(true)
+      .mockImplementationOnce(async () => {
+        mockBoardStore.loading = false
+        mockBoardStore.error = 'Board B unavailable'
+        throw new Error('board B unavailable')
+      })
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await flushPromises()
+
+    const errorAlert = wrapper.get('[data-testid="board-load-error"]')
+    expect(errorAlert.text()).toContain("We couldn't load this board")
+    expect(errorAlert.text()).not.toContain('Your last loaded board is still shown')
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(false)
+    expect(wrapper.find('[data-board-action-rail]').exists()).toBe(false)
+  })
+
   it('reports mutation errors without presenting them as retryable board-load failures', async () => {
     const wrapper = mountView()
     await flushPromises()

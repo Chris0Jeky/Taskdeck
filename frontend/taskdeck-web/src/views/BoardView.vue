@@ -73,6 +73,9 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 const boardId = ref(route.params.id as string)
 const boardLoadRetryInFlight = ref(false)
 const boardLoadError = ref<string | null>(null)
+const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
+  ? boardStore.currentBoard
+  : null)
 let viewUnmounted = false
 let realtimeStarted = false
 const realtime = createBoardRealtimeController({
@@ -94,7 +97,7 @@ const realtime = createBoardRealtimeController({
   },
 })
 
-const boardLoadErrorSummary = computed(() => boardStore.currentBoard
+const boardLoadErrorSummary = computed(() => routedBoard.value
   ? "We couldn't refresh this board. Your last loaded board is still shown."
   : "We couldn't load this board.")
 
@@ -137,13 +140,15 @@ async function retryBoardLoad() {
 
 // Sort columns by position
 const sortedColumns = computed(() => {
-  if (!boardStore.currentBoard) return []
-  return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
+  if (!routedBoard.value) return []
+  return [...routedBoard.value.columns].sort((a, b) => a.position - b.position)
 })
-const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(boardStore.currentBoard?.name))
+const isDemoBoard = computed(() => isClientOnboardingDemoBoardName(routedBoard.value?.name))
 const paperCollapsedColumnIds = ref<Set<string>>(new Set())
 const paperCardsByColumn = computed<Map<string, Card[]>>(() => {
   const map = new Map<string, Card[]>()
+  if (!routedBoard.value) return map
+
   for (const card of boardStore.currentBoardCards) {
     if (!map.has(card.columnId)) {
       map.set(card.columnId, [])
@@ -307,7 +312,7 @@ onBeforeUnmount(() => {
 })
 
 async function createColumn() {
-  if (!newColumnName.value.trim()) return
+  if (!routedBoard.value || !newColumnName.value.trim()) return
 
   try {
     await boardStore.createColumn(boardId.value, {
@@ -358,6 +363,8 @@ function openBoardChat() {
 }
 
 function openBoardCardComposer() {
+  if (!routedBoard.value) return
+
   if (sortedColumns.value.length === 0) {
     showColumnForm.value = true
     return
@@ -414,7 +421,7 @@ function closeOpenUi() {
 }
 
 function standardBoardOnlyShortcutsEnabled() {
-  return !paperOn.value
+  return Boolean(routedBoard.value) && !paperOn.value
 }
 
 /**
@@ -435,7 +442,7 @@ const paperDialogOpen = ref(false)
  * and gating it here would only risk stranding one open.
  */
 function boardShortcutsEnabled() {
-  return !paperDialogOpen.value
+  return Boolean(routedBoard.value) && !paperDialogOpen.value
 }
 
 // Setup keyboard shortcuts
@@ -501,9 +508,9 @@ useKeyboardShortcuts([
     <div class="bg-surface-container border-b border-outline-variant/15">
       <div class="max-w-full px-4 sm:px-6 lg:px-8 py-4">
         <BoardToolbar
-          v-if="boardStore.currentBoard"
-          :board-name="boardStore.currentBoard.name"
-          :board-description="boardStore.currentBoard.description"
+          v-if="routedBoard"
+          :board-name="routedBoard.name"
+          :board-description="routedBoard.description"
           :is-demo-board="isDemoBoard"
           :presence-members="presenceMembers"
           :show-filter-panel="showFilterPanel"
@@ -519,7 +526,7 @@ useKeyboardShortcuts([
         />
 
         <BoardActionRail
-          v-if="boardStore.currentBoard"
+          v-if="routedBoard"
           @capture="openBoardCaptureModal"
           @chat="openBoardChat"
           @review="openBoardReview"
@@ -528,7 +535,7 @@ useKeyboardShortcuts([
         />
 
         <WorkspaceHelpCallout
-          v-if="boardStore.currentBoard"
+          v-if="routedBoard"
           topic="board"
           class="mt-4"
           title="What should happen on a board?"
@@ -541,7 +548,7 @@ useKeyboardShortcuts([
         </WorkspaceHelpCallout>
 
         <!-- Create Column Form -->
-        <div v-if="showColumnForm" class="td-column-form">
+        <div v-if="routedBoard && showColumnForm" class="td-column-form">
           <form @submit.prevent="createColumn" class="td-column-form__row">
             <label for="td-new-column-name" class="sr-only">Column name</label>
             <input
@@ -572,6 +579,7 @@ useKeyboardShortcuts([
 
     <!-- Filter Panel -->
     <FilterPanel
+      v-if="routedBoard"
       :is-open="showFilterPanel"
       :labels="boardStore.currentBoardLabels"
       :active-filters="boardStore.filters"
@@ -614,7 +622,7 @@ useKeyboardShortcuts([
     </section>
 
     <!-- Loading State -->
-    <div v-if="boardStore.loading && !boardStore.currentBoard && !boardLoadError && !boardStore.error" class="td-board-skeleton" aria-live="polite" role="status">
+    <div v-if="boardStore.loading && !routedBoard && !boardLoadError && !boardStore.error" class="td-board-skeleton" aria-live="polite" role="status">
       <span class="sr-only">Loading board...</span>
       <div class="td-board-skeleton__toolbar">
         <TdSkeleton width="200px" height="24px" />
@@ -639,12 +647,12 @@ useKeyboardShortcuts([
 
     <!-- Board Content -->
     <BoardCanvas
-      v-if="boardStore.currentBoard"
+      v-if="routedBoard"
       :sorted-columns="sortedColumns"
       :cards-by-column="boardStore.cardsByColumn"
       :labels="boardStore.currentBoardLabels"
       :board-id="boardId"
-      :has-columns="boardStore.currentBoard.columns.length > 0"
+      :has-columns="routedBoard.columns.length > 0"
       :dragged-column="draggedColumn"
       :drag-over-column-id="dragOverColumnId"
       :dragged-card="draggedCard"
@@ -660,7 +668,8 @@ useKeyboardShortcuts([
 
     <!-- Dialog Host -->
     <BoardDialogHost
-      :board="boardStore.currentBoard"
+      v-if="routedBoard"
+      :board="routedBoard"
       :board-id="boardId"
       :board-labels="boardStore.currentBoardLabels"
       :show-board-settings="showBoardSettings"

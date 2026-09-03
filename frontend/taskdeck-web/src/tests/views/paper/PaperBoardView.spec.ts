@@ -753,6 +753,7 @@ describe('PaperBoardView — empty board (#1765)', () => {
   beforeEach(() => {
     routerMock.push.mockClear()
     mockBoardStore.createColumn.mockClear()
+    routeMock.params.id = 'board-1'
     mockBoardStore.currentBoard = emptyBoard
     mockBoardStore.currentBoardCards = []
     mockBoardStore.cardsByColumn = new Map()
@@ -875,6 +876,25 @@ describe('PaperBoardView — empty board (#1765)', () => {
       'Your last loaded board is still shown',
     )
     expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
+  })
+
+  it('hides cached Paper lanes when they belong to a different routed board', () => {
+    routeMock.params.id = 'board-2'
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    mockBoardStore.error = 'Board B unavailable'
+
+    const wrapper = mountView({ boardLoadError: 'Board B unavailable' })
+
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      "We couldn't load this board",
+    )
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).not.toContain(
+      'Your last loaded board is still shown',
+    )
+    expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(false)
+    expect(wrapper.findComponent(PaperBoardColumn).exists()).toBe(false)
   })
 
   it('reports mutation errors without a board-load summary or Retry action', () => {

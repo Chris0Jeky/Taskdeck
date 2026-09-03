@@ -82,7 +82,10 @@ const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
-const boardLoadErrorSummary = computed(() => boardStore.currentBoard
+const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
+  ? boardStore.currentBoard
+  : null)
+const boardLoadErrorSummary = computed(() => routedBoard.value
   ? "We couldn't refresh this board. Your last loaded board is still shown."
   : "We couldn't load this board.")
 const selectedCard = ref<Card | null>(null)
@@ -205,8 +208,8 @@ function changeColumnWidth(event: Event) {
 }
 
 const sortedColumns = computed<Column[]>(() => {
-  if (!boardStore.currentBoard) return []
-  return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
+  if (!routedBoard.value) return []
+  return [...routedBoard.value.columns].sort((a, b) => a.position - b.position)
 })
 
 const activeCollapsedColumnIds = computed(() => sortedColumns.value
@@ -244,6 +247,7 @@ function toggleColumnCollapse(column: Column) {
 
 const cardsByColumn = computed<Map<string, Card[]>>(() => {
   const map = new Map<string, Card[]>()
+  if (!routedBoard.value) return map
 
   for (const card of boardStore.currentBoardCards) {
     if (!map.has(card.columnId)) {
@@ -608,7 +612,7 @@ const creatingColumns = ref(false)
 const columnError = ref<string | null>(null)
 
 /** A loaded board that has no columns. */
-const isEmptyBoard = computed(() => Boolean(boardStore.currentBoard) && sortedColumns.value.length === 0)
+const isEmptyBoard = computed(() => Boolean(routedBoard.value) && sortedColumns.value.length === 0)
 
 // Column creation owns its local recovery copy. Other mutation errors retain
 // the existing empty-state fallback, while an explicit board-load error stays
@@ -718,7 +722,7 @@ async function addStarterColumns() {
         <div class="paper-board-view__title-block">
           <span class="paper-board-view__eyebrow tk-eyebrow">Board</span>
           <h1 class="paper-board-view__title tk-h2">
-            {{ boardStore.currentBoard?.name ?? 'Board' }}
+            {{ routedBoard?.name ?? 'Board' }}
           </h1>
           <p class="paper-board-view__subline tk-meta">
             {{ totalCards }} cards · {{ sortedColumns.length }} columns
@@ -756,7 +760,7 @@ async function addStarterColumns() {
             @click="toggleDensity"
           />
           <PaperHLBtn
-            v-if="boardStore.currentBoard"
+            v-if="routedBoard"
             :label="t('boardDetail.actions.settings')"
             data-testid="paper-board-settings"
             @click="openBoardSettings"
@@ -803,7 +807,7 @@ async function addStarterColumns() {
       </section>
 
       <section
-        v-if="!boardStore.currentBoard && boardStore.loading"
+        v-if="!routedBoard && boardStore.loading"
         class="paper-board-view__loading"
         aria-live="polite"
       >
@@ -865,7 +869,7 @@ async function addStarterColumns() {
         neither the column-bootstrap empty state nor an empty lane rail.
       -->
       <div
-        v-else-if="boardStore.currentBoard"
+        v-else-if="routedBoard"
         class="paper-board-view__workspace"
         data-testid="paper-board-workspace"
       >
@@ -1029,8 +1033,8 @@ async function addStarterColumns() {
       />
 
       <PaperBoardSettingsDialog
-        v-if="boardStore.currentBoard && showBoardSettings"
-        :board="boardStore.currentBoard"
+        v-if="routedBoard && showBoardSettings"
+        :board="routedBoard"
         :is-open="showBoardSettings"
         @close="closeBoardSettings"
         @updated="closeBoardSettings"
