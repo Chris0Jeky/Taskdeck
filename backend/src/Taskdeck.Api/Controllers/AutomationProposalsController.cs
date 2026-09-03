@@ -615,7 +615,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _conflictDetector.DetectConflictsAsync(id, callerUserId, cancellationToken);
+        var result = await _conflictDetector.DetectConflictsAsync(auth.Proposal!, callerUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -632,7 +632,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _cardHistoryService.GetCardHistoryForProposalAsync(id, cancellationToken);
+        var result = await _cardHistoryService.GetCardHistoryForProposalAsync(auth.Proposal!, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
@@ -651,7 +651,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _sideEffectAnalyzer.AnalyzeAsync(id, cancellationToken);
+        var result = await _sideEffectAnalyzer.AnalyzeAsync(auth.Proposal!, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
     /// <summary>
@@ -723,7 +723,7 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
-        var result = await _similarDecisionService.GetSimilarPastAsync(id, callerUserId, cancellationToken);
+        var result = await _similarDecisionService.GetSimilarPastAsync(auth.Proposal!, callerUserId, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
