@@ -506,6 +506,28 @@ describe('http interceptors (#725)', () => {
       expect(response.status).toBe(201)
       expect(response.data).toEqual({ id: 'new-1' })
     })
+
+    it('does not apply fetchBoard bounds to unrelated nested board reads', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      mock.onGet('/boards/board-1/cards/card-1/provenance').reply(200, { sourceType: 'manual' })
+
+      const response = await http.get('/boards/board-1/cards/card-1/provenance')
+
+      expect(response.config.timeout).toBe(0)
+      expect((response.config as { skipRetry?: boolean }).skipRetry).toBeUndefined()
+    })
+
+    it('does not automatically retry a failed fetchBoard transport request', async () => {
+      mock.onGet('/boards/board-1').reply(503, { message: 'unavailable' })
+
+      await expect(
+        http.get('/boards/board-1', { timeout: 10_000, skipRetry: true }),
+      ).rejects.toMatchObject({
+        response: { status: 503 },
+      })
+
+      expect(mock.history.get).toHaveLength(1)
+    })
   })
 
   // ── Retry interceptor (#854) ───────────────────────────────────────────

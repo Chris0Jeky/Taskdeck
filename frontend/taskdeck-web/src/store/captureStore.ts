@@ -35,6 +35,8 @@ type DetailLoadOptions = {
 
 export const BATCH_TRIAGE_POLL_INTERVAL_MS = 3_000
 export const BATCH_TRIAGE_POLL_MAX_DURATION_MS = 60_000
+const BATCH_TRIAGE_POLL_TIMEOUT_MESSAGE =
+  'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.'
 
 type CreateItemOptions = {
   /**
@@ -538,6 +540,17 @@ export const useCaptureStore = defineStore('capture', () => {
       }
     }
 
+    function stopAtDeadline() {
+      if (stopped) return
+      // The batch write already succeeded. A deadline only means automatic
+      // checking stopped; the server-side triage may still be running.
+      if (!isComplete()) {
+        batchError.value = BATCH_TRIAGE_POLL_TIMEOUT_MESSAGE
+        toast.warning(BATCH_TRIAGE_POLL_TIMEOUT_MESSAGE, 0)
+      }
+      stop()
+    }
+
     function isComplete(): boolean {
       return trackedIds.every((id) => {
         const summary = items.value.find((item) => item.id === id)
@@ -624,7 +637,7 @@ export const useCaptureStore = defineStore('capture', () => {
     }
     // A separate deadline timer aborts an in-flight request at the boundary;
     // counting ticks alone would let one slow HTTP request exceed 60 seconds.
-    deadlineTimerId = setTimeout(stop, BATCH_TRIAGE_POLL_MAX_DURATION_MS)
+    deadlineTimerId = setTimeout(stopAtDeadline, BATCH_TRIAGE_POLL_MAX_DURATION_MS)
     scheduleNext()
     return stop
   }

@@ -37,8 +37,20 @@ const props = withDefaults(
     /** Card visual variant — propagated to every column. */
     cardVariant?: PaperBoardCardVariant
     selectedCardId?: string | null
+    /** Lane currently targeted by BoardView's keyboard model. */
+    selectedColumnId?: string | null
+    /** Stable error copy retained by BoardView while an explicit retry is in flight. */
+    boardLoadError?: string | null
+    /** BoardView owns the actual load and realtime subscription transition. */
+    boardLoadRetrying?: boolean
   }>(),
-  { cardVariant: 'index', selectedCardId: null },
+  {
+    cardVariant: 'index',
+    selectedCardId: null,
+    selectedColumnId: null,
+    boardLoadError: null,
+    boardLoadRetrying: false,
+  },
 )
 
 const emit = defineEmits<{
@@ -59,6 +71,8 @@ const emit = defineEmits<{
   (event: 'collapsed-columns-change', columnIds: string[]): void
   /** Keeps BoardView's logical lane selection aligned with a focused lane control. */
   (event: 'column-select', columnId: string): void
+  /** Requests a fresh load from BoardView, which also owns realtime startup/switching. */
+  (event: 'retry-board-load'): void
 }>()
 
 const route = useRoute()
@@ -68,6 +82,12 @@ const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
 const boardId = computed(() => (typeof route.params.id === 'string' ? route.params.id : ''))
+const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
+  ? boardStore.currentBoard
+  : null)
+const boardLoadErrorSummary = computed(() => routedBoard.value
+  ? "We couldn't refresh this board. Your last loaded board is still shown."
+  : "We couldn't load this board.")
 const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
 const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
@@ -188,8 +208,8 @@ function changeColumnWidth(event: Event) {
 }
 
 const sortedColumns = computed<Column[]>(() => {
-  if (!boardStore.currentBoard) return []
-  return [...boardStore.currentBoard.columns].sort((a, b) => a.position - b.position)
+  if (!routedBoard.value) return []
+  return [...routedBoard.value.columns].sort((a, b) => a.position - b.position)
 })
 
 const activeCollapsedColumnIds = computed(() => sortedColumns.value
@@ -227,6 +247,7 @@ function toggleColumnCollapse(column: Column) {
 
 const cardsByColumn = computed<Map<string, Card[]>>(() => {
   const map = new Map<string, Card[]>()
+  if (!routedBoard.value) return map
 
   for (const card of boardStore.currentBoardCards) {
     if (!map.has(card.columnId)) {
@@ -265,7 +286,7 @@ const {
   handleColumnDragEnd,
   handleColumnDragOver,
   handleColumnDragLeave,
-  handleColumnDrop,
+  handleColumnDrop: performColumnDrop,
   handleCardDragStart,
   handleCardDragEnd,
 } = useBoardDragDrop(() => boardId.value, sortedColumns)
@@ -511,12 +532,32 @@ async function createCardInColumn(column: Column, title: string) {
   }
 }
 
+const columnReorderBusy = ref(false)
+
+async function onColumnDrop(column: Column, event: DragEvent) {
+  event.preventDefault()
+  if (!draggedColumn.value) return
+  if (columnReorderBusy.value) {
+    handleColumnDragLeave()
+    return
+  }
+
+  columnReorderBusy.value = true
+  try {
+    await performColumnDrop(column, event)
+  } finally {
+    columnReorderBusy.value = false
+  }
+}
+
 /**
  * Keyboard/pointer column reorder, alongside the existing drag handle. Drag is
  * the only reorder Legacy offers; it is unusable without a pointer, so Paper
  * adds explicit controls over the same `reorderColumns` action.
  */
 async function moveColumn(column: Column, direction: 'left' | 'right') {
+  if (columnReorderBusy.value) return
+
   const columns = sortedColumns.value
   const index = columns.findIndex((c) => c.id === column.id)
   const targetIndex = direction === 'left' ? index - 1 : index + 1
@@ -527,6 +568,7 @@ async function moveColumn(column: Column, direction: 'left' | 'right') {
   if (!removed) return
   reordered.splice(targetIndex, 0, removed)
 
+  columnReorderBusy.value = true
   try {
     await boardStore.reorderColumns(
       boardId.value,
@@ -534,6 +576,8 @@ async function moveColumn(column: Column, direction: 'left' | 'right') {
     )
   } catch (error) {
     logError('Failed to reorder columns (paper):', error)
+  } finally {
+    columnReorderBusy.value = false
   }
 }
 
@@ -567,14 +611,15 @@ const firstColumnName = ref('')
 const creatingColumns = ref(false)
 const columnError = ref<string | null>(null)
 
-/**
- * A loaded board that has no columns. The empty state takes precedence over the
- * generic board error banner here so a failed column create keeps the recovery
- * affordance on screen instead of replacing it with a bare error.
- */
-const isEmptyBoard = computed(() => Boolean(boardStore.currentBoard) && sortedColumns.value.length === 0)
+/** A loaded board that has no columns. */
+const isEmptyBoard = computed(() => Boolean(routedBoard.value) && sortedColumns.value.length === 0)
 
-const emptyStateError = computed(() => columnError.value ?? boardStore.error)
+// Column creation owns its local recovery copy. Other mutation errors retain
+// the existing empty-state fallback, while an explicit board-load error stays
+// in the additive Retry alert above instead of being rendered twice.
+const emptyStateError = computed(
+  () => columnError.value ?? (props.boardLoadError ? null : boardStore.error),
+)
 
 const canSubmitFirstColumn = computed(
   () => firstColumnName.value.trim().length > 0 && !creatingColumns.value,
@@ -677,7 +722,7 @@ async function addStarterColumns() {
         <div class="paper-board-view__title-block">
           <span class="paper-board-view__eyebrow tk-eyebrow">Board</span>
           <h1 class="paper-board-view__title tk-h2">
-            {{ boardStore.currentBoard?.name ?? 'Board' }}
+            {{ routedBoard?.name ?? 'Board' }}
           </h1>
           <p class="paper-board-view__subline tk-meta">
             {{ totalCards }} cards · {{ sortedColumns.length }} columns
@@ -715,7 +760,7 @@ async function addStarterColumns() {
             @click="toggleDensity"
           />
           <PaperHLBtn
-            v-if="boardStore.currentBoard"
+            v-if="routedBoard"
             :label="t('boardDetail.actions.settings')"
             data-testid="paper-board-settings"
             @click="openBoardSettings"
@@ -730,20 +775,39 @@ async function addStarterColumns() {
         `v-if` chain as the lanes, so ANY store error — including a rejected
         direct add-card, which sets `state.error` before it rethrows — unmounted
         every lane and took the user's half-typed draft with it (GH-1959). It
-        now renders above whatever follows. The empty state still wins where it
-        applies: it owns `emptyStateError`, so `!isEmptyBoard` keeps the banner
-        out of its way.
+        now renders above whatever follows. Only BoardView-owned fetch failures
+        offer Retry; mutation errors retain their original text. A local
+        empty-board column failure keeps its own error beside that form.
       -->
       <section
-        v-if="boardStore.error && !isEmptyBoard"
+        v-if="props.boardLoadError"
         class="paper-board-view__error"
         role="alert"
+        data-testid="paper-board-load-error"
+      >
+        <div class="paper-board-view__error-copy">
+          <p class="paper-board-view__error-summary">{{ boardLoadErrorSummary }}</p>
+          <p class="paper-board-view__error-detail">{{ props.boardLoadError }}</p>
+        </div>
+        <PaperHLBtn
+          label="Retry"
+          :disabled="props.boardLoadRetrying || boardStore.loading"
+          data-testid="paper-board-load-retry"
+          @click="emit('retry-board-load')"
+        />
+      </section>
+
+      <section
+        v-else-if="boardStore.error && !isEmptyBoard"
+        class="paper-board-view__error"
+        role="alert"
+        data-testid="paper-board-error"
       >
         {{ boardStore.error }}
       </section>
 
       <section
-        v-if="!boardStore.currentBoard && boardStore.loading"
+        v-if="!routedBoard && boardStore.loading"
         class="paper-board-view__loading"
         aria-live="polite"
       >
@@ -805,7 +869,7 @@ async function addStarterColumns() {
         neither the column-bootstrap empty state nor an empty lane rail.
       -->
       <div
-        v-else-if="boardStore.currentBoard"
+        v-else-if="routedBoard"
         class="paper-board-view__workspace"
         data-testid="paper-board-workspace"
       >
@@ -829,7 +893,7 @@ async function addStarterColumns() {
           @dragend="handleColumnDragEnd"
           @dragover="(event) => { handleColumnDragOver(column, event); onCardDragOverColumn(column, event) }"
           @dragleave="handleColumnDragLeave"
-          @drop="(event) => { handleColumnDrop(column, event); if (draggedCard) onCardDropOnColumn(column, event) }"
+          @drop="(event) => { onColumnDrop(column, event); if (draggedCard) onCardDropOnColumn(column, event) }"
         >
           <PaperBoardColumn
             :column="column"
@@ -840,8 +904,10 @@ async function addStarterColumns() {
             :style="columnWidthStyle"
             :is-drag-over="dragOverColumnId === column.id"
             :selected-card-id="activeSelectedCardId"
+            :selected="column.id === props.selectedColumnId"
             :can-move-left="idx > 0"
             :can-move-right="idx < sortedColumns.length - 1"
+            :reorder-busy="columnReorderBusy"
             :composer-open="composerColumnId === column.id"
             :composer-busy="composerBusy"
             :composer-error="composerError"
@@ -967,8 +1033,8 @@ async function addStarterColumns() {
       />
 
       <PaperBoardSettingsDialog
-        v-if="boardStore.currentBoard && showBoardSettings"
-        :board="boardStore.currentBoard"
+        v-if="routedBoard && showBoardSettings"
+        :board="routedBoard"
         :is-open="showBoardSettings"
         @close="closeBoardSettings"
         @updated="closeBoardSettings"
@@ -1059,6 +1125,11 @@ async function addStarterColumns() {
 }
 
 .paper-board-view__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   border: 1px solid var(--ember);
   background: var(--ember-tint);
   color: var(--ember-ink);
@@ -1066,6 +1137,20 @@ async function addStarterColumns() {
   border-radius: var(--r-2);
   font-family: var(--mono);
   font-size: 11px;
+}
+
+.paper-board-view__error-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.paper-board-view__error-summary,
+.paper-board-view__error-detail {
+  margin: 0;
+}
+
+.paper-board-view__error-summary {
+  font-weight: 700;
 }
 
 .paper-board-view__loading,

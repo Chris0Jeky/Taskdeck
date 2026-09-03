@@ -2,6 +2,7 @@ using System.Reflection;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.FirstRun;
@@ -396,6 +397,13 @@ if (!DesktopRuntime.IsPackagedDesktop)
     builder.Logging.AddDebug();
 }
 
+// Hosting.Diagnostics renders the raw request target at Information. SignalR transports bearer
+// tokens in the access_token query string, so apply the floor after every normal configuration rule
+// has loaded. The post-configure guard also wraps provider-specific rules, which outrank a plain
+// provider-agnostic AddFilter and could otherwise restore the secret-bearing Information events.
+builder.Services.AddSingleton<IPostConfigureOptions<LoggerFilterOptions>,
+    HostingDiagnosticsLoggerFilterPostConfigure>();
+
 // ---- First-run bootstrap (must run before services are registered) ----------
 // Registers appsettings.local.json so previously generated secrets are loaded,
 // then generates a JWT secret if none is configured.
@@ -673,5 +681,52 @@ public partial class Program
         {
             configuration["AllowedHosts"] = StandaloneMcpLoopbackAllowedHosts;
         }
+    }
+}
+
+internal sealed class HostingDiagnosticsLoggerFilterPostConfigure
+    : IPostConfigureOptions<LoggerFilterOptions>
+{
+    internal const string CategoryName = "Microsoft.AspNetCore.Hosting.Diagnostics";
+
+    public void PostConfigure(string? name, LoggerFilterOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var configuredRules = options.Rules.ToArray();
+        options.Rules.Clear();
+
+        // Keep this fallback before configured rules. A more specific or provider-specific rule
+        // can retain a stricter threshold, but every such rule is guarded below against lowering
+        // this exact category beneath Warning.
+        options.Rules.Add(CreateGuardedRule(new LoggerFilterRule(
+            providerName: null,
+            categoryName: CategoryName,
+            logLevel: LogLevel.Warning,
+            filter: null)));
+
+        foreach (var rule in configuredRules)
+        {
+            options.Rules.Add(CreateGuardedRule(rule));
+        }
+    }
+
+    private static LoggerFilterRule CreateGuardedRule(LoggerFilterRule rule)
+    {
+        var originalFilter = rule.Filter;
+        return new LoggerFilterRule(
+            rule.ProviderName,
+            rule.CategoryName,
+            rule.LogLevel,
+            (providerName, categoryName, logLevel) =>
+            {
+                if (string.Equals(categoryName, CategoryName, StringComparison.Ordinal)
+                    && logLevel < LogLevel.Warning)
+                {
+                    return false;
+                }
+
+                return originalFilter?.Invoke(providerName, categoryName, logLevel) ?? true;
+            });
     }
 }

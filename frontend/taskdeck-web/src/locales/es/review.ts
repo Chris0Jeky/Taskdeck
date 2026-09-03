@@ -38,8 +38,6 @@ export default {
     empty: 'Nada en este filtro.',
     cadence: {
       heading: 'Esta semana',
-      applyRateLabel: 'Tasa de aplicación',
-      applyRateEmpty: 'Aún sin decisiones',
     },
   },
 

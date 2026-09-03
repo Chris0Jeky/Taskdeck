@@ -12,7 +12,8 @@ Local-first execution workspace for developers: transcripts/notes in → evidenc
 **Direction:** strategy spine `docs/strategy/PRODUCT_DIRECTION.md`; execution plan `docs/REVIVAL_PLAN.md`
 (ADR-0044 revival, ADR-0051 bounded autonomous admission). The shipped trust model is review-first
 (ADR-0003/GP-06/ADR-0056); ADR-0057 delegated autonomy is **direction only — nothing under it is buildable
-without its own separate gate**. The repository goes private for the v0.3.0 release (directive 2026-08-30).
+without its own separate gate** (CF-22 `#2275` holds its maintainer go since 2026-09-03; the ADR-0065 ruling-6
+evidence report is its acceptance bar before real execution is enabled). The repository goes private for the v0.3.0 release (directive 2026-08-30).
 
 ## Orient (do NOT bulk-read the big docs)
 

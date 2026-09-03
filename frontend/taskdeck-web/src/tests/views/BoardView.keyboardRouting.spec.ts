@@ -121,6 +121,12 @@ const BoardCanvasStub = {
   template: '<div data-testid="board-canvas" :data-selected-card-id="selectedCardId ?? \'\'"></div>',
 }
 
+const PaperBoardViewStub = {
+  props: ['selectedColumnId'],
+  template:
+    '<div data-testid="paper-board" :data-selected-column-id="selectedColumnId ?? \'\'"></div>',
+}
+
 function mountView() {
   const wrapper = mount(BoardView, {
     attachTo: document.body,
@@ -133,6 +139,7 @@ function mountView() {
         KeyboardShortcutsHelp: { template: '<div />' },
         FilterPanel: { template: '<div />' },
         CaptureModal: { template: '<div />' },
+        PaperBoardView: PaperBoardViewStub,
       },
     },
   })
@@ -195,5 +202,19 @@ describe('BoardView keyboard routing', () => {
     // The board must not consume `h`. AppShell owns it and routes Home; if
     // BoardView re-bound it the selection would slide back to card-1 here.
     expect(selectedCardId()).toBe('card-2')
+  })
+
+  it('passes the live keyboard lane selection to the Paper board', async () => {
+    usePaperThemeStore().enable()
+    mountView()
+    await waitForUi()
+
+    const paperBoard = () => document.body.querySelector('[data-testid="paper-board"]')
+    expect(paperBoard()?.getAttribute('data-selected-column-id')).toBe('column-1')
+
+    pressKey('ArrowRight')
+    await waitForUi()
+
+    expect(paperBoard()?.getAttribute('data-selected-column-id')).toBe('column-2')
   })
 })

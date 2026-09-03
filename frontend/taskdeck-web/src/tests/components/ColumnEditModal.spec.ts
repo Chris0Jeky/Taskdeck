@@ -76,6 +76,71 @@ describe('ColumnEditModal', () => {
     expect(wipCheckbox.element.checked).toBe(false)
   })
 
+  it('preserves an in-progress edit when realtime replaces the column object', async () => {
+    const wrapper = mount(ColumnEditModal, {
+      props: {
+        column,
+        isOpen: true,
+        boardId: 'board-1',
+      },
+    })
+
+    await wrapper.get('#column-name').setValue('My draft name')
+    await wrapper.setProps({
+      column: { ...column, name: 'Server refresh', updatedAt: new Date().toISOString() },
+    })
+
+    expect((wrapper.get('#column-name').element as HTMLInputElement).value).toBe('My draft name')
+  })
+
+  it('reconciles untouched WIP fields while preserving a dirty name', async () => {
+    const wrapper = mount(ColumnEditModal, {
+      props: { column, isOpen: true, boardId: 'board-1' },
+    })
+
+    await wrapper.get('#column-name').setValue('My draft name')
+    await wrapper.setProps({
+      column: { ...column, name: 'Server name', wipLimit: 3 },
+    })
+
+    expect((wrapper.get('#column-name').element as HTMLInputElement).value).toBe('My draft name')
+    expect((wrapper.get('#column-has-wip-limit').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('#wip-limit').element as HTMLInputElement).value).toBe('3')
+  })
+
+  it('keeps a locally edited WIP pair when realtime clears the remote limit', async () => {
+    const wrapper = mount(ColumnEditModal, {
+      props: { column: { ...column, wipLimit: 3 }, isOpen: true, boardId: 'board-1' },
+    })
+
+    await wrapper.get('#wip-limit').setValue(5)
+    await wrapper.setProps({ column: { ...column, wipLimit: null } })
+
+    expect((wrapper.get('#column-has-wip-limit').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('#wip-limit').element as HTMLInputElement).value).toBe('5')
+  })
+
+  it('seeds the latest values when a cancelled dialog is reopened', async () => {
+    const wrapper = mount(ColumnEditModal, {
+      props: {
+        column,
+        isOpen: true,
+        boardId: 'board-1',
+      },
+    })
+
+    await wrapper.get('#column-name').setValue('Cancelled draft')
+    await wrapper.setProps({ isOpen: false })
+    await wrapper.setProps({
+      column: { ...column, name: 'Latest server name' },
+      isOpen: true,
+    })
+
+    expect((wrapper.get('#column-name').element as HTMLInputElement).value).toBe(
+      'Latest server name',
+    )
+  })
+
   it('should show WIP limit input when column has WIP limit', () => {
     const columnWithWip = {
       ...column,

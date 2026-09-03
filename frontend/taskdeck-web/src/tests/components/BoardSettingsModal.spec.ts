@@ -81,6 +81,68 @@ describe('BoardSettingsModal', () => {
     expect(wrapper.text()).toContain('Active')
   })
 
+  it('preserves in-progress edits when realtime replaces the board object', async () => {
+    const wrapper = mount(BoardSettingsModal, {
+      props: {
+        board,
+        isOpen: true,
+      },
+    })
+
+    await wrapper.get('#board-name').setValue('My draft board')
+    await wrapper.get('#board-description').setValue('My draft description')
+    await wrapper.setProps({
+      board: {
+        ...board,
+        name: 'Server refresh',
+        description: 'Server description',
+        updatedAt: new Date().toISOString(),
+      },
+    })
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'My draft description',
+    )
+  })
+
+  it('saves a dirty field after realtime briefly matches it and keeps its sibling current', async () => {
+    const wrapper = mount(BoardSettingsModal, {
+      props: { board, isOpen: true },
+    })
+
+    await wrapper.get('#board-name').setValue('My draft board')
+    await wrapper.setProps({
+      board: { ...board, name: 'My draft board', description: 'First server description' },
+    })
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'First server description',
+    )
+
+    await wrapper.setProps({
+      board: { ...board, name: 'Later server name', description: 'Latest server description' },
+    })
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'Latest server description',
+    )
+
+    mockStore.updateBoard.mockClear()
+    const saveButton = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Save Changes'))
+    await saveButton?.trigger('click')
+
+    expect(mockStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
+  })
+
   it('should emit close event when close button is clicked', async () => {
     const wrapper = mount(BoardSettingsModal, {
       props: {
@@ -274,6 +336,53 @@ describe('BoardSettingsModal', () => {
     expect((buttonAfterClick?.element as HTMLButtonElement).disabled).toBe(true)
 
     resolvePush!()
+    confirmSpy.mockRestore()
+  })
+
+  it('reconciles an untouched field when a busy restore fails without another refresh', async () => {
+    const archivedBoard = { ...board, isArchived: true }
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let rejectUpdate!: (error: Error) => void
+    mockStore.updateBoard.mockImplementationOnce(
+      () => new Promise((_, reject) => { rejectUpdate = reject }),
+    )
+
+    const wrapper = mount(BoardSettingsModal, {
+      props: { board: archivedBoard, isOpen: true },
+    })
+
+    await wrapper.get('#board-name').setValue('My draft board')
+    const restoreButton = wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Restore Board'))
+    void restoreButton?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await wrapper.setProps({
+      board: { ...archivedBoard, name: 'Busy server name', description: 'Busy server description' },
+    })
+    rejectUpdate(new Error('restore failed'))
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect((wrapper.get('#board-name').element as HTMLInputElement).value).toBe('My draft board')
+    expect((wrapper.get('#board-description').element as HTMLTextAreaElement).value).toBe(
+      'Busy server description',
+    )
+
+    mockStore.updateBoard.mockClear()
+    await wrapper
+      .findAll('button')
+      .find((btn) => btn.text().includes('Save Changes'))
+      ?.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(mockStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
+
     confirmSpy.mockRestore()
   })
 

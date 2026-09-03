@@ -288,6 +288,70 @@ describe('PaperBoardView — column settings', () => {
     ).toBe('Today')
   })
 
+  it('keeps a column draft when realtime replaces the live column object', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[1]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-name"]').setValue('My draft column')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-today'
+          ? { ...column, name: 'Server refresh', updatedAt: new Date().toISOString() }
+          : column,
+      ),
+    }
+    await nextTick()
+
+    expect(
+      (wrapper.get('[data-testid="paper-column-dialog-name"]').element as HTMLInputElement).value,
+    ).toBe('My draft column')
+  })
+
+  it('reconciles an untouched column field while preserving a dirty Paper draft', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[1]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-name"]').setValue('My draft column')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-today' ? { ...column, name: 'Server column', wipLimit: 3 } : column,
+      ),
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-column-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft column')
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').element as HTMLInputElement).checked)
+      .toBe(true)
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip"]').element as HTMLInputElement).value)
+      .toBe('3')
+  })
+
+  it('keeps a locally edited WIP pair when realtime clears the remote limit', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[0]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').setValue(true)
+    await wrapper.get('[data-testid="paper-column-dialog-wip"]').setValue(5)
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-backlog' ? { ...column, wipLimit: null } : column,
+      ),
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').element as HTMLInputElement).checked)
+      .toBe(true)
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip"]').element as HTMLInputElement).value)
+      .toBe('5')
+  })
+
   it('renames a column through boardStore.updateColumn and closes', async () => {
     const wrapper = mountView()
 
@@ -346,6 +410,42 @@ describe('PaperBoardView — column settings', () => {
 
     expect(wrapper.find('[data-testid="paper-column-dialog-delete-confirm"]').exists()).toBe(false)
     expect(mockBoardStore.deleteColumn).not.toHaveBeenCalled()
+  })
+
+  it('reconciles an untouched column field when delete confirmation is cancelled without another refresh', async () => {
+    const wrapper = mountView()
+
+    await wrapper.findAll('[data-testid="paper-column-edit"]')[1]!.trigger('click')
+    await wrapper.get('[data-testid="paper-column-dialog-name"]').setValue('My draft column')
+    await wrapper.get('[data-testid="paper-column-dialog-delete"]').trigger('click')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      columns: columns.map((column) =>
+        column.id === 'col-today'
+          ? { ...column, name: 'Busy server column', wipLimit: 3 }
+          : column,
+      ),
+    }
+    await nextTick()
+    await wrapper.get('[data-testid="paper-column-dialog-delete-confirm-no"]').trigger('click')
+
+    expect((wrapper.get('[data-testid="paper-column-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft column')
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip-toggle"]').element as HTMLInputElement).checked)
+      .toBe(true)
+    expect((wrapper.get('[data-testid="paper-column-dialog-wip"]').element as HTMLInputElement).value)
+      .toBe('3')
+
+    mockBoardStore.updateColumn.mockClear()
+    await wrapper.get('[data-testid="paper-column-dialog-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.updateColumn).toHaveBeenCalledWith('board-1', 'col-today', {
+      name: 'My draft column',
+      wipLimit: 3,
+      position: null,
+    })
   })
 
   it('refuses to delete a column that still holds cards, and says why', async () => {
@@ -413,6 +513,50 @@ describe('PaperBoardView — column reorder', () => {
     expect(left[2]?.attributes('disabled')).toBeUndefined()
     expect(right[2]?.attributes('disabled')).toBeDefined()
     expect(right[0]?.attributes('disabled')).toBeUndefined()
+  })
+
+  it('allows only one column reorder while the first request is in flight', async () => {
+    let resolveReorder!: () => void
+    mockBoardStore.reorderColumns.mockReturnValueOnce(
+      new Promise<Column[]>((resolve) => {
+        resolveReorder = () => resolve(columns)
+      }),
+    )
+    const wrapper = mountView()
+    const moveRight = wrapper.findAll('[data-testid="paper-column-move-right"]')[0]!
+
+    void moveRight.trigger('click')
+    await nextTick()
+    await moveRight.trigger('click')
+
+    expect(mockBoardStore.reorderColumns).toHaveBeenCalledTimes(1)
+    expect(moveRight.attributes('disabled')).toBeDefined()
+
+    resolveReorder()
+    await flushPromises()
+    expect(moveRight.attributes('disabled')).toBeUndefined()
+  })
+
+  it('ignores a column drop while a move-button reorder is in flight', async () => {
+    let resolveReorder!: () => void
+    mockBoardStore.reorderColumns.mockReturnValueOnce(
+      new Promise<Column[]>((resolve) => {
+        resolveReorder = () => resolve(columns)
+      }),
+    )
+    const wrapper = mountView()
+
+    void wrapper.findAll('[data-testid="paper-column-move-right"]')[0]!.trigger('click')
+    await nextTick()
+
+    const lanes = wrapper.findAll('[data-column-dnd-id]')
+    await lanes[1]!.get('[data-action="drag-column-handle"]').trigger('dragstart')
+    await lanes[2]!.trigger('drop')
+
+    expect(mockBoardStore.reorderColumns).toHaveBeenCalledTimes(1)
+
+    resolveReorder()
+    await flushPromises()
   })
 })
 
@@ -511,6 +655,113 @@ describe('PaperBoardView — board settings', () => {
       (wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value,
     ).toBe('Product Backlog')
     expect(wrapper.get('[data-testid="paper-board-dialog-state"]').text()).toBe('Active')
+  })
+
+  it('keeps board drafts when realtime replaces the live board object', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-dialog-name"]').setValue('My draft board')
+    await wrapper
+      .get('[data-testid="paper-board-dialog-description"]')
+      .setValue('My draft description')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'Server refresh',
+      description: 'Server description',
+      updatedAt: new Date().toISOString(),
+    }
+    await nextTick()
+
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value,
+    ).toBe('My draft board')
+    expect(
+      (
+        wrapper.get('[data-testid="paper-board-dialog-description"]')
+          .element as HTMLTextAreaElement
+      ).value,
+    ).toBe('My draft description')
+  })
+
+  it('saves a dirty Paper field after realtime briefly matches it and keeps its sibling current', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-dialog-name"]').setValue('My draft board')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'My draft board',
+      description: 'First server description',
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft board')
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe('First server description')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'Later server board',
+      description: 'Latest server description',
+    }
+    await nextTick()
+
+    expect((wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value)
+      .toBe('My draft board')
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe('Latest server description')
+
+    mockBoardStore.updateBoard.mockClear()
+    await wrapper.get('[data-testid="paper-board-dialog-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
+  })
+
+  it('reconciles an untouched board field when archive confirmation is cancelled without another refresh', async () => {
+    const wrapper = mountView()
+
+    await wrapper.get('[data-testid="paper-board-settings"]').trigger('click')
+    await wrapper.get('[data-testid="paper-board-dialog-name"]').setValue('My draft board')
+    await wrapper.get('[data-testid="paper-board-dialog-archive"]').trigger('click')
+
+    mockBoardStore.currentBoard = {
+      ...board,
+      name: 'Busy server name',
+      description: 'Busy server description',
+    }
+    await nextTick()
+    await wrapper.get('[data-testid="paper-board-dialog-archive-confirm-no"]').trigger('click')
+
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-name"]').element as HTMLInputElement).value,
+    ).toBe('My draft board')
+    expect(
+      (wrapper.get('[data-testid="paper-board-dialog-description"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe('Busy server description')
+
+    mockBoardStore.updateBoard.mockClear()
+    await wrapper.get('[data-testid="paper-board-dialog-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockBoardStore.updateBoard).toHaveBeenCalledWith('board-1', {
+      name: 'My draft board',
+      description: null,
+      isArchived: null,
+    })
   })
 
   it('renames the board through boardStore.updateBoard and closes', async () => {
@@ -643,6 +894,17 @@ describe('PaperBoardView — dialogs and the board shortcuts', () => {
     await nextTick()
 
     expect(document.activeElement).toBe(opener)
+  })
+})
+
+describe('PaperBoardView — visible keyboard column selection', () => {
+  it('marks the lane targeted by the board keyboard model', () => {
+    const wrapper = mountView({ selectedColumnId: 'col-today' })
+    const selected = wrapper.get('[data-column-id="col-today"]')
+
+    expect(selected.classes()).toContain('paper-board-column--selected')
+    expect(selected.attributes('aria-current')).toBe('true')
+    expect(wrapper.get('[data-column-id="col-backlog"]').attributes('aria-current')).toBeUndefined()
   })
 })
 

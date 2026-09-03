@@ -1,6 +1,6 @@
 # Private-repository cutover checklist (personal GitHub Pro account)
 
-Last Updated: 2026-08-30 · Decision: ADR-0066 · Executable copy: CI-13 `#2337` (record evidence there) · Human actions: `OUTSTANDING_TASKS.md` §J
+Last Updated: 2026-09-03 · Decision: ADR-0066 · Executable copy: CI-13 `#2337` (record evidence there) · Human actions: `OUTSTANDING_TASKS.md` §J
 
 The repository goes **private for the v0.3.0 release**. Everything below is proven while the
 repository is still public and hosted-only; **no self-hosted runner is attached before the
@@ -10,13 +10,13 @@ billing, visibility and runner-registration actions.
 ## A. Decisions (maintainer)
 
 - [ ] Confirm the GitHub plan is Pro and record the allowance in force (3,000 minutes/month, 1 GB storage as of 2026-08-30).
-- [ ] Set a monthly Actions **spend ceiling** and an alert threshold (Billing → Spending limits).
+- [ ] Set a monthly Actions **spend ceiling** and an alert threshold (Billing → Spending limits). *Ruled 2026-09-03 (SC-3): a **$10/month hard ceiling**; the setting itself is still to be applied by the maintainer.*
 - [ ] Verify how the Codex GitHub App and Copilot code review are billed on a private repository (Copilot review consumes Actions minutes; do not assume the public-repo model); set the review cadence to after-CI-stabilises.
-- [ ] Ownership: stay personal (ADR-0066 ruling 1) — the organization boundary is CI-14 with its triggers.
+- [ ] Ownership: stay personal (ADR-0066 ruling 1) — the organization boundary is CI-14 with its triggers. *Confirmed 2026-09-03 with the private-Pro approval-boundary amendment (ADR-0066).*
 - [ ] Initial execution mode: `hosted` (ruling 4); `hybrid` only after CI-04 is registered and proven.
 - [ ] Laptop as a real Windows runner, or hosted Windows as the initial fallback.
 - [ ] Release/signing boundary stays `#2149`'s protected context, separate from ordinary CI.
-- [ ] Public documentation/demo/site: GitHub Pages (`pages-frontend.yml`) keeps publishing from a private repo on Pro and the site stays public — keep, move, or retire; the launch-kit links (`#2242`) and any `awesome-selfhosted` reference get the same decision.
+- [ ] Public documentation/demo/site: GitHub Pages (`pages-frontend.yml`) keeps publishing from a private repo on Pro and the site stays public — keep, move, or retire; the launch-kit links (`#2242`) and any `awesome-selfhosted` reference get the same decision. *Ruled 2026-09-03 (SC-8): **private development repository + public release/source mirror** — Pages keeps publishing; Releases, checksums/provenance and the GPL source publish through the mirror (CI-16 `#2439`); launch-kit and `awesome-selfhosted` wording point at the mirror.*
 
 ## B. Measure before changing (CI-01 `#2325`, CI-09 `#2333`)
 
@@ -29,7 +29,7 @@ billing, visibility and runner-registration actions.
 - [ ] Shadow planner running on every PR; recall report over ≥20 PRs shows the plan would have selected every lane that actually failed.
 - [ ] `Smart CI / Required Gate` in observation mode with zero false reds over ≥20 PRs; receipts bound to the exact SHA, merge tree and policy digest.
 - [ ] Landed verifier proven: normal merge → bounded path; direct-push simulation → full escalation; base moved → re-qualification.
-- [ ] **Maintainer:** register the gate as required; set `strict: true`; keep the three security contexts; decide `enforce_admins` or document break-glass. (CI-03 supplies the exact `gh api` commands.)
+- [ ] **Maintainer:** register the gate as required; keep the three security contexts; decide on the observation evidence — not in advance (SC-4 ruling 2026-09-03) — whether to set `strict: true` and `enforce_admins` or to document break-glass. (CI-03 supplies the exact `gh api` commands.)
 
 ## D. Event topology (CI-03)
 
@@ -76,7 +76,7 @@ billing, visibility and runner-registration actions.
 
 1. Pause merges briefly.
 2. Capture current required-check and Actions settings (`gh api repos/Chris0Jeky/Taskdeck/branches/main/protection`, `…/actions/permissions`, `…/actions/permissions/workflow`).
-3. Register the gate + `strict: true` (C); flip `sha_pinning_required` (G).
+3. Register the gate and apply the SC-4 evidence-based `strict` / `enforce_admins` decision (C); flip `sha_pinning_required` (G).
 4. Verify public assets that must remain public have a separate home (A).
 5. **Change repository visibility to private.**
 6. Re-check Actions permissions, fork-PR approval policy, Dependabot, Pages/package/release visibility, runner association, collaborator list.

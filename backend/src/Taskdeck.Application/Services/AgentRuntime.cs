@@ -263,13 +263,15 @@ public sealed class AgentRuntime
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Agent run '{RunId}' failed unexpectedly", run.Id);
-            run.MarkFailed($"Unexpected error: {ex.Message}");
+            run.MarkFailed(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
             try { await _unitOfWork.SaveChangesAsync(CancellationToken.None); }
             catch (Exception saveEx)
             {
                 _logger?.LogError(saveEx, "Failed to persist failure state for run '{RunId}'", run.Id);
             }
-            return Result.Failure<AgentRunDto>(ErrorCodes.UnexpectedError, $"Agent run failed: {ex.Message}");
+            return Result.Failure<AgentRunDto>(
+                ErrorCodes.UnexpectedError,
+                SensitiveDataRedactor.GenericUnexpectedFailureMessage);
         }
 
         if (run.Status == AgentRunStatus.Failed)

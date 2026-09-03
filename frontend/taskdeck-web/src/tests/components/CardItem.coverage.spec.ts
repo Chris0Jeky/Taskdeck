@@ -216,7 +216,7 @@ describe('CardItem — selection and click', () => {
     const card = createCard()
     const wrapper = mount(CardItem, { props: { card } })
 
-    await wrapper.find('.td-board-card').trigger('keydown.enter')
+    await wrapper.find('.td-board-card').trigger('keydown', { key: 'Enter' })
 
     expect(wrapper.emitted('click')).toBeTruthy()
     expect(wrapper.emitted('click')![0]).toEqual([card])
