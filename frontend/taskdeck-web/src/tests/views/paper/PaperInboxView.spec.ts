@@ -221,6 +221,57 @@ describe('PaperInboxView', () => {
     wrapper.unmount()
   })
 
+  it('closes a stalled archived detail load, restores row focus, and ignores the late payload', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [captureRow('history-capture', 'ProposalCreated')]
+
+    let resolveDetail: (detail: CaptureItem) => void = () => undefined
+    mockCaptureStore.peekDetail.mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+      resolveDetail = resolve
+    }))
+
+    const wrapper = mount(PaperInboxView, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const opener = wrapper.get<HTMLButtonElement>('[data-testid="capture-history-open"]')
+
+    expect(opener.attributes('aria-expanded')).toBe('false')
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(opener.attributes('aria-expanded')).toBe('true')
+    expect(
+      wrapper.get('[data-testid="capture-history-detail"] [role="status"]').text(),
+    ).toContain('Loading')
+    const close = wrapper.get<HTMLButtonElement>('[data-testid="capture-history-loading-close"]')
+    expect(close.text()).toBe('Hide the full retained capture')
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(1)
+
+    close.element.focus()
+    await close.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="capture-history-detail"]').exists()).toBe(false)
+    expect(opener.attributes('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(opener.element)
+
+    resolveDetail({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'Late retained detail must stay hidden.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-history-detail"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Late retained detail must stay hidden.')
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('states that no decision record exists when triage recorded no proposal', async () => {
     orchestratorState.isArchivedHistory.value = true
     orchestratorState.activeBoardId.value = 'board-archived'
