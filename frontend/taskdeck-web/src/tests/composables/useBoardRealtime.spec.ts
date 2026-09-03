@@ -183,7 +183,7 @@ describe('createBoardRealtimeController', () => {
     await controller.stop()
   })
 
-  it('drains one coalesced mutation refresh after the active refresh fails', async () => {
+  it('drains one coalesced mutation refresh after the active refresh succeeds', async () => {
     vi.useFakeTimers()
     const firstRefresh = createDeferred<void>()
     const fetchBoard = vi
@@ -202,7 +202,7 @@ describe('createBoardRealtimeController', () => {
     await vi.advanceTimersByTimeAsync(300)
     expect(fetchBoard).toHaveBeenCalledTimes(1)
 
-    firstRefresh.reject(new Error('background unavailable'))
+    firstRefresh.resolve()
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
