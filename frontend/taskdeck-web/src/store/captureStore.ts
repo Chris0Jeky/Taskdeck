@@ -546,7 +546,7 @@ export const useCaptureStore = defineStore('capture', () => {
       // checking stopped; the server-side triage may still be running.
       if (!isComplete()) {
         batchError.value = BATCH_TRIAGE_POLL_TIMEOUT_MESSAGE
-        toast.error(BATCH_TRIAGE_POLL_TIMEOUT_MESSAGE)
+        toast.warning(BATCH_TRIAGE_POLL_TIMEOUT_MESSAGE, 0)
       }
       stop()
     }

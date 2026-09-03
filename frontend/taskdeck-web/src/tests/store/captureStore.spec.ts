@@ -9,6 +9,7 @@ import {
 const toastMocks = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn(),
+  warning: vi.fn(),
 }))
 
 const workspaceMocks = vi.hoisted(() => ({
@@ -1843,15 +1844,16 @@ describe('captureStore', () => {
         expect(store.batchError).toBe(
           'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
         )
-        expect(toastMocks.error).toHaveBeenCalledTimes(1)
-        expect(toastMocks.error).toHaveBeenCalledWith(
+        expect(toastMocks.warning).toHaveBeenCalledTimes(1)
+        expect(toastMocks.warning).toHaveBeenCalledWith(
           'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
+          0,
         )
-        expect(toastMocks.error.mock.calls[0][0]).not.toContain('triage failed')
+        expect(toastMocks.error).not.toHaveBeenCalled()
 
         await vi.advanceTimersByTimeAsync(9_000)
         expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtDeadline)
-        expect(toastMocks.error).toHaveBeenCalledTimes(1)
+        expect(toastMocks.warning).toHaveBeenCalledTimes(1)
       } finally {
         vi.useRealTimers()
       }
@@ -1872,6 +1874,7 @@ describe('captureStore', () => {
 
         expect(store.batchError).toBeNull()
         expect(toastMocks.error).not.toHaveBeenCalled()
+        expect(toastMocks.warning).not.toHaveBeenCalled()
         expect(captureApi.listItems).not.toHaveBeenCalled()
       } finally {
         vi.useRealTimers()
