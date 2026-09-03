@@ -477,6 +477,64 @@ public sealed class CaptureServiceReadSwitchTests
     }
 
     [Fact]
+    public async Task CancelAsync_WhenAlreadyCancelled_ShouldRefreshQueueFallbackWithoutMutatingArchivedText()
+    {
+        var row = QueueRow("first draft");
+        var durable = DurableFor(row, "first draft");
+        var correctedPayload = CaptureRequestContract.ParseStoredPayload(row.Payload) with
+        {
+            Text = "corrected draft"
+        };
+        row.UpdatePayload(CaptureRequestContract.SerializePayload(correctedPayload));
+        row.Cancel();
+        var cancelledStamp = new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero);
+        typeof(Entity).GetProperty(nameof(Entity.UpdatedAt))!.SetValue(row, cancelledStamp);
+
+        durable.Archive();
+        var maskedStamp = cancelledStamp.AddMinutes(1);
+        typeof(Entity).GetProperty(nameof(Entity.UpdatedAt))!.SetValue(durable, maskedStamp);
+        var refreshedQueueStamp = maskedStamp.AddMinutes(1);
+
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(row);
+        _queue.Setup(repository => repository.TrySetCaptureDispositionAsync(
+                row.Id,
+                RequestStatus.Cancelled,
+                cancelledStamp,
+                RequestStatus.Cancelled,
+                It.Is<string>(payload => string.Equals(payload, row.Payload, StringComparison.Ordinal)),
+                It.IsAny<CancellationToken>()))
+            .Callback(() =>
+                typeof(Entity).GetProperty(nameof(Entity.UpdatedAt))!.SetValue(row, refreshedQueueStamp))
+            .ReturnsAsync(true);
+        _captureStore
+            .Setup(store => store.GetByIdForUpdateAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+        _captureStore
+            .Setup(store => store.GetByIdForUserAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+
+        var service = CreateService();
+        var result = await service.CancelAsync(_userId, row.Id);
+        var reread = await service.GetByIdAsync(_userId, row.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        reread.IsSuccess.Should().BeTrue(reread.ErrorMessage);
+        reread.Value!.RawText.Should().Be(
+            "corrected draft",
+            "the successful idempotent CAS must make the truthful queue fallback newer");
+        row.UpdatedAt.Should().Be(refreshedQueueStamp);
+        durable.CurrentText.Should().Be("first draft", "archived source lineage cannot be superseded inline");
+        durable.UpdatedAt.Should().Be(maskedStamp, "a failed archived repair must not earn a stamp");
+        durable.SourceAssets.Should().ContainSingle();
+        _captureStore.Verify(
+            store => store.UpdateAsync(It.IsAny<Capture>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWork.Verify(unit => unit.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWork.Verify(unit => unit.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldReadTheTextAndSourceFromTheAggregate()
     {
         var row = QueueRow("payload text");

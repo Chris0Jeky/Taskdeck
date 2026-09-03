@@ -918,9 +918,6 @@ public class CaptureService : ICaptureService
         if (item.UserId != userId)
             return Result.Failure(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
-        if (item.Status == RequestStatus.Cancelled)
-            return Result.Success();
-
         var transactionOpen = false;
         try
         {
