@@ -113,7 +113,8 @@ failed, was cancelled, timed out or is missing; a job was skipped without a poli
 references another SHA or policy digest; required hosted control evidence is absent; or a hard
 safety budget was exceeded without an authorized override. In the **shadow phase** the gate is
 red only for planner/schema defects and otherwise reports the would-be verdict; it is registered in
-branch protection (with `strict: true`) only after ≥20 PRs without a false red (CI-03).
+branch protection only after ≥20 PRs without a false red (CI-03); `strict` and `enforce_admins` are
+decided on that observation evidence, not in advance (SC-4, no pre-ruling 2026-09-03).
 
 ## 8. Receipts and reports
 
@@ -143,7 +144,7 @@ unusable evidence, `2` insufficient or zero-failure evidence, and `3` a recall m
 | --- | --- | --- |
 | 0 measure | `measure-ci-estate.mjs`, `docs/ci/CI_BASELINE.md` | baseline committed |
 | 1 shadow | policy + planner + schemas + fixtures; `smart-ci-shadow.yml`; observation-mode gate; action-pin inventory | ≥20 PRs; recall report; zero false reds |
-| 2 gate | gate evaluator with receipts; landed verifier; consolidated control job; **maintainer** registers the gate + `strict` | one merge proven; direct-push escalation proven |
+| 2 gate | gate evaluator with receipts; landed verifier; consolidated control job; **maintainer** registers the gate and rules `strict` / `enforce_admins` on the evidence (SC-4) | one merge proven; direct-push escalation proven |
 | 3 dedupe | `push: main` full run removed; Windows frontend full run removed; Windows API → contract shard; containers risk-gated; nightly consolidated | recall stays 100%; weekly sweep exists |
 | 4 runners | isolated VMs bootstrapped; broker; runbook; rehearsals (hosted-only while public) | after cutover: **maintainer** registers runners, mode → `hybrid` |
 | 5 cutover | CI-13 checklist executed; **maintainer** flips visibility | private-mode R0/R2/R4/merge/nightly/release runs green |

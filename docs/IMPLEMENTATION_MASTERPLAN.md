@@ -137,8 +137,9 @@ behaviour.
   typechecking to `#1607`, and impact-based CI to `#2324` plus its children. User-data export
   already has a streaming path; no competing issue was seeded.
 - **Later horizons remain bounded.** Formatting and staged .NET analyzer ratchets are `#2352`
-  (v0.5); `#1607` also moves to v0.5. Entitlement architecture `#2353` remains unmilestoned and
-  blocked by `#2012`, retention evidence, the subject model, and rights review. No bundle-only
+  (v0.5); `#1607` also moves to v0.5. Entitlement architecture `#2353` remains unmilestoned; `#2012` closed 2026-09-03
+  (ADR-0067, open-core + managed hosting/services), so it is now gated only by retention evidence,
+  the subject model, rights review and the `#1482` legal review. No bundle-only
   work was manufactured for v0.6/v0.7, and v0.4 hosted open beta remains non-commercial.
 - **Queue/governance.** The bounded owner-requested intake created exactly five `Pending` records
   (`#2349`-`#2353`) and promoted none to `Now`/`Next`. A complete ProjectV2 Apply/post-audit
