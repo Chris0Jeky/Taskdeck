@@ -79,6 +79,7 @@ function createMockHelpers() {
     isDemoMode: false,
     toast: { success: vi.fn(), error: vi.fn() },
     updateColumnCardCount: vi.fn(),
+    markBoardDetailMutation: vi.fn(),
   }
 }
 
@@ -166,6 +167,7 @@ describe('cardStore', () => {
       expect(result).toEqual(newCard)
       expect(state.currentBoardCards.value).toHaveLength(3)
       expect(state.currentBoardCards.value[2]).toEqual(newCard)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(helpers.updateColumnCardCount).toHaveBeenCalledWith('col-1', 1)
       expect(helpers.toast.success).toHaveBeenCalledWith(
         'Card "New Card" created successfully',
@@ -214,6 +216,9 @@ describe('cardStore', () => {
         updatedAt: '2024-01-05T00:00:00Z',
       }
       mockCardsApi.updateCard.mockResolvedValueOnce(updatedCard)
+      helpers.markBoardDetailMutation.mockImplementationOnce(() => {
+        expect(state.currentBoardCards.value[0].title).toBe('First')
+      })
       const { updateCard } = createCardActions(state as any, helpers as any)
 
       const result = await updateCard('board-1', 'card-1', {
@@ -223,6 +228,7 @@ describe('cardStore', () => {
 
       expect(result).toEqual(updatedCard)
       expect(state.currentBoardCards.value[0]).toEqual(updatedCard)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(helpers.toast.success).toHaveBeenCalledWith('Card updated successfully')
       expect(state.loading.value).toBe(false)
     })
@@ -302,6 +308,7 @@ describe('cardStore', () => {
 
       expect(state.currentBoardCards.value).toHaveLength(1)
       expect(state.currentBoardCards.value[0].id).toBe('card-2')
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(state.cardCommentsByCardId.value).not.toHaveProperty('card-1')
       expect(helpers.updateColumnCardCount).toHaveBeenCalledWith('col-1', -1)
       expect(helpers.toast.success).toHaveBeenCalledWith('Card deleted successfully')
@@ -368,6 +375,7 @@ describe('cardStore', () => {
         targetPosition: 0,
       })
       expect(result).toEqual(movedCard)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
       expect(state.currentBoardCards.value[state.currentBoardCards.value.length - 1]).toEqual(
         movedCard,
       )

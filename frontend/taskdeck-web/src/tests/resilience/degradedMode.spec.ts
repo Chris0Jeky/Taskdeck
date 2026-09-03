@@ -404,7 +404,7 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
     // Reconnecting fires — fallback polling begins
     await realtimeCallbacks.reconnecting?.()
     await vi.advanceTimersByTimeAsync(30000)
-    expect(fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
 
     // Reconnected fires — fallback polling stops
     fetchBoard.mockClear()
@@ -467,7 +467,7 @@ describe('useBoardRealtime — SignalR disconnect resilience', () => {
 
     // Advance past the 30s fallback poll interval
     await vi.advanceTimersByTimeAsync(30000)
-    expect(fetchBoard).toHaveBeenCalledWith('board-1')
+    expect(fetchBoard).toHaveBeenCalledWith('board-1', { intent: 'background' })
 
     await controller.stop()
   })

@@ -79,12 +79,12 @@ const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
 let viewUnmounted = false
 let realtimeStarted = false
 const realtime = createBoardRealtimeController({
-  fetchBoard: async (id: string) => {
-    if (id !== boardId.value) {
+  fetchBoard: async (id: string, options: { intent: 'background' }) => {
+    if (viewUnmounted || id !== boardId.value) {
       return
     }
 
-    await boardStore.fetchBoard(id)
+    await boardStore.fetchBoard(id, options)
   },
   onPresenceChanged: (snapshot) => {
     if (snapshot.boardId !== boardId.value) {
@@ -108,7 +108,7 @@ function recordBoardLoadFailure(requestedBoardId: string, error: unknown) {
 }
 
 async function retryBoardLoad() {
-  if (viewUnmounted || boardLoadRetryInFlight.value || boardStore.loading) return
+  if (viewUnmounted || boardLoadRetryInFlight.value) return
 
   const requestedBoardId = boardId.value
   if (!requestedBoardId) return
@@ -305,6 +305,7 @@ watch(
 
 onBeforeUnmount(() => {
   viewUnmounted = true
+  boardStore.cancelBackgroundBoardFetch?.(boardId.value)
   presenceMembers.value = []
   boardStore.setBoardPresenceMembers([])
   boardStore.setEditingCard(null)
@@ -600,7 +601,7 @@ useKeyboardShortcuts([
         <button
           type="button"
           class="td-btn td-btn--secondary td-btn--sm mt-3"
-          :disabled="boardLoadRetryInFlight || boardStore.loading"
+          :disabled="boardLoadRetryInFlight"
           data-testid="board-load-retry"
           @click="retryBoardLoad"
         >
