@@ -155,12 +155,13 @@ describe('CardItem keyboard activation', () => {
     wrapper.unmount()
   })
 
-  it('activates from Enter keyup when a global keydown owner consumes the first event', async () => {
+  it('emits one activation for a complete Enter key press', async () => {
     const wrapper = mount(CardItem, {
       attachTo: document.body,
       props: { card: createCard() },
     })
 
+    await wrapper.get('[data-card-id]').trigger('keydown', { key: 'Enter' })
     await wrapper.get('[data-card-id]').trigger('keyup', { key: 'Enter' })
 
     expect(wrapper.emitted('click')).toHaveLength(1)

@@ -129,7 +129,6 @@ function isOverdue(dateString: string | null): boolean {
     :aria-selected="isSelected"
     @click.stop="handleCardClick"
     @keydown.capture="handleCardKeydown"
-    @keyup.enter="handleCardKeydown"
     @keydown.space.prevent="emit('click', card)"
     @dragstart="handleDragStart"
     @dragend="handleDragEnd"
