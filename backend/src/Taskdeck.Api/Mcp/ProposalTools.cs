@@ -4,7 +4,9 @@ using ModelContextProtocol.Server;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Mcp;
 
@@ -46,7 +48,7 @@ public class ProposalTools
 
         var result = await _proposalService.GetProposalByIdAsync(proposalGuid);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         var p = result.Value;
 
@@ -120,7 +122,7 @@ public class ProposalTools
 
         var result = await _proposalService.GetProposalsAsync(filter);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         var proposals = result.Value.Select(p => new
         {
@@ -159,14 +161,14 @@ public class ProposalTools
         // Verify the proposal belongs to the current user before dismissing
         var getResult = await _proposalService.GetProposalByIdAsync(proposalGuid);
         if (!getResult.IsSuccess)
-            return Error(getResult.ErrorMessage);
+            return Error(getResult);
 
         if (getResult.Value.RequestedByUserId != userId)
             return Error("Proposal not found or access denied");
 
         var result = await _proposalService.DismissProposalsAsync(new List<Guid> { proposalGuid });
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         return JsonSerializer.Serialize(new
         {
@@ -180,5 +182,17 @@ public class ProposalTools
     private static string Error(string message)
     {
         return JsonSerializer.Serialize(new { error = message }, BoardResources.SerializerOptions);
+    }
+
+    private static string Error(Result result)
+    {
+        var message = string.Equals(
+            result.ErrorCode,
+            ErrorCodes.UnexpectedError,
+            StringComparison.Ordinal)
+                ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+                : result.ErrorMessage;
+
+        return Error(message);
     }
 }
