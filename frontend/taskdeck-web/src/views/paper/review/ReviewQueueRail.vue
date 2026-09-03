@@ -50,12 +50,6 @@ const props = withDefaults(
      */
     cadence?: number[]
     /**
-     * Real apply rate (0–1) derived from decision history. Omit when there is
-     * no decision history so the rail shows an honest empty state instead of a
-     * fabricated percentage. There is intentionally no default value.
-     */
-    applyRate?: number
-    /**
      * Whether the author partition — the "All" vs "Mine" split — can mean
      * anything for this viewer. It comes from the server-computed
      * collaboration-membership contract, never from proposal authorship,
@@ -100,22 +94,9 @@ const visible = computed<QueueRailItem[]>(() => {
   }
 })
 
-function asPct(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-
 /** Real 7-day cadence to render; null hides the mini-cadence bars entirely. */
 const hasCadence = computed<boolean>(
   () => Array.isArray(props.cadence) && props.cadence.length > 0,
-)
-
-/**
- * Formatted apply-rate percentage, or null when there is no decision history.
- * Never falls back to a fabricated constant — an absent value renders the
- * "No decisions yet" empty state instead of an invented percentage.
- */
-const applyRatePct = computed<string | null>(() =>
-  typeof props.applyRate === 'number' ? asPct(props.applyRate) : null,
 )
 
 function setFilter(next: QueueFilter) {
@@ -281,20 +262,6 @@ function onFilterPillClick(key: QueueFilter) {
         {{ $t('review.queueRail.cadence.heading') }}
       </div>
       <ReviewMiniCadence v-if="hasCadence" :days="cadence" />
-      <div
-        v-if="applyRatePct !== null"
-        class="tk-meta paper-review-rail__cadence-meta"
-        data-testid="paper-review-apply-rate"
-      >
-        {{ $t('review.queueRail.cadence.applyRateLabel') }} <b>{{ applyRatePct }}</b>
-      </div>
-      <div
-        v-else
-        class="tk-meta paper-review-rail__cadence-meta paper-review-rail__cadence-empty"
-        data-testid="paper-review-apply-rate-empty"
-      >
-        {{ $t('review.queueRail.cadence.applyRateEmpty') }}
-      </div>
     </div>
   </aside>
 </template>
@@ -432,13 +399,5 @@ function onFilterPillClick(key: QueueFilter) {
 }
 .paper-review-rail__cadence-heading {
   margin-bottom: 6px;
-}
-.paper-review-rail__cadence-meta {
-  font-size: 10px;
-  margin-top: 6px;
-}
-.paper-review-rail__cadence-meta b {
-  color: var(--ink);
-  font-weight: 500;
 }
 </style>
