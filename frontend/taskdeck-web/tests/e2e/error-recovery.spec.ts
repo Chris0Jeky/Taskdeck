@@ -25,29 +25,32 @@ test.beforeEach(async ({ page, request }) => {
   auth = await registerAndAttachSession(page, request, 'error-recovery', { theme: 'legacy' })
 })
 
-// ─── Scenario 1: Board load failure → error state shown → retry succeeds ─────
+// ─── Scenario 1: Paper board load failure → explicit Retry → recovery ───────
 
-test('board load failure should display error state and allow retry', async ({ page }) => {
-  let failedLoads = 0
-  const MAX_FAILED_LOADS = 4 // 1 initial + 3 retries from httpRetry.ts MAX_RETRIES
-  let firstGotoDone = false
+test('Paper board load failure should recover through one explicit Retry without reloading', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('td.paper.mode.v2', 'paper')
+  })
 
-  await page.route('**/api/boards/**', async (route) => {
-    // Only intercept GET requests for board details (not cards, not list)
-    const url = route.request().url()
-    const isBoardDetail = route.request().method() === 'GET' && /\/api\/boards\/[a-f0-9-]+$/.test(url)
-    if (!isBoardDetail) {
+  let targetBoardId: string | null = null
+  let boardDetailLoads = 0
+  let releaseRetryResponse!: () => void
+  let reportRetryRequest!: () => void
+  const retryResponseGate = new Promise<void>((resolve) => { releaseRetryResponse = resolve })
+  const retryRequestArrived = new Promise<void>((resolve) => { reportRetryRequest = resolve })
+
+  await page.route((url) => (
+    url.origin === API_ORIGIN &&
+    targetBoardId !== null &&
+    url.pathname === `/api/boards/${targetBoardId}`
+  ), async (route) => {
+    if (route.request().method() !== 'GET') {
       await route.continue()
       return
     }
 
-    // The FE-15 retry interceptor retries idempotent 5xx up to 3 times, so we
-    // must fail the initial load AND all retries to actually surface the
-    // error state. After the first `page.goto` has settled on that error
-    // state, `firstGotoDone` flips and we let subsequent loads (post-reload)
-    // succeed to prove the retry button / reload recovers.
-    if (!firstGotoDone && failedLoads < MAX_FAILED_LOADS) {
-      failedLoads += 1
+    boardDetailLoads += 1
+    if (boardDetailLoads === 1) {
       await route.fulfill({
         status: 503,
         contentType: 'application/json',
@@ -59,6 +62,8 @@ test('board load failure should display error state and allow retry', async ({ p
       return
     }
 
+    reportRetryRequest()
+    await retryResponseGate
     await route.continue()
   })
 
@@ -68,23 +73,40 @@ test('board load failure should display error state and allow retry', async ({ p
     description: 'board load failure test',
     columnNamePrefix: 'Backlog',
   })
+  targetBoardId = boardId
 
-  // First visit: 503 should be served on every attempt (initial + 3 retries)
-  // so the terminal error state surfaces.
   await page.goto(`/workspace/boards/${boardId}`)
 
-  // Expect the error state to be visible — any role=alert or error-related text.
-  // Timeout is generous because the retry interceptor waits 1s+2s+4s
-  // between attempts before surfacing the terminal rejection.
-  const errorState = page.getByRole('alert').first()
-  await expect(errorState).toBeVisible({ timeout: 20_000 })
-  firstGotoDone = true
+  const errorState = page.getByTestId('paper-board-load-error')
+  await expect(errorState).toBeVisible({ timeout: 10_000 })
+  await expect(errorState).toContainText("We couldn't load this board")
+  await expect(errorState).toContainText('Board service temporarily unavailable')
+  const retry = errorState.getByRole('button', { name: 'Retry' })
+  await expect(retry).toBeEnabled()
+  expect(boardDetailLoads).toBe(1)
 
-  // After a reload the route continues normally
-  await page.reload()
+  const documentMarker = await page.evaluate(() => {
+    const marker = `${Date.now()}-${Math.random()}`
+    ;(window as typeof window & { __boardRetryDocumentMarker?: string }).__boardRetryDocumentMarker = marker
+    return marker
+  })
 
-  // Board heading should now be visible
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible({ timeout: 15_000 })
+  await retry.click()
+  await retryRequestArrived
+  expect(boardDetailLoads).toBe(2)
+  await expect(retry).toBeDisabled()
+
+  releaseRetryResponse()
+
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    `Error Recovery ${seed}`,
+    { timeout: 15_000 },
+  )
+  await expect(errorState).toHaveCount(0)
+  expect(boardDetailLoads).toBe(2)
+  expect(await page.evaluate(
+    () => (window as typeof window & { __boardRetryDocumentMarker?: string }).__boardRetryDocumentMarker,
+  )).toBe(documentMarker)
 })
 
 // ─── Scenario 2: Capture submission API failure → error shown in UI ───────────
