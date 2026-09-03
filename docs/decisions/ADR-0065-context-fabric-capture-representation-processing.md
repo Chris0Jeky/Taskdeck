@@ -498,6 +498,20 @@ still off; every new table empty on an unchanged install). What the amendments c
 Declined: renaming `UserId` to `OwnerPrincipalId` (every owned entity uses `UserId`;
 `ProducedByPrincipalId` carries the distinction); opening the umbrella children before admission.
 
+## Amendment (2026-09-03) — CF-22 maintainer go recorded
+
+The maintainer's decision packet of 2026-09-03 rules CF22 = "Authorize real execution now",
+recorded on `#2275`. This is the explicit maintainer go that ruling 6 (as amended 2026-08-30)
+required before any CF-22 implementation: the V06-CF22-07 go-gate child is discharged, and agents
+may build the full CF-22 slice (policy engine, ADR-0057 presets, budget and operation ceilings,
+kill switch, receipts with compensating action), not only its shadow contract. The evidence half of
+ruling 6 is not waived by this record: enabling real auto-execution in a shipped build still
+attaches the risk-based shadow-and-canary report, the initial daily operation ceiling and the
+immediate kill switch as acceptance evidence on `#2275`, and review-first (ADR-0003 / GP-06 /
+ADR-0056) remains the default for every other operation class. CF-22 stays a v0.6 stretch item and
+never a release blocker. If the maintainer intended the evidence report itself to be waived, one
+reply on `#2275` amends this section.
+
 ## In force (2026-08-30, CF-01 `#2255`)
 
 §Decision 1 is no longer a scaffold. `ContextFabric:DualWriteCaptures`, `BackfillCaptures` and
