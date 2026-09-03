@@ -72,6 +72,15 @@ function usesEntries(source, workflowPath, violations) {
   for (const [index, line] of lines.entries()) {
     if (!line.structural || line.raw.trim() === '' || line.raw.trim().startsWith('#')) continue
 
+    const trimmed = line.raw.trim()
+    const anchoredUses = /(?:^(?:-\s+)?|[{,]\s*)&[^\s[\]{},]+\s+(?:uses|"uses"|'uses')\s*:/
+    if (anchoredUses.test(trimmed)) {
+      violations.add(
+        `${workflowPath}:${line.lineNumber}: uses with YAML anchors is unsupported by the release cache scanner`,
+      )
+      continue
+    }
+
     const match = /^( *)(-\s+)?(?:uses|"uses"|'uses')\s*:\s*(.*?)\s*$/.exec(line.raw)
     if (!match) {
       if (/(?:^|[{,]\s*)(?:uses|"uses"|'uses')\s*:/.test(line.raw.trim())) {
@@ -505,6 +514,27 @@ test('irregular valid sequence whitespace cannot hide cross-run artifact inputs'
   assert.throws(
     () => enforceReleaseCacheContract(sources),
     /actions\/download-artifact may not declare cross-run input run-id/,
+  )
+})
+
+test('anchored action mappings cannot hide cross-run artifact inputs', () => {
+  const sources = validSyntheticClosure()
+  sources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/download-artifact@v8
+        with:
+          name: release-input`,
+      `      - &unsafe uses: actions/download-artifact@v8
+        with:
+          name: release-input
+          run-id: 123`,
+    ),
+  )
+
+  assert.throws(
+    () => enforceReleaseCacheContract(sources),
+    /uses with YAML anchors is unsupported by the release cache scanner/,
   )
 })
 
