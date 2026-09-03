@@ -682,6 +682,68 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.provenance.value[0]?.key).toBe('proposal-a')
   })
 
+  it('restarts pending capture metadata when returning to settled A', async () => {
+    mockAllEndpointsEmpty()
+    let aCaptureSignal: AbortSignal | undefined
+    let bCaptureSignal: AbortSignal | undefined
+    vi.mocked(captureApi.getItem)
+      .mockImplementationOnce((_id, options) => {
+        aCaptureSignal = options?.signal
+        return new Promise<CaptureItem>(() => {})
+      })
+      .mockImplementationOnce((_id, options) => {
+        bCaptureSignal = options?.signal
+        return new Promise<CaptureItem>(() => {})
+      })
+      .mockResolvedValueOnce(
+        captureDetail({
+          captureItemId: 'capture-a',
+          proposalId: 'proposal-a',
+          provider: 'OpenAI',
+          model: 'gpt-4o-mini',
+          promptVersion: 'llm-triage.v2',
+        }, { id: 'capture-a' }),
+      )
+    const proposal = ref<ApiProposal | null>(makeProposal({
+      id: 'proposal-a',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-a',
+      latestRevisionId: 'rev-a',
+    }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    let resolveB!: (rows: ProvenanceRowDto[]) => void
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockImplementationOnce(
+      () => new Promise<ProvenanceRowDto[]>((resolve) => { resolveB = resolve }),
+    )
+    proposal.value = makeProposal({
+      id: 'proposal-b',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-b',
+      latestRevisionId: 'rev-b',
+    })
+    await nextTick()
+    expect(aCaptureSignal?.aborted).toBe(true)
+
+    proposal.value = makeProposal({
+      id: 'proposal-a',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-a',
+      latestRevisionId: 'rev-a',
+    })
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    expect(bCaptureSignal?.aborted).toBe(true)
+    expect(captureApi.getItem).toHaveBeenCalledTimes(3)
+    expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => {
+      expect(selectors.provenanceMetadata.value?.provider).toBe('OpenAI')
+    })
+
+    resolveB([])
+  })
+
   it('reuses an already-settled exact selector batch without duplicate requests', async () => {
     mockAllEndpointsEmpty()
     const proposal = ref<ApiProposal | null>(

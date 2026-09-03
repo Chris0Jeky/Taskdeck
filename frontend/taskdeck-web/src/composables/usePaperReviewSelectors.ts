@@ -493,6 +493,36 @@ export function usePaperReviewSelectors(
     }
   }
 
+  function refreshCaptureMetadataForSettledKey(key: SelectorKey) {
+    if (!key.captureReference) {
+      settledCaptureMetadata = { key, value: null }
+      provenanceMetadataData.value = null
+      return
+    }
+    const generation = fetchGeneration
+    const captureSettlement = Promise.allSettled([
+      getCaptureLookup(key.captureReference, true),
+    ])
+    void captureSettlement.then(([capture]) => {
+      if (
+        generation !== fetchGeneration ||
+        !selectorKeysEqual(settledCoreKey, key) ||
+        !selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)
+      ) return
+      const metadata =
+        capture?.status === 'fulfilled' && capture.value
+          ? mapProvenanceMetadata(
+              capture.value,
+              key.proposalId,
+              key.captureReference!,
+              confidenceData.value,
+            )
+          : null
+      settledCaptureMetadata = { key, value: metadata }
+      provenanceMetadataData.value = metadata
+    })
+  }
+
   function ensureCoreBatch(key: SelectorKey): Promise<CoreSelectorBatchOutcome> {
     if (!selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)) {
       return Promise.resolve('unavailable')
@@ -507,10 +537,15 @@ export function usePaperReviewSelectors(
         discardCaptureLookup()
       }
       isLoading.value = false
-      provenanceMetadataData.value =
-        settledCaptureMetadata && selectorKeysEqual(settledCaptureMetadata.key, key)
-          ? settledCaptureMetadata.value
-          : null
+      if (settledCaptureMetadata && selectorKeysEqual(settledCaptureMetadata.key, key)) {
+        provenanceMetadataData.value = settledCaptureMetadata.value
+      } else {
+        provenanceMetadataData.value = null
+        // The earlier A metadata request may have been aborted when B became
+        // active. Retry only that optional read; the exact A core batch remains
+        // settled and the Apply waiter must not wait for this enrichment.
+        refreshCaptureMetadataForSettledKey(key)
+      }
       return Promise.resolve('settled')
     }
     if (activeCoreBatch && selectorKeysEqual(activeCoreBatch.key, key)) {
