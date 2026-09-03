@@ -1,6 +1,6 @@
 # Taskdeck licensing policy
 
-Last Updated: 2026-08-25
+Last Updated: 2026-09-03
 
 Taskdeck's open-source core is distributed under the GNU General Public
 License version 3 only (`GPL-3.0-only`). The complete terms are in
@@ -30,9 +30,9 @@ accepted, contributions to the core came in under the same GPL-3.0-only terms
 (inbound equals outbound), and any future reopening will first put a
 relicensing-capable inbound-rights instrument in place (maintainer ruling
 2026-09-03, [ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md);
-DCO alone does not preserve relicensing flexibility). Taskdeck uses the Developer Certificate of Origin rather than a
-contributor licence agreement; its enforcement is paused (see
-[CONTRIBUTING.md](CONTRIBUTING.md)).
+DCO alone does not preserve relicensing flexibility). Contributions accepted before 2026-08-24 came in under the Developer
+Certificate of Origin and no CLA was collected; DCO enforcement is paused (see
+[CONTRIBUTING.md](CONTRIBUTING.md)) and reopening requires the ADR-0067 instrument.
 
 Third-party components, assets, and code originally received under compatible
 permissive licences retain their own copyright notices and licence terms.

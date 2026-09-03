@@ -2,7 +2,7 @@
 
 Status: **Active, sanitized**
 
-Last reconciled: **2026-08-27**
+Last reconciled: **2026-09-03**
 
 This register records only the external-service facts that contributors need for architecture, release, cost, expiry, and
 exit-path decisions. It must never contain account identifiers, student or legal identity evidence, payment details, private
