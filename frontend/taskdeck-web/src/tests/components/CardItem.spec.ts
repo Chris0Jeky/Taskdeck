@@ -161,9 +161,15 @@ describe('CardItem keyboard activation', () => {
       props: { card: createCard() },
     })
 
-    await wrapper.get('[data-card-id]').trigger('keydown', { key: 'Enter' })
+    const keydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    wrapper.get('[data-card-id]').element.dispatchEvent(keydown)
     await wrapper.get('[data-card-id]').trigger('keyup', { key: 'Enter' })
 
+    expect(keydown.defaultPrevented).toBe(true)
     expect(wrapper.emitted('click')).toHaveLength(1)
     wrapper.unmount()
   })

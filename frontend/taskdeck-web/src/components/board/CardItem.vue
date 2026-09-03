@@ -103,6 +103,7 @@ function focusCardAfterDragHandleClick(event: MouseEvent) {
 
 function handleCardKeydown(event: KeyboardEvent) {
   if (event.key !== 'Enter') return
+  event.preventDefault()
   emit('click', props.card)
 }
 
