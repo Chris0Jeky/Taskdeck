@@ -4,7 +4,9 @@
   2026-08-29 — guided-walkthrough reply q-3 A, decision map
   `map:v1:3b5e90e6a5e9b97b362dbe5d8412b699b742818a054edd8443515fc2c2dfe3e7`, recorded on `#1772`; on
   the ADR-0057 precedent in `docs/decisions/INDEX.md:61`; Stage 1 deployment stays gated
-  on `#1772`'s remaining human acts and the recorded sequencing; not inferred from any deployment)
+  on `#1772`'s remaining human acts and the recorded sequencing; not inferred from any deployment; the three deployment-critical values were supplied by the
+  maintainer on 2026-09-03 — decision packet, recorded on `#1772` — and are carried in the
+  rulings below)
 - **Date**: 2026-08-26
 - **Deciders**: Chris0Jeky (maintainer)
 - **Related**: `#1772`, `#1325`, `#1879`, `#2012`, ADR-0002, ADR-0012, ADR-0023,
@@ -96,8 +98,9 @@ afterwards, and the registration mode set explicitly at deploy time because the 
 Open. This stays inside the literal wording of the `#1644` and `#1653` risk acceptances, so neither
 has to be re-recorded — provided the Stage 1 instance keeps MFA disabled
 (`MfaPolicySettings.EnableMfaSetup=false`, the shipped default) until `#1653` encrypts TOTP secrets
-at rest; enabling MFA there would persist plaintext TOTP secrets outside the accepted risk. Decided — value pending from the maintainer: the collaborator has not been
-named, which is `#1772`'s first blocking checkbox and is human-only.
+at rest; enabling MFA there would persist plaintext TOTP secrets outside the accepted risk. Value supplied 2026-09-03 (decision packet CL1_USERS): exactly **one named collaborator**.
+The collaborator's identity is held by the maintainer privately and is deliberately not recorded in
+this repository or on the public issue; the account is created at deploy time under InviteOnly.
 
 **private-access-perimeter** — A: an independent identity/access policy sits in front of the
 instance (a tunnel with an access policy or equivalent), so only the two named identities reach the
@@ -116,9 +119,9 @@ payer, and the collaborator pays nothing. One all-in monthly ceiling (host plus 
 recorded on `#1772`, a provider spend alert is configured where available, and
 `LlmQuota:GlobalBudgetCeilingTokens` is set to a real number, since it is unlimited by default. The
 breach action is to disable live providers, not to shut the instance down, so the collaboration
-walkthroughs survive a spend stop. Decided — value pending from the maintainer: the monthly ceiling
-and the alert threshold were not supplied, and the amounts must be re-verified against current
-provider prices before any purchase.
+walkthroughs survive a spend stop. Value supplied 2026-09-03 (decision packet CL1_BUDGET): the all-in monthly ceiling is
+**£20** with an alert at **£10**; the amounts are re-verified against current provider prices
+before any purchase.
 
 **llm-cost-ownership** — A: live triage runs on the maintainer's provider key as the
 deployment-global key, with per-user quotas and the global ceiling set, and with a written
@@ -138,8 +141,9 @@ nor a `sqlite3` binary, so a scheduled on-instance job needs the tooling added t
 sidecar, or a host-volume procedure first — that gap is tracked on `#1772` (the active Stage 1 issue; `#1777` stays parked) and must be closed before this
 ruling is executable. And the recovery-point objective for host loss is the age of the last
 off-platform copy, not of the last on-instance copy, so either the encrypted off-platform transfer
-runs after every daily backup or the weekly disaster-loss window is recorded as accepted. Decided —
-value pending from the maintainer: the off-platform retention window was not supplied.
+runs after every daily backup or the weekly disaster-loss window is recorded as accepted. Value
+supplied 2026-09-03 (decision packet CL1_BACKUP): the off-platform retention window is **12 weekly
+encrypted copies (about 90 days)**; older copies are deleted on rotation.
 
 **connector-key-custody** — A: `Connectors:EncryptionKey` is generated offline, held in the
 maintainer's password manager plus one offline copy, and injected only as the host or environment
@@ -187,5 +191,6 @@ backend or realtime collaboration path.
 - Managed SaaS remains post-v0.3 and requires a separate accepted decision and operating plan.
 - The direction-only qualifier on the status is lifted only when Stage 1 evidence exists; until then
   this ADR records direction, not proof, and no instance has been deployed.
-- Three deployment-critical values stay open on `#1772`: the collaborator's identity, the monthly
-  ceiling and alert threshold, and the off-platform backup retention window.
+- The three deployment-critical values (one named collaborator, £20 ceiling with a £10 alert,
+  12 weekly off-platform copies) were supplied on 2026-09-03; what stays open on `#1772` is the
+  deployment itself, the accounts and billing (human acts), and the Stage 1 evidence.
