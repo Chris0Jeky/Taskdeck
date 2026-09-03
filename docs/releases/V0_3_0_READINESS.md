@@ -18,14 +18,15 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. State measured 20
 | # | Gate clause | State | What it waits on |
 |---|---|---|---|
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
-| 2 | Milestone closed or explicitly re-ruled | **Not met.** 52 open. **Ruled 2026-09-03: nothing is re-ruled out; all 52 ship in v0.3.0** | Every open issue closing on evidence, sections 2 to 5 below |
+| 2 | Milestone closed or explicitly re-ruled | **Not met.** 51 open. **Ruled 2026-09-03: nothing else is re-ruled out; the one exception is `#1972`, moved to v0.5 with CF-21** | Every open issue closing on evidence, sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
 | 4 | `main` green | **Green** at `cca2db22f` (`ci-required` 2026-09-03 21:15Z) | Two known intermittent reds, section 2 |
 | 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
 
 Clause 2 does not by itself require every open issue to close. "Explicitly re-ruled" means each one
 either closes on evidence or carries a recorded decision moving it out of v0.3. **The maintainer ruled
-on 2026-09-03 that none of the un-gated issues move: v0.3.0 tags only when the whole milestone is
+on 2026-09-03 that the un-gated issues do not move, with one exception: `#1972` goes to v0.5 with
+CF-21 `#2274`, which is the only thing that can close it. v0.3.0 tags only when the whole milestone is
 closed.** Section 5 records the split that ruling was made over. Issues seeded onto the milestone
 after the ruling inherit it unless their seeding says otherwise.
 
@@ -143,16 +144,17 @@ Trackers do not close by doing work; they close when their children do, or by a 
 - **`#2235`** v0.3 spring cleaning. This is the reconciliation pass that clause 2 depends on, and this
   readiness file is one of its outputs.
 
-## 5. Where the 52 open issues actually sit
+## 5. Where the 51 open issues actually sit
 
 Clause 2's content is deciding which of these ship inside v0.3.0 and which are re-ruled out, and that
 split is a maintainer ruling, not an agent decision. The useful thing this section does is separate
 the ones that already have a gate clause behind them from the ones that do not. Measured 2026-09-03:
 
-- 16 carry `dogfooding`, the product-polish family seeded from real use: `#2193`, `#2141`, `#2090`,
-  `#2009`, `#2008`, `#2007`, `#2004`, `#1999`, `#1987`, `#1984`, `#1972`, `#1968`, `#1961`, `#1949`,
-  `#1940`, `#1936`. Three of these are Priority I (`#2004`, `#1949`, `#1940`) and three carry
-  `decision` (`#2004`, `#1972`, `#1936`), so they need a ruling before they can be moved wholesale.
+- 15 carry `dogfooding`, the product-polish family seeded from real use: `#2193`, `#2141`, `#2090`,
+  `#2009`, `#2008`, `#2007`, `#2004`, `#1999`, `#1987`, `#1984`, `#1968`, `#1961`, `#1949`,
+  `#1940`, `#1936`. Three of these are Priority I (`#2004`, `#1949`, `#1940`) and two carry
+  `decision` (`#2004`, `#1936`), so they need a ruling before they can close. (`#1972` was the
+  sixteenth until the 2026-09-03 exception moved it to v0.5.)
 - 15 carry `ci`, and almost none of them are residuals; they split across this file:
   - 10 are section 2: the clause-5 chain `#2327` and `#2326`, the cutover-checklist owners `#2333`
     (B), `#2329`, `#2331`, `#2332` (E), `#2335` (G) and `#2334` (H, moved in from v0.4 on the Q1
@@ -170,24 +172,28 @@ the ones that already have a gate clause behind them from the ones that do not. 
   `#2315`, `#2305`, `#2304`, `#2303`, `#2302`, `#2301`, `#2240`, `#2215`, `#2214`, `#2391`,
   `#1866`, `#1640`, `#1309`, `#1307`, `#1284`, `#1131`, `#2460`, `#2461`.
 
-The three label sets are disjoint and closed: 16 + 15 + 21 = 52. If that arithmetic stops holding,
+The three label sets are disjoint and closed: 15 + 15 + 21 = 51. If that arithmetic stops holding,
 this section is stale and the milestone should be re-counted before the file is trusted. It has
-already moved four times since this file was drafted: `#2230` closed on PR `#2421` and CI-16 `#2439`
+already moved five times since this file was drafted: `#2230` closed on PR `#2421` and CI-16 `#2439`
 was seeded the same afternoon, `#2401` closed on PR `#2440`, `#2460`/`#2461` were seeded from PR
-`#2456`'s review, and `#2334` moved in on the Q1 ruling.
+`#2456`'s review, `#2334` moved in on the Q1 ruling, and `#1972` moved out to v0.5.
 
-**The split that matters.** 17 of the 52 have a gate clause behind them and are not re-ruling
+**The split that matters.** 17 of the 51 have a gate clause behind them and are not re-ruling
 candidates at all: the 14 `ci` issues above other than `#2250`, plus `#2235`, `#1772` and `#2399`.
-The other **35** have no gate clause: the 16 `dogfooding` issues, the 18 ordinary backlog issues, and
+The other **34** have no gate clause: the 15 `dogfooding` issues, the 18 ordinary backlog issues, and
 `#2250`.
 
-The question this section put to the maintainer was one question about those 35, not fifty-two:
-which of them ship inside v0.3.0 and which are re-ruled to v0.4? **Ruled 2026-09-03: all 35 stay.**
-The options declined were gate-work-only (all 35 to v0.4), Priority I plus security-labelled only
-(`#2004`, `#1949`, `#1940`, `#1866`, `#1131`, `#1987`, `#1309` stay, 28 move), and dogfooding-only
-(16 stay, 19 move). Agents keep finishing the 35 in dependency order; the three that carry `decision`
-(`#2004`, `#1972`, `#1936`) still need their own product rulings before they can close, and the
-milestone count is the blocker count until it reaches zero.
+The question this section put to the maintainer was one question about the then 35 un-gated issues,
+not fifty-two: which of them ship inside v0.3.0 and which are re-ruled to v0.4? **Ruled 2026-09-03:
+all 35 stay, then one exception in the same reply: `#1972` moves to v0.5 with CF-21 `#2274`** (its 2026-08-30
+resolution is the presentation-profile migration, which is v0.5 work; the recorded middle option of
+dropping the selector now was declined, as was pulling CF-21 forward). The options declined for the
+rest were gate-work-only (all 35 to v0.4), Priority I plus security-labelled only (`#2004`, `#1949`,
+`#1940`, `#1866`, `#1131`, `#1987`, `#1309` stay, 28 move), and dogfooding-only (16 stay, 19 move).
+After the exception the milestone holds 51 (15 `dogfooding`, 15 `ci`, 21 other; 34 un-gated). Agents
+keep finishing the 34 in dependency order; the two that still carry `decision` (`#2004`, `#1936`)
+need their own product rulings before they can close, and the milestone count is the blocker count
+until it reaches zero.
 
 ## 6. Keeping this current
 
