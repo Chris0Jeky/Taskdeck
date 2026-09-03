@@ -1538,7 +1538,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
                         new
                         {
                             sequence = 0,
-                            actionType = "update",
+                            actionType = "archive",
                             targetType = "board",
                             targetId = boardId.ToString(),
                             parameters = "{}",
