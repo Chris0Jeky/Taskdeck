@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { ref } from 'vue'
+import axios from 'axios'
 
 const { mockBoardsApi } = vi.hoisted(() => ({
   mockBoardsApi: {
@@ -264,7 +265,19 @@ describe('boardCrudStore', () => {
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
       const committed = await fetchBoard('board-1')
 
-      expect(mockBoardsApi.getBoard).toHaveBeenCalledWith('board-1')
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledWith(
+        'board-1',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+      expect(mockCardsApi.getCards).toHaveBeenCalledWith(
+        'board-1',
+        undefined,
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+      expect(mockLabelsApi.getLabels).toHaveBeenCalledWith(
+        'board-1',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
       expect(state.currentBoard.value).toEqual(boardDetail)
       expect(state.currentBoardCards.value).toEqual(cards)
       expect(state.currentBoardLabels.value).toEqual(labels)
@@ -308,6 +321,9 @@ describe('boardCrudStore', () => {
     })
 
     it('handles error and rethrows', async () => {
+      state.currentBoard.value = { id: 'existing', name: 'Existing' }
+      state.currentBoardCards.value = [{ id: 'existing-card' }]
+      state.currentBoardLabels.value = [{ id: 'existing-label' }]
       mockBoardsApi.getBoard.mockRejectedValueOnce(new Error('not found'))
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
@@ -317,6 +333,89 @@ describe('boardCrudStore', () => {
         expect.any(Error),
         'Failed to fetch board',
       )
+      expect(state.currentBoard.value).toEqual({ id: 'existing', name: 'Existing' })
+      expect(state.currentBoardCards.value).toEqual([{ id: 'existing-card' }])
+      expect(state.currentBoardLabels.value).toEqual([{ id: 'existing-label' }])
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('aborts still-pending siblings when one board read fails', async () => {
+      let cardsAborted = false
+      let labelsAborted = false
+      const abortable = (onAbort: () => void) =>
+        (_id: string, _params: unknown, options: { signal: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => {
+              onAbort()
+              reject(new axios.CanceledError('sibling aborted'))
+            })
+          })
+
+      mockBoardsApi.getBoard.mockRejectedValueOnce(new Error('board failed'))
+      mockCardsApi.getCards.mockImplementationOnce(abortable(() => (cardsAborted = true)))
+      mockLabelsApi.getLabels.mockImplementationOnce(
+        (_id: string, options: { signal: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => {
+              labelsAborted = true
+              reject(new axios.CanceledError('sibling aborted'))
+            })
+          }),
+      )
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      await expect(fetchBoard('board-1')).rejects.toThrow('board failed')
+
+      expect(cardsAborted).toBe(true)
+      expect(labelsAborted).toBe(true)
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('aborts the previous generation before starting a new board read', async () => {
+      let oldCardsAborted = false
+      let oldLabelsAborted = false
+      let boardCall = 0
+      mockBoardsApi.getBoard.mockImplementation((_id: string, options: { signal: AbortSignal }) => {
+        boardCall += 1
+        if (boardCall === 1) {
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => reject(new axios.CanceledError('stale board')))
+          })
+        }
+        return Promise.resolve({ id: 'board-2', name: 'Board 2', columns: [] })
+      })
+      mockCardsApi.getCards.mockImplementation((_id: string, _params: unknown, options: { signal: AbortSignal }) => {
+        if (boardCall === 1) {
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => {
+              oldCardsAborted = true
+              reject(new axios.CanceledError('stale cards'))
+            })
+          })
+        }
+        return Promise.resolve([])
+      })
+      mockLabelsApi.getLabels.mockImplementation((_id: string, options: { signal: AbortSignal }) => {
+        if (boardCall === 1) {
+          return new Promise((_resolve, reject) => {
+            options.signal.addEventListener('abort', () => {
+              oldLabelsAborted = true
+              reject(new axios.CanceledError('stale labels'))
+            })
+          })
+        }
+        return Promise.resolve([])
+      })
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const first = fetchBoard('board-1')
+      const second = fetchBoard('board-2')
+
+      await expect(second).resolves.toBe(true)
+      await expect(first).resolves.toBe(false)
+      expect(oldCardsAborted).toBe(true)
+      expect(oldLabelsAborted).toBe(true)
+      expect(state.currentBoard.value).toMatchObject({ id: 'board-2' })
       expect(state.loading.value).toBe(false)
     })
 

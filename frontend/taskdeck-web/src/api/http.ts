@@ -30,6 +30,18 @@ declare module 'axios' {
 
 const REQUEST_ID_HEADER = 'X-Request-Id'
 
+/**
+ * Maximum time a board read may occupy the UI before the caller receives a
+ * terminal error. This is applied only to GETs under `/boards`; long-running
+ * APIs keep Axios's existing unbounded default unless they opt into a bound.
+ */
+export const BOARD_REQUEST_TIMEOUT_MS = 10_000
+
+/** Optional cancellation controls for board-scoped read wrappers. */
+export interface BoardReadOptions {
+  signal?: AbortSignal
+}
+
 function ensureRequestIdHeader(config: InternalAxiosRequestConfig): void {
   const headers = AxiosHeaders.from(config.headers)
   if (!headers.get(REQUEST_ID_HEADER)) {
@@ -49,6 +61,18 @@ const http = axios.create({
 http.interceptors.request.use(
   (config) => {
     ensureRequestIdHeader(config)
+
+    // Board loads fan out across board, card, and label reads. Give that
+    // bounded user-facing operation a finite deadline and let its caller own
+    // recovery via an explicit Retry action rather than entering the shared
+    // retry/backoff loop. Other APIs retain their existing configuration.
+    const retryConfig = config as InternalAxiosRequestConfig & RetryableRequestConfig
+    if (config.method?.toUpperCase() === 'GET' && /^\/boards(?:\/|\?|$)/.test(config.url ?? '')) {
+      if (retryConfig.timeout == null || retryConfig.timeout === 0) {
+        retryConfig.timeout = BOARD_REQUEST_TIMEOUT_MS
+      }
+      retryConfig.skipRetry ??= true
+    }
 
     const token = tokenStorage.getToken()
     if (token) {

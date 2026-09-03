@@ -506,6 +506,30 @@ describe('http interceptors (#725)', () => {
       expect(response.status).toBe(201)
       expect(response.data).toEqual({ id: 'new-1' })
     })
+
+    it('bounds board reads without changing unrelated API requests', async () => {
+      vi.spyOn(tokenStorage, 'getToken').mockReturnValue(null)
+      mock.onGet('/boards/board-1').reply(200, { id: 'board-1' })
+      mock.onGet('/long-running').reply(200, { ok: true })
+
+      const boardResponse = await http.get('/boards/board-1')
+      const unrelatedResponse = await http.get('/long-running')
+
+      expect(boardResponse.config.timeout).toBe(10_000)
+      expect((boardResponse.config as { skipRetry?: boolean }).skipRetry).toBe(true)
+      expect(unrelatedResponse.config.timeout).toBe(0)
+      expect((unrelatedResponse.config as { skipRetry?: boolean }).skipRetry).toBeUndefined()
+    })
+
+    it('does not automatically retry a failed board read', async () => {
+      mock.onGet('/boards/board-1').reply(503, { message: 'unavailable' })
+
+      await expect(http.get('/boards/board-1')).rejects.toMatchObject({
+        response: { status: 503 },
+      })
+
+      expect(mock.history.get).toHaveLength(1)
+    })
   })
 
   // ── Retry interceptor (#854) ───────────────────────────────────────────
