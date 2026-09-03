@@ -1,9 +1,10 @@
-import http from './http'
+import http, { type BoardReadOptions } from './http'
 import type { Label, CreateLabelDto, UpdateLabelDto } from '../types/board'
 
 export const labelsApi = {
-  async getLabels(boardId: string): Promise<Label[]> {
-    const { data } = await http.get<Label[]>(`/boards/${boardId}/labels`)
+  async getLabels(boardId: string, options?: BoardReadOptions): Promise<Label[]> {
+    const url = `/boards/${boardId}/labels`
+    const { data } = options ? await http.get<Label[]>(url, options) : await http.get<Label[]>(url)
     return data
   },
 

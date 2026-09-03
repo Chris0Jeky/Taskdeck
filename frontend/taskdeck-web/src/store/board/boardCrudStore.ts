@@ -4,6 +4,8 @@
 import { boardsApi } from '../../api/boardsApi'
 import { cardsApi } from '../../api/cardsApi'
 import { labelsApi } from '../../api/labelsApi'
+import axios from 'axios'
+import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
 import type { BoardState } from './boardState'
@@ -17,6 +19,7 @@ const FETCH_BOARDS_THROTTLE_MS = 5000
 export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
   let lastFetchBoardsAt = 0
   let boardFetchGeneration = 0
+  let activeBoardFetchController: AbortController | null = null
 
   async function fetchBoards(search?: string, includeArchived = false) {
     const now = Date.now()
@@ -59,6 +62,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
   async function fetchBoard(id: string): Promise<boolean> {
     const requestGeneration = ++boardFetchGeneration
+    activeBoardFetchController?.abort()
+    const controller = new AbortController()
+    activeBoardFetchController = controller
 
     if (helpers.isDemoMode) {
       state.loading.value = true
@@ -70,6 +76,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         state.currentBoardLabels.value = []
         state.cardCommentsByCardId.value = {}
         state.loading.value = false
+        activeBoardFetchController = null
         return true
       }
 
@@ -79,10 +86,15 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     try {
       state.loading.value = true
       state.error.value = null
+      const readOptions: BoardReadOptions = {
+        signal: controller.signal,
+        timeout: BOARD_REQUEST_TIMEOUT_MS,
+        skipRetry: true,
+      }
       const [board, cards, labels] = await Promise.all([
-        boardsApi.getBoard(id),
-        cardsApi.getCards(id),
-        labelsApi.getLabels(id),
+        boardsApi.getBoard(id, readOptions),
+        cardsApi.getCards(id, undefined, readOptions),
+        labelsApi.getLabels(id, readOptions),
       ])
 
       if (requestGeneration !== boardFetchGeneration) {
@@ -103,15 +115,21 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       state.cardCommentsByCardId.value = {}
       return true
     } catch (e: unknown) {
-      if (requestGeneration !== boardFetchGeneration) {
+      if (requestGeneration !== boardFetchGeneration || axios.isCancel(e)) {
         return false
       }
 
+      // Ensure held-open siblings are cancelled before exposing the failure to
+      // the caller. The next explicit Retry starts a new generation.
+      controller.abort()
       helpers.handleApiError(e, 'Failed to fetch board')
       throw e
     } finally {
       if (requestGeneration === boardFetchGeneration) {
         state.loading.value = false
+        if (activeBoardFetchController === controller) {
+          activeBoardFetchController = null
+        }
       }
     }
   }
