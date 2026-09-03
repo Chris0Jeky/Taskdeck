@@ -234,6 +234,37 @@ test('the gate fails closed on missing, mismatched or errored plans in both mode
   assert.equal(planJobFailed.ok, false);
 });
 
+test('a superseded cancelled plan is non-red only in shadow mode', () => {
+  const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+
+  const shadow = evaluateGate(plan, { mode: 'shadow', planJobResult: 'cancelled' });
+  assert.equal(shadow.ok, true);
+  assert.equal(shadow.wouldFail, true);
+  assert.deepEqual(shadow.plannerFailures, []);
+  assert.ok(shadow.failures.some((failure) => failure.code === 'plan-job-cancelled'));
+  assert.ok(shadow.notes.some((note) => note.includes('superseded')));
+  const summary = renderGateSummary(shadow, plan);
+  assert.match(summary, /would FAIL in enforce mode/);
+  assert.match(summary, /superseded plan cancellation is excluded from observation evidence/);
+
+  const cancelledBeforeReceipt = evaluateGate(null, { mode: 'shadow', planJobResult: 'cancelled' });
+  assert.equal(cancelledBeforeReceipt.ok, true);
+  assert.equal(cancelledBeforeReceipt.wouldFail, true);
+  assert.deepEqual(cancelledBeforeReceipt.plannerFailures, []);
+  assert.ok(cancelledBeforeReceipt.failures.some((failure) => failure.code === 'plan-job-cancelled'));
+
+  const enforcePlan = { ...plan, mode: 'enforce' };
+  const enforce = evaluateGate(enforcePlan, { mode: 'enforce', planJobResult: 'cancelled', results: {} });
+  assert.equal(enforce.ok, false);
+  assert.ok(enforce.failures.some((failure) => failure.code === 'plan-job-failed'));
+
+  for (const planJobResult of ['failure', 'timed_out', 'skipped']) {
+    const ordinaryFailure = evaluateGate(plan, { mode: 'shadow', planJobResult });
+    assert.equal(ordinaryFailure.ok, false, `${planJobResult} must stay red in shadow mode`);
+    assert.ok(ordinaryFailure.failures.some((failure) => failure.code === 'plan-job-failed'));
+  }
+});
+
 test('the gate distinguishes shadow (report) from enforce (block) for job evidence', () => {
   const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
   const noEvidence = evaluateGate(plan, { mode: 'shadow', expectedHeadSha: HEAD, expectedBaseSha: BASE, expectedPolicyDigest: digest, planJobResult: 'success' });
