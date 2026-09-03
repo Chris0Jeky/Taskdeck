@@ -73,10 +73,25 @@ function usesEntries(source, workflowPath, violations) {
     if (!line.structural || line.raw.trim() === '' || line.raw.trim().startsWith('#')) continue
 
     const trimmed = line.raw.trim()
-    const anchoredUses = /(?:^(?:-\s+)?|[{,]\s*)&[^\s[\]{},]+\s+(?:uses|"uses"|'uses')\s*:/
-    if (anchoredUses.test(trimmed)) {
+    const mappingKeyDelimiter = trimmed.indexOf(':')
+    const mappingKeyPrefix = mappingKeyDelimiter === -1
+      ? trimmed
+      : trimmed.slice(0, mappingKeyDelimiter)
+    if (/(?:^|\s)&[^\s[\]{},]+(?:\s|$)/.test(mappingKeyPrefix)) {
       violations.add(
-        `${workflowPath}:${line.lineNumber}: uses with YAML anchors is unsupported by the release cache scanner`,
+        `${workflowPath}:${line.lineNumber}: YAML anchors in mapping keys are unsupported by the release cache scanner`,
+      )
+      continue
+    }
+    if (/^(?:-\s+)?\?\s+/.test(trimmed)) {
+      violations.add(
+        `${workflowPath}:${line.lineNumber}: explicit YAML mapping keys are unsupported by the release cache scanner`,
+      )
+      continue
+    }
+    if (/(?:^(?:-\s+)?|[{,]\s*)"(?:[^"\\]|\\.)*\\(?:[^"\\]|\\.)*"\s*:/.test(trimmed)) {
+      violations.add(
+        `${workflowPath}:${line.lineNumber}: escaped YAML mapping keys are unsupported by the release cache scanner`,
       )
       continue
     }
@@ -534,8 +549,50 @@ test('anchored action mappings cannot hide cross-run artifact inputs', () => {
 
   assert.throws(
     () => enforceReleaseCacheContract(sources),
-    /uses with YAML anchors is unsupported by the release cache scanner/,
+    /YAML anchors in mapping keys are unsupported by the release cache scanner/,
   )
+})
+
+test('encoded and explicit action keys cannot hide cross-run artifact inputs', () => {
+  const cases = [
+    {
+      label: 'escaped double-quoted key',
+      usesLine: '      - "\\u0075ses": actions/download-artifact@v8',
+      expected: /escaped YAML mapping keys are unsupported by the release cache scanner/,
+    },
+    {
+      label: 'anchored escaped double-quoted key',
+      usesLine: '      - &unsafe "\\u0075ses": actions/download-artifact@v8',
+      expected: /YAML anchors in mapping keys are unsupported by the release cache scanner/,
+    },
+    {
+      label: 'explicit mapping key',
+      usesLine: `      - ? uses
+        : actions/download-artifact@v8`,
+      expected: /explicit YAML mapping keys are unsupported by the release cache scanner/,
+    },
+  ]
+
+  for (const testCase of cases) {
+    const sources = validSyntheticClosure()
+    sources.set(
+      `${workflowPrefix}reusable-release-build.yml`,
+      sources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+        '      - uses: actions/download-artifact@v8',
+        testCase.usesLine,
+      ).replace(
+        '          name: release-input',
+        `          name: release-input
+          run-id: 123`,
+      ),
+    )
+
+    assert.throws(
+      () => enforceReleaseCacheContract(sources),
+      testCase.expected,
+      testCase.label,
+    )
+  }
 })
 
 test('a violation hidden in a transitive reusable workflow fails closed', () => {
