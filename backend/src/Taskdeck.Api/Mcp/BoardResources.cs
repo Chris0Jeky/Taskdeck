@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using ModelContextProtocol.Server;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 
 namespace Taskdeck.Api.Mcp;
 
@@ -59,7 +60,7 @@ public class BoardResources
         // List board summaries scoped to this user.
         var listResult = await _boardService.ListBoardsAsync(userId, searchText: null, includeArchived: false);
         if (!listResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to list boards: {listResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to list boards: {PublicFailureMessage(listResult)}");
 
         var boardSummaries = new List<object>();
         foreach (var boardDto in listResult.Value)
@@ -108,7 +109,7 @@ public class BoardResources
 
         var detailResult = await _boardService.GetBoardDetailAsync(boardGuid, userId);
         if (!detailResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to get board detail: {detailResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to get board detail: {PublicFailureMessage(detailResult)}");
 
         var detail = detailResult.Value;
 
@@ -159,7 +160,7 @@ public class BoardResources
         // Verify user can access this board
         var boardResult = await _boardService.GetBoardDetailAsync(boardGuid, userId);
         if (!boardResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to access board: {boardResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to access board: {PublicFailureMessage(boardResult)}");
 
         var column = boardResult.Value.Columns.FirstOrDefault(c => c.Id == columnGuid);
         if (column == null)
@@ -167,7 +168,7 @@ public class BoardResources
 
         var cardsResult = await _cardService.SearchCardsAsync(boardGuid, columnId: columnGuid);
         if (!cardsResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to get cards: {cardsResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to get cards: {PublicFailureMessage(cardsResult)}");
 
         var cards = cardsResult.Value.OrderBy(c => c.Position).Select(c => new
         {
@@ -208,11 +209,11 @@ public class BoardResources
         // Verify user can access this board
         var boardResult = await _boardService.GetBoardDetailAsync(boardGuid, userId);
         if (!boardResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to access board: {boardResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to access board: {PublicFailureMessage(boardResult)}");
 
         var cardsResult = await _cardService.SearchCardsAsync(boardGuid);
         if (!cardsResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to search cards: {cardsResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to search cards: {PublicFailureMessage(cardsResult)}");
 
         var card = cardsResult.Value.FirstOrDefault(c => c.Id == cardGuid);
         if (card == null)
@@ -258,11 +259,11 @@ public class BoardResources
         // Verify user can access this board
         var boardResult = await _boardService.GetBoardDetailAsync(boardGuid, userId);
         if (!boardResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to access board: {boardResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to access board: {PublicFailureMessage(boardResult)}");
 
         var labelsResult = await _labelService.GetLabelsByBoardIdAsync(boardGuid);
         if (!labelsResult.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to get labels: {labelsResult.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to get labels: {PublicFailureMessage(labelsResult)}");
 
         var labels = labelsResult.Value.Select(l => new
         {
@@ -279,4 +280,7 @@ public class BoardResources
             totalCount = labelsResult.Value.Count()
         }, SerializerOptions);
     }
+
+    private static string PublicFailureMessage(Result result) =>
+        SensitiveDataRedactor.SanitizeLlmFailureMessage(result.ErrorCode, result.ErrorMessage);
 }
