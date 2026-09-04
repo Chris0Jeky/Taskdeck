@@ -14,6 +14,24 @@ public class UserRepository : Repository<User>, IUserRepository
     {
     }
 
+    public async Task<IReadOnlyDictionary<Guid, string>> GetUsernamesByIdsAsync(
+        IEnumerable<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var uniqueIds = ids
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .ToList();
+
+        if (uniqueIds.Count == 0)
+            return new Dictionary<Guid, string>();
+
+        return await _context.Users
+            .AsNoTracking()
+            .Where(user => uniqueIds.Contains(user.Id))
+            .ToDictionaryAsync(user => user.Id, user => user.Username, cancellationToken);
+    }
+
     public async Task<User?> GetByUsernameAsync(string username, CancellationToken cancellationToken = default)
     {
         return await _context.Users

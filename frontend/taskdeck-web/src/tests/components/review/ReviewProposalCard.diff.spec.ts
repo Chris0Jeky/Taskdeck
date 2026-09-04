@@ -297,6 +297,30 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(applied.text()).not.toContain('ready for approval')
     expect(applied.text()).not.toContain('This would')
 
+    const boardlessApplied = mountCard({
+      proposal: makeProposal({
+        status: 'Applied',
+        boardId: null,
+        summary: 'Dark mode support',
+        operations: [operation],
+        presentation: prospectivePresentation,
+      }),
+    })
+    expect(boardlessApplied.find('.td-review-cue').text()).toBe('1 recorded change applied.')
+
+    const rejected = mountCard({
+      proposal: makeProposal({
+        status: 'Rejected',
+        summary: 'Dark mode support',
+        operations: [operation],
+        presentation: prospectivePresentation,
+      }),
+    })
+    expect(rejected.find('.td-review-card__title').text()).toBe('Dark mode support')
+    expect(rejected.find('.td-review-cue').text()).toBe('1 recorded change rejected.')
+    expect(rejected.text()).not.toContain('ready for approval')
+    expect(rejected.text()).not.toContain('This would')
+
     const pending = mountCard({
       proposal: makeProposal({
         summary: 'Dark mode support',

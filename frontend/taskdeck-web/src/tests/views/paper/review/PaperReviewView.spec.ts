@@ -1309,6 +1309,7 @@ describe('PaperReviewView', () => {
         summary: 'Newer applied work',
         decidedAt: new Date(Date.now() - 35 * 60_000).toISOString(),
         decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+        decidedByUserName: 'Ada',
         appliedAt: newerAppliedAt,
         presentation: {
           plainSummary: 'Newer applied work',
@@ -1341,7 +1342,7 @@ describe('PaperReviewView', () => {
       'Create card "Exact applied work".',
     )
     expect(wrapper.get('[data-testid="applied-record-decision-actor"]').text()).toBe(
-      '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+      'Ada',
     )
     expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
@@ -4625,6 +4626,64 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('keeps known revision metadata and the draft after a definite 4xx rejection', async () => {
+      const now = new Date().toISOString()
+      mocks.getRevisions.mockResolvedValueOnce([
+        {
+          id: 'rev-known-1',
+          proposalId: 'proposal-001',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"headline":"Existing revision","notes":"Original notes"}',
+          revisedAt: now,
+          reason: 'First revision',
+          createdAt: now,
+        },
+      ])
+      mocks.createRevision.mockRejectedValueOnce({
+        response: {
+          status: 400,
+          data: {
+            errorCode: 'ValidationError',
+            message: 'Revision payload is invalid',
+          },
+        },
+      })
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+      await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+      const proposalFetchesBeforeSave = mocks.getProposals.mock.calls.length
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      await editor.get('[data-testid="revision-field-headline"]').setValue('Reviewer headline')
+      await editor.get('[data-testid="revision-field-notes"]').setValue('Reviewer notes')
+      await editor.get('[data-testid="revision-reason"]').setValue('Second revision')
+      await editor.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+
+      const stillOpen = wrapper.get('[data-testid="revision-editor"]')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-headline"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer headline')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-notes"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer notes')
+      expect(
+        (stillOpen.get('[data-testid="revision-reason"]').element as HTMLInputElement).value,
+      ).toBe('Second revision')
+      expect(wrapper.get('[data-testid="revision-badge"]').text()).toContain('1 revision')
+      expect(mocks.errorToast).toHaveBeenCalledWith('Revision payload is invalid')
+      expect(mocks.getProposals.mock.calls.length).toBe(proposalFetchesBeforeSave)
+      expect(
+        stillOpen.element.contains(document.activeElement),
+      ).toBe(true)
+
+      wrapper.unmount()
+    })
+
     it('does not let a stale A1 save clear a newer A2 editor seed', async () => {
       let resolveA1Save!: (value: unknown) => void
       mocks.createRevision.mockImplementationOnce(
@@ -4810,7 +4869,11 @@ describe('PaperReviewView', () => {
 
     it('consumes one Approve after an indeterminate save even when the revision key is unchanged', async () => {
       const original = makeProposal({ id: 'uncertain-truth' })
-      mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after commit'))
+      // A 409 can be raised after a competing writer has committed the next
+      // revision. It must take the same refresh barrier as a timeout.
+      mocks.createRevision.mockRejectedValueOnce({
+        response: { status: 409 },
+      })
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'uncertain-truth', status: 'Approved' }),
       )

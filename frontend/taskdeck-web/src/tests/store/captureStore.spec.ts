@@ -1413,6 +1413,43 @@ describe('captureStore', () => {
       }
     })
 
+    it('commits an explicit list load after a concurrent keep write', async () => {
+      const store = useCaptureStore()
+      const createdAt = new Date().toISOString()
+      store.items = [{
+        id: 'board-a-item', userId: 'u1', boardId: 'board-a', status: 'New', source: 'Typed',
+        textExcerpt: 'board A', createdAt, processedAt: null,
+      }]
+
+      let resolveKeep!: (value: unknown) => void
+      let resolveList!: (value: unknown[]) => void
+      vi.mocked(captureApi.keepItem).mockReturnValueOnce(
+        new Promise((resolve) => { resolveKeep = resolve }) as never,
+      )
+      vi.mocked(captureApi.listItems).mockReturnValueOnce(
+        new Promise((resolve) => { resolveList = resolve }) as never,
+      )
+
+      const keep = store.keepItem('board-a-item')
+      const scopedLoad = store.fetchItems({ boardId: 'board-b' })
+
+      resolveKeep({
+        id: 'board-a-item', userId: 'u1', boardId: 'board-a', status: 'New', source: 'Typed',
+        textExcerpt: 'board A', rawText: 'board A', createdAt, processedAt: null, retryCount: 0,
+        disposition: { kind: 'Kept', at: createdAt, byUserId: 'u1', boardId: 'board-a' },
+      })
+      await keep
+
+      resolveList([{
+        id: 'board-b-item', userId: 'u1', boardId: 'board-b', status: 'New', source: 'Typed',
+        textExcerpt: 'board B', createdAt, processedAt: null,
+      }])
+      await scopedLoad
+
+      expect(store.items.map((item) => item.id)).toEqual(['board-b-item'])
+      expect(store.detailById['board-a-item']?.disposition?.kind).toBe('Kept')
+    })
+
     it('keeps a successful suggestion update when an older detail read lands later', async () => {
       const store = useCaptureStore()
       const createdAt = new Date().toISOString()
@@ -1514,6 +1551,80 @@ describe('captureStore', () => {
         await Promise.resolve()
 
         expect(store.items[0]?.status).toBe('Triaging')
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not invalidate an explicit list load for an uncached triage item', async () => {
+      const store = useCaptureStore()
+      let resolveList!: (value: unknown[]) => void
+      vi.mocked(captureApi.listItems).mockReturnValueOnce(
+        new Promise((resolve) => { resolveList = resolve }) as never,
+      )
+      vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+        status: 'Triaging', alreadyTriaging: false,
+      } as never)
+      vi.mocked(captureApi.getItem).mockRejectedValue(new Error('detail unavailable'))
+
+      const listLoad = store.fetchItems({ limit: 200 })
+      await store.triageItem('uncached-capture')
+      resolveList([{
+        id: 'fresh-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+        textExcerpt: 'fresh list row', createdAt: new Date().toISOString(), processedAt: null,
+      }])
+      await listLoad
+
+      expect(store.items.map((item) => item.id)).toEqual(['fresh-capture'])
+    })
+
+    it('does not let a pre-batch detail poll restore the old status', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const createdAt = new Date().toISOString()
+        const staleDetail = {
+          id: 'batch-capture', userId: 'u1', boardId: null, status: 'Triaging', source: 'Typed',
+          textExcerpt: 'batch this', rawText: 'batch this', createdAt, processedAt: null,
+          retryCount: 0, provenance: null,
+        }
+        store.items = [{
+          id: 'batch-capture', userId: 'u1', boardId: null, status: 'Triaging', source: 'Typed',
+          textExcerpt: 'batch this', createdAt, processedAt: null,
+        }]
+        store.detailById['batch-capture'] = staleDetail as never
+
+        let resolvePoll!: (value: unknown) => void
+        vi.mocked(captureApi.getItem)
+          .mockReturnValueOnce(new Promise((resolve) => { resolvePoll = resolve }) as never)
+          .mockResolvedValue({
+            ...staleDetail,
+            status: 'Ignored',
+            disposition: { kind: 'Ignored', at: createdAt, byUserId: 'u1', boardId: null },
+          } as never)
+        vi.mocked(captureApi.batchTriage).mockResolvedValue({
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          results: [{ itemId: 'batch-capture', success: true }],
+        })
+        vi.mocked(captureApi.listItems).mockResolvedValue([{
+          id: 'batch-capture', userId: 'u1', boardId: null, status: 'Ignored', source: 'Typed',
+          textExcerpt: 'batch this', createdAt, processedAt: createdAt, errorMessage: null,
+          disposition: { kind: 'Ignored', at: createdAt, byUserId: 'u1', boardId: null },
+        }] as never)
+
+        const stop = store.pollTriageCompletion('batch-capture')
+        await vi.advanceTimersByTimeAsync(2_000)
+        expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+
+        await store.batchTriage(['batch-capture'], 'ignore')
+        resolvePoll(staleDetail)
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.detailById['batch-capture']?.status).toBe('Ignored')
         stop()
       } finally {
         vi.useRealTimers()

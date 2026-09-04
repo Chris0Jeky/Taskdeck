@@ -258,16 +258,119 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer)
     await wrapper.find('textarea').setValue('Preserve this if the API fails')
     const labelInput = wrapper.find('input[type="text"]')
-    await labelInput.setValue('uncommitted-label')
+    await labelInput.setValue('committed')
+    await labelInput.trigger('keydown', { key: 'Enter' })
 
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('Preserve this if the API fails')
-    expect((labelInput.element as HTMLInputElement).value).toBe('uncommitted-label')
+    expect(wrapper.find('.paper-composer__labels').text()).toContain('committed')
 
     ;(wrapper.vm as unknown as { resetDraft: () => void }).resetDraft()
     await wrapper.vm.$nextTick()
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
     expect((labelInput.element as HTMLInputElement).value).toBe('')
+    // GH-2490 -- the committed chips go with the reset. Without this the
+    // `labels.value = []` line is unguarded and a stale chip could ride into
+    // the NEXT capture.
+    expect(wrapper.find('.paper-composer__labels').exists()).toBe(false)
+  })
+
+  // GH-2490 -- typing a label and pressing Cmd/Ctrl+Enter without first pressing
+  // Enter filed a capture with NO label, and the success reset then wiped the
+  // box that was the only evidence of it.
+  describe('pending label on submit (GH-2490)', () => {
+    it('flushes an uncommitted label into the emitted payload', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Ship the label flush')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('  urgent  ')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual(['urgent'])
+      expect((labelInput.element as HTMLInputElement).value).toBe('')
+    })
+
+    it('does not duplicate a pending label that is already a chip', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Dedupe me')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('urgent')
+      await labelInput.trigger('keydown', { key: 'Enter' })
+      await labelInput.setValue('urgent')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual(['urgent'])
+    })
+
+    it('keeps a comma inside the pending label as content (GH-2485 unregressed)', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Commas are content')
+      await wrapper.find('input[type="text"]').setValue('ops, later')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual(['ops, later'])
+    })
+
+    it('flushes nothing when the label box holds only whitespace', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('No label here')
+      await wrapper.find('input[type="text"]').setValue('   ')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual([])
+    })
+
+    it('does not flush the pending label when the submit is refused', async () => {
+      mockBoardStore.boards = [{ id: 'board-readonly', name: 'Archive', canWrite: false }]
+      const wrapper = mount(PaperCaptureComposer, { props: { defaultBoardId: 'board-readonly' } })
+      await wrapper.find('textarea').setValue('nowhere to land')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('urgent')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      expect(wrapper.emitted('submit')).toBeUndefined()
+      // The box still holds the evidence while the capture cannot be filed.
+      expect((labelInput.element as HTMLInputElement).value).toBe('urgent')
+    })
+
+    it('carries the pending label through snapshot and restore', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Survive the redirect')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('half-typed')
+
+      const vm = wrapper.vm as unknown as {
+        snapshotDraft: () => { labelInput: string }
+        restoreDraft: (draft: { text: string; labelInput?: string | null }) => void
+        resetDraft: () => void
+      }
+      const snapshot = vm.snapshotDraft()
+      expect(snapshot.labelInput).toBe('half-typed')
+
+      vm.resetDraft()
+      vm.restoreDraft({ ...snapshot, text: 'Survive the redirect' })
+      await wrapper.vm.$nextTick()
+      expect((labelInput.element as HTMLInputElement).value).toBe('half-typed')
+    })
+
+    it('restores a pre-GH-2490 draft with no pending label as an empty box', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      const vm = wrapper.vm as unknown as {
+        restoreDraft: (draft: { text: string }) => void
+      }
+      vm.restoreDraft({ text: 'older stash' })
+      await wrapper.vm.$nextTick()
+      expect((wrapper.find('input[type="text"]').element as HTMLInputElement).value).toBe('')
+    })
   })
 
   // GH-2141 -- the Paper skin could not file a transcript without dropping into
