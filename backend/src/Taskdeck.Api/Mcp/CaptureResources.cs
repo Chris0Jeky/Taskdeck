@@ -3,6 +3,7 @@ using ModelContextProtocol.Server;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 
 namespace Taskdeck.Api.Mcp;
 
@@ -38,7 +39,7 @@ public class CaptureResources
 
         var result = await _captureService.ListAsync(userId, new CaptureListFilterDto());
         if (!result.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to list captures: {result.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to list captures: {PublicFailureMessage(result)}");
 
         var captures = result.Value.Select(c => new
         {
@@ -75,7 +76,7 @@ public class CaptureResources
 
         var result = await _captureService.GetByIdAsync(userId, captureGuid);
         if (!result.IsSuccess)
-            throw new InvalidOperationException($"MCP: failed to get capture: {result.ErrorMessage}");
+            throw new InvalidOperationException($"MCP: failed to get capture: {PublicFailureMessage(result)}");
 
         var c = result.Value;
 
@@ -94,4 +95,7 @@ public class CaptureResources
             errorMessage = c.ErrorMessage
         }, BoardResources.SerializerOptions);
     }
+
+    private static string PublicFailureMessage(Result result) =>
+        SensitiveDataRedactor.SanitizeLlmFailureMessage(result.ErrorCode, result.ErrorMessage);
 }
