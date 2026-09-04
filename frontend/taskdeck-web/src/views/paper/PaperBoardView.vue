@@ -88,6 +88,10 @@ const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
 const boardLoadErrorSummary = computed(() => routedBoard.value
   ? "We couldn't refresh this board. Your last loaded board is still shown."
   : "We couldn't load this board.")
+const boardMutationError = computed(() => {
+  const error = boardStore.error
+  return error && error !== props.boardLoadError ? error : null
+})
 const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
 const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
@@ -798,12 +802,12 @@ async function addStarterColumns() {
       </section>
 
       <section
-        v-else-if="boardStore.error && !isEmptyBoard"
+        v-if="boardMutationError && !isEmptyBoard"
         class="paper-board-view__error"
         role="alert"
         data-testid="paper-board-error"
       >
-        {{ boardStore.error }}
+        {{ boardMutationError }}
       </section>
 
       <section

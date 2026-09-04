@@ -878,6 +878,22 @@ describe('PaperBoardView — empty board (#1765)', () => {
     expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
   })
 
+  it('keeps a later mutation error visible beside a retryable board-load error', () => {
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    mockBoardStore.error = 'Failed to create card'
+
+    const wrapper = mountView({ boardLoadError: 'Board refresh failed' })
+
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      'Your last loaded board is still shown',
+    )
+    expect(wrapper.get('[data-testid="paper-board-error"]').text()).toBe('Failed to create card')
+    expect(wrapper.find('[data-testid="paper-board-load-retry"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
+  })
+
   it('hides cached Paper lanes when they belong to a different routed board', () => {
     routeMock.params.id = 'board-2'
     mockBoardStore.currentBoard = board
