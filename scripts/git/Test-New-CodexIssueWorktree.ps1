@@ -24,6 +24,7 @@ param(
         "base-missing-handoff-artifacts",
         "fully-qualified-ref",
         "refresh-remote-base",
+        "askpass-suppression",
         "remote-default-head",
         "missing-base",
         "what-if",
@@ -54,6 +55,7 @@ param(
         "base-missing-handoff-artifacts",
         "fully-qualified-ref",
         "refresh-remote-base",
+        "askpass-suppression",
         "remote-default-head",
         "missing-base",
         "what-if",
@@ -748,6 +750,138 @@ finally {
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "protocol.ext.allow")
         }
         Complete-Test "complete remote names are safely refreshed and non-responsive Git process trees are bounded and reaped"
+    }
+
+    if (Test-CaseSelected "askpass-suppression") {
+        $askPassProbeDirectory = Join-Path $testRoot "askpass-probe"
+        New-Item -ItemType Directory -Path $askPassProbeDirectory | Out-Null
+        $askPassScript = Join-Path $askPassProbeDirectory "askpass-canary.cmd"
+        $askPassMarker = Join-Path $askPassProbeDirectory "askpass-invoked.txt"
+        $askPassRequestMarker = Join-Path $askPassProbeDirectory "remote-requested.txt"
+        Set-Content -LiteralPath $askPassScript -Encoding Ascii -Value @'
+@echo off
+@echo INVOKED > "%~dp0askpass-invoked.txt"
+exit /b 42
+'@
+
+        $askPassServerScript = Join-Path $askPassProbeDirectory "http-401-server.ps1"
+        $askPassServerReady = Join-Path $askPassProbeDirectory "server-ready.txt"
+        Set-Content -LiteralPath $askPassServerScript -Encoding Ascii -Value @'
+$ErrorActionPreference = "Stop"
+$port = [int][System.Environment]::GetEnvironmentVariable("TASKDECK_ASKPASS_PORT")
+$listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $port)
+$listener.Start()
+[System.IO.File]::WriteAllText($env:TASKDECK_ASKPASS_READY, "ready")
+$client = $null
+try {
+    $client = $listener.AcceptTcpClient()
+    [System.IO.File]::WriteAllText($env:TASKDECK_ASKPASS_REQUESTED, "requested")
+    $stream = $client.GetStream()
+    $requestBuffer = New-Object byte[] 4096
+    $null = $stream.Read($requestBuffer, 0, $requestBuffer.Length)
+    $response = [System.Text.Encoding]::ASCII.GetBytes(
+        "HTTP/1.1 401 Unauthorized`r`nWWW-Authenticate: Basic realm=`"taskdeck`"`r`nContent-Length: 0`r`nConnection: close`r`n`r`n")
+    $stream.Write($response, 0, $response.Length)
+    $stream.Flush()
+}
+finally {
+    if ($null -ne $client) {
+        $client.Dispose()
+    }
+    $listener.Stop()
+}
+'@
+
+        $portProbe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $portProbe.Start()
+        $askPassPort = ([System.Net.IPEndPoint]$portProbe.LocalEndpoint).Port
+        $portProbe.Stop()
+
+        $serverStartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+        $serverStartInfo.FileName = $powerShellExecutable
+        $serverStartInfo.WorkingDirectory = $askPassProbeDirectory
+        $serverStartInfo.UseShellExecute = $false
+        $serverStartInfo.CreateNoWindow = $true
+        $serverStartInfo.RedirectStandardOutput = $true
+        $serverStartInfo.RedirectStandardError = $true
+        $serverStartInfo.EnvironmentVariables["TASKDECK_ASKPASS_PORT"] = [string]$askPassPort
+        $serverStartInfo.EnvironmentVariables["TASKDECK_ASKPASS_READY"] = $askPassServerReady
+        $serverStartInfo.EnvironmentVariables["TASKDECK_ASKPASS_REQUESTED"] = $askPassRequestMarker
+        $serverArguments = @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $askPassServerScript)
+        if ($null -ne $serverStartInfo.PSObject.Properties['ArgumentList']) {
+            foreach ($argument in $serverArguments) {
+                $serverStartInfo.ArgumentList.Add($argument)
+            }
+        }
+        else {
+            $serverStartInfo.Arguments = (($serverArguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+        }
+
+        $serverProcess = $null
+        $askPassRemoteConfigured = $false
+        $askPassConfigConfigured = $false
+        $askPassEnvironmentNames = @("GIT_ASKPASS", "SSH_ASKPASS")
+        $previousAskPassEnvironment = @{}
+
+        try {
+            $serverProcess = [System.Diagnostics.Process]::new()
+            $serverProcess.StartInfo = $serverStartInfo
+            if (-not $serverProcess.Start()) {
+                throw "Askpass HTTP probe server did not start."
+            }
+
+            $serverReadyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+            while (-not (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) -and
+                -not $serverProcess.HasExited -and
+                [DateTimeOffset]::UtcNow -lt $serverReadyDeadline) {
+                Start-Sleep -Milliseconds 50
+            }
+            Assert-True (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) "Askpass HTTP probe server did not become ready."
+
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @(
+                "remote", "add", "askpass-probe", "http://127.0.0.1:$askPassPort/repo.git"
+            )
+            $askPassRemoteConfigured = $true
+            $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.askPass", $askPassScript)
+            $askPassConfigConfigured = $true
+            foreach ($environmentName in $askPassEnvironmentNames) {
+                $previousAskPassEnvironment[$environmentName] = [System.Environment]::GetEnvironmentVariable($environmentName, "Process")
+                [System.Environment]::SetEnvironmentVariable($environmentName, $askPassScript, "Process")
+            }
+
+            try {
+                $askPassProbe = Invoke-Helper -WorkingDirectory $callerPath -Arguments @(
+                    "-IssueNumber", "499",
+                    "-Slug", "askpass-suppression",
+                    "-BaseBranch", "askpass-probe/main"
+                )
+                Assert-True ($askPassProbe.ExitCode -ne 0) "An unauthorized remote base should fail closed."
+                Assert-True (Test-Path -LiteralPath $askPassRequestMarker -PathType Leaf) "The helper did not reach the unauthorized remote probe."
+                Assert-True (-not (Test-Path -LiteralPath $askPassMarker -PathType Leaf)) "The ambient askpass canary was invoked by a helper Git command."
+                Assert-True (-not (Test-Path -LiteralPath (Join-Path $callerPath ".worktrees/codex-499-askpass-suppression"))) "Askpass suppression failure created a worktree target."
+            }
+            finally {
+                foreach ($environmentName in $askPassEnvironmentNames) {
+                    [System.Environment]::SetEnvironmentVariable($environmentName, $previousAskPassEnvironment[$environmentName], "Process")
+                }
+            }
+        }
+        finally {
+            if ($askPassRemoteConfigured) {
+                $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("remote", "remove", "askpass-probe")
+            }
+            if ($askPassConfigConfigured) {
+                $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "--unset", "core.askPass")
+            }
+            if ($null -ne $serverProcess) {
+                if (-not $serverProcess.HasExited) {
+                    $serverProcess.Kill()
+                    $serverProcess.WaitForExit(5000)
+                }
+                $serverProcess.Dispose()
+            }
+        }
+        Complete-Test "remote Git commands suppress ambient askpass helpers and core.askPass"
     }
 
     if (Test-CaseSelected "remote-default-head") {

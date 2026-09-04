@@ -210,14 +210,17 @@ function Invoke-GitCommand {
         $startInfo.RedirectStandardError = $true
         $startInfo.EnvironmentVariables["GIT_TERMINAL_PROMPT"] = "0"
         $startInfo.EnvironmentVariables["GCM_INTERACTIVE"] = "Never"
+        $startInfo.EnvironmentVariables.Remove("GIT_ASKPASS")
+        $startInfo.EnvironmentVariables.Remove("SSH_ASKPASS")
+        $gitArguments = @("-c", "core.askPass=") + $Arguments
 
         if ($null -ne $startInfo.PSObject.Properties['ArgumentList']) {
-            foreach ($argument in $Arguments) {
+            foreach ($argument in $gitArguments) {
                 $startInfo.ArgumentList.Add($argument)
             }
         }
         else {
-            $startInfo.Arguments = (($Arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
+            $startInfo.Arguments = (($gitArguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
         }
 
         $process = [System.Diagnostics.Process]::new()
