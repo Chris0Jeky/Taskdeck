@@ -4,15 +4,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  AUTH_HEADER_ENV,
   MAX_ATTEMPTS,
+  observeBaseTip,
   observeMergeRef,
   resolveMergeRef,
+  writeMergeRefNote,
 } from './resolve-merge-ref.mjs';
 
 const CONTROL_BASE = 'a'.repeat(40);
 const EVENT_HEAD = 'b'.repeat(40);
 const MERGE_SHA = 'c'.repeat(40);
 const TREE_SHA = 'd'.repeat(40);
+const ADVANCED_BASE = 'f'.repeat(40);
+const NEWLINE = String.fromCharCode(10);
 
 function observation(overrides = {}) {
   return {
@@ -178,9 +183,9 @@ test('one rev-parse invocation returns a coherent four-value observation', async
   assert.match(calls[0].args[0], /^--config-env=http\.extraHeader=/);
 });
 
-test('a merge ref regenerated against the live protected base tip resolves as merge-ref-moved', async () => {
+test('a merge ref regenerated against the live base branch tip resolves as merge-ref-moved', async () => {
   const fixture = outputFixture();
-  const advancedBase = 'f'.repeat(40);
+  const advancedBase = ADVANCED_BASE;
   const logs = [];
 
   try {
@@ -206,7 +211,7 @@ test('a merge ref regenerated against the live protected base tip resolves as me
   }
 });
 
-test('a first parent that is not the live protected base tip stays fail-closed', async () => {
+test('a first parent that is not the live base branch tip stays fail-closed', async () => {
   const fixture = outputFixture();
   const attempts = [];
 
@@ -219,7 +224,7 @@ test('a first parent that is not the live protected base tip stays fail-closed',
       observe: async () => { attempts.push('observe'); return observation({ baseSha: 'e'.repeat(40) }); },
       resolveBaseTip: async () => 'f'.repeat(40),
       sleep: async () => {},
-    }), /not the live protected base tip/);
+    }), /not the live base branch tip/);
 
     assert.equal(attempts.length, MAX_ATTEMPTS);
     assertNotPublished(fixture);
@@ -250,7 +255,7 @@ test('a moved base never excuses a head mismatch', async () => {
   }
 });
 
-test('an unreadable protected base tip stays fail-closed', async () => {
+test('an unreadable base branch tip stays fail-closed', async () => {
   const fixture = outputFixture();
 
   try {
@@ -262,9 +267,72 @@ test('an unreadable protected base tip stays fail-closed', async () => {
       observe: async () => observation({ baseSha: 'f'.repeat(40) }),
       resolveBaseTip: async () => { throw new Error('network down'); },
       sleep: async () => {},
-    }), /the protected base tip could not be read/);
+    }), /the base branch tip could not be read/);
 
     assertNotPublished(fixture);
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('observeBaseTip fetches exactly the named base ref and keeps the token out of argv', async () => {
+  const token = 'test-token-that-must-not-enter-argv';
+  const calls = [];
+  const executeGit = async (args, options) => {
+    calls.push({ args, options });
+    if (args.includes('fetch')) return '';
+    return `${ADVANCED_BASE}${NEWLINE}`;
+  };
+
+  const tip = await observeBaseTip({ baseRef: 'main', token, executeGit });
+
+  assert.equal(tip, ADVANCED_BASE);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].args[0], /^--config-env=http\.extraHeader=/);
+  assert.deepEqual(calls[0].args.slice(1), ['fetch', '--no-tags', '--depth=1', 'origin', 'refs/heads/main']);
+  assert.deepEqual(calls[1].args, ['rev-parse', 'FETCH_HEAD^{commit}']);
+  assert.equal(JSON.stringify(calls.map((call) => call.args)).includes(token), false);
+  // The token travels only in the fetch environment, never the argument list.
+  assert.ok(String(calls[0].options.env[AUTH_HEADER_ENV]).includes('AUTHORIZATION: basic '));
+  assert.equal(calls[1].options.env[AUTH_HEADER_ENV], undefined);
+});
+
+test('observeBaseTip rejects a missing base ref and a non-SHA answer', async () => {
+  await assert.rejects(
+    observeBaseTip({ baseRef: '', token: 'test-token', executeGit: async () => '' }),
+    /base ref is required/,
+  );
+  await assert.rejects(
+    observeBaseTip({ baseRef: 'main', token: 'test-token', executeGit: async () => `not-a-sha${NEWLINE}` }),
+    /did not yield one commit SHA/,
+  );
+});
+
+test('the CLI note wiring records an accepted moved base with an LF-terminated line', async () => {
+  const fixture = outputFixture();
+  const notePath = join(fixture.root, 'notes', 'merge-ref-note.txt');
+
+  try {
+    const resolved = await resolveMergeRef({
+      expectedBase: CONTROL_BASE,
+      expectedHead: EVENT_HEAD,
+      mergeOutput: fixture.mergeOutput,
+      treeOutput: fixture.treeOutput,
+      observe: async () => observation({ baseSha: ADVANCED_BASE }),
+      resolveBaseTip: async () => ADVANCED_BASE,
+      sleep: async () => {},
+    });
+
+    assert.equal(resolved.mergeRefMoved, true);
+    writeMergeRefNote(notePath, CONTROL_BASE, resolved);
+
+    const note = readFileSync(notePath, 'utf8');
+    assert.match(note, /^merge-ref-moved: the base advanced from /);
+    assert.ok(note.includes(CONTROL_BASE));
+    assert.ok(note.includes(ADVANCED_BASE));
+    assert.equal(note.endsWith(NEWLINE), true);
+    assert.equal(note.includes('\r'), false);
+    assertPublished(fixture);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

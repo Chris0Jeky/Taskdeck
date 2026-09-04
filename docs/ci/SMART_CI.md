@@ -110,10 +110,10 @@ whatever the base branch points at *now*, so a push to `main` while a Smart CI r
 changes the merge commit's first parent out from under the run. The resolver therefore requires the
 event head (`CONTROL_HEAD`) to match the merge ref's second parent **exactly** — that is the
 untrusted side and is never negotiable — while the first parent may be either the dispatch-time
-control base (`CONTROL_BASE`) or the base branch's live protected tip, which the resolver reads
-itself with `--base-ref` before accepting. Both are protected-branch heads, so nothing untrusted
-enters the binding. An accepted move is recorded as a `merge-ref-moved` planner note in the receipt.
-Any other first parent, an unreadable base tip, or any head mismatch still fails closed with no
+control base (`CONTROL_BASE`) or the base branch's live tip on origin — the same branch whose
+commit already supplies the control-plane tooling — which the resolver reads itself with
+`--base-ref` before accepting. Nothing untrusted enters the binding. An accepted move is recorded as a `merge-ref-moved` planner note in the receipt.
+Any other first parent, an unreadable base branch tip, or any head mismatch still fails closed with no
 merge/tree outputs, which the planner turns into a `planner-error` plan. Before this rule
 (CI-03 #2327) an ordinary base push produced a false red on a healthy PR; because an error plan pins
 its trust class to `T3` by construction, the gate's re-derivation also emitted a misleading
