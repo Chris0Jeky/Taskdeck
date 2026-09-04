@@ -701,6 +701,25 @@ describe('BoardView', () => {
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
   })
 
+  it('keeps a later mutation error visible beside a retryable board-load error', async () => {
+    mockBoardStore.fetchBoard.mockImplementationOnce(async () => {
+      mockBoardStore.error = 'Board refresh failed'
+      throw new Error('offline')
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board refresh failed')
+
+    mockBoardStore.error = 'Failed to create card'
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board refresh failed')
+    expect(wrapper.get('[data-testid="board-error"]').text()).toBe('Failed to create card')
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+  })
+
   it('does not let an old board Retry replace a newer route load error', async () => {
     const oldBoardRetry = createDeferred<boolean>()
     mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard

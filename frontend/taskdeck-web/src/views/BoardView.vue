@@ -100,6 +100,10 @@ const realtime = createBoardRealtimeController({
 const boardLoadErrorSummary = computed(() => routedBoard.value
   ? "We couldn't refresh this board. Your last loaded board is still shown."
   : "We couldn't load this board.")
+const boardMutationError = computed(() => {
+  const error = boardStore.error
+  return error && error !== boardLoadError.value ? error : null
+})
 
 function recordBoardLoadFailure(requestedBoardId: string, error: unknown) {
   if (viewUnmounted || boardId.value !== requestedBoardId) return
@@ -612,13 +616,13 @@ useKeyboardShortcuts([
 
     <!-- Other operation errors stay truthful and never imply that reloading is their recovery. -->
     <section
-      v-else-if="boardStore.error"
+      v-if="boardMutationError"
       class="max-w-7xl mx-auto px-4 py-8"
       role="alert"
       data-testid="board-error"
     >
       <div class="bg-error-container/20 border border-error/20 rounded-lg p-4 text-error">
-        {{ boardStore.error }}
+        {{ boardMutationError }}
       </div>
     </section>
 

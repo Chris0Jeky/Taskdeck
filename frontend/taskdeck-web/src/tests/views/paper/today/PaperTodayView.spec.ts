@@ -83,6 +83,9 @@ describe('PaperTodayView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    // `clearAllMocks` clears calls but not implementations, so a test that
+    // installs a resolving `getTomorrowNote` would leak into the next one.
+    vi.mocked(todayApi.getTomorrowNote).mockRejectedValue(new Error('stub'))
     localStorage.clear()
     mockSessionStore.userId = 'user-1'
     mockWorkspaceStore.todaySummary = null
@@ -220,6 +223,32 @@ describe('PaperTodayView', () => {
 
     expect(input.element.value).toBe('')
     expect(input.element.value).not.toBe('user-two note')
+  })
+
+  it('renders the inbound note separately from the editor, each under its own key (GH-1640)', async () => {
+    const today = formatLocalDossierDate(new Date())
+    const tomorrow = formatLocalDossierDate(new Date(Date.now() + 24 * 60 * 60 * 1000))
+    vi.mocked(todayApi.getTomorrowNote).mockImplementation(async (date: string) => {
+      if (date === today) return { id: 'in', date, text: 'Left for you yesterday', updatedAt: '', createdAt: '' }
+      if (date === tomorrow) return { id: 'out', date, text: 'Draft for tomorrow', updatedAt: '', createdAt: '' }
+      return null
+    })
+
+    const wrapper = mount(PaperTodayView)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="line-from-yesterday"]').text()).toContain('Left for you yesterday')
+    const input = wrapper.find<HTMLTextAreaElement>('[data-testid="line-for-tomorrow-input"]')
+    expect(input.element.value).toBe('Draft for tomorrow')
+  })
+
+  it('omits the inbound note block when there is no note for today', async () => {
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+
+    const wrapper = mount(PaperTodayView)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="line-from-yesterday"]').exists()).toBe(false)
   })
 
   it('does not advertise unimplemented global shortcuts in the footer', () => {
@@ -566,12 +595,13 @@ describe('PaperTodayView', () => {
     wrapper.unmount()
   })
 
-  it('describes the note lifecycle as same-day, matching what the API does', () => {
+  it('describes the note lifecycle as a tomorrow hand-off, matching what the save now does (GH-1640)', () => {
     const wrapper = mount(PaperTodayView)
 
     expect(wrapper.get('[data-testid="line-for-tomorrow-lifecycle"]').text())
-      .toBe('saved with today’s date')
-    expect(wrapper.text()).not.toContain('tomorrow-self')
+      .toBe('saved for tomorrow')
+    // The copy may promise the hand-off again only because the save is shifted by
+    // a day; it must still never promise a briefing that does not exist.
     expect(wrapper.text()).not.toContain('morning briefing')
   })
 })

@@ -53,10 +53,11 @@ export default {
     toastFailed: 'Failed to seal the day. Please try again.',
   },
   note: {
+    inboundLabel: 'Your line from yesterday',
     action: 'Write a note',
     hint: 'Goes to your line for tomorrow, below.',
-    sectionSub: 'Saved with today’s date · you see it when you reopen Today',
-    meta: 'saved with today’s date',
+    sectionSub: 'Saved for tomorrow · your tomorrow-self sees it at first open',
+    meta: 'saved for tomorrow',
     metaFailed: 'save not confirmed · edit again to retry',
   },
   loading: {

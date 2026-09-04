@@ -191,6 +191,23 @@ public record CreateProposalDto(
     /// </summary>
     [JsonIgnore]
     public TrustedProposalConfidenceInput? TrustedConfidence { get; init; }
+
+    /// <summary>
+    /// Trusted application-side producer name recorded with the proposal's provenance (#1987).
+    /// Excluded from the HTTP contract for the same reason as <see cref="TrustedConfidence"/>: a
+    /// caller must not be able to label its own proposal as produced by a provider. Only capture
+    /// triage sets it, from the provider it actually dispatched to (or the deterministic
+    /// extractor it fell back to).
+    /// </summary>
+    [JsonIgnore]
+    public string? ProvenanceProvider { get; init; }
+
+    /// <summary>
+    /// Trusted application-side prompt contract version recorded with the proposal's provenance
+    /// (#1987). Excluded from the HTTP contract; see <see cref="ProvenanceProvider"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string? ProvenancePromptVersion { get; init; }
 }
 
 public record CreateProposalOperationDto(

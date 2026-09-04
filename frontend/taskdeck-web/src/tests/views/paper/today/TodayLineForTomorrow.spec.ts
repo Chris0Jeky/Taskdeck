@@ -274,7 +274,7 @@ describe('TodayLineForTomorrow', () => {
     expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Save unavailable')
     const failed = wrapper.find('[data-testid="line-for-tomorrow-lifecycle"]').text()
     expect(failed).toContain('save not confirmed')
-    expect(failed).not.toContain('saved with today’s date')
+    expect(failed).not.toContain('saved for tomorrow')
 
     // And it comes back when a later save succeeds — the line tracks state, it
     // is not a one-way switch to the failure wording.
@@ -284,7 +284,7 @@ describe('TodayLineForTomorrow', () => {
 
     expect(wrapper.find('[data-testid="line-for-tomorrow-status"]').text()).toContain('Saved')
     expect(wrapper.find('[data-testid="line-for-tomorrow-lifecycle"]').text())
-      .toBe('saved with today’s date')
+      .toBe('saved for tomorrow')
   })
 
   it('passes the edit-time save date even if prop changes before debounce flushes', async () => {

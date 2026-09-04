@@ -29,6 +29,19 @@ public class ProposalProvenance : Entity
     /// </summary>
     public int TotalTokens { get; private set; }
 
+    /// <summary>
+    /// Identifier of the provider that produced the proposal (e.g., "openai", "deterministic").
+    /// Null when nothing was recorded — the surface must then make no producer claim rather than
+    /// guess one. Server-stamped at creation; never accepted from a client.
+    /// </summary>
+    public string? Provider { get; private set; }
+
+    /// <summary>
+    /// Version of the prompt contract that produced the proposal (e.g., "llm-triage.v2").
+    /// Null when nothing was recorded. Server-stamped at creation; never accepted from a client.
+    /// </summary>
+    public string? PromptVersion { get; private set; }
+
     private readonly List<ProvenanceField> _fields = new();
     public IReadOnlyList<ProvenanceField> Fields => _fields.AsReadOnly();
 
@@ -38,7 +51,9 @@ public class ProposalProvenance : Entity
         Guid proposalId,
         string correlationId,
         string modelId,
-        int totalTokens = 0)
+        int totalTokens = 0,
+        string? provider = null,
+        string? promptVersion = null)
     {
         if (proposalId == Guid.Empty)
             throw new DomainException(ErrorCodes.ValidationError, "ProposalId cannot be empty");
@@ -52,12 +67,29 @@ public class ProposalProvenance : Entity
             throw new DomainException(ErrorCodes.ValidationError, "ModelId cannot exceed 100 characters");
         if (totalTokens < 0)
             throw new DomainException(ErrorCodes.ValidationError, "TotalTokens cannot be negative");
+        if (provider is not null && provider.Length > MaxProviderLength)
+            throw new DomainException(ErrorCodes.ValidationError, $"Provider cannot exceed {MaxProviderLength} characters");
+        if (promptVersion is not null && promptVersion.Length > MaxPromptVersionLength)
+            throw new DomainException(ErrorCodes.ValidationError, $"PromptVersion cannot exceed {MaxPromptVersionLength} characters");
 
         ProposalId = proposalId;
         CorrelationId = correlationId;
         ModelId = modelId;
         TotalTokens = totalTokens;
+        // Blank is indistinguishable from "not recorded" on a trust surface, so it normalizes to
+        // null rather than becoming an empty producer claim.
+        Provider = NormalizeOptional(provider);
+        PromptVersion = NormalizeOptional(promptVersion);
     }
+
+    /// <summary>Maximum stored length of <see cref="Provider"/>.</summary>
+    public const int MaxProviderLength = 64;
+
+    /// <summary>Maximum stored length of <see cref="PromptVersion"/>.</summary>
+    public const int MaxPromptVersionLength = 64;
+
+    private static string? NormalizeOptional(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public void AddField(ProvenanceField field)
     {

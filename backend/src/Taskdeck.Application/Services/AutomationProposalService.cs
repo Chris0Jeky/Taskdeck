@@ -163,7 +163,11 @@ public class AutomationProposalService : IAutomationProposalService
             proposal.Id,
             proposal.CorrelationId,
             ResolveProvenanceModelId(dto),
-            Math.Max(0, dto.ProvenanceTotalTokens));
+            Math.Max(0, dto.ProvenanceTotalTokens),
+            // Server-stamped from trusted, JSON-ignored inputs only. Absent for origins that
+            // recorded no producer, which the review surface renders as no claim at all (#1987).
+            TruncateOptionalProvenance(dto.ProvenanceProvider, ProposalProvenance.MaxProviderLength),
+            TruncateOptionalProvenance(dto.ProvenancePromptVersion, ProposalProvenance.MaxPromptVersionLength));
 
         provenance.AddField(new ProvenanceField(
             "Summary",
@@ -323,6 +327,20 @@ public class AutomationProposalService : IAutomationProposalService
     private static string TruncateProvenanceModelId(string modelId)
     {
         return modelId.Length <= 100 ? modelId : modelId[..100];
+    }
+
+    /// <summary>
+    /// Normalizes an optional provenance value to null-or-bounded. Blank stays null so an empty
+    /// producer claim can never be stored, and an over-long value is truncated rather than
+    /// failing a proposal that is otherwise valid.
+    /// </summary>
+    private static string? TruncateOptionalProvenance(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength];
     }
 
     public async Task<Result<ProposalDto>> GetProposalByIdAsync(Guid id, CancellationToken cancellationToken = default)

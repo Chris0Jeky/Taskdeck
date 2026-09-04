@@ -131,6 +131,26 @@ describe('PaperCaptureComposer', () => {
     expect(submitted.labels).toEqual(['motion', 'qa'])
   })
 
+  it('preserves commas in a label until Enter commits the exact name', async () => {
+    const wrapper = mount(PaperCaptureComposer)
+    const labelInput = wrapper.find('input[type="text"]')
+    await labelInput.setValue('Sales, EMEA')
+    await labelInput.trigger('keydown', { key: ',' })
+
+    expect((labelInput.element as HTMLInputElement).value).toBe('Sales, EMEA')
+    expect(wrapper.findAll('.paper-composer__labels li')).toHaveLength(0)
+
+    await labelInput.trigger('keydown', { key: 'Enter' })
+    expect((labelInput.element as HTMLInputElement).value).toBe('')
+    expect(wrapper.find('.paper-composer__labels').text()).toContain('Sales, EMEA')
+
+    await wrapper.find('textarea').setValue('Keep this label lossless')
+    await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+    const submitted = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+    expect(submitted.labels).toEqual(['Sales, EMEA'])
+  })
+
   it('does not add labels on Enter while IME composition is active', async () => {
     const wrapper = mount(PaperCaptureComposer)
     const labelInput = wrapper.find('input[type="text"]')
