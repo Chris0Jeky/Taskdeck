@@ -53,14 +53,28 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
 - The standalone `Taskdeck.Cli` entry point wraps its whole run in an unknown-exception boundary
   (`CliUnexpectedFailure`): an unexpected exception prints only the stable generic failure message
   and exits with the normal failure code, instead of letting the runtime print raw exception text
-  and a stack trace. The CLI has **no always-on diagnostic sink** (it clears all logging providers
-  to keep stdout clean JSON), so the full exception is retained only when the harness startup trace
-  is enabled for the run (`TASKDECK_CLI_TEST_TRACE_CORRELATION`): then it is written once to a
-  companion `startup-<correlation>.failure` file, created owner-read/write only on POSIX, and the
-  bounded correlation reference is shown alongside the generic line. In an ordinary operator run no
-  trace exists, so the CLI prints the generic line plus an explicit
-  "diagnostics were not captured" notice and the exception is not retained anywhere. Adding an
-  always-on local diagnostic sink is tracked in #2468.
+  and a stack trace. The CLI clears all logging providers to keep stdout clean JSON, so retention
+  is handled by two sinks, both bounded and both fail-open:
+  - The harness startup trace, enabled only when `TASKDECK_CLI_TEST_TRACE_CORRELATION` is set for
+    the run. It writes the full exception once to a companion `startup-<correlation>.failure` file,
+    created owner-read/write only on POSIX.
+  - The **always-on** local diagnostic sink (`CliFailureSink`, #2468), used on every run including
+    an ordinary operator run. It writes exactly one record file
+    `<data directory>/diagnostics/cli-failure-<yyyyMMddTHHmmssZ>-<reference>.txt`, where the data
+    directory is the directory of the resolved SQLite data source (the same resolution the CLI
+    first-run bootstrap uses, falling back to the working directory for a non-file data source).
+    The record holds the UTC timestamp, the reference, the CLI version, the process arguments
+    passed through `SensitiveDataRedactor.Redact`, and `SensitiveDataRedactor.SummarizeException`
+    output — never a raw stack trace and never a raw `Exception.Message`. Bounds: at most 8 KB per
+    record (truncated with an explicit marker) and at most 20 records, oldest evicted first by the
+    timestamp-sorted name. The file is created with `FileMode.CreateNew`, so a stale file or a
+    planted symlink at the target path makes the write fail rather than being appended to or
+    followed, and on POSIX it is created 0600 at creation time (no world-readable window).
+  The reference the CLI prints alongside the generic line is the trace correlation when a trace is
+  enabled and a freshly generated 12-hex-character reference otherwise. It is shown only when a
+  sink actually kept the record; when every sink fails (unwritable directory, full disk, a file
+  already at the target path, permission error) the CLI prints the generic line plus the explicit
+  "diagnostics were not captured" notice, still with no exception text and an unchanged exit code.
 - Deliberate CLI messages are unchanged by that boundary: `DomainException` and failed-`Result`
   messages, usage/validation and parse errors, the recovery and connector-verification commands'
   own stable codes, `PreMigrationBackupException` (its fail-closed text is deliberately actionable
