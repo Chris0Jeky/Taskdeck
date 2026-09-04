@@ -9,12 +9,12 @@ billing, visibility and runner-registration actions.
 
 ## A. Decisions (maintainer)
 
-- [ ] Confirm the GitHub plan is Pro and record the allowance in force (3,000 minutes/month, 1 GB storage as of 2026-08-30).
-- [ ] Set a monthly Actions **spend ceiling** and an alert threshold (Billing → Spending limits). *Ruled 2026-09-03 (SC-3): a **$10/month hard ceiling**; the setting itself is still to be applied by the maintainer.*
+- [x] Confirm the GitHub plan is Pro and record the allowance in force (3,000 minutes/month, 1 GB storage as of 2026-08-30). *Confirmed by the maintainer 2026-09-03 (SC-3 re-ruling): the account is GitHub Pro and the included 3,000 minutes/month are the CI budget.*
+- [ ] Verify at step J.7 that the Actions spending limit (Billing → Spending limits) reads **$0** and record it on `#2337`. *This box replaced "set a spend ceiling and alert" on 2026-09-03 when SC-3 was re-ruled (superseding the $10/month packet value): **deferred — no paid overage, no alert threshold.** Hosted Actions spend only the included 3,000 minutes/month and only on **Linux** jobs; Windows (x2) and any macOS (x10) legs run locally (the laptop runner via CI-04, or agent-run proving checks) or carry a local fallback, never hosted overage. GitHub's default $0 spending limit is the effective hard ceiling, which is what the J.7 read-back confirms.*
 - [ ] Verify how the Codex GitHub App and Copilot code review are billed on a private repository (Copilot review consumes Actions minutes; do not assume the public-repo model); set the review cadence to after-CI-stabilises.
 - [ ] Ownership: stay personal (ADR-0066 ruling 1) — the organization boundary is CI-14 with its triggers. *Confirmed 2026-09-03 with the private-Pro approval-boundary amendment (ADR-0066).*
 - [ ] Initial execution mode: `hosted` (ruling 4); `hybrid` only after CI-04 is registered and proven.
-- [ ] Laptop as a real Windows runner, or hosted Windows as the initial fallback.
+- [x] Laptop as a real Windows runner, or hosted Windows as the initial fallback. *Ruled 2026-09-03 (SC-3 re-ruling): the laptop is the Windows runner and the fallback is local execution, not hosted Windows. Hosted Windows legs run only while the repository is still public and free; from the visibility change onward Windows evidence is local only — the laptop runner once CI-04 `#2328` registers it (SC-7), agent-run proving checks on this box until then. CI-07 `#2331` sizes the Windows contract for local execution, not for a hosted allowance.*
 - [ ] Release/signing boundary stays `#2149`'s protected context, separate from ordinary CI.
 - [ ] Public documentation/demo/site: GitHub Pages (`pages-frontend.yml`) keeps publishing from a private repo on Pro and the site stays public — keep, move, or retire; the launch-kit links (`#2242`) and any `awesome-selfhosted` reference get the same decision. *Ruled 2026-09-03 (SC-8): **private development repository + public release/source mirror** — Pages keeps publishing; Releases, checksums/provenance and the GPL source publish through the mirror (CI-16 `#2439`); launch-kit and `awesome-selfhosted` wording point at the mirror.*
 
@@ -62,7 +62,7 @@ billing, visibility and runner-registration actions.
 - [ ] CI-control changes run hosted-only (fixture).
 - [ ] **Maintainer:** flip `sha_pinning_required` on after the migration.
 
-## H. Nightly and release (CI-10 `#2334`)
+## H. Nightly and release (CI-10 `#2334` — v0.3 since 2026-09-03: Q1 on `#2337` ruled **A**, the whole section is a cutover prerequisite and `#2334` moved from v0.4)
 
 - [ ] One coordinator owns nightly/quality; a no-change night exits through the honest green receipt; the weekly full sweep exists.
 - [ ] Mutation remains manual (ADR-0052).
@@ -80,7 +80,7 @@ billing, visibility and runner-registration actions.
 4. Verify public assets that must remain public have a separate home (A).
 5. **Change repository visibility to private.**
 6. Re-check Actions permissions, fork-PR approval policy, Dependabot, Pages/package/release visibility, runner association, collaborator list.
-7. Run R0, R2, R4, a merge (main verifier), a nightly dispatch, and a no-publish release rehearsal in private mode; verify hosted-minute accounting against the ceiling.
+7. Run R0, R2, R4, a merge (main verifier), a nightly dispatch, and a no-publish release rehearsal in private mode; verify hosted-minute accounting against the 3,000-minute Linux-only allowance; read Billing → Spending limits back, confirm it shows **$0**, and record it on `#2337` (SC-3, checklist A).
 8. Register the isolated runners (F); set `CI_EXECUTION_MODE=hybrid`; verify self-hosted jobs consume no hosted minutes and expose no secrets.
 9. Resume merges; record post-cutover evidence on CI-00 `#2324`.
 
