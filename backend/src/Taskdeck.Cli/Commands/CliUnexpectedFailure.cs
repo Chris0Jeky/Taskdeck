@@ -12,8 +12,10 @@ namespace Taskdeck.Cli.Commands;
 /// operator's own local paths -- keep their own messages. Everything else is an unknown
 /// exception: its raw message, stack trace, file paths, SQL/constraint text, provider URLs
 /// and tokens must never reach stdout or stderr. This boundary prints one stable generic
-/// line instead, plus the bounded startup-trace correlation reference when the run has one,
-/// and keeps the full exception exactly once in the protected trace sink.
+/// line instead, plus a bounded correlation reference: the startup-trace correlation when the
+/// harness trace is enabled (that sink keeps the full exception exactly once), otherwise a
+/// generated reference that names the redacted record the always-on <see cref="CliFailureSink"/>
+/// writes under the data directory.
 /// </summary>
 internal static class CliUnexpectedFailure
 {
@@ -31,8 +33,8 @@ internal static class CliUnexpectedFailure
     /// knows diagnostics were absent rather than suppressed. Contains no exception detail.
     /// </summary>
     internal const string DiagnosticsUnavailableNotice =
-        "Full failure diagnostics were not captured: the CLI has no local diagnostic sink, and the " +
-        "startup trace is not enabled for this run.";
+        "Full failure diagnostics were not captured: the local diagnostic sink could not write its " +
+        "record under the data directory, and the startup trace is not enabled for this run.";
 
     /// <summary>
     /// Stable code for the fail-closed pre-migration snapshot failure (#1803), whose message is
