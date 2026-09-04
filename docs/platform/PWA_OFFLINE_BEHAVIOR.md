@@ -14,26 +14,21 @@ All app shell assets (JS, CSS, HTML, icons, fonts) are precached on first load. 
 
 | Resource | Strategy | TTL | Notes |
 |----------|----------|-----|-------|
-| API responses (`/api/*`) | Network only | N/A | Not stored by the service worker: no runtime route matches a path starting with `/api`, and `ApiCacheControlMiddleware` stamps `no-store, private` on every `/api` response so the browser cache does not hold it either. See the boundary caveat below - this is not unconditional for an API base nested under `/assets/` or `/icons/` |
+| API responses (default `/api/*` or the configured API base) | Network only | N/A | Not stored by the service worker: runtime routes reject both the default and configured API paths, and `ApiCacheControlMiddleware` stamps `no-store, private` on every `/api` response so the browser cache does not hold it either. |
 | Lazy `it`/`es` locale chunks | StaleWhileRevalidate | Content-versioned | Cached after first use so the selected language remains available offline |
 | Static assets under `/assets/` and `/icons/` | CacheFirst | 30 days | Served from cache after a miss; there is no Google Fonts runtime route |
 
 The static-asset route is anchored on the directories the build emits, not on the file extension.
-The API base is a deployment choice - `VITE_API_BASE_URL` may be prefixed, such as `/taskdeck/api` -
-so denying `/api` alone would not stop an authenticated `GET /taskdeck/api/users/by-username/alice.png`
-from being stored in the shared, cross-identity static cache. Anchoring on the emitted directories
-closes that case: an unrecognised layout loses runtime caching for a static asset.
+The API base is a deployment choice: `VITE_API_BASE_URL` may be prefixed, such as `/taskdeck/api`,
+or nested under an emitted directory, such as `/assets/api`. The build normalizes that configured
+path and serializes both it and the default `/api` boundary into each runtime matcher. A malformed
+or ambiguous configured base produces a match-nothing predicate, so runtime caching fails closed.
 
-**The boundary is directory-anchored, not absolute, and it is not origin-anchored.** Two limits are
-load-bearing and were previously overstated here:
-
-- The deny test matches only a path *starting* with `/api`, while the admit test accepts `/assets/` or
-  `/icons/` followed by any nested path ending in a media or font extension. An API base nested under
-  either directory is therefore still admitted: `/assets/api/users/by-username/alice.png` is cached.
-  Do not deploy an API base under `/assets/` or `/icons/`. Tracked as `#2411`.
-- The predicates test `url.pathname` only, and `cacheableResponse` is `{ statuses: [0, 200] }`, so an
-  opaque third-party response under a matching path is admitted too. Nothing identity-bound leaks, but
-  `taskdeck-static-assets` is not first-party-only.
+**The boundary is configuration-aware but not origin-anchored.** The generated regular expressions
+match the complete request URL but deliberately allow any HTTP or HTTPS authority. Together with
+`cacheableResponse` statuses `[0, 200]`, this means an opaque third-party response under a matching
+static path can still be admitted. Nothing identity-bound leaks because both API path boundaries are
+excluded, but `taskdeck-static-assets` is not first-party-only.
 
 ### Retiring the pre-#2350 worker
 
@@ -43,8 +38,10 @@ worker wait indefinitely - the update banner is never shown on the public login 
 dismiss it - so the migration is not left to the update UI.
 
 Before any session is established, the page asks the controlling worker for the retirement policy over
-a `MessageChannel` (`src/pwa/legacyApiCacheWorker.ts`). A pre-#2350 worker has no listener, so silence
-identifies it. The page then calls `registration.update()` and follows the replacement through
+a `MessageChannel` (`src/pwa/legacyApiCacheWorker.ts`). A pre-#2350 worker has no listener, while the
+#2350 worker reports an older policy marker whose static-asset rule is not configuration-aware. The page
+accepts only the current versioned marker, so either installed predecessor causes
+`registration.update()`. It then follows the replacement through
 `updatefound` and `statechange` until it reaches `installed`, at which point it is messaged to skip
 waiting. Following it matters: `registration.update()` resolves inside Install, *before* the install
 event's lifetime promises settle, so `registration.waiting` is normally still null when it returns and
@@ -67,9 +64,40 @@ stays refused until reload - and a *missing* registration is not treated as succ
 non-answering controller is still intercepting, because `unregister()` never releases a page the
 worker already controls.
 
-Activation also evicts any entry in `taskdeck-static-assets` that the current route would refuse.
-The pre-#2350 extension-only matcher could have stored an authenticated response there under a
-prefixed API base, where it would otherwise survive an account switch for 30 days.
+The migration invalidates the whole `taskdeck-static-assets` runtime cache rather than trying to
+reconstruct the build-time API base inside the public worker script. The old extension-only matcher
+could have stored an authenticated response there under a prefixed API base, where it would otherwise
+survive an account switch for 30 days. Normal assets are cached again on their next successful
+request; the share-target queue is preserved.
+
+The sweep runs when `public/api-cache-cleanup.js` is **evaluated**, not only from its `activate`
+listener. `vite-plugin-pwa`'s generated worker loads that file with `importScripts()` from inside an
+asynchronous AMD `define()` factory, which runs in a promise continuation rather than during the
+worker's synchronous initial evaluation - so by the time the `activate` listener is attached the
+event has already been dispatched and never fires it. Measured in Chromium, a seeded
+`taskdeck-static-assets` entry survived the entire old-worker-to-v2 migration while that same file's
+`message` listener answered the policy handshake normally. A `taskdeck-pwa-cache-policy-v2` marker
+cache, written only after the sweep completes, keeps that evaluation-time pass a one-time migration
+instead of a purge on every worker restart, and a failed sweep is not memoised, so a later restart
+retries it.
+
+The `activate` listener is still registered, and it always re-sweeps **unconditionally** - it does
+not reuse the memoised evaluation-time promise and does not short-circuit on the marker cache. That
+matters because the evaluation-time sweep runs during *install*, while the old vulnerable worker is
+still the controller and can still store an identity-bound response in `taskdeck-static-assets`.
+Reusing the completed sweep would let anything cached in that install-to-activation window survive
+the migration, which is exactly the threat model. The forced sweep still fails activation on error,
+so a worker cannot control the page and report the current policy marker from a partially cleaned
+state, and it still leaves the share-target queue and the Workbox precache untouched.
+
+`tests/pwa-generated-worker.spec.ts` pins this against the real emitted `dist/api-cache-cleanup.js`
+using the cache names parsed out of the generated `dist/sw.js`. One case deliberately never
+dispatches an `activate` event, so a build that retires the caches only from that listener fails it;
+another re-seeds the static cache after the evaluation-time sweep has written the marker and then
+dispatches `activate`, so a build whose activation reuses that completed sweep fails too. A third
+asserts the marker cache name carries the same version suffix as the policy handshake constant in
+`src/pwa/legacyApiCacheWorker.ts`, so a future bump cannot silently leave the migration keyed on the
+old version.
 
 Normal (non-security) updates still go through the `SwUpdatePrompt` banner: only this migration sends
 skip-waiting.

@@ -241,10 +241,18 @@ public sealed class OutboundWebhookDeliveryWorker : BackgroundService
 
                 if (delivery.Status == WebhookDeliveryStatus.Processing)
                 {
+                    // Unknown exceptions never contribute text to the persisted failure message:
+                    // pattern redaction leaves unmatched paths, SQL constraints and provider
+                    // internals verbatim, so a stable generalized constant is persisted instead and
+                    // the original exception is logged exactly once against the delivery id.
+                    _logger.LogError(
+                        "Webhook delivery threw {ExceptionType} while Processing. DeliveryId={DeliveryId}. {ExceptionSummary}",
+                        ex.GetType().Name,
+                        candidate.DeliveryId,
+                        SensitiveDataRedactor.SummarizeException(ex));
                     outcome = MarkFailure(
                         delivery,
-                        SensitiveDataRedactor.Redact(
-                            $"Webhook delivery threw {ex.GetType().Name}: {ex.Message}"));
+                        SensitiveDataRedactor.GenericUnexpectedFailureMessage);
                     await unitOfWork.SaveChangesAsync(CancellationToken.None);
                 }
                 else

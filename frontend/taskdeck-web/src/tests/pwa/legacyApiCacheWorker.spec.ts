@@ -7,7 +7,7 @@ import {
 } from '../../pwa/legacyApiCacheWorker'
 
 /** Minimal ServiceWorker stand-in: answers the policy handshake, or stays silent. */
-function worker(options: { retired: boolean; state?: string }) {
+function worker(options: { retired: boolean; state?: string; policy?: string }) {
   const listeners = new Map<string, Set<() => void>>()
   return {
     state: options.state ?? 'activated',
@@ -15,7 +15,7 @@ function worker(options: { retired: boolean; state?: string }) {
     postMessage(message: unknown, transfer?: MessagePort[]) {
       this.posted.push(message)
       if (!options.retired || !transfer) return
-      transfer[0].postMessage({ policy: API_CACHE_POLICY_RETIRED })
+      transfer[0].postMessage({ policy: options.policy ?? API_CACHE_POLICY_RETIRED })
     },
     addEventListener(type: string, listener: () => void) {
       const bucket = listeners.get(type) ?? new Set()
@@ -108,6 +108,27 @@ describe('legacy API cache worker retirement', () => {
 
     await expect((await load())()).resolves.toBe(true)
     expect(controller.posted).toEqual([{ type: API_CACHE_POLICY_QUERY }])
+  })
+
+  it('does not accept the #2350 acknowledgement as the current retirement policy', async () => {
+    const legacy = worker({ retired: true, policy: 'legacy-api-cache-retired' })
+    const replacement = worker({ retired: true, state: 'installed' })
+    const registered = registration({ waiting: replacement })
+    const state: { controller: unknown; registration: unknown } = {
+      controller: legacy,
+      registration: registered,
+    }
+    const container = installServiceWorkerContainer(state)
+
+    const retire = (await load())()
+    await silence()
+    expect(replacement.posted).toContainEqual({ type: API_CACHE_SKIP_WAITING })
+    expect(registered.update).toHaveBeenCalled()
+
+    state.controller = replacement
+    container.emit('controllerchange')
+
+    await expect(retire).resolves.toBe(true)
   })
 
   it('sends skip-waiting to a replacement that only reaches "installed" after update() resolves', async () => {
@@ -273,8 +294,14 @@ describe('service worker handshake contract', () => {
     return { self, caches, listeners }
   }
 
-  it('answers the policy query and the forced-activation message', () => {
+  it('answers the v2 policy query after activation and across a worker restart', async () => {
     const { self, listeners } = loadWorker()
+
+    let activation: Promise<unknown> | undefined
+    ;(listeners.get('activate') as (event: { waitUntil: (p: Promise<unknown>) => void }) => void)(
+      { waitUntil: (promise) => { activation = promise } },
+    )
+    await activation
 
     const replies: unknown[] = []
     listeners.get('message')!({
@@ -282,6 +309,14 @@ describe('service worker handshake contract', () => {
       ports: [{ postMessage: (value: unknown) => replies.push(value) }],
     })
     expect(replies).toEqual([{ policy: API_CACHE_POLICY_RETIRED }])
+
+    const restarted = loadWorker()
+    const restartedReplies: unknown[] = []
+    restarted.listeners.get('message')!({
+      data: { type: API_CACHE_POLICY_QUERY },
+      ports: [{ postMessage: (value: unknown) => restartedReplies.push(value) }],
+    })
+    expect(restartedReplies).toEqual([{ policy: API_CACHE_POLICY_RETIRED }])
 
     listeners.get('message')!({ data: { type: API_CACHE_SKIP_WAITING }, ports: [] })
     expect(self.skipWaiting).toHaveBeenCalledTimes(1)
@@ -303,25 +338,21 @@ describe('service worker handshake contract', () => {
     expect(self.clients.claim).toHaveBeenCalledTimes(1)
   })
 
-  it('evicts static-cache entries the pre-#2350 extension-only matcher admitted', async () => {
+  it('invalidates the whole static cache so configured API entries cannot survive activation', async () => {
     // An authenticated response stored under a prefixed API base survives an account
-    // switch for 30 days otherwise. The current route cannot serve it, but it is still
-    // user A's data sitting in user B's browser.
-    const deleted: string[] = []
-    const cache = {
-      keys: vi.fn(async () => [
-        { url: 'https://taskdeck.example/taskdeck/api/users/by-username/alice.png' },
-        { url: 'https://taskdeck.example/assets/avatar-a1b2.png' },
-        { url: 'https://taskdeck.example/icons/icon-192x192.png' },
-      ]),
-      delete: vi.fn(async (request: { url: string }) => {
-        deleted.push(request.url)
-        return true
-      }),
-    }
+    // switch otherwise, including when its URL has an ordinary asset extension.
+    const staleEntries = [
+      'https://taskdeck.example/assets/api/users/by-username/alice.png',
+      'https://taskdeck.example/icons/api/users/by-username/alice.svg',
+      'https://taskdeck.example/assets/avatar-a1b2.png',
+    ]
+    let staticCachePresent = staleEntries.length > 0
     const { listeners, caches } = loadWorker()
-    caches.has.mockResolvedValue(true)
-    caches.open.mockResolvedValue(cache)
+    caches.keys.mockResolvedValue(['taskdeck-static-assets', 'taskdeck-share-target'])
+    caches.delete.mockImplementation(async () => {
+      staticCachePresent = false
+      return true
+    })
 
     let activation: Promise<unknown> | undefined
     ;(listeners.get('activate') as (event: { waitUntil: (p: Promise<unknown>) => void }) => void)({
@@ -329,6 +360,28 @@ describe('service worker handshake contract', () => {
     })
     await activation
 
-    expect(deleted).toEqual(['https://taskdeck.example/taskdeck/api/users/by-username/alice.png'])
+    expect(caches.delete).toHaveBeenCalledWith('taskdeck-static-assets')
+    expect(caches.delete).not.toHaveBeenCalledWith('taskdeck-share-target')
+    // The only cache this migration creates is its own completion marker; it never
+    // re-opens (and so never resurrects) a namespace it just retired.
+    // The only cache this migration creates is its own completion marker; it never
+    // re-opens (and so never resurrects) a namespace it just retired. It is written
+    // once per sweep, and there are two sweeps: evaluation-time and activation.
+    expect(new Set(caches.open.mock.calls.map((call: unknown[]) => call[0])))
+      .toEqual(new Set(['taskdeck-pwa-cache-policy-v2']))
+    expect(staticCachePresent).toBe(false)
+  })
+
+  it('fails activation when cache cleanup fails', async () => {
+    const { listeners, caches } = loadWorker()
+    caches.delete.mockRejectedValue(new Error('storage unavailable'))
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    let activation: Promise<unknown> | undefined
+    ;(listeners.get('activate') as (event: { waitUntil: (p: Promise<unknown>) => void }) => void)({
+      waitUntil: (promise) => { activation = promise },
+    })
+    await expect(activation).rejects.toThrow('storage unavailable')
+    warning.mockRestore()
   })
 })

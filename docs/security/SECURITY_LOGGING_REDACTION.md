@@ -50,7 +50,31 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   write authorization, proposal creation, capture creation, and the column append-position and
   operation-contract validators. Invalid input strings, `Not authorized ...` literals, and known
   domain messages stay specific; arbitrary thrown exceptions remain a separate contract.
+- The standalone `Taskdeck.Cli` entry point wraps its whole run in an unknown-exception boundary
+  (`CliUnexpectedFailure`): an unexpected exception prints only the stable generic failure message
+  and exits with the normal failure code, instead of letting the runtime print raw exception text
+  and a stack trace. The CLI has **no always-on diagnostic sink** (it clears all logging providers
+  to keep stdout clean JSON), so the full exception is retained only when the harness startup trace
+  is enabled for the run (`TASKDECK_CLI_TEST_TRACE_CORRELATION`): then it is written once to a
+  companion `startup-<correlation>.failure` file, created owner-read/write only on POSIX, and the
+  bounded correlation reference is shown alongside the generic line. In an ordinary operator run no
+  trace exists, so the CLI prints the generic line plus an explicit
+  "diagnostics were not captured" notice and the exception is not retained anywhere. Adding an
+  always-on local diagnostic sink is tracked in #2468.
+- Deliberate CLI messages are unchanged by that boundary: `DomainException` and failed-`Result`
+  messages, usage/validation and parse errors, the recovery and connector-verification commands'
+  own stable codes, `PreMigrationBackupException` (its fail-closed text is deliberately actionable
+  for a local-first operator, and is printed redacted with no stack trace), and the first-run
+  bootstrapper's operator guidance about the operator's own local paths.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
+- `UnknownExceptionBoundaryProofTests` pins the correlated unknown-exception boundary end to end:
+  a synthetic failure carrying a secret-like token, a Windows path, a SQLite constraint string, and a
+  provider URL leaves no marker in the HTTP response or in any captured log entry, on both the
+  unhandled path and the `UnexpectedError` `Result` mapper path; the response echoes the request
+  `X-Request-Id`; and the failure produces exactly one correlated error log entry rather than one
+  per layer. Deliberate validation, not-found, and conflict `Result` messages stay unchanged and
+  are not logged as errors; those messages contain no redactable pattern, so that leg pins mapper
+  pass-through rather than redaction behavior.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for
   `Microsoft.AspNetCore.Hosting.Diagnostics`. Its Information-level request start/finish events
@@ -58,6 +82,16 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   setting to reach this exact category would expose SignalR bearer tokens. The post-configuration
   guard also covers provider-specific rules and configuration reloads. Other ASP.NET Core
   categories retain their configured levels, and stricter thresholds remain effective.
+- Outbound webhook delivery persists only the stable generic failure message in
+  `OutboundWebhookDelivery.LastErrorMessage` when an unknown exception is thrown while the delivery
+  is in `Processing`; pattern redaction alone left unmatched paths, SQL constraint text and provider
+  internals verbatim. The original exception is logged once as a redacted summary with the delivery
+  ID, and deliberate failures (endpoint HTTP status, invalid URI, scheme and host policy, shutdown
+  requeue) keep their existing stable messages and retry/dead-letter transitions.
+- MCP proposal tools route every failed `Result` through
+  `SensitiveDataRedactor.SanitizeLlmFailureMessage`, matching the read and write tool helpers, so
+  known domain messages are pattern-redacted rather than returned verbatim while `UnexpectedError`
+  still becomes the stable generic failure message.
 
 ## Operator Guidance
 
@@ -72,6 +106,12 @@ Focused redaction checks:
 ```powershell
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~SensitiveDataRedactorTests|FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~CaptureRequestContractTests|FullyQualifiedName~CaptureServiceTests|FullyQualifiedName~OpsCliServiceTests|FullyQualifiedName~AgentRuntimeTests"
 $env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~LoggingProviderConfigurationTests|FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests|FullyQualifiedName~ProposalToolsErrorSafetyTests|FullyQualifiedName~ProposalResourcesErrorSafetyTests|FullyQualifiedName~ReadToolsErrorSafetyTests"
+```
+
+Focused unknown-exception boundary proof:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~UnknownExceptionBoundaryProofTests"
 ```
 
 Unknown-exception boundary guard (also runs in the CI `docs-governance` job). The reviewed surface
