@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, useAttrs, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperConfidenceDial from '../../../components/paper/PaperConfidenceDial.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
@@ -99,6 +99,27 @@ const props = withDefaults(
 )
 
 const { t } = useI18n()
+
+/**
+ * The Review view describes this column with the ids of the notes it renders
+ * above it: the post-revision refresh lock, and the evidence-unavailable note.
+ * That `aria-describedby` lands on this wrapper, which is not focusable, so a
+ * reviewer inspecting a disabled decision button never reached it (#2461).
+ *
+ * The wrapper keeps the attribute — those notes describe the whole column — and
+ * the same ids are handed to the rail so the disabled controls carry them too.
+ * Read through a function rather than a `computed`: fallthrough attrs are not
+ * reactive, so a cached computed would keep the value the column had on its
+ * first render and never drop it when the lock clears.
+ */
+const attrs = useAttrs()
+function decisionDescriptionIds(): string | undefined {
+  const describedBy = attrs['aria-describedby']
+  return typeof describedBy === 'string' && describedBy.trim().length > 0
+    ? describedBy
+    : undefined
+}
+
 const reviewMainEl = ref<HTMLElement | null>(null)
 const decisionReceiptEl = ref<HTMLElement | null>(null)
 const provenanceExpanded = ref(false)
@@ -319,6 +340,7 @@ watch(
       :apply-phase="applyPhase"
       :edit-lock="editLock"
       :apply-only="decisionReceipt === 'approved'"
+      :decision-description-ids="decisionDescriptionIds()"
       data-testid="paper-review-decision-rail"
       @apply="emit('apply')"
       @reject="emit('reject')"
