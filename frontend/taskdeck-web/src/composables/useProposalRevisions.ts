@@ -14,10 +14,25 @@ import {
 
 export type SaveRevisionResult = {
   proposalId: string
-  /** Whether the API response confirmed persistence or left it unknown. */
-  outcome: 'persisted' | 'indeterminate'
+  /** Whether the API response confirmed persistence, rejection, or left it unknown. */
+  outcome: 'persisted' | 'rejected' | 'indeterminate'
   /** The active proposal/save generation still owns this continuation. */
   current: boolean
+}
+
+/**
+ * These statuses are emitted before the revision write can commit. Other
+ * statuses remain indeterminate because the server may have committed before
+ * the client received an error (notably 404/409 from a concurrent or deleted
+ * proposal, and 5xx responses after the write path was reached).
+ */
+function isDefiniteRevisionSaveRejection(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const status = (error as { response?: { status?: unknown } }).response?.status
+  return (
+    typeof status === 'number' &&
+    [400, 401, 403, 413, 422, 429].includes(status)
+  )
 }
 
 export function useProposalRevisions(
@@ -194,6 +209,15 @@ export function useProposalRevisions(
       return { proposalId, outcome: 'persisted', current: true }
     } catch (e: unknown) {
       const current = gen === saveGeneration && activeProposal.value?.id === proposalId
+      if (isDefiniteRevisionSaveRejection(e)) {
+        // The API rejected this request before reporting persistence. Keep the
+        // authoritative metadata and retryable draft intact; unlike an
+        // indeterminate response, no queue read can have become stale.
+        if (current) {
+          toast.error(getErrorDisplay(e, 'Failed to save revision').message)
+        }
+        return { proposalId, outcome: 'rejected', current }
+      }
       // A rejected POST can have committed before a timeout, network break, or
       // 5xx reached the client. Invalidate queue reads synchronously even for a
       // stale continuation: a pre-write answer can restore old operations after

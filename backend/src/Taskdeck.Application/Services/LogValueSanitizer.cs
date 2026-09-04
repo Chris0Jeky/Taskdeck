@@ -11,8 +11,6 @@ internal static class LogValueSanitizer
         var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         var sanitized = LogControlCharacterSanitizer.Strip(text);
 
-        return sanitized.Length <= MaxLength
-            ? sanitized
-            : string.Concat(sanitized.AsSpan(0, MaxLength), "...");
+        return LogControlCharacterSanitizer.Truncate(sanitized, MaxLength, "...");
     }
 }

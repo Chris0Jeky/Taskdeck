@@ -189,9 +189,9 @@ const {
   clearSelection: clearBatchSelection,
   isSelected: isBatchSelected,
   toggleSelection: toggleBatchSelection,
-  requestConfirmation: requestBatchApproval,
-  cancelConfirmation: cancelBatchApproval,
-  confirmApproval: confirmBatchApproval,
+  requestConfirmation: requestBatchApprovalAction,
+  cancelConfirmation: cancelBatchApprovalAction,
+  confirmApproval: confirmBatchApprovalAction,
 } = useBatchApproveProposals(proposals, currentUserId, nowMs, loadProposals)
 
 // #1307, q-14 C. Separate from batch approve on purpose: approve and execute stay two explicit
@@ -1172,8 +1172,11 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 // is a shared primitive with no return-focus target prop and is deliberately
 // not touched here.
 const mainColRef = ref<HTMLElement | null>(null)
+const reviewViewRef = ref<HTMLElement | null>(null)
 const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
+let batchApproveReturnFocusEl: HTMLElement | null = null
+let batchApproveFocusRestorePending = false
 let revisionReturnFocusEl: HTMLElement | null = null
 let revisionReturnFocusProposalId: string | null = null
 let revisionEditEpoch = 0
@@ -1186,6 +1189,13 @@ function revisionReviewKey(proposalId: string): string {
   return proposalId.toLowerCase()
 }
 
+function revisionReviewUnavailableKey(
+  proposalId: string,
+  revisionIdentity: string | null,
+): string {
+  return `${revisionReviewKey(proposalId)}:${revisionIdentity?.toLowerCase() ?? ''}`
+}
+
 function requireRevisionReviewRefresh(proposalId: string) {
   revisionReviewRefreshEpochs.set(
     revisionReviewKey(proposalId),
@@ -1193,18 +1203,61 @@ function requireRevisionReviewRefresh(proposalId: string) {
   )
 }
 
-function setRevisionReviewUnavailable(proposalId: string, unavailable: boolean) {
-  const key = revisionReviewKey(proposalId)
+function setRevisionReviewUnavailable(
+  proposalId: string,
+  revisionIdentity: string | null,
+  unavailable: boolean,
+) {
+  const key = revisionReviewUnavailableKey(proposalId, revisionIdentity)
   const next = new Set(revisionReviewUnavailableKeys.value)
   if (unavailable) next.add(key)
   else next.delete(key)
   revisionReviewUnavailableKeys.value = next
 }
 
+function isRevisionReviewUnavailableVisible(proposal: ApiProposal): boolean {
+  // The unavailable state belongs to the pre-approval review action. Once the
+  // proposal is approved, expired, or deferred, leaving the old note and its
+  // hidden evidence panels in place is stale UI with no matching action.
+  return (
+    normalizeProposalStatus(proposal.status) === 'PendingReview' &&
+    isApplyActionable(proposal) &&
+    !isProposalDeferred(proposal)
+  )
+}
+
 const activeRevisionReviewUnavailable = computed(() => {
-  const proposalId = activeProposal.value?.id
-  return !!proposalId && revisionReviewUnavailableKeys.value.has(revisionReviewKey(proposalId))
+  const proposal = activeProposal.value
+  return (
+    !!proposal &&
+    isRevisionReviewUnavailableVisible(proposal) &&
+    revisionReviewUnavailableKeys.value.has(
+      revisionReviewUnavailableKey(proposal.id, proposalRevisionIdentity(proposal)),
+    )
+  )
 })
+
+watch(
+  () => {
+    const proposal = activeProposal.value
+    if (!proposal) return null
+    return {
+      proposalId: proposal.id,
+      revisionIdentity: proposalRevisionIdentity(proposal),
+      eligible: isRevisionReviewUnavailableVisible(proposal),
+    }
+  },
+  (current, previous) => {
+    if (!previous?.eligible) return
+    const sameProposal = !!current && proposalIdsEqual(current.proposalId, previous.proposalId)
+    // Keep a failure for its exact revision so a move to a clean revision does
+    // not inherit it. Clear it when that proposal leaves the actionable review
+    // state, or when the active proposal itself is replaced.
+    if (!sameProposal || !current?.eligible) {
+      setRevisionReviewUnavailable(previous.proposalId, previous.revisionIdentity, false)
+    }
+  },
+)
 
 const reviewMainDescriptionIds = computed(() => {
   const ids: string[] = []
@@ -1231,6 +1284,57 @@ function decisionRailFocusTarget(): HTMLElement | null {
     root.querySelector<HTMLElement>('[data-testid="decision-apply"]') ??
     root.querySelector<HTMLElement>('[data-testid="decision-file-away"]')
   )
+}
+
+/**
+ * Batch approval clears the selected queue rows as soon as the request settles. That means the
+ * dialog's captured opener can disappear before its shared focus restore runs. Keep the reviewer
+ * in the review surface by preferring a surviving decision control, then a queue action/control.
+ */
+function batchApprovalFocusTarget(): HTMLElement | null {
+  const root = reviewViewRef.value
+  if (!root) return null
+  const candidates = [
+    decisionRailFocusTarget(),
+    root.querySelector<HTMLElement>('[data-testid="queue-batch-approve"]'),
+    root.querySelector<HTMLElement>('[data-testid="queue-batch-execute"]'),
+    root.querySelector<HTMLElement>('[data-testid="queue-file-away-all"]'),
+    root.querySelector<HTMLElement>('[data-testid^="queue-batch-select-"]'),
+    root.querySelector<HTMLElement>('[data-testid="paper-review-queue-rail"] button'),
+  ]
+  return candidates.find((candidate) => candidate?.isConnected && isFocusable(candidate)) ?? null
+}
+
+function requestBatchApproval() {
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  requestBatchApprovalAction()
+  batchApproveReturnFocusEl = batchConfirmationOpen.value ? opener : null
+  batchApproveFocusRestorePending = batchConfirmationOpen.value
+}
+
+function cancelBatchApproval() {
+  batchApproveReturnFocusEl = null
+  batchApproveFocusRestorePending = false
+  cancelBatchApprovalAction()
+}
+
+function restoreBatchApprovalFocus() {
+  const captured = batchApproveReturnFocusEl
+  batchApproveReturnFocusEl = null
+  batchApproveFocusRestorePending = false
+  void nextTick(() => {
+    const target = captured?.isConnected && isFocusable(captured)
+      ? captured
+      : batchApprovalFocusTarget()
+    if (target) target.focus?.()
+  })
+}
+
+async function confirmBatchApproval() {
+  await confirmBatchApprovalAction()
+  if (batchApproveFocusRestorePending && !batchApproveBusy.value) {
+    restoreBatchApprovalFocus()
+  }
 }
 
 function revisionRailFocusTarget(): HTMLElement | null {
@@ -1375,7 +1479,7 @@ async function refreshRevisionReviewBeforeApply(
       revisionIdentity,
     )
     if (selectorOutcome === 'failed') {
-      setRevisionReviewUnavailable(proposal.id, true)
+      setRevisionReviewUnavailable(proposal.id, revisionIdentity, true)
       toast.error(t('review.toast.revisionReviewUnavailable'))
       return
     }
@@ -1396,7 +1500,7 @@ async function refreshRevisionReviewBeforeApply(
     const key = revisionReviewKey(proposal.id)
     if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return
     revisionReviewRefreshEpochs.delete(key)
-    setRevisionReviewUnavailable(proposal.id, false)
+    setRevisionReviewUnavailable(proposal.id, revisionIdentity, false)
     toast.info(t('review.toast.revisionReviewRefreshed'))
   } finally {
     revisionReviewRefreshBusy.value = false
@@ -1619,6 +1723,10 @@ async function onRequestEdit() {
     return
   }
   const request = ++revisionOpenGeneration
+  // Capture the actual rail control before the metadata await. The rail exposes
+  // Cancel while that await owns the lock, so cancelling must have a valid
+  // same-proposal target even though the editor has not mounted yet.
+  captureRevisionReturnFocus(p.id)
   revisionOpening.value = true
   try {
     // A not-yet-loaded list must not be treated as an empty one: a saved revision
@@ -1639,14 +1747,19 @@ async function onRequestEdit() {
       revisionEditing.value ||
       revisionSaving.value
     ) return
-    captureRevisionReturnFocus(p.id)
     revisionEditorPayload.value = editablePayload.value
     revisionEditorPayloadEpoch = revisionEditEpoch
     startRevisionEditing()
   } finally {
     // A later open, cancel, proposal switch, or read-only transition owns the
     // state now. Its lock must never be cleared by this stale continuation.
-    if (request === revisionOpenGeneration) revisionOpening.value = false
+    if (request === revisionOpenGeneration) {
+      revisionOpening.value = false
+      // A failed metadata load never mounts the editor, so return to the
+      // captured rail control once it is re-enabled. A successful open keeps
+      // focus inside the newly mounted composer instead.
+      if (!revisionEditing.value) restoreRevisionFocus()
+    }
   }
 }
 
@@ -1912,10 +2025,23 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   const saveEpoch = revisionEditEpoch
   const saveResult = await saveRevision(payload)
   if (!saveResult) return
+  if (saveResult.outcome === 'rejected') {
+    // A definite 4xx cannot have committed, so the known revision metadata and
+    // any open preview remain authoritative. Keep the retryable draft visible
+    // and return focus inside the editor after the error toast.
+    if (
+      saveResult.current &&
+      proposalIdsEqual(activeProposal.value?.id, saveResult.proposalId) &&
+      revisionEditorPayloadEpoch === saveEpoch
+    ) {
+      retainRevisionEditorFocus()
+    }
+    return
+  }
   // A rejected response may still have committed, so both confirmed and
   // indeterminate saves require the same later read barrier. Record it before
-  // branching on the editor outcome, including for stale A continuations that
-  // finish while another proposal is active.
+  // branching on the indeterminate outcome, including for stale A continuations
+  // that finish while another proposal is active.
   requireRevisionReviewRefresh(saveResult.proposalId)
   if (saveResult.outcome === 'indeterminate') {
     // A rejected POST may still have committed. Clear only a preview of the
@@ -2080,6 +2206,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // Prevent an in-flight metadata open or save continuation from restoring
+  // focus into a component that no longer owns the document.
+  invalidateRevisionOpening()
+  invalidateRevisionFocusSession()
   clearBatchSelection()
   stopClock()
   stopQueueRefresh()
@@ -2144,6 +2274,7 @@ async function onClearBoardScope() {
 
 <template>
   <div
+    ref="reviewViewRef"
     class="paper paper-review-deep"
     data-testid="paper-review-view"
     :data-history-mode="isArchivedHistory ? 'archived' : undefined"

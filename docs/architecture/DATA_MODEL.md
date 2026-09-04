@@ -582,7 +582,7 @@ A single message in a chat session.
 | SessionId | `Guid` | Yes | FK to ChatSession | Parent session |
 | Role | `ChatMessageRole` | Yes | Enum: User, Assistant, System | Message author role |
 | Content | `string` | Yes | Non-empty | Message body |
-| MessageType | `string` | Yes | One of: text, proposal-reference, error, status, degraded, clarification | Message classification |
+| MessageType | `string` | Yes | One of: text, proposal-reference, error, status, degraded, clarification, parse-hint | Message classification |
 | ProposalId | `Guid?` | No | | Linked proposal |
 | TokenUsage | `int?` | No | >= 0 | Tokens consumed |
 | DegradedReason | `string?` | No | | Reason for degraded response |

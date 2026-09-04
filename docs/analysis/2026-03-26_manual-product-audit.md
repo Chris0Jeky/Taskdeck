@@ -56,14 +56,14 @@ Execution mode:
 ## Docs Reviewed First
 
 Authoritative and user-facing docs reviewed before runtime testing:
-- [AGENTS.md](C:/Users/jekyt/source/Taskdeck/AGENTS.md)
-- [STATUS.md](C:/Users/jekyt/source/Taskdeck/docs/STATUS.md)
-- [IMPLEMENTATION_MASTERPLAN.md](C:/Users/jekyt/source/Taskdeck/docs/IMPLEMENTATION_MASTERPLAN.md)
-- [GOLDEN_PRINCIPLES.md](C:/Users/jekyt/source/Taskdeck/docs/GOLDEN_PRINCIPLES.md)
-- [TESTING_GUIDE.md](C:/Users/jekyt/source/Taskdeck/docs/TESTING_GUIDE.md)
-- [START_HERE.md](C:/Users/jekyt/source/Taskdeck/docs/START_HERE.md)
-- [USER_MANUAL.md](C:/Users/jekyt/source/Taskdeck/docs/USER_MANUAL.md)
-- [MANUAL_TEST_CHECKLIST.md](C:/Users/jekyt/source/Taskdeck/docs/MANUAL_TEST_CHECKLIST.md)
+- [AGENTS.md](../../AGENTS.md)
+- [STATUS.md](../../docs/STATUS.md)
+- [IMPLEMENTATION_MASTERPLAN.md](../../docs/IMPLEMENTATION_MASTERPLAN.md)
+- [GOLDEN_PRINCIPLES.md](../../docs/GOLDEN_PRINCIPLES.md)
+- [TESTING_GUIDE.md](../../docs/TESTING_GUIDE.md)
+- [START_HERE.md](../../docs/START_HERE.md)
+- [USER_MANUAL.md](../../docs/USER_MANUAL.md)
+- [MANUAL_TEST_CHECKLIST.md](../../docs/MANUAL_TEST_CHECKLIST.md)
 
 ## Claimed Product Shape
 
@@ -81,8 +81,8 @@ The docs also claim the shipped product currently supports:
 - workspace modes, including a `Workbench` mode that keeps all shipped tools visible in the main nav
 
 See:
-- [START_HERE.md](C:/Users/jekyt/source/Taskdeck/docs/START_HERE.md)
-- [USER_MANUAL.md](C:/Users/jekyt/source/Taskdeck/docs/USER_MANUAL.md)
+- [START_HERE.md](../../docs/START_HERE.md)
+- [USER_MANUAL.md](../../docs/USER_MANUAL.md)
 
 ## What The Product Demonstrably Does
 
@@ -141,8 +141,8 @@ Why this matters:
 - the app may remain usable via fallback polling, but the advertised primary realtime path is degraded
 
 Evidence:
-- docs claims in [STATUS.md](C:/Users/jekyt/source/Taskdeck/docs/STATUS.md:74), [STATUS.md](C:/Users/jekyt/source/Taskdeck/docs/STATUS.md:108), and [STATUS.md](C:/Users/jekyt/source/Taskdeck/docs/STATUS.md:707)
-- CORS policy setup in [Program.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Api/Program.cs:318) through [Program.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Api/Program.cs:322)
+- docs claims in [STATUS.md:74](../../docs/STATUS.md), [STATUS.md:108](../../docs/STATUS.md), and [STATUS.md:707](../../docs/STATUS.md)
+- CORS policy setup in [Program.cs:318](../../backend/src/Taskdeck.Api/Program.cs) through [Program.cs:322](../../backend/src/Taskdeck.Api/Program.cs)
 - no `AllowCredentials()` call in that policy
 
 Console error summary:
@@ -171,8 +171,8 @@ Likely cause:
 - if the queue finishes after that one fetch, the UI remains stale until the user refreshes manually
 
 Evidence:
-- refresh button and detail states in [InboxView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/InboxView.vue:343), [InboxView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/InboxView.vue:552), [InboxView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/InboxView.vue:557), and [InboxView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/InboxView.vue:567)
-- triage flow in [captureStore.ts](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/store/captureStore.ts:189), [captureStore.ts](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/store/captureStore.ts:215), and [captureStore.ts](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/store/captureStore.ts:216)
+- refresh button and detail states in [InboxView.vue:343](../../frontend/taskdeck-web/src/views/InboxView.vue), [InboxView.vue:552](../../frontend/taskdeck-web/src/views/InboxView.vue), [InboxView.vue:557](../../frontend/taskdeck-web/src/views/InboxView.vue), and [InboxView.vue:567](../../frontend/taskdeck-web/src/views/InboxView.vue)
+- triage flow in [captureStore.ts:189](../../frontend/taskdeck-web/src/store/captureStore.ts), [captureStore.ts:215](../../frontend/taskdeck-web/src/store/captureStore.ts), and [captureStore.ts:216](../../frontend/taskdeck-web/src/store/captureStore.ts)
 
 Recommendation:
 - add short-lived polling or push-driven refresh after triage enqueue
@@ -191,13 +191,13 @@ Why this matters:
 - actual navigation behavior does not match that statement
 
 Docs evidence:
-- [USER_MANUAL.md](C:/Users/jekyt/source/Taskdeck/docs/USER_MANUAL.md:51) through [USER_MANUAL.md](C:/Users/jekyt/source/Taskdeck/docs/USER_MANUAL.md:58)
-- [START_HERE.md](C:/Users/jekyt/source/Taskdeck/docs/START_HERE.md:113) through [START_HERE.md](C:/Users/jekyt/source/Taskdeck/docs/START_HERE.md:122)
+- [USER_MANUAL.md:51](../../docs/USER_MANUAL.md) through [USER_MANUAL.md:58](../../docs/USER_MANUAL.md)
+- [START_HERE.md:113](../../docs/START_HERE.md) through [START_HERE.md:122](../../docs/START_HERE.md)
 
 Code evidence:
-- Workbench copy in [AppShell.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/components/shell/AppShell.vue:55)
-- nav items gated by flags in [AppShell.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/components/shell/AppShell.vue:134), [AppShell.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/components/shell/AppShell.vue:144), [AppShell.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/components/shell/AppShell.vue:174), and [AppShell.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/components/shell/AppShell.vue:184)
-- default advanced flags off in [feature-flags.ts](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/types/feature-flags.ts:16) through [feature-flags.ts](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/types/feature-flags.ts:20)
+- Workbench copy in [AppShell.vue:55](../../frontend/taskdeck-web/src/components/shell/AppShell.vue)
+- nav items gated by flags in [AppShell.vue:134](../../frontend/taskdeck-web/src/components/shell/AppShell.vue), [AppShell.vue:144](../../frontend/taskdeck-web/src/components/shell/AppShell.vue), [AppShell.vue:174](../../frontend/taskdeck-web/src/components/shell/AppShell.vue), and [AppShell.vue:184](../../frontend/taskdeck-web/src/components/shell/AppShell.vue)
+- default advanced flags off in [feature-flags.ts:16](../../frontend/taskdeck-web/src/types/feature-flags.ts) through [feature-flags.ts:20](../../frontend/taskdeck-web/src/types/feature-flags.ts)
 
 Recommendation:
 - either update the docs and shell copy to reflect feature-flagged visibility
@@ -216,12 +216,12 @@ Why this matters:
 - the current implementation appears to only include audit rows whose entity is literally the board itself
 
 Docs and UI evidence:
-- expectations in [MANUAL_TEST_CHECKLIST.md](C:/Users/jekyt/source/Taskdeck/docs/MANUAL_TEST_CHECKLIST.md:217) and [MANUAL_TEST_CHECKLIST.md](C:/Users/jekyt/source/Taskdeck/docs/MANUAL_TEST_CHECKLIST.md:218)
-- board-history view language in [ActivityView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/ActivityView.vue:141) and [ActivityView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/ActivityView.vue:511)
+- expectations in [MANUAL_TEST_CHECKLIST.md:217](../../docs/MANUAL_TEST_CHECKLIST.md) and [MANUAL_TEST_CHECKLIST.md:218](../../docs/MANUAL_TEST_CHECKLIST.md)
+- board-history view language in [ActivityView.vue:141](../../frontend/taskdeck-web/src/views/ActivityView.vue) and [ActivityView.vue:511](../../frontend/taskdeck-web/src/views/ActivityView.vue)
 
 Implementation evidence:
-- history service delegates directly to board-only repository calls in [HistoryService.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Application/Services/HistoryService.cs:28)
-- repository board query only returns `EntityType == "board"` rows in [AuditLogRepository.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Infrastructure/Repositories/AuditLogRepository.cs:131), [AuditLogRepository.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Infrastructure/Repositories/AuditLogRepository.cs:137), and [AuditLogRepository.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Infrastructure/Repositories/AuditLogRepository.cs:144)
+- history service delegates directly to board-only repository calls in [HistoryService.cs:28](../../backend/src/Taskdeck.Application/Services/HistoryService.cs)
+- repository board query only returns `EntityType == "board"` rows in [AuditLogRepository.cs:131](../../backend/src/Taskdeck.Infrastructure/Repositories/AuditLogRepository.cs), [AuditLogRepository.cs:137](../../backend/src/Taskdeck.Infrastructure/Repositories/AuditLogRepository.cs), and [AuditLogRepository.cs:144](../../backend/src/Taskdeck.Infrastructure/Repositories/AuditLogRepository.cs)
 
 Recommendation:
 - decide explicitly whether board history means:
@@ -242,12 +242,12 @@ Why this matters:
 - this weakens readability and trust instead of improving it
 
 Policy evidence:
-- [GOLDEN_PRINCIPLES.md](C:/Users/jekyt/source/Taskdeck/docs/GOLDEN_PRINCIPLES.md:33)
+- [GOLDEN_PRINCIPLES.md:33](../../docs/GOLDEN_PRINCIPLES.md)
 
 Implementation evidence:
-- diff preview construction in [AutomationProposalService.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Application/Services/AutomationProposalService.cs:282)
-- affected-entity label building in [AutomationProposalService.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Application/Services/AutomationProposalService.cs:370), [AutomationProposalService.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Application/Services/AutomationProposalService.cs:552), and [AutomationProposalService.cs](C:/Users/jekyt/source/Taskdeck/backend/src/Taskdeck.Application/Services/AutomationProposalService.cs:559)
-- review rendering points in [ReviewView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/ReviewView.vue:559), [ReviewView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/ReviewView.vue:563), [ReviewView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/ReviewView.vue:590), and [ReviewView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/ReviewView.vue:615)
+- diff preview construction in [AutomationProposalService.cs:282](../../backend/src/Taskdeck.Application/Services/AutomationProposalService.cs)
+- affected-entity label building in [AutomationProposalService.cs:370](../../backend/src/Taskdeck.Application/Services/AutomationProposalService.cs), [AutomationProposalService.cs:552](../../backend/src/Taskdeck.Application/Services/AutomationProposalService.cs), and [AutomationProposalService.cs:559](../../backend/src/Taskdeck.Application/Services/AutomationProposalService.cs)
+- review rendering points in [ReviewView.vue:559](../../frontend/taskdeck-web/src/views/ReviewView.vue), [ReviewView.vue:563](../../frontend/taskdeck-web/src/views/ReviewView.vue), [ReviewView.vue:590](../../frontend/taskdeck-web/src/views/ReviewView.vue), and [ReviewView.vue:615](../../frontend/taskdeck-web/src/views/ReviewView.vue)
 
 Recommendation:
 - show entity names where possible, not IDs
@@ -265,12 +265,12 @@ Why this matters:
 - these docs currently overstate stability and understate suite growth
 
 Docs evidence:
-- [TESTING_GUIDE.md](C:/Users/jekyt/source/Taskdeck/docs/TESTING_GUIDE.md:18)
-- [TESTING_GUIDE.md](C:/Users/jekyt/source/Taskdeck/docs/TESTING_GUIDE.md:22)
-- [TESTING_GUIDE.md](C:/Users/jekyt/source/Taskdeck/docs/TESTING_GUIDE.md:23)
-- [TESTING_GUIDE.md](C:/Users/jekyt/source/Taskdeck/docs/TESTING_GUIDE.md:28)
-- [STATUS.md](C:/Users/jekyt/source/Taskdeck/docs/STATUS.md:509)
-- [STATUS.md](C:/Users/jekyt/source/Taskdeck/docs/STATUS.md:553)
+- [TESTING_GUIDE.md:18](../../docs/TESTING_GUIDE.md)
+- [TESTING_GUIDE.md:22](../../docs/TESTING_GUIDE.md)
+- [TESTING_GUIDE.md:23](../../docs/TESTING_GUIDE.md)
+- [TESTING_GUIDE.md:28](../../docs/TESTING_GUIDE.md)
+- [STATUS.md:509](../../docs/STATUS.md)
+- [STATUS.md:553](../../docs/STATUS.md)
 
 Recommendation:
 - refresh `STATUS.md` and `TESTING_GUIDE.md` with current counts and current E2E outcome
@@ -295,7 +295,7 @@ During one live click from Review, `Open Board` appeared to land on the board li
 
 However:
 - a later targeted retest from the same review route correctly navigated to `/workspace/boards/{boardId}`
-- the implementation in [ReviewView.vue](C:/Users/jekyt/source/Taskdeck/frontend/taskdeck-web/src/views/ReviewView.vue:371) is correct
+- the implementation in [ReviewView.vue:371](../../frontend/taskdeck-web/src/views/ReviewView.vue) is correct
 
 Conclusion:
 - this was observed once but is not yet a solid deterministic bug

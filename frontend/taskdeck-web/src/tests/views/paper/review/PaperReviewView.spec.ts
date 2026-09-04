@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import type { CaptureItem } from '../../../../types/capture'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
-import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
 import {
   REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
   REVIEW_QUEUE_REFRESH_MS,
@@ -32,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   getConflicts: vi.fn(),
   getHistory: vi.fn(),
   getSimilarPast: vi.fn(),
+  getProvenanceMetadata: vi.fn(),
   getCaptureItem: vi.fn(),
   getBoards: vi.fn(),
   getColumns: vi.fn(),
@@ -86,6 +86,7 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
     getConflicts: mocks.getConflicts,
     getHistory: mocks.getHistory,
     getSimilarPast: mocks.getSimilarPast,
+    getProvenanceMetadata: mocks.getProvenanceMetadata,
   },
 }))
 
@@ -295,6 +296,12 @@ describe('PaperReviewView', () => {
     mocks.getConflicts.mockResolvedValue([])
     mocks.getHistory.mockResolvedValue([])
     mocks.getSimilarPast.mockResolvedValue({ decisions: [], applyRate: 0 })
+    // Default: the proposal recorded no producer, so capture detail decides (#1987).
+    mocks.getProvenanceMetadata.mockResolvedValue({
+      provider: null,
+      model: null,
+      promptVersion: null,
+    })
     mocks.getCaptureItem.mockRejectedValue(new Error('capture metadata unavailable'))
     mocks.getColumns.mockResolvedValue([])
   })
@@ -333,7 +340,9 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="queue-batch-select-batch-medium"]').exists()).toBe(false)
     await wrapper.get('[data-testid="queue-batch-select-batch-1"]').trigger('change')
     await wrapper.get('[data-testid="queue-batch-select-batch-2"]').trigger('change')
-    await wrapper.get('[data-testid="queue-batch-approve"]').trigger('click')
+    const batchApprove = wrapper.get('[data-testid="queue-batch-approve"]')
+    ;(batchApprove.element as HTMLButtonElement).focus()
+    await batchApprove.trigger('click')
     await flushPromises()
 
     expect(document.body.querySelector('[data-testid="batch-approve-dialog"]')).not.toBeNull()
@@ -369,6 +378,31 @@ describe('PaperReviewView', () => {
     expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('data-apply-phase')).toBe('execute')
     expect(wrapper.text()).not.toContain('APPLIED · READ-ONLY')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
+  })
+
+  it('returns keyboard focus to the review surface when batch approval fails', async () => {
+    const proposals = [
+      makeProposal({
+        id: 'batch-failure',
+        summary: 'Batch failure proposal',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'batch-failure', actionType: 'create', targetType: 'card' }],
+      }),
+    ]
+    mocks.approveProposals.mockRejectedValueOnce(new Error('batch approval failed'))
+    const wrapper = await mountView(proposals, '/workspace/review', [], [], { attachTo: true })
+
+    await wrapper.get('[data-testid="queue-batch-select-batch-failure"]').trigger('change')
+    const batchApprove = wrapper.get('[data-testid="queue-batch-approve"]')
+    ;(batchApprove.element as HTMLButtonElement).focus()
+    await batchApprove.trigger('click')
+    await flushPromises()
+
+    ;(document.body.querySelector('[data-testid="batch-approve-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('batch approval failed')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
   })
 
   it('keeps secondary evidence collapsed per proposal without changing selection or queue focus', async () => {
@@ -3401,7 +3435,7 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('does not let a cancelled revision metadata load mount the editor late', async () => {
+  it('returns focus to Request edit when cancelling a pending revision metadata load', async () => {
     const revisionLoadResolvers: Array<(revisions: unknown[]) => void> = []
     mocks.getRevisions.mockImplementation(
       () => new Promise((resolve) => { revisionLoadResolvers.push(resolve) }),
@@ -3411,16 +3445,19 @@ describe('PaperReviewView', () => {
         id: 'cancelled-edit-open',
         operations: [{ ...makeProposal().operations[0], proposalId: 'cancelled-edit-open' }],
       }),
-    ])
+    ], '/workspace/review', [], [], { attachTo: true })
     await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
 
+    const opener = wrapper.get('[data-testid="decision-edit"]').element as HTMLButtonElement
+    opener.focus()
     await wrapper.get('[data-testid="decision-edit"]').trigger('click')
     await Promise.resolve()
     expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+    const cancel = wrapper.get('[data-testid="decision-cancel-edit"]')
 
     // Cancelling the rail's pending edit opening invalidates its continuation,
     // not merely an editor that has already been mounted.
-    wrapper.findComponent(ReviewMain).vm.$emit('cancel-edit')
+    await cancel.trigger('click')
     await nextTick()
     revisionLoadResolvers[1]!([])
     await flushPromises()
@@ -3428,6 +3465,29 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
+  })
+
+  it('returns focus to Request edit when revision metadata loading fails', async () => {
+    mocks.getRevisions.mockRejectedValueOnce(new Error('initial revision load failed'))
+    mocks.getRevisions.mockRejectedValueOnce(new Error('opening revision load failed'))
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'failed-edit-open',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'failed-edit-open' }],
+      }),
+    ], '/workspace/review', [], [], { attachTo: true })
+    await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+    const opener = wrapper.get('[data-testid="decision-edit"]').element as HTMLButtonElement
+    opener.focus()
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(opener)
     wrapper.unmount()
   })
 
@@ -4566,6 +4626,64 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('keeps known revision metadata and the draft after a definite 4xx rejection', async () => {
+      const now = new Date().toISOString()
+      mocks.getRevisions.mockResolvedValueOnce([
+        {
+          id: 'rev-known-1',
+          proposalId: 'proposal-001',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"headline":"Existing revision","notes":"Original notes"}',
+          revisedAt: now,
+          reason: 'First revision',
+          createdAt: now,
+        },
+      ])
+      mocks.createRevision.mockRejectedValueOnce({
+        response: {
+          status: 400,
+          data: {
+            errorCode: 'ValidationError',
+            message: 'Revision payload is invalid',
+          },
+        },
+      })
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+      await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+      const proposalFetchesBeforeSave = mocks.getProposals.mock.calls.length
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      await editor.get('[data-testid="revision-field-headline"]').setValue('Reviewer headline')
+      await editor.get('[data-testid="revision-field-notes"]').setValue('Reviewer notes')
+      await editor.get('[data-testid="revision-reason"]').setValue('Second revision')
+      await editor.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+
+      const stillOpen = wrapper.get('[data-testid="revision-editor"]')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-headline"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer headline')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-notes"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer notes')
+      expect(
+        (stillOpen.get('[data-testid="revision-reason"]').element as HTMLInputElement).value,
+      ).toBe('Second revision')
+      expect(wrapper.get('[data-testid="revision-badge"]').text()).toContain('1 revision')
+      expect(mocks.errorToast).toHaveBeenCalledWith('Revision payload is invalid')
+      expect(mocks.getProposals.mock.calls.length).toBe(proposalFetchesBeforeSave)
+      expect(
+        stillOpen.element.contains(document.activeElement),
+      ).toBe(true)
+
+      wrapper.unmount()
+    })
+
     it('does not let a stale A1 save clear a newer A2 editor seed', async () => {
       let resolveA1Save!: (value: unknown) => void
       mocks.createRevision.mockImplementationOnce(
@@ -4751,7 +4869,11 @@ describe('PaperReviewView', () => {
 
     it('consumes one Approve after an indeterminate save even when the revision key is unchanged', async () => {
       const original = makeProposal({ id: 'uncertain-truth' })
-      mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after commit'))
+      // A 409 can be raised after a competing writer has committed the next
+      // revision. It must take the same refresh barrier as a timeout.
+      mocks.createRevision.mockRejectedValueOnce({
+        response: { status: 409 },
+      })
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'uncertain-truth', status: 'Approved' }),
       )
@@ -4860,10 +4982,16 @@ describe('PaperReviewView', () => {
       await flushPromises()
 
       mocks.getProposals.mockResolvedValue([refreshed])
-      mocks.getHistory.mockRejectedValueOnce(new Error('history unavailable'))
+      // Fail both the automatic refresh and the same-action retry. The first
+      // Apply must attempt the retry, but still leave the honest unavailable
+      // state when that retry also fails.
+      mocks.getHistory
+        .mockRejectedValueOnce(new Error('history unavailable'))
+        .mockRejectedValueOnce(new Error('history still unavailable'))
       await wrapper.get('[data-testid="decision-apply"]').trigger('click')
       await flushPromises()
 
+      expect(mocks.getHistory).toHaveBeenCalledTimes(3)
       expect(mocks.approveProposal).not.toHaveBeenCalled()
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(mocks.infoToast).not.toHaveBeenCalledWith(
@@ -4883,7 +5011,7 @@ describe('PaperReviewView', () => {
       // batch succeeds, the recovery action is consumed and cannot approve.
       await wrapper.get('[data-testid="decision-apply"]').trigger('click')
       await flushPromises()
-      expect(mocks.getHistory).toHaveBeenCalledTimes(3)
+      expect(mocks.getHistory).toHaveBeenCalledTimes(4)
       expect(mocks.approveProposal).not.toHaveBeenCalled()
       expect(mocks.executeProposal).not.toHaveBeenCalled()
       expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
@@ -4895,6 +5023,123 @@ describe('PaperReviewView', () => {
       await flushPromises()
       expect(mocks.approveProposal).toHaveBeenCalledOnce()
       expect(mocks.executeProposal).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('scopes unavailable review evidence to the active revision', async () => {
+      const now = new Date().toISOString()
+      const original = makeProposal({ id: 'revision-scoped' })
+      const refreshed = makeProposal({
+        id: 'revision-scoped',
+        latestRevisionId: 'rev-scoped-1',
+      })
+      const moved = makeProposal({
+        id: 'revision-scoped',
+        latestRevisionId: 'rev-scoped-2',
+      })
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-scoped-1',
+        proposalId: 'revision-scoped',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'Scope the evidence state',
+        createdAt: now,
+      })
+      const wrapper = await mountView(
+        [original],
+        '/workspace/review#proposal-revision-scoped',
+      )
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        reason: 'Scope the evidence state',
+      })
+      await flushPromises()
+
+      mocks.getProposals.mockResolvedValue([refreshed])
+      mocks.getHistory
+        .mockRejectedValueOnce(new Error('history unavailable'))
+        .mockRejectedValueOnce(new Error('history still unavailable'))
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(true)
+
+      let resolveMovedHistory!: (rows: unknown[]) => void
+      mocks.getProposals.mockResolvedValueOnce([moved])
+      mocks.getHistory.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveMovedHistory = resolve }),
+      )
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await vi.waitFor(() => expect(mocks.getHistory).toHaveBeenCalledTimes(4))
+      await nextTick()
+
+      // The old revision's failure remains scoped to rev-scoped-1; a clean
+      // rev-scoped-2 load must not inherit the unavailable note or hidden panels.
+      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="apply-risk-posture"]').exists()).toBe(true)
+
+      resolveMovedHistory([])
+      await flushPromises()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('clears unavailable review evidence when the proposal is deferred', async () => {
+      const now = new Date().toISOString()
+      const original = makeProposal({ id: 'deferred-evidence' })
+      const refreshed = makeProposal({
+        id: 'deferred-evidence',
+        latestRevisionId: 'rev-deferred-1',
+      })
+      const deferred = makeProposal({
+        id: 'deferred-evidence',
+        latestRevisionId: 'rev-deferred-1',
+        deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+      })
+      mocks.createRevision.mockResolvedValueOnce({
+        id: 'rev-deferred-1',
+        proposalId: 'deferred-evidence',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        revisedAt: now,
+        reason: 'Defer the evidence state',
+        createdAt: now,
+      })
+      const wrapper = await mountView(
+        [original],
+        '/workspace/review#proposal-deferred-evidence',
+      )
+
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}',
+        reason: 'Defer the evidence state',
+      })
+      await flushPromises()
+
+      mocks.getProposals.mockResolvedValue([refreshed])
+      mocks.getHistory
+        .mockRejectedValueOnce(new Error('history unavailable'))
+        .mockRejectedValueOnce(new Error('history still unavailable'))
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(true)
+
+      mocks.getProposals.mockResolvedValueOnce([deferred])
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      // The preflight exits because the proposal is no longer actionable. The
+      // old failure is cleared rather than leaving the review panels suppressed.
+      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="apply-risk-posture"]').exists()).toBe(true)
+      expect(mocks.getHistory).toHaveBeenCalledTimes(3)
       wrapper.unmount()
     })
 

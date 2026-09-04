@@ -115,7 +115,7 @@ export function useReviewKeymap(
     if (event.isComposing) return
     if (isEditableTarget(event.target)) return
     if (isInteractiveTarget(event.target)) return
-    // Modifier keys (⌘/Ctrl/Alt) belong to other shortcut layers.
+    // Platform modifier keys (Command/Control/Alt) belong to other shortcut layers.
     if (event.metaKey || event.ctrlKey || event.altKey) return
 
     const action = matchAction(event)

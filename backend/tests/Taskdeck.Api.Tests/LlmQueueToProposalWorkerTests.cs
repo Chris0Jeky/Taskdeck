@@ -413,6 +413,31 @@ public class LlmQueueToProposalWorkerTests
     }
 
     [Fact]
+    public async Task ProcessBatch_CaptureTriageItem_AnchorsToTheQueueRowsCaptureDay_NotTheTriageDay()
+    {
+        // #2193: this item was captured 9 days ago and is only being drained now. The reference
+        // date handed to triage must be the capture's own day, so "1 September" in the transcript
+        // resolves the way it would have at capture time.
+        var item = CreateCaptureTriageItem();
+        var capturedAt = DateTimeOffset.UtcNow.AddDays(-9);
+        typeof(Taskdeck.Domain.Common.Entity)
+            .GetProperty("CreatedAt")!
+            .SetValue(item, capturedAt);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var triageService = new FakeCaptureTriageService();
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        var anchor = triageService.ReceivedAnchors.Should().ContainSingle().Subject;
+        anchor.Should().NotBeNull();
+        anchor!.CapturedAtServer.Should().Be(capturedAt);
+        anchor.ReferenceDate.Should().Be(DateOnly.FromDateTime(capturedAt.UtcDateTime));
+        anchor.ReferenceDate.Should().NotBe(DateOnly.FromDateTime(DateTime.UtcNow));
+    }
+
+    [Fact]
     public async Task ProcessBatch_CaptureRetryAfterProposalCrash_ReplaysTheSamePayloadToTheSameProposal()
     {
         // The proposal may have committed before the capture provenance/status save crashes. The
@@ -454,6 +479,10 @@ public class LlmQueueToProposalWorkerTests
         triageService.CallCount.Should().Be(2);
         triageService.ReceivedPayloads.Should().HaveCount(2);
         triageService.ReceivedPayloads[1].Should().Be(triageService.ReceivedPayloads[0]);
+        // #2193: a retry re-resolves the anchor from the same server-stamped row, so both attempts
+        // see the same reference date.
+        triageService.ReceivedAnchors.Should().HaveCount(2);
+        triageService.ReceivedAnchors[1]!.ReferenceDate.Should().Be(triageService.ReceivedAnchors[0]!.ReferenceDate);
     }
 
     #endregion
@@ -1533,6 +1562,7 @@ public class LlmQueueToProposalWorkerTests
     {
         public int CallCount { get; private set; }
         public List<CapturePayloadV1> ReceivedPayloads { get; } = [];
+        public List<CaptureTriageAnchor?> ReceivedAnchors { get; } = [];
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
 
@@ -1541,10 +1571,12 @@ public class LlmQueueToProposalWorkerTests
             Guid userId,
             Guid? boardId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
         {
             CallCount++;
             ReceivedPayloads.Add(payload);
+            ReceivedAnchors.Add(anchor);
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(captureItemId, userId, boardId, payload, cancellationToken));
@@ -1567,8 +1599,9 @@ public class LlmQueueToProposalWorkerTests
             Guid? boardId,
             Guid transcriptId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
-            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, anchor, cancellationToken);
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

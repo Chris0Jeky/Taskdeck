@@ -22,6 +22,11 @@ vi.mock('../../api/proposalDeepReviewApi', async (importOriginal) => {
       getConflicts: vi.fn(),
       getHistory: vi.fn(),
       getSimilarPast: vi.fn(),
+      getProvenanceMetadata: vi.fn().mockResolvedValue({
+        provider: null,
+        model: null,
+        promptVersion: null,
+      }),
     },
   }
 })
@@ -74,6 +79,12 @@ function mockAllEndpointsEmpty() {
   vi.mocked(proposalDeepReviewApi.getSimilarPast).mockResolvedValue({
     decisions: [],
     applyRate: 0,
+  })
+  // Default: the proposal recorded no producer, so the capture-detail fallback decides.
+  vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockResolvedValue({
+    provider: null,
+    model: null,
+    promptVersion: null,
   })
 }
 
@@ -554,15 +565,17 @@ describe('usePaperReviewSelectors', () => {
     proposal.value = makeProposal({ latestRevisionId: 'rev-2' })
     await nextTick()
 
-    await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('failed')
-    expect(selectors.loading.value).toBe(false)
-    // A partial rev-2 answer is not published as measured-empty evidence, and
-    // the coherent rev-1 batch is dropped rather than shown as rev-2 evidence.
-    expect(selectors.conflicts.value).toEqual([])
-    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
-    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(2)
-
+    // The first explicit waiter consumes the failed automatic batch and starts
+    // its retry before resolving, so Apply does not spend a click on a stale
+    // failure result.
     await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
+    expect(selectors.loading.value).toBe(false)
+    // The failed automatic rev-2 answer was not published as measured-empty
+    // evidence, and the coherent rev-1 batch was dropped rather than shown as
+    // rev-2 evidence. The same-action retry now lands a complete empty rev-2
+    // batch, so the settled confidence is the retry's value.
+    expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBe(0.5)
     expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(3)
     expect(selectors.conflicts.value).toEqual([])
   })
@@ -578,10 +591,14 @@ describe('usePaperReviewSelectors', () => {
     await expect(selectors.waitForCoreBatch('p-1', null)).resolves.toBe('settled')
     expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
 
-    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValueOnce(new Error('fail'))
+    vi.mocked(proposalDeepReviewApi.getHistory)
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockRejectedValueOnce(new Error('retry fail'))
     proposal.value = makeProposal({ id: 'p-2' })
     await nextTick()
 
+    // A failed retry still reports unavailable, while leaving that retry
+    // available for a later deliberate action.
     await expect(selectors.waitForCoreBatch('p-2', null)).resolves.toBe('failed')
     // p-1 evidence must never render under the p-2 header. The same drop
     // applies to a revision move within one proposal (covered above).
@@ -1225,5 +1242,144 @@ describe('usePaperReviewSelectors', () => {
 
     expect(selectors.confidenceBreakdown.value.overall).toBeNull()
     expect(selectors.confidenceBreakdown.value.components).toEqual([])
+  })
+
+  describe('proposal-scoped provenance metadata (#1987)', () => {
+    it('renders the server-recorded triple for a proposal with no capture link', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockResolvedValue({
+        provider: 'openai',
+        model: 'gpt-5.6-luna',
+        promptVersion: 'llm-triage.v2',
+      })
+
+      const selectors = usePaperReviewSelectors(
+        computed(() => makeProposal({ sourceType: 'Chat', sourceReferenceId: null })),
+      )
+
+      await vi.waitFor(() => {
+        expect(selectors.provenanceMetadata.value).toEqual({
+          provider: 'openai',
+          model: 'gpt-5.6-luna',
+          promptVersion: 'llm-triage.v2',
+          confidence: 0.5,
+          latencyMs: null,
+        })
+      })
+      // The proposal endpoint alone answered; no owner-only capture read was needed.
+      expect(captureApi.getItem).not.toHaveBeenCalled()
+    })
+
+    it('prefers the server-recorded triple over the capture-detail fallback', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockResolvedValue({
+        provider: 'openai',
+        model: 'gpt-5.6-luna',
+        promptVersion: 'llm-triage.v2',
+      })
+      vi.mocked(captureApi.getItem).mockResolvedValue(
+        captureDetail({
+          provider: 'stale-capture-provider',
+          model: 'stale-capture-model',
+          promptVersion: 'stale.v0',
+        }),
+      )
+
+      const selectors = usePaperReviewSelectors(
+        computed(() => makeProposal({ sourceType: 'Queue', sourceReferenceId: 'capture-1' })),
+      )
+
+      await vi.waitFor(() => {
+        expect(selectors.provenanceMetadata.value?.provider).toBe('openai')
+      })
+      expect(selectors.provenanceMetadata.value?.model).toBe('gpt-5.6-luna')
+      expect(selectors.provenanceMetadata.value?.promptVersion).toBe('llm-triage.v2')
+    })
+
+    it('falls back to capture detail only when the proposal recorded no producer', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockResolvedValue({
+        provider: null,
+        model: null,
+        promptVersion: null,
+      })
+      vi.mocked(captureApi.getItem).mockResolvedValue(
+        captureDetail({
+          provider: 'deterministic-extractor',
+          model: 'capture-triage-v1',
+          promptVersion: 'triage.v1',
+        }),
+      )
+
+      const selectors = usePaperReviewSelectors(
+        computed(() => makeProposal({ sourceType: 'Queue', sourceReferenceId: 'capture-1' })),
+      )
+
+      await vi.waitFor(() => {
+        expect(selectors.provenanceMetadata.value?.provider).toBe('deterministic-extractor')
+      })
+      expect(selectors.provenanceMetadata.value?.model).toBe('capture-triage-v1')
+    })
+
+    it('renders no claim when neither source recorded a producer', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(captureApi.getItem).mockResolvedValue(captureDetail())
+
+      const selectors = usePaperReviewSelectors(
+        computed(() => makeProposal({ sourceType: 'Queue', sourceReferenceId: 'capture-1' })),
+      )
+
+      await vi.waitFor(() => {
+        expect(proposalDeepReviewApi.getProvenanceMetadata).toHaveBeenCalled()
+      })
+      await nextTick()
+      expect(selectors.provenanceMetadata.value).toBeNull()
+    })
+
+    it('renders no claim when the metadata lookup fails', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockRejectedValue(
+        new Error('Network error'),
+      )
+
+      const selectors = usePaperReviewSelectors(
+        computed(() => makeProposal({ sourceType: 'Chat', sourceReferenceId: null })),
+      )
+
+      // A failed optional read must not become a producer claim, and must not stall the
+      // six core selectors that gate Apply.
+      await vi.waitFor(() => {
+        expect(selectors.loading.value).toBe(false)
+      })
+      expect(selectors.provenanceMetadata.value).toBeNull()
+    })
+
+    it('does not delay the core selectors on the optional metadata read', async () => {
+      mockAllEndpointsEmpty()
+      let releaseMetadata: (value: {
+        provider: string | null
+        model: string | null
+        promptVersion: string | null
+      }) => void = () => {}
+      vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockReturnValue(
+        new Promise((resolve) => {
+          releaseMetadata = resolve
+        }),
+      )
+
+      const selectors = usePaperReviewSelectors(
+        computed(() => makeProposal({ sourceType: 'Chat', sourceReferenceId: null })),
+      )
+
+      await vi.waitFor(() => {
+        expect(selectors.loading.value).toBe(false)
+      })
+      expect(selectors.provenanceMetadata.value).toBeNull()
+
+      releaseMetadata({ provider: 'openai', model: 'm', promptVersion: 'v' })
+      await vi.waitFor(() => {
+        expect(selectors.provenanceMetadata.value?.provider).toBe('openai')
+      })
+    })
   })
 })
