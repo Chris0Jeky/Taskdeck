@@ -114,7 +114,7 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | Collaborator reads or writes outside their grant | Claims-first authorization, client identity fields rejected, per-board (not global) SignalR | **shipped** as an invariant in `CLAUDE.md` / `docs/STATUS.md`; **not re-measured in this draft (unverified here)** |
-| Authorization diverges under development sandbox settings | `AuthorizationService` takes a `DevelopmentSandboxSettings` dependency (`:11-16`) | **open — `#1866`** sandbox-mode authz divergence |
+| Authorization diverges under development sandbox settings | The sandbox no longer widens write-class authorization: the write, delete, manage-access, role, writable-set, board-access-management and proposal-execute gates are membership-backed in every environment; only the read-side helpers and the sandbox-gated export/import lane still consult the flag | **shipped** — ADR-0068, `#1866`. Residual, tracked on that thread: `LlmQueueService` (`:133`) and `BoardJsonExportImportService` (`:239`) still branch on the flag |
 | Automation mutates a board without review | Proposal-first: approve, then separately execute; preview equals apply (ADR-0003, GP-06). ADR-0056 confirms the loop governs **non-human** actors only — humans edit their own boards directly | **shipped** |
 | Proposals persisted before permission validation | — | **open — `#1433`**, fix PR `#2219` in flight |
 | Writes to archived history | `CardService` and the bulk writers reject archived boards with `409`; the automatic expiry paths now honour the same guard | **shipped** — ADR-0063; `docs/STATUS.md` post-v0.2.0 `#2197` entry |
