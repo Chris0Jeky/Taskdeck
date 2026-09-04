@@ -720,8 +720,9 @@ export function usePaperReviewSelectors(
     activeCoreBatch = batch
     void promise.then((outcome) => {
       // Preserve a failed automatic batch long enough for the next explicit
-      // Apply waiter to observe it. That action reports the failure and clears
-      // this entry; only a later deliberate action starts the retry.
+      // Apply waiter to consume it. The waiter immediately starts the retry
+      // within that same action, while a later failed retry remains available
+      // for the next deliberate action.
       if (outcome !== 'failed' && activeCoreBatch === batch) activeCoreBatch = null
     })
     return promise
@@ -746,6 +747,7 @@ export function usePaperReviewSelectors(
         activeCoreBatch.promise === promise
       ) {
         activeCoreBatch = null
+        return ensureCoreBatch(key)
       }
       return outcome
     })
