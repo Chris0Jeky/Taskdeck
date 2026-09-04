@@ -9,16 +9,15 @@ namespace Taskdeck.Application.Services;
 public class BoardAccessService : IBoardAccessService
 {
     private readonly IUnitOfWork _unitOfWork;
-    private readonly DevelopmentSandboxSettings _sandboxSettings;
     private readonly INotificationService _notificationService;
 
+    // No DevelopmentSandboxSettings dependency: the development sandbox never widens write-class
+    // authorization (ADR-0068 / #1866). Board-access management stays owner-or-manager only.
     public BoardAccessService(
         IUnitOfWork unitOfWork,
-        DevelopmentSandboxSettings? sandboxSettings = null,
         INotificationService? notificationService = null)
     {
         _unitOfWork = unitOfWork;
-        _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
     }
 
@@ -196,9 +195,6 @@ public class BoardAccessService : IBoardAccessService
 
     private async Task<Result> EnsureCanManageBoardAccessAsync(Board board, Guid actingUserId)
     {
-        if (_sandboxSettings.Enabled)
-            return Result.Success();
-
         if (board.OwnerId == actingUserId)
             return Result.Success();
 

@@ -114,7 +114,7 @@ unverified.
 | Threat | Current control | Status |
 | --- | --- | --- |
 | Collaborator reads or writes outside their grant | Claims-first authorization, client identity fields rejected, per-board (not global) SignalR | **shipped** as an invariant in `CLAUDE.md` / `docs/STATUS.md`; **not re-measured in this draft (unverified here)** |
-| Authorization diverges under development sandbox settings | `AuthorizationService` takes a `DevelopmentSandboxSettings` dependency (`:11-16`) | **open — `#1866`** sandbox-mode authz divergence |
+| Authorization diverges under development sandbox settings | The sandbox no longer widens write-class authorization: the write, delete, manage-access, role, writable-set, board-access-management and proposal-execute gates are membership-backed in every environment; only the read-side helpers and the sandbox-gated export/import lane still consult the flag | **shipped** — ADR-0068, `#1866`. Residual, tracked on that thread: `LlmQueueService` (`:133`) and `BoardJsonExportImportService` (`:239`) still branch on the flag |
 | Automation mutates a board without review | Proposal-first: approve, then separately execute; preview equals apply (ADR-0003, GP-06). ADR-0056 confirms the loop governs **non-human** actors only — humans edit their own boards directly | **shipped** |
 | Proposals persisted before permission validation | — | **open — `#1433`**, fix PR `#2219` in flight |
 | Writes to archived history | `CardService` and the bulk writers reject archived boards with `409`; the automatic expiry paths now honour the same guard | **shipped** — ADR-0063; `docs/STATUS.md` post-v0.2.0 `#2197` entry |
@@ -189,8 +189,12 @@ unverified.
    codes; recovery codes are hashed, the seed is not.
 3. **Prompt injection is mitigated, not solved**, and the hostile-fixture suite is still not bound to
    the effective prompt/parser path (`#1323`). Human review remains a load-bearing control.
-4. **Authorization has a known sandbox divergence** (`#1866`) and a known persist-before-validate
-   ordering defect (`#1433`, fix in flight as PR `#2219`).
+4. **Authorization** no longer diverges under the development sandbox (ADR-0068, `#1866`: write,
+   delete, manage-access and proposal-execute gates are membership-backed in every environment).
+   Two residuals still branch on the flag, both tracked on `#1866`: `LlmQueueService` (`:133`)
+   relaxes its cross-user request-ownership check, and `BoardJsonExportImportService` (`:239`)
+   relaxes a read check, consistent with the read bypasses this ADR deliberately kept. The known
+   persist-before-validate ordering defect stands (`#1433`, fix in flight as PR `#2219`).
 5. **Quota is bounded, not exact** (`#1435`); worst-case overshoot is roughly one call's real usage
    beyond the estimate per boundary crossing.
 6. **Availability is unprotected beyond rate limits** — one SQLite file, no per-account resource
