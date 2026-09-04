@@ -43,7 +43,20 @@ internal static class CliUnexpectedFailure
     /// <summary>
     /// Prints the safe failure line and returns the standard failure exit code.
     /// </summary>
-    internal static int Handle(Exception exception, CliStartupTrace? trace, TextWriter errorWriter)
+    /// <param name="failureSink">
+    /// The always-on local diagnostic sink (#2468). When the harness trace is absent -- the
+    /// ordinary operator run -- this is the only thing that retains the failure, and the reference
+    /// it is filed under is what the generic stderr line shows.
+    /// </param>
+    /// <param name="arguments">
+    /// The process arguments, recorded into the sink after redaction. Never printed.
+    /// </param>
+    internal static int Handle(
+        Exception exception,
+        CliStartupTrace? trace,
+        TextWriter errorWriter,
+        CliFailureSink? failureSink = null,
+        IReadOnlyList<string>? arguments = null)
     {
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(errorWriter);
@@ -57,12 +70,19 @@ internal static class CliUnexpectedFailure
             return ExitCodes.Failure;
         }
 
-        var captured = trace?.TryRecordUnexpectedFailure(exception) ?? false;
-        var correlationId = trace?.CorrelationId;
+        // The harness trace stays the primary sink when it is enabled, so its correlation remains
+        // the reference a harness run reports. Otherwise the always-on sink files the record under
+        // a freshly generated short reference.
+        var traceCaptured = trace?.TryRecordUnexpectedFailure(exception) ?? false;
+        var reference = trace?.CorrelationId ?? CliFailureSink.CreateReference();
+        var sinkCaptured = failureSink?.TryRecord(exception, reference, arguments) ?? false;
+        var captured = traceCaptured || sinkCaptured;
 
-        errorWriter.WriteLine(correlationId is null
-            ? $"Error [{ErrorCode}]: {Message}"
-            : $"Error [{ErrorCode}]: {Message} (trace correlation: {correlationId})");
+        // Show the reference only when something actually kept the record: a reference to a record
+        // that was never written would send an operator looking for a file that does not exist.
+        errorWriter.WriteLine(captured
+            ? $"Error [{ErrorCode}]: {Message} (trace correlation: {reference})"
+            : $"Error [{ErrorCode}]: {Message}");
 
         if (!captured)
         {
