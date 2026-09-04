@@ -1,10 +1,17 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import {
+  createLocaleCatalogRuntimePattern,
+  createStaticAssetRuntimePattern,
+} from './src/pwa/runtimeCachePolicy.ts'
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), 'VITE_')
+
+  return {
+    plugins: [
     vue(),
     VitePWA({
       // 'prompt' prevents the new SW from auto-activating; SwUpdatePrompt.vue
@@ -83,18 +90,13 @@ export default defineConfig({
           /^(?:\/|%2[fF])+(?:h|%68|%48)(?:u|%75|%55)(?:b|%62|%42)(?:s|%73|%53)(?:[/?]|%2[fF]|$)/i,
           /^(?:\/|%2[fF])+(?:m|%6d|%4d)(?:c|%63|%43)(?:p|%70|%50)(?:[/?]|%2[fF]|$)/i,
         ],
-        // NetworkFirst for API calls — 1-day TTL ensures extended offline sessions
-        // retain cached responses. Fresh data is always preferred when online.
         runtimeCaching: [
           {
             // Lazy locale catalogs (excluded from precache above): cache on
             // first use so a user who picked it/es keeps their language offline.
-            // Workbox serializes this callback into sw.js. Keep every
-            // dependency inline: imported helpers become free identifiers in
-            // the generated worker.
-            urlPattern: ({ url }) =>
-              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
-              /^\/assets\/(?:it|es)-[\w-]+\.js$/.test(url.pathname),
+            // The shared factory executes at build time. Workbox serializes its
+            // RegExp result, so the generated worker has no free identifiers.
+            urlPattern: createLocaleCatalogRuntimePattern(env.VITE_API_BASE_URL),
             handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'taskdeck-locale-chunks',
@@ -104,17 +106,15 @@ export default defineConfig({
           },
           {
             // CacheFirst for static assets (fonts, images, icons)
-            // See the locale matcher above: this must remain self-contained
-            // when vite-plugin-pwa serializes it into the service worker.
+            // See the locale matcher above: the generated RegExp must remain
+            // self-contained when vite-plugin-pwa serializes it.
             // Anchored on the directories the build emits, not on the file
             // extension alone. The API base is a deployment choice - a prefixed
             // `VITE_API_BASE_URL` such as `/taskdeck/api` is supported - so an
             // authenticated `GET /taskdeck/api/users/by-username/alice.png` is not
             // caught by the `/api` denial and would otherwise be stored in this
             // shared, cross-identity cache. Mirrors src/pwa/runtimeCachePolicy.ts.
-            urlPattern: ({ url }) =>
-              !/^(?:\/|%2[fF])+(?:a|%61|%41)(?:p|%70|%50)(?:i|%69|%49)(?:[/?]|%2[fF]|$)/i.test(url.pathname) &&
-              /^\/(?:assets|icons)\/[^?#]*\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2)$/i.test(url.pathname),
+            urlPattern: createStaticAssetRuntimePattern(env.VITE_API_BASE_URL),
             handler: 'CacheFirst',
             options: {
               cacheName: 'taskdeck-static-assets',
@@ -227,4 +227,5 @@ export default defineConfig({
       },
     },
   },
+  }
 })

@@ -4,37 +4,31 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * `src/pwa/runtimeCachePolicy.ts` is not imported by any shipping module: Workbox
- * serializes the `urlPattern` callbacks out of `vite.config.ts`, so the inline copies
- * there are what actually reaches the service worker. Without this check a security
- * fix applied to the policy module alone would ship nothing while its own spec stayed
- * green. `tests/pwa-generated-worker.spec.ts` proves the emitted worker; this proves
- * the two sources cannot drift apart in the first place.
+ * `vite.config.ts` evaluates the policy factories at build time and hands Workbox
+ * their RegExp results. Workbox serializes those results, not the imported functions,
+ * so `sw.js` remains self-contained while the source policy and build configuration
+ * share one implementation. `tests/pwa-generated-worker.spec.ts` proves the emitted
+ * worker; this test proves the build still consumes the shared factories.
  */
-const MATCHERS = ['API_PATH', 'LOCALE_CATALOG_PATH', 'STATIC_ASSET_PATH'] as const
+const RUNTIME_MATCHER_FACTORIES = [
+  'createLocaleCatalogRuntimePattern',
+  'createStaticAssetRuntimePattern',
+] as const
 
 function read(relative: string): string {
   const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
   return readFileSync(resolve(projectRoot, relative), 'utf8')
 }
 
-function declaredPattern(source: string, name: string): string {
-  const match = new RegExp(`^const ${name} =\\s*\\n?\\s*(.+)$`, 'm').exec(source)
-  if (!match) throw new Error(`runtimeCachePolicy.ts no longer declares ${name}`)
-  return match[1].trim()
-}
-
 describe('runtime cache policy parity', () => {
-  it('ships the exact matchers the policy module and its spec exercise', () => {
-    const policy = read('src/pwa/runtimeCachePolicy.ts')
+  it('builds each runtime route from the shared policy factory', () => {
     const viteConfig = read('vite.config.ts')
 
-    for (const name of MATCHERS) {
-      const pattern = declaredPattern(policy, name)
-      expect(pattern.startsWith('/')).toBe(true)
+    expect(viteConfig).toContain("from './src/pwa/runtimeCachePolicy.ts'")
+    for (const factory of RUNTIME_MATCHER_FACTORIES) {
       expect(
-        viteConfig.includes(pattern),
-        `vite.config.ts must inline ${name} verbatim: ${pattern}`,
+        new RegExp(`urlPattern:\\s*${factory}\\(\\s*env\\.VITE_API_BASE_URL\\s*\\)`).test(viteConfig),
+        `vite.config.ts must build a runtime route with ${factory}`,
       ).toBe(true)
     }
   })
@@ -43,12 +37,14 @@ describe('runtime cache policy parity', () => {
     const module = read('src/pwa/legacyApiCacheWorker.ts')
     const worker = read('public/api-cache-cleanup.js')
 
-    for (const literal of ['taskdeck:api-cache-policy', 'legacy-api-cache-retired', 'taskdeck:skip-waiting']) {
+    for (const literal of ['taskdeck:api-cache-policy', 'taskdeck-api-cache-policy-v2', 'taskdeck:skip-waiting']) {
       expect(module.includes(`'${literal}'`)).toBe(true)
       expect(worker.includes(`'${literal}'`)).toBe(true)
     }
 
-    // The activation hook evicts against the same static-asset rule the route admits.
-    expect(worker.includes(declaredPattern(read('src/pwa/runtimeCachePolicy.ts'), 'STATIC_ASSET_PATH'))).toBe(true)
+    // The public worker cannot reconstruct the build-time API base, so it must
+    // invalidate the whole static runtime cache instead of copying a partial matcher.
+    expect(worker).toContain('await caches.delete(TASKDECK_STATIC_ASSET_CACHE)')
+    expect(worker).not.toContain('TASKDECK_STATIC_ASSET_PATH')
   })
 })
