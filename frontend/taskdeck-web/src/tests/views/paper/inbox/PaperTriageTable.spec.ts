@@ -100,7 +100,7 @@ describe('PaperTriageTable', () => {
 
   it('hides retained rows and their count while a replacement list is loading', () => {
     const wrapper = mount(PaperTriageTable, {
-      props: { items: makeItems(), loadingList: true },
+      props: { items: makeItems(), loadingList: true, scopeReplacement: true },
     })
 
     expect(wrapper.get('.paper-triage').attributes('aria-busy')).toBe('true')
@@ -112,7 +112,12 @@ describe('PaperTriageTable', () => {
 
   it('prioritizes an error and hides retained rows and their count after replacement fails', () => {
     const wrapper = mount(PaperTriageTable, {
-      props: { items: makeItems(), loadingList: true, listError: 'Refresh failed' },
+      props: {
+        items: makeItems(),
+        loadingList: true,
+        listError: 'Refresh failed',
+        scopeReplacement: true,
+      },
     })
 
     expect(wrapper.find('[role="alert"]').text()).toContain('Refresh failed')
@@ -121,6 +126,17 @@ describe('PaperTriageTable', () => {
     expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('2 items')
     expect(wrapper.text()).not.toContain('A pen and a phrase')
+  })
+
+  it('keeps retained rows and their count alongside a same-scope refresh error', () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems(), listError: 'Refresh failed' },
+    })
+
+    expect(wrapper.find('[role="alert"]').text()).toContain('Refresh failed')
+    expect(wrapper.get('.paper-triage__list').attributes('style')).toBeUndefined()
+    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)
+    expect(wrapper.text()).toContain('2 items')
   })
 
   it('prioritizes failed/error status tone over triage wording', () => {
@@ -744,7 +760,7 @@ describe('PaperTriageTable', () => {
     const typed = 'a correction that has not been saved yet'
     await wrapper.get('[data-testid="capture-edit-textarea"]').setValue(typed)
 
-    await wrapper.setProps({ loadingList: true })
+    await wrapper.setProps({ loadingList: true, scopeReplacement: true })
     await flushPromises()
 
     expect(wrapper.get('.paper-triage__list').attributes('style')).toContain('display: none')
@@ -753,7 +769,7 @@ describe('PaperTriageTable', () => {
       .toBe(typed)
     expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(1)
 
-    await wrapper.setProps({ loadingList: false })
+    await wrapper.setProps({ loadingList: false, scopeReplacement: false })
     await flushPromises()
 
     expect(wrapper.get('.paper-triage__list').attributes('style')).toBeUndefined()

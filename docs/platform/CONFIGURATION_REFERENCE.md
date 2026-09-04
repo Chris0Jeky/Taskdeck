@@ -829,6 +829,16 @@ Bound to `DevelopmentSandboxSettings`. Even when `Enabled = true`, the
 sandbox is force-disabled outside the `Development` environment
 (`SettingsRegistration.cs`).
 
+**The sandbox never widens write-class authorization** (ADR-0068, `#1866`). With
+`Enabled = true` a caller still needs board ownership or a write-capable
+`BoardAccess` row to write to a board, delete it, manage its access grants, or
+execute a proposal against it — the same bar the automation policy engine has
+always enforced, so a sandbox demo answers exactly as production does. The flag
+only relaxes **read** helpers (board read checks and readable-board-set
+resolution, so seeded fixtures are browsable without hand-granting access), and
+is separately used as a **requirement** by the database and board JSON
+export/import endpoints, which return `403` unless it is on.
+
 | Key | Type | Default | Description | Required? |
 | --- | --- | --- | --- | --- |
 | `DevelopmentSandbox:Enabled` | `bool` | `false` | Enables the local dev sandbox helpers. Ignored unless the app is in the Development environment. | No |
