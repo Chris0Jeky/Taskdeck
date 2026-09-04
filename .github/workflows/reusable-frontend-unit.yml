@@ -34,7 +34,13 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/taskdeck-web/package-lock.json
 
+      # #2378: this step launches real PowerShell/Bash launchers and their API/Vite children. When
+      # it hangs it used to consume the whole job budget (cancellations observed at 25:00), taking
+      # the job's remaining steps down with it. A passed windows-latest run of this step measured
+      # 6m31s, so 10 minutes fails a hang fast while leaving ~1.5x headroom on a slow runner. The
+      # suite's own watchdog trips at 9 minutes first and logs which launcher trees leaked.
       - name: Run source launcher regression suite
+        timeout-minutes: 10
         run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
 
       - name: Install frontend dependencies
