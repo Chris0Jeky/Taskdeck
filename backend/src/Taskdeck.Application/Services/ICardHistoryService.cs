@@ -10,6 +10,14 @@ namespace Taskdeck.Application.Services;
 public interface ICardHistoryService
 {
     /// <summary>
+    /// Returns history for the server-authoritative, revision-resolved proposal snapshot
+    /// already authorized by the API boundary.
+    /// </summary>
+    Task<Result<IReadOnlyList<CardHistoryRowDto>>> GetCardHistoryForProposalAsync(
+        ProposalDto effectiveProposal,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns a history ledger of all touches on cards affected by the given proposal,
     /// ordered by timestamp descending (newest first).
     /// </summary>
