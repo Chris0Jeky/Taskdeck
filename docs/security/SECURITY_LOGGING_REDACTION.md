@@ -47,6 +47,13 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   board listing, and card search operations. Invalid input and known domain messages stay specific;
   silent child-result handling and arbitrary thrown exceptions remain separate contracts.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
+- `UnknownExceptionBoundaryProofTests` pins the correlated unknown-exception boundary end to end:
+  a synthetic failure carrying a secret-like token, a Windows path, a SQLite constraint string, and a
+  provider URL leaves no marker in the HTTP response or in any captured log entry, on both the
+  unhandled path and the `UnexpectedError` `Result` mapper path; the response echoes the request
+  `X-Request-Id`; and the failure produces exactly one correlated error log entry rather than one
+  per layer. Deliberate validation, not-found, and conflict `Result` messages stay unchanged and
+  are not logged as errors.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for
   `Microsoft.AspNetCore.Hosting.Diagnostics`. Its Information-level request start/finish events
@@ -68,6 +75,12 @@ Focused redaction checks:
 ```powershell
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~SensitiveDataRedactorTests|FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~CaptureRequestContractTests|FullyQualifiedName~CaptureServiceTests|FullyQualifiedName~OpsCliServiceTests|FullyQualifiedName~AgentRuntimeTests"
 $env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~LoggingProviderConfigurationTests|FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests|FullyQualifiedName~ProposalToolsErrorSafetyTests|FullyQualifiedName~ProposalResourcesErrorSafetyTests|FullyQualifiedName~ReadToolsErrorSafetyTests"
+```
+
+Focused unknown-exception boundary proof:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~UnknownExceptionBoundaryProofTests"
 ```
 
 Full backend regression:
