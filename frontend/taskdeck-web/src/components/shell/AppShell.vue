@@ -88,7 +88,7 @@ const commandItems = computed<CommandItem[]>(() => {
       id: 'action:capture',
       label: 'New Capture',
       icon: '+',
-      keywords: 'capture inbox quick note modal',
+      keywords: 'capture inbox quick note modal transcript',
       kind: 'action',
       action: openCaptureModal,
     },

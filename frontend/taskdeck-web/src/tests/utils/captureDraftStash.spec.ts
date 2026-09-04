@@ -52,6 +52,7 @@ describe('captureDraftStash', () => {
       boardId: 'board-7',
       labels: ['release', 'docs'],
       dueAt: '2026-09-01',
+      source: 'Typed',
       failure: { message: 'Capture not saved.', details: 'Status: 401' },
       truncated: false,
       labelsDropped: false,
@@ -230,6 +231,57 @@ describe('captureDraftStash', () => {
 
       expect(peekCaptureDraft(USER_A)).toBeNull()
       expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+  })
+
+  // GH-2141 -- the composer now carries a capture source across the redirect.
+  describe('capture source', () => {
+    it('round-trips a transcript source', () => {
+      stashCaptureDraft({
+        userId: USER_A,
+        variant: 'composer',
+        text: 'Ana: ship it Friday.',
+        source: 'TranscriptPaste',
+      })
+
+      expect(takeCaptureDraft(USER_A)?.source).toBe('TranscriptPaste')
+    })
+
+    it('defaults a nib draft, which has no source, to Typed', () => {
+      stashCaptureDraft({ userId: USER_A, variant: 'nib', text: 'a thought' })
+
+      expect(takeCaptureDraft(USER_A)?.source).toBe('Typed')
+    })
+
+    it('reads a record written before this field as Typed, not as a transcript', () => {
+      window.sessionStorage.setItem(
+        CAPTURE_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          userId: USER_A,
+          variant: 'composer',
+          text: 'older draft',
+          stashedAt: Date.now(),
+        }),
+      )
+
+      // Restoring an unsourced draft as a transcript would send it to the
+      // assistant on a choice its author never made.
+      expect(peekCaptureDraft(USER_A)?.source).toBe('Typed')
+    })
+
+    it('reads an unrecognised source value as Typed', () => {
+      window.sessionStorage.setItem(
+        CAPTURE_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          userId: USER_A,
+          variant: 'composer',
+          text: 'odd draft',
+          source: 'Voice',
+          stashedAt: Date.now(),
+        }),
+      )
+
+      expect(peekCaptureDraft(USER_A)?.source).toBe('Typed')
     })
   })
 

@@ -457,6 +457,39 @@ describe('PaperInboxView', () => {
     expect((textarea.element as HTMLTextAreaElement).value).toBe('')
   })
 
+  // GH-2141 -- the composer's source choice must reach the API, because the
+  // server keys LLM triage extraction off a transcript source. The nib has no
+  // toggle and must keep filing `Typed`.
+  it('sends the composer transcript source through the capture request', async () => {
+    const wrapper = mount(PaperInboxView)
+    await wrapper.find('[data-testid="paper-composer-source-transcript"]').setValue()
+    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await textarea.setValue('Ana: ship it Friday.')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
+      boardId: null,
+      text: 'Ana: ship it Friday.',
+      source: 'TranscriptPaste',
+    })
+  })
+
+  it('keeps the nib on the Typed source', async () => {
+    const wrapper = mount(PaperInboxView)
+    const setVariant = (wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant
+    setVariant('nib')
+    await wrapper.vm.$nextTick()
+    const nib = wrapper.find('textarea[aria-label="Quick capture input"]')
+    await nib.setValue('a thought')
+    await nib.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'Typed' }),
+    )
+  })
+
   it('sends composer due date and labels through the capture request', async () => {
     const wrapper = mount(PaperInboxView)
     await wrapper.find('textarea[aria-label="Capture body"]').setValue('Buy milk and gas')
