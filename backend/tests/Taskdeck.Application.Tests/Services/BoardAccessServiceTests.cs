@@ -92,7 +92,6 @@ public class BoardAccessServiceTests
         var dto = new GrantAccessDto(board.Id, targetUser.Id, UserRole.Editor);
         var notificationAwareService = new BoardAccessService(
             _unitOfWorkMock.Object,
-            sandboxSettings: null,
             notificationService: _notificationServiceMock.Object);
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
@@ -308,27 +307,51 @@ public class BoardAccessServiceTests
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
+    // #1866: the development sandbox no longer bypasses the manage gate. A granter with no
+    // manage-capable membership is refused in every environment; an Admin membership row still
+    // grants — the fixture supplies a real row rather than relying on a bypass.
     [Fact]
-    public async Task GrantAccessAsync_ShouldBypassManageChecks_WhenSandboxModeIsEnabled()
+    public async Task GrantAccessAsync_ShouldRefuseNonManager_WithNoSandboxBypassAvailable()
     {
         var owner = CreateUser("owner");
         var granter = CreateUser("granter");
         var targetUser = CreateUser("target");
         var board = new Board("Test Board", ownerId: owner.Id);
         var dto = new GrantAccessDto(board.Id, targetUser.Id, UserRole.Editor);
-        var sandboxService = new BoardAccessService(
-            _unitOfWorkMock.Object,
-            new DevelopmentSandboxSettings { Enabled = true });
 
         _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
         _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
         _userRepoMock.Setup(r => r.GetByIdAsync(targetUser.Id, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, granter.Id, default))
+            .ReturnsAsync((BoardAccess?)null);
+
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GrantAccessAsync_ShouldSucceed_ForAdminMember_WithNoSandboxBypass()
+    {
+        var owner = CreateUser("owner");
+        var granter = CreateUser("granter");
+        var targetUser = CreateUser("target");
+        var board = new Board("Test Board", ownerId: owner.Id);
+        var dto = new GrantAccessDto(board.Id, targetUser.Id, UserRole.Editor);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _userRepoMock.Setup(r => r.GetByIdAsync(granter.Id, default)).ReturnsAsync(granter);
+        _userRepoMock.Setup(r => r.GetByIdAsync(targetUser.Id, default)).ReturnsAsync(targetUser);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, granter.Id, default))
+            .ReturnsAsync(new BoardAccess(board.Id, granter.Id, UserRole.Admin, owner.Id));
         _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, targetUser.Id, default))
             .ReturnsAsync((BoardAccess?)null);
         _boardAccessRepoMock.Setup(r => r.AddAsync(It.IsAny<BoardAccess>(), default))
             .ReturnsAsync((BoardAccess a, CancellationToken _) => a);
 
-        var result = await sandboxService.GrantAccessAsync(dto, granter.Id);
+        var result = await _service.GrantAccessAsync(dto, granter.Id);
 
         result.IsSuccess.Should().BeTrue();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);

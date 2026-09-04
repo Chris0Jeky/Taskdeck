@@ -21,15 +21,18 @@ export type SaveRevisionResult = {
 }
 
 /**
- * A revision endpoint 4xx is a definite non-commit: the existing API contract
- * uses 4xx responses for validation, authorization, missing proposals, and
- * revision conflicts. A timeout, network failure, or 5xx remains indeterminate
- * because the server may have committed before the client lost the response.
+ * These statuses are emitted before the revision write can commit. Other
+ * statuses remain indeterminate because the server may have committed before
+ * the client received an error (notably 404/409 from a concurrent or deleted
+ * proposal, and 5xx responses after the write path was reached).
  */
 function isDefiniteRevisionSaveRejection(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false
   const status = (error as { response?: { status?: unknown } }).response?.status
-  return typeof status === 'number' && status >= 400 && status < 500
+  return (
+    typeof status === 'number' &&
+    [400, 401, 403, 413, 422, 429].includes(status)
+  )
 }
 
 type RevisionHistory = {

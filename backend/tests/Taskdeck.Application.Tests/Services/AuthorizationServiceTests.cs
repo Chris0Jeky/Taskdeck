@@ -479,4 +479,136 @@ public class AuthorizationServiceTests
     }
 
     #endregion
+
+    #region Sandbox write-gate convergence (#1866)
+
+    private AuthorizationService SandboxService() => new(
+        _unitOfWorkMock.Object,
+        new DevelopmentSandboxSettings { Enabled = true });
+
+    [Fact]
+    public async Task CanWriteBoardAsync_ShouldReturnFalse_ForViewer_WhenSandboxModeIsEnabled()
+    {
+        var board = new Board("Test Board", ownerId: Guid.NewGuid());
+        var userId = Guid.NewGuid();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, userId, default))
+            .ReturnsAsync(new BoardAccess(board.Id, userId, UserRole.Viewer, Guid.NewGuid()));
+
+        var result = await SandboxService().CanWriteBoardAsync(userId, board.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CanWriteBoardAsync_ShouldReturnTrue_ForEditor_WhenSandboxModeIsEnabled()
+    {
+        var board = new Board("Test Board", ownerId: Guid.NewGuid());
+        var userId = Guid.NewGuid();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, userId, default))
+            .ReturnsAsync(new BoardAccess(board.Id, userId, UserRole.Editor, Guid.NewGuid()));
+
+        var result = await SandboxService().CanWriteBoardAsync(userId, board.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CanWriteBoardAsync_ShouldReturnTrue_ForOwner_WhenSandboxModeIsEnabled()
+    {
+        var ownerId = Guid.NewGuid();
+        var board = new Board("Test Board", ownerId: ownerId);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+
+        var result = await SandboxService().CanWriteBoardAsync(ownerId, board.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task CanDeleteBoardAsync_ShouldReturnFalse_ForViewer_WhenSandboxModeIsEnabled()
+    {
+        var board = new Board("Test Board", ownerId: Guid.NewGuid());
+        var userId = Guid.NewGuid();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, userId, default))
+            .ReturnsAsync(new BoardAccess(board.Id, userId, UserRole.Viewer, Guid.NewGuid()));
+
+        var result = await SandboxService().CanDeleteBoardAsync(userId, board.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task CanManageBoardAccessAsync_ShouldReturnFalse_ForViewer_WhenSandboxModeIsEnabled()
+    {
+        var board = new Board("Test Board", ownerId: Guid.NewGuid());
+        var userId = Guid.NewGuid();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, userId, default))
+            .ReturnsAsync(new BoardAccess(board.Id, userId, UserRole.Viewer, Guid.NewGuid()));
+
+        var result = await SandboxService().CanManageBoardAccessAsync(userId, board.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetUserRoleForBoardAsync_ShouldReturnRealRole_WhenSandboxModeIsEnabled()
+    {
+        var board = new Board("Test Board", ownerId: Guid.NewGuid());
+        var userId = Guid.NewGuid();
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _boardAccessRepoMock.Setup(r => r.GetByBoardAndUserAsync(board.Id, userId, default))
+            .ReturnsAsync(new BoardAccess(board.Id, userId, UserRole.Viewer, Guid.NewGuid()));
+
+        var result = await SandboxService().GetUserRoleForBoardAsync(userId, board.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(UserRole.Viewer);
+    }
+
+    [Fact]
+    public async Task GetWritableBoardIdsAsync_ShouldExcludeViewerBoards_WhenSandboxModeIsEnabled()
+    {
+        var userId = Guid.NewGuid();
+        var grantedBy = Guid.NewGuid();
+        var editorBoardId = Guid.NewGuid();
+        var viewerBoardId = Guid.NewGuid();
+        var boardIds = new[] { editorBoardId, viewerBoardId };
+
+        _boardRepoMock.Setup(r => r.GetOwnedBoardIdsAsync(userId, It.IsAny<IEnumerable<Guid>>(), default))
+            .ReturnsAsync(new List<Guid>());
+        _boardAccessRepoMock.Setup(r => r.GetByUserIdAsync(userId, default))
+            .ReturnsAsync(new List<BoardAccess>
+            {
+                new(editorBoardId, userId, UserRole.Editor, grantedBy),
+                new(viewerBoardId, userId, UserRole.Viewer, grantedBy)
+            });
+
+        var result = await SandboxService().GetWritableBoardIdsAsync(userId, boardIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(new[] { editorBoardId });
+    }
+
+    [Fact]
+    public async Task GetReadableBoardIdsAsync_ShouldStillBypass_WhenSandboxModeIsEnabled()
+    {
+        var userId = Guid.NewGuid();
+        var boardIds = new[] { Guid.NewGuid(), Guid.NewGuid() };
+
+        var result = await SandboxService().GetReadableBoardIdsAsync(userId, boardIds);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(boardIds);
+    }
+
+    #endregion
 }

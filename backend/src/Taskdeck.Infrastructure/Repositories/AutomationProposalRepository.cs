@@ -321,9 +321,8 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
                 !_context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived))
             .ToListAsync(cancellationToken);
 
-        // Counted with the complementary predicate rather than by subtracting from a total, so the
-        // withheld figure is never inferred from two reads that could disagree. It is a count only
-        // and is used solely for an operator log line.
+        // Counted with the complementary predicate rather than by subtracting from a total. It is a
+        // count only and is used solely for an operator log line.
         var skippedArchivedBoardCount = await expired
             .Where(p =>
                 p.BoardId.HasValue &&

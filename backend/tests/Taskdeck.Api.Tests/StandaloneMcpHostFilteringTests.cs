@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
@@ -332,6 +333,33 @@ public class StandaloneMcpHostFilteringTests
             });
     }
 
+    [Fact]
+    public async Task StandaloneMcpHttpHost_Preflight_ReturnsEmptyNoCorsResponseBeforeAuthentication()
+    {
+        await RunSeededApiKeyHostAsync(
+            "tdsk_standalone_preflight_auth_0000000000",
+            perKeyPermitLimit: 1000,
+            async client =>
+            {
+                using var anonymous = new HttpClient { BaseAddress = client.BaseAddress };
+                using var request = new HttpRequestMessage(HttpMethod.Options, "/mcp");
+                request.Headers.TryAddWithoutValidation("Origin", "http://localhost:5173");
+                request.Headers.TryAddWithoutValidation("Access-Control-Request-Method", "POST");
+                request.Headers.TryAddWithoutValidation(
+                    "Access-Control-Request-Headers", "Authorization,Content-Type");
+
+                using var response = await anonymous.SendAsync(request);
+
+                response.StatusCode.Should().Be(HttpStatusCode.NoContent,
+                    "the CORS preflight must short-circuit before API-key authentication");
+                (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+                response.Headers
+                    .Concat(response.Content.Headers)
+                    .Where(header => header.Key.StartsWith("Access-Control-", StringComparison.OrdinalIgnoreCase))
+                    .Should().BeEmpty("the MCP endpoint must not enable browser CORS");
+            });
+    }
+
     // The fail-closed machine-path contract holds on THIS host too (#1992 q-10 A, ADR-0064). The
     // standalone branch builds its own pipeline instead of calling ConfigureTaskdeckPipeline, so it
     // is the one place the guard could silently be absent: before it was registered there, /MCP with
@@ -462,7 +490,8 @@ public class StandaloneMcpHostFilteringTests
             Environment.SetEnvironmentVariable("RateLimiting__Enabled", "true");
             // Caller-chosen per-key budget, long window so it cannot replenish mid-test.
             Environment.SetEnvironmentVariable(
-                "RateLimiting__McpPerApiKey__PermitLimit", perKeyPermitLimit.ToString());
+                "RateLimiting__McpPerApiKey__PermitLimit",
+                perKeyPermitLimit.ToString(CultureInfo.InvariantCulture));
             Environment.SetEnvironmentVariable("RateLimiting__McpPerApiKey__WindowSeconds", "300");
             // Raise the pre-auth IP failure budget out of the way — only the per-key budget must reject.
             Environment.SetEnvironmentVariable("RateLimiting__McpAuthenticationPerIp__PermitLimit", "1000");
