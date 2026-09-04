@@ -2181,4 +2181,108 @@ describe('captureStore', () => {
     })
   })
 
+  describe('background batch poll list truth', () => {
+    const NOW = new Date().toISOString()
+
+    function summaryRow(id: string, status: string, errorMessage: string | null = null) {
+      return {
+        id,
+        userId: 'u1',
+        boardId: null,
+        status,
+        source: 'Typed',
+        textExcerpt: id,
+        createdAt: NOW,
+        processedAt: status === 'Triaging' || status === 'New' ? null : NOW,
+        errorMessage,
+        disposition: null,
+      } as never
+    }
+
+    it('reveals rows without a manual retry when a later background poll succeeds', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        vi.mocked(captureApi.batchTriage).mockResolvedValue({
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          results: [{ itemId: 'c-1', success: true }],
+        })
+        vi.mocked(captureApi.listItems)
+          .mockRejectedValueOnce(new Error('post-write-refresh-exhausted'))
+          .mockResolvedValue([summaryRow('c-1', 'ProposalCreated')] as never)
+
+        await store.batchTriage(['c-1'], 'triage')
+        expect(store.listError).toBe('Failed to load inbox items')
+        expect(store.items).toEqual([])
+
+        store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        expect(store.listError).toBeNull()
+        expect(store.items.map((item) => item.id)).toEqual(['c-1'])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps a foreground list error when a superseded poll response lands', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems)
+          .mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve }) as never)
+          .mockRejectedValueOnce(new Error('scope-load-failed'))
+
+        const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+        await expect(
+          store.fetchItems({ limit: 200, boardId: 'board-b' }),
+        ).rejects.toThrow('scope-load-failed')
+        expect(store.listError).toBe('Failed to load inbox items')
+
+        resolveList([summaryRow('c-1', 'ProposalCreated')])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.listError).toBe('Failed to load inbox items')
+        expect(store.items).toEqual([])
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it.each([401, 403])(
+      'keeps a foreground list error when the background poll loses access (%s)',
+      async (status) => {
+        vi.useFakeTimers()
+        try {
+          const store = useCaptureStore()
+          vi.mocked(captureApi.listItems)
+            .mockRejectedValueOnce(new Error('foreground-load-failed'))
+            .mockRejectedValue({ response: { status } } as never)
+
+          await expect(store.fetchItems({ limit: 200 })).rejects.toThrow('foreground-load-failed')
+          expect(store.listError).toBe('Failed to load inbox items')
+
+          store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+          await vi.advanceTimersByTimeAsync(3_000)
+          expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+          expect(store.listError).toBe('Failed to load inbox items')
+
+          await vi.advanceTimersByTimeAsync(9_000)
+          expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+          expect(store.listError).toBe('Failed to load inbox items')
+        } finally {
+          vi.useRealTimers()
+        }
+      },
+    )
+  })
+
 })

@@ -646,6 +646,15 @@ export const useCaptureStore = defineStore('capture', () => {
         const loadedItems = await captureApi.listItems(query, requestOptions)
         if (!isCurrent()) return
         items.value = loadedItems
+        // A foreground read failure hides every row behind its message, so a
+        // batch whose immediate post-POST refresh exhausted its retries left
+        // the inbox looking empty-and-broken until the user pressed Retry
+        // (#2305). This accepted snapshot is proof the same list is readable
+        // again, and it is the rows now on screen. Only this success path
+        // clears the error: an aborted, superseded (newer explicit load or
+        // newer capture write), 401 or 403 response fails `isCurrent()` or
+        // lands in the catch below and leaves the foreground error standing.
+        listError.value = null
         observedPostEnqueueList = true
         await refreshTerminalDetails(trackedIds, {
           requestOptions,
