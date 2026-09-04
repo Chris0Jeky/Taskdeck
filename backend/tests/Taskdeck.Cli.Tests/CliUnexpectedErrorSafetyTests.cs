@@ -253,6 +253,66 @@ public sealed class CliUnexpectedErrorSafetyTests
         result.StdOut.Should().NotContain(SecretToken);
     }
 
+    /// <summary>
+    /// #2468: an ordinary operator run has no harness startup trace, so the always-on sink is the
+    /// only thing that retains the failure. It must write exactly one bounded, redacted record
+    /// under the data directory and print the same reference on stderr.
+    /// </summary>
+    [Fact]
+    public async Task RealCli_WithoutTheHarnessTrace_KeepsOneRedactedRecordUnderTheDataDirectory()
+    {
+        await using var harness = new CliTestHarness("cli-failure-sink", enableStartupTrace: false);
+        // A data directory that does not exist yet: opening the database throws from inside
+        // startup, and the sink must still be able to create the directory it writes into.
+        var dataDirectory = Path.Combine(harness.DataDirectory, "unopenable");
+        var databasePath = Path.Combine(dataDirectory, "taskdeck.db");
+
+        var result = await harness.RunAsync(
+            $"boards list --api_key={SecretToken}",
+            new Dictionary<string, string?>
+            {
+                ["TASKDECK_CONNECTION_STRING"] = $"Data Source={databasePath}"
+            });
+
+        result.ExitCode.Should().Be(ExitCodes.Failure, result.StdErr);
+        result.StdErr.Should().Contain(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+        result.StdErr.Should().NotContain(CliUnexpectedFailure.DiagnosticsUnavailableNotice);
+        result.StdErr.Should().NotContain(SecretToken);
+        result.StdErr.Should().NotContain("   at ");
+        result.StdOut.Should().NotContain(SecretToken);
+
+        var reference = ExtractCorrelationReference(result.StdErr);
+        reference.Should().MatchRegex("^[0-9a-f]{12}$");
+
+        var diagnosticsDirectory = Path.Combine(dataDirectory, "diagnostics");
+        Directory.Exists(diagnosticsDirectory).Should().BeTrue();
+        var records = Directory.GetFiles(diagnosticsDirectory, "cli-failure-*.txt");
+        records.Should().HaveCount(1);
+        Path.GetFileName(records[0]).Should().Contain(reference);
+
+        var record = File.ReadAllText(records[0]);
+        record.Should().Contain(reference);
+        // The redacted exception summary is the point of the record.
+        record.Should().Contain("exception:");
+        // argv is redacted, so the token the operator typed is not retained in raw form.
+        record.Should().NotContain(SecretToken);
+        record.Should().Contain(SensitiveDataRedactor.RedactedValue);
+        // Never a raw stack trace.
+        record.Should().NotContain("   at ");
+        new FileInfo(records[0]).Length.Should().BeLessThanOrEqualTo(8 * 1024);
+    }
+
+    private static string ExtractCorrelationReference(string standardError)
+    {
+        const string marker = "(trace correlation: ";
+        var start = standardError.IndexOf(marker, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, "stderr must carry a correlation reference");
+        start += marker.Length;
+        var end = standardError.IndexOf(')', start);
+        end.Should().BeGreaterThan(start);
+        return standardError[start..end];
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;
