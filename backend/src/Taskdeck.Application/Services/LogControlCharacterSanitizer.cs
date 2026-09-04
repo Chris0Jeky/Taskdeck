@@ -29,5 +29,7 @@ internal static class LogControlCharacterSanitizer
     }
 
     private static bool IsControlCharacter(char character) =>
-        character <= '\u001F' || (character >= '\u007F' && character <= '\u009F');
+        character <= '\u001F'
+        || (character >= '\u007F' && character <= '\u009F')
+        || character is '\u2028' or '\u2029';
 }

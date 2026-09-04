@@ -5,7 +5,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Proposal } from '../../../../types/automation'
 import type { CaptureItem } from '../../../../types/capture'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
-import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
 import {
   REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
   REVIEW_QUEUE_REFRESH_MS,
@@ -3400,7 +3399,7 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
-  it('does not let a cancelled revision metadata load mount the editor late', async () => {
+  it('returns focus to Request edit when cancelling a pending revision metadata load', async () => {
     const revisionLoadResolvers: Array<(revisions: unknown[]) => void> = []
     mocks.getRevisions.mockImplementation(
       () => new Promise((resolve) => { revisionLoadResolvers.push(resolve) }),
@@ -3410,16 +3409,19 @@ describe('PaperReviewView', () => {
         id: 'cancelled-edit-open',
         operations: [{ ...makeProposal().operations[0], proposalId: 'cancelled-edit-open' }],
       }),
-    ])
+    ], '/workspace/review', [], [], { attachTo: true })
     await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
 
+    const opener = wrapper.get('[data-testid="decision-edit"]').element as HTMLButtonElement
+    opener.focus()
     await wrapper.get('[data-testid="decision-edit"]').trigger('click')
     await Promise.resolve()
     expect(mocks.getRevisions).toHaveBeenCalledTimes(2)
+    const cancel = wrapper.get('[data-testid="decision-cancel-edit"]')
 
     // Cancelling the rail's pending edit opening invalidates its continuation,
     // not merely an editor that has already been mounted.
-    wrapper.findComponent(ReviewMain).vm.$emit('cancel-edit')
+    await cancel.trigger('click')
     await nextTick()
     revisionLoadResolvers[1]!([])
     await flushPromises()
@@ -3427,6 +3429,29 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
+  })
+
+  it('returns focus to Request edit when revision metadata loading fails', async () => {
+    mocks.getRevisions.mockRejectedValueOnce(new Error('initial revision load failed'))
+    mocks.getRevisions.mockRejectedValueOnce(new Error('opening revision load failed'))
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'failed-edit-open',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'failed-edit-open' }],
+      }),
+    ], '/workspace/review', [], [], { attachTo: true })
+    await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+    const opener = wrapper.get('[data-testid="decision-edit"]').element as HTMLButtonElement
+    opener.focus()
+    await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(opener)
     wrapper.unmount()
   })
 

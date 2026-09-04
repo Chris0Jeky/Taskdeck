@@ -1619,6 +1619,10 @@ async function onRequestEdit() {
     return
   }
   const request = ++revisionOpenGeneration
+  // Capture the actual rail control before the metadata await. The rail exposes
+  // Cancel while that await owns the lock, so cancelling must have a valid
+  // same-proposal target even though the editor has not mounted yet.
+  captureRevisionReturnFocus(p.id)
   revisionOpening.value = true
   try {
     // A not-yet-loaded list must not be treated as an empty one: a saved revision
@@ -1639,14 +1643,19 @@ async function onRequestEdit() {
       revisionEditing.value ||
       revisionSaving.value
     ) return
-    captureRevisionReturnFocus(p.id)
     revisionEditorPayload.value = editablePayload.value
     revisionEditorPayloadEpoch = revisionEditEpoch
     startRevisionEditing()
   } finally {
     // A later open, cancel, proposal switch, or read-only transition owns the
     // state now. Its lock must never be cleared by this stale continuation.
-    if (request === revisionOpenGeneration) revisionOpening.value = false
+    if (request === revisionOpenGeneration) {
+      revisionOpening.value = false
+      // A failed metadata load never mounts the editor, so return to the
+      // captured rail control once it is re-enabled. A successful open keeps
+      // focus inside the newly mounted composer instead.
+      if (!revisionEditing.value) restoreRevisionFocus()
+    }
   }
 }
 
@@ -2080,6 +2089,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // Prevent an in-flight metadata open or save continuation from restoring
+  // focus into a component that no longer owns the document.
+  invalidateRevisionOpening()
+  invalidateRevisionFocusSession()
   clearBatchSelection()
   stopClock()
   stopQueueRefresh()

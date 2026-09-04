@@ -170,9 +170,9 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         expirableIds.Should().Contain(boardless.Id, "a board-less proposal has no archive state to respect");
         expirableIds.Should().Contain(danglingBoard.Id, "a proposal whose board row is gone is not archived history");
 
-        sweep.SkippedArchivedBoardCount.Should().BeGreaterThanOrEqualTo(
+        sweep.SkippedArchivedBoardCount.Should().Be(
             1,
-            "the withheld proposal is reported as a count so the sweep can say what it declined to touch");
+            "the fixture has exactly one archived-board proposal and the sweep must report the exact withheld count");
     }
 
     [Fact]
