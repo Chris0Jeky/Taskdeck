@@ -454,10 +454,19 @@ test('board settings lifecycle should support rename archive unarchive and archi
   await expect(page.getByRole('heading', { name: renamedBoardName })).toBeVisible()
 
   await page.locator('button[title="Board Settings"]').click()
+  // The modal navigates before starting the DELETE to avoid the reactive
+  // cascade freeze covered by #519. Arm the response listener before the
+  // click, then wait for the server mutation before the next hard navigation;
+  // URL/list changes alone can precede durable state.
+  const archiveResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/boards/') &&
+    response.request().method() === 'DELETE')
   await expectDialog(page, () => page.getByRole('button', { name: 'Move to Archive' }).click(), {
     type: 'confirm',
     message: /^Archive "/,
   })
+
+  await archiveResponse.then((response) => expect(response.ok()).toBeTruthy())
 
   await expect(page).toHaveURL(/\/workspace\/boards$/)
   await expect(page.getByText(renamedBoardName)).toHaveCount(0)

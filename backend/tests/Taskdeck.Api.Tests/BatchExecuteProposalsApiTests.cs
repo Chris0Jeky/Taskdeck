@@ -255,7 +255,7 @@ public class BatchExecuteProposalsApiTests : IClassFixture<HostedWorkerDisabledT
     }
 
     [Fact]
-    public async Task ExecuteProposals_DevelopmentSandboxPreservesFinalExecutorPermissionBar()
+    public async Task ExecuteProposals_DevelopmentSandboxDoesNotWidenTheAuthorizationSnapshot()
     {
         using var factory = _factory.WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
@@ -279,10 +279,10 @@ public class BatchExecuteProposalsApiTests : IClassFixture<HostedWorkerDisabledT
             "/api/automation/proposals/execute",
             new ExecuteProposalsRequest { Proposals = [Select(proposal)] });
 
-        // The development sandbox still exposes the proposal to phase one and its ACL preload, so
-        // this reaches the executor's independent fail-closed policy bar and answers Forbidden.
-        // A NotFound response would mean the new snapshot filter changed existing sandbox routing.
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        // #1866: the sandbox no longer widens the phase-one snapshot. A caller with no membership
+        // on the proposal's board sees nothing, so the request collapses to NotFound exactly as it
+        // does outside the sandbox — the converged, non-divergent answer.
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         (await db.Cards.CountAsync(card => card.BoardId == boardId)).Should().Be(0);
