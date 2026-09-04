@@ -153,6 +153,31 @@ describe('PaperTriageRowEdit', () => {
     })
   })
 
+  it('flushes a pending label into metadata when saving without Enter', async () => {
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
+      metadata: {
+        dueDate: '2026-08-23',
+        labels: [],
+      },
+    }))
+    const wrapper = await mountEditor()
+
+    const input = wrapper.get('[data-testid="capture-edit-label-input"]')
+    await input.setValue('  urgent  ')
+
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('button[data-action="edit-save"]').trigger('click')
+    await flushPromises()
+
+    expect(mockCaptureStore.updateSuggestion).toHaveBeenCalledWith('capture-1', {
+      text: 'Ship teh releaes notes before Friday',
+      metadata: {
+        dueDate: '2026-08-23',
+        labels: ['urgent'],
+      },
+    })
+  })
+
   it('removes labels and due date through an explicit empty metadata replacement', async () => {
     mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({
       status: 'Failed',

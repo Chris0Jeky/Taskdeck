@@ -92,12 +92,14 @@ function labelsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((label, index) => label === right[index])
 }
 
+const normalizedLabelInput = computed(() => labelInput.value.trim())
+
 const metadataChanged = computed(() => metadataAvailable.value && (
   dueDateDraft.value !== originalDueDate.value ||
-  !labelsEqual(labelsDraft.value, originalLabels.value)
+  !labelsEqual(labelsDraft.value, originalLabels.value) ||
+  normalizedLabelInput.value.length > 0
 ))
 
-const normalizedLabelInput = computed(() => labelInput.value.trim())
 const canAddLabel = computed(() => (
   normalizedLabelInput.value.length > 0 &&
   !labelsDraft.value.includes(normalizedLabelInput.value)
@@ -216,6 +218,10 @@ async function save() {
   // of the shared-slot test could go out of step with the one the button and
   // the reason line read, which is the drift this shape exists to prevent.
   if (saveBlock.value !== null || saving.value) return
+  // GH-2540: the label box can still hold a value the user never committed
+  // with Enter. Reuse the existing add path so trimming and deduplication stay
+  // identical to the explicit add affordance before the payload is built.
+  addLabel()
   saving.value = true
   saveErrorMessage.value = null
   try {
