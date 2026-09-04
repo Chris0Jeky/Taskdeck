@@ -658,6 +658,69 @@ describe('useReviewProposals', () => {
   })
 
   describe('loadProposals', () => {
+    it('reports when the current explicit load lands authoritatively', async () => {
+      const fakeProposals = [makeProposal({ id: 'fetched' })]
+      mockAutomationApi.getProposals.mockResolvedValueOnce(fakeProposals)
+      const rp = useReviewProposals()
+
+      await expect(rp.loadProposalsWithOutcome()).resolves.toBe('landed')
+      expect(rp.proposals.value).toEqual(fakeProposals)
+      expect(rp.proposalsLoading.value).toBe(false)
+    })
+
+    it('reports a current explicit load failure without publishing stale truth', async () => {
+      mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('network'))
+      const rp = useReviewProposals()
+
+      await expect(rp.loadProposalsWithOutcome()).resolves.toBe('failed')
+      expect(mockToast.error).toHaveBeenCalledOnce()
+      expect(rp.proposalsLoading.value).toBe(false)
+    })
+
+    it('reports an older overlapping explicit load as superseded', async () => {
+      let resolveOlder!: (proposals: ReturnType<typeof makeProposal>[]) => void
+      const olderResponse = new Promise<ReturnType<typeof makeProposal>[]>((resolve) => {
+        resolveOlder = resolve
+      })
+      mockAutomationApi.getProposals
+        .mockReturnValueOnce(olderResponse)
+        .mockResolvedValueOnce([makeProposal({ id: 'newer' })])
+      const rp = useReviewProposals()
+
+      const older = rp.loadProposalsWithOutcome()
+      const newer = rp.loadProposalsWithOutcome()
+      await expect(newer).resolves.toBe('landed')
+      resolveOlder([makeProposal({ id: 'older' })])
+
+      await expect(older).resolves.toBe('superseded')
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['newer'])
+      expect(rp.proposalsLoading.value).toBe(false)
+    })
+
+    it('does not report landed until its deep-link lookup completes', async () => {
+      mockRoute.hash = '#proposal-p-remote'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      let resolveProposal!: (proposal: ReturnType<typeof makeProposal>) => void
+      mockAutomationApi.getProposal.mockReturnValueOnce(
+        new Promise<ReturnType<typeof makeProposal>>((resolve) => {
+          resolveProposal = resolve
+        }),
+      )
+      const rp = useReviewProposals()
+
+      let settled = false
+      const load = rp.loadProposalsWithOutcome().then((outcome) => {
+        settled = true
+        return outcome
+      })
+      await Promise.resolve()
+      expect(settled).toBe(false)
+
+      resolveProposal(makeProposal({ id: 'p-remote' }))
+      await expect(load).resolves.toBe('landed')
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['p-remote'])
+    })
+
     it('calls automationApi.getProposals with board filter', async () => {
       mockRoute.query = { boardId: 'brd-1' }
       const rp = useReviewProposals()

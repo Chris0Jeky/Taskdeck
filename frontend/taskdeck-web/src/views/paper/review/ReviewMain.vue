@@ -65,6 +65,8 @@ const props = withDefaults(
     sideEffects: SideEffects
     conflicts: ConflictRow[]
     history: HistoryRow[]
+    /** Required evidence could not be refreshed for the active saved revision. */
+    evidenceUnavailable?: boolean
     /** When true the active proposal is settled; the rail offers "File away" only. */
     dismissable?: boolean
     /**
@@ -92,6 +94,7 @@ const props = withDefaults(
     appliedProposal: null,
     metadata: null,
     suppressProducerFootnote: false,
+    evidenceUnavailable: false,
   },
 )
 
@@ -214,7 +217,7 @@ watch(
           {{ isAppliedRecord ? $t('review.appliedRecord.lede') : lede }}
         </p>
       </div>
-      <div v-if="!isAppliedRecord" class="paper-review-main__dial card">
+      <div v-if="!isAppliedRecord && !evidenceUnavailable" class="paper-review-main__dial card">
         <PaperConfidenceDial
           v-if="hasNumericConfidence && confidence.overall !== null"
           :value="confidence.overall"
@@ -333,20 +336,22 @@ watch(
       :applied="isAppliedRecord"
     />
 
-    <ReviewProvenance
-      :rows="provenance"
-      :metadata="metadata"
-      :suppress-producer-footnote="suppressProducerFootnote"
-      :evidence-links="evidenceLinks"
-      :proposal-id="proposalId"
-      :read-only="readOnly"
-      :details-expanded="provenanceExpanded"
-      @update:details-expanded="provenanceExpanded = $event"
-      @report="emit('report', $event)"
-    />
-    <ReviewSideEffects :data="sideEffects" />
-    <ReviewConflicts :rows="conflicts" />
-    <ReviewHistory :rows="history" />
+    <template v-if="!evidenceUnavailable">
+      <ReviewProvenance
+        :rows="provenance"
+        :metadata="metadata"
+        :suppress-producer-footnote="suppressProducerFootnote"
+        :evidence-links="evidenceLinks"
+        :proposal-id="proposalId"
+        :read-only="readOnly"
+        :details-expanded="provenanceExpanded"
+        @update:details-expanded="provenanceExpanded = $event"
+        @report="emit('report', $event)"
+      />
+      <ReviewSideEffects :data="sideEffects" />
+      <ReviewConflicts :rows="conflicts" />
+      <ReviewHistory :rows="history" />
+    </template>
 
     <footer class="paper-review-main__footer">
       <span class="tk-serial">{{ $t('review.main.footer', { serial }) }}</span>
