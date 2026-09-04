@@ -625,6 +625,7 @@ describe('PaperInboxView', () => {
     expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(true)
     expect(textarea.attributes('aria-invalid')).toBe('true')
     expect(textarea.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
+    expect(wrapper.get('[data-testid="paper-inbox-capture-error"]').attributes('role')).toBeUndefined()
 
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()

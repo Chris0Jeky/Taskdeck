@@ -60,6 +60,7 @@ const captureSubmitting = ref(false)
  */
 type CaptureFailure = { message: string; details: string | null }
 const captureErrors = ref<Record<Variant, CaptureFailure | null>>({ nib: null, composer: null })
+const captureErrorAcknowledged = ref<Record<Variant, boolean>>({ nib: false, composer: false })
 const activeCaptureError = computed(() => captureErrors.value[variant.value])
 const nibError = computed(() => (variant.value === 'nib' ? captureErrors.value.nib : null))
 const composerError = computed(() =>
@@ -133,6 +134,9 @@ function toggleVariant() {
 
 function setVariant(next: Variant) {
   if (isArchivedHistory.value) return
+  if (next !== variant.value && captureErrors.value[variant.value]) {
+    captureErrorAcknowledged.value[variant.value] = true
+  }
   variant.value = next
   void nextTick(() => {
     if (next === 'nib') {
@@ -207,6 +211,7 @@ async function dispatchCapture(
       message: getErrorDisplay(error, t('inbox.capture.errorFallback')).message,
       details: getErrorDetails(error),
     }
+    captureErrorAcknowledged.value[sourceVariant] = false
     return false
   } finally {
     captureSubmitting.value = false
@@ -580,7 +585,7 @@ defineExpose({ variant, toggleVariant, setVariant })
         v-if="activeCaptureError"
         :id="CAPTURE_ERROR_ID"
         class="paper-inbox__capture-error"
-        role="alert"
+        :role="captureErrorAcknowledged[variant] ? undefined : 'alert'"
         data-testid="paper-inbox-capture-error"
       >
         <strong>{{ $t('inbox.capture.errorLead') }}</strong>
