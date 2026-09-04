@@ -150,7 +150,7 @@ test.describe('Advanced checks', () => {
     await expect(palette).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('09-command-palette.png'), fullPage: true })
 
-    const paletteInput = palette.getByPlaceholder('Type a command or search...')
+    const paletteInput = palette.getByRole('combobox', { name: 'Command palette search' })
     await paletteInput.fill('inbox')
     await paletteInput.press('Enter')
 
