@@ -148,5 +148,5 @@ Note: "Radix Vue" was renamed to "Reka UI" in late 2024. shadcn-vue v1.x uses Re
 - [Reka UI docs](https://reka-ui.com) (formerly radix-vue.com)
 - [shadcn-vue docs](https://www.shadcn-vue.com/)
 - [Headless UI docs](https://headlessui.com/)
-- [Existing Taskdeck UI synthesis](docs/analysis/2026-02-23_frontend-premium-ui-synthesis.md)
-- [Archived library analysis](docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/LIBRARIES_AND_STACK_DECISIONS.md)
+- [Existing Taskdeck UI synthesis](2026-02-23_frontend-premium-ui-synthesis.md)
+- [Archived library analysis](../archive/2026-02-25_inreview-repo-pack/REPO_PACK/docs/analysis/2026-02-23_frontend-premium-ui-pack/LIBRARIES_AND_STACK_DECISIONS.md)
