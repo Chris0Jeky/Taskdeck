@@ -32,6 +32,17 @@ function isDefiniteRevisionSaveRejection(error: unknown): boolean {
   return typeof status === 'number' && status >= 400 && status < 500
 }
 
+type RevisionHistory = {
+  revisions: Map<number, ProposalRevision>
+  loaded: boolean
+  invalid: boolean
+}
+
+type RevisionMetadata = {
+  count: number
+  latest: ProposalRevision | null
+}
+
 export function useProposalRevisions(
   activeProposal: Ref<ApiProposal | null>,
   /**
@@ -64,6 +75,99 @@ export function useProposalRevisions(
   let loadGeneration = 0
   let saveGeneration = 0
 
+  // Successful save responses survive A -> B -> A navigation so a delayed
+  // response can be reconciled with the response that became current later.
+  // The map is deliberately conservative: a gap in the chain stays unknown.
+  const revisionHistoryByProposal = new Map<string, RevisionHistory>()
+
+  function getRevisionHistory(proposalId: string): RevisionHistory {
+    const existing = revisionHistoryByProposal.get(proposalId)
+    if (existing) return existing
+    const created: RevisionHistory = {
+      revisions: new Map(),
+      loaded: false,
+      invalid: false,
+    }
+    revisionHistoryByProposal.set(proposalId, created)
+    return created
+  }
+
+  function mergeRevision(
+    history: RevisionHistory,
+    proposalId: string,
+    revision: ProposalRevision,
+  ) {
+    if (
+      revision.proposalId !== proposalId ||
+      !Number.isInteger(revision.revisionNumber) ||
+      revision.revisionNumber < 1
+    ) {
+      history.invalid = true
+      return
+    }
+
+    const existing = history.revisions.get(revision.revisionNumber)
+    if (existing && existing.id !== revision.id) {
+      history.invalid = true
+      return
+    }
+    history.revisions.set(revision.revisionNumber, revision)
+  }
+
+  function mergeLoadedRevisions(proposalId: string, revisions: ProposalRevision[]) {
+    const history = getRevisionHistory(proposalId)
+    for (const revision of revisions) {
+      mergeRevision(history, proposalId, revision)
+    }
+    history.loaded = true
+  }
+
+  function rememberPersistedRevision(proposalId: string, revision: ProposalRevision) {
+    mergeRevision(getRevisionHistory(proposalId), proposalId, revision)
+  }
+
+  function getCompleteRevisionMetadata(proposalId: string): RevisionMetadata | null {
+    const history = revisionHistoryByProposal.get(proposalId)
+    if (!history || history.invalid) return null
+
+    const revisionNumbers = [...history.revisions.keys()].sort((a, b) => a - b)
+    if (revisionNumbers.length === 0) {
+      return history.loaded ? { count: 0, latest: null } : null
+    }
+
+    const highestRevisionNumber = revisionNumbers[revisionNumbers.length - 1]
+    for (let revisionNumber = 1; revisionNumber <= highestRevisionNumber; revisionNumber += 1) {
+      if (!history.revisions.has(revisionNumber)) return null
+    }
+
+    return {
+      count: highestRevisionNumber,
+      latest: history.revisions.get(highestRevisionNumber) ?? null,
+    }
+  }
+
+  /**
+   * A successful POST proves only the returned revision. Publish metadata only
+   * when the stored responses and/or a completed GET prove every prior number;
+   * otherwise leave the state unknown and request one authoritative reload.
+   */
+  function publishPersistedRevisionMetadata(proposalId: string): boolean {
+    if (activeProposal.value?.id !== proposalId) return false
+    // Suppress any revision GET that started before this save committed.
+    loadGeneration += 1
+    const metadata = getCompleteRevisionMetadata(proposalId)
+    if (!metadata) {
+      revisionCount.value = 0
+      latestRevision.value = null
+      revisionsLoaded.value = false
+      return false
+    }
+    revisionCount.value = metadata.count
+    latestRevision.value = metadata.latest
+    revisionsLoaded.value = true
+    return true
+  }
+
   /**
    * A save can outlive an A -> B -> A navigation. If A is active again when its
    * old continuation lands, its current metadata may have been read before that
@@ -90,11 +194,16 @@ export function useProposalRevisions(
     try {
       const revisions = await proposalRevisionsApi.getRevisions(proposalId)
       if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
-      revisionCount.value = revisions.length
-      latestRevision.value =
-        revisions.length > 0
-          ? revisions.reduce((a, b) => (a.revisionNumber > b.revisionNumber ? a : b))
-          : null
+      mergeLoadedRevisions(proposalId, revisions)
+      const metadata = getCompleteRevisionMetadata(proposalId)
+      if (!metadata) {
+        revisionCount.value = 0
+        latestRevision.value = null
+        revisionsLoaded.value = false
+        return
+      }
+      revisionCount.value = metadata.count
+      latestRevision.value = metadata.latest
       revisionsLoaded.value = true
     } catch (e: unknown) {
       if (gen !== loadGeneration || activeProposal.value?.id !== proposalId) return
@@ -180,27 +289,30 @@ export function useProposalRevisions(
       saving.value = true
       const revision = await proposalRevisionsApi.createRevision(proposalId, payload)
       const current = gen === saveGeneration && activeProposal.value?.id === proposalId
+      rememberPersistedRevision(proposalId, revision)
+      const metadataKnown = publishPersistedRevisionMetadata(proposalId)
       if (!current) {
         // The persisted A1 response is stale as an editor continuation, but it
         // still makes matching re-entered A metadata (and any pending A GET)
         // unsafe to treat as an authoritative empty revision list.
-        invalidateActiveRevisionMetadata(proposalId)
+        if (!metadataKnown && activeProposal.value?.id === proposalId) {
+          void loadRevisionState(proposalId)
+        }
         // Same hazard, different list: a queue GET that predates this save must
         // not restore the pre-revision proposal, even if this UI continuation is stale.
         options?.onRevisionSaved?.()
         return { proposalId, outcome: 'persisted', current: false }
       }
-      // Invalidate any in-flight revision load so a pre-save (stale, empty) list
-      // can't overwrite this save's state when it resolves after the save.
-      loadGeneration += 1
+      // `publishPersistedRevisionMetadata` already invalidated any in-flight
+      // revision load before the metadata was published.
       // Same hazard, different list: a review-queue read that predates this save
       // would restore the pre-revision proposal. Called synchronously here, in
       // the same continuation as the POST, so no queue answer can slip between
       // the save landing and the invalidation.
       options?.onRevisionSaved?.()
-      latestRevision.value = revision
-      revisionCount.value += 1
-      revisionsLoaded.value = true
+      if (!metadataKnown) {
+        void loadRevisionState(proposalId)
+      }
       editing.value = false
       toast.success('Revision saved')
       return { proposalId, outcome: 'persisted', current: true }
