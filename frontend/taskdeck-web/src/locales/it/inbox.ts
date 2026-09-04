@@ -16,6 +16,10 @@
 export default {
   eyebrow:
     'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
+  // Mostrato AL POSTO di `eyebrow` durante la sostituzione dell'ambito (#2501):
+  // i conteggi apparterrebbero all'ambito appena lasciato. Nessun plurale: non
+  // c'è alcun numero con cui concordare.
+  eyebrowLoading: 'Inbox · superficie di cattura · caricamento delle catture…',
   title: {
     lead: 'Cosa hai in mente,',
     emphasis: 'in breve?',
@@ -95,6 +99,10 @@ export default {
   empty: {
     scoped: 'Nessuna cattura in {scope}. Mostra tutte le catture per ripristinare l’Inbox completo.',
   },
+  // Aggiunto alla riga del conteggio durante un aggiornamento nello STESSO
+  // ambito, con le righe ancora visibili e utilizzabili (#2501). Minuscolo:
+  // segue un separatore "·".
+  refreshing: 'aggiornamento…',
   variantToggle: {
     label: 'Variante di cattura',
   },

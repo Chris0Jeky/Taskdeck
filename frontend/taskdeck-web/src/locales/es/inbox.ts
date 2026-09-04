@@ -18,6 +18,10 @@
 export default {
   eyebrow:
     'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
+  // Se muestra EN LUGAR de `eyebrow` mientras se sustituye el ámbito (#2501):
+  // los recuentos serían del ámbito que el usuario acaba de dejar. Sin plural:
+  // no hay ningún número con el que concordar.
+  eyebrowLoading: 'Inbox · superficie de captura · cargando las capturas…',
   title: {
     lead: '¿Qué tienes en mente,',
     emphasis: 'en dos palabras?',
@@ -97,6 +101,10 @@ export default {
   empty: {
     scoped: 'No hay capturas en {scope}. Muestra todas las capturas para restaurar el Inbox completo.',
   },
+  // Se añade a la línea del recuento durante una recarga en el MISMO ámbito,
+  // con las filas todavía visibles y utilizables (#2501). En minúscula: va
+  // detrás de un separador "·".
+  refreshing: 'actualizando…',
   variantToggle: {
     label: 'Variante de captura',
   },

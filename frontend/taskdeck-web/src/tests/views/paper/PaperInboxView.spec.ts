@@ -824,6 +824,48 @@ describe('PaperInboxView', () => {
     expect(table.text()).not.toContain('1 item')
   })
 
+  /**
+   * #2501: during a scope replacement the rows still in `items` belong to the
+   * OLD scope — the table hides them for exactly that reason — while the scope
+   * chip already names the NEW one. `useInboxCounts` counts whatever is in
+   * `items`, so the eyebrow published old-scope numbers beside a new-scope
+   * label. It drops the counts instead of relabelling them.
+   */
+  it('drops the eyebrow counts while a scope replacement is in flight', () => {
+    orchestratorState.items.value = [
+      captureRow('old-scope-1', 'New'),
+      captureRow('old-scope-2', 'Converted'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    expect(eyebrow).not.toContain('awaiting triage')
+    expect(eyebrow).not.toContain('captured')
+    expect(eyebrow).not.toMatch(/\d/)
+    expect(eyebrow).toContain('Inbox · capture surface')
+    expect(eyebrow).toContain('loading captures')
+  })
+
+  it('publishes the eyebrow counts again once the replacement resolves', async () => {
+    orchestratorState.items.value = [
+      captureRow('new-scope-1', 'New'),
+      captureRow('new-scope-2', 'New'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()).toContain('loading captures')
+
+    orchestratorState.isScopeReplacement.value = false
+    await wrapper.vm.$nextTick()
+
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+    expect(eyebrow).toContain('2 awaiting triage')
+    expect(eyebrow).toContain('2 captured')
+  })
+
   it('guards nib submissions while capture creation is in flight', async () => {
     let resolveCreate: (value: unknown) => void = () => undefined
     mockCaptureStore.createItem.mockReturnValueOnce(new Promise((resolve) => {

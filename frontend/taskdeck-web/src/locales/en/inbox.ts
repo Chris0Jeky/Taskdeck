@@ -25,6 +25,12 @@
 export default {
   eyebrow:
     'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
+  // Shown INSTEAD of `eyebrow` while a scope replacement is loading (#2501).
+  // The rows those counts would be computed from belong to the scope the user
+  // just left, so the eyebrow carries no count at all rather than a count about
+  // somewhere else. Deliberately not a plural message: it has nothing to agree
+  // with, which is the whole point.
+  eyebrowLoading: 'Inbox · capture surface · loading captures…',
   // Rendered as `{lead} <em>{emphasis}</em>` — the space before the emphasis
   // comes from the template, so `lead` must not carry a trailing space.
   title: {
@@ -128,6 +134,10 @@ export default {
   empty: {
     scoped: 'No captures in {scope}. Show all captures to restore the full Inbox.',
   },
+  // Appended to the capture-count line while a SAME-scope list load runs over
+  // rows that stay visible and usable (#2501). Lowercase because it follows a
+  // "·" separator inside that line.
+  refreshing: 'refreshing…',
   variantToggle: {
     label: 'Capture variant',
   },
