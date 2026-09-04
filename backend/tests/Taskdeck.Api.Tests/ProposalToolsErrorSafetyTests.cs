@@ -114,6 +114,29 @@ public class ProposalToolsErrorSafetyTests
         document.RootElement.GetProperty("error").GetString().Should().Be(stableMessage);
     }
 
+    [Fact]
+    public async Task GetProposalStatus_KnownDomainFailureWithRedactablePattern_IsRedacted()
+    {
+        var proposalId = Guid.NewGuid();
+        var proposalService = new Mock<IAutomationProposalService>(MockBehavior.Strict);
+        proposalService
+            .Setup(service => service.GetProposalByIdAsync(
+                proposalId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(
+                ErrorCodes.ValidationError,
+                "Proposal validation failed: token=abc123 is not accepted."));
+
+        var json = await CreateTools(proposalService.Object).GetProposalStatus(proposalId.ToString());
+
+        using var document = JsonDocument.Parse(json);
+        var error = document.RootElement.GetProperty("error").GetString();
+        error.Should().NotBeNull();
+        error.Should().NotContain("abc123");
+        error.Should().Contain($"token={SensitiveDataRedactor.RedactedValue}");
+        error.Should().StartWith("Proposal validation failed:");
+    }
+
     private static ProposalTools CreateTools(
         IAutomationProposalService proposalService,
         Guid? userId = null)

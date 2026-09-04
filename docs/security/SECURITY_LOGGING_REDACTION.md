@@ -58,6 +58,16 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   setting to reach this exact category would expose SignalR bearer tokens. The post-configuration
   guard also covers provider-specific rules and configuration reloads. Other ASP.NET Core
   categories retain their configured levels, and stricter thresholds remain effective.
+- Outbound webhook delivery persists only the stable generic failure message in
+  `OutboundWebhookDelivery.LastErrorMessage` when an unknown exception is thrown while the delivery
+  is in `Processing`; pattern redaction alone left unmatched paths, SQL constraint text and provider
+  internals verbatim. The original exception is logged once as a redacted summary with the delivery
+  ID, and deliberate failures (endpoint HTTP status, invalid URI, scheme and host policy, shutdown
+  requeue) keep their existing stable messages and retry/dead-letter transitions.
+- MCP proposal tools route every failed `Result` through
+  `SensitiveDataRedactor.SanitizeLlmFailureMessage`, matching the read and write tool helpers, so
+  known domain messages are pattern-redacted rather than returned verbatim while `UnexpectedError`
+  still becomes the stable generic failure message.
 
 ## Operator Guidance
 

@@ -211,7 +211,7 @@ public class OutboundWebhookDeliveryWorkerTests
     }
 
     [Fact]
-    public async Task ProcessDueDeliveriesAsync_ShouldRedactSensitiveFailureMessage_WhenDispatchThrowsDuringProcessing()
+    public async Task ProcessDueDeliveriesAsync_ShouldGeneralizePersistedFailureMessage_WhenDispatchThrowsDuringProcessing()
     {
         var subscription = new OutboundWebhookSubscription(
             Guid.NewGuid(),
@@ -230,7 +230,66 @@ public class OutboundWebhookDeliveryWorkerTests
         var handler = new CountingHandler
         {
             OnSend = (_, _) => throw new InvalidOperationException(
-                "Authorization: Bearer webhook-secret {\"payload\":\"delivery secret\"} token=webhook-token")
+                "Authorization: Bearer webhook-secret {\"payload\":\"delivery secret\"} token=webhook-token " +
+                "at C:\\Users\\taskdeck\\src\\Outbound.cs " +
+                "SQLite Error 19: 'UNIQUE constraint failed: OutboundWebhookDeliveries.Id' " +
+                "endpoint https://internal.provider.example/v1/deliver")
+        };
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var logger = new InMemoryLogger<OutboundWebhookDeliveryWorker>();
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings
+            {
+                MaxBatchSize = 5,
+                QueuePollIntervalSeconds = 1,
+                MaxRetries = 1
+            },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        handler.RequestCount.Should().Be(1);
+        delivery.Status.Should().Be(WebhookDeliveryStatus.DeadLetter);
+        delivery.LastErrorMessage.Should().Be(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+        delivery.LastErrorMessage.Should().NotContain("InvalidOperationException");
+        delivery.LastErrorMessage.Should().NotContain("webhook-secret");
+        delivery.LastErrorMessage.Should().NotContain("delivery secret");
+        delivery.LastErrorMessage.Should().NotContain("webhook-token");
+        delivery.LastErrorMessage.Should().NotContain("C:\\Users\\taskdeck");
+        delivery.LastErrorMessage.Should().NotContain("UNIQUE constraint failed");
+        delivery.LastErrorMessage.Should().NotContain("internal.provider.example");
+
+        var errorEntries = logger.Entries.Where(entry => entry.Level == LogLevel.Error).ToList();
+        errorEntries.Should().ContainSingle();
+        errorEntries[0].Message.Should().Contain("Webhook delivery threw InvalidOperationException while Processing");
+        errorEntries[0].Message.Should().Contain(delivery.Id.ToString("D"));
+        errorEntries[0].Message.Should().NotContain("webhook-secret");
+    }
+
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldKeepStableStatusMessage_WhenEndpointReturnsHttp500()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            AllowedWebhookEndpoint,
+            "secret",
+            ["card.*"]);
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true);
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler
+        {
+            OnSend = (_, _) => new HttpResponseMessage(HttpStatusCode.InternalServerError)
         };
         var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
         var worker = new OutboundWebhookDeliveryWorker(
@@ -248,13 +307,55 @@ public class OutboundWebhookDeliveryWorkerTests
 
         await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
 
-        handler.RequestCount.Should().Be(1);
         delivery.Status.Should().Be(WebhookDeliveryStatus.DeadLetter);
-        delivery.LastErrorMessage.Should().Contain("Webhook delivery threw InvalidOperationException");
-        delivery.LastErrorMessage.Should().Contain($"Authorization: Bearer {SensitiveDataRedactor.RedactedValue}");
-        delivery.LastErrorMessage.Should().NotContain("webhook-secret");
-        delivery.LastErrorMessage.Should().NotContain("delivery secret");
-        delivery.LastErrorMessage.Should().NotContain("webhook-token");
+        delivery.LastErrorMessage.Should().Be("Webhook endpoint returned HTTP 500.");
+        delivery.LastResponseStatusCode.Should().Be(500);
+    }
+
+    [Fact]
+    public async Task ProcessDueDeliveriesAsync_ShouldGeneralizePersistedFailureMessage_WhenDispatchTimesOut()
+    {
+        var subscription = new OutboundWebhookSubscription(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            AllowedWebhookEndpoint,
+            "secret",
+            ["card.*"]);
+        var delivery = CreateDeliveryWithSubscription(subscription);
+        var deliveryRepository = new FakeOutboundWebhookDeliveryRepository(
+            dueDeliveries: [delivery],
+            stuckDeliveries: [],
+            tryClaimResult: true);
+        var unitOfWork = new FakeUnitOfWork(deliveryRepository);
+
+        using var serviceProvider = BuildServiceProvider(unitOfWork);
+        var handler = new CountingHandler
+        {
+            OnSend = (_, _) => throw new TaskCanceledException(
+                "The request was canceled due to the configured HttpClient.Timeout of 100 seconds elapsing.",
+                new TimeoutException("A connection attempt to https://internal.provider.example failed."))
+        };
+        var httpClientFactory = new SingleClientFactory(new HttpClient(handler));
+        var logger = new InMemoryLogger<OutboundWebhookDeliveryWorker>();
+        var worker = new OutboundWebhookDeliveryWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            httpClientFactory,
+            new WorkerSettings
+            {
+                MaxBatchSize = 5,
+                QueuePollIntervalSeconds = 1,
+                MaxRetries = 1
+            },
+            new OutboundWebhookSecuritySettings { AllowLocalhostEndpoints = false },
+            new WorkerHeartbeatRegistry(),
+            logger);
+
+        await InvokeProcessDueDeliveriesAsync(worker, CancellationToken.None);
+
+        delivery.Status.Should().Be(WebhookDeliveryStatus.DeadLetter);
+        delivery.LastErrorMessage.Should().Be(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+        delivery.LastErrorMessage.Should().NotContain("internal.provider.example");
+        logger.Entries.Count(entry => entry.Level == LogLevel.Error).Should().Be(1);
     }
 
     [Fact]
