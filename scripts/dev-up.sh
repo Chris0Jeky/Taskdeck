@@ -370,10 +370,67 @@ port_is_bindable() {
   ' "$port" >/dev/null 2>&1
 }
 
+DEFAULT_PORT_RELEASE_TIMEOUT_MS=30000
+
+port_release_timeout_ms() {
+  local raw="${TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS:-}"
+  if [[ -n "$raw" ]]; then
+    if [[ "$raw" =~ ^[0-9]+$ ]]; then printf '%s\n' "$raw"; return 0; fi
+    warn "Ignoring invalid TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS '$raw'; using ${DEFAULT_PORT_RELEASE_TIMEOUT_MS} ms."
+  fi
+  printf '%s\n' "$DEFAULT_PORT_RELEASE_TIMEOUT_MS"
+}
+
+# Prints the live PIDs LISTENING on $1, one per line. Exit 2 means no inventory could be read at
+# all, so the caller must fail closed instead of assuming no foreign server owns the port.
+live_port_listener_owners() {
+  local port="$1" raw="" pid
+  if command -v lsof >/dev/null 2>&1; then
+    raw="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true)"
+  elif command -v ss >/dev/null 2>&1; then
+    raw="$(ss -ltnHp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 || true)"
+  else
+    return 2
+  fi
+  for pid in $(printf '%s\n' "$raw" | sort -u); do
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
+    kill -0 "$pid" 2>/dev/null && printf '%s\n' "$pid"
+  done
+  return 0
+}
+
+# Elapsed-time deadline, not a fixed iteration count: a loaded runner can hold a listening socket
+# past a short fixed budget after the tree is reaped (#1898/#2378). After the deadline, a port with
+# no LIVE listener is a lingering kernel socket behind our own confirmed-dead tree and counts as
+# released; any live listener - unrelated, or a recorded PID that outlived its reap - fails closed.
 wait_for_port_release() {
-  local port="$1"
-  for _ in {1..50}; do port_is_bindable "$port" && return 0; sleep 0.1; done
-  return 1
+  local port="$1" owned="${2:-}" timeout_ms deadline owners_status=0 owners kind pid
+  timeout_ms="$(port_release_timeout_ms)"
+  local started_at deadline_s elapsed
+  started_at="$(date +%s)"
+  deadline_s=$(( started_at + (timeout_ms + 999) / 1000 ))
+  while true; do
+    port_is_bindable "$port" && return 0
+    (( $(date +%s) >= deadline_s )) && break
+    sleep 0.25
+  done
+  elapsed=$(( $(date +%s) - started_at ))
+  owners="$(live_port_listener_owners "$port")" || owners_status=$?
+  if [[ "$owners_status" -ne 0 ]]; then
+    warn "Port $port stayed unbindable for ${elapsed}s and its listening owner could not be inventoried."
+    return 1
+  fi
+  owners="$(printf '%s\n' "$owners" | tr '\n' ' ' | sed 's/  */ /g; s/^ //; s/ $//')"
+  if [[ -n "$owners" ]]; then
+    kind="unrelated"
+    for pid in $owners; do
+      case " $owned " in *" $pid "*) kind="recorded" ;; *) kind="unrelated"; break ;; esac
+    done
+    warn "Port $port is held by a live $kind listener (PID $owners) after ${elapsed}s."
+    return 1
+  fi
+  info "Port $port stayed unbindable for ${elapsed}s but no live process is listening on it; treating the lingering socket as released."
+  return 0
 }
 
 find_safe_api_port() {
@@ -552,11 +609,12 @@ stop_loaded_stack() {
   local clean=1
   if ! stop_recorded_process frontend "$STATE_FRONTEND_PID" "$STATE_FRONTEND_NAME" "$STATE_FRONTEND_TOKEN"; then clean=0; fi
   if ! stop_recorded_process api "$STATE_API_PID" "$STATE_API_NAME" "$STATE_API_TOKEN"; then clean=0; fi
-  if [[ "$clean" -eq 1 ]] && ! wait_for_port_release "$STATE_API_PORT"; then
+  local owned_pids="$STATE_API_PID $STATE_FRONTEND_PID"
+  if [[ "$clean" -eq 1 ]] && ! wait_for_port_release "$STATE_API_PORT" "$owned_pids"; then
     warn "API port $STATE_API_PORT is still occupied. No foreign listener was killed; PID state is retained."
     clean=0
   fi
-  if [[ "$clean" -eq 1 && -n "$STATE_FRONTEND_PORT" ]] && ! wait_for_port_release "$STATE_FRONTEND_PORT"; then
+  if [[ "$clean" -eq 1 && -n "$STATE_FRONTEND_PORT" ]] && ! wait_for_port_release "$STATE_FRONTEND_PORT" "$owned_pids"; then
     warn "Frontend port $STATE_FRONTEND_PORT is still occupied. No foreign listener was killed; PID state is retained."
     clean=0
   fi

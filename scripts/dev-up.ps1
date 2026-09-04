@@ -58,6 +58,8 @@ $FrontendDir = Join-Path $RepoRoot "frontend/taskdeck-web"
 $DataDir = Join-Path $env:LOCALAPPDATA "Taskdeck"
 $DevDbPath = Join-Path $DataDir "taskdeck-dev.db"
 $PidFile = Join-Path $DataDir "dev-up.pids"
+# Hosted-safe default; override with TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS.
+$DefaultPortReleaseTimeoutMs = 30000
 $OperationLockFile = Join-Path $DataDir "dev-up.operation.lock"
 
 $MinimumNodeVersion = [version]"24.13.1"
@@ -364,13 +366,87 @@ function Test-PortBindable {
     return $true
 }
 
-function Wait-PortRelease {
-    param([int]$Port)
-    for ($attempt = 0; $attempt -lt 50; $attempt++) {
-        if (Test-PortBindable -Port $Port) { return $true }
-        Start-Sleep -Milliseconds 100
+function Get-PortReleaseTimeoutMs {
+    $raw = $env:TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+        $parsed = 0
+        if ([int]::TryParse($raw.Trim(), [ref]$parsed) -and $parsed -ge 0) { return $parsed }
+        Write-DevWarning "Ignoring invalid TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS '$raw'; using $DefaultPortReleaseTimeoutMs ms."
     }
-    return $false
+    return $DefaultPortReleaseTimeoutMs
+}
+
+# Live PIDs currently LISTENING on $Port. Determined=$false means no inventory could be read at
+# all; the caller must then fail closed rather than assume the port is free of a foreign server.
+function Get-LivePortListenerOwner {
+    param([int]$Port)
+    $owners = New-Object System.Collections.Generic.List[int]
+    $determined = $false
+    try {
+        $connections = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop)
+        $determined = $true
+        foreach ($connection in $connections) { $owners.Add([int]$connection.OwningProcess) }
+    } catch [System.Management.Automation.CommandNotFoundException] {
+        $determined = $false
+    } catch {
+        # Get-NetTCPConnection throws ObjectNotFound when nothing matches the port filter.
+        if ($_.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::ObjectNotFound) {
+            $determined = $true
+        }
+    }
+    if (-not $determined) {
+        $netstat = Join-Path $env:SystemRoot "System32/netstat.exe"
+        if (Test-Path -LiteralPath $netstat -PathType Leaf) {
+            try {
+                $rows = & $netstat -ano -p TCP 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    $determined = $true
+                    foreach ($row in $rows) {
+                        $fields = ($row -split '\s+') | Where-Object { $_ -ne "" }
+                        if ($fields.Count -lt 5) { continue }
+                        if ($fields[0] -ne "TCP" -or $fields[3] -ne "LISTENING") { continue }
+                        if ($fields[1] -notmatch ":(\d+)$" -or [int]$Matches[1] -ne $Port) { continue }
+                        $ownerPid = 0
+                        if ([int]::TryParse($fields[4], [ref]$ownerPid)) { $owners.Add($ownerPid) }
+                    }
+                }
+            } catch { $determined = $false }
+        }
+    }
+    $live = @($owners | Sort-Object -Unique | Where-Object {
+        $_ -gt 0 -and $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue)
+    })
+    return [pscustomobject]@{ Determined = $determined; Owners = $live }
+}
+
+# Waits on an elapsed-time deadline, not a fixed iteration count: a loaded hosted runner can hold a
+# listening socket well past a short fixed budget after taskkill (#1898/#2378, same family as the
+# #2157 marker budget). Once the deadline passes, a port that no LIVE process is listening on is a
+# lingering kernel socket behind our own confirmed-dead tree, not a foreign owner, so it counts as
+# released. Any live listener - foreign or a recorded PID that outlived its reap - fails closed.
+function Wait-PortRelease {
+    param([int]$Port, [int[]]$OwnedPids = @())
+    $timeoutMs = Get-PortReleaseTimeoutMs
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        if (Test-PortBindable -Port $Port) { return $true }
+        if ($stopwatch.ElapsedMilliseconds -ge $timeoutMs) { break }
+        Start-Sleep -Milliseconds 250
+    }
+    $elapsed = [int]$stopwatch.ElapsedMilliseconds
+    $listener = Get-LivePortListenerOwner -Port $Port
+    if (-not $listener.Determined) {
+        Write-DevWarning "Port $Port stayed unbindable for $elapsed ms and its listening owner could not be inventoried."
+        return $false
+    }
+    if ($listener.Owners.Count -gt 0) {
+        $foreign = @($listener.Owners | Where-Object { $OwnedPids -notcontains $_ })
+        $kind = if ($foreign.Count -gt 0) { "unrelated" } else { "recorded" }
+        Write-DevWarning "Port $Port is held by a live $kind listener (PID $($listener.Owners -join ', ')) after $elapsed ms."
+        return $false
+    }
+    Write-Info "Port $Port stayed unbindable for $elapsed ms but no live process is listening on it; treating the lingering socket as released."
+    return $true
 }
 
 function Find-SafeApiPort {
@@ -425,11 +501,16 @@ function Stop-LoadedStack {
     $clean = $true
     if (-not (Stop-RecordedProcess -Record $script:State.FrontendRecord)) { $clean = $false }
     if (-not (Stop-RecordedProcess -Record $script:State.ApiRecord)) { $clean = $false }
-    if ($clean -and -not (Wait-PortRelease -Port ([int]$script:State.ApiPort))) {
+    $ownedPids = @(
+        @($script:State.ApiRecord, $script:State.FrontendRecord) |
+            Where-Object { $null -ne $_ } |
+            ForEach-Object { [int]$_.Pid }
+    )
+    if ($clean -and -not (Wait-PortRelease -Port ([int]$script:State.ApiPort) -OwnedPids $ownedPids)) {
         Write-DevWarning "API port $($script:State.ApiPort) is still occupied. No foreign listener was killed; PID state is retained."
         $clean = $false
     }
-    if ($clean -and $null -ne $script:State.Frontend -and -not (Wait-PortRelease -Port ([int]$script:State.Frontend.Port))) {
+    if ($clean -and $null -ne $script:State.Frontend -and -not (Wait-PortRelease -Port ([int]$script:State.Frontend.Port) -OwnedPids $ownedPids)) {
         Write-DevWarning "Frontend port $($script:State.Frontend.Port) is still occupied. No foreign listener was killed; PID state is retained."
         $clean = $false
     }
