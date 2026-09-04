@@ -37,7 +37,11 @@ grep -RnE '#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6,8})\b' \
 ```
 
 The CI workflow at `.github/workflows/reusable-paper-color-audit.yml`
-enforces the same regex.  For the `paper-tokens.css` baseline count, the
+enforces the same regex.  The component scan first removes JavaScript/CSS/HTML
+comment content with `scripts/ci/check-paper-color-components.mjs`, preserving
+line positions and quoted values so issue references in comments are not
+treated as colors while real literals remain covered.  For the
+`paper-tokens.css` baseline count, the
 workflow uses `grep -oE … | wc -l` (occurrence-based, not line-based) and
 filters out CSS comment lines (`^\s*(\*|/\*)`) to avoid false positives
 from issue references and illustrative values in comments.  The AppShell
