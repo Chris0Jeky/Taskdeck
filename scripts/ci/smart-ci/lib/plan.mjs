@@ -471,7 +471,16 @@ export function evaluateGate(plan, context) {
     if (context.expectedPolicyDigest && plan.policyDigest !== context.expectedPolicyDigest) failures.push({ code: 'policy-digest-mismatch', detail: `plan ${plan.policyDigest} vs policy ${context.expectedPolicyDigest}` });
     if (context.eventInput && context.policy) {
       const expectedTrust = classifyTrust(context.eventInput, plan.controlPathsChanged ?? [], context.policy);
-      if (expectedTrust !== plan.trust) failures.push({ code: 'trust-mismatch', detail: `plan says ${plan.trust}, the event re-derives ${expectedTrust}` });
+      if (expectedTrust !== plan.trust) {
+        if (plan.plannerError) {
+          // An error plan pins trust to T3 by construction, so it is not a derivation the
+          // gate can meaningfully re-check. The planner-error failure above already makes
+          // the run red; a second "trust-mismatch" line only misdescribes it (CI-03 #2327).
+          notes.push(`error-plan trust is pinned to ${plan.trust}; the event would classify ${expectedTrust}`);
+        } else {
+          failures.push({ code: 'trust-mismatch', detail: `plan says ${plan.trust}, the event re-derives ${expectedTrust}` });
+        }
+      }
       const expectedLabels = uniqueSorted((context.eventInput.labels ?? []).map(String));
       if (JSON.stringify(expectedLabels) !== JSON.stringify(plan.labels ?? [])) failures.push({ code: 'labels-mismatch', detail: `plan labels ${JSON.stringify(plan.labels ?? [])} vs event ${JSON.stringify(expectedLabels)}` });
       if (context.eventInput.headSha && plan.headSha !== context.eventInput.headSha) failures.push({ code: 'head-sha-mismatch', detail: `plan ${plan.headSha} vs event payload ${context.eventInput.headSha}` });

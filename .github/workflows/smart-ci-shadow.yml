@@ -106,14 +106,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
+          # --base-ref lets the resolver accept a merge ref GitHub regenerated against the
+          # base branch live tip when the base advanced after dispatch (CI-03 #2327). The
+          # event head must still match exactly.
           node scripts/ci/smart-ci/resolve-merge-ref.mjs \
             --pr "$PR_NUMBER" \
             --base "$CONTROL_BASE" \
             --head "$CONTROL_HEAD" \
+            --base-ref "$BASE_REF" \
             --merge-out artifacts/merge-sha.txt \
-            --tree-out artifacts/merge-tree-sha.txt
+            --tree-out artifacts/merge-tree-sha.txt \
+            --note-out artifacts/merge-ref-note.txt
 
       - name: Plan
         env:
@@ -122,6 +128,9 @@ jobs:
         run: |
           set -euo pipefail
           plan_args=(--head-actors "$(cat artifacts/head-actors.txt)")
+          if [ -s artifacts/merge-ref-note.txt ]; then
+            plan_args+=(--note "$(cat artifacts/merge-ref-note.txt)")
+          fi
           if [ -s artifacts/merge-sha.txt ] && [ -s artifacts/merge-tree-sha.txt ]; then
             plan_args+=(
               --merge-sha "$(cat artifacts/merge-sha.txt)"
