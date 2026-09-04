@@ -434,7 +434,9 @@ public class AutomationPlannerService : IAutomationPlannerService
             var createDto = new CreateProposalDto(
                 sourceType,
                 userId,
-                instruction.Length > 500 ? instruction.Substring(0, 497) + "..." : instruction,
+                instruction.Length > 500
+                    ? SurrogateSafeTruncation.Truncate(instruction, 497, "...")
+                    : instruction,
                 riskLevel,
                 resolvedCorrelationId,
                 boardId,
@@ -563,7 +565,7 @@ public class AutomationPlannerService : IAutomationPlannerService
                 : string.Empty;
             var summary = $"Batch: {successCount} operation{(successCount == 1 ? string.Empty : "s")}{failSuffix}";
             if (summary.Length > 500)
-                summary = summary.Substring(0, 497) + "...";
+                summary = SurrogateSafeTruncation.Truncate(summary, 497, "...");
 
             var createDto = new CreateProposalDto(
                 sourceType,
