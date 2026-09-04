@@ -18,9 +18,10 @@ public static class SignalRRegistration
         ILogger logger)
     {
         // #2351 / R4: pin the safe value explicitly. Hub exception text must never
-        // reach clients; the framework default is false but nothing pinned it, so an
-        // options delegate added later could flip it silently. There is deliberately no
-        // configuration key that can turn this on.
+        // reach clients; the framework default is false but nothing pinned it. There is
+        // deliberately no configuration key that can turn this on. The pin is asserted on
+        // the HubOptions this registration produces; a later global Configure<HubOptions>
+        // or a per-hub AddHubOptions<THub> elsewhere would not be caught by that test.
         var signalRBuilder = services.AddSignalR(options => options.EnableDetailedErrors = false);
 
         var redisConnectionString = configuration[RedisConnectionStringKey];

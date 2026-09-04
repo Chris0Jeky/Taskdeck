@@ -27,7 +27,8 @@ R4 / R5 / R6 fixes were re-read at `#2575` and carry that branch's line numbers.
 | `CircuitBreakerFailureClassifier.Classify(exception, status)` | `backend/src/Taskdeck.Api/Extensions/CircuitBreakerFailureClassifier.cs:23` | Exception **type** name, or `HTTP <status>`, or `Unknown failure`. Never reads the message. Added by `#2575` for R5 |
 
 The two generic constants are deliberately different texts for two different readers, and `#2575`
-gave each of them one definition: `GenericUnexpectedErrorMessage` is the wire-facing string (HTTP 500
+gave each of them one definition (the three private copies and the `ResultExtensions` 500 arm now
+reference the shared constant): `GenericUnexpectedErrorMessage` is the wire-facing string (HTTP 500
 body, batch receipt item) and `GenericUnexpectedFailureMessage` is the operator-facing string
 (persisted state, MCP, CLI) that tells its reader to look the correlation ID up in the server logs.
 
@@ -61,7 +62,7 @@ body, batch receipt item) and `GenericUnexpectedFailureMessage` is the operator-
 | SignalR hubs | `backend/src/Taskdeck.Api/Extensions/SignalRRegistration.cs:24` (`AddSignalR(options => options.EnableDetailedErrors = false)`) | Hub exceptions reach clients as the framework default `An unexpected error occurred invoking '<method>'.` | `EnableDetailedErrors` is pinned to `false` by the options delegate; no configuration key can turn it on | safe — closed by `#2575` | `backend/tests/Taskdeck.Api.Tests/SignalRScaleOutTests.AddTaskdeckSignalR_PinsDetailedErrorsOff` |
 | SignalR logging floor | policy bullet in `SECURITY_LOGGING_REDACTION.md`, `Microsoft.AspNetCore.Hosting.Diagnostics` minimum `Warning` | Prevents Information-level request-target logging from exposing SignalR bearer tokens | post-configuration guard | safe | `Taskdeck.Api.Tests/LoggingProviderConfigurationTests` |
 | Provider health | `backend/src/Taskdeck.Api/Controllers/ConnectorProvidersController.cs:98-103`; `backend/src/Taskdeck.Application/Connectors/ConnectorExecutionService.cs:67-73,116-120,131` | `ConnectorProviderHealthDto.Message` comes from the provider's own `CheckHealthAsync`, not from an exception. Unknown exceptions become the constants `Provider operation failed.`, `Provider operation failed after retries.`, `Failed to retrieve provider capabilities.` | constant strings | owned-elsewhere — `#2213` owns provider-health detail; no exception text is exposed today | none dedicated to these constants |
-| Circuit-breaker state snapshot | `backend/src/Taskdeck.Application/Services/CircuitBreakerStateTracker.cs:29-31,232-246`; callers `Extensions/LlmProviderRegistration.cs:426,463`, `Extensions/AuthenticationRegistration.cs:290` | `LastFailureReason` holds only the exception type name or `HTTP <status>`; no exception message reaches the snapshot. `HealthController.cs:294-313` still exposes state and `lastTransitionUtc` only | `CircuitBreakerFailureClassifier.Classify` at all three `onBreak` sites, plus `LogValueSanitizer.Sanitize` on every reason the tracker stores | safe — closed by `#2575` | `Taskdeck.Api.Tests/CircuitBreakerTests.BuildCircuitBreakerPolicy_RecordsExceptionTypeName_NotTheExceptionMessage` and `...RecordsHttpStatus_WhenThereIsNoException`; `Taskdeck.Application.Tests/Services/CircuitBreakerStateTrackerTests.RecordState_SanitizesAndBoundsTheStoredFailureReason` and `...KeepsANullFailureReasonNull` |
+| Circuit-breaker state snapshot | `backend/src/Taskdeck.Application/Services/CircuitBreakerStateTracker.cs:29-31,232-246`; callers `Extensions/LlmProviderRegistration.cs:426,463`, `Extensions/AuthenticationRegistration.cs:290` | `LastFailureReason` holds only a bounded value: the exception type name or `HTTP <status>` from the three Polly `onBreak` sites, or an authored constant from the companion provider lane; every stored reason is sanitized and bounded to 203 characters, and no exception message reaches the snapshot. `HealthController.cs:294-313` still exposes state and `lastTransitionUtc` only | `CircuitBreakerFailureClassifier.Classify` at all three `onBreak` sites, plus `LogValueSanitizer.Sanitize` on every reason the tracker stores | safe — closed by `#2575` | `Taskdeck.Api.Tests/CircuitBreakerTests.BuildCircuitBreakerPolicy_RecordsExceptionTypeName_NotTheExceptionMessage` and `...RecordsHttpStatus_WhenThereIsNoException`; `Taskdeck.Application.Tests/Services/CircuitBreakerStateTrackerTests.RecordState_SanitizesAndBoundsTheStoredFailureReason` and `...KeepsANullFailureReasonNull` |
 
 ## Open residuals
 
@@ -94,9 +95,11 @@ R3 sits outside the regions the guard inspects, so it is not suppressed by an al
 - **R4 — CLOSED by `#2575`: SignalR detailed errors are pinned off, not merely defaulted off.**
   `SignalRRegistration.cs:24` now calls
   `AddSignalR(options => options.EnableDetailedErrors = false)` with a comment citing this residual.
-  The value was already `false` by framework default, so no behaviour changed; what changed is that a
-  future options delegate can no longer flip it silently. No configuration key was added, so there is
-  no supported way to turn detailed hub errors on. Pinned by
+  The value was already `false` by framework default, so no behaviour changed; what changed is that the
+  value is now set at the registration site and asserted on the `HubOptions` that registration produces.
+  A later global `Configure<HubOptions>` or per-hub `AddHubOptions<THub>` elsewhere would not be caught
+  by that test. No configuration key was added, so there is no supported way to turn detailed hub
+  errors on. Pinned by
   `backend/tests/Taskdeck.Api.Tests/SignalRScaleOutTests.AddTaskdeckSignalR_PinsDetailedErrorsOff`,
   which builds the provider after `AddTaskdeckSignalR` and asserts
   `IOptions<HubOptions>.Value.EnableDetailedErrors` is `false`.
