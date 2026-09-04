@@ -4565,6 +4565,64 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('keeps known revision metadata and the draft after a definite 4xx rejection', async () => {
+      const now = new Date().toISOString()
+      mocks.getRevisions.mockResolvedValueOnce([
+        {
+          id: 'rev-known-1',
+          proposalId: 'proposal-001',
+          revisionNumber: 1,
+          editorUserId: 'u-1',
+          revisedPayload: '{"headline":"Existing revision","notes":"Original notes"}',
+          revisedAt: now,
+          reason: 'First revision',
+          createdAt: now,
+        },
+      ])
+      mocks.createRevision.mockRejectedValueOnce({
+        response: {
+          status: 400,
+          data: {
+            errorCode: 'ValidationError',
+            message: 'Revision payload is invalid',
+          },
+        },
+      })
+      const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], {
+        attachTo: true,
+      })
+      await vi.waitFor(() => expect(mocks.getRevisions).toHaveBeenCalledTimes(1))
+
+      const proposalFetchesBeforeSave = mocks.getProposals.mock.calls.length
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      const editor = wrapper.get('[data-testid="revision-editor"]')
+      await editor.get('[data-testid="revision-field-headline"]').setValue('Reviewer headline')
+      await editor.get('[data-testid="revision-field-notes"]').setValue('Reviewer notes')
+      await editor.get('[data-testid="revision-reason"]').setValue('Second revision')
+      await editor.get('[data-testid="revision-save"]').trigger('click')
+      await flushPromises()
+
+      const stillOpen = wrapper.get('[data-testid="revision-editor"]')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-headline"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer headline')
+      expect(
+        (stillOpen.get('[data-testid="revision-field-notes"]').element as HTMLTextAreaElement).value,
+      ).toBe('Reviewer notes')
+      expect(
+        (stillOpen.get('[data-testid="revision-reason"]').element as HTMLInputElement).value,
+      ).toBe('Second revision')
+      expect(wrapper.get('[data-testid="revision-badge"]').text()).toContain('1 revision')
+      expect(mocks.errorToast).toHaveBeenCalledWith('Revision payload is invalid')
+      expect(mocks.getProposals.mock.calls.length).toBe(proposalFetchesBeforeSave)
+      expect(
+        stillOpen.element.contains(document.activeElement),
+      ).toBe(true)
+
+      wrapper.unmount()
+    })
+
     it('does not let a stale A1 save clear a newer A2 editor seed', async () => {
       let resolveA1Save!: (value: unknown) => void
       mocks.createRevision.mockImplementationOnce(

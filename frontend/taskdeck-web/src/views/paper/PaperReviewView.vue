@@ -1912,10 +1912,23 @@ async function onSaveRevision(payload: Parameters<typeof saveRevision>[0]) {
   const saveEpoch = revisionEditEpoch
   const saveResult = await saveRevision(payload)
   if (!saveResult) return
+  if (saveResult.outcome === 'rejected') {
+    // A definite 4xx cannot have committed, so the known revision metadata and
+    // any open preview remain authoritative. Keep the retryable draft visible
+    // and return focus inside the editor after the error toast.
+    if (
+      saveResult.current &&
+      proposalIdsEqual(activeProposal.value?.id, saveResult.proposalId) &&
+      revisionEditorPayloadEpoch === saveEpoch
+    ) {
+      retainRevisionEditorFocus()
+    }
+    return
+  }
   // A rejected response may still have committed, so both confirmed and
   // indeterminate saves require the same later read barrier. Record it before
-  // branching on the editor outcome, including for stale A continuations that
-  // finish while another proposal is active.
+  // branching on the indeterminate outcome, including for stale A continuations
+  // that finish while another proposal is active.
   requireRevisionReviewRefresh(saveResult.proposalId)
   if (saveResult.outcome === 'indeterminate') {
     // A rejected POST may still have committed. Clear only a preview of the
