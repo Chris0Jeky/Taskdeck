@@ -258,6 +258,35 @@ public class WorkspaceApiTests : IClassFixture<HostedWorkerDisabledTestWebApplic
     }
 
     [Fact]
+    public async Task Calendar_ShouldRollOverDecemberWhenLocalDateSuppliesDefaultRange()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "workspace-calendar-december-rollover");
+
+        var response = await client.GetAsync("/api/workspace/calendar?localDate=2026-12-15");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var calendar = await response.Content.ReadFromJsonAsync<WorkspaceCalendarDto>();
+        calendar.Should().NotBeNull();
+        calendar!.From.Should().Be(new DateTimeOffset(2026, 12, 1, 0, 0, 0, TimeSpan.Zero));
+        calendar.To.Should().Be(new DateTimeOffset(2027, 1, 1, 0, 0, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public async Task Calendar_ShouldReturnValidationErrorWhenLocalDateCannotDeriveFollowingMonth()
+    {
+        using var client = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "workspace-calendar-max-date");
+
+        var response = await client.GetAsync("/api/workspace/calendar?localDate=9999-12-01");
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+    }
+
+    [Fact]
     public async Task Calendar_ShouldUseCallerLocalDateForOverdueStatus()
     {
         using var client = _factory.CreateClient();
