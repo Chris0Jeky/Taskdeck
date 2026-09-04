@@ -360,7 +360,15 @@ export function useInboxOrchestrator(options: {
     }
     inboxLoadPerf.start()
     try {
-      await captureStore.fetchItems({
+      // `applied` is the store reporting that THIS call's response was written
+      // into `items` (#2501). `fetchItems` resolves without writing anything
+      // when its own request id has been superseded, so resolution alone is not
+      // evidence the new scope's rows arrived. Clearing the flag on resolution
+      // alone un-hid the retained OLD-scope rows under the NEW scope's label —
+      // the exact state this flag exists to prevent. The request-id and
+      // scope-key checks below stay: they guard against a stale caller, while
+      // `applied` guards against a dropped response.
+      const applied = await captureStore.fetchItems({
         limit: 200,
         ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
       })
@@ -368,7 +376,7 @@ export function useInboxOrchestrator(options: {
         boardId: activeBoardId.value,
         archived: isArchivedHistory.value,
       })
-      if (requestId === latestInboxLoadRequestId && requestScopeKey === currentScopeKey) {
+      if (applied && requestId === latestInboxLoadRequestId && requestScopeKey === currentScopeKey) {
         isScopeReplacement.value = false
       }
     } catch {
