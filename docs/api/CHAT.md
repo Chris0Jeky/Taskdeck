@@ -77,7 +77,7 @@ Response (`200 OK`):
   "sessionId": "aabbccdd-...",
   "role": "Assistant",
   "content": "I've created a proposal to add a 'Dark mode support' card...",
-  "messageType": "proposal",
+  "messageType": "proposal-reference",
   "proposalId": "55667788-...",
   "tokenUsage": 142,
   "createdAt": "2026-03-30T12:01:00Z",
@@ -89,9 +89,13 @@ Response (`200 OK`):
 
 | Type | Description |
 |------|-------------|
-| `text` | Regular conversational response |
-| `proposal` | Response includes an automation proposal (check `proposalId`) |
-| `degraded` | LLM provider returned a degraded response (check `degradedReason`) |
+| `text` | The server emits this for a regular conversational response. |
+| `proposal-reference` | The server emits this when the response includes an automation proposal; check `proposalId`. |
+| `error` | The server emits this when the request could not be completed and the message describes the error. |
+| `status` | The server emits this for a progress or status update for the current chat operation. |
+| `degraded` | The server emits this when the LLM provider returns a degraded response; check `degradedReason`. |
+| `clarification` | The server emits this when the assistant needs clarification before continuing. |
+| `parse-hint` | The server emits this when the assistant provides a supported input pattern or parsing hint. |
 
 ### Degraded responses
 
