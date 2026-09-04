@@ -74,6 +74,14 @@ dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.
 $env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~LoggingProviderConfigurationTests|FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests|FullyQualifiedName~ProposalToolsErrorSafetyTests|FullyQualifiedName~ProposalResourcesErrorSafetyTests|FullyQualifiedName~ReadToolsErrorSafetyTests"
 ```
 
+Unknown-exception boundary guard (also runs in the CI `docs-governance` job). The reviewed surface
+list it enforces is `docs/security/UNKNOWN_EXCEPTION_SURFACE_INVENTORY.md`:
+
+```powershell
+node --test scripts/check-unknown-exception-boundary.test.mjs
+node scripts/check-unknown-exception-boundary.mjs
+```
+
 Full backend regression:
 
 ```powershell
