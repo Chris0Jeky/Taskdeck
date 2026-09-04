@@ -208,6 +208,23 @@ export function createProposalDisplayNameResolver() {
     return null
   }
 
+  function operationHeadlineTarget(proposal: Proposal, operation: ProposalOperation): string | null {
+    return operationTargetLabel(proposal, operation)
+      ?? (operationColumnId(operation)
+        ? columnLabel(operationBoardId(proposal, operation), operationColumnId(operation))
+        : stringParameter(parseParameters(operation), 'boardId', 'targetBoardId', 'sourceBoardId')
+          ? boardLabel(stringParameter(parseParameters(operation), 'boardId', 'targetBoardId', 'sourceBoardId'))
+          : null)
+  }
+
+  function resolvedMoveCardColumnLabel(proposal: Proposal, operation: ProposalOperation): string | null {
+    if (operation.actionType.trim().toLowerCase() !== 'movecard') return null
+    const boardKey = key(operationBoardId(proposal, operation))
+    const columnKey = key(operationColumnId(operation))
+    if (!boardKey || !columnKey || !accessibleBoards.has(boardKey)) return null
+    return columnNames.get(`${boardKey}:${columnKey}`) ?? null
+  }
+
   function displayParameterValue(
     proposal: Proposal,
     operation: ProposalOperation,
@@ -245,13 +262,19 @@ export function createProposalDisplayNameResolver() {
     return parts.length > 0 ? parts.join(' · ') : 'No parameter preview supplied for this operation.'
   }
 
-  function operationHeadline(proposal: Proposal, operation: ProposalOperation): string {
-    const target = operationTargetLabel(proposal, operation)
-      ?? (operationColumnId(operation)
-        ? columnLabel(operationBoardId(proposal, operation), operationColumnId(operation))
-        : stringParameter(parseParameters(operation), 'boardId', 'targetBoardId', 'sourceBoardId')
-          ? boardLabel(stringParameter(parseParameters(operation), 'boardId', 'targetBoardId', 'sourceBoardId'))
-          : null)
+  function operationHeadline(
+    proposal: Proposal,
+    operation: ProposalOperation,
+    suppliedHeadline?: string | null,
+  ): string {
+    const supplied = suppliedHeadline?.trim()
+    if (supplied && operation.actionType.trim().toLowerCase() === 'movecard' && /^move\s+card\s*\.?$/i.test(supplied)) {
+      const destination = resolvedMoveCardColumnLabel(proposal, operation)
+      if (destination) return `${supplied.replace(/\s*\.\s*$/, '')} to “${destination}”.`
+    }
+    if (supplied) return supplied
+
+    const target = operationHeadlineTarget(proposal, operation)
     return `${operation.actionType} ${operation.targetType}${target ? ` “${target}”` : ''}`
   }
 

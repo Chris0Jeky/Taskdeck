@@ -120,10 +120,9 @@ function getOperationHeadlines(proposal: Proposal): string[] {
   const headlineCount = Math.max(operations.length, suppliedHeadlines.length)
   return Array.from({ length: headlineCount }, (_, index) => {
     const suppliedHeadline = suppliedHeadlines[index]?.trim()
-    if (suppliedHeadline) return suppliedHeadline
-
     const operation = operations[index]
-    return operation ? proposalDisplayNames.operationHeadline(proposal, operation) : ''
+    if (!operation) return suppliedHeadline ?? ''
+    return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
   }).filter((headline) => headline.length > 0)
 }
 

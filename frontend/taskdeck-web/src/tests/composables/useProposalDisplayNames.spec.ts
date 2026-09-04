@@ -209,4 +209,36 @@ describe('useProposalDisplayNames cache lifecycle', () => {
     expect(summary).toContain('labels: ["shopping"]')
     expect(summary).not.toContain('columnId:')
   })
+
+  it('enriches only an incomplete move-card headline when the destination resolves', async () => {
+    mocks.getBoards.mockResolvedValue([makeBoard('board-1', 'Support Triage')])
+    mocks.getColumns.mockResolvedValue([{ id: 'column-1', boardId: 'board-1', name: 'Done' }])
+    const resolver = createProposalDisplayNameResolver()
+    const proposal = makeProposal('board-1', 'column-1')
+    const operation = proposal.operations[0]
+    operation.targetType = 'Card'
+    operation.targetId = 'card-1'
+    operation.parameters = JSON.stringify({ boardId: 'board-1', cardId: 'card-1', columnId: 'column-1' })
+
+    await resolver.ensure([proposal])
+
+    expect(resolver.operationHeadline(proposal, operation, 'Move card.'))
+      .toBe('Move card to “Done”.')
+    expect(resolver.operationHeadline(proposal, operation, 'Move card "Project plan" to Done.'))
+      .toBe('Move card "Project plan" to Done.')
+  })
+
+  it('keeps an incomplete move-card headline when destination metadata is unavailable', async () => {
+    mocks.getBoards.mockResolvedValue([])
+    const resolver = createProposalDisplayNameResolver()
+    const proposal = makeProposal('board-1', 'column-missing')
+    const operation = proposal.operations[0]
+    operation.targetType = 'Card'
+    operation.targetId = 'card-1'
+    operation.parameters = JSON.stringify({ boardId: 'board-1', cardId: 'card-1', columnId: 'column-missing' })
+
+    await resolver.ensure([proposal])
+
+    expect(resolver.operationHeadline(proposal, operation, 'Move card.')).toBe('Move card.')
+  })
 })

@@ -897,6 +897,15 @@ function summarizeOperation(operation: ProposalOperation): string {
   return proposalDisplayNames.summarizeOperation(proposal, operation)
 }
 
+function afterOperationTitle(proposal: ApiProposal, operation: ProposalOperation, index: number): string {
+  const suppliedHeadline = proposal.presentation?.operationHeadlines?.[index]?.trim()
+  if (suppliedHeadline && operation.actionType.trim().toLowerCase() === 'movecard') {
+    const enrichedHeadline = proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
+    if (enrichedHeadline !== suppliedHeadline) return enrichedHeadline
+  }
+  return `${formatActionLabel(operation.actionType)} · ${operation.targetType}`
+}
+
 const before = computed<ChangeBeforeCard>(() => {
   void displayVersion.value
   const operationCount = activeProposal.value?.operations?.length ?? 0
@@ -945,7 +954,7 @@ const after = computed<ChangeAfterCard[]>(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map((operation, index) => ({
       serial: `op-${index + 1}`,
-      title: `${formatActionLabel(operation.actionType)} · ${operation.targetType}`,
+      title: afterOperationTitle(p!, operation, index),
       body: summarizeOperation(operation),
       status: operation.actionType.toLowerCase().startsWith('create') ? 'new' : 'kept',
     }))

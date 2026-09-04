@@ -964,6 +964,14 @@ describe('PaperReviewView', () => {
           expectedVersion: null,
         },
       ],
+      presentation: {
+        plainSummary: 'Move a card',
+        impactSummary: 'Moves one card.',
+        riskCue: 'Low risk',
+        sourceCue: 'Chat',
+        operationHeadlines: ['Move card.'],
+        affectedEntities: [],
+      },
     })
     const originalOperations = JSON.parse(JSON.stringify(proposal.operations))
     const wrapper = await mountView(
@@ -974,6 +982,7 @@ describe('PaperReviewView', () => {
     )
 
     const mainText = wrapper.find('[data-testid="paper-review-main"]').text()
+    expect(mainText).toContain('Move card to “Done”.')
     expect(mainText).toContain('Support Triage')
     expect(mainText).toContain('Done')
     expect(mainText).not.toContain('board-1')
