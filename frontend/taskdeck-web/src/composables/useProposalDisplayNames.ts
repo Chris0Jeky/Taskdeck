@@ -268,6 +268,9 @@ export function createProposalDisplayNameResolver() {
     suppliedHeadline?: string | null,
   ): string {
     const supplied = suppliedHeadline?.trim()
+    // Normal MoveCard presentations only name the action because the backend payload carries
+    // IDs. Enrich that exact incomplete shape only from a column loaded for this proposal; an
+    // unavailable placeholder is not a destination guess.
     if (supplied && operation.actionType.trim().toLowerCase() === 'movecard' && /^move\s+card\s*\.?$/i.test(supplied)) {
       const destination = resolvedMoveCardColumnLabel(proposal, operation)
       if (destination) return `${supplied.replace(/\s*\.\s*$/, '')} to “${destination}”.`

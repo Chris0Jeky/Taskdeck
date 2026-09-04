@@ -900,8 +900,7 @@ function summarizeOperation(operation: ProposalOperation): string {
 function afterOperationTitle(proposal: ApiProposal, operation: ProposalOperation, index: number): string {
   const suppliedHeadline = proposal.presentation?.operationHeadlines?.[index]?.trim()
   if (suppliedHeadline && operation.actionType.trim().toLowerCase() === 'movecard') {
-    const enrichedHeadline = proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
-    if (enrichedHeadline !== suppliedHeadline) return enrichedHeadline
+    return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
   }
   return `${formatActionLabel(operation.actionType)} · ${operation.targetType}`
 }
