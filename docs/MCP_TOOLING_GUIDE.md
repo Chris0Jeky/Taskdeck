@@ -332,7 +332,7 @@ file-redirection bridge to `wsl.exe`:
 $wsl = Get-Command -Name wsl.exe -CommandType Application -TotalCount 1 -ErrorAction Stop
 $repoWindows = (git rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$repoWsl = (& $wsl.Source wslpath -a $repoWindows).Trim()
+$repoWsl = (& $wsl.Source --exec wslpath -a $repoWindows).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 function ConvertTo-BashSingleQuotedLiteral {
@@ -353,9 +353,9 @@ $handoffPath = Join-Path $env:TEMP ("taskdeck-wsl-{0}.sh" -f [Guid]::NewGuid().T
 
 try {
     [IO.File]::WriteAllText($handoffPath, $handoff, [Text.UTF8Encoding]::new($false))
-    $cmdLine = '/d /s /c ""{0}" --exec bash -s -- < "{1}""' -f $wsl.Source, $handoffPath
+    $inner = '"{0}" --exec bash -s -- < "{1}"' -f $wsl.Source, $handoffPath
     $LASTEXITCODE = $null
-    & $env:ComSpec $cmdLine
+    & $env:ComSpec /d /s /c $inner
     $handoffExit = $LASTEXITCODE
     if ($null -eq $handoffExit) { throw 'cmd.exe did not return an exit code.' }
     if ($handoffExit -ne 0) { exit $handoffExit }
@@ -373,11 +373,11 @@ skip the handoff and invoke the file directly once its WSL path is known:
 $wsl = Get-Command -Name wsl.exe -CommandType Application -TotalCount 1 -ErrorAction Stop
 $repoWindows = (git rev-parse --show-toplevel).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$repoWsl = (& $wsl.Source wslpath -a $repoWindows).Trim()
+$repoWsl = (& $wsl.Source --exec wslpath -a $repoWindows).Trim()
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 $ledgerWsl = "$repoWsl/scripts/agent_hooks/render_failure_ledger.py"
 $LASTEXITCODE = $null
-& $wsl.Source python3 -B $ledgerWsl
+& $wsl.Source --exec python3 -B $ledgerWsl
 $fallbackExit = $LASTEXITCODE
 if ($null -eq $fallbackExit) { throw 'wsl.exe did not return an exit code.' }
 if ($fallbackExit -ne 0) { exit $fallbackExit }
