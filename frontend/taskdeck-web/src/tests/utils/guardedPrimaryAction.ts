@@ -71,6 +71,18 @@ const DEFAULT_ERROR_EVENTS = ['error', 'invalid', 'blocked']
  */
 export type PrimaryActionTrigger = Omit<DOMWrapper<Element>, 'exists'>
 
+/**
+ * How many times each event has been emitted so far, as plain numbers.
+ *
+ * Reading lengths eagerly is the whole point: it detaches the snapshot from the
+ * live arrays that Vue Test Utils keeps appending to.
+ */
+function countEmits(wrapper: VueWrapper<any>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(wrapper.emitted()).map(([name, calls]) => [name, calls?.length ?? 0]),
+  )
+}
+
 /** True when the wrapper's element carries a real HTML disabled state. */
 function isDisabled(trigger: PrimaryActionTrigger): boolean {
   const element = trigger.element as HTMLButtonElement
@@ -92,17 +104,20 @@ export async function expectGuardedPrimaryAction(
 ): Promise<void> {
   const scenario = options.unmetPreconditions
 
-  // `get()` already throws for a missing node; a `find()` caller passes a
-  // wrapper it has asserted itself. Either way there is an element by here.
-  expect(trigger.element, `guarded primary action not found (${scenario})`).toBeTruthy()
-
   if (isDisabled(trigger)) {
     // Branch 1: the control tells the truth by being off. Done.
     return
   }
 
   // Branch 2: the control is enabled, so it must not be silent.
-  const emittedBefore = { ...wrapper.emitted() }
+  //
+  // Snapshot emit COUNTS, not the arrays. `wrapper.emitted()` hands back the
+  // live record and Vue Test Utils pushes into those arrays in place, so a
+  // shallow spread aliases them: for an event the component had ALREADY
+  // emitted before the click, `after > before` would compare an array's length
+  // to itself and never be true. That produced a false "enabled-and-silent"
+  // failure for any component that emits `error` during setup.
+  const emittedBefore = countEmits(wrapper)
   const toastCallsBefore = options.toastSpy?.mock.calls.length ?? 0
 
   await trigger.trigger('click')
@@ -119,12 +134,10 @@ export async function expectGuardedPrimaryAction(
   const toasted = toastCallsAfter > toastCallsBefore
 
   const errorEvents = options.errorEvents ?? DEFAULT_ERROR_EVENTS
-  const emittedAfter = wrapper.emitted()
-  const emittedError = errorEvents.some((name) => {
-    const after = emittedAfter[name]?.length ?? 0
-    const before = emittedBefore[name]?.length ?? 0
-    return after > before
-  })
+  const emittedAfter = countEmits(wrapper)
+  const emittedError = errorEvents.some(
+    (name) => (emittedAfter[name] ?? 0) > (emittedBefore[name] ?? 0),
+  )
 
   expect(
     renderedValidation || toasted || emittedError,

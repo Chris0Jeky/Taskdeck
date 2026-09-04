@@ -113,6 +113,35 @@ describe('primary action guards (GH-1949 AC3)', () => {
     })
   })
 
+  /**
+   * Regression for the emit-snapshot aliasing defect. `wrapper.emitted()`
+   * returns the LIVE record and Vue Test Utils appends to those arrays in
+   * place, so a shallow-spread snapshot aliased them and the errorEvents branch
+   * could never fire for an event the component had already emitted once.
+   * This control emits `error` in setup AND again on click: it satisfies the
+   * contract, so it must PASS. Against the shallow spread it failed.
+   */
+  it('counts a repeat error emit as feedback when one was already emitted', async () => {
+    const AlreadyErrored = {
+      emits: ['error'],
+      setup(_props: unknown, { emit }: { emit: (event: string, ...args: unknown[]) => void }) {
+        emit('error', 'a pre-existing complaint')
+        return { fire: () => emit('error', 'pick a board first') }
+      },
+      template: '<div><button data-action="go" @click="fire">Do it</button></div>',
+    }
+    const wrapper = mount(AlreadyErrored)
+    expect(wrapper.emitted('error')).toHaveLength(1)
+
+    await expectGuardedPrimaryAction(wrapper, wrapper.get('button[data-action="go"]'), {
+      unmetPreconditions: 'control that already emitted error before the click',
+    })
+
+    // The click really did add a second emit — the helper is not passing by
+    // accident on the setup-time one.
+    expect(wrapper.emitted('error')).toHaveLength(2)
+  })
+
   // ---- Registered primary actions ----
 
   it('Inbox "Accept on board" is guarded with no board selected (#1944)', async () => {
@@ -122,11 +151,16 @@ describe('primary action guards (GH-1949 AC3)', () => {
     await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
     const confirm = wrapper.get('button[data-action="accept-on-board"]')
 
+    // Pin WHICH branch of the contract this control satisfies. The helper
+    // accepts either, so without this the test would still pass if the button
+    // silently became enabled-with-feedback; #1944's fix was specifically to
+    // disable it. `expectGuardedPrimaryAction` never clicks a disabled trigger,
+    // so asserting "no accept emitted" afterwards would be trivially true.
+    expect(confirm.attributes('disabled')).toBeDefined()
+
     await expectGuardedPrimaryAction(wrapper, confirm, {
       unmetPreconditions: 'board picker open, no board chosen',
     })
-    // The original defect was a silent no-op, so also pin the absence of an emit.
-    expect(wrapper.emitted('accept')).toBeUndefined()
   })
 
   it('Capture composer submit is guarded with an empty body', async () => {
@@ -139,9 +173,12 @@ describe('primary action guards (GH-1949 AC3)', () => {
       .find((button) => button.text().includes('Capture'))
     expect(submit, 'composer submit button not found').toBeDefined()
 
+    // As above: record which branch is in force rather than asserting the
+    // absence of an emit the helper never had a chance to trigger.
+    expect(submit!.attributes('disabled')).toBeDefined()
+
     await expectGuardedPrimaryAction(wrapper, submit!, {
       unmetPreconditions: 'composer body is whitespace only',
     })
-    expect(wrapper.emitted('submit')).toBeUndefined()
   })
 })
