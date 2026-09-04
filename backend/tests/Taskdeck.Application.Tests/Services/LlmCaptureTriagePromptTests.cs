@@ -437,4 +437,47 @@ public class LlmCaptureTriagePromptTests
         parsed.Should().BeFalse();
         tasks.Should().BeEmpty();
     }
+
+    [Fact]
+    public void TryParseTasks_ShouldResolveAPartialSeptemberDate_ToTheCaptureAnchorYear()
+    {
+        // The shipped 2026-08-29 acceptance defect: "Monday 1 September" spoken in late August
+        // returned 2023-09-01. Anchored on the CAPTURE day, the plausible answer is the anchor's
+        // own year and the fabricated one is dropped (the task itself survives).
+        var anchor = CaptureTriageAnchor.FromCapture(
+            new DateTimeOffset(2026, 8, 29, 10, 0, 0, TimeSpan.Zero));
+
+        var resolved = LlmCaptureTriagePrompt.TryParseTasks(
+            BuildSingleTaskContent("2026-09-01", "Monday 1 September"),
+            anchor.ReferenceDate,
+            out var resolvedTasks,
+            out var resolvedNotes);
+        var fabricated = LlmCaptureTriagePrompt.TryParseTasks(
+            BuildSingleTaskContent("2023-09-01", "Monday 1 September"),
+            anchor.ReferenceDate,
+            out var fabricatedTasks,
+            out var fabricatedNotes);
+
+        resolved.Should().BeTrue();
+        resolvedTasks[0].DueDateHint.Should().Be("2026-09-01");
+        resolvedNotes.Should().BeEmpty();
+
+        fabricated.Should().BeTrue();
+        fabricatedTasks[0].DueDateHint.Should().BeNull();
+        fabricatedNotes.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void BuildSystemPrompt_ShouldStateTheCaptureDayAsTheReferenceDate()
+    {
+        var anchor = CaptureTriageAnchor.FromCapture(
+            new DateTimeOffset(2026, 9, 1, 2, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 8, 31, 19, 0, 0, TimeSpan.FromHours(-7)));
+
+        var prompt = LlmCaptureTriagePrompt.BuildSystemPrompt(anchor.ReferenceDate);
+
+        prompt.Should().Contain("The transcript was captured on 2026-08-31");
+        prompt.Should().Contain("That is the reference date");
+        prompt.Should().NotContain("2026-09-01");
+    }
 }

@@ -938,6 +938,7 @@ public class TranscriptTriageWorkerTests
         public Guid? LastBoardId { get; private set; }
         public Guid? LastTranscriptId { get; private set; }
         public CapturePayloadV1? LastPayload { get; private set; }
+        public CaptureTriageAnchor? LastAnchor { get; private set; }
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
 
@@ -946,9 +947,11 @@ public class TranscriptTriageWorkerTests
             Guid userId,
             Guid? boardId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
         {
             CallCount++;
+            LastAnchor = anchor;
             LastCaptureItemId = captureItemId;
             LastUserId = userId;
             LastBoardId = boardId;
@@ -981,10 +984,11 @@ public class TranscriptTriageWorkerTests
             Guid? boardId,
             Guid transcriptId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
         {
             LastTranscriptId = transcriptId;
-            return CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
+            return CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, null, cancellationToken);
         }
     }
 
