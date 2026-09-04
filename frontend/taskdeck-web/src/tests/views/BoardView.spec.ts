@@ -743,6 +743,47 @@ describe('BoardView', () => {
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
   })
 
+  it('clears the store error when a successful background refresh leaves it unchanged', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => true)
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(mockBoardStore.error).toBe('Board refresh failed')
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(mockBoardStore.error).toBeNull()
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-error"]').exists()).toBe(false)
+  })
+
+  it('preserves a different mutation error raised during a successful background refresh', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Failed to create card'
+        return true
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="board-error"]').text()).toBe('Failed to create card')
+  })
+
   it('does not let an older background refresh clear a newer route error', async () => {
     const backgroundRefresh = createDeferred<boolean>()
     mockBoardStore.fetchBoard
