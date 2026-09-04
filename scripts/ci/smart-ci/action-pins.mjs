@@ -5,8 +5,10 @@
 //
 // Lists every `uses:` reference in the workflow files, classifies it (local, docker,
 // external), and reports whether an external reference is pinned to a full 40-hex commit
-// SHA. `--check` exits 1 when any external reference is unpinned (the CI-11 guard; report-only
-// until every action is migrated).
+// SHA. `--check` exits 1 when any external reference is unpinned (the CI-11 guard, enforced
+// since CI-11 slice 1). A pinned reference without a trailing `# vX.Y.Z` version comment is
+// reported as a warning, not a failure: the SHA is the security property, the comment is
+// readability (and what Dependabot rewrites when it bumps the pin).
 
 import { readdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,12 +40,14 @@ export function inventoryActionPins(files) {
         ref = at >= 0 ? uses.slice(at + 1) : '';
       }
       const pinned = kind === 'local' ? true : kind === 'docker' ? /^sha256:[0-9a-f]{64}$/.test(ref) : /^[0-9a-f]{40}$/.test(ref);
-      entries.push({ file: file.path, line: index + 1, uses, kind, action, ref, pinned, comment });
+      const versionComment = /^v\d+(\.\d+)*/.test(comment);
+      entries.push({ file: file.path, line: index + 1, uses, kind, action, ref, pinned, comment, versionComment });
     });
   }
   entries.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
   const external = entries.filter((entry) => entry.kind !== 'local');
   const unpinned = external.filter((entry) => !entry.pinned);
+  const missingVersionComment = external.filter((entry) => entry.pinned && !entry.versionComment);
   const byAction = {};
   for (const entry of external) {
     byAction[entry.action] ??= { references: 0, pinned: 0, refs: new Set() };
@@ -59,6 +63,7 @@ export function inventoryActionPins(files) {
       external: external.length,
       pinned: external.length - unpinned.length,
       unpinned: unpinned.length,
+      missingVersionComment: missingVersionComment.length,
       distinctExternalActions: Object.keys(byAction).length,
     },
     byAction: Object.fromEntries(Object.entries(byAction).sort().map(([action, stat]) => [action, { references: stat.references, pinned: stat.pinned, refs: [...stat.refs].sort() }])),
@@ -71,6 +76,10 @@ export function renderPinsMarkdown(inventory) {
   lines.push('');
   lines.push(`${inventory.summary.external} external references across ${inventory.summary.files} workflow files · **${inventory.summary.pinned} pinned to a full SHA**, **${inventory.summary.unpinned} unpinned** · ${inventory.summary.distinctExternalActions} distinct actions`);
   lines.push('');
+  if (inventory.summary.missingVersionComment > 0) {
+    lines.push(`${inventory.summary.missingVersionComment} pinned reference(s) carry no \`# vX.Y.Z\` version comment.`);
+    lines.push('');
+  }
   lines.push('| Action | references | pinned | refs in use |');
   lines.push('| --- | ---: | ---: | --- |');
   for (const [action, stat] of Object.entries(inventory.byAction)) lines.push(`| ${action} | ${stat.references} | ${stat.pinned} | ${stat.refs.map((ref) => `\`${ref}\``).join(', ')} |`);
@@ -106,6 +115,7 @@ function main() {
   if (args.json) writeFileSync(args.json, `${JSON.stringify(inventory, null, 2)}\n`);
   if (args.markdown) appendFileSync(args.markdown, markdown);
   process.stdout.write(markdown);
+  for (const entry of inventory.entries.filter((candidate) => candidate.kind !== 'local' && candidate.pinned && !candidate.versionComment)) console.error(`::warning file=${entry.file},line=${entry.line}::pinned action reference ${entry.uses} has no "# vX.Y.Z" version comment`);
   if (args.check && inventory.summary.unpinned > 0) {
     for (const entry of inventory.entries.filter((candidate) => candidate.kind !== 'local' && !candidate.pinned)) console.error(`::error file=${entry.file},line=${entry.line}::unpinned action reference ${entry.uses}`);
     process.exit(1);

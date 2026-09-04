@@ -40,5 +40,5 @@ jobs:
       - name: Planner, gate and pin-inventory self-tests
         run: node --test scripts/ci/smart-ci/*.test.mjs
 
-      - name: External action pin inventory (report only until CI-11 completes the migration)
-        run: node scripts/ci/smart-ci/action-pins.mjs --markdown "$GITHUB_STEP_SUMMARY"
+      - name: External action pin guard (CI-11: every external action must be pinned to a full SHA)
+        run: node scripts/ci/smart-ci/action-pins.mjs --check --markdown "$GITHUB_STEP_SUMMARY"
