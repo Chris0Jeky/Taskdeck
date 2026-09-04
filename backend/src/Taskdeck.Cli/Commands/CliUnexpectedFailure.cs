@@ -1,5 +1,6 @@
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Cli.Commands;
 
@@ -30,7 +31,14 @@ internal static class CliUnexpectedFailure
     /// knows diagnostics were absent rather than suppressed. Contains no exception detail.
     /// </summary>
     internal const string DiagnosticsUnavailableNotice =
-        "Full failure diagnostics were not captured: the CLI startup trace is not enabled for this run.";
+        "Full failure diagnostics were not captured: the CLI has no local diagnostic sink, and the " +
+        "startup trace is not enabled for this run.";
+
+    /// <summary>
+    /// Stable code for the fail-closed pre-migration snapshot failure (#1803), whose message is
+    /// deliberately written to be actionable for a local-first operator.
+    /// </summary>
+    internal const string PreMigrationBackupErrorCode = "PRE_MIGRATION_BACKUP_FAILED";
 
     /// <summary>
     /// Prints the safe failure line and returns the standard failure exit code.
@@ -39,6 +47,15 @@ internal static class CliUnexpectedFailure
     {
         ArgumentNullException.ThrowIfNull(exception);
         ArgumentNullException.ThrowIfNull(errorWriter);
+
+        // Class (a): the pre-migration snapshot failure is a deliberate operator message. It keeps
+        // its own text (redacted, never a stack trace) so a local-first user can act on it.
+        if (exception is PreMigrationBackupException)
+        {
+            errorWriter.WriteLine(
+                $"Error [{PreMigrationBackupErrorCode}]: {SensitiveDataRedactor.Redact(exception.Message)}");
+            return ExitCodes.Failure;
+        }
 
         var captured = trace?.TryRecordUnexpectedFailure(exception) ?? false;
         var correlationId = trace?.CorrelationId;

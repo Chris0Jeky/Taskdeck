@@ -97,9 +97,10 @@ internal sealed class CliStartupTrace
 
     /// <summary>
     /// The bounded reference the CLI may show a user alongside a generic failure line.
-    /// Null when tracing is not enabled for this run.
+    /// Null when tracing is not enabled for this run, or once tracing has disabled itself
+    /// after a write failure -- so the CLI never shows a reference to a record it did not keep.
     /// </summary>
-    internal string? CorrelationId => _path is null ? null : _correlationId;
+    internal string? CorrelationId => _disabled || _path is null ? null : _correlationId;
 
     /// <summary>
     /// Writes the full exception text exactly once to the protected companion file and
@@ -118,8 +119,25 @@ internal sealed class CliStartupTrace
 
         try
         {
+            var failurePath = Path.ChangeExtension(_path, FailureDetailExtension);
+            if (!File.Exists(failurePath))
+            {
+                // The file carries full exception text. On a default POSIX umask (022) an
+                // implicit create would land it 0644 (world-readable), so create it first and
+                // restrict to owner read/write before any content is written. No-op on Windows,
+                // where NTFS ACL inheritance governs access.
+                using (File.Create(failurePath))
+                {
+                }
+
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(failurePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                }
+            }
+
             File.AppendAllText(
-                Path.ChangeExtension(_path, FailureDetailExtension),
+                failurePath,
                 $"v1|{_correlationId}|unexpected-failure\n{exception}\n",
                 StrictUtf8);
         }

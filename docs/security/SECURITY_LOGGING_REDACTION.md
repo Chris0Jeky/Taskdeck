@@ -48,12 +48,20 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   silent child-result handling and arbitrary thrown exceptions remain separate contracts.
 - The standalone `Taskdeck.Cli` entry point wraps its whole run in an unknown-exception boundary
   (`CliUnexpectedFailure`): an unexpected exception prints only the stable generic failure message
-  plus the bounded startup-trace correlation reference when one exists, and exits with the normal
-  failure code instead of letting the runtime print raw exception text and a stack trace. The full
-  exception is written once to the protected startup-trace companion file. Deliberate
-  `DomainException`, usage/validation, parse, and recovery-command messages are unchanged, and the
-  first-run bootstrapper's operator guidance about the operator's own local paths is a deliberate,
-  retained message rather than a leak.
+  and exits with the normal failure code, instead of letting the runtime print raw exception text
+  and a stack trace. The CLI has **no always-on diagnostic sink** (it clears all logging providers
+  to keep stdout clean JSON), so the full exception is retained only when the harness startup trace
+  is enabled for the run (`TASKDECK_CLI_TEST_TRACE_CORRELATION`): then it is written once to a
+  companion `startup-<correlation>.failure` file, created owner-read/write only on POSIX, and the
+  bounded correlation reference is shown alongside the generic line. In an ordinary operator run no
+  trace exists, so the CLI prints the generic line plus an explicit
+  "diagnostics were not captured" notice and the exception is not retained anywhere. Adding an
+  always-on local diagnostic sink is tracked in #2468.
+- Deliberate CLI messages are unchanged by that boundary: `DomainException` and failed-`Result`
+  messages, usage/validation and parse errors, the recovery and connector-verification commands'
+  own stable codes, `PreMigrationBackupException` (its fail-closed text is deliberately actionable
+  for a local-first operator, and is printed redacted with no stack trace), and the first-run
+  bootstrapper's operator guidance about the operator's own local paths.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for

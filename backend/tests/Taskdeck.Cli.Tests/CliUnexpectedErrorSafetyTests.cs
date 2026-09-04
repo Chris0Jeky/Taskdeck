@@ -2,6 +2,7 @@ using FluentAssertions;
 using Taskdeck.Application.Services;
 using Taskdeck.Cli.Commands;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Cli.Tests;
@@ -162,6 +163,65 @@ public sealed class CliUnexpectedErrorSafetyTests
         output.Should().Contain("Invalid --expires value.");
         output.Should().Contain("taskdeck api-key create --name <name>");
         output.Should().NotContain(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+    }
+
+    [Fact]
+    public void FailureSink_IsOwnerReadWriteOnly_OnPosix()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // NTFS ACL inheritance governs access on Windows; there is no Unix mode to assert.
+            return;
+        }
+
+        using var directory = new TemporaryDirectory();
+        var trace = CliStartupTrace.TryCreate(directory.Path, CorrelationId);
+        using var stderr = new StringWriter();
+
+        CliUnexpectedFailure.Handle(CreateLeakyException(), trace, stderr);
+
+        var failurePath = Path.Combine(directory.Path, $"startup-{CorrelationId}.failure");
+        File.GetUnixFileMode(failurePath)
+            .Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+    }
+
+    [Fact]
+    public void Handle_WhenTraceDisabledItself_DoesNotShowACorrelationReference()
+    {
+        // Occupy the trace path with a directory so the first write fails and the trace disables
+        // itself; the CLI must not then advertise a reference to a record it did not keep.
+        using var directory = new TemporaryDirectory();
+        Directory.CreateDirectory(Path.Combine(directory.Path, $"startup-{CorrelationId}.trace"));
+        var trace = CliStartupTrace.TryCreate(directory.Path, CorrelationId);
+        trace.Record(CliStartupTrace.ManagedEntryPhase);
+        using var stderr = new StringWriter();
+
+        var exitCode = CliUnexpectedFailure.Handle(CreateLeakyException(), trace, stderr);
+
+        exitCode.Should().Be(ExitCodes.Failure);
+        trace.CorrelationId.Should().BeNull();
+        var output = stderr.ToString();
+        output.Should().NotContain(CorrelationId);
+        output.Should().Contain(CliUnexpectedFailure.DiagnosticsUnavailableNotice);
+    }
+
+    [Fact]
+    public void Handle_WithPreMigrationBackupFailure_KeepsItsDeliberateOperatorMessage()
+    {
+        var exception = new PreMigrationBackupException(
+            "Pre-migration snapshot could not be written; migration was blocked to protect your data.",
+            new IOException("disk full"));
+        using var stderr = new StringWriter();
+
+        var exitCode = CliUnexpectedFailure.Handle(exception, trace: null, stderr);
+
+        exitCode.Should().Be(ExitCodes.Failure);
+        var output = stderr.ToString();
+        output.Should().Contain(CliUnexpectedFailure.PreMigrationBackupErrorCode);
+        output.Should().Contain("migration was blocked to protect your data.");
+        output.Should().NotContain(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+        output.Should().NotContain("   at ");
+        output.Should().NotContain("IOException");
     }
 
     /// <summary>
