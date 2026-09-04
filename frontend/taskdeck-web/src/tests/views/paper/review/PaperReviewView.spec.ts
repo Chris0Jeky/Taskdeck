@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => ({
   getConflicts: vi.fn(),
   getHistory: vi.fn(),
   getSimilarPast: vi.fn(),
+  getProvenanceMetadata: vi.fn(),
   getCaptureItem: vi.fn(),
   getBoards: vi.fn(),
   getColumns: vi.fn(),
@@ -86,6 +87,7 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
     getConflicts: mocks.getConflicts,
     getHistory: mocks.getHistory,
     getSimilarPast: mocks.getSimilarPast,
+    getProvenanceMetadata: mocks.getProvenanceMetadata,
   },
 }))
 
@@ -295,6 +297,12 @@ describe('PaperReviewView', () => {
     mocks.getConflicts.mockResolvedValue([])
     mocks.getHistory.mockResolvedValue([])
     mocks.getSimilarPast.mockResolvedValue({ decisions: [], applyRate: 0 })
+    // Default: the proposal recorded no producer, so capture detail decides (#1987).
+    mocks.getProvenanceMetadata.mockResolvedValue({
+      provider: null,
+      model: null,
+      promptVersion: null,
+    })
     mocks.getCaptureItem.mockRejectedValue(new Error('capture metadata unavailable'))
     mocks.getColumns.mockResolvedValue([])
   })
