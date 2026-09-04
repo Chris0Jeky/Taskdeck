@@ -100,6 +100,12 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
     getConflicts: vi.fn().mockResolvedValue([]),
     getHistory: vi.fn().mockResolvedValue([]),
     getSimilarPast: vi.fn().mockResolvedValue({ decisions: [], applyRate: 0 }),
+    // Default: the proposal recorded no producer, so capture detail decides (#1987).
+    getProvenanceMetadata: vi.fn().mockResolvedValue({
+      provider: null,
+      model: null,
+      promptVersion: null,
+    }),
   },
 }))
 
