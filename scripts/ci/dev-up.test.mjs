@@ -23,6 +23,63 @@ const bashLauncher = join(repoRoot, 'scripts', 'dev-up.sh')
 const frontendPackage = join(repoRoot, 'frontend', 'taskdeck-web', 'package.json')
 const trackedNodeVersion = join(repoRoot, '.nvmrc')
 const RESET_CYCLE_TEARDOWN_TIMEOUT_MS = 45_000
+
+// #2378: this suite is serial and launches real PowerShell/Bash launchers, which in turn start
+// real API/Vite child processes. `--test-timeout` bounds each individual case, but it cannot bound
+// the *process*: if a launcher descendant outlives its case and keeps the test process (or the
+// runner's inherited stdio) alive, the file never exits and the hang consumes the whole CI job
+// budget instead of failing. This watchdog converts that class of hang into a fast, diagnosable
+// failure. The timer is unref'd on purpose: a healthy run's event loop drains and the process
+// exits normally without waiting for it, while a hung run keeps the loop alive and trips it.
+// Budget: a passed hosted windows-latest run of this step took 6m31s wall (node --test reported
+// duration_ms 390278.96). 9 minutes is ~1.38x that and sits deliberately *under* the step's
+// `timeout-minutes: 10` in reusable-frontend-unit.yml, so on a hang this watchdog trips first and
+// leaves the leaked-pid diagnostic in the log; the step timeout is only the backstop for a hang
+// this timer cannot observe (for example one where the process already exited and the test runner
+// is the thing still waiting).
+const SUITE_WATCHDOG_MS = Number(process.env.TASKDECK_DEV_UP_SUITE_TIMEOUT_MS ?? 9 * 60_000)
+
+// Descendant launcher process trees that must not outlive the suite. Populated by the launcher
+// spawn helpers below so the watchdog can name and kill whatever is still holding the process open.
+const trackedLauncherPids = new Set()
+
+function killProcessTree(pid) {
+  if (!pid) return
+  if (process.platform === 'win32') {
+    spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+      stdio: 'ignore',
+      timeout: 5000,
+      windowsHide: true,
+    })
+    return
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch (error) {
+    if (error?.code !== 'ESRCH') {
+      try {
+        process.kill(pid, 'SIGKILL')
+      } catch (innerError) {
+        if (innerError?.code !== 'ESRCH') throw innerError
+      }
+    }
+  }
+}
+
+if (Number.isFinite(SUITE_WATCHDOG_MS) && SUITE_WATCHDOG_MS > 0) {
+  const watchdog = setTimeout(() => {
+    const leaked = [...trackedLauncherPids]
+    process.stderr.write(
+      `\n[dev-up.test] SUITE WATCHDOG: the suite exceeded ${SUITE_WATCHDOG_MS}ms and is being ` +
+        `force-failed (#2378). Launcher process trees still tracked as live: ` +
+        `${leaked.length > 0 ? leaked.join(', ') : '(none)'}. If this list is empty the hang is ` +
+        `not a leaked launcher descendant; capture the runner log before rerunning.\n`,
+    )
+    for (const pid of leaked) killProcessTree(pid)
+    process.exit(1)
+  }, SUITE_WATCHDOG_MS)
+  watchdog.unref()
+}
 const powershell =
   process.platform === 'win32'
     ? join(
@@ -739,9 +796,21 @@ function runLauncher(platform, fixture, options = {}) {
     closeSync(stdoutFd)
     closeSync(stderrFd)
   }
+  // spawnSync's `timeout` kills only the direct child, so a launcher that was cut off mid-run can
+  // leave its API/Vite descendants alive; those are exactly what can keep the test process from
+  // exiting later (#2378). Reap the tree before returning, keeping the timeout result intact.
+  reapTimedOutLauncher(result)
   result.stdout = readFileSync(stdoutPath, 'utf8')
   result.stderr = readFileSync(stderrPath, 'utf8')
   return result
+}
+
+// A spawnSync result whose `timeout` fired leaves descendants behind; kill the whole tree so the
+// suite cannot be held open by them. Verified locally on Node 24/Windows: spawnSync itself does
+// return at the timeout (with error.code ETIMEDOUT) even when a grandchild inherited its stdio.
+function reapTimedOutLauncher(result) {
+  if (result?.error?.code !== 'ETIMEDOUT') return
+  if (result.pid) killProcessTree(result.pid)
 }
 
 function runPowerShellCancellation(fixture, apiPort, { afterSeed = false } = {}) {
@@ -785,6 +854,7 @@ function runPowerShellCancellation(fixture, apiPort, { afterSeed = false } = {})
     closeSync(stdoutFd)
     closeSync(stderrFd)
   }
+  reapTimedOutLauncher(result)
   result.stdout = readFileSync(stdoutPath, 'utf8')
   result.stderr = readFileSync(stderrPath, 'utf8')
   return result
@@ -815,6 +885,10 @@ function startLauncher(platform, fixture, options = {}) {
     closeSync(stdoutFd)
     closeSync(stderrFd)
   }
+  if (child?.pid) {
+    trackedLauncherPids.add(child.pid)
+    child.once('exit', () => trackedLauncherPids.delete(child.pid))
+  }
   return { child, stdoutPath, stderrPath }
 }
 
@@ -829,19 +903,7 @@ async function waitUntil(predicate, message, timeout = 5000) {
 
 async function terminateLauncherTree(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return
-  if (process.platform === 'win32') {
-    spawnSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
-      stdio: 'ignore',
-      timeout: 5000,
-      windowsHide: true,
-    })
-  } else {
-    try {
-      process.kill(-child.pid, 'SIGKILL')
-    } catch (error) {
-      if (error?.code !== 'ESRCH') throw error
-    }
-  }
+  killProcessTree(child.pid)
   await Promise.race([
     new Promise((resolve) => child.once('exit', resolve)),
     new Promise((resolve) => setTimeout(resolve, 2000)),
