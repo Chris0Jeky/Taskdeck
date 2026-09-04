@@ -42,6 +42,7 @@ test('keeps literals after apostrophes in Vue template prose', () => {
   const source = `<template>
   <p>Don't replace real colors with issue references.</p>
   <div style="color: #abc"></div>
+  <p>{{ count < 5 ? '#1234' : 'ok' }}</p>
   <!-- tracking issue #1932 -->
 </template>
 <script setup lang="ts">
@@ -54,7 +55,8 @@ const paperColor = '#aabbcc' // tracking issue #1955
       .map(({ literal, line }) => ({ literal, line })),
     [
       { literal: '#abc', line: 3 },
-      { literal: '#aabbcc', line: 8 },
+      { literal: '#1234', line: 4 },
+      { literal: '#aabbcc', line: 9 },
     ],
   )
 })

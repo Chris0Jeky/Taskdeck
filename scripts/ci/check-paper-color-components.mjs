@@ -141,7 +141,7 @@ function stripVueComments(source) {
         continue
       }
 
-      if (char === '<') {
+      if (char === '<' && /[!/A-Za-z]/.test(source[index + 1] ?? '')) {
         const tagEnd = findTagEnd(source, index)
         const tag = parseTag(source, index, tagEnd)
         output += source.slice(index, tagEnd + 1)
