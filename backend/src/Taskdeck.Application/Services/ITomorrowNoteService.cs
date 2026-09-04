@@ -13,7 +13,9 @@ public interface ITomorrowNoteService
 
     /// <summary>
     /// Upsert: creates or updates the tomorrow note for the given date.
-    /// Autosave-friendly -- idempotent for the same user+date pair.
+    /// <paramref name="date"/> is the date the note is FOR (the day it will be
+    /// displayed), not the day it was written: the caller writing a note on day X
+    /// passes X+1. Autosave-friendly -- idempotent for the same user+date pair.
     /// </summary>
     Task<Result<TomorrowNoteResponse>> SaveNoteAsync(Guid userId, DateOnly date, string text, CancellationToken cancellationToken = default);
 }

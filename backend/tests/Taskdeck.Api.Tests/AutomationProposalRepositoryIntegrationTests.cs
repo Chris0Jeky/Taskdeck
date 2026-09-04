@@ -83,6 +83,14 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
             ProposalSourceType.Queue, user.Id, "Will expire soon", RiskLevel.Low,
             $"corr-exp-{Guid.NewGuid():N}", expiryMinutes: 1);
         SetExpiresAt(expired, DateTime.UtcNow.AddDays(-1));
+        expired.AddOperation(new AutomationProposalOperation(
+            expired.Id,
+            0,
+            "create",
+            "card",
+            "{\"title\":\"Expiry operation\"}",
+            $"idempkey-expired-{Guid.NewGuid():N}",
+            targetId: Guid.NewGuid().ToString()));
 
         // Long expiry that should NOT appear
         var notExpired = new AutomationProposal(
@@ -111,6 +119,10 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         results.Should().NotContain(p => p.Id == notExpired.Id);
         results.Should().NotContain(p => p.Id == approvedExpired.Id,
             "GetExpiredAsync only returns PendingReview proposals; a decided (Approved) one is never re-expired");
+
+        var loadedExpired = results.Single(p => p.Id == expired.Id);
+        db.Entry(loadedExpired).Collection(p => p.Operations).IsLoaded.Should().BeFalse(
+            "the expiry sweep only needs proposal metadata and must not materialize operations");
     }
 
     [Fact]

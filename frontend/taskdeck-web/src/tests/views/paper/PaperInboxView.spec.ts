@@ -38,6 +38,7 @@ const orchestratorState = {
   activeBoardId: ref<string | null>(null),
   activeColumnId: ref<string | null>(null),
   isArchivedHistory: ref(false),
+  isScopeReplacement: ref(false),
   activeBoardName: ref(''),
   activeColumnName: ref(''),
   selectedItemId: ref<string | null>(null),
@@ -92,6 +93,7 @@ describe('PaperInboxView', () => {
     orchestratorState.activeBoardId.value = null
     orchestratorState.activeColumnId.value = null
     orchestratorState.isArchivedHistory.value = false
+    orchestratorState.isScopeReplacement.value = false
     orchestratorState.activeBoardName.value = ''
     orchestratorState.activeColumnName.value = ''
     orchestratorState.selectedItemId.value = null
@@ -625,6 +627,7 @@ describe('PaperInboxView', () => {
     expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(true)
     expect(textarea.attributes('aria-invalid')).toBe('true')
     expect(textarea.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
+    expect(wrapper.get('[data-testid="paper-inbox-capture-error"]').attributes('role')).toBeUndefined()
 
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
@@ -750,6 +753,42 @@ describe('PaperInboxView', () => {
     expect(
       (wrapper.find('textarea[aria-label="Quick capture input"]').element as HTMLTextAreaElement).value,
     ).toBe('')
+  })
+
+  it('keeps a successful capture and retained rows visible when a same-scope refresh fails', async () => {
+    orchestratorState.items.value = [captureRow('retained-capture', 'New')]
+    orchestratorState.loadInbox.mockImplementationOnce(async () => {
+      mockCaptureStore.listError = 'Inbox refresh unavailable'
+      throw new Error('Inbox refresh unavailable')
+    })
+    const wrapper = mount(PaperInboxView)
+    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await textarea.setValue('Saved despite the follow-up refresh')
+    await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
+    await flushPromises()
+
+    expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
+    expect((textarea.element as HTMLTextAreaElement).value).toBe('')
+    expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
+
+    const table = wrapper.findComponent({ name: 'PaperTriageTable' })
+    expect(table.find('[role="alert"]').text()).toContain('Inbox refresh unavailable')
+    expect(table.findAll('.paper-triage__row')).toHaveLength(1)
+    expect(table.text()).toContain('1 item')
+    expect(table.find('.paper-triage__list').attributes('style')).toBeUndefined()
+  })
+
+  it('hides retained rows while a route scope replacement fails', () => {
+    orchestratorState.items.value = [captureRow('previous-scope-capture', 'New')]
+    orchestratorState.isScopeReplacement.value = true
+    mockCaptureStore.listError = 'New scope unavailable'
+    const wrapper = mount(PaperInboxView)
+
+    const table = wrapper.findComponent({ name: 'PaperTriageTable' })
+    expect(table.find('[role="alert"]').text()).toContain('New scope unavailable')
+    expect(table.get('.paper-triage__list').attributes('style')).toContain('display: none')
+    expect(table.findAll('.paper-triage__row')).toHaveLength(1)
+    expect(table.text()).not.toContain('1 item')
   })
 
   it('guards nib submissions while capture creation is in flight', async () => {

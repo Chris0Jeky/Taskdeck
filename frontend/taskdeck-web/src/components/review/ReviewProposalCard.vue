@@ -98,10 +98,17 @@ function formatDate(value: string | null): string {
 }
 
 function readableSummary(proposal: Proposal): string {
+  if (normalizeProposalStatus(proposal.status) === 'Applied') {
+    return proposal.summary
+  }
   return proposal.presentation?.plainSummary || proposal.summary
 }
 
 function impactSummary(proposal: Proposal): string {
+  if (normalizeProposalStatus(proposal.status) === 'Applied') {
+    const count = proposal.operations?.length ?? 0
+    return `${count} recorded change${count === 1 ? '' : 's'} applied to the board.`
+  }
   return proposal.presentation?.impactSummary
     || `${proposal.operations.length} planned change${proposal.operations.length === 1 ? '' : 's'}.`
 }

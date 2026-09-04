@@ -692,6 +692,27 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Gets the server-recorded producer metadata (provider/model/promptVersion) for a proposal.
+    /// Shares the board read authorization and 404 parity of <c>{id}/provenance</c>, and exposes
+    /// no capture contents, so an authorized collaborator reviewing another owner's proposal can
+    /// still see what produced it. A proposal with nothing recorded returns 200 with null fields:
+    /// "not recorded" is an answer, and the surface renders it as no producer claim.
+    /// </summary>
+    [HttpGet("{id}/provenance/metadata")]
+    public async Task<IActionResult> GetProposalProvenanceMetadata(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _provenanceQueryService.GetProvenanceMetadataAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Gets source-labelled confidence recorded with proposal provenance. Deterministic and
     /// unreported paths return no numeric confidence.
     /// </summary>

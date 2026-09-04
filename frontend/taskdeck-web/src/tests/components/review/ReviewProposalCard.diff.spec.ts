@@ -263,6 +263,53 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
       .toContain('Create card “Implement OAuth” in the authentication column')
   })
 
+  it('uses historical copy for applied API-shaped records and prospective copy for pending records', () => {
+    const prospectivePresentation = {
+      plainSummary: 'Dark mode support This would create card "Dark mode support".',
+      impactSummary: '1 task card change ready for approval.',
+      riskCue: 'Low risk. Usually safe to review quickly.',
+      sourceCue: 'Created from Inbox capture triage.',
+      operationHeadlines: ['Create card "Dark mode support"'],
+      affectedEntities: [],
+    }
+    const operation = {
+      id: 'op-1',
+      proposalId: 'p-1',
+      sequence: 0,
+      actionType: 'CreateCard',
+      targetType: 'Card',
+      targetId: null,
+      parameters: '{}',
+      idempotencyKey: 'k-1',
+      expectedVersion: null,
+    }
+
+    const applied = mountCard({
+      proposal: makeProposal({
+        status: 'Applied',
+        summary: 'Dark mode support',
+        operations: [operation],
+        presentation: prospectivePresentation,
+      }),
+    })
+    expect(applied.find('.td-review-card__title').text()).toBe('Dark mode support')
+    expect(applied.find('.td-review-cue').text()).toBe('1 recorded change applied to the board.')
+    expect(applied.text()).not.toContain('ready for approval')
+    expect(applied.text()).not.toContain('This would')
+
+    const pending = mountCard({
+      proposal: makeProposal({
+        summary: 'Dark mode support',
+        operations: [operation],
+        presentation: prospectivePresentation,
+      }),
+    })
+    expect(pending.find('.td-review-card__title').text()).toBe(prospectivePresentation.plainSummary)
+    expect(pending.find('.td-review-cue').text()).toBe(prospectivePresentation.impactSummary)
+    expect(pending.text()).toContain('ready for approval')
+    expect(pending.text()).toContain('This would')
+  })
+
   it('renders the invalid verdict with the zero-op fallback when no backend reason is supplied', () => {
     const wrapper = mountCard({
       selectedDiffMode: 'invalid',

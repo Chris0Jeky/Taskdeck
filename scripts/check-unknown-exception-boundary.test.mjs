@@ -318,3 +318,12 @@ test('the real tree has zero unknown-exception boundary findings', async () => {
     [],
   )
 })
+
+test('the webhook delivery worker is guarded as a persisted-state surface', () => {
+  assert.ok(
+    PERSISTED_STATE_FILES.includes(
+      'backend/src/Taskdeck.Api/Workers/OutboundWebhookDeliveryWorker.cs',
+    ),
+    'OutboundWebhookDeliveryWorker persists failure text into OutboundWebhookDelivery.LastErrorMessage (#2474), so it must stay in PERSISTED_STATE_FILES',
+  )
+})

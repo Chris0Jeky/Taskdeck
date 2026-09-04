@@ -317,6 +317,14 @@ async function retryTodaySummary() {
             <h3 class="tk-h3 paper-today__section-title">A line for tomorrow</h3>
             <span class="tk-meta paper-today__section-sub">{{ t('today.note.sectionSub') }}</span>
           </header>
+          <p
+            v-if="dossier.inboundNote"
+            class="paper-today__inbound-note"
+            data-testid="line-from-yesterday"
+          >
+            <span class="tk-meta paper-today__inbound-note-label">{{ t('today.note.inboundLabel') }}</span>
+            <span class="paper-today__inbound-note-text">{{ dossier.inboundNote }}</span>
+          </p>
           <TodayLineForTomorrow
             ref="lineForTomorrow"
             :initial="dossier.lineForTomorrow"
@@ -338,6 +346,21 @@ async function retryTodaySummary() {
 </template>
 
 <style scoped>
+.paper-today__inbound-note {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--ember);
+  background: var(--paper-card);
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-deep);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.paper-today__inbound-note-label {
+  font-style: normal;
+}
 .paper-today {
   display: flex;
   flex-direction: column;
