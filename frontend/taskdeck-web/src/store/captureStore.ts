@@ -148,7 +148,6 @@ export const useCaptureStore = defineStore('capture', () => {
 
   async function fetchItems(query?: CaptureListQuery) {
     const requestId = ++latestListLoadRequestId
-    const observedListWriteGeneration = latestListWriteGeneration
     if (isDemoMode) {
       loadingList.value = true
       listError.value = null
@@ -164,7 +163,11 @@ export const useCaptureStore = defineStore('capture', () => {
       listError.value = null
       const loadedItems = await captureApi.listItems(query)
       if (requestId !== latestListLoadRequestId) return
-      if (observedListWriteGeneration !== latestListWriteGeneration) return
+      // This is the explicit/user-facing list load. A successful mutation may
+      // finish while a scope replacement is in flight, but that must not make
+      // the newer scope response disappear. The request id still gives the
+      // usual latest-load-wins ordering; background batch polls keep the write
+      // generation guard in their own reader below.
       items.value = loadedItems
     } catch (e: unknown) {
       if (requestId !== latestListLoadRequestId) return
@@ -439,10 +442,13 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const triageResult = await captureApi.enqueueTriage(itemId, boardId)
-      recordCaptureWrite(itemId, true)
 
       const existingDetail = detailById.value[itemId]
       const existingSummary = items.value.find((item) => item.id === itemId)
+      // An uncached item has no summary to protect. Avoid invalidating an
+      // explicit list load solely because the detail generation advanced.
+      const syncSummary = Boolean(existingDetail || existingSummary)
+      recordCaptureWrite(itemId, syncSummary)
       let optimisticDetail: CaptureItem | null = null
       if (existingDetail) {
         optimisticDetail = {
@@ -697,6 +703,12 @@ export const useCaptureStore = defineStore('capture', () => {
         batchError.value = message
         toast.error(message)
         throw e
+      }
+
+      // Record every successful batch write before any reconciliation read. An
+      // older detail poll must not restore the pre-batch status/disposition.
+      for (const item of result.results) {
+        if (item.success) recordCaptureWrite(item.itemId, true)
       }
 
       if (result.succeeded > 0) {
