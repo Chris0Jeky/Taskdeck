@@ -20,6 +20,8 @@ evidence report is its acceptance bar before real execution is enabled). The rep
 1. `autodoc/AGENT_INDEX.md` — the seam map. Start here, find your region, jump to entry points.
 2. `docs/STATUS.md` — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
 3. `OUTSTANDING_TASKS.md` — the human-action file (global law 5). Surface open `[ ]` items in every summary.
+   `.codex/memories/00_ACTIVE.md` §Lane coordination — read it before claiming an issue: lane split, claim
+   and release markers, control-plane PR parking, stacked-PR order. It is not auto-loaded for Claude.
 4. Region rules auto-load by path: `backend/CLAUDE.md`, `frontend/taskdeck-web/CLAUDE.md`,
    `scripts/agent_hooks/CLAUDE.md`, `.claude/rules/ci-control.md` (`.github/**`, `ci/**`, `scripts/ci/**`),
    `.claude/rules/docs.md` (`docs/**`, root `*.md`). Workflow skills: `.claude/skills/README.md` — local

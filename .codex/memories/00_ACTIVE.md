@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-04
 
-This file is the active-gate pointer for every implementation agent on Taskdeck (Claude Code lanes today; Codex when its review credits return). It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
+This file is the active-gate pointer for every implementation agent on Taskdeck: Codex reaches it through `AGENTS.md` and `.codex/README.md`, Claude Code through the `CLAUDE.md` orient list (it is not auto-loaded for Claude). It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
 **This file is a pointer, not a record.** It carries routing, standing constraints, and unpushed-work protection only. Shipped reality belongs in `docs/STATUS.md`; delivery history and roadmap sequencing belong in `docs/IMPLEMENTATION_MASTERPLAN.md`, the split that `.codex/README.md` and that file both declare; release state, milestone counts, PR status, and CI colour come from live GitHub. All three outrank anything written here. If you are about to add a dated delivery narrative to this file, put it in `docs/IMPLEMENTATION_MASTERPLAN.md` instead.
 
@@ -50,12 +50,12 @@ No saved head currently holds unshipped work. Record one here the moment a slice
 
 ## Lane coordination (2026-09-04)
 
-- Two implementation lanes run concurrently: `alpha-product-trust` (human work loop: Capture/Inbox, proposals, Review, Board/Paper/Legacy, a11y, product semantics) and `beta-platform-integrity` (runtime, security, delivery, CI, harness). An issue belongs to the lane that owns its primary acceptance outcome, not to whichever layer its files sit in. A programme coordinator session owns issue topology, milestones, Project state, this file, `autodoc/AGENT_INDEX.md` and `docs/releases/V0_3_0_READINESS.md`; it does not implement or merge.
-- Claim before writing: post `[Claude lane claim v2]` on the issue (lane, base SHA, owned paths, shared-path leases, parallel-safe work, status) and `[Claude lane release v2]` with the exact head and result when done. A stale claim is one with no release and no branch activity; the coordinator reconciles it, not the other lane.
+- Two implementation lanes run concurrently: `alpha-product-trust` (human work loop: Capture/Inbox, proposals, Review, Board/Paper/Legacy, a11y, product semantics) and `beta-platform-integrity` (runtime, security, delivery, CI, harness). An issue belongs to the lane that owns its primary acceptance outcome, not to whichever layer its files sit in. A programme coordinator session owns issue topology, milestones, Project state, this file, `autodoc/AGENT_INDEX.md` and `docs/releases/V0_3_0_READINESS.md`; it does not implement in a path a lane has leased, and it merges only its own coordination PRs under the ordinary tier gate (`.agent-harness/tier.json` is the authority, not this line).
+- Claim before writing: post `[Claude lane claim v2]` on the issue (lane, base SHA, owned paths, shared-path leases, parallel-safe work, status) and `[Claude lane release v2]` with the exact head and result when done. `[Codex lane claim v2]` / `[Codex lane release v2]` are the same protocol with the same fields; search for both forms before claiming, because an existing open PR plus a current claim in either form outranks a new claim. A stale claim is one with no release and no branch activity; the coordinator reconciles it, not the other lane.
 - One writer per canonical doc: the lane that merges a slice writes its own bounded `docs/STATUS.md` block and `OUTSTANDING_TASKS.md` tick; cross-lane reconciliation blocks and the readiness view are the coordinator's. Never edit a canonical doc that an open PR already edits without agreeing the order first.
 - Control-plane PRs (`.github/workflows/**`, `ci/**`, `scripts/ci/**`, runner or branch-protection paths, and the `ci/policy.v1.json` control paths) merge only after the maintainer's own review plus one fresh-context review (ADR-0066 amendment 2026-09-03). Open them ready-for-review, then park them under `OUTSTANDING_TASKS.md` SC-10; green is not authority.
 - Codex review credits are exhausted (SC-9, since 2026-09-03 22:34Z): every PR carries one fresh-context independent review instead, and the connector's usage-limit notice is informational, not a finding.
-- Stacked PRs: a PR whose base is a merged-but-undeleted branch merges into that branch, not `main`. Re-target with `gh pr edit N --base main` before merging.
+- Stacked PRs: a PR whose base is another PR's branch merges into that branch, not `main`. Merge the parent first, always; only after the parent has actually merged, re-target the child with `gh pr edit N --base main`, then confirm the new base via the API before merging it. Never re-target a child whose parent is still open, because that pulls the parent's unmerged commits into the child. Never `--delete-branch` a stacked base PR.
 
 ## Start of session
 
