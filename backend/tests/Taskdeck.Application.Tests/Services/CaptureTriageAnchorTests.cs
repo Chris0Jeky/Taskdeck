@@ -57,10 +57,13 @@ public class CaptureTriageAnchorTests
     }
 
     [Fact]
-    public void FromCapture_ShouldIgnoreAnImpossibleOffset()
+    public void FromCapture_ShouldKeepTheWidestRealOffset()
     {
-        // DateTimeOffset itself bounds the offset to +/-14h, so an out-of-range value can only
-        // arrive through a future construction path; the anchor refuses it rather than trusting it.
+        // UTC+14 (Kiritimati) is the eastern extreme of the real offset range, whose western
+        // extreme is UTC-12; the anchor accepts the whole range and only discards a value outside
+        // it. DateTimeOffset itself already bounds construction to +/-14h, so an out-of-range
+        // value could only arrive through some future construction path - the clamp is a guard,
+        // not a reachable branch today.
         var anchor = CaptureTriageAnchor.FromCapture(
             new DateTimeOffset(2026, 8, 29, 23, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2026, 8, 30, 13, 0, 0, TimeSpan.FromHours(14)));

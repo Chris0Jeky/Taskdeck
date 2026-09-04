@@ -167,6 +167,31 @@ public class TranscriptTriageWorkerTests
     }
 
     [Fact]
+    public async Task ProcessBatch_TranscriptItem_AnchorsToTheQueueRowsCaptureDay_NotTheTriageDay()
+    {
+        // #2193, transcript lane: this item was captured 9 days ago and is only being drained now.
+        // The reference date handed to triage is the capture's own day, so a partial date in the
+        // transcript resolves the way it would have at capture time.
+        var item = CreateTranscriptTriageItem();
+        var capturedAt = DateTimeOffset.UtcNow.AddDays(-9);
+        typeof(Taskdeck.Domain.Common.Entity)
+            .GetProperty("CreatedAt")!
+            .SetValue(item, capturedAt);
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var triageService = new FakeCaptureTriageService();
+        using var sp = BuildServiceProvider(queueRepo, triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        triageService.CallCount.Should().Be(1);
+        triageService.LastAnchor.Should().NotBeNull();
+        triageService.LastAnchor!.CapturedAtServer.Should().Be(capturedAt);
+        triageService.LastAnchor.ReferenceDate.Should().Be(DateOnly.FromDateTime(capturedAt.UtcDateTime));
+        triageService.LastAnchor.ReferenceDate.Should().NotBe(DateOnly.FromDateTime(DateTime.UtcNow));
+    }
+
+    [Fact]
     public async Task ProcessBatch_DegradedTriage_CompletesButRecordsTheDegradedNoticeOnTheCapture()
     {
         // #2192: a live provider request that failed (nonexistent model / non-2xx) still yields a
@@ -988,7 +1013,7 @@ public class TranscriptTriageWorkerTests
             CancellationToken cancellationToken = default)
         {
             LastTranscriptId = transcriptId;
-            return CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, null, cancellationToken);
+            return CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, anchor, cancellationToken);
         }
     }
 
