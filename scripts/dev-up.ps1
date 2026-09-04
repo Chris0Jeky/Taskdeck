@@ -413,7 +413,9 @@ function Get-PortListenerInventory {
                     foreach ($row in $rows) {
                         $fields = ($row -split '\s+') | Where-Object { $_ -ne "" }
                         if ($fields.Count -lt 5) { continue }
-                        if ($fields[0] -ne "TCP" -or $fields[3] -ne "LISTENING") { continue }
+                        # Windows localizes netstat's state token; any non-empty value in the
+                        # positional state column is conservative evidence of a matching TCP row.
+                        if ($fields[0] -ne "TCP" -or [string]::IsNullOrWhiteSpace([string]$fields[3])) { continue }
                         if ($fields[1] -notmatch ":(\d+)$" -or [int]$Matches[1] -ne $Port) { continue }
                         $listening = $true
                         $ownerPid = 0

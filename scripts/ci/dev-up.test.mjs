@@ -659,6 +659,39 @@ async function installPowerShellStubs(fakeBin) {
   )
 }
 
+async function installPowerShellNetstatFallbackProbe(fixture) {
+  const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
+  const source = normalise(await readFile(launcherPath, 'utf8'))
+  const marker = 'Set-StrictMode -Version Latest'
+  const netstatPath = join(fixture.fakeBin, 'netstat.cmd')
+  const probe = String.raw`function Get-NetTCPConnection {
+    [CmdletBinding()]
+    param([string]$State, [int]$LocalPort)
+    throw [System.Management.Automation.CommandNotFoundException]::new("synthetic unavailable")
+}
+`
+  assert.equal(source.split(marker).length - 1, 1, 'unexpected strict-mode marker count')
+  assert.equal(source.includes('$netstat = Join-Path $env:SystemRoot "System32/netstat.exe"'), true)
+  const instrumented = source
+    .replace(marker, `${marker}\n${probe}`)
+    .replace(
+      '$netstat = Join-Path $env:SystemRoot "System32/netstat.exe"',
+      '$netstat = $env:TASKDECK_TEST_NETSTAT_PATH',
+    )
+  assert.notEqual(instrumented, source, 'PowerShell netstat probe did not instrument the launcher')
+  await writeFile(launcherPath, instrumented)
+  await writeFile(
+    netstatPath,
+    [
+      '@echo off',
+      'echo TCP 0.0.0.0:%TASKDECK_TEST_NETSTAT_PORT% 0.0.0.0:0 ABHOEREN 4242',
+      'exit /b 0',
+      '',
+    ].join('\r\n'),
+  )
+  return netstatPath
+}
+
 async function installBashStubs(fakeBin) {
   const stubs = {
     node: String.raw`#!/usr/bin/env bash
@@ -1183,6 +1216,125 @@ if (powershell) {
 }
 
 if (bash) {
+  test('Bash: localized netstat state still identifies a listening socket', { concurrency: false }, async () => {
+    const source = normalise(await readFile(bashLauncher, 'utf8'))
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-netstat-seam-'))
+    const fakeBin = join(fixtureRoot, 'bin')
+    const fakeNetstat = join(fakeBin, 'netstat')
+    const harness = join(fixtureRoot, 'netstat-seam.sh')
+    try {
+      await mkdir(fakeBin, { recursive: true })
+      await writeFile(
+        fakeNetstat,
+        String.raw`#!/usr/bin/env bash
+printf '%s\n' 'Proto Recv-Q Send-Q Local Address Foreign Address State'
+printf 'tcp 0 0 127.0.0.1:%s 0.0.0.0:* ABHOEREN\n' "$TASKDECK_TEST_NETSTAT_PORT"
+`,
+      )
+      await chmod(fakeNetstat, 0o755)
+      await writeFile(
+        harness,
+        String.raw`#!/usr/bin/env bash
+set -euo pipefail
+command() {
+  if [[ "$#" -eq 2 && "$1" == '-v' && ("$2" == 'ss' || "$2" == 'lsof') ]]; then return 1; fi
+  builtin command "$@"
+}
+${extractBashFunction(source, 'port_listener_inventory')}
+[[ "$(port_listener_inventory "$TASKDECK_TEST_NETSTAT_PORT")" == 'listening' ]]
+`,
+      )
+      const result = spawnSync(bash, [toPosixPath(harness)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          PATH: `${toPosixPath(fakeBin)}:/usr/local/bin:/usr/bin:/bin`,
+          TASKDECK_TEST_NETSTAT_PORT: '43210',
+        },
+      })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    } finally {
+      await removeDirectory(fixtureRoot)
+    }
+  })
+
+  test('Bash: timeout parsing matches PowerShell for whitespace and signed zero', { concurrency: false }, async () => {
+    const source = normalise(await readFile(bashLauncher, 'utf8'))
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-timeout-seam-'))
+    const harness = join(fixtureRoot, 'timeout-seam.sh')
+    try {
+      await writeFile(
+        harness,
+        String.raw`#!/usr/bin/env bash
+set -euo pipefail
+warn() { :; }
+DEFAULT_PORT_RELEASE_TIMEOUT_MS=30000
+${extractBashFunction(source, 'port_release_timeout_ms')}
+assert_value() {
+  local input="$1" expected="$2"
+  TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS="$input"
+  [[ "$(port_release_timeout_ms)" == "$expected" ]]
+}
+assert_value ' 42 ' 42
+assert_value '-0' 0
+assert_value ' +0 ' 0
+assert_value '   ' 30000
+`,
+      )
+      const result = spawnSync(bash, [toPosixPath(harness)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+        env: { ...process.env },
+      })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    } finally {
+      await removeDirectory(fixtureRoot)
+    }
+  })
+
+  test('Bash: now_ms rejects a bare-seconds date result', { concurrency: false }, async () => {
+    const source = normalise(await readFile(bashLauncher, 'utf8'))
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-clock-seam-'))
+    const harness = join(fixtureRoot, 'clock-seam.sh')
+    try {
+      await writeFile(
+        harness,
+        String.raw`#!/usr/bin/env bash
+set -euo pipefail
+DATE_MODE=seconds
+date() {
+  case "$1" in
+    +%s%3N)
+      if [[ "$DATE_MODE" == 'seconds' ]]; then printf '1700000000\n'; else printf '1700000000123\n'; fi
+      ;;
+    +%s) printf '1700000000\n' ;;
+    *) return 1 ;;
+  esac
+}
+${extractBashFunction(source, 'now_ms')}
+[[ "$(now_ms)" == '1700000000000' ]]
+DATE_MODE=milliseconds
+[[ "$(now_ms)" == '1700000000123' ]]
+`,
+      )
+      const result = spawnSync(bash, [toPosixPath(harness)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+        env: { ...process.env },
+      })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    } finally {
+      await removeDirectory(fixtureRoot)
+    }
+  })
+
   test('Bash: Match to Mismatch after TERM never escalates to KILL', { concurrency: false }, async () => {
     const source = normalise(await readFile(bashLauncher, 'utf8'))
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-identity-seam-'))
@@ -1863,6 +2015,40 @@ for (const platform of platforms) {
       }
     },
   )
+
+  if (platform.name === 'PowerShell') {
+    test(
+      `${platform.name}: a localized netstat state still identifies a live listener`,
+      { concurrency: false },
+      async () => {
+        const fixture = await createFixture(platform)
+        const apiPort = await getFreePort()
+        const foreign = await listenForeign('127.0.0.1')
+        const frontendPort = foreign.address().port
+        try {
+          const netstatPath = await installPowerShellNetstatFallbackProbe(fixture)
+          await writeReapedState(fixture, { apiPort, frontendPort })
+          const result = runLauncher(platform, fixture, {
+            stop: true,
+            timeout: 30_000,
+            env: {
+              TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500',
+              TASKDECK_TEST_NETSTAT_PATH: netstatPath,
+              TASKDECK_TEST_NETSTAT_PORT: String(frontendPort),
+            },
+          })
+          assertFailedClosed(result)
+          assert.match(combinedOutput(result), /Frontend port .* is still occupied/)
+          assert.match(combinedOutput(result), /still held by a live listener/)
+          assert.equal(existsSync(fixture.stateFile), true, 'PID state was dropped for a localized listener')
+          assert.equal(foreign.listening, true, 'the localized listener was disturbed')
+        } finally {
+          await new Promise((resolve) => foreign.close(resolve))
+          await removeFixture(fixture)
+        }
+      },
+    )
+  }
 
   // An unprivileged inventory can see that a socket is listening without being able to name its
   // owner: `ss -p` omits `users:(...)` for another account's socket, and `lsof` cannot see it at
