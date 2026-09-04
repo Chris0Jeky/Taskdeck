@@ -289,6 +289,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       await captureApi.ignoreItem(itemId)
+      recordCaptureWrite(itemId, true)
       await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item ignored')
       notifyTriageCountChanged()
@@ -352,6 +353,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       await captureApi.cancelItem(itemId)
+      recordCaptureWrite(itemId, true)
       await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item cancelled')
       notifyTriageCountChanged()
@@ -437,6 +439,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const triageResult = await captureApi.enqueueTriage(itemId, boardId)
+      recordCaptureWrite(itemId, true)
 
       const existingDetail = detailById.value[itemId]
       const existingSummary = items.value.find((item) => item.id === itemId)
