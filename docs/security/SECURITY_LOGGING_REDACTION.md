@@ -1,8 +1,8 @@
 # Security Logging Redaction Policy
 
-Last Updated: 2026-09-03
+Last Updated: 2026-09-04
 Owner: Taskdeck maintainers
-Linked issues: `#212` (SEC-14), `#2351`
+Linked issues: `#212` (SEC-14), `#2351`, `#2519`
 
 ## Scope
 
@@ -26,6 +26,13 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   - bearer/auth headers
   - provider keys and token-like values
   - capture payload/body fields that may contain private content
+- `Taskdeck.Application.Services.LogControlCharacterSanitizer` (behind `LogSanitizer` and
+  `LogValueSanitizer`) strips C0, DEL and C1 controls, the Unicode line and paragraph separators
+  (U+2028/U+2029), unpaired surrogates, and every Basic Multilingual Plane format character (general category Cf, checked per UTF-16 code unit,
+  which covers the zero-width and bidirectional overrides U+200B..U+200F, U+202A..U+202E,
+  U+2060..U+2064 and U+FEFF) from caller-controlled values before they reach a log sink. The MCP
+  API-key failure path slices its 8-character token prefix before sanitizing it, so stripping can
+  only shorten what is logged.
 - `UnhandledExceptionMiddleware` logs redacted exception summaries instead of raw exception objects.
 - Capture queue, live-provider, webhook, and housekeeping worker failures log sanitized summaries instead of passing exception objects directly to the logger on sensitive paths.
 - Persisted queue/webhook failure messages are redacted or generalized before they are saved for later inspection.
