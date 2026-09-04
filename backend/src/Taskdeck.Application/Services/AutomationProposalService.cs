@@ -43,6 +43,7 @@ public class AutomationProposalService : IAutomationProposalService
     private readonly IProposalProvenanceRepository? _provenanceRepository;
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly ILogger<AutomationProposalService>? _logger;
+    private int _lastSkippedArchivedBoardCount;
 
     public AutomationProposalService(
         IUnitOfWork unitOfWork,
@@ -55,7 +56,8 @@ public class AutomationProposalService : IAutomationProposalService
         _notificationService = notificationService ?? NoOpNotificationService.Instance;
         _provenanceRepository = provenanceRepository;
         // Optional, like AccountDeletionService's: direct construction in tests and the DI-less
-        // fallback paths keep working, and the archived-board skip line is simply not emitted.
+        // fallback paths keep working. The archived-board skip count is reported only on transitions,
+        // matching the worker's operator-log policy.
         _logger = logger;
         // Fall back to a plain engine over the same unit of work when DI does not supply one
         // (direct construction in tests). The engine is stateless apart from _unitOfWork, so
@@ -1260,14 +1262,30 @@ public class AutomationProposalService : IAutomationProposalService
             var sweep = await _unitOfWork.AutomationProposals.GetExpiredAsync(cancellationToken);
             var expiredProposals = sweep.Expirable;
 
-            if (sweep.SkippedArchivedBoardCount > 0)
+            if (sweep.SkippedArchivedBoardCount != _lastSkippedArchivedBoardCount)
             {
-                // Count only — no id, summary, or board name — so this stays non-secret.
-                _logger?.LogInformation(
-                    "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
-                        + "restore the board to let them expire.",
+                if (sweep.SkippedArchivedBoardCount > 0)
+                {
+                    // Count only — no id, summary, or board name — so this stays non-secret.
+                    _logger?.LogInformation(
+                        "Skipped expiring {SkippedCount} stale proposals because their board is archived; "
+                            + "restore the board to let them expire.",
+                        sweep.SkippedArchivedBoardCount);
+                }
+                else
+                {
+                    _logger?.LogInformation(
+                        "No stale proposals are being withheld for archived boards any more.");
+                }
+            }
+            else if (sweep.SkippedArchivedBoardCount > 0)
+            {
+                _logger?.LogDebug(
+                    "Still skipping {SkippedCount} stale proposals because their board is archived.",
                     sweep.SkippedArchivedBoardCount);
             }
+
+            _lastSkippedArchivedBoardCount = sweep.SkippedArchivedBoardCount;
 
             int count = 0;
 
