@@ -53,10 +53,60 @@ describe('captureDraftStash', () => {
       labels: ['release', 'docs'],
       dueAt: '2026-09-01',
       source: 'Typed',
+      labelInput: '',
       failure: { message: 'Capture not saved.', details: 'Status: 401' },
       truncated: false,
       labelsDropped: false,
       stashedAt: expect.any(Number),
+    })
+  })
+
+  // GH-2490 -- an uncommitted label was dropped across the 401 round trip.
+  describe('pending label input', () => {
+    it('round-trips the uncommitted label text', () => {
+      stashCaptureDraft({
+        userId: USER_A,
+        variant: 'composer',
+        text: 'ship it',
+        labelInput: 'half-typed',
+      })
+
+      expect(takeCaptureDraft(USER_A)?.labelInput).toBe('half-typed')
+    })
+
+    it('reads a record written before GH-2490 as an empty pending label', () => {
+      window.sessionStorage.setItem(
+        CAPTURE_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          userId: USER_A,
+          variant: 'composer',
+          text: 'older stash',
+          boardId: null,
+          labels: [],
+          dueAt: null,
+          failure: null,
+          truncated: false,
+          labelsDropped: false,
+          stashedAt: Date.now(),
+        }),
+      )
+
+      const restored = peekCaptureDraft(USER_A)
+      expect(restored?.text).toBe('older stash')
+      expect(restored?.labelInput).toBe('')
+    })
+
+    it('drops an over-long pending label whole and says so', () => {
+      stashCaptureDraft({
+        userId: USER_A,
+        variant: 'composer',
+        text: 'ship it',
+        labelInput: 'x'.repeat(MAX_LABEL_CHARS + 1),
+      })
+
+      const restored = takeCaptureDraft(USER_A)
+      expect(restored?.labelInput).toBe('')
+      expect(restored?.labelsDropped).toBe(true)
     })
   })
 
