@@ -40,9 +40,16 @@ export type ShortcutBinding = AppShellShortcutBinding | ContextShortcutBinding
 type NavigatorHints = Readonly<{
   userAgent?: string
   userAgentData?: Readonly<{ platform?: string }>
+  /**
+   * Deprecated and therefore a LAST-RESORT tier only: consulted through a
+   * `typeof` feature check when neither high-entropy platform data nor a
+   * platform-bearing user agent string is available.
+   */
+  platform?: string
 }>
 
 const APPLE_PLATFORM = /mac|iphone|ipad|ipod/i
+const KNOWN_NON_APPLE_USER_AGENT = /windows|android|linux|x11|cros|freebsd|openbsd|netbsd|sunos/i
 const LEGACY_COMMAND_PREFIX = '\u2318'
 
 const KEY_LABELS: Readonly<Record<string, string>> = {
@@ -58,11 +65,41 @@ function runtimeNavigator(): NavigatorHints | null {
   return typeof navigator === 'undefined' ? null : navigator as NavigatorHints
 }
 
+/**
+ * Read the deprecated `navigator.platform` only behind a feature check, so an
+ * SSR or jsdom runtime that omits it cannot throw. Returning `null` means the
+ * tier had nothing to say, which is distinct from "said it is not Apple".
+ */
+function legacyPlatformIsApple(navigatorHints: NavigatorHints | null): boolean | null {
+  if (!navigatorHints) return null
+  if (typeof navigatorHints.platform !== 'string') return null
+
+  const legacyPlatform = navigatorHints.platform.trim()
+  if (!legacyPlatform) return null
+
+  return APPLE_PLATFORM.test(legacyPlatform)
+}
+
+/**
+ * Detection runs in three tiers, deprecated data strictly last:
+ *
+ * 1. `navigator.userAgentData.platform` — the supported high-entropy hint.
+ * 2. `navigator.userAgent` — trusted when it names ANY platform we recognise,
+ *    including a reduced Windows/Android UA, which must stay on Ctrl notation.
+ * 3. `navigator.platform` — a feature-detected last resort reached only when
+ *    the first two tiers are absent or platform-generic. This is what keeps an
+ *    older browser exposing just `MacIntel` from showing Ctrl on a Mac; it is
+ *    never the primary mechanism.
+ */
 function isApplePlatform(navigatorHints: NavigatorHints | null): boolean {
   const platform = navigatorHints?.userAgentData?.platform?.trim()
   if (platform) return APPLE_PLATFORM.test(platform)
 
-  return APPLE_PLATFORM.test(navigatorHints?.userAgent ?? '')
+  const userAgent = navigatorHints?.userAgent ?? ''
+  if (APPLE_PLATFORM.test(userAgent)) return true
+  if (KNOWN_NON_APPLE_USER_AGENT.test(userAgent)) return false
+
+  return legacyPlatformIsApple(navigatorHints) ?? false
 }
 
 function keyLabel(token: string): string {
@@ -109,8 +146,9 @@ function formatChord(chord: string, apple: boolean): string {
  *
  * Descriptors use `mod` for Command-or-Control, `+` inside a chord, ` ` between
  * chord steps, and `|` between alternative keys. Platform detection prefers
- * `userAgentData.platform`, falls back to `userAgent`, and safely defaults to
- * Ctrl notation when no browser navigator exists.
+ * `userAgentData.platform`, then a platform-bearing `userAgent`, then the
+ * feature-detected legacy `navigator.platform`, and safely defaults to Ctrl
+ * notation when no browser navigator exists.
  */
 export function formatShortcut(
   descriptor: string,

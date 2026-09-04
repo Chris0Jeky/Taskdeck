@@ -146,7 +146,17 @@ public class WorkspaceController : AuthenticatedControllerBase
             0,
             0,
             TimeSpan.Zero);
-        var effectiveTo = to ?? effectiveFrom.AddMonths(1);
+        DateTimeOffset effectiveTo;
+        try
+        {
+            effectiveTo = to ?? effectiveFrom.AddMonths(1);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "The calendar range cannot be derived for the supplied local date."));
+        }
 
         var result = await _workspaceService.GetCalendarAsync(
             userId,

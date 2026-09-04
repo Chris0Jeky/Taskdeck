@@ -436,7 +436,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(extractor => extractor.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(extractor => extractor.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.Succeeded,
                 new CaptureTriageOutputV2(
@@ -466,7 +466,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(extractor => extractor.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(extractor => extractor.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.Succeeded,
                 new CaptureTriageOutputV2(
@@ -814,6 +814,7 @@ public class CaptureTriageServiceTests
                 CaptureRequestContract.CurrentSchemaVersion,
                 CaptureSource.Typed,
                 "- [ ] cancelled before any work"),
+            null,
             cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -1110,7 +1111,7 @@ public class CaptureTriageServiceTests
             p => p.ValidateBoardAccessAsync(userId, boardId, BoardAccessBar.Write, It.IsAny<CancellationToken>()),
             Times.Once);
         extractorMock.Verify(
-            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _boardsMock.Verify(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
         _columnsMock.Verify(r => r.GetByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()), Times.Never);
@@ -1144,7 +1145,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(SuccessfulExtraction(("Send the report", "Alice: send the report.")));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1164,7 +1165,7 @@ public class CaptureTriageServiceTests
                 It.IsAny<CancellationToken>()),
             Times.Once);
         extractorMock.Verify(
-            e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()),
             Times.Once);
         _proposalServiceMock.Verify(
             s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
@@ -1182,7 +1183,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(SuccessfulExtraction(
                 ("Send the quarterly report", "Alice: I will send the report."),
                 ("Review the deployment plan", "Bob: I will review the deployment plan tomorrow.")));
@@ -1231,7 +1232,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.Succeeded,
                 new CaptureTriageOutputV2(
@@ -1282,7 +1283,7 @@ public class CaptureTriageServiceTests
                 0.98m,
                 "Alice: we decided to launch on August 7.")]);
         extractorMock
-            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(userId, boardId, It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.Succeeded,
                 output,
@@ -1313,7 +1314,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.ProviderDegraded, Detail: "circuit open"));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1342,7 +1343,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("unexpected provider bug"));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1367,7 +1368,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.EmptyExtraction,
                 Provider: "OpenAI",
@@ -1416,7 +1417,7 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Provider.Should().Be(CaptureTriageService.TriageProviderName);
         extractorMock.Verify(
-            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 
@@ -1455,7 +1456,7 @@ public class CaptureTriageServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.ProposalId.Should().Be(existingProposal.Id);
         extractorMock.Verify(
-            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()),
             Times.Never);
         _policyEngineMock.Verify(
             p => p.ValidateBoardAccessAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<BoardAccessBar>(), It.IsAny<CancellationToken>()),
@@ -1604,7 +1605,7 @@ public class CaptureTriageServiceTests
         // ProviderDegraded carrying the provider's reason.
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.ProviderDegraded,
                 Detail: "Live provider request failed."));
@@ -1646,7 +1647,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.ProviderDegraded));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1681,7 +1682,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(outcome, Detail: "degradation detail"));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1711,7 +1712,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(outcome));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1739,7 +1740,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("unexpected provider bug"));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1772,7 +1773,7 @@ public class CaptureTriageServiceTests
         // dropped rather than redacted.
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException(
                 "connect failed for C:\\srv\\secrets\\prod.db (cred sk-live-abcdef1234567890)"));
         var service = BuildServiceWithExtractor(extractorMock);
@@ -1806,7 +1807,7 @@ public class CaptureTriageServiceTests
             new List<CaptureTriageTaskV2>());
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.Succeeded,
                 invalidOutput,
@@ -1836,7 +1837,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.EmptyExtraction,
                 Provider: "OpenAI",
@@ -1863,7 +1864,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(SuccessfulExtraction(("Send the report", "Alice: I'll send the report.")));
         var service = BuildServiceWithExtractor(extractorMock);
 
@@ -1884,7 +1885,7 @@ public class CaptureTriageServiceTests
 
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock
-            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()))
+            .Setup(e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LlmCaptureTriageExtraction(
                 LlmCaptureTriageOutcome.ProviderDegraded,
                 Detail: "Live provider request failed."));
@@ -1983,7 +1984,7 @@ public class CaptureTriageServiceTests
 
         // The replay must not spend a second extraction call for output the reuse discards.
         extractorMock.Verify(
-            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CancellationToken>()),
+            e => e.ExtractAsync(It.IsAny<Guid>(), It.IsAny<Guid?>(), It.IsAny<CapturePayloadV1>(), It.IsAny<CaptureTriageAnchor?>(), It.IsAny<CancellationToken>()),
             Times.Never);
     }
 

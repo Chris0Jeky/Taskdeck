@@ -52,10 +52,61 @@ describe('captureDraftStash', () => {
       boardId: 'board-7',
       labels: ['release', 'docs'],
       dueAt: '2026-09-01',
+      source: 'Typed',
+      labelInput: '',
       failure: { message: 'Capture not saved.', details: 'Status: 401' },
       truncated: false,
       labelsDropped: false,
       stashedAt: expect.any(Number),
+    })
+  })
+
+  // GH-2490 -- an uncommitted label was dropped across the 401 round trip.
+  describe('pending label input', () => {
+    it('round-trips the uncommitted label text', () => {
+      stashCaptureDraft({
+        userId: USER_A,
+        variant: 'composer',
+        text: 'ship it',
+        labelInput: 'half-typed',
+      })
+
+      expect(takeCaptureDraft(USER_A)?.labelInput).toBe('half-typed')
+    })
+
+    it('reads a record written before GH-2490 as an empty pending label', () => {
+      window.sessionStorage.setItem(
+        CAPTURE_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          userId: USER_A,
+          variant: 'composer',
+          text: 'older stash',
+          boardId: null,
+          labels: [],
+          dueAt: null,
+          failure: null,
+          truncated: false,
+          labelsDropped: false,
+          stashedAt: Date.now(),
+        }),
+      )
+
+      const restored = peekCaptureDraft(USER_A)
+      expect(restored?.text).toBe('older stash')
+      expect(restored?.labelInput).toBe('')
+    })
+
+    it('drops an over-long pending label whole and says so', () => {
+      stashCaptureDraft({
+        userId: USER_A,
+        variant: 'composer',
+        text: 'ship it',
+        labelInput: 'x'.repeat(MAX_LABEL_CHARS + 1),
+      })
+
+      const restored = takeCaptureDraft(USER_A)
+      expect(restored?.labelInput).toBe('')
+      expect(restored?.labelsDropped).toBe(true)
     })
   })
 
@@ -230,6 +281,57 @@ describe('captureDraftStash', () => {
 
       expect(peekCaptureDraft(USER_A)).toBeNull()
       expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
+    })
+  })
+
+  // GH-2141 -- the composer now carries a capture source across the redirect.
+  describe('capture source', () => {
+    it('round-trips a transcript source', () => {
+      stashCaptureDraft({
+        userId: USER_A,
+        variant: 'composer',
+        text: 'Ana: ship it Friday.',
+        source: 'TranscriptPaste',
+      })
+
+      expect(takeCaptureDraft(USER_A)?.source).toBe('TranscriptPaste')
+    })
+
+    it('defaults a nib draft, which has no source, to Typed', () => {
+      stashCaptureDraft({ userId: USER_A, variant: 'nib', text: 'a thought' })
+
+      expect(takeCaptureDraft(USER_A)?.source).toBe('Typed')
+    })
+
+    it('reads a record written before this field as Typed, not as a transcript', () => {
+      window.sessionStorage.setItem(
+        CAPTURE_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          userId: USER_A,
+          variant: 'composer',
+          text: 'older draft',
+          stashedAt: Date.now(),
+        }),
+      )
+
+      // Restoring an unsourced draft as a transcript would send it to the
+      // assistant on a choice its author never made.
+      expect(peekCaptureDraft(USER_A)?.source).toBe('Typed')
+    })
+
+    it('reads an unrecognised source value as Typed', () => {
+      window.sessionStorage.setItem(
+        CAPTURE_DRAFT_STORAGE_KEY,
+        JSON.stringify({
+          userId: USER_A,
+          variant: 'composer',
+          text: 'odd draft',
+          source: 'Voice',
+          stashedAt: Date.now(),
+        }),
+      )
+
+      expect(peekCaptureDraft(USER_A)?.source).toBe('Typed')
     })
   })
 

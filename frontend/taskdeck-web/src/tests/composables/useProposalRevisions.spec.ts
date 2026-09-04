@@ -166,6 +166,84 @@ describe('useProposalRevisions', () => {
     expect(revisionsLoaded.value).toBe(false)
   })
 
+  it('preserves known revision metadata for a definite 4xx rejection', async () => {
+    const knownRevision = makeRevision({
+      revisedPayload: '{"title":"Existing revision"}',
+    })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValueOnce([knownRevision])
+    vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: {
+          errorCode: 'ValidationError',
+          message: 'Revision payload is invalid',
+        },
+      },
+    })
+    const onRevisionSaved = vi.fn()
+    const onRevisionStateUncertain = vi.fn()
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const {
+      editing,
+      revisionCount,
+      latestRevision,
+      revisionsLoaded,
+      startEditing,
+      saveRevision,
+    } = useProposalRevisions(proposal, { onRevisionSaved, onRevisionStateUncertain })
+
+    await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+    startEditing()
+
+    await expect(
+      saveRevision({ revisedPayload: '{"title":"Invalid"}', reason: 'Try invalid payload' }),
+    ).resolves.toEqual({ proposalId: 'p-1', outcome: 'rejected', current: true })
+
+    expect(onRevisionSaved).not.toHaveBeenCalled()
+    expect(onRevisionStateUncertain).not.toHaveBeenCalled()
+    expect(editing.value).toBe(true)
+    expect(revisionCount.value).toBe(1)
+    expect(latestRevision.value).toEqual(knownRevision)
+    expect(revisionsLoaded.value).toBe(true)
+    expect(toastMocks.error).toHaveBeenCalledWith('Revision payload is invalid')
+  })
+
+  it.each([404, 409, 500])(
+    'treats HTTP %s as indeterminate because revision persistence is unknown',
+    async (status) => {
+      const knownRevision = makeRevision()
+      vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValueOnce([knownRevision])
+      vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce({
+        response: { status },
+      })
+      const onRevisionSaved = vi.fn()
+      const onRevisionStateUncertain = vi.fn()
+      const proposal = ref<ApiProposal | null>(makeProposal())
+      const {
+        editing,
+        revisionCount,
+        latestRevision,
+        revisionsLoaded,
+        startEditing,
+        saveRevision,
+      } = useProposalRevisions(proposal, { onRevisionSaved, onRevisionStateUncertain })
+
+      await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+      startEditing()
+
+      await expect(
+        saveRevision({ revisedPayload: '{"title":"Uncertain"}', reason: 'Check boundary' }),
+      ).resolves.toEqual({ proposalId: 'p-1', outcome: 'indeterminate', current: true })
+
+      expect(onRevisionSaved).not.toHaveBeenCalled()
+      expect(onRevisionStateUncertain).toHaveBeenCalledOnce()
+      expect(editing.value).toBe(true)
+      expect(revisionCount.value).toBe(0)
+      expect(latestRevision.value).toBeNull()
+      expect(revisionsLoaded.value).toBe(false)
+    },
+  )
+
   it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
     // Codex review: a getRevisions request in flight when a save lands must not
     // overwrite the save's state when it resolves with the pre-save (empty) list.

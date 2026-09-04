@@ -11,6 +11,7 @@ import {
   clearCaptureDraft,
   stashCaptureDraft,
   takeCaptureDraft,
+  type CaptureDraftSource,
   type CaptureDraftVariant,
   type StashedCaptureDraft,
 } from '../../utils/captureDraftStash'
@@ -159,7 +160,13 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 async function dispatchCapture(
   sourceVariant: Variant,
   text: string,
-  opts: { boardId?: string | null; dueDate?: string | null; labels?: string[] } = {},
+  opts: {
+    boardId?: string | null
+    dueDate?: string | null
+    labels?: string[]
+    /** Composer-chosen capture source; the nib and Home always file `Typed`. */
+    source?: CaptureDraftSource
+  } = {},
 ): Promise<boolean> {
   if (isArchivedHistory.value) {
     return false
@@ -176,7 +183,9 @@ async function dispatchCapture(
     const created = await captureStore.createItem({
       boardId: Object.hasOwn(opts, 'boardId') ? opts.boardId ?? null : activeBoardId.value,
       text,
-      source: 'Typed',
+      // A transcript source is not cosmetic: the server routes it to the LLM
+      // triage extractor and applies the larger transcript limit (GH-2141).
+      source: opts.source ?? 'Typed',
       ...(metadataRequested
         ? { dueDate: opts.dueDate ?? null, labels: opts.labels ?? [] }
         : {}),
@@ -248,6 +257,7 @@ async function onComposerSubmit(payload: {
   boardId: string | null
   labels: string[]
   dueAt: string | null
+  source: CaptureDraftSource
 }) {
   const metadata = payload.dueAt || payload.labels.length > 0
     ? { dueDate: payload.dueAt, labels: payload.labels }
@@ -256,6 +266,7 @@ async function onComposerSubmit(payload: {
   // the inbox refresh that could 401 (GH-2142).
   await dispatchCapture('composer', payload.text, {
     boardId: payload.boardId,
+    source: payload.source,
     ...metadata,
   })
 }
@@ -382,6 +393,8 @@ function handleAuthExpired() {
       boardId?: string | null
       labels?: string[]
       dueAt?: string | null
+      source?: CaptureDraftSource | null
+      labelInput?: string | null
     }
     if (draft.text.trim().length === 0) continue
     stashCaptureDraft({
@@ -391,6 +404,9 @@ function handleAuthExpired() {
       boardId: draft.boardId ?? null,
       labels: draft.labels ?? [],
       dueAt: draft.dueAt ?? null,
+      source: draft.source ?? 'Typed',
+      // GH-2490: the nib has no label box, so this is empty for that surface.
+      labelInput: draft.labelInput ?? '',
       failure:
         captureErrors.value[surface] ?? {
           message: t('inbox.capture.sessionExpiredReason'),
@@ -428,6 +444,8 @@ function restoreStashedDraft() {
       boardId: stashed.boardId,
       labels: stashed.labels,
       dueAt: stashed.dueAt,
+      source: stashed.source,
+      labelInput: stashed.labelInput,
     })
     composerRef.value?.focus()
   })
@@ -532,7 +550,7 @@ defineExpose({ variant, toggleVariant, setVariant })
           :aria-selected="variant === 'composer'"
           :variant="variant === 'composer' ? 'ember' : 'default'"
           :label="$t('inbox.variant.composer')"
-          kbd="⌘;"
+          kbd="mod+;"
           @click="setVariant('composer')"
         />
       </div>

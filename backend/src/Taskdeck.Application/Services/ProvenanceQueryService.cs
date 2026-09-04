@@ -238,7 +238,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
         {
             // Truncate long quotes to keep the UI scannable.
             var quote = field.ExtractiveQuote.Length > 120
-                ? string.Concat(field.ExtractiveQuote.AsSpan(0, 117), "...")
+                ? SurrogateSafeTruncation.Truncate(field.ExtractiveQuote, 117, "...")
                 : field.ExtractiveQuote;
             return $"Extracted: \"{quote}\" ({confidencePercent}% match)";
         }

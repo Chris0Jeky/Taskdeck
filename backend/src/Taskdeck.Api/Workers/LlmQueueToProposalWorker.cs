@@ -526,11 +526,17 @@ public class LlmQueueToProposalWorker : BackgroundService
                 return;
             }
 
+            // #2193: anchor date resolution to the queue row's server-stamped CreatedAt, not to
+            // now. This item may have waited in the queue or been retried for days, and "1
+            // September" in the transcript means the next one after the CAPTURE, not after today.
             var triageResult = await triageService.CreateProposalFromCaptureAsync(
                 item.Id,
                 item.UserId,
                 item.BoardId,
                 parsedPayloadResult.Value,
+                CaptureTriageAnchor.FromCapture(
+                    item.CreatedAt,
+                    parsedPayloadResult.Value.ClientCreatedAt),
                 ct);
 
             if (triageResult.IsSuccess)

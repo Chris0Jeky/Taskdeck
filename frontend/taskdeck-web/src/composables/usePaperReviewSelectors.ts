@@ -19,6 +19,7 @@ import type {
   ConflictToneWireValue,
   CardHistoryStatusWireValue,
   SimilarPastResultDto,
+  ProposalProvenanceMetadataDto,
 } from '../api/proposalDeepReviewApi'
 import {
   proposalIdsEqual,
@@ -282,6 +283,55 @@ function mapProvenanceMetadata(
 }
 
 /**
+ * Maps the proposal-scoped, server-recorded producer triple (#1987). This is the primary source:
+ * it is board-authorized, covers proposals with no capture link, and needs no owner-only read.
+ *
+ * A null provider means the server recorded no producer, which must render as no claim at all.
+ */
+function mapServerProvenanceMetadata(
+  dto: ProposalProvenanceMetadataDto | null | undefined,
+  confidence: ConfidenceBreakdown,
+): ProvenanceMetadata | null {
+  const provider = meaningfulWireValue(dto?.provider)
+  if (provider === null) return null
+
+  return {
+    provider,
+    model: meaningfulWireValue(dto?.model),
+    promptVersion: meaningfulWireValue(dto?.promptVersion),
+    // `mapConfidence` already suppresses numbers for deterministic/not-reported sources.
+    confidence: confidence.overall,
+    // Proposal provenance does not record triage latency. Keep the row absent.
+    latencyMs: null,
+  }
+}
+
+/**
+ * Chooses which recorded producer to render. The proposal endpoint wins whenever it recorded one;
+ * the #2310 capture-detail path stays as a fallback for proposals stamped before the proposal-side
+ * triple existed, and is consulted only when the endpoint recorded nothing AND a capture link
+ * exists. Both sources are server-recorded, so neither can be a client-supplied claim, and when
+ * neither recorded anything the result is null — no claim rather than a guessed one.
+ */
+function resolveProvenanceMetadata(
+  serverResult: PromiseSettledResult<ProposalProvenanceMetadataDto> | undefined,
+  captureResult: PromiseSettledResult<CaptureItem | null> | undefined,
+  key: SelectorKey,
+  confidence: ConfidenceBreakdown,
+): ProvenanceMetadata | null {
+  const serverMetadata =
+    serverResult?.status === 'fulfilled'
+      ? mapServerProvenanceMetadata(serverResult.value, confidence)
+      : null
+  if (serverMetadata) return serverMetadata
+
+  if (!key.captureReference) return null
+  return captureResult?.status === 'fulfilled' && captureResult.value
+    ? mapProvenanceMetadata(captureResult.value, key.proposalId, key.captureReference, confidence)
+    : null
+}
+
+/**
  * Normalizes a wire span into an ordered pair, or null when either bound is
  * missing or incoherent. A malformed span must degrade to "no deep link"
  * rather than to a highlight over the wrong characters.
@@ -494,30 +544,27 @@ export function usePaperReviewSelectors(
   }
 
   function refreshCaptureMetadataForSettledKey(key: SelectorKey) {
-    if (!key.captureReference) {
-      settledCaptureMetadata = { key, value: null }
-      provenanceMetadataData.value = null
-      return
-    }
     const generation = fetchGeneration
+    // The proposal-scoped read runs for every proposal, capture-linked or not; the capture
+    // lookup is still made only for a genuine capture reference.
     const captureSettlement = Promise.allSettled([
-      getCaptureLookup(key.captureReference, true),
+      proposalDeepReviewApi.getProvenanceMetadata(key.proposalId),
+      key.captureReference
+        ? getCaptureLookup(key.captureReference, true)
+        : Promise.resolve(null),
     ])
-    void captureSettlement.then(([capture]) => {
+    void captureSettlement.then(([serverMetadata, capture]) => {
       if (
         generation !== fetchGeneration ||
         !selectorKeysEqual(settledCoreKey, key) ||
         !selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)
       ) return
-      const metadata =
-        capture?.status === 'fulfilled' && capture.value
-          ? mapProvenanceMetadata(
-              capture.value,
-              key.proposalId,
-              key.captureReference!,
-              confidenceData.value,
-            )
-          : null
+      const metadata = resolveProvenanceMetadata(
+        serverMetadata,
+        capture,
+        key,
+        confidenceData.value,
+      )
       settledCaptureMetadata = { key, value: metadata }
       provenanceMetadataData.value = metadata
     })
@@ -573,10 +620,13 @@ export function usePaperReviewSelectors(
     const captureRequest: Promise<CaptureItem | null> = key.captureReference
       ? getCaptureLookup(key.captureReference, !proposalChanged && !captureChanged)
       : Promise.resolve(null)
-    // Attach rejection handling immediately, but keep optional capture metadata
-    // outside the core waiter. Apply is gated on the six proposal selectors,
-    // not on an owner-only provenance embellishment that may retry for longer.
-    const captureSettlement = Promise.allSettled([captureRequest])
+    // Attach rejection handling immediately, but keep optional producer metadata
+    // outside the core waiter. Apply is gated on the six proposal selectors, not on
+    // a provenance embellishment that may retry for longer.
+    const captureSettlement = Promise.allSettled([
+      proposalDeepReviewApi.getProvenanceMetadata(key.proposalId, { signal }),
+      captureRequest,
+    ])
 
     let resolveSuperseded!: (outcome: CoreSelectorBatchOutcome) => void
     const superseded = new Promise<CoreSelectorBatchOutcome>((resolve) => {
@@ -642,20 +692,17 @@ export function usePaperReviewSelectors(
       settledCoreKey = key
       isLoading.value = false
 
-      void captureSettlement.then(([capture]) => {
+      void captureSettlement.then(([serverMetadata, capture]) => {
         if (
           generation !== fetchGeneration ||
           !selectorKeysEqual(selectorKeyForProposal(activeProposal.value), key)
         ) return
-        const metadata =
-          key.captureReference && capture?.status === 'fulfilled' && capture.value
-            ? mapProvenanceMetadata(
-                capture.value,
-                key.proposalId,
-                key.captureReference,
-                mappedConfidence,
-              )
-            : null
+        const metadata = resolveProvenanceMetadata(
+          serverMetadata,
+          capture,
+          key,
+          mappedConfidence,
+        )
         settledCaptureMetadata = { key, value: metadata }
         provenanceMetadataData.value = metadata
       })
@@ -673,8 +720,9 @@ export function usePaperReviewSelectors(
     activeCoreBatch = batch
     void promise.then((outcome) => {
       // Preserve a failed automatic batch long enough for the next explicit
-      // Apply waiter to observe it. That action reports the failure and clears
-      // this entry; only a later deliberate action starts the retry.
+      // Apply waiter to consume it. The waiter immediately starts the retry
+      // within that same action, while a later failed retry remains available
+      // for the next deliberate action.
       if (outcome !== 'failed' && activeCoreBatch === batch) activeCoreBatch = null
     })
     return promise
@@ -699,6 +747,7 @@ export function usePaperReviewSelectors(
         activeCoreBatch.promise === promise
       ) {
         activeCoreBatch = null
+        return ensureCoreBatch(key)
       }
       return outcome
     })
