@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
