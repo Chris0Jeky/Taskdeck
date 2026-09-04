@@ -29,6 +29,14 @@ public class ProposalProvenanceConfiguration : IEntityTypeConfiguration<Proposal
         builder.Property(pp => pp.TotalTokens)
             .IsRequired();
 
+        // Optional: absent for legacy rows and for producers that recorded nothing. Null is the
+        // honest "not recorded" state and must stay distinguishable from an empty claim.
+        builder.Property(pp => pp.Provider)
+            .HasMaxLength(ProposalProvenance.MaxProviderLength);
+
+        builder.Property(pp => pp.PromptVersion)
+            .HasMaxLength(ProposalProvenance.MaxPromptVersionLength);
+
         builder.Property(pp => pp.CreatedAt)
             .IsRequired();
 

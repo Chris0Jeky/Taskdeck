@@ -134,6 +134,14 @@ the mirrored rows go with the tables. Downgrading past `ReconcileContextFabricSc
 three state axes back into the single legacy `Lifecycle` column, which is lossy — irrelevant while the
 tables are empty, but a reason to export before downgrading if you ever turned the setting on.
 
+- **BREAKING: none — proposal provenance records the producer triple.** Migration
+  `20260904030926_AddProposalProvenanceProducerTriple` adds two nullable columns, `Provider` and
+  `PromptVersion`, to `ProposalProvenances`. Both are `ALTER TABLE ADD COLUMN` statements with no
+  table rebuild and no backfill: proposals created before the upgrade keep null in both, which the
+  Review surface renders as no producer claim rather than a guessed one. The pre-migration snapshot
+  runs as usual. Downgrading drops the two columns, losing only the newly recorded producer
+  metadata.
+
 - **MCP stdio identity remediation is reported by known tool calls, not at startup.** The stdio host
   completes `initialize` without resolving caller identity, but tool and resource discovery or reads
   are identity-gated and may detect an ambiguous or inactive identity first. For multiple active
