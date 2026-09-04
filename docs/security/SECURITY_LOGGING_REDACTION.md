@@ -46,6 +46,14 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
 - MCP read tools apply that boundary to directly returned failed `Result` values from board detail,
   board listing, and card search operations. Invalid input and known domain messages stay specific;
   silent child-result handling and arbitrary thrown exceptions remain separate contracts.
+- The standalone  entry point wraps its whole run in an unknown-exception boundary
+  (): an unexpected exception prints only the stable generic failure message
+  plus the bounded startup-trace correlation reference when one exists, and exits with the normal
+  failure code instead of letting the runtime print raw exception text and a stack trace. The full
+  exception is written once to the protected startup-trace companion file. Deliberate
+  , usage/validation, parse, and recovery-command messages are unchanged, and the
+  first-run bootstrapper's operator guidance about the operator's own local paths is a deliberate,
+  retained message rather than a leak.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for
