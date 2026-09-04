@@ -66,9 +66,6 @@ public class AuthorizationService : IAuthorizationService
         if (candidateBoardIds.Count == 0)
             return Result.Success<IReadOnlySet<Guid>>(new HashSet<Guid>());
 
-        if (_sandboxSettings.Enabled)
-            return Result.Success<IReadOnlySet<Guid>>(candidateBoardIds.ToHashSet());
-
         // Owners short-circuit: one batched query, no membership row required (owners have none).
         var writableBoardIds = (await _unitOfWork.Boards.GetOwnedBoardIdsAsync(
                 userId,
@@ -99,6 +96,8 @@ public class AuthorizationService : IAuthorizationService
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
+        // Read-only convenience for local development fixtures; the write-class gates below
+        // deliberately have no such branch (ADR-0068 / #1866).
         if (_sandboxSettings.Enabled)
             return Result.Success(true);
 
@@ -115,9 +114,6 @@ public class AuthorizationService : IAuthorizationService
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
-        if (_sandboxSettings.Enabled)
-            return Result.Success(true);
-
         if (board.OwnerId == userId)
             return Result.Success(true);
 
@@ -130,9 +126,6 @@ public class AuthorizationService : IAuthorizationService
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
-
-        if (_sandboxSettings.Enabled)
-            return Result.Success(true);
 
         if (board.OwnerId == userId)
             return Result.Success(true);
@@ -147,9 +140,6 @@ public class AuthorizationService : IAuthorizationService
         if (board is null)
             return Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
 
-        if (_sandboxSettings.Enabled)
-            return Result.Success(true);
-
         if (board.OwnerId == userId)
             return Result.Success(true);
 
@@ -162,9 +152,6 @@ public class AuthorizationService : IAuthorizationService
         var board = await _unitOfWork.Boards.GetByIdAsync(boardId);
         if (board is null)
             return Result.Failure<UserRole?>(ErrorCodes.NotFound, $"Board with ID {boardId} not found");
-
-        if (_sandboxSettings.Enabled)
-            return Result.Success<UserRole?>(UserRole.Owner);
 
         if (board.OwnerId == userId)
             return Result.Success<UserRole?>(UserRole.Owner);
