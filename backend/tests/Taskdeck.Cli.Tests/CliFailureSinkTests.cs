@@ -261,6 +261,26 @@ public sealed class CliFailureSinkTests
             Path.GetFullPath(Path.Combine(directory.Path, CliFailureSink.DirectoryName)));
     }
 
+    /// <summary>
+    /// The sink is constructed before the CLI's unknown-exception boundary exists, so it must
+    /// swallow every parse failure of the operator-supplied connection string. A non-boolean
+    /// keyword value makes <c>SqliteConnectionStringBuilder</c> raise a <see cref="FormatException"/>,
+    /// which none of the filters in the data-directory resolution chain catch.
+    /// </summary>
+    [Theory]
+    [InlineData("Data Source=taskdeck.db;Foreign Keys=yes")]
+    [InlineData("Data Source=taskdeck.db;Default Timeout=abc")]
+    [InlineData("Data Source=taskdeck.db;Pooling=sometimes")]
+    public void ForConnectionString_WithAnUnparsableKeywordValue_FallsBackInsteadOfThrowing(
+        string connectionString)
+    {
+        var sink = CliFailureSink.ForConnectionString(connectionString);
+
+        // Same current-directory root the resolver uses for any other unresolvable data source.
+        sink.DiagnosticsDirectory.Should().Be(Path.GetFullPath(
+            Path.Combine(Directory.GetCurrentDirectory(), CliFailureSink.DirectoryName)));
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()

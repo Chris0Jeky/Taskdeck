@@ -302,6 +302,34 @@ public sealed class CliUnexpectedErrorSafetyTests
         new FileInfo(records[0]).Length.Should().BeLessThanOrEqualTo(8 * 1024);
     }
 
+    /// <summary>
+    /// #2468 review follow-up: the sink is built before the unknown-exception boundary, so a
+    /// malformed operator connection string must not escape as an unhandled exception with a raw
+    /// stack trace. The run still fails, but through the boundary, with the ordinary exit code.
+    /// </summary>
+    [Fact]
+    public async Task RealCli_WithAnUnparsableConnectionString_FailsThroughTheBoundary()
+    {
+        await using var harness = new CliTestHarness("cli-bad-conn", enableStartupTrace: false);
+        var databasePath = Path.Combine(harness.DataDirectory, "taskdeck.db");
+
+        // "yes" is a plausible operator typo for "True". SqliteConnectionStringBuilder converts
+        // the Foreign Keys keyword with Convert.ToBoolean, which raises FormatException.
+        var result = await harness.RunAsync(
+            $"boards list --api_key={SecretToken}",
+            new Dictionary<string, string?>
+            {
+                ["TASKDECK_CONNECTION_STRING"] = $"Data Source={databasePath};Foreign Keys=yes"
+            });
+
+        result.ExitCode.Should().Be(ExitCodes.Failure, result.StdErr);
+        result.StdErr.Should().NotContain("Unhandled exception");
+        result.StdErr.Should().NotContain("   at ");
+        result.StdErr.Should().NotContain(SecretToken);
+        result.StdErr.Should().Contain(SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+        result.StdOut.Should().NotContain(SecretToken);
+    }
+
     private static string ExtractCorrelationReference(string standardError)
     {
         const string marker = "(trace correlation: ";
