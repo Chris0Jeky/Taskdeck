@@ -373,6 +373,56 @@ describe('useProposalRevisions', () => {
     expect(revisionsLoaded.value).toBe(true)
   })
 
+  it('does not clear an inconsistency on a response that skips the disputed number (#2524 review)', async () => {
+    // A partial answer is trustworthy revision by revision, but it proves
+    // nothing about the number that was reported twice. Without the completeness
+    // requirement it would clear the flag and republish the FIRST id seen for
+    // that number as authoritative, even though the server contradicted it.
+    // Scripted rather than a `mockResolvedValueOnce` queue: an assertion that
+    // fails part way through a queue leaves its remaining entries armed for the
+    // NEXT test, which turns one red into a cascade of unrelated ones.
+    const responses: ProposalRevision[][] = [
+      [makeRevision({ id: 'rev-1', revisionNumber: 1 })],
+      [
+        makeRevision({ id: 'rev-1', revisionNumber: 1 }),
+        makeRevision({ id: 'rev-1-conflict', revisionNumber: 1 }),
+      ],
+      [makeRevision({ id: 'rev-2', revisionNumber: 2 })],
+      [
+        makeRevision({ id: 'rev-1', revisionNumber: 1 }),
+        makeRevision({ id: 'rev-2', revisionNumber: 2 }),
+      ],
+    ]
+    let call = 0
+    vi.mocked(proposalRevisionsApi.getRevisions).mockImplementation(() =>
+      Promise.resolve(responses[call++] ?? []),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { revisionCount, latestRevision, revisionsLoaded, loadRevisionState } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+    expect(revisionCount.value).toBe(1)
+
+    // The server now reports revision 1 under two ids.
+    await loadRevisionState('p-1')
+    expect(revisionCount.value).toBe(0)
+    expect(revisionsLoaded.value).toBe(false)
+
+    // Revision 2 alone would complete the stored chain 1..2, but revision 1 is
+    // exactly the number in dispute, so the metadata stays unknown.
+    await loadRevisionState('p-1')
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+
+    // A whole chain settles it.
+    await loadRevisionState('p-1')
+    expect(revisionCount.value).toBe(2)
+    expect(latestRevision.value?.id).toBe('rev-2')
+    expect(revisionsLoaded.value).toBe(true)
+  })
+
   it.each([404, 409, 500])(
     'treats HTTP %s as indeterminate because revision persistence is unknown',
     async (status) => {
@@ -409,9 +459,12 @@ describe('useProposalRevisions', () => {
     },
   )
 
-  it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
+  it('merges a pre-save revision load that resolves after the save without lowering the count', async () => {
     // Codex review: a getRevisions request in flight when a save lands must not
-    // overwrite the save's state when it resolves with the pre-save (empty) list.
+    // overwrite the save's state when it resolves with the pre-save (empty)
+    // list. Since #2524 that answer is merged rather than dropped, which is the
+    // same outcome here: merging only ever adds, so an older, emptier list
+    // cannot take the saved revision back out.
     let resolveLoad: (v: ProposalRevision[]) => void = () => {}
     const loadPromise = new Promise<ProposalRevision[]>((r) => {
       resolveLoad = r
@@ -430,7 +483,7 @@ describe('useProposalRevisions', () => {
     expect(revisionCount.value).toBe(1)
     expect(revisionsLoaded.value).toBe(true)
 
-    // The stale load now resolves with the OLD (empty) list — must be ignored.
+    // The stale load now resolves with the OLD (empty) list — it adds nothing.
     resolveLoad([])
     await nextTick()
     await nextTick()
@@ -486,6 +539,57 @@ describe('useProposalRevisions', () => {
     expect(revisionCount.value).toBe(2)
     expect(latestRevision.value?.id).toBe('rev-saved')
     expect(revisionsLoaded.value).toBe(true)
+  })
+
+  it('keeps the proven metadata when the re-entered A GET REJECTS after the save (#2524 review)', async () => {
+    // Same interleaving as the test above, except the pending GET fails instead
+    // of answering. A failed GET proves nothing, so it must not zero a count a
+    // save already proved: `revisionsLoaded` true beside `revisionCount` 0 is
+    // the state that makes PaperReviewView render the diff as no-operations,
+    // block Apply with a false zero-op toast, and pin the editor to the
+    // pre-revision operations so the next save discards the saved revision.
+    let rejectReopenedA!: (error: Error) => void
+    let resolveSave!: (revision: ProposalRevision) => void
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-a', proposalId: 'p-1' })])
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-b', proposalId: 'p-2' })])
+      .mockImplementationOnce(
+        () => new Promise((_resolve, reject) => { rejectReopenedA = reject }),
+      )
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { revisionCount, latestRevision, revisionsLoaded, startEditing, saveRevision } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() => expect(latestRevision.value?.proposalId).toBe('p-1'))
+
+    startEditing()
+    const savePromise = saveRevision({ revisedPayload: '{"title":"Saved"}', reason: 'Save A' })
+    proposal.value = makeProposal({ id: 'p-2' })
+    await vi.waitFor(() => expect(latestRevision.value?.proposalId).toBe('p-2'))
+    proposal.value = makeProposal({ id: 'p-1' })
+    await vi.waitFor(() => expect(rejectReopenedA).toBeTypeOf('function'))
+
+    resolveSave(makeRevision({ id: 'rev-saved', proposalId: 'p-1', revisionNumber: 2 }))
+    await expect(savePromise).resolves.toEqual({
+      proposalId: 'p-1',
+      outcome: 'persisted',
+      current: false,
+    })
+    expect(revisionCount.value).toBe(2)
+    expect(revisionsLoaded.value).toBe(true)
+
+    rejectReopenedA(new Error('network'))
+    await flushMicrotasks()
+
+    expect(revisionCount.value).toBe(2)
+    expect(latestRevision.value?.id).toBe('rev-saved')
+    expect(revisionsLoaded.value).toBe(true)
+    // The invariant that must hold whatever else changes: never authoritative
+    // and empty at the same time.
+    expect(revisionsLoaded.value && revisionCount.value === 0).toBe(false)
   })
 
   it('keeps B metadata authoritative when a stale A save succeeds while B is active', async () => {
