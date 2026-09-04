@@ -64,12 +64,29 @@ stays refused until reload - and a *missing* registration is not treated as succ
 non-answering controller is still intercepting, because `unregister()` never releases a page the
 worker already controls.
 
-Activation invalidates the whole `taskdeck-static-assets` runtime cache rather than trying to
+The migration invalidates the whole `taskdeck-static-assets` runtime cache rather than trying to
 reconstruct the build-time API base inside the public worker script. The old extension-only matcher
 could have stored an authenticated response there under a prefixed API base, where it would otherwise
-survive an account switch for 30 days. Cache cleanup failure rejects activation, so a worker cannot
-control the page and report the current policy marker from a partially cleaned state. Normal assets
-are cached again on their next successful request; the share-target queue is preserved.
+survive an account switch for 30 days. Normal assets are cached again on their next successful
+request; the share-target queue is preserved.
+
+The sweep runs when `public/api-cache-cleanup.js` is **evaluated**, not only from its `activate`
+listener. `vite-plugin-pwa`'s generated worker loads that file with `importScripts()` from inside an
+asynchronous AMD `define()` factory, which runs in a promise continuation rather than during the
+worker's synchronous initial evaluation - so by the time the `activate` listener is attached the
+event has already been dispatched and never fires it. Measured in Chromium, a seeded
+`taskdeck-static-assets` entry survived the entire old-worker-to-v2 migration while that same file's
+`message` listener answered the policy handshake normally. The `activate` listener is still
+registered, so the cleanup stays bound to activation on any build whose worker imports the file
+synchronously; the two share one deduplicated sweep. A `taskdeck-pwa-cache-policy-v2` marker cache,
+written only after the sweep completes, keeps this a one-time migration instead of a purge on every
+worker restart, and a failed sweep is not memoised so activation or a later restart retries it.
+Cleanup failure still rejects activation, so a worker cannot control the page and report the current
+policy marker from a partially cleaned state.
+
+`tests/pwa-generated-worker.spec.ts` pins this against the real emitted `dist/api-cache-cleanup.js`
+using the cache names parsed out of the generated `dist/sw.js`, and deliberately never dispatches an
+`activate` event - a build that retires the caches only from that listener fails it.
 
 Normal (non-security) updates still go through the `SwUpdatePrompt` banner: only this migration sends
 skip-waiting.
