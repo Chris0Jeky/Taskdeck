@@ -154,6 +154,26 @@ describe('useVisualViewport', () => {
     wrapper.unmount()
   })
 
+  it('emits both custom properties under the "unset" fallback while VisualViewport is present', () => {
+    // The browser class issue #2180 exposed: VisualViewport API present, CSS
+    // `dvh` absent. `'unset'` withholds the properties only when the API is
+    // MISSING — CSS feature support is invisible here, so this composable
+    // publishes both properties to a `dvh`-less browser exactly as it does to a
+    // modern one. That is why `TdDialog`'s stylesheet must consume them outside
+    // its `@supports (height: 100dvh)` guard rather than inside it; the CSS half
+    // is pinned by `src/tests/config/DialogVisualViewportCss.spec.ts`, since the
+    // DOM environment vitest runs (happy-dom) evaluates no feature queries.
+    installSyntheticVisualViewport(420, 120)
+
+    const wrapper = mountHost({ prefix: '--td-dialog', fallback: 'unset' })
+    const style = hostStyle(wrapper)
+
+    expect(style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('420px')
+    expect(style.getPropertyValue('--td-dialog-visual-viewport-offset-top')).toBe('120px')
+
+    wrapper.unmount()
+  })
+
   it('registers two listeners on mount and removes them on unmount', () => {
     const synthetic = installSyntheticVisualViewport(800, 0)
 
