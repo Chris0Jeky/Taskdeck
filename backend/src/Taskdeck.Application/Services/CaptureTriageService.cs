@@ -427,7 +427,11 @@ public class CaptureTriageService : ICaptureTriageService
                 Operations: operations,
                 ProvenanceModelId: triageModel)
         {
-            TrustedConfidence = trustedConfidence
+            TrustedConfidence = trustedConfidence,
+            // The producer that actually ran: the dispatched provider, or the deterministic
+            // extractor when the LLM leg was skipped or fell back (#1987).
+            ProvenanceProvider = triageProvider,
+            ProvenancePromptVersion = triagePromptVersion
         };
 
         Result<ProposalDto> createProposalResult;
