@@ -1197,7 +1197,101 @@ let revisionEditEpoch = 0
 let revisionReturnFocusEpoch: number | null = null
 let revisionReviewEpoch = 0
 const revisionReviewRefreshEpochs = new Map<string, number>()
-const revisionReviewUnavailableKeys = ref<Set<string>>(new Set())
+
+/**
+ * #2460 — the longest one post-revision truth refresh may hold the decision rail.
+ *
+ * The barrier is a COMPOSITE read: one authoritative queue read, then the six
+ * core evidence reads, plus at most one same-action retry of that batch. Every
+ * leg is bounded by the transport already, but a leg that never answers at all
+ * would hold the shared decision lock forever: the rail stays disabled, the
+ * keymap stays inert, and the reviewer has no way back to their own decision.
+ * So the CALLER caps the whole attempt, in the same spirit as
+ * `BOARD_REQUEST_TIMEOUT_MS` in `api/http.ts` caps one board read — long enough
+ * for a realistic composite round trip on a slow link, short enough that a
+ * locked rail still reads as work in progress rather than as broken.
+ *
+ * Timing out costs one more explicit action and nothing else: the per-proposal
+ * barrier is RETAINED, so the retry refreshes again before any decision can be
+ * made on pre-revision evidence.
+ */
+const POST_REVISION_REVIEW_DEADLINE_MS = 12_000
+
+/** Race marker for {@link POST_REVISION_REVIEW_DEADLINE_MS}. */
+const REVISION_REVIEW_DEADLINE = 'post-revision-review-deadline' as const
+
+/**
+ * Why the barrier is telling the reviewer that evidence is not current. The two
+ * reasons need different copy: a failed read is a server or transport answer the
+ * reviewer cannot influence, a timed-out one is an attempt that may simply need
+ * longer. Collapsing them into one message would make the surface guess.
+ */
+type RevisionReviewUnavailableReason = 'failed' | 'timed-out'
+
+/**
+ * How one barrier attempt ended. Deliberately five distinct members rather than
+ * a boolean: only `refreshed` may clear the barrier, and the other four each
+ * call for different user-facing treatment.
+ */
+type RevisionReviewRefreshOutcome =
+  | 'refreshed'
+  | 'failed'
+  | 'timed-out'
+  | 'aborted'
+  | 'superseded'
+
+interface RevisionReviewAttempt {
+  /** Shared by the queue read and the six core selector reads. */
+  signal: AbortSignal
+  /** Resolves with {@link REVISION_REVIEW_DEADLINE} when the attempt expires. */
+  deadline: Promise<typeof REVISION_REVIEW_DEADLINE>
+  /** True once the deadline fired, which names an abort as a timeout. */
+  readonly timedOut: boolean
+  dispose: () => void
+}
+
+/**
+ * One cancellation contract per barrier attempt.
+ *
+ * Aborting is not enough on its own: a transport (or a test double) may ignore
+ * the signal and never settle, which is exactly the stall this guards against.
+ * So the deadline both aborts the shared controller AND resolves a race marker,
+ * and the caller releases its lock on whichever arrives first.
+ */
+function startRevisionReviewAttempt(): RevisionReviewAttempt {
+  const controller = new AbortController()
+  let timedOut = false
+  let resolveDeadline!: (value: typeof REVISION_REVIEW_DEADLINE) => void
+  const deadline = new Promise<typeof REVISION_REVIEW_DEADLINE>((resolve) => {
+    resolveDeadline = resolve
+  })
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+    resolveDeadline(REVISION_REVIEW_DEADLINE)
+  }, POST_REVISION_REVIEW_DEADLINE_MS)
+  return {
+    signal: controller.signal,
+    deadline,
+    get timedOut() {
+      return timedOut
+    },
+    dispose() {
+      clearTimeout(timer)
+    },
+  }
+}
+
+/**
+ * Generation of the barrier attempt that currently owns the decision lock. A
+ * late attempt must not unlock a rail another attempt is holding, and must not
+ * write barrier state on behalf of a screen that has moved on.
+ */
+let revisionReviewAttemptGeneration = 0
+
+const revisionReviewUnavailableKeys = ref<Map<string, RevisionReviewUnavailableReason>>(
+  new Map(),
+)
 
 function revisionReviewKey(proposalId: string): string {
   return proposalId.toLowerCase()
@@ -1220,11 +1314,11 @@ function requireRevisionReviewRefresh(proposalId: string) {
 function setRevisionReviewUnavailable(
   proposalId: string,
   revisionIdentity: string | null,
-  unavailable: boolean,
+  reason: RevisionReviewUnavailableReason | null,
 ) {
   const key = revisionReviewUnavailableKey(proposalId, revisionIdentity)
-  const next = new Set(revisionReviewUnavailableKeys.value)
-  if (unavailable) next.add(key)
+  const next = new Map(revisionReviewUnavailableKeys.value)
+  if (reason) next.set(key, reason)
   else next.delete(key)
   revisionReviewUnavailableKeys.value = next
 }
@@ -1240,15 +1334,33 @@ function isRevisionReviewUnavailableVisible(proposal: ApiProposal): boolean {
   )
 }
 
-const activeRevisionReviewUnavailable = computed(() => {
-  const proposal = activeProposal.value
-  return (
-    !!proposal &&
-    isRevisionReviewUnavailableVisible(proposal) &&
-    revisionReviewUnavailableKeys.value.has(
-      revisionReviewUnavailableKey(proposal.id, proposalRevisionIdentity(proposal)),
+const activeRevisionReviewUnavailableReason = computed<RevisionReviewUnavailableReason | null>(
+  () => {
+    const proposal = activeProposal.value
+    if (!proposal || !isRevisionReviewUnavailableVisible(proposal)) return null
+    return (
+      revisionReviewUnavailableKeys.value.get(
+        revisionReviewUnavailableKey(proposal.id, proposalRevisionIdentity(proposal)),
+      ) ?? null
     )
-  )
+  },
+)
+
+const activeRevisionReviewUnavailable = computed(
+  () => activeRevisionReviewUnavailableReason.value !== null,
+)
+
+/**
+ * The note the reviewer reads when the barrier could not confirm current truth.
+ * Both messages state the same non-negotiable fact — no decision was made — and
+ * differ only in why, and in whether waiting is worth another try.
+ */
+const revisionReviewUnavailableNote = computed(() => {
+  const reason = activeRevisionReviewUnavailableReason.value
+  if (!reason) return ''
+  return reason === 'timed-out'
+    ? t('review.toast.revisionReviewTimedOut')
+    : t('review.toast.revisionReviewUnavailable')
 })
 
 watch(
@@ -1268,7 +1380,7 @@ watch(
     // not inherit it. Clear it when that proposal leaves the actionable review
     // state, or when the active proposal itself is replaced.
     if (!sameProposal || !current?.eligible) {
-      setRevisionReviewUnavailable(previous.proposalId, previous.revisionIdentity, false)
+      setRevisionReviewUnavailable(previous.proposalId, previous.revisionIdentity, null)
     }
   },
 )
@@ -1465,67 +1577,136 @@ function restoreApplyFocus(captured: HTMLElement | null) {
   })
 }
 
+/**
+ * Run one barrier attempt and report exactly how it ended.
+ *
+ * The barrier clears -- and the action becomes approvable on the NEXT explicit
+ * press -- only on `refreshed`: the authoritative proposal DTO and all six core
+ * evidence reads landed for one identity, status, expiry, defer state and
+ * effective revision. Every other ending leaves the epoch in place, so the next
+ * Approve or Apply refreshes again instead of deciding on pre-revision truth.
+ */
+async function runRevisionReviewRefresh(
+  proposal: ApiProposal,
+  requiredEpoch: number,
+  attempt: RevisionReviewAttempt,
+): Promise<RevisionReviewRefreshOutcome> {
+  const queueOutcome = await Promise.race([
+    loadProposalsWithOutcome({ signal: attempt.signal }),
+    attempt.deadline,
+  ])
+  if (queueOutcome === REVISION_REVIEW_DEADLINE) return 'timed-out'
+  // Only this attempt aborts that signal, so an abort it did not schedule
+  // itself can only be a teardown -- never a deadline the reviewer should retry.
+  if (queueOutcome === 'aborted') return attempt.timedOut ? 'timed-out' : 'aborted'
+  if (queueOutcome === 'failed') return 'failed'
+  if (queueOutcome !== 'landed') return 'superseded'
+
+  const refreshed = activeProposal.value
+  if (
+    !refreshed ||
+    !proposalIdsEqual(refreshed.id, proposal.id) ||
+    !isApplyActionable(refreshed) ||
+    isProposalDeferred(refreshed)
+  ) return 'superseded'
+
+  const status = normalizeProposalStatus(refreshed.status)
+  const revisionIdentity = proposalRevisionIdentity(refreshed)
+  const expiresAt = refreshed.expiresAt ?? null
+  const deferredUntil = refreshed.deferredUntil ?? null
+  const selectorOutcome = await Promise.race([
+    selectors.waitForCoreBatch(refreshed.id, revisionIdentity, { signal: attempt.signal }),
+    attempt.deadline,
+  ])
+  if (selectorOutcome === REVISION_REVIEW_DEADLINE) return 'timed-out'
+  if (selectorOutcome === 'aborted') return attempt.timedOut ? 'timed-out' : 'aborted'
+  if (selectorOutcome === 'failed') return 'failed'
+  if (selectorOutcome !== 'settled') return 'superseded'
+
+  const verified = activeProposal.value
+  if (
+    !verified ||
+    !proposalIdsEqual(verified.id, proposal.id) ||
+    normalizeProposalStatus(verified.status) !== status ||
+    !revisionIdentitiesEqual(proposalRevisionIdentity(verified), revisionIdentity) ||
+    (verified.expiresAt ?? null) !== expiresAt ||
+    (verified.deferredUntil ?? null) !== deferredUntil ||
+    !isApplyActionable(verified) ||
+    isProposalDeferred(verified)
+  ) return 'superseded'
+
+  const key = revisionReviewKey(proposal.id)
+  if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return 'superseded'
+  revisionReviewRefreshEpochs.delete(key)
+  return 'refreshed'
+}
+
+/**
+ * Key the barrier note to the proposal and revision now on screen. A reviewer
+ * who has already moved on must not inherit another screen's failure.
+ */
+function noteRevisionReviewOutcome(
+  proposal: ApiProposal,
+  reason: RevisionReviewUnavailableReason | null,
+) {
+  const current = activeProposal.value
+  if (!current || !proposalIdsEqual(current.id, proposal.id)) return
+  setRevisionReviewUnavailable(current.id, proposalRevisionIdentity(current), reason)
+}
+
+function applyRevisionReviewOutcome(
+  proposal: ApiProposal,
+  outcome: RevisionReviewRefreshOutcome,
+) {
+  switch (outcome) {
+    case 'refreshed':
+      noteRevisionReviewOutcome(proposal, null)
+      toast.info(t('review.toast.revisionReviewRefreshed'))
+      return
+    case 'failed':
+      noteRevisionReviewOutcome(proposal, 'failed')
+      toast.error(t('review.toast.revisionReviewUnavailable'))
+      return
+    case 'timed-out':
+      noteRevisionReviewOutcome(proposal, 'timed-out')
+      toast.error(t('review.toast.revisionReviewTimedOut'))
+      return
+    case 'aborted':
+    case 'superseded':
+      // Nothing to tell the reviewer: the screen they were deciding on is gone
+      // or was replaced, and the barrier stays armed for whatever replaced it.
+      return
+  }
+}
+
 async function refreshRevisionReviewBeforeApply(
   proposal: ApiProposal,
   requiredEpoch: number,
 ) {
   const captured = applyReturnFocusEl
+  const generation = ++revisionReviewAttemptGeneration
+  const attempt = startRevisionReviewAttempt()
   applyGuardBusy.value = true
   revisionReviewRefreshBusy.value = true
   try {
-    const queueOutcome = await loadProposalsWithOutcome()
-    if (queueOutcome !== 'landed') return
-
-    const refreshed = activeProposal.value
-    if (
-      !refreshed ||
-      !proposalIdsEqual(refreshed.id, proposal.id) ||
-      !isApplyActionable(refreshed) ||
-      isProposalDeferred(refreshed)
-    ) return
-
-    const status = normalizeProposalStatus(refreshed.status)
-    const revisionIdentity = proposalRevisionIdentity(refreshed)
-    const expiresAt = refreshed.expiresAt ?? null
-    const deferredUntil = refreshed.deferredUntil ?? null
-    const selectorOutcome = await selectors.waitForCoreBatch(
-      refreshed.id,
-      revisionIdentity,
-    )
-    if (selectorOutcome === 'failed') {
-      setRevisionReviewUnavailable(proposal.id, revisionIdentity, true)
-      toast.error(t('review.toast.revisionReviewUnavailable'))
-      return
-    }
-    if (selectorOutcome !== 'settled') return
-
-    const verified = activeProposal.value
-    if (
-      !verified ||
-      !proposalIdsEqual(verified.id, proposal.id) ||
-      normalizeProposalStatus(verified.status) !== status ||
-      !revisionIdentitiesEqual(proposalRevisionIdentity(verified), revisionIdentity) ||
-      (verified.expiresAt ?? null) !== expiresAt ||
-      (verified.deferredUntil ?? null) !== deferredUntil ||
-      !isApplyActionable(verified) ||
-      isProposalDeferred(verified)
-    ) return
-
-    const key = revisionReviewKey(proposal.id)
-    if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return
-    revisionReviewRefreshEpochs.delete(key)
-    setRevisionReviewUnavailable(proposal.id, revisionIdentity, false)
-    toast.info(t('review.toast.revisionReviewRefreshed'))
+    const outcome = await runRevisionReviewRefresh(proposal, requiredEpoch, attempt)
+    // A late attempt reports nothing: a newer attempt owns the barrier, the
+    // rail and the note, and this one's answer is by definition older.
+    if (generation !== revisionReviewAttemptGeneration) return
+    applyRevisionReviewOutcome(proposal, outcome)
   } finally {
-    revisionReviewRefreshBusy.value = false
-    applyGuardBusy.value = false
-    applyReturnFocusEl = null
-    // The preflight consumes this action unconditionally. Return focus only
-    // after the shared lock releases, so a keyboard reviewer can inspect the
-    // refreshed evidence and deliberately invoke the current action again.
-    void nextTick(() => {
-      restoreApplyFocus(captured)
-    })
+    attempt.dispose()
+    if (generation === revisionReviewAttemptGeneration) {
+      revisionReviewRefreshBusy.value = false
+      applyGuardBusy.value = false
+      applyReturnFocusEl = null
+      // The preflight consumes this action unconditionally. Return focus only
+      // after the shared lock releases, so a keyboard reviewer can inspect the
+      // refreshed evidence and deliberately invoke the current action again.
+      void nextTick(() => {
+        restoreApplyFocus(captured)
+      })
+    }
   }
 }
 
@@ -2354,7 +2535,7 @@ async function onClearBoardScope() {
         aria-atomic="true"
         data-testid="paper-review-evidence-unavailable"
       >
-        {{ $t('review.toast.revisionReviewUnavailable') }}
+        {{ revisionReviewUnavailableNote }}
       </p>
       <ReviewMain
         ref="reviewMainRef"

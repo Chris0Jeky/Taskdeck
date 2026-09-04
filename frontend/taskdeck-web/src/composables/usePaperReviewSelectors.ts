@@ -127,7 +127,28 @@ export interface SimilarPastRow {
   date: string
 }
 
-export type CoreSelectorBatchOutcome = 'settled' | 'failed' | 'superseded' | 'unavailable'
+/**
+ * How one exact-key core evidence batch ended.
+ *
+ * - `settled`    every one of the six proposal reads landed for the requested key.
+ * - `failed`     at least one read rejected on its own; the snapshot is incomplete.
+ * - `superseded` the reviewer moved to another proposal or revision mid-flight.
+ * - `unavailable` the requested key is not the one this surface is rendering.
+ * - `aborted`    the CALLER cancelled through its own signal. Kept distinct from
+ *   `failed` because nothing failed: only the caller knows why it cancelled
+ *   (a deadline, a teardown), so only the caller may name that reason.
+ */
+export type CoreSelectorBatchOutcome =
+  | 'settled'
+  | 'failed'
+  | 'superseded'
+  | 'unavailable'
+  | 'aborted'
+
+/** Caller-owned cancellation for one explicit core-batch wait. */
+export interface CoreSelectorBatchWaitOptions {
+  signal?: AbortSignal
+}
 
 export interface PaperReviewSelectors {
   provenance: ComputedRef<ProvenanceRow[]>
@@ -143,6 +164,7 @@ export interface PaperReviewSelectors {
   waitForCoreBatch: (
     proposalId: string,
     revisionIdentity: string | null,
+    options?: CoreSelectorBatchWaitOptions,
   ) => Promise<CoreSelectorBatchOutcome>
 }
 
@@ -533,6 +555,17 @@ export function usePaperReviewSelectors(
     similarPastData.value = EMPTY_SIMILAR
   }
 
+  /**
+   * Cancel whatever core batch is currently in flight without disturbing the
+   * generation bookkeeping. `invalidateCoreBatch` is the stronger neighbour: it
+   * also supersedes the batch's waiters. Here the waiter reports its own
+   * outcome, so the batch is left to reach its ordinary failure branch (which
+   * clears `loading`) instead of being declared superseded.
+   */
+  function abortInFlightCoreBatch() {
+    abortController?.abort()
+  }
+
   function invalidateCoreBatch() {
     fetchGeneration += 1
     activeCoreBatch?.supersede()
@@ -728,16 +761,56 @@ export function usePaperReviewSelectors(
     return promise
   }
 
+  /**
+   * Await the exact-key core batch on behalf of an explicit reviewer action.
+   *
+   * The optional `signal` belongs to the CALLER, not to this composable. When
+   * it fires the wait resolves `aborted` immediately and the in-flight batch is
+   * cancelled, so a caller holding a decision lock is released even when the
+   * transport (or a test double) ignores cancellation and never settles. The
+   * batch's own continuations still run behind their generation guard, so a
+   * late answer can neither publish evidence for a key the reviewer has left
+   * nor be mistaken for this wait's result.
+   */
   function waitForCoreBatch(
     proposalId: string,
     revisionIdentity: string | null,
+    options?: CoreSelectorBatchWaitOptions,
   ): Promise<CoreSelectorBatchOutcome> {
+    const signal = options?.signal
+    if (signal?.aborted) return Promise.resolve('aborted')
     const key = selectorKeyForProposal(activeProposal.value)
     if (
       !key ||
       !proposalIdsEqual(key.proposalId, proposalId) ||
       !nullableIdentifiersEqual(key.revisionIdentity, revisionIdentity)
     ) return Promise.resolve('unavailable')
+
+    if (!signal) return runCoreBatchWithSameActionRetry(key)
+
+    let onAbort: (() => void) | null = null
+    const aborted = new Promise<CoreSelectorBatchOutcome>((resolve) => {
+      onAbort = () => {
+        // Cancel the reads this wait is holding open before reporting, so the
+        // abandoned batch stops occupying the transport.
+        abortInFlightCoreBatch()
+        resolve('aborted')
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    })
+
+    return Promise.race([runCoreBatchWithSameActionRetry(key), aborted]).finally(() => {
+      if (onAbort) signal.removeEventListener('abort', onAbort)
+    })
+  }
+
+  /**
+   * One explicit wait retries a failed batch once, inside the same action
+   * (#2528). A second failure is reported honestly rather than retried again.
+   */
+  function runCoreBatchWithSameActionRetry(
+    key: SelectorKey,
+  ): Promise<CoreSelectorBatchOutcome> {
     const promise = ensureCoreBatch(key)
     return promise.then((outcome) => {
       if (

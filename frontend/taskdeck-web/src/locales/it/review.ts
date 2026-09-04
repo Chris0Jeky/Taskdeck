@@ -612,6 +612,8 @@ export default {
       'Revisione aggiornata dopo il tentativo di salvataggio. Controlla le prove correnti, quindi scegli di nuovo l’azione.',
     revisionReviewUnavailable:
       'Non è stato possibile aggiornare le prove della revisione. Non è stata presa alcuna decisione. Scegli di nuovo l’azione corrente per riprovare.',
+    revisionReviewTimedOut:
+      'L’aggiornamento della revisione ha richiesto troppo tempo ed è stato interrotto. Non è stata presa alcuna decisione. Scegli di nuovo l’azione corrente per riprovare.',
     notRejectable:
       'Questa proposta non può più essere rifiutata. Aggiorna la revisione per vedere lo stato attuale.',
     notEditable: 'Questa proposta non può più essere modificata.',
