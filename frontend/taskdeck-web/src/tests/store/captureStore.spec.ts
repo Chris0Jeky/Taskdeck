@@ -2342,6 +2342,52 @@ describe('captureStore', () => {
       }
     })
 
+    it('leaves the store-wide detail loading flag alone during batch reconciliation', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        store.detailById['c-1'] = detailFor('c-1', 'Triaging')
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-1', 'ProposalCreated'),
+        ] as never)
+        let resolveDetail!: (value: unknown) => void
+        vi.mocked(captureApi.getItem).mockReturnValueOnce(
+          new Promise((resolve) => { resolveDetail = resolve }) as never,
+        )
+
+        store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        // The reconciliation read is in flight. An unrelated open detail must
+        // keep its panel and its refresh control.
+        expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+        expect(store.loadingDetail).toBe(false)
+
+        resolveDetail(detailFor('c-1', 'ProposalCreated'))
+        await Promise.resolve()
+        await Promise.resolve()
+        expect(store.loadingDetail).toBe(false)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('still raises the detail loading flag for a foreground detail load', async () => {
+      const store = useCaptureStore()
+      let resolveDetail!: (value: unknown) => void
+      vi.mocked(captureApi.getItem).mockReturnValueOnce(
+        new Promise((resolve) => { resolveDetail = resolve }) as never,
+      )
+
+      const load = store.fetchDetail('c-1', { forceRefresh: true })
+      expect(store.loadingDetail).toBe(true)
+
+      resolveDetail(detailFor('c-1', 'ProposalCreated'))
+      await load
+      expect(store.loadingDetail).toBe(false)
+      expect(store.detailError).toBeNull()
+    })
+
     it('refreshes workload counts for a partial batch outcome and not for unchanged snapshots', async () => {
       vi.useFakeTimers()
       try {

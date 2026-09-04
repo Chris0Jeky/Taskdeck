@@ -31,6 +31,16 @@ type DetailLoadOptions = {
   syncSummary?: boolean
   requestOptions?: CaptureReadOptions
   shouldCache?: () => boolean
+  /**
+   * Whether this read owns the store-wide `loadingDetail` flag (default true).
+   *
+   * That flag is what the open detail panel renders from: while it is set the
+   * panel body is replaced by a "Refreshing detail..." spinner and its Refresh
+   * Detail button is disabled. A background reconciliation of some OTHER
+   * capture must not do that to the detail the user is reading (#2304), so the
+   * quiet reads pass `false` and leave the flag to foreground loads.
+   */
+  trackLoading?: boolean
 }
 
 export const BATCH_TRIAGE_POLL_INTERVAL_MS = 3_000
@@ -222,6 +232,7 @@ export const useCaptureStore = defineStore('capture', () => {
       syncSummary = true,
       requestOptions,
       shouldCache = () => true,
+      trackLoading = true,
     } = options
 
     if (!forceRefresh && detailById.value[itemId]) {
@@ -239,7 +250,9 @@ export const useCaptureStore = defineStore('capture', () => {
 
     const observedDetailWriteGeneration = detailWriteGeneration(itemId)
     try {
-      loadingDetail.value = true
+      if (trackLoading) {
+        loadingDetail.value = true
+      }
       if (recordError) {
         detailError.value = null
       }
@@ -260,7 +273,9 @@ export const useCaptureStore = defineStore('capture', () => {
       }
       throw e
     } finally {
-      loadingDetail.value = false
+      if (trackLoading) {
+        loadingDetail.value = false
+      }
     }
   }
 
@@ -573,6 +588,10 @@ export const useCaptureStore = defineStore('capture', () => {
             // endpoint lags it briefly, do not regress the row back to Triaging
             // or reinsert an item that fell beyond the visible list cap.
             syncSummary: false,
+            // Quiet in every respect: this reconciliation runs for items the
+            // user may not have open, so it must not take the panel-wide
+            // loading flag away from whatever detail IS open (#2304).
+            trackLoading: false,
             requestOptions: options.requestOptions,
             shouldCache: isCurrent,
           })
