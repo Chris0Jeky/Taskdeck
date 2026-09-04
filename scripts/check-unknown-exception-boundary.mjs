@@ -32,6 +32,7 @@ export const MCP_DIRECTORY = 'backend/src/Taskdeck.Api/Mcp'
 export const PERSISTED_STATE_FILES = [
   'backend/src/Taskdeck.Application/Services/AgentRuntime.cs',
   'backend/src/Taskdeck.Application/Services/OpsCliService.cs',
+  'backend/src/Taskdeck.Api/Workers/OutboundWebhookDeliveryWorker.cs',
 ]
 
 // Calls that actually sanitize the value handed to them. An `.ErrorMessage` occurrence counts as
