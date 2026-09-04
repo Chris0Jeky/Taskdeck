@@ -327,7 +327,12 @@ describe('PaperInboxView', () => {
     wrapper.unmount()
   })
 
-  it('discloses the board and column scope, then clears it without reloading', async () => {
+  // #1984 finding 2: this pin used to require "Column: Ready" in the chip while
+  // the list request was board-only, so a green suite defended the untruth. The
+  // chip names the applied filter and nothing else. The chip and the request are
+  // asserted together in `inbox/PaperInboxScopeTruth.spec.ts`, which mounts this
+  // view over the real orchestrator; here the orchestrator is a stub.
+  it('discloses only the board scope the list request applies, then clears it without reloading', async () => {
     orchestratorState.activeBoardId.value = 'board-active'
     orchestratorState.activeColumnId.value = 'column-ready'
     orchestratorState.activeBoardName.value = 'Payments API Migration'
@@ -340,7 +345,8 @@ describe('PaperInboxView', () => {
 
     const wrapper = mount(PaperInboxView)
     expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Board: Payments API Migration')
-    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Column: Ready')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).not.toContain('Column')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).not.toContain('Ready')
 
     await wrapper.find('[data-testid="paper-scope-clear"]').trigger('click')
     await wrapper.vm.$nextTick()
@@ -359,6 +365,21 @@ describe('PaperInboxView', () => {
     expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
     await empty.trigger('click')
     expect(orchestratorState.clearScope).toHaveBeenCalledTimes(1)
+  })
+
+  // #1984 finding 2: the scoped empty state interpolates the same label as the
+  // chip, so a column left in the route used to make it read "No captures in
+  // Board: X · Column: Y" over a list that was never column-filtered.
+  it('names only the applied scope in an empty Inbox when the route still carries a column', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+    orchestratorState.activeColumnId.value = 'column-ready'
+    orchestratorState.activeBoardName.value = 'Payments API Migration'
+    orchestratorState.activeColumnName.value = 'Ready'
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
+    expect(wrapper.text()).not.toContain('Column: Ready')
+    expect(wrapper.find('[data-testid="paper-triage-clear-scope"]').exists()).toBe(true)
   })
 
   it('toggles between composer and nib when Cmd+; is pressed globally', async () => {

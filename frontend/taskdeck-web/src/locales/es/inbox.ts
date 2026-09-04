@@ -89,9 +89,11 @@ export default {
     selectedBoard: 'el tablero seleccionado',
     submit: 'Capturar',
   },
+  // `boardAndColumn` se eliminó con #1984 (hallazgo 2): la lista del Inbox se
+  // solicita por tablero y sin columna, así que nombrar una columna aquí
+  // declaraba un filtro que nunca se aplicó.
   scope: {
     board: 'Tablero: {board}',
-    boardAndColumn: 'Tablero: {board} · Columna: {column}',
     clear: 'Mostrar todas las capturas',
   },
   empty: {
