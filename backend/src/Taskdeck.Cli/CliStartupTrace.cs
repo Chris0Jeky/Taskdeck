@@ -22,6 +22,14 @@ internal sealed class CliStartupTrace
     internal const string DispatchBeginPhase = "dispatch-begin";
     internal const string DispatchEndPhase = "dispatch-end";
     internal const string DisposalEndPhase = "disposal-end";
+    internal const string UnexpectedFailurePhase = "unexpected-failure";
+
+    /// <summary>
+    /// Extension of the companion file that carries the full text of an unexpected
+    /// exception. It sits beside the trace file, inside the same guarded directory,
+    /// and is never read back into user-visible CLI output.
+    /// </summary>
+    internal const string FailureDetailExtension = ".failure";
 
     private static readonly HashSet<string> AllowedPhases =
     [
@@ -32,7 +40,8 @@ internal sealed class CliStartupTrace
         MigrationEndPhase,
         DispatchBeginPhase,
         DispatchEndPhase,
-        DisposalEndPhase
+        DisposalEndPhase,
+        UnexpectedFailurePhase
     ];
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
@@ -84,6 +93,43 @@ internal sealed class CliStartupTrace
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// The bounded reference the CLI may show a user alongside a generic failure line.
+    /// Null when tracing is not enabled for this run.
+    /// </summary>
+    internal string? CorrelationId => _path is null ? null : _correlationId;
+
+    /// <summary>
+    /// Writes the full exception text exactly once to the protected companion file and
+    /// marks the trace stream. Returns false when no protected sink is available, so the
+    /// caller can say so instead of silently dropping diagnostics. Fail-open: a diagnostic
+    /// failure never changes the command result or exit code.
+    /// </summary>
+    internal bool TryRecordUnexpectedFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+
+        if (_disabled || _path is null || _correlationId is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            File.AppendAllText(
+                Path.ChangeExtension(_path, FailureDetailExtension),
+                $"v1|{_correlationId}|unexpected-failure\n{exception}\n",
+                StrictUtf8);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        Record(UnexpectedFailurePhase);
+        return true;
     }
 
     internal void Record(string phase)
