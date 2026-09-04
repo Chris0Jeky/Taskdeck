@@ -897,6 +897,20 @@ function summarizeOperation(operation: ProposalOperation): string {
   return proposalDisplayNames.summarizeOperation(proposal, operation)
 }
 
+function afterOperationTitle(proposal: ApiProposal, operation: ProposalOperation, index: number): string {
+  const suppliedHeadline = proposal.presentation?.operationHeadlines?.[index]?.trim()
+  // Canonical card move: actionType "move" + targetType "card", the only pair the backend
+  // emits and the only one Apply dispatch accepts.
+  if (
+    suppliedHeadline
+    && operation.actionType.trim().toLowerCase() === 'move'
+    && operation.targetType.trim().toLowerCase() === 'card'
+  ) {
+    return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
+  }
+  return `${formatActionLabel(operation.actionType)} · ${operation.targetType}`
+}
+
 const before = computed<ChangeBeforeCard>(() => {
   void displayVersion.value
   const operationCount = activeProposal.value?.operations?.length ?? 0
@@ -945,7 +959,7 @@ const after = computed<ChangeAfterCard[]>(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map((operation, index) => ({
       serial: `op-${index + 1}`,
-      title: `${formatActionLabel(operation.actionType)} · ${operation.targetType}`,
+      title: afterOperationTitle(p!, operation, index),
       body: summarizeOperation(operation),
       status: operation.actionType.toLowerCase().startsWith('create') ? 'new' : 'kept',
     }))

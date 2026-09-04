@@ -263,6 +263,78 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
       .toContain('Create card “Implement OAuth” in the authentication column')
   })
 
+  it('enriches the backend MoveCard headline with the resolved destination', async () => {
+    mocks.getBoards.mockResolvedValue([{ id: 'board-1', name: 'Support Triage' }])
+    mocks.getColumns.mockResolvedValue([{ id: 'column-1', boardId: 'board-1', name: 'Done' }])
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        operations: [{
+          id: 'op-move',
+          proposalId: 'p-1',
+          sequence: 0,
+          actionType: 'move',
+          targetType: 'card',
+          targetId: 'card-1',
+          parameters: JSON.stringify({ boardId: 'board-1', cardId: 'card-1', columnId: 'column-1' }),
+          idempotencyKey: 'k-move',
+          expectedVersion: null,
+        }],
+        presentation: {
+          plainSummary: 'Move a card',
+          impactSummary: 'Moves one card.',
+          riskCue: 'Low risk',
+          sourceCue: 'Chat',
+          operationHeadlines: ['Move card.'],
+          affectedEntities: [],
+        },
+      }),
+    })
+    await flushPromises()
+
+    const plannedChanges = wrapper.findAll('button').find((button) => button.text().includes('Planned changes'))
+    expect(plannedChanges).toBeDefined()
+    await plannedChanges!.trigger('click')
+
+    const headlines = wrapper.find('.td-review-card__operation-list').text()
+    expect(headlines).toContain('Move card to “Done”.')
+    expect(headlines).not.toContain('Move card.')
+  })
+
+  it('does not guess a destination for an incomplete MoveCard headline', async () => {
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        operations: [{
+          id: 'op-move',
+          proposalId: 'p-1',
+          sequence: 0,
+          actionType: 'move',
+          targetType: 'card',
+          targetId: 'card-1',
+          parameters: JSON.stringify({ boardId: 'board-1', cardId: 'card-1', columnId: 'column-missing' }),
+          idempotencyKey: 'k-move',
+          expectedVersion: null,
+        }],
+        presentation: {
+          plainSummary: 'Move a card',
+          impactSummary: 'Moves one card.',
+          riskCue: 'Low risk',
+          sourceCue: 'Chat',
+          operationHeadlines: ['Move card.'],
+          affectedEntities: [],
+        },
+      }),
+    })
+    await flushPromises()
+
+    const plannedChanges = wrapper.findAll('button').find((button) => button.text().includes('Planned changes'))
+    expect(plannedChanges).toBeDefined()
+    await plannedChanges!.trigger('click')
+
+    const headlines = wrapper.find('.td-review-card__operation-list').text()
+    expect(headlines).toContain('Move card.')
+    expect(headlines).not.toContain(' to “')
+  })
+
   it('uses historical copy for applied API-shaped records and prospective copy for pending records', () => {
     const prospectivePresentation = {
       plainSummary: 'Dark mode support This would create card "Dark mode support".',

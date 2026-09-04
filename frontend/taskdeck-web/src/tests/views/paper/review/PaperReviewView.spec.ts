@@ -983,14 +983,22 @@ describe('PaperReviewView', () => {
           id: 'op-move',
           proposalId: 'proposal-001',
           sequence: 0,
-          actionType: 'MoveCard',
-          targetType: 'Card',
+          actionType: 'move',
+          targetType: 'card',
           targetId: 'card-99',
           parameters: JSON.stringify({ boardId: 'board-1', columnId: 'column-1', position: 2 }),
           idempotencyKey: 'move-1',
           expectedVersion: null,
         },
       ],
+      presentation: {
+        plainSummary: 'Move a card',
+        impactSummary: 'Moves one card.',
+        riskCue: 'Low risk',
+        sourceCue: 'Chat',
+        operationHeadlines: ['Move card.'],
+        affectedEntities: [],
+      },
     })
     const originalOperations = JSON.parse(JSON.stringify(proposal.operations))
     const wrapper = await mountView(
@@ -1001,6 +1009,7 @@ describe('PaperReviewView', () => {
     )
 
     const mainText = wrapper.find('[data-testid="paper-review-main"]').text()
+    expect(mainText).toContain('Move card to “Done”.')
     expect(mainText).toContain('Support Triage')
     expect(mainText).toContain('Done')
     expect(mainText).not.toContain('board-1')
