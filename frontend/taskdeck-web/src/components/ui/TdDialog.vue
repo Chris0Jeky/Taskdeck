@@ -164,7 +164,17 @@ onUnmounted(() => {
    * `overflow-y: auto` would never engage and a long dialog's footer would
    * become unreachable. The `100vh` fallback is again load-bearing: a `100dvh`
    * fallback would substitute a value that is invalid at computed-value time on
-   * a `dvh`-less browser, computing to the initial `max-height: none`. */
+   * a `dvh`-less browser, computing to the initial `max-height: none`.
+   *
+   * One difference from the backdrop, worth stating because the shapes look
+   * alike: this first line is NOT a pre-custom-property floor. It contains
+   * `var(--td-space-8)`, so a browser without custom properties drops it at
+   * parse time exactly as it drops the line below, and `max-height` computes to
+   * `none` there — as it did before #2180 too. It is kept because it is the
+   * pre-existing declaration and because losing it would leave nothing to fall
+   * back to if a later edit removes the line below; on every browser that has
+   * custom properties the next line overrides it outright. The backdrop's
+   * `height: 100vh` above is the real floor, because it names no variable. */
   max-height: calc(100vh - 2 * var(--td-space-8));
   max-height: calc(var(--td-dialog-visual-viewport-height, 100vh) - 2 * var(--td-space-8));
   overflow-y: auto;
@@ -284,9 +294,12 @@ onUnmounted(() => {
      * below is later in source order and percentages resolve against the
      * backdrop in every browser that supports them, so it always wins. Do not
      * read the vh/dvh pair as a live fallback chain; the live chain for this
-     * component is `100vh` -> `@supports (height: 100dvh)` on `.td-dialog`
-     * above. Historical intent: vh for iOS Safari <= 15.4 without dvh, dvh to
-     * survive browser-chrome collapse. */
+     * component is the three-step ladder on `.td-dialog` above — a viewport-unit
+     * floor, then the same declaration reading
+     * `--td-dialog-visual-viewport-height` with a `100vh` fallback, then the
+     * same again inside the `dvh` feature query with a `100dvh` fallback.
+     * Historical intent: vh for iOS Safari <= 15.4 without dvh, dvh to survive
+     * browser-chrome collapse. */
     max-height: 100vh;
     height: 100vh;
     max-height: 100dvh;

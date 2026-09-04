@@ -23,12 +23,22 @@ import paperBoardDialogShellSource from '../../views/paper/board/PaperBoardDialo
  * software keyboard.
  *
  * The shape each rule must keep, in this order:
- *   1. a plain viewport-unit floor, for browsers with no custom properties;
+ *   1. a plain viewport-unit floor;
  *   2. the same declaration reading the custom property with a `100vh`
  *      fallback, OUTSIDE the feature query, so every browser that has custom
  *      properties follows the visual viewport;
  *   3. the same declaration inside `@supports (height: 100dvh)`, identical but
  *      for a `100dvh` fallback, which upgrades only the fallback.
+ *
+ * What step 1 buys differs per rule, and the difference is easy to misread
+ * because the two ladders look alike. `.td-dialog-backdrop`'s `height: 100vh`
+ * names no variable, so it is a genuine pre-custom-property floor and survives
+ * on a browser where `var()` does not parse. `.td-dialog`'s
+ * `max-height: calc(100vh - 2 * var(--td-space-8))` does name one, so such a
+ * browser drops it alongside step 2 and gets `max-height: none`, exactly as it
+ * did before #2180. For that rule the ordering assertion below pins source
+ * order only: it stops a later edit from placing the floor AFTER the `var()`
+ * form, where it would silently clobber the visual-viewport binding.
  *
  * Step 2 must never use a `100dvh` fallback. `var()` is parse-valid in every
  * browser with custom properties, so the substitution would happen on a
@@ -153,8 +163,12 @@ describe.each(targets)('$label visual-viewport CSS', (target) => {
 
     expect(floorAt).toBeGreaterThanOrEqual(0)
     expect(varAt).toBeGreaterThanOrEqual(0)
-    // Source order is the whole mechanism: a browser without custom properties
-    // drops the var() form at parse time and must still have the floor.
+    // Source order is the whole mechanism. For `height` it also buys a real
+    // fallback, since `100vh` names no variable and so survives a browser that
+    // cannot parse `var()`. For `max-height` the floor names `--td-space-8` and
+    // is dropped right alongside the var() form on such a browser, so there
+    // this assertion is purely about order: the floor must never move BELOW the
+    // var() form, where it would clobber the visual-viewport binding.
     expect(floorAt).toBeLessThan(varAt)
   })
 
