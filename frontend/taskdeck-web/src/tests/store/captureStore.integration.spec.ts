@@ -27,6 +27,7 @@ vi.mock('../../store/toastStore', () => ({
 
 vi.mock('../../composables/useErrorMapper', () => ({
   getErrorDisplay: (_error: unknown, fallback: string) => ({ message: fallback }),
+  getErrorDetails: () => null,
 }))
 
 vi.mock('../../utils/demoMode', async (importOriginal) => {
@@ -275,10 +276,11 @@ describe('captureStore — integration (real captureApi, mocked HTTP)', () => {
 
   describe('createItem — server error', () => {
     it('does not add a phantom summary when the API rejects with 500', async () => {
-      vi.mocked(http.post).mockRejectedValue({ response: { status: 500, data: { message: 'Internal Server Error' } } })
+      const apiError = { response: { status: 500, data: { message: 'Internal Server Error' } } }
+      vi.mocked(http.post).mockRejectedValue(apiError)
 
       const store = useCaptureStore()
-      await expect(store.createItem({ boardId: null, text: 'will fail' })).rejects.toBeDefined()
+      await expect(store.createItem({ boardId: null, text: 'will fail' })).rejects.toBe(apiError)
 
       expect(store.items).toHaveLength(0)
       // getErrorDisplay is mocked to always return the fallback string
