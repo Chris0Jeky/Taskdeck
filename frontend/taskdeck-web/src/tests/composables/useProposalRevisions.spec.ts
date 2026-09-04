@@ -241,9 +241,17 @@ describe('useProposalRevisions', () => {
 
     saveResolvers[0](makeRevision({ id: 'rev-a1', revisionNumber: 1 }))
     await flushMicrotasks()
+
+    // A1 proves the whole chain on its own, so it publishes straight away
+    // instead of waiting for A2 to land.
+    expect(revisions.revisionCount.value).toBe(1)
+    expect(revisions.latestRevision.value?.id).toBe('rev-a1')
+    expect(revisions.revisionsLoaded.value).toBe(true)
+
     saveResolvers[1](makeRevision({ id: 'rev-a2', revisionNumber: 2 }))
     await Promise.all([firstSave, secondSave])
 
+    // Monotonic: the later response raises the published count, never lowers it.
     expect(revisions.revisionCount.value).toBe(2)
     expect(revisions.latestRevision.value?.id).toBe('rev-a2')
     expect(revisions.revisionsLoaded.value).toBe(true)
@@ -261,6 +269,108 @@ describe('useProposalRevisions', () => {
     expect(revisions.revisionCount.value).toBe(2)
     expect(revisions.latestRevision.value?.id).toBe('rev-a2')
     expect(revisions.revisionsLoaded.value).toBe(true)
+  })
+
+  it('merges a newer revision GET that was in flight when a save landed (#2524)', async () => {
+    // Another session saved a third revision while this session's own POST was
+    // in flight. Discarding the GET that was already running would publish a
+    // complete-looking 1..2 chain and let the next edit build on a superseded
+    // revision until the ~15 s poll moved latestRevisionId.
+    let resolveLoad!: (revisions: ProposalRevision[]) => void
+    let resolveSave!: (revision: ProposalRevision) => void
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([makeRevision({ id: 'rev-1', revisionNumber: 1 })])
+      .mockImplementationOnce(
+        () => new Promise((resolve) => { resolveLoad = resolve }),
+      )
+    vi.mocked(proposalRevisionsApi.createRevision).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveSave = resolve }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const {
+      revisionCount,
+      latestRevision,
+      revisionsLoaded,
+      startEditing,
+      saveRevision,
+      loadRevisionState,
+    } = useProposalRevisions(proposal)
+    await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+
+    startEditing()
+    const savePromise = saveRevision({ revisedPayload: '{"title":"Edited"}', reason: 'Edit' })
+    void loadRevisionState('p-1')
+    await vi.waitFor(() => expect(resolveLoad).toBeTypeOf('function'))
+
+    resolveSave(makeRevision({ id: 'rev-2', revisionNumber: 2 }))
+    await savePromise
+
+    // The POST alone proves 1..2, so the intermediate publish still happens.
+    expect(revisionCount.value).toBe(2)
+    expect(latestRevision.value?.id).toBe('rev-2')
+    expect(revisionsLoaded.value).toBe(true)
+
+    resolveLoad([
+      makeRevision({ id: 'rev-1', revisionNumber: 1 }),
+      makeRevision({ id: 'rev-2', revisionNumber: 2 }),
+      makeRevision({ id: 'rev-3-other-session', revisionNumber: 3 }),
+    ])
+    await flushMicrotasks()
+
+    expect(revisionCount.value).toBe(3)
+    expect(latestRevision.value?.id).toBe('rev-3-other-session')
+    expect(revisionsLoaded.value).toBe(true)
+  })
+
+  it('leaves revision metadata unknown when a GET reports another proposal (#2524)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValueOnce([
+      makeRevision({ id: 'rev-1', revisionNumber: 1 }),
+      makeRevision({ id: 'rev-foreign', proposalId: 'p-9', revisionNumber: 2 }),
+    ])
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { revisionCount, latestRevision, revisionsLoaded } = useProposalRevisions(proposal)
+    await vi.waitFor(() =>
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1),
+    )
+    await flushMicrotasks()
+
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+  })
+
+  it('recovers revision metadata once a consistent GET follows an inconsistent one (#2524)', async () => {
+    // One number reported under two ids is not a trustworthy answer, but it
+    // must not blind the composable for the rest of its lifetime.
+    vi.mocked(proposalRevisionsApi.getRevisions)
+      .mockResolvedValueOnce([
+        makeRevision({ id: 'rev-1', revisionNumber: 1 }),
+        makeRevision({ id: 'rev-1-conflict', revisionNumber: 1 }),
+      ])
+      .mockResolvedValueOnce([
+        makeRevision({ id: 'rev-1', revisionNumber: 1 }),
+        makeRevision({ id: 'rev-2', revisionNumber: 2 }),
+      ])
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const { revisionCount, latestRevision, revisionsLoaded, loadRevisionState } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() =>
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1),
+    )
+    await flushMicrotasks()
+
+    expect(revisionCount.value).toBe(0)
+    expect(latestRevision.value).toBeNull()
+    expect(revisionsLoaded.value).toBe(false)
+
+    await loadRevisionState('p-1')
+
+    expect(revisionCount.value).toBe(2)
+    expect(latestRevision.value?.id).toBe('rev-2')
+    expect(revisionsLoaded.value).toBe(true)
   })
 
   it.each([404, 409, 500])(

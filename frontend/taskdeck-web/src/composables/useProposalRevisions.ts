@@ -95,16 +95,20 @@ export function useProposalRevisions(
     return created
   }
 
+  function isUsableRevision(revision: ProposalRevision, proposalId: string): boolean {
+    return (
+      revision.proposalId === proposalId &&
+      Number.isInteger(revision.revisionNumber) &&
+      revision.revisionNumber >= 1
+    )
+  }
+
   function mergeRevision(
     history: RevisionHistory,
     proposalId: string,
     revision: ProposalRevision,
   ) {
-    if (
-      revision.proposalId !== proposalId ||
-      !Number.isInteger(revision.revisionNumber) ||
-      revision.revisionNumber < 1
-    ) {
+    if (!isUsableRevision(revision, proposalId)) {
       history.invalid = true
       return
     }
@@ -117,10 +121,38 @@ export function useProposalRevisions(
     history.revisions.set(revision.revisionNumber, revision)
   }
 
+  /**
+   * A revision GET is the authoritative answer for the numbers it reports, so an
+   * internally consistent response clears an earlier inconsistency instead of
+   * leaving the proposal unknown for the whole composable lifetime (#2524 (2)):
+   * badges and diff panes came back only after a remount. A response that
+   * contradicts itself — a foreign proposal, a malformed number, or one number
+   * under two ids — is not trusted at all: nothing from it is stored and the
+   * metadata stays unknown until a consistent answer arrives. Numbers the
+   * response does not cover keep the revisions their POST responses proved, so a
+   * GET that predates a save still cannot erase it.
+   */
   function mergeLoadedRevisions(proposalId: string, revisions: ProposalRevision[]) {
     const history = getRevisionHistory(proposalId)
+    const loaded = new Map<number, ProposalRevision>()
     for (const revision of revisions) {
-      mergeRevision(history, proposalId, revision)
+      if (!isUsableRevision(revision, proposalId)) {
+        history.invalid = true
+        history.loaded = true
+        return
+      }
+      const conflicting = loaded.get(revision.revisionNumber)
+      if (conflicting && conflicting.id !== revision.id) {
+        history.invalid = true
+        history.loaded = true
+        return
+      }
+      loaded.set(revision.revisionNumber, revision)
+    }
+
+    history.invalid = false
+    for (const [revisionNumber, revision] of loaded) {
+      history.revisions.set(revisionNumber, revision)
     }
     history.loaded = true
   }
@@ -153,11 +185,18 @@ export function useProposalRevisions(
    * A successful POST proves only the returned revision. Publish metadata only
    * when the stored responses and/or a completed GET prove every prior number;
    * otherwise leave the state unknown and request one authoritative reload.
+   *
+   * A revision GET already in flight is deliberately NOT suppressed here (#2524
+   * (1)). It can carry a revision another session saved while this POST was in
+   * flight, and `mergeLoadedRevisions` only ever adds to what the POST proved,
+   * so a pre-save answer cannot lower the published state while a strictly newer
+   * one is no longer thrown away: bumping the generation here published a
+   * complete-looking prefix and let the next edit build on a superseded revision
+   * until the ~15 s poll moved `latestRevisionId`. `loadRevisionState` re-checks
+   * the generation and the active proposal before it publishes anything.
    */
   function publishPersistedRevisionMetadata(proposalId: string): boolean {
     if (activeProposal.value?.id !== proposalId) return false
-    // Suppress any revision GET that started before this save committed.
-    loadGeneration += 1
     const metadata = getCompleteRevisionMetadata(proposalId)
     if (!metadata) {
       revisionCount.value = 0
@@ -306,8 +345,8 @@ export function useProposalRevisions(
         options?.onRevisionSaved?.()
         return { proposalId, outcome: 'persisted', current: false }
       }
-      // `publishPersistedRevisionMetadata` already invalidated any in-flight
-      // revision load before the metadata was published.
+      // A revision GET still in flight is left to land: it can only add to the
+      // revisions this save proved, and it may carry a newer one (#2524).
       // Same hazard, different list: a review-queue read that predates this save
       // would restore the pre-revision proposal. Called synchronously here, in
       // the same continuation as the POST, so no queue answer can slip between
