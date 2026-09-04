@@ -1,8 +1,8 @@
 # Active Taskdeck Agent Context
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
-This file is the Codex active-gate pointer for Taskdeck. It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
+This file is the active-gate pointer for every implementation agent on Taskdeck (Claude Code lanes today; Codex when its review credits return). It intentionally summarizes routing only; the canonical state remains in `docs/STATUS.md`.
 
 **This file is a pointer, not a record.** It carries routing, standing constraints, and unpushed-work protection only. Shipped reality belongs in `docs/STATUS.md`; delivery history and roadmap sequencing belong in `docs/IMPLEMENTATION_MASTERPLAN.md`, the split that `.codex/README.md` and that file both declare; release state, milestone counts, PR status, and CI colour come from live GitHub. All three outrank anything written here. If you are about to add a dated delivery narrative to this file, put it in `docs/IMPLEMENTATION_MASTERPLAN.md` instead.
 
@@ -44,7 +44,18 @@ The architecture for "speak, type, paste, or drop" is `docs/decisions/ADR-0065-c
 
 No saved head currently holds unshipped work. Record one here the moment a slice is parked without a PR, and say what it contains and how to resume it.
 
+- Retired, check before resuming: `origin/issue-2198/batch-approve-focus@9a2d723771b8fda0a04bb22e87056a5ee5b63289`. Not an ancestor of `main`. `#2198` closed 2026-09-04 on PR `#2534` (merge `d11bd4ada`, branch `issue-2198/batch-approve-focus-v2`). The alpha lane's 2026-09-03 release note says the original branch preserves a verified composable-only settle-outcome slice that never opened a PR; whether that slice is still wanted after `#2534` is unrecorded, so read `#2198` first and do not recreate a worktree from it blindly.
+
 - Retired, do not resume: `origin/issue-1940/provenance-shortcut@c9135fef3b64da5d6c578bd4d9c76fe4fdb7eb65`. The ref still exists and is not an ancestor of `main`, but the slice it held shipped as PR `#2323` (merge `221aa88c8`), recorded in `docs/STATUS.md`. Recreating a worktree from it would redo landed work. `#1940` stays open for the two MEDIUM residuals named on the issue, not for this branch.
+
+## Lane coordination (2026-09-04)
+
+- Two implementation lanes run concurrently: `alpha-product-trust` (human work loop: Capture/Inbox, proposals, Review, Board/Paper/Legacy, a11y, product semantics) and `beta-platform-integrity` (runtime, security, delivery, CI, harness). An issue belongs to the lane that owns its primary acceptance outcome, not to whichever layer its files sit in. A programme coordinator session owns issue topology, milestones, Project state, this file, `autodoc/AGENT_INDEX.md` and `docs/releases/V0_3_0_READINESS.md`; it does not implement or merge.
+- Claim before writing: post `[Claude lane claim v2]` on the issue (lane, base SHA, owned paths, shared-path leases, parallel-safe work, status) and `[Claude lane release v2]` with the exact head and result when done. A stale claim is one with no release and no branch activity; the coordinator reconciles it, not the other lane.
+- One writer per canonical doc: the lane that merges a slice writes its own bounded `docs/STATUS.md` block and `OUTSTANDING_TASKS.md` tick; cross-lane reconciliation blocks and the readiness view are the coordinator's. Never edit a canonical doc that an open PR already edits without agreeing the order first.
+- Control-plane PRs (`.github/workflows/**`, `ci/**`, `scripts/ci/**`, runner or branch-protection paths, and the `ci/policy.v1.json` control paths) merge only after the maintainer's own review plus one fresh-context review (ADR-0066 amendment 2026-09-03). Open them ready-for-review, then park them under `OUTSTANDING_TASKS.md` SC-10; green is not authority.
+- Codex review credits are exhausted (SC-9, since 2026-09-03 22:34Z): every PR carries one fresh-context independent review instead, and the connector's usage-limit notice is informational, not a finding.
+- Stacked PRs: a PR whose base is a merged-but-undeleted branch merges into that branch, not `main`. Re-target with `gh pr edit N --base main` before merging.
 
 ## Start of session
 
