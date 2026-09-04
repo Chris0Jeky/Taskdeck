@@ -189,9 +189,9 @@ const {
   clearSelection: clearBatchSelection,
   isSelected: isBatchSelected,
   toggleSelection: toggleBatchSelection,
-  requestConfirmation: requestBatchApproval,
-  cancelConfirmation: cancelBatchApproval,
-  confirmApproval: confirmBatchApproval,
+  requestConfirmation: requestBatchApprovalAction,
+  cancelConfirmation: cancelBatchApprovalAction,
+  confirmApproval: confirmBatchApprovalAction,
 } = useBatchApproveProposals(proposals, currentUserId, nowMs, loadProposals)
 
 // #1307, q-14 C. Separate from batch approve on purpose: approve and execute stay two explicit
@@ -1172,8 +1172,11 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 // is a shared primitive with no return-focus target prop and is deliberately
 // not touched here.
 const mainColRef = ref<HTMLElement | null>(null)
+const reviewViewRef = ref<HTMLElement | null>(null)
 const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
+let batchApproveReturnFocusEl: HTMLElement | null = null
+let batchApproveFocusRestorePending = false
 let revisionReturnFocusEl: HTMLElement | null = null
 let revisionReturnFocusProposalId: string | null = null
 let revisionEditEpoch = 0
@@ -1281,6 +1284,57 @@ function decisionRailFocusTarget(): HTMLElement | null {
     root.querySelector<HTMLElement>('[data-testid="decision-apply"]') ??
     root.querySelector<HTMLElement>('[data-testid="decision-file-away"]')
   )
+}
+
+/**
+ * Batch approval clears the selected queue rows as soon as the request settles. That means the
+ * dialog's captured opener can disappear before its shared focus restore runs. Keep the reviewer
+ * in the review surface by preferring a surviving decision control, then a queue action/control.
+ */
+function batchApprovalFocusTarget(): HTMLElement | null {
+  const root = reviewViewRef.value
+  if (!root) return null
+  const candidates = [
+    decisionRailFocusTarget(),
+    root.querySelector<HTMLElement>('[data-testid="queue-batch-approve"]'),
+    root.querySelector<HTMLElement>('[data-testid="queue-batch-execute"]'),
+    root.querySelector<HTMLElement>('[data-testid="queue-file-away-all"]'),
+    root.querySelector<HTMLElement>('[data-testid^="queue-batch-select-"]'),
+    root.querySelector<HTMLElement>('[data-testid="paper-review-queue-rail"] button'),
+  ]
+  return candidates.find((candidate) => candidate?.isConnected && isFocusable(candidate)) ?? null
+}
+
+function requestBatchApproval() {
+  const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  requestBatchApprovalAction()
+  batchApproveReturnFocusEl = batchConfirmationOpen.value ? opener : null
+  batchApproveFocusRestorePending = batchConfirmationOpen.value
+}
+
+function cancelBatchApproval() {
+  batchApproveReturnFocusEl = null
+  batchApproveFocusRestorePending = false
+  cancelBatchApprovalAction()
+}
+
+function restoreBatchApprovalFocus() {
+  const captured = batchApproveReturnFocusEl
+  batchApproveReturnFocusEl = null
+  batchApproveFocusRestorePending = false
+  void nextTick(() => {
+    const target = captured?.isConnected && isFocusable(captured)
+      ? captured
+      : batchApprovalFocusTarget()
+    if (target) target.focus?.()
+  })
+}
+
+async function confirmBatchApproval() {
+  await confirmBatchApprovalAction()
+  if (batchApproveFocusRestorePending && !batchApproveBusy.value) {
+    restoreBatchApprovalFocus()
+  }
 }
 
 function revisionRailFocusTarget(): HTMLElement | null {
@@ -2207,6 +2261,7 @@ async function onClearBoardScope() {
 
 <template>
   <div
+    ref="reviewViewRef"
     class="paper paper-review-deep"
     data-testid="paper-review-view"
     :data-history-mode="isArchivedHistory ? 'archived' : undefined"

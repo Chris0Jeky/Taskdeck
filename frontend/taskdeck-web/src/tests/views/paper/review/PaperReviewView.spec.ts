@@ -340,7 +340,9 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="queue-batch-select-batch-medium"]').exists()).toBe(false)
     await wrapper.get('[data-testid="queue-batch-select-batch-1"]').trigger('change')
     await wrapper.get('[data-testid="queue-batch-select-batch-2"]').trigger('change')
-    await wrapper.get('[data-testid="queue-batch-approve"]').trigger('click')
+    const batchApprove = wrapper.get('[data-testid="queue-batch-approve"]')
+    ;(batchApprove.element as HTMLButtonElement).focus()
+    await batchApprove.trigger('click')
     await flushPromises()
 
     expect(document.body.querySelector('[data-testid="batch-approve-dialog"]')).not.toBeNull()
@@ -376,6 +378,31 @@ describe('PaperReviewView', () => {
     expect(mocks.executeProposal).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('data-apply-phase')).toBe('execute')
     expect(wrapper.text()).not.toContain('APPLIED · READ-ONLY')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
+  })
+
+  it('returns keyboard focus to the review surface when batch approval fails', async () => {
+    const proposals = [
+      makeProposal({
+        id: 'batch-failure',
+        summary: 'Batch failure proposal',
+        operations: [{ ...makeProposal().operations[0], proposalId: 'batch-failure', actionType: 'create', targetType: 'card' }],
+      }),
+    ]
+    mocks.approveProposals.mockRejectedValueOnce(new Error('batch approval failed'))
+    const wrapper = await mountView(proposals, '/workspace/review', [], [], { attachTo: true })
+
+    await wrapper.get('[data-testid="queue-batch-select-batch-failure"]').trigger('change')
+    const batchApprove = wrapper.get('[data-testid="queue-batch-approve"]')
+    ;(batchApprove.element as HTMLButtonElement).focus()
+    await batchApprove.trigger('click')
+    await flushPromises()
+
+    ;(document.body.querySelector('[data-testid="batch-approve-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+
+    expect(mocks.errorToast).toHaveBeenCalledWith('batch approval failed')
+    expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
   })
 
   it('keeps secondary evidence collapsed per proposal without changing selection or queue focus', async () => {
