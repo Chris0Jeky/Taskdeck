@@ -67,9 +67,9 @@ function createFakeCacheStorage(seed: Record<string, string[]>): FakeCacheStorag
 async function evaluateCleanupWithoutActivate(
   cacheStorage: FakeCacheStorage,
 ): Promise<{ activateListeners: number }> {
-  const listeners: Record<string, ((event: unknown) => void)[]> = {}
+  const listeners: Record<string, ((event: any) => void)[]> = {}
   const workerScope = {
-    addEventListener: (type: string, handler: (event: unknown) => void) => {
+    addEventListener: (type: string, handler: (event: any) => void) => {
       listeners[type] = [...(listeners[type] ?? []), handler]
     },
     registration: { active: null },
@@ -99,7 +99,17 @@ async function evaluateCleanupWithoutActivate(
     await Promise.resolve()
   }
 
-  return { activateListeners: listeners.activate?.length ?? 0 }
+  return {
+    activateListeners: listeners.activate?.length ?? 0,
+    /** Dispatches `activate` and awaits whatever the handler passed to waitUntil. */
+    dispatchActivate: async () => {
+      let activation: Promise<unknown> = Promise.resolve()
+      const handler = listeners.activate?.[0]
+      if (!handler) throw new Error('the worker script registered no activate listener')
+      handler({ waitUntil: (promise: Promise<unknown>) => { activation = promise } })
+      await activation
+    },
+  }
 }
 
 function buildWithNestedApiBase(): void {
@@ -186,6 +196,62 @@ describe('generated PWA worker runtime-cache contract', () => {
 
     expect([...(cacheStorage.storage.get('taskdeck-static-assets') ?? [])])
       .toContain('https://taskdeck.example/legitimate-asset.png')
+  })
+
+  it('re-sweeps at activation even after the evaluation-time sweep wrote the marker', async () => {
+    // The evaluation-time sweep runs during INSTALL, while the OLD vulnerable worker
+    // is still the controller and can still store an identity-bound response in
+    // taskdeck-static-assets. If activation reused that completed sweep - via a
+    // memoised promise or by short-circuiting on the marker cache - anything cached
+    // in that window would survive the migration, which is the PR's threat model.
+    const cacheStorage = createFakeCacheStorage({ 'taskdeck-static-assets': [] })
+    const { dispatchActivate } = await evaluateCleanupWithoutActivate(cacheStorage)
+
+    // The install-time sweep has completed and recorded itself.
+    expect([...cacheStorage.storage.keys()]).toContain('taskdeck-pwa-cache-policy-v2')
+
+    // The old worker poisons the cache in the install-to-activate window.
+    cacheStorage.storage.set('taskdeck-static-assets', new Set([
+      'https://taskdeck.example/assets/api/users/by-username/alice.png',
+    ]))
+    cacheStorage.storage.set('taskdeck-api-cache-v2', new Set(['https://taskdeck.example/api/boards']))
+    cacheStorage.storage.set('taskdeck-share-target', new Set(['https://taskdeck.example/queued-share']))
+
+    await dispatchActivate()
+
+    const remaining = [...cacheStorage.storage.keys()]
+    expect(remaining).not.toContain('taskdeck-static-assets')
+    expect(remaining.some((name) => name.startsWith('taskdeck-api-cache'))).toBe(false)
+    expect([...(cacheStorage.storage.get('taskdeck-share-target') ?? [])])
+      .toContain('https://taskdeck.example/queued-share')
+    // The marker survives the forced sweep, so evaluation-time stays one-time.
+    expect(remaining).toContain('taskdeck-pwa-cache-policy-v2')
+  })
+
+  it('fails activation when the forced sweep cannot complete', async () => {
+    const cacheStorage = createFakeCacheStorage({ 'taskdeck-static-assets': [] })
+    const { dispatchActivate } = await evaluateCleanupWithoutActivate(cacheStorage)
+
+    cacheStorage.delete = () => Promise.reject(new Error('storage unavailable'))
+
+    // A worker must not control the page and report the current policy marker from a
+    // partially cleaned state.
+    await expect(dispatchActivate()).rejects.toThrow('storage unavailable')
+  })
+
+  it('keeps the migration marker versioned with the policy handshake constant', () => {
+    // The marker name is a bare literal in the public worker script, so a future v3
+    // bump of the handshake constant must fail loudly here rather than silently
+    // leaving the migration keyed on the old version.
+    const pageSideSource = readFileSync(
+      resolve(fileURLToPath(import.meta.url), '..', '..', 'src', 'pwa', 'legacyApiCacheWorker.ts'),
+      'utf8',
+    )
+    const policyVersion = /taskdeck-api-cache-policy-(v\d+)/.exec(pageSideSource)?.[1]
+    expect(policyVersion).toBeTruthy()
+
+    const markerVersion = /taskdeck-pwa-cache-policy-(v\d+)/.exec(loadGeneratedCleanupScript())?.[1]
+    expect(markerVersion).toBe(policyVersion)
   })
 
   it('excludes a prefixed API base that the /api denial cannot see', () => {

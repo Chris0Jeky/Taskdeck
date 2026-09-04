@@ -38,10 +38,14 @@ self.addEventListener('message', (event) => {
 // NOT under the `taskdeck-api-cache` prefix, which the sweep below deletes.
 const TASKDECK_MIGRATION_MARKER_CACHE = 'taskdeck-pwa-cache-policy-v2'
 
-let retirement = null
+let evaluationSweep = null
 
-async function retireCaches() {
-  if (await caches.has(TASKDECK_MIGRATION_MARKER_CACHE)) return
+/**
+ * @param {{ force?: boolean }} [options] `force` re-sweeps even when the marker cache
+ *   says a previous sweep already completed.
+ */
+async function retireCaches({ force = false } = {}) {
+  if (!force && (await caches.has(TASKDECK_MIGRATION_MARKER_CACHE))) return
 
   const cacheNames = await caches.keys()
   await Promise.all(
@@ -56,26 +60,37 @@ async function retireCaches() {
   await caches.open(TASKDECK_MIGRATION_MARKER_CACHE)
 }
 
+function reportFailure(error) {
+  console.warn('Unable to retire legacy Taskdeck runtime caches.', error)
+  throw error
+}
+
 /**
- * Deduplicated so the activation hook and the evaluation-time call below share one
- * sweep instead of racing two of them over the same cache names.
+ * The evaluation-time sweep, memoised so concurrent callers share one pass. The memo
+ * is cleared on failure so a later activation or worker restart retries rather than
+ * remembering a failure that left the vulnerable namespace in place.
  */
 function retireCachesOnce() {
-  if (!retirement) {
-    retirement = retireCaches().catch((error) => {
-      // Cleared so a later activation or worker restart retries rather than
-      // memoising a failure that left the vulnerable namespace in place.
-      retirement = null
-      console.warn('Unable to retire legacy Taskdeck runtime caches.', error)
-      throw error
+  if (!evaluationSweep) {
+    evaluationSweep = retireCaches().catch((error) => {
+      evaluationSweep = null
+      reportFailure(error)
     })
   }
-  return retirement
+  return evaluationSweep
 }
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    await retireCachesOnce()
+    // Deliberately NOT the memoised evaluation-time sweep, and deliberately ignoring
+    // the marker. That sweep runs during INSTALL, while the old vulnerable worker is
+    // still the controller and can still store an identity-bound response in
+    // `taskdeck-static-assets`. Reusing the memo (or short-circuiting on the marker)
+    // would let anything cached in that window survive the migration, which is the
+    // whole threat model. Activation therefore always re-sweeps, and still fails
+    // activation on error so a worker cannot control the page from a partially
+    // cleaned state.
+    await retireCaches({ force: true }).catch(reportFailure)
     try {
       // A page loaded under the vulnerable worker keeps getting API replay until
       // something takes over its fetches; waiting for a reload is not a guarantee.
@@ -92,11 +107,9 @@ self.addEventListener('activate', (event) => {
 // the time the listener above is attached the `activate` event has already been
 // dispatched, so it never fires and the sweep never runs - measured in Chromium,
 // where a seeded `taskdeck-static-assets` entry survived the whole migration while
-// this same file's `message` listener answered normally. Running the sweep at
-// evaluation time is what actually retires the caches; the listener above stays so
-// the cleanup is still bound to activation on any build whose worker imports this
-// file synchronously. The marker cache keeps it a one-time migration rather than a
-// purge on every worker restart.
+// this same file's `message` listener answered normally. This evaluation-time sweep
+// is what actually retires the caches on such a build; the marker cache keeps it a
+// one-time migration rather than a purge on every worker restart.
 void retireCachesOnce().catch(() => {
-  // Already reported; activation retries.
+  // Already reported; the forced sweep at activation retries.
 })

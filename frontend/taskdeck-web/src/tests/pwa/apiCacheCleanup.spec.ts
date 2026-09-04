@@ -33,12 +33,17 @@ describe('legacy API cache service-worker activation', () => {
     activate!({ waitUntil: (promise) => { activation = promise } })
     await activation
 
-    expect(deleted).toEqual([
+    // Two sweeps by design: one at script evaluation (during install) and an
+    // unconditional one at activation, because the old worker can still poison the
+    // static cache in between.
+    expect([...new Set(deleted)]).toEqual([
       'taskdeck-api-cache',
       'taskdeck-api-cache-v2',
       'taskdeck-api-cache-future',
       'taskdeck-static-assets',
     ])
+    expect(deleted.filter((name) => name === 'taskdeck-static-assets')).toHaveLength(2)
+    expect(deleted).not.toContain('taskdeck-share-target')
   })
 
   it('rejects service-worker activation when cache storage rejects', async () => {

@@ -364,8 +364,11 @@ describe('service worker handshake contract', () => {
     expect(caches.delete).not.toHaveBeenCalledWith('taskdeck-share-target')
     // The only cache this migration creates is its own completion marker; it never
     // re-opens (and so never resurrects) a namespace it just retired.
-    expect(caches.open.mock.calls.map((call: unknown[]) => call[0]))
-      .toEqual(['taskdeck-pwa-cache-policy-v2'])
+    // The only cache this migration creates is its own completion marker; it never
+    // re-opens (and so never resurrects) a namespace it just retired. It is written
+    // once per sweep, and there are two sweeps: evaluation-time and activation.
+    expect(new Set(caches.open.mock.calls.map((call: unknown[]) => call[0])))
+      .toEqual(new Set(['taskdeck-pwa-cache-policy-v2']))
     expect(staticCachePresent).toBe(false)
   })
 
