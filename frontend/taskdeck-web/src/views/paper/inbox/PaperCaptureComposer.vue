@@ -144,6 +144,13 @@ function removeLabel(label: string) {
 
 function submit() {
   if (!canSubmit.value) return
+  // GH-2490: the label box can still hold text the user never pressed Enter on.
+  // Submitting without flushing it filed an UNLABELLED capture, and since
+  // GH-2057 the success reset also wipes the box, so the only evidence the
+  // label was lost disappeared with it. `addLabel` is reused rather than
+  // reimplemented so the commit path stays identical (same trim, same dedupe)
+  // and any future label validation gates the shortcut automatically.
+  addLabel()
   emit('submit', {
     text: body.value.trim(),
     boardId: boardId.value,
@@ -173,6 +180,10 @@ function snapshotDraft() {
     labels: [...labels.value],
     dueAt: dueAt.value || null,
     source: source.value,
+    // GH-2490: the uncommitted label text travels too. It is kept as pending
+    // input rather than promoted to a chip — the restored composer must look
+    // like the one the redirect interrupted.
+    labelInput: labelInput.value,
   }
 }
 
@@ -183,6 +194,7 @@ function restoreDraft(draft: {
   labels?: string[]
   dueAt?: string | null
   source?: ComposerSource | null
+  labelInput?: string | null
 }) {
   body.value = draft.text
   boardId.value = draft.boardId ?? null
@@ -192,6 +204,9 @@ function restoreDraft(draft: {
   // keeps an old draft restorable and never silently upgrades it into an LLM
   // extraction the author did not ask for.
   source.value = draft.source === 'TranscriptPaste' ? 'TranscriptPaste' : 'Typed'
+  // Tolerant like `source` above: a stash written before GH-2490 carries no
+  // pending label, and reads back as an empty box rather than failing.
+  labelInput.value = typeof draft.labelInput === 'string' ? draft.labelInput : ''
 }
 
 onMounted(async () => {

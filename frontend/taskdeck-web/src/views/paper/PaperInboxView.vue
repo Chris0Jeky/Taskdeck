@@ -394,6 +394,7 @@ function handleAuthExpired() {
       labels?: string[]
       dueAt?: string | null
       source?: CaptureDraftSource | null
+      labelInput?: string | null
     }
     if (draft.text.trim().length === 0) continue
     stashCaptureDraft({
@@ -404,6 +405,8 @@ function handleAuthExpired() {
       labels: draft.labels ?? [],
       dueAt: draft.dueAt ?? null,
       source: draft.source ?? 'Typed',
+      // GH-2490: the nib has no label box, so this is empty for that surface.
+      labelInput: draft.labelInput ?? '',
       failure:
         captureErrors.value[surface] ?? {
           message: t('inbox.capture.sessionExpiredReason'),
@@ -442,6 +445,7 @@ function restoreStashedDraft() {
       labels: stashed.labels,
       dueAt: stashed.dueAt,
       source: stashed.source,
+      labelInput: stashed.labelInput,
     })
     composerRef.value?.focus()
   })
