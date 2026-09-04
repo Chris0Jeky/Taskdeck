@@ -2199,6 +2199,91 @@ describe('captureStore', () => {
       } as never
     }
 
+    function detailFor(id: string, status: string) {
+      return {
+        id,
+        userId: 'u1',
+        boardId: null,
+        status,
+        source: 'Typed',
+        textExcerpt: id,
+        rawText: id,
+        createdAt: NOW,
+        processedAt: status === 'Triaging' || status === 'New' ? null : NOW,
+        retryCount: 0,
+        errorMessage: null,
+        provenance: null,
+        disposition: null,
+      } as never
+    }
+
+    it('does not regress a newer single-item poll summary with a delayed batch snapshot', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        store.items = [summaryRow('c-1', 'Triaging'), summaryRow('c-2', 'Triaging')]
+
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems).mockReturnValueOnce(
+          new Promise((resolve) => { resolveList = resolve }) as never,
+        )
+
+        const stopBatch = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+        // The single-item poll observes the terminal outcome while the batch
+        // list read for the same item is still in flight.
+        vi.mocked(captureApi.getItem).mockResolvedValue(detailFor('c-1', 'ProposalCreated'))
+        const stopSingle = store.pollTriageCompletion('c-1')
+        await vi.advanceTimersByTimeAsync(2_000)
+        expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('ProposalCreated')
+
+        resolveList([summaryRow('c-1', 'Triaging'), summaryRow('c-2', 'ProposalCreated')])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('ProposalCreated')
+        // The rest of the snapshot still lands: this is a per-item merge, not a
+        // rejected response.
+        expect(store.items.find((item) => item.id === 'c-2')?.status).toBe('ProposalCreated')
+        stopSingle()
+        stopBatch()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not regress a newer explicit detail load with a delayed batch snapshot', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        store.items = [summaryRow('c-1', 'Triaging')]
+
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems).mockReturnValueOnce(
+          new Promise((resolve) => { resolveList = resolve }) as never,
+        )
+
+        const stopBatch = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+        vi.mocked(captureApi.getItem).mockResolvedValue(detailFor('c-1', 'Failed'))
+        await store.fetchDetail('c-1', { forceRefresh: true })
+        expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Failed')
+
+        resolveList([summaryRow('c-1', 'Triaging')])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Failed')
+        stopBatch()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('reveals rows without a manual retry when a later background poll succeeds', async () => {
       vi.useFakeTimers()
       try {

@@ -102,9 +102,13 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   let latestListLoadRequestId = 0
-  let nextCaptureWriteGeneration = 0
+  // One monotonic clock for both guards below. A write records it to reject
+  // older reads; a summary records it so an older BACKGROUND list snapshot
+  // cannot regress a row that moved after that read began (#2301).
+  let nextCaptureGeneration = 0
   let latestListWriteGeneration = 0
   const latestDetailWriteGenerationById = new Map<string, number>()
+  const latestSummaryGenerationById = new Map<string, number>()
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -113,6 +117,10 @@ export const useCaptureStore = defineStore('capture', () => {
   const hasItems = computed(() => items.value.length > 0)
 
   function upsertSummary(summary: CaptureItemSummary) {
+    // Every per-item summary write — an explicit detail load, the single-item
+    // triage poll, an optimistic mutation — stamps the shared clock so a list
+    // read that started earlier cannot overwrite it with older status.
+    latestSummaryGenerationById.set(summary.id, ++nextCaptureGeneration)
     const existingIndex = items.value.findIndex((item) => item.id === summary.id)
     if (existingIndex >= 0) {
       items.value[existingIndex] = summary
@@ -135,7 +143,7 @@ export const useCaptureStore = defineStore('capture', () => {
    * callers, but they must not replace the newer mutation response.
    */
   function recordCaptureWrite(itemId: string, syncSummary: boolean) {
-    const generation = ++nextCaptureWriteGeneration
+    const generation = ++nextCaptureGeneration
     latestDetailWriteGenerationById.set(itemId, generation)
     if (syncSummary) {
       latestListWriteGeneration = generation
@@ -144,6 +152,30 @@ export const useCaptureStore = defineStore('capture', () => {
 
   function detailWriteGeneration(itemId: string): number {
     return latestDetailWriteGenerationById.get(itemId) ?? 0
+  }
+
+  /**
+   * Apply a BACKGROUND list snapshot without regressing rows that moved after
+   * the read began (#2301).
+   *
+   * `latestListWriteGeneration` rejects a whole snapshot that a mutation has
+   * outdated, but the single-item triage poll and an explicit detail load are
+   * READS: they write a fresher summary through `upsertSummary` without
+   * recording a capture write, so a slower batch-list response landing after
+   * them used to put the row back to `Triaging`. The snapshot stays the
+   * authority for membership and order — the list still owns scope and the
+   * newest-first cap — and only a row whose own summary is newer than this
+   * read keeps its local value.
+   */
+  function applyBackgroundListSnapshot(
+    loadedItems: CaptureItemSummary[],
+    observedGeneration: number,
+  ) {
+    const currentById = new Map(items.value.map((item) => [item.id, item]))
+    items.value = loadedItems.map((loaded) => {
+      if ((latestSummaryGenerationById.get(loaded.id) ?? 0) <= observedGeneration) return loaded
+      return currentById.get(loaded.id) ?? loaded
+    })
   }
 
   async function fetchItems(query?: CaptureListQuery) {
@@ -632,6 +664,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
       const observedListLoadRequestId = latestListLoadRequestId
       const observedListWriteGeneration = latestListWriteGeneration
+      const observedSummaryGeneration = nextCaptureGeneration
       const controller = new AbortController()
       activeRequest = controller
       const requestOptions = { signal: controller.signal, skipRetry: true }
@@ -645,7 +678,7 @@ export const useCaptureStore = defineStore('capture', () => {
       try {
         const loadedItems = await captureApi.listItems(query, requestOptions)
         if (!isCurrent()) return
-        items.value = loadedItems
+        applyBackgroundListSnapshot(loadedItems, observedSummaryGeneration)
         // A foreground read failure hides every row behind its message, so a
         // batch whose immediate post-POST refresh exhausted its retries left
         // the inbox looking empty-and-broken until the user pressed Retry
