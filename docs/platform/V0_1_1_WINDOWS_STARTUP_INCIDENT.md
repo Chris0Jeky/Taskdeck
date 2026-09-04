@@ -185,12 +185,13 @@ Do not resume the implementation branch or reopen `#1876`; the correction is alr
 was shipped in the public v0.1.2 release. Use the live release checkpoint instead:
 
 1. Refresh Git, GitHub, ProjectV2, CI, review threads, milestone membership, and worktrees.
-2. Treat the remaining residuals as current v0.2 work; the v0.1.2 milestone is closed and no longer
-   gates release work.
+2. Treat the remaining residuals as work on the current release queue; the v0.1.2 milestone is
+   closed and no longer gates release work.
 3. The v0.1.2 tag and public artifact already exist; the remaining release-proof items are ordinary
    Explorer/SmartScreen acceptance and inherited-profile migration, which remain explicitly
    unverified until a human runs them.
-4. Route any new startup or upgrade findings to the current v0.2 queue; do not reopen `#1876` for
+4. Route any new startup or upgrade findings to the current release queue — the open milestone on
+   GitHub, not a milestone named here, which goes stale on every ship; do not reopen `#1876` for
    the already-shipped correction.
 
 ## User-facing status
