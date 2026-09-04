@@ -948,13 +948,12 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         firstPage.Count.Should().Be(20);
         firstPage.Select(n => n.Id).Should().OnlyHaveUniqueItems();
 
-        // Newest first, with Id as the stable tiebreaker for rows sharing a CreatedAt.
-        var expectedOrder = firstPage
-            .OrderByDescending(n => n.CreatedAt)
-            .ThenBy(n => n.Id)
-            .Select(n => n.Id)
-            .ToList();
-        firstPage.Select(n => n.Id).Should().Equal(expectedOrder);
+        // Newest first. Only CreatedAt is asserted here: the repository breaks CreatedAt ties by
+        // Id in SQL, and SQLite orders the TEXT-stored Guid differently from Guid.CompareTo, so an
+        // in-memory re-sort could disagree with a correct page whenever two seeded rows share a
+        // CreatedAt tick. Tie ordering is owned by NotificationRepositoryIntegrationTests
+        // .GetByUserIdAsync_WithTiedCreatedAt_PagesDeterministicallyWithoutGapsOrDuplicates.
+        firstPage.Select(n => n.CreatedAt).Should().BeInDescendingOrder();
 
         // The next page continues where the first stopped: no overlap between pages.
         var secondPage = (await repo.GetByUserIdAsync(user.Id, limit: 20, offset: 20)).ToList();
