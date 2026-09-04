@@ -422,7 +422,10 @@ public static class LlmProviderRegistration
                 durationOfBreak: TimeSpan.FromSeconds(settings.BreakDurationSeconds),
                 onBreak: (outcome, breakDuration) =>
                 {
-                    var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
+                    // #2351 / R5: never record outcome.Exception.Message.
+                    var reason = CircuitBreakerFailureClassifier.Classify(
+                        outcome.Exception,
+                        outcome.Result is null ? null : (int)outcome.Result.StatusCode);
                     tracker.RecordState(circuitName, CircuitState.Open, reason);
                 },
                 onReset: () =>
@@ -456,7 +459,10 @@ public static class LlmProviderRegistration
                 durationOfBreak: TimeSpan.FromSeconds(settings.BreakDurationSeconds),
                 onBreak: (outcome, breakDuration) =>
                 {
-                    var reason = outcome.Exception?.Message ?? $"HTTP {(int)(outcome.Result?.StatusCode ?? 0)}";
+                    // #2351 / R5: never record outcome.Exception.Message.
+                    var reason = CircuitBreakerFailureClassifier.Classify(
+                        outcome.Exception,
+                        outcome.Result is null ? null : (int)outcome.Result.StatusCode);
                     tracker.RecordState(circuitName, CircuitState.Open, reason);
                 },
                 onReset: () => tracker.RecordState(circuitName, CircuitState.Closed),
