@@ -76,17 +76,28 @@ asynchronous AMD `define()` factory, which runs in a promise continuation rather
 worker's synchronous initial evaluation - so by the time the `activate` listener is attached the
 event has already been dispatched and never fires it. Measured in Chromium, a seeded
 `taskdeck-static-assets` entry survived the entire old-worker-to-v2 migration while that same file's
-`message` listener answered the policy handshake normally. The `activate` listener is still
-registered, so the cleanup stays bound to activation on any build whose worker imports the file
-synchronously; the two share one deduplicated sweep. A `taskdeck-pwa-cache-policy-v2` marker cache,
-written only after the sweep completes, keeps this a one-time migration instead of a purge on every
-worker restart, and a failed sweep is not memoised so activation or a later restart retries it.
-Cleanup failure still rejects activation, so a worker cannot control the page and report the current
-policy marker from a partially cleaned state.
+`message` listener answered the policy handshake normally. A `taskdeck-pwa-cache-policy-v2` marker
+cache, written only after the sweep completes, keeps that evaluation-time pass a one-time migration
+instead of a purge on every worker restart, and a failed sweep is not memoised, so a later restart
+retries it.
+
+The `activate` listener is still registered, and it always re-sweeps **unconditionally** - it does
+not reuse the memoised evaluation-time promise and does not short-circuit on the marker cache. That
+matters because the evaluation-time sweep runs during *install*, while the old vulnerable worker is
+still the controller and can still store an identity-bound response in `taskdeck-static-assets`.
+Reusing the completed sweep would let anything cached in that install-to-activation window survive
+the migration, which is exactly the threat model. The forced sweep still fails activation on error,
+so a worker cannot control the page and report the current policy marker from a partially cleaned
+state, and it still leaves the share-target queue and the Workbox precache untouched.
 
 `tests/pwa-generated-worker.spec.ts` pins this against the real emitted `dist/api-cache-cleanup.js`
-using the cache names parsed out of the generated `dist/sw.js`, and deliberately never dispatches an
-`activate` event - a build that retires the caches only from that listener fails it.
+using the cache names parsed out of the generated `dist/sw.js`. One case deliberately never
+dispatches an `activate` event, so a build that retires the caches only from that listener fails it;
+another re-seeds the static cache after the evaluation-time sweep has written the marker and then
+dispatches `activate`, so a build whose activation reuses that completed sweep fails too. A third
+asserts the marker cache name carries the same version suffix as the policy handshake constant in
+`src/pwa/legacyApiCacheWorker.ts`, so a future bump cannot silently leave the migration keyed on the
+old version.
 
 Normal (non-security) updates still go through the `SwUpdatePrompt` banner: only this migration sends
 skip-waiting.
