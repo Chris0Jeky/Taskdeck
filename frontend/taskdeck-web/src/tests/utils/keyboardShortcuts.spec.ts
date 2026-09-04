@@ -27,6 +27,32 @@ describe('formatShortcut', () => {
       .toBe('⌘;')
   })
 
+  it('keeps a reduced non-Apple user agent on Ctrl even when legacy platform data exists', () => {
+    // Tier 2 recognises the reduced Windows UA, so the deprecated tier is never
+    // reached and a stale/spoofed `platform` cannot flip the notation.
+    expect(formatShortcut('mod+k', {
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      platform: 'MacIntel',
+    })).toBe('Ctrl+K')
+  })
+
+  it('uses the feature-detected legacy platform only when the first two tiers are generic', () => {
+    expect(formatShortcut('mod+k', { userAgent: 'Mozilla/5.0', platform: 'MacIntel' }))
+      .toBe('⌘K')
+    expect(formatShortcut('mod+k', { platform: 'MacIntel' })).toBe('⌘K')
+    expect(formatShortcut('mod+k', { platform: 'iPhone' })).toBe('⌘K')
+    expect(formatShortcut('mod+k', { userAgent: 'Mozilla/5.0', platform: 'Win32' }))
+      .toBe('Ctrl+K')
+  })
+
+  it('does not throw when the legacy platform property is missing or unusable', () => {
+    expect(formatShortcut('mod+k', { userAgent: 'Mozilla/5.0' })).toBe('Ctrl+K')
+    expect(formatShortcut('mod+k', { platform: '   ' })).toBe('Ctrl+K')
+    expect(formatShortcut('mod+k', {
+      platform: undefined as unknown as string,
+    })).toBe('Ctrl+K')
+  })
+
   it('safely defaults to Ctrl notation without a navigator', () => {
     expect(formatShortcut('mod+enter', null)).toBe('Ctrl+Enter')
   })

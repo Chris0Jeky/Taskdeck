@@ -532,7 +532,7 @@ defineExpose({ variant, toggleVariant, setVariant })
           :aria-selected="variant === 'composer'"
           :variant="variant === 'composer' ? 'ember' : 'default'"
           :label="$t('inbox.variant.composer')"
-          kbd="⌘;"
+          kbd="mod+;"
           @click="setVariant('composer')"
         />
       </div>
