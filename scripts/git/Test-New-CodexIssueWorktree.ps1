@@ -313,7 +313,10 @@ function Get-ModeledEffectivePermissionConfiguration {
     $effectiveAdditionalDirectories = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $effectiveEnvironment = @{}
     $effectivePermissionMode = $null
-    $projectScopedProtectedPermissionModes = @("auto", "bypassPermissions")
+    # #2395 measured that project/local files cannot grant bypassPermissions. The accompanying
+    # harness-refresh record calls auto the built-in default, but does not measure an explicit
+    # project/local auto value as protected; keep that unsupported runtime claim out of this model.
+    $projectScopedProtectedPermissionModes = @("bypassPermissions")
     foreach ($source in $SettingSources) {
         $settingsPath = switch ($source) {
             "project" { $ProjectSettingsPath }
@@ -1031,6 +1034,16 @@ finally {
             Assert-Equal 0 $localSettingsIgnore.ExitCode "Permission fixture should model a gitignored main-checkout local settings file."
             Assert-True (-not (Test-Path -LiteralPath $linkedWorktreeLocalSettingsPath)) "Permission fixture should not copy the local settings file into the linked worktree."
 
+            $projectAcceptEditsSettingsPath = Join-Path $testRoot "settings.project-acceptEdits.json"
+            [ordered]@{
+                permissions = [ordered]@{
+                    defaultMode = "acceptEdits"
+                    allow = @()
+                }
+            } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $projectAcceptEditsSettingsPath -Encoding Ascii
+            $projectConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $projectAcceptEditsSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
+            Assert-Equal "acceptEdits" $projectConfiguration.PermissionMode "A project-scope acceptEdits default should apply in the modeled configuration (#2395)."
+
             $inheritedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
             Assert-Equal "acceptEdits" $inheritedConfiguration.PermissionMode "A supported main-checkout local default mode should apply to a linked worktree when local settings are enabled."
             Assert-True ($inheritedConfiguration.Allow -contains $broadLocalRule) "A main-checkout local allow should remain effective for a linked worktree when the local source is enabled."
@@ -1039,7 +1052,7 @@ finally {
             Assert-Equal "dontAsk" $dontAskWithLocalConfiguration.PermissionMode "The command-line dontAsk mode should override a local acceptEdits default."
             Assert-True ($dontAskWithLocalConfiguration.Allow -contains $broadLocalRule) "Command-line dontAsk should not erase a broad local allow while the local source remains enabled."
 
-            foreach ($protectedPermissionMode in @("bypassPermissions", "auto")) {
+            foreach ($protectedPermissionMode in @("bypassPermissions")) {
                 $protectedSettingsPath = Join-Path $testRoot "settings.$protectedPermissionMode.json"
                 [ordered]@{
                     permissions = [ordered]@{
