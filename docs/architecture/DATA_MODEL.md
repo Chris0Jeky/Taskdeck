@@ -1384,33 +1384,27 @@ One row per user per calendar day, marking whether that day has been sealed.
 
 A short free-text note, at most one per user per date.
 
-**`Date` is the authoring day, not the display day.** The shipped flow is same-day on both sides:
-Paper Today passes the line-for-tomorrow editor a `save-date` of
-`formatLocalDossierDate(dossier.value.date)`
-(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue` -- the computed is
-`lineForTomorrowSaveDate` at `main`, renamed to `dossierLocalDate` by open PR `#1976` with the
-expression unchanged) and re-reads the *same* key on load
-(`useTodayDossier.ts:374-381` fetches `todayApi.getTomorrowNote(formatLocalDossierDate(now.value))`).
-A note written on day X therefore persists as `Date = X` and is read back on day X; at the local day
-rollover the composable clears the field and day X+1 queries key X+1, which returns 204. Neither the
-backend service nor the API applies a one-day shift.
+**`Date` is the display day, not the authoring day** (settled by `#1640`). Paper Today passes the
+line-for-tomorrow editor a `save-date` of the current dossier day
+(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue`, the `dossierLocalDate` computed) and
+`useTodayDossier.saveLineForTomorrow` shifts it by one local calendar day
+(`nextLocalDossierDate`) before calling `PUT /today/tomorrow-note`. The read side is unchanged:
+`useTodayDossier` fetches `todayApi.getTomorrowNote(formatLocalDossierDate(now.value))`, so a note
+written on day X persists as `Date = X+1` and is read back by the X+1 self at first open -- the
+hand-off the UI copy, `TodayController.GetTomorrowNote` and the `TomorrowNote` entity summary all
+describe.
 
-The "tomorrow" framing is *product intent that no code path implements*, and `#1640` still owns the
-open question of which side moves -- whether the server adopts the X -> X+1 handoff or the framing is
-retired. The XML doc on `TodayController.GetTomorrowNote` ("written the previous day and is displayed
-on the specified date's morning open") still describes the X -> X+1 handoff. The Paper UI copy is
-changing in flight: at `main` it reads "A note your tomorrow-self will see at first open"
-(`PaperTodayView.vue`, the `paper-today__section-sub` span in the line-for-tomorrow section), and
-**open PR `#1976` (`#1939`) replaces it** with same-day copy ("Saved with today's date - you see it
-when you reopen Today") plus a spec asserting the surface no longer says "tomorrow-self". That is a
-relabel only: it does not settle `#1640`, and if `#1640` picks the one-day shift the copy moves with
-it. Until then, persist under the current dossier date, not tomorrow's.
+The shift lives entirely on the client: neither `TomorrowNoteService` nor `TodayController` applies
+`AddDays(1)`, and the API contract is unchanged -- the request's `date` is simply defined as the day
+the note is FOR. Notes written before this change persist under the authoring day and are therefore
+read back on that same day (that is, one day earlier than a note written after it); there is no
+migration, the rows stay valid, and the stale key is superseded by the next save.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | References User (no FK) | Owning user |
-| Date | `DateOnly` | Yes | Required | Calendar day the note is filed under -- the authoring/dossier day (see above) |
+| Date | `DateOnly` | Yes | Required | Calendar day the note is filed under -- the display day, i.e. authoring day + 1 (see above) |
 | Text | `string` | Yes | Max 500 chars; empty allowed, null rejected | Note body |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |

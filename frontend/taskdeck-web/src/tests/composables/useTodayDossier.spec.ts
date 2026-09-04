@@ -386,7 +386,30 @@ describe('useTodayDossier', () => {
     await vi.advanceTimersByTimeAsync(850)
     await save
 
-    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'Finish handoff')
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-16', 'Finish handoff')
+  })
+
+  it('persists the note under the day AFTER the authoring day, which is the day it is read back on (GH-1640)', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockResolvedValue(null)
+    vi.mocked(todayApi.saveTomorrowNote).mockResolvedValue(tomorrowNoteResponse)
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    // Month boundary: the shift must roll over, not string-increment the day.
+    const nowRef = ref(new Date('2026-01-31T09:00:00'))
+    const { saveLineForTomorrow } = useTodayDossier({ now: nowRef })
+
+    const save = saveLineForTomorrow('Call the bank')
+    await vi.advanceTimersByTimeAsync(850)
+    await save
+
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-02-01', 'Call the bank')
+    // The read side is unshifted, so the key written above is exactly the key the
+    // next day's first open queries.
+    expect(todayApi.getTomorrowNote).toHaveBeenCalledWith('2026-01-31')
   })
 
   it('rejects autosave promise when the backend save fails', async () => {
@@ -424,7 +447,7 @@ describe('useTodayDossier', () => {
     await second
 
     expect(todayApi.saveTomorrowNote).toHaveBeenCalledTimes(1)
-    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'latest draft')
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-16', 'latest draft')
   })
 
   it('does not let slow tomorrow-note hydration overwrite a newer local edit', async () => {
@@ -456,7 +479,7 @@ describe('useTodayDossier', () => {
     await vi.advanceTimersByTimeAsync(850)
     await save
 
-    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'Fresh local edit')
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-16', 'Fresh local edit')
     expect(dossier.value.lineForTomorrow).toBe('Fresh local edit')
   })
 
@@ -487,7 +510,7 @@ describe('useTodayDossier', () => {
     await vi.advanceTimersByTimeAsync(850)
 
     expect(todayApi.saveTomorrowNote).toHaveBeenCalledTimes(1)
-    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-15', 'older draft')
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-16', 'older draft')
 
     const second = saveLineForTomorrow('latest draft', '2026-01-15')
     await vi.advanceTimersByTimeAsync(850)
@@ -500,7 +523,7 @@ describe('useTodayDossier', () => {
     await vi.waitFor(() => {
       expect(todayApi.saveTomorrowNote).toHaveBeenCalledTimes(2)
     })
-    expect(todayApi.saveTomorrowNote).toHaveBeenLastCalledWith('2026-01-15', 'latest draft')
+    expect(todayApi.saveTomorrowNote).toHaveBeenLastCalledWith('2026-01-16', 'latest draft')
 
     resolveSecond({ ...tomorrowNoteResponse, text: 'latest draft' })
     await second

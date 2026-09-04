@@ -566,12 +566,13 @@ describe('PaperTodayView', () => {
     wrapper.unmount()
   })
 
-  it('describes the note lifecycle as same-day, matching what the API does', () => {
+  it('describes the note lifecycle as a tomorrow hand-off, matching what the save now does (GH-1640)', () => {
     const wrapper = mount(PaperTodayView)
 
     expect(wrapper.get('[data-testid="line-for-tomorrow-lifecycle"]').text())
-      .toBe('saved with today’s date')
-    expect(wrapper.text()).not.toContain('tomorrow-self')
+      .toBe('saved for tomorrow')
+    // The copy may promise the hand-off again only because the save is shifted by
+    // a day; it must still never promise a briefing that does not exist.
     expect(wrapper.text()).not.toContain('morning briefing')
   })
 })

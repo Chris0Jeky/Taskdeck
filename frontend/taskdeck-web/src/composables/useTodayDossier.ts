@@ -100,6 +100,22 @@ export function formatLocalDossierDate(date: Date): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
+/**
+ * The tomorrow note is keyed by the date it is FOR, not the date it was written
+ * (issue 1640). A note written on day X is persisted under X+1 and read back by
+ * the X+1 self, which is the hand-off the UI copy and `TodayController` promise.
+ * The shift is done in local calendar terms so it matches
+ * `formatLocalDossierDate`, and via the `Date` constructor so month/year and DST
+ * rollovers are handled by the platform.
+ */
+export function nextLocalDossierDate(dateStr: string): string {
+  const [yyyy, mm, dd] = dateStr.split('-').map(Number)
+  if (!Number.isFinite(yyyy) || !Number.isFinite(mm) || !Number.isFinite(dd)) {
+    throw new Error(`Invalid dossier date: ${dateStr}`)
+  }
+  return formatLocalDossierDate(new Date(yyyy, mm - 1, dd + 1))
+}
+
 function formatLocalDossierDateParts(date: Date): { yyyy: string; mm: string; dd: string } {
   return {
     yyyy: date.getFullYear().toString().padStart(4, '0'),
@@ -350,7 +366,12 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     }
   }
 
+  /**
+   * `dateStr` is the day the note is WRITTEN on; it is persisted under the next
+   * day, which is the day it is read back on (issue 1640).
+   */
   function saveLineForTomorrow(text: string, dateStr = formatLocalDossierDate(now.value)): Promise<void> {
+    const targetDate = nextLocalDossierDate(dateStr)
     tomorrowNoteMutationGeneration += 1
     const saveGeneration = ++tomorrowNoteSaveGeneration
     liveLineForTomorrow.value = text
@@ -359,7 +380,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     }
     if (autosaveTimer) clearTimeout(autosaveTimer)
     return new Promise((resolve, reject) => {
-      pendingAutosave = { text, dateStr, saveGeneration, resolve, reject }
+      pendingAutosave = { text, dateStr: targetDate, saveGeneration, resolve, reject }
       autosaveTimer = setTimeout(() => {
         autosaveTimer = null
         void flushAutosave()

@@ -35,8 +35,8 @@ export default {
   note: {
     action: 'Scrivi una nota',
     hint: 'Porta alla tua riga per domani, qui sotto.',
-    sectionSub: 'Salvata con la data di oggi · la rivedi quando riapri Oggi',
-    meta: 'salvata con la data di oggi',
+    sectionSub: 'Salvata per domani · la rivedrai domani aprendo Oggi',
+    meta: 'salvata per domani',
     metaFailed: 'salvataggio non confermato · modificala di nuovo per riprovare',
   },
   loading: {

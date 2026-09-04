@@ -35,8 +35,8 @@ export default {
   note: {
     action: 'Escribe una nota',
     hint: 'Va a tu línea para mañana, aquí abajo.',
-    sectionSub: 'Guardada con la fecha de hoy · la ves cuando vuelves a abrir Hoy',
-    meta: 'guardada con la fecha de hoy',
+    sectionSub: 'Guardada para mañana · la verás mañana al abrir Hoy',
+    meta: 'guardada para mañana',
     metaFailed: 'guardado sin confirmar · edítala de nuevo para reintentar',
   },
   loading: {

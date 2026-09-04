@@ -157,6 +157,8 @@ public class TodayController : AuthenticatedControllerBase
 
     /// <summary>
     /// Upsert the tomorrow note for the given date.
+    /// The date on the request is the date the note is FOR (the day it will be read
+    /// back on), not the day it was written -- the client writing on day X sends X+1.
     /// Idempotent PUT suitable for debounced autosave from the frontend.
     /// </summary>
     [HttpPut("tomorrow-note")]
