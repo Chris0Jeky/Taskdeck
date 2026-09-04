@@ -195,7 +195,7 @@ See [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) for suite ownership and CI parity.
 
 ## Contributing
 
-External code contributions are currently paused while the project's long-term licensing — including a possible commercial/proprietary future — is evaluated; see the notice at the top of [CONTRIBUTING.md](CONTRIBUTING.md) and [issue #2012](https://github.com/Chris0Jeky/Taskdeck/issues/2012). Issues and bug reports are welcome. `Signed-off-by:` trailers are currently optional and are not checked for merge eligibility; see the [paused Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin-enforcement-paused). The required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
+External code contributions are currently paused; the commercial model is decided as open-core with managed hosting and services ([ADR-0067](docs/decisions/ADR-0067-open-core-commercial-model-and-inbound-rights.md)), and contributions reopen only behind a relicensing-capable CLA or contribution grant; see the notice at the top of [CONTRIBUTING.md](CONTRIBUTING.md) and [issue #2012](https://github.com/Chris0Jeky/Taskdeck/issues/2012). Issues and bug reports are welcome. `Signed-off-by:` trailers are currently optional and are not checked for merge eligibility; see the [paused Developer Certificate of Origin guidance](CONTRIBUTING.md#developer-certificate-of-origin-enforcement-paused). The required branch-protection gate covers the secret, dependency, and SAST scans (ADR-0035).
 
 Repository rules for automated contributors live in [AGENTS.md](AGENTS.md).
 

@@ -29,7 +29,7 @@ Update this file at the end of each meaningful delivery cycle or when new work i
 
 **The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. ADR-0044 Decision 3 was superseded by ADR-0050 on 2026-08-12: copies already received under MIT retain those grants, while the current core is GPL-3.0-only.
 
-The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is deferred behind the GEN-12 `#1326` evidence gate), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
+The active planning spine is **`docs/REVIVAL_PLAN.md`**: Phase 0 (charter + dogfooding), Phase 1 (truth + safety before strangers — the repurposed archive exit criteria become the v0.1 ship gate), Phase 2 (the LLM transcript-triage engine, the largest authorized new-backend-surface slice), Phase 3 (slim + launch), Phase 4 (generalist expansion — **ADR-0046, Accepted 2026-07-13, tracker GEN-00 `#1327`**: artefact intake beyond transcripts, project dossiers, generalist legibility, friends-family channel; the twin generalist app is not built — the GEN-12 `#1326` gate closed 2026-09-03, *stay one application*), the bounded autonomous-admission lane in §5, plus the other scoped exceptions enumerated in §7, then a **traction checkpoint** (~8 weeks): if the beta shows no traction and dogfooding has not stuck, fall back to the archive plan below, which Phase 1 keeps ~90% intact. New backend surface is authorized only where REVIVAL_PLAN §7 or a later Accepted ADR/plan amendment grants it. The finite-work discipline now means a tracked, acceptance-ready, dependency-aware queue capped at four `Now` and eight `Next`, rather than a prohibition on every issue not named in the original wave tables.
 
 Goals, in order:
 
@@ -69,6 +69,39 @@ behaviour.
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
 > the blocks themselves are unchanged, in their original order.
 
+## Planning update (2026-09-03, v0.3.0 readiness view and the clause-5 dependency chain)
+
+- **The v0.3 milestone count is not the v0.3.0 blocker count, and that is now written down.**
+  `docs/releases/V0_3_0_READINESS.md` holds the standing per-clause view of the five gate clauses in
+  `docs/REVIVAL_PLAN.md` §3. Measured 2026-09-03: clause 3 (launch kit `#2242`) is met, clause 4
+  (`main` green) held at `98f3fbd14` with the `01d77faf3` run still in progress at measurement time,
+  clause 1 is only measurable at a final tag head, and clauses 2 and 5 are open. Of the 50 open v0.3
+  issues, 16 carry `dogfooding`, 15 carry `ci` and 19 carry neither; 17 of the 50 have a gate clause
+  behind them and the other 33 do not. Those counts moved once during the same afternoon (`#2230`
+  closed on PR `#2421`, CI-16 `#2439` was seeded), so the readiness file, not this block, is the
+  place to read them.
+- **Clause 5 has an ordered dependency chain that was not previously recorded.** The cutover needs
+  `Smart CI / Required Gate` enforced; registering it is human action SC-4, whose condition is at
+  least 20 PRs of observation without a false red. Branch protection on `main` was measured on
+  2026-09-03 to require exactly three contexts, all security, so the Smart CI gate is not enforced
+  today. `#2401` was producing the false reds that stopped that window from accumulating: PRs `#2408`
+  (run `33736889079`) and `#2421` (run `33754458696`) both failed the gate on `base-sha-mismatch`
+  plus `trust-mismatch` after `main` moved under a queued `pull_request_target` event, not on branch
+  content. It closed on PR `#2440` (merge `a09d986c0`), which restarts the observation count from a
+  clean planner. Order is therefore `#2327`, then SC-4, then the `#2337` cutover, with `#2333` and
+  `#2335` handing off to SC-2 (executed 2026-09-03) and SC-5 alongside.
+- **Clause 2 was ruled 2026-09-03: nothing moves out except `#1972`.** "Milestone closed or
+  explicitly re-ruled" could have been satisfied by moving families out of v0.3; the maintainer
+  chose closure instead. Every un-gated issue stays in v0.3.0, the single exception being `#1972`,
+  which moves to v0.5 with CF-21 `#2274` because only CF-21 can close it. The readiness file §5
+  records the split the ruling was made over.
+- **Sequencing changes, 2026-09-03 (later rulings, PR `#2462`).** CI-10 `#2334` moves v0.4 → v0.3 at
+  Priority I: Q1 on `#2337` ruled A, so checklist section H (nightly coordinator, manual mutation,
+  clean-from-tag release qualification) is a cutover prerequisite in full. `#1972` moves v0.3 → v0.5
+  (above). SC-3 re-ruled: no paid Actions overage; the included 3,000 minutes/month fund Linux hosted
+  jobs only and Windows/macOS legs run locally or carry a local fallback, which sizes CI-07 `#2331`
+  and CI-04 `#2328` for local Windows execution.
+
 ## Planning update (2026-09-02, v0.5 / v0.6 acceleration bundles unbundled)
 
 - **Two more bundles were validated and unbundled, not copied** (tracker `#2368`; record
@@ -91,7 +124,7 @@ behaviour.
   PascalCase digests in the router, a denylist privacy guard that rejects its own facts, a non-canonical
   snapshot digest, a cost-ordering evaluator that is scoring by another name); CF-22 material was audited
   and opens no execution path. No new ADR is warranted (the router draft is ADR-0065 §Decision 6–8).
-- **Startable now, contract-only:** CF-24B metric dictionary, CF-10 profile contract, CF-22 shadow records,
+- **Startable now, contract-only:** CF-24B metric dictionary, CF-10 profile contract, CF-22 shadow records (*2026-09-03: the maintainer's go on `#2275` widens CF-22 to the full slice — policy engine, presets, ceilings, kill switch, receipts — with ADR-0065's ruling-6 evidence report as the acceptance bar before real execution is enabled; see the 2026-09-03 checkpoint*),
   a narrow `image.ocr` manifest, then CF-11's cache key; everything else stays behind CF-03/04/06/07/08/21/24A
   or a human decision. A separate small PR scaffolds five Domain vocabulary enums ahead of CF-10/CF-24B, the
   way `#2280` did for CF-06. Breadth recommendation (coordinator input, not a decision): CF-18 has the shortest
@@ -113,8 +146,9 @@ behaviour.
   typechecking to `#1607`, and impact-based CI to `#2324` plus its children. User-data export
   already has a streaming path; no competing issue was seeded.
 - **Later horizons remain bounded.** Formatting and staged .NET analyzer ratchets are `#2352`
-  (v0.5); `#1607` also moves to v0.5. Entitlement architecture `#2353` remains unmilestoned and
-  blocked by `#2012`, retention evidence, the subject model, and rights review. No bundle-only
+  (v0.5); `#1607` also moves to v0.5. Entitlement architecture `#2353` remains unmilestoned; `#2012` closed 2026-09-03
+  (ADR-0067, open-core + managed hosting/services), so it is now gated only by retention evidence,
+  the subject model, rights review and the `#1482` legal review. No bundle-only
   work was manufactured for v0.6/v0.7, and v0.4 hosted open beta remains non-commercial.
 - **Queue/governance.** The bounded owner-requested intake created exactly five `Pending` records
   (`#2349`-`#2353`) and promoted none to `Now`/`Next`. A complete ProjectV2 Apply/post-audit
@@ -186,7 +220,11 @@ visibility, billing, branch-protection, runner or secret changes. Human actions:
 - **Scaffold.** The same pass delivered the behaviour-preserving scaffolding (PR `#2280`): capture dimension enums + `CaptureSourceMapping`, `CaptureLifecycleState`, the `Capture` aggregate with the empty `Captures` table (migration `AddCaptureAggregate`), `ICaptureStore`/`EfCaptureStore`, `IRepresentationStore`/`IBlobStore` contracts (unregistered), `ProcessorManifest` + validator + JSON schema, the worker-protocol envelopes + validator, `ProcessingCapability`, and `ContextFabric:DualWriteCaptures` (default off). Map: `docs/architecture/CONTEXT_FABRIC.md`.
 - **Unchanged.** Review-first automation (ADR-0003/GP-06/ADR-0056), the shipped capture and transcript paths, ADR-0060's board model, and the v0.3 milestone. ADR-0005 is scheduled for supersession when CF-01 lands; ADR-0046 decisions 4 and 5 are amended in place; ADR-0033's voice deprioritisation is partially superseded.
 - **Reconciliation (same day).** An external audit of the `#2280` scaffold was implemented the same day: `CaptureLifecycleState` is deleted in favour of three orthogonal axes (`Disposition` — the only axis a user sets, `ProcessingSummary`, `ActionState`) with the user-legible timeline as a computed projection; producer identity splits into `ProducerKind` (Human/Agent/Integration — `Import` retired as a transport) plus `ProducedByPrincipalId`, and intent into `RequestedIntent`/`EffectiveIntent` + `IntentResolvedByRunId`; a general `SourceAsset` + `SourceAssetTextPayload` foundation lands (up to 32 immutable assets per capture, typed and pasted text stored verbatim inline, `SourceArtefact` adapted behind `LegacyArtefactId` rather than replaced) under migration `ReconcileContextFabricScaffold`; a canonical `CaptureIntakeService` becomes the single writer, closing the `POST /api/llm-queue` dual-write bypass. Contracts were re-cut: **Worker Protocol v1-alpha** (typed `inputs`/`outputs`, per-capability manifest contracts, externalizable-only capabilities for sidecars) stays a draft until PdfPig `#1429` and WhisperX CF-14 both pass CF-04 conformance; `IBlobStore` gains acquire/release reference semantics with per-owner dedupe; `IRepresentationStore` is explicitly a draft; the *Controlled* processing preset is renamed **Strict** (Private/Balanced/Strict/Expert) so it cannot be confused with the *Control* presentation profile.
-- **Plan corrections.** v0.4 now runs under four internal gates — **A** Fabric persistence, **B** processor containment, **C** trusted hosted instance, **D** public hosted beta — with public registration as the final gate and milestone membership alone making no child a release blocker. The valid first-vertical order is reconciliation → CF-01 → {CF-02, CF-03, CF-23} → {CF-04, CF-06, CF-12} → {CF-05, CF-07} → CF-14 and/or CF-13 → CF-16 → existing proposal/review/apply, with v0.5 gated on one genuinely accessible speech route (a manually configured WhisperX environment is a dogfooding route, not the public promise). CF-24 splits into **CF-24A `#2319`** (benchmark corpus + reproducible command, v0.5, issue opened with this pass) and **CF-24B** = `#2277` (runtime outcome metrics + Control dashboard, v0.6); CF-22 stays a v0.6 stretch, blocked and not a release blocker. The nine CF-00 rulings are **confirmed by the maintainer with amendments** (gates A–D on ruling 2, the `IBlobStore` reference model on ruling 4, a risk-based shadow-and-canary evidence gate replacing the provisional 50/90%/zero-reversal figures on ruling 6, the Agent-selector caveat on ruling 9), so ADR-0065's status is now **Accepted (confirmed 2026-08-30 with amendments)**.
+- **Plan corrections.** v0.4 now runs under four internal gates — **A** Fabric persistence, **B** processor containment, **C** trusted hosted instance, **D** public hosted beta — with public registration as the final gate and milestone membership alone making no child a release blocker. The valid first-vertical order is reconciliation → CF-01 → {CF-02, CF-03, CF-23} → {CF-04, CF-06, CF-12} → {CF-05, CF-07} → CF-14 and/or CF-13 → CF-16 → existing proposal/review/apply, with v0.5 gated on one genuinely accessible speech route (a manually configured WhisperX environment is a dogfooding route, not the public promise). CF-24 splits into **CF-24A `#2319`** (benchmark corpus + reproducible command, v0.5, issue opened with this pass) and **CF-24B** = `#2277` (runtime outcome metrics + Control dashboard, v0.6); CF-22 stays a v0.6 stretch and not a release blocker; *blocked until 2026-09-03*, when the maintainer's decision packet recorded the go on `#2275` (ADR-0065 amendment of that date — build authorized, ruling-6 evidence report kept as the acceptance bar). The nine CF-00 rulings are **confirmed by the maintainer with amendments** (gates A–D on ruling 2, the `IBlobStore` reference model on ruling 4, a risk-based shadow-and-canary evidence gate replacing the provisional 50/90%/zero-reversal figures on ruling 6, the Agent-selector caveat on ruling 9), so ADR-0065's status is now **Accepted (confirmed 2026-08-30 with amendments)**.
+
+## Decision checkpoint (2026-09-03, maintainer decision packet)
+
+- **Sequencing changes.** CF-22 `#2275` moves from *blocked* to *authorized to build* (maintainer go recorded; ADR-0065 amendment 2026-09-03; the ruling-6 shadow-and-canary report, daily ceiling and kill switch are the acceptance bar before real auto-execution is enabled — still v0.6 stretch, never a release blocker). GEN-12 `#1326` closed: stay one application (ADR-0046). `#2012` closed: ADR-0067 records open-core + managed hosting/services with contributions paused pending a relicensing-capable CLA/grant. SC-8: private development repository + public release/source mirror, seeded as CI-16 `#2439`; SC-1 confirmed with the private-Pro approval-boundary amendment (ADR-0066); SC-2 executed (1,498 PR-lane artifacts, about 263 GB, deleted). `#1276` re-ruled: voice via CF-16, ink-bleed wired into real processing states, cohorts hidden behind internal/dev access, Ollama kept and marked experimental. RT-1: Microsoft Artifact Signing primary, SignPath fallback, dedicated Taskdeck domain, no v0.3 signing gate. CL-1 values supplied. Staging stays parked. Record: PR `#2442`, `OUTSTANDING_TASKS.md` changelog 2026-09-03.
 
 ## Closeout checkpoint (2026-08-28, v0.3 integration wave)
 

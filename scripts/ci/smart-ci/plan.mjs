@@ -163,7 +163,6 @@ function main() {
     }
     const notes = [...args.notes];
     input = inputFromEvent(event, args.eventName ?? (event ? null : 'local'), { changedFiles: [...changedFiles], changedFileRows, changedFilesAvailable, changedFilesExpected: args.changedFilesExpected, headActors: args.headActors, headActorsKnown: args.headActorsKnown, notes, executionMode: args.executionMode, mergeSha: args.mergeSha, mergeTreeSha: args.mergeTreeSha });
-    requirePullRequestMergeBinding(event, input);
     if (!event) {
       // Local what-if: an explicit actor is the operator; default to a trusted owner preview.
       input.actorLogin = 'local';
@@ -171,6 +170,7 @@ function main() {
       input.authorAssociation = 'OWNER';
     }
     for (const [key, value] of Object.entries(args.overrides)) input[key] = value;
+    requirePullRequestMergeBinding(event, input);
     plan = buildPlan(input, policy, digest);
   } catch (error) {
     plan = errorPlan(input, policy, digest, error);

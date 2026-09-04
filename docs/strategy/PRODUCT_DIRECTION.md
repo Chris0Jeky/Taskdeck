@@ -124,13 +124,13 @@ The wave map and dependency order for v0.4–v0.6 live on tracker CF-00 `#2254` 
 
 ## 6. Direction guardrails (what this document does NOT change)
 
-- **Licence:** the core is GPL-3.0-only (ADR-0050, `LICENSING.md`). The maintainer's exploratory
-  interest in a proprietary future is an **open commercial decision**, not policy. The
-  copyright/contribution audit half was delivered 2026-08-25 (posted on `#2012`: single-human-author
-  history, zero external PRs ever), and **external code contributions are paused** until the
-  possible proprietary future is stated publicly (notice in `CONTRIBUTING.md`); the deliberate
-  business-model choice remains open on `#2012`. Nothing in this file alters licence terms or the
-  free boundary.
+- **Licence and commercial model:** the core is GPL-3.0-only (ADR-0050, `LICENSING.md`). The
+  commercial model is **settled 2026-09-03 by ADR-0067**: open-core plus managed hosting/services,
+  with paid surfaces additive and no proprietary transition of the core. The copyright/contribution
+  audit was delivered 2026-08-25 (on `#2012`, now closed: single-human-author history, zero external
+  PRs ever). **External code contributions stay paused** and reopen only behind a
+  relicensing-capable CLA or contribution grant (notice in `CONTRIBUTING.md`). Nothing in this file
+  alters licence terms or the free boundary.
 - **Name:** kept (walkthrough q-6, 2026-08-23); remaining legal residuals live on `#1482` gated on
   commercial publicity.
 - **Telemetry:** outbound telemetry stays **off by default, opt-in, instance-UUID-only** (REVIVAL
@@ -147,8 +147,9 @@ The wave map and dependency order for v0.4–v0.6 live on tracker CF-00 `#2254` 
 Tracked as `decision`-labelled issues; none may be converted into implementation without an
 explicit maintainer ruling or Accepted ADR:
 
-1. Commercial/licensing model (proprietary vs open-core vs managed-service). The contribution
-   audit is delivered on `#2012`; the model choice itself remains open.
+1. Commercial/licensing model — **ruled 2026-09-03** (maintainer decision packet, ADR-0067):
+   open-core + managed hosting/services; external contributions stay paused until a
+   relicensing-capable CLA/grant exists. `#2012` closed; no longer open.
 2. Beta Observability Mode telemetry scope (inside `#1308`).
 3. Victory/progress dossier product shape (relation to GEN-07 `#1321`).
 4. The remaining decision-studio advanced questions (38 recorded with provisional recommendations

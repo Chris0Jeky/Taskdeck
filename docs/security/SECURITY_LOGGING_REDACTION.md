@@ -39,6 +39,13 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   `UnexpectedError` with the same stable generic failure message before returning tool output or
   throwing a resource error. Known domain result messages stay specific, and diagnostic logging
   remains owned by the service and MCP operation boundaries.
+- MCP capture and board resources apply the same boundary rule to every interpolated failed
+  `Result`: `UnexpectedError` becomes the stable generic failure message, while known domain
+  messages remain specific. Persisted `CaptureItemDto.ErrorMessage` values, invalid caller IDs, and
+  arbitrary thrown exceptions are separate contracts and are not rewritten by this rule.
+- MCP read tools apply that boundary to directly returned failed `Result` values from board detail,
+  board listing, and card search operations. Invalid input and known domain messages stay specific;
+  silent child-result handling and arbitrary thrown exceptions remain separate contracts.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for
@@ -60,7 +67,7 @@ Focused redaction checks:
 
 ```powershell
 dotnet test backend/tests/Taskdeck.Application.Tests/Taskdeck.Application.Tests.csproj -c Release --filter "FullyQualifiedName~SensitiveDataRedactorTests|FullyQualifiedName~OpenAiLlmProviderTests|FullyQualifiedName~CaptureRequestContractTests|FullyQualifiedName~CaptureServiceTests|FullyQualifiedName~OpsCliServiceTests|FullyQualifiedName~AgentRuntimeTests"
-$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~LoggingProviderConfigurationTests|FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests|FullyQualifiedName~ProposalToolsErrorSafetyTests|FullyQualifiedName~ProposalResourcesErrorSafetyTests"
+$env:Llm__EnableLiveProviders='false'; $env:Llm__AllowLiveProvidersInDevelopment='false'; $env:Llm__Provider='Mock'; dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release --filter "FullyQualifiedName~LoggingProviderConfigurationTests|FullyQualifiedName~UnhandledExceptionMiddlewareTests|FullyQualifiedName~OutboundWebhookDeliveryWorkerTests|FullyQualifiedName~ProposalHousekeepingWorkerTests|FullyQualifiedName~ObservabilityConfigurationTests|FullyQualifiedName~ProtectedOutboundTelemetryHandlerTests|FullyQualifiedName~CaptureApiTests|FullyQualifiedName~LlmQueueApiTests|FullyQualifiedName~ProposalToolsErrorSafetyTests|FullyQualifiedName~ProposalResourcesErrorSafetyTests|FullyQualifiedName~ReadToolsErrorSafetyTests"
 ```
 
 Full backend regression:

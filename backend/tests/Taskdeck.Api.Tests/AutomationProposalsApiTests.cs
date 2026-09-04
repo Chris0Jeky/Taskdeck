@@ -1430,6 +1430,129 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         return (await response.Content.ReadFromJsonAsync<List<ProposalDto>>())!;
     }
 
+    [Fact]
+    public async Task ReviewOperations_UseSavedRevisionInsteadOfOriginalOperations()
+    {
+        var userId = await AuthenticateAsync("effective-review-operations");
+        var boardId = await CreateOwnedBoardAsync(userId);
+        var original = await CreateTestProposal(userId, boardId, RiskLevel.Low);
+        Guid targetCardId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var column = new Column(boardId, "Review", 0);
+            var card = new Card(boardId, column.Id, "Revised target");
+            db.Columns.Add(column);
+            db.Cards.Add(card);
+            await db.SaveChangesAsync();
+            targetCardId = card.Id;
+        }
+        var revisionPayload = JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 0,
+                    actionType = "update",
+                    targetType = "card",
+                    targetId = targetCardId.ToString(),
+                    parameters = JsonSerializer.Serialize(new { cardId = targetCardId, title = "Revised target" }),
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.ProposalRevisions.Add(new ProposalRevision(
+                original.Id,
+                revisionNumber: 1,
+                editorUserId: userId,
+                revisedPayload: revisionPayload,
+                reason: "change review target"));
+            await db.SaveChangesAsync();
+        }
+
+        var pastSummary = "Past update decision";
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var pastProposal = new AutomationProposal(
+                ProposalSourceType.Chat,
+                userId,
+                pastSummary,
+                RiskLevel.Low,
+                Guid.NewGuid().ToString(),
+                boardId);
+            pastProposal.AddOperation(new AutomationProposalOperation(
+                pastProposal.Id,
+                0,
+                "update",
+                "card",
+                "{}",
+                Guid.NewGuid().ToString(),
+                targetCardId.ToString()));
+            pastProposal.Approve(userId);
+            pastProposal.MarkAsApplied();
+            db.AutomationProposals.Add(pastProposal);
+            await db.SaveChangesAsync();
+        }
+
+        async Task AssertEffectiveReviewOperationsAsync()
+        {
+            var conflicts = await _client.GetFromJsonAsync<List<ConflictRowDto>>(
+                $"/api/automation/proposals/{original.Id}/conflicts");
+            conflicts.Should().Contain(row => row.Key == "stale-data");
+
+            var history = await _client.GetFromJsonAsync<List<CardHistoryRowDto>>(
+                $"/api/automation/proposals/{original.Id}/history");
+            history.Should().ContainSingle(row => row.Event == "Update card");
+
+            var sideEffects = await _client.GetFromJsonAsync<ProposalSideEffectsDto>(
+                $"/api/automation/proposals/{original.Id}/side-effects");
+            sideEffects!.Rows.Single(row => row.Key == "Cards").Tone.Should().Be("active");
+
+            var similarPast = await _client.GetFromJsonAsync<SimilarPastResultDto>(
+                $"/api/automation/proposals/{original.Id}/similar-past");
+            similarPast!.Decisions.Should().ContainSingle(decision => decision.Title == pastSummary);
+        }
+
+        await AssertEffectiveReviewOperationsAsync();
+
+        var approveResponse = await _client.PostAsync($"/api/automation/proposals/{original.Id}/approve", null);
+        approveResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.ProposalRevisions.Add(new ProposalRevision(
+                original.Id,
+                revisionNumber: 2,
+                editorUserId: userId,
+                revisedPayload: JsonSerializer.Serialize(new
+                {
+                    operations = new[]
+                    {
+                        new
+                        {
+                            sequence = 0,
+                            actionType = "archive",
+                            targetType = "board",
+                            targetId = boardId.ToString(),
+                            parameters = "{}",
+                            idempotencyKey = Guid.NewGuid().ToString()
+                        }
+                    }
+                }),
+                reason: "post-approval revision must not change review evidence"));
+            await db.SaveChangesAsync();
+        }
+
+        await AssertEffectiveReviewOperationsAsync();
+    }
+
     private async Task<ProposalDto> CreateTestProposal(Guid userId, Guid boardId, RiskLevel riskLevel)
     {
         return await CreateTestProposalAsync(_client, userId, boardId, riskLevel);

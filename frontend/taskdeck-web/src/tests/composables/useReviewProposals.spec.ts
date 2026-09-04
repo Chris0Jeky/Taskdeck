@@ -1777,6 +1777,45 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
+    it('resets the transient failure run after a non-transient failure without fabricating recovery', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      const pollWith = async (failure: unknown) => {
+        mockAutomationApi.getProposals.mockRejectedValueOnce(failure)
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+
+      await pollWith({ response: { status: 500 } })
+      await pollWith({ response: { status: 500 } })
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      // A malformed/non-transient response breaks the uninterrupted transient
+      // run, but it cannot prove that the retained queue is fresh.
+      await pollWith({ response: { status: 400 } })
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      await pollWith({ response: { status: 500 } })
+      await pollWith({ response: { status: 500 } })
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      await pollWith({ response: { status: 500 } })
+      expect(rp.queueRefreshStale.value).toBe(true)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['current'])
+
+      await pollWith({ response: { status: 400 } })
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['recovered'])
+      rp.stopQueueRefresh()
+    })
+
     it('does not count teardown or a superseded board read as a queue failure', async () => {
       vi.useFakeTimers()
       mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'a-1' })])
