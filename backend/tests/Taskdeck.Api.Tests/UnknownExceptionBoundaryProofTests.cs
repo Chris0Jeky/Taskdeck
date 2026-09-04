@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
@@ -200,10 +201,22 @@ public class UnknownExceptionBoundaryProofTests
 
     private static void AssertResponseCarriesNoMarkers(ResponseProbe probe, string correlationId)
     {
+        // The raw scan alone is not sufficient: JSON serialization escapes the markers (a Windows
+        // path is written with doubled backslashes, and JavaScriptEncoder.Default renders the
+        // SQLite marker's apostrophe as a \u0027 escape), so a regression that added a
+        // detail/extensions/exceptionMessage field carrying the raw text would slip past it.
+        // Decode the body and scan every string value and property name as well.
+        var decodedStrings = CollectJsonStrings(probe.Body);
+        decodedStrings.Should().NotBeEmpty("the error contract body must be readable JSON");
+
         foreach (var marker in Markers)
         {
             probe.Body.Should().NotContain(marker);
             probe.HeaderText.Should().NotContain(marker);
+
+            decodedStrings.Should().NotContain(
+                value => value.Contains(marker, StringComparison.Ordinal),
+                $"no decoded JSON string or property name in the response body may carry '{marker}'");
         }
 
         probe.CorrelationHeader.Should().Be(
@@ -211,15 +224,56 @@ public class UnknownExceptionBoundaryProofTests
             "the caller must get back the correlation reference to quote to an operator");
     }
 
+    /// <summary>
+    /// Every string value and property name in the response body, recursively, after JSON decoding.
+    /// </summary>
+    private static IReadOnlyList<string> CollectJsonStrings(string body)
+    {
+        var collected = new List<string>();
+        using var document = JsonDocument.Parse(body);
+        Walk(document.RootElement, collected);
+        return collected;
+
+        static void Walk(JsonElement element, List<string> collected)
+        {
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var property in element.EnumerateObject())
+                    {
+                        collected.Add(property.Name);
+                        Walk(property.Value, collected);
+                    }
+
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in element.EnumerateArray())
+                    {
+                        Walk(item, collected);
+                    }
+
+                    break;
+                case JsonValueKind.String:
+                    collected.Add(element.GetString() ?? string.Empty);
+                    break;
+            }
+        }
+    }
+
     private static void AssertNoCapturedLogContainsMarkers(ProofWebApplicationFactory factory)
     {
         var entries = factory.CapturedLogs.Snapshot();
         foreach (var marker in Markers)
         {
-            var occurrences = entries.Count(entry => entry.Text.Contains(marker, StringComparison.Ordinal));
+            // Search the rendered message, every structured property value, and every enclosing
+            // log scope: exception text smuggled into a scope or a property is still a leak.
+            var occurrences = entries.Count(entry =>
+                entry.Text.Contains(marker, StringComparison.Ordinal) ||
+                entry.Properties.Values.Any(value => value.Contains(marker, StringComparison.Ordinal)) ||
+                entry.Scopes.Any(scope => scope.Contains(marker, StringComparison.Ordinal)));
             occurrences.Should().Be(
                 0,
-                $"no captured log entry may render the raw marker '{marker}'");
+                $"no captured log entry, property, or scope may render the raw marker '{marker}'");
         }
     }
 
@@ -293,7 +347,8 @@ public class UnknownExceptionBoundaryProofTests
         string Category,
         LogLevel Level,
         string Text,
-        IReadOnlyDictionary<string, string> Properties);
+        IReadOnlyDictionary<string, string> Properties,
+        IReadOnlyList<string> Scopes);
 
     internal sealed class CapturedLogSink
     {
@@ -308,6 +363,37 @@ public class UnknownExceptionBoundaryProofTests
             while (_entries.TryDequeue(out _))
             {
             }
+        }
+    }
+
+
+    /// <summary>
+    /// Ambient stack of rendered logging scopes, so scope-carried text is searchable too.
+    /// </summary>
+    private static class CapturedScopeStack
+    {
+        private static readonly AsyncLocal<ImmutableStack<string>?> Scopes = new();
+
+        public static IReadOnlyList<string> Current =>
+            Scopes.Value is null ? Array.Empty<string>() : Scopes.Value.ToArray();
+
+        public static IDisposable Push(string rendered)
+        {
+            var previous = Scopes.Value ?? ImmutableStack<string>.Empty;
+            Scopes.Value = previous.Push(rendered);
+            return new PopOnDispose(previous);
+        }
+
+        private sealed class PopOnDispose : IDisposable
+        {
+            private readonly ImmutableStack<string> _previous;
+
+            public PopOnDispose(ImmutableStack<string> previous)
+            {
+                _previous = previous;
+            }
+
+            public void Dispose() => Scopes.Value = _previous;
         }
     }
 
@@ -337,7 +423,18 @@ public class UnknownExceptionBoundaryProofTests
                 _sink = sink;
             }
 
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull
+                => CapturedScopeStack.Push(RenderScope(state));
+
+            private static string RenderScope<TState>(TState state)
+            {
+                if (state is IEnumerable<KeyValuePair<string, object?>> structured)
+                {
+                    return string.Join("; ", structured.Select(pair => $"{pair.Key}={pair.Value}"));
+                }
+
+                return state.ToString() ?? string.Empty;
+            }
 
             public bool IsEnabled(LogLevel logLevel) => logLevel != LogLevel.None;
 
@@ -363,7 +460,12 @@ public class UnknownExceptionBoundaryProofTests
                     text = $"{text}\n{exception}";
                 }
 
-                _sink.Record(new CapturedLogEntry(_categoryName, logLevel, text, properties));
+                _sink.Record(new CapturedLogEntry(
+                    _categoryName,
+                    logLevel,
+                    text,
+                    properties,
+                    CapturedScopeStack.Current));
             }
         }
     }

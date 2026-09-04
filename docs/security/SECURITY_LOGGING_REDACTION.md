@@ -53,7 +53,8 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   unhandled path and the `UnexpectedError` `Result` mapper path; the response echoes the request
   `X-Request-Id`; and the failure produces exactly one correlated error log entry rather than one
   per layer. Deliberate validation, not-found, and conflict `Result` messages stay unchanged and
-  are not logged as errors.
+  are not logged as errors; those messages contain no redactable pattern, so that leg pins mapper
+  pass-through rather than redaction behavior.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for
   `Microsoft.AspNetCore.Hosting.Diagnostics`. Its Information-level request start/finish events
