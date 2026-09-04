@@ -376,16 +376,25 @@ function Get-PortReleaseTimeoutMs {
     return $DefaultPortReleaseTimeoutMs
 }
 
-# Live PIDs currently LISTENING on $Port. Determined=$false means no inventory could be read at
-# all; the caller must then fail closed rather than assume the port is free of a foreign server.
-function Get-LivePortListenerOwner {
+# Inventory of TCP LISTEN sockets on $Port. Determined=$false means nothing could be read at all,
+# and the caller must fail closed rather than assume the port is free of a foreign server.
+#
+# Socket EXISTENCE and PID ATTRIBUTION are deliberately separate. Existence comes from the kernel's
+# TCP table, which lists every listener regardless of the owning account; attribution (a process
+# name for the diagnostic) can fail for a socket owned by another user or by SYSTEM, so an
+# unattributable owner must never read as "nothing is listening".
+function Get-PortListenerInventory {
     param([int]$Port)
-    $owners = New-Object System.Collections.Generic.List[int]
+    $owners = New-Object System.Collections.Generic.List[string]
     $determined = $false
+    $listening = $false
     try {
         $connections = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop)
         $determined = $true
-        foreach ($connection in $connections) { $owners.Add([int]$connection.OwningProcess) }
+        foreach ($connection in $connections) {
+            $listening = $true
+            $owners.Add((Format-ListenerOwner -OwnerPid ([int]$connection.OwningProcess)))
+        }
     } catch [System.Management.Automation.CommandNotFoundException] {
         $determined = $false
     } catch {
@@ -406,26 +415,38 @@ function Get-LivePortListenerOwner {
                         if ($fields.Count -lt 5) { continue }
                         if ($fields[0] -ne "TCP" -or $fields[3] -ne "LISTENING") { continue }
                         if ($fields[1] -notmatch ":(\d+)$" -or [int]$Matches[1] -ne $Port) { continue }
+                        $listening = $true
                         $ownerPid = 0
-                        if ([int]::TryParse($fields[4], [ref]$ownerPid)) { $owners.Add($ownerPid) }
+                        if ([int]::TryParse($fields[4], [ref]$ownerPid)) {
+                            $owners.Add((Format-ListenerOwner -OwnerPid $ownerPid))
+                        }
                     }
                 }
             } catch { $determined = $false }
         }
     }
-    $live = @($owners | Sort-Object -Unique | Where-Object {
-        $_ -gt 0 -and $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue)
-    })
-    return [pscustomobject]@{ Determined = $determined; Owners = $live }
+    return [pscustomobject]@{
+        Determined = $determined
+        Listening  = $listening
+        Owners     = @($owners | Sort-Object -Unique)
+    }
+}
+
+function Format-ListenerOwner {
+    param([int]$OwnerPid)
+    if ($OwnerPid -le 0) { return "PID $OwnerPid" }
+    $owner = Get-Process -Id $OwnerPid -ErrorAction SilentlyContinue
+    if ($null -ne $owner) { return "PID $OwnerPid ($($owner.ProcessName))" }
+    return "PID $OwnerPid"
 }
 
 # Waits on an elapsed-time deadline, not a fixed iteration count: a loaded hosted runner can hold a
 # listening socket well past a short fixed budget after taskkill (#1898/#2378, same family as the
-# #2157 marker budget). Once the deadline passes, a port that no LIVE process is listening on is a
-# lingering kernel socket behind our own confirmed-dead tree, not a foreign owner, so it counts as
-# released. Any live listener - foreign or a recorded PID that outlived its reap - fails closed.
+# #2157 marker budget). Once the deadline passes, a port with no listening socket at all is a
+# lingering kernel socket behind our own confirmed-dead tree, so it counts as released. Any
+# surviving listener - and any port whose sockets cannot be inventoried - fails closed.
 function Wait-PortRelease {
-    param([int]$Port, [int[]]$OwnedPids = @())
+    param([int]$Port)
     $timeoutMs = Get-PortReleaseTimeoutMs
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     while ($true) {
@@ -434,18 +455,20 @@ function Wait-PortRelease {
         Start-Sleep -Milliseconds 250
     }
     $elapsed = [int]$stopwatch.ElapsedMilliseconds
-    $listener = Get-LivePortListenerOwner -Port $Port
-    if (-not $listener.Determined) {
-        Write-DevWarning "Port $Port stayed unbindable for $elapsed ms and its listening owner could not be inventoried."
+    $inventory = Get-PortListenerInventory -Port $Port
+    if (-not $inventory.Determined) {
+        Write-DevWarning "Port $Port stayed unbindable for $elapsed ms and its listening sockets could not be inventoried."
         return $false
     }
-    if ($listener.Owners.Count -gt 0) {
-        $foreign = @($listener.Owners | Where-Object { $OwnedPids -notcontains $_ })
-        $kind = if ($foreign.Count -gt 0) { "unrelated" } else { "recorded" }
-        Write-DevWarning "Port $Port is held by a live $kind listener (PID $($listener.Owners -join ', ')) after $elapsed ms."
+    if ($inventory.Listening) {
+        if ($inventory.Owners.Count -gt 0) {
+            Write-DevWarning "Port $Port is still held by a live listener ($($inventory.Owners -join ', ')) after $elapsed ms."
+        } else {
+            Write-DevWarning "Port $Port is still held by a live listener that could not be attributed to a process after $elapsed ms."
+        }
         return $false
     }
-    Write-Info "Port $Port stayed unbindable for $elapsed ms but no live process is listening on it; treating the lingering socket as released."
+    Write-Info "Port $Port stayed unbindable for $elapsed ms but nothing is listening on it; treating the lingering socket as released."
     return $true
 }
 
@@ -501,16 +524,11 @@ function Stop-LoadedStack {
     $clean = $true
     if (-not (Stop-RecordedProcess -Record $script:State.FrontendRecord)) { $clean = $false }
     if (-not (Stop-RecordedProcess -Record $script:State.ApiRecord)) { $clean = $false }
-    $ownedPids = @(
-        @($script:State.ApiRecord, $script:State.FrontendRecord) |
-            Where-Object { $null -ne $_ } |
-            ForEach-Object { [int]$_.Pid }
-    )
-    if ($clean -and -not (Wait-PortRelease -Port ([int]$script:State.ApiPort) -OwnedPids $ownedPids)) {
+    if ($clean -and -not (Wait-PortRelease -Port ([int]$script:State.ApiPort))) {
         Write-DevWarning "API port $($script:State.ApiPort) is still occupied. No foreign listener was killed; PID state is retained."
         $clean = $false
     }
-    if ($clean -and $null -ne $script:State.Frontend -and -not (Wait-PortRelease -Port ([int]$script:State.Frontend.Port) -OwnedPids $ownedPids)) {
+    if ($clean -and $null -ne $script:State.Frontend -and -not (Wait-PortRelease -Port ([int]$script:State.Frontend.Port))) {
         Write-DevWarning "Frontend port $($script:State.Frontend.Port) is still occupied. No foreign listener was killed; PID state is retained."
         $clean = $false
     }

@@ -1864,6 +1864,69 @@ for (const platform of platforms) {
     },
   )
 
+  // An unprivileged inventory can see that a socket is listening without being able to name its
+  // owner: `ss -p` omits `users:(...)` for another account's socket, and `lsof` cannot see it at
+  // all. An unattributable owner must never be read as "nothing is listening" - otherwise a
+  // root-owned listener (docker-proxy, a systemd unit on 5000/5173) would be reported as a clean
+  // stop and the PID file removed. Stubs reproduce that exact shape.
+  if (platform.name === 'Bash') {
+    test(
+      `${platform.name}: a listening socket with no attributable owner still fails closed`,
+      { concurrency: false },
+      async () => {
+        const fixture = await createFixture(platform)
+        const apiPort = await getFreePort()
+        const foreign = await listenForeign('127.0.0.1')
+        const frontendPort = foreign.address().port
+        try {
+          // Prints a LISTEN row for the frontend port only - and never a `pid=` field.
+          await writeFile(
+            join(fixture.fakeBin, 'ss'),
+            [
+              '#!/usr/bin/env bash',
+              'for arg in "$@"; do',
+              '  case "$arg" in',
+              '    *":$TASKDECK_TEST_UNATTRIBUTABLE_PORT")',
+              '      printf \'LISTEN 0 511 0.0.0.0:%s 0.0.0.0:*\\n\' "$TASKDECK_TEST_UNATTRIBUTABLE_PORT"',
+              '      exit 0 ;;',
+              '  esac',
+              'done',
+              'exit 0',
+              '',
+            ].join('\n'),
+          )
+          await chmod(join(fixture.fakeBin, 'ss'), 0o755)
+          // Deny the lsof attribution fallback too, so the unattributable path is deterministic
+          // whether or not the host has a real lsof.
+          await writeFile(join(fixture.fakeBin, 'lsof'), '#!/usr/bin/env bash\nexit 1\n')
+          await chmod(join(fixture.fakeBin, 'lsof'), 0o755)
+
+          await writeReapedState(fixture, { apiPort, frontendPort })
+          const result = runLauncher(platform, fixture, {
+            stop: true,
+            timeout: 30_000,
+            env: {
+              TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500',
+              TASKDECK_TEST_UNATTRIBUTABLE_PORT: String(frontendPort),
+            },
+          })
+          assertFailedClosed(result)
+          assert.match(combinedOutput(result), /still held by a live listener/)
+          assert.match(combinedOutput(result), /Frontend port .* is still occupied/)
+          assert.equal(
+            existsSync(fixture.stateFile),
+            true,
+            'PID state was dropped for a listener that could not be attributed to a PID',
+          )
+          assert.equal(foreign.listening, true, 'the unattributable listener was disturbed')
+        } finally {
+          await new Promise((resolve) => foreign.close(resolve))
+          await removeFixture(fixture)
+        }
+      },
+    )
+  }
+
   test(`${platform.name}: high-volume stdout and stderr cannot deadlock marker acceptance`, { concurrency: false }, async () => {
     const fixture = await createFixture(platform)
     const apiPort = await getFreePort()
