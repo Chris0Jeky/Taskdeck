@@ -34,27 +34,48 @@ self.addEventListener('message', (event) => {
   if (port) port.postMessage({ policy: TASKDECK_API_CACHE_POLICY_RETIRED })
 })
 
+// Marker cache proving this migration already ran for this origin. Deliberately
+// NOT under the `taskdeck-api-cache` prefix, which the sweep below deletes.
+const TASKDECK_MIGRATION_MARKER_CACHE = 'taskdeck-pwa-cache-policy-v2'
+
+let retirement = null
+
+async function retireCaches() {
+  if (await caches.has(TASKDECK_MIGRATION_MARKER_CACHE)) return
+
+  const cacheNames = await caches.keys()
+  await Promise.all(
+    cacheNames
+      .filter((cacheName) => cacheName.startsWith(TASKDECK_LEGACY_API_CACHE_PREFIX))
+      .map((cacheName) => caches.delete(cacheName)),
+  )
+  await caches.delete(TASKDECK_STATIC_ASSET_CACHE)
+
+  // Written last: a partial sweep must not be recorded as a completed migration,
+  // or a retry would be suppressed while an identity-bound entry still survived.
+  await caches.open(TASKDECK_MIGRATION_MARKER_CACHE)
+}
+
+/**
+ * Deduplicated so the activation hook and the evaluation-time call below share one
+ * sweep instead of racing two of them over the same cache names.
+ */
+function retireCachesOnce() {
+  if (!retirement) {
+    retirement = retireCaches().catch((error) => {
+      // Cleared so a later activation or worker restart retries rather than
+      // memoising a failure that left the vulnerable namespace in place.
+      retirement = null
+      console.warn('Unable to retire legacy Taskdeck runtime caches.', error)
+      throw error
+    })
+  }
+  return retirement
+}
+
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    try {
-      const cacheNames = await caches.keys()
-      await Promise.all(
-        cacheNames
-          .filter((cacheName) => cacheName.startsWith(TASKDECK_LEGACY_API_CACHE_PREFIX))
-          .map((cacheName) => caches.delete(cacheName)),
-      )
-    } catch {
-      console.warn('Unable to remove legacy API caches during activation.')
-      throw new Error('Legacy API cache cleanup failed.')
-    }
-
-    try {
-      await caches.delete(TASKDECK_STATIC_ASSET_CACHE)
-    } catch {
-      console.warn('Unable to invalidate the static asset cache during activation.')
-      throw new Error('Static asset cache cleanup failed.')
-    }
-
+    await retireCachesOnce()
     try {
       // A page loaded under the vulnerable worker keeps getting API replay until
       // something takes over its fetches; waiting for a reload is not a guarantee.
@@ -63,4 +84,19 @@ self.addEventListener('activate', (event) => {
       console.warn('Unable to claim open clients after retiring legacy API caches.')
     }
   })())
+})
+
+// The generated worker loads this file with `importScripts()` from inside
+// vite-plugin-pwa's asynchronous AMD `define()` factory, which runs in a promise
+// continuation rather than during the worker's synchronous initial evaluation. By
+// the time the listener above is attached the `activate` event has already been
+// dispatched, so it never fires and the sweep never runs - measured in Chromium,
+// where a seeded `taskdeck-static-assets` entry survived the whole migration while
+// this same file's `message` listener answered normally. Running the sweep at
+// evaluation time is what actually retires the caches; the listener above stays so
+// the cleanup is still bound to activation on any build whose worker imports this
+// file synchronously. The marker cache keeps it a one-time migration rather than a
+// purge on every worker restart.
+void retireCachesOnce().catch(() => {
+  // Already reported; activation retries.
 })
