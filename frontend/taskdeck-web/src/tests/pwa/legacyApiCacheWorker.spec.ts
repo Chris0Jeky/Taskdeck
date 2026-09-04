@@ -362,7 +362,10 @@ describe('service worker handshake contract', () => {
 
     expect(caches.delete).toHaveBeenCalledWith('taskdeck-static-assets')
     expect(caches.delete).not.toHaveBeenCalledWith('taskdeck-share-target')
-    expect(caches.open).not.toHaveBeenCalled()
+    // The only cache this migration creates is its own completion marker; it never
+    // re-opens (and so never resurrects) a namespace it just retired.
+    expect(caches.open.mock.calls.map((call: unknown[]) => call[0]))
+      .toEqual(['taskdeck-pwa-cache-policy-v2'])
     expect(staticCachePresent).toBe(false)
   })
 
@@ -375,7 +378,7 @@ describe('service worker handshake contract', () => {
     ;(listeners.get('activate') as (event: { waitUntil: (p: Promise<unknown>) => void }) => void)({
       waitUntil: (promise) => { activation = promise },
     })
-    await expect(activation).rejects.toThrow('Static asset cache cleanup failed.')
+    await expect(activation).rejects.toThrow('storage unavailable')
     warning.mockRestore()
   })
 })

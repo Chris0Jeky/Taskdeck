@@ -51,14 +51,25 @@ describe('legacy API cache service-worker activation', () => {
       skipWaiting: vi.fn(),
       clients: { claim: vi.fn(async () => undefined) },
     }
-    const caches = { keys: vi.fn().mockRejectedValue(new Error('storage unavailable')), delete: vi.fn() }
+    const caches = {
+      keys: vi.fn().mockRejectedValue(new Error('storage unavailable')),
+      has: vi.fn(async () => false),
+      open: vi.fn(),
+      delete: vi.fn(),
+    }
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
     new Function('self', 'caches', workerScript)(self, caches)
     activate!({ waitUntil: (promise) => { activation = promise } })
 
-    await expect(activation).rejects.toThrow('Legacy API cache cleanup failed.')
-    expect(warning).toHaveBeenCalledWith('Unable to remove legacy API caches during activation.')
+    // The original failure is surfaced rather than replaced, so an operator sees
+    // which storage call actually broke the migration.
+    await expect(activation).rejects.toThrow('storage unavailable')
+    expect(warning).toHaveBeenCalledWith(
+      'Unable to retire legacy Taskdeck runtime caches.',
+      expect.any(Error),
+    )
+    warning.mockRestore()
   })
 
   it('rejects service-worker activation when deleting a legacy cache rejects', async () => {
@@ -77,10 +88,12 @@ describe('legacy API cache service-worker activation', () => {
       open: vi.fn(),
       delete: vi.fn().mockRejectedValue(new Error('storage unavailable')),
     }
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
     new Function('self', 'caches', workerScript)(self, caches)
     activate!({ waitUntil: (promise) => { activation = promise } })
 
-    await expect(activation).rejects.toThrow('Legacy API cache cleanup failed.')
+    await expect(activation).rejects.toThrow('storage unavailable')
+    warning.mockRestore()
   })
 })

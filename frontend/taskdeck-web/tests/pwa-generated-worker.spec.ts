@@ -16,6 +16,92 @@ function loadGeneratedWorker(): string {
   return readFileSync(resolve(projectRoot, 'dist', 'sw.js'), 'utf8')
 }
 
+/** The emitted copy of `public/api-cache-cleanup.js` that the worker importScripts. */
+function loadGeneratedCleanupScript(): string {
+  const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
+  return readFileSync(resolve(projectRoot, 'dist', 'api-cache-cleanup.js'), 'utf8')
+}
+
+/** Runtime cache names as the *generated* worker spells them, not as the source hopes. */
+function generatedRuntimeCacheNames(): string[] {
+  return [...loadGeneratedWorker().matchAll(/"?cacheName"?\s*:\s*"([^"]+)"/g)].map((match) => match[1])
+}
+
+interface FakeCache {
+  keys: () => Promise<{ url: string }[]>
+}
+
+interface FakeCacheStorage {
+  storage: Map<string, Set<string>>
+  has: (name: string) => Promise<boolean>
+  keys: () => Promise<string[]>
+  open: (name: string) => Promise<FakeCache>
+  delete: (name: string) => Promise<boolean>
+}
+
+function createFakeCacheStorage(seed: Record<string, string[]>): FakeCacheStorage {
+  const storage = new Map<string, Set<string>>(
+    Object.entries(seed).map(([name, urls]) => [name, new Set(urls)]),
+  )
+  return {
+    storage,
+    has: (name) => Promise.resolve(storage.has(name)),
+    keys: () => Promise.resolve([...storage.keys()]),
+    open: (name) => {
+      if (!storage.has(name)) storage.set(name, new Set())
+      const entries = storage.get(name)!
+      return Promise.resolve({ keys: () => Promise.resolve([...entries].map((url) => ({ url }))) })
+    },
+    delete: (name) => Promise.resolve(storage.delete(name)),
+  }
+}
+
+/**
+ * Evaluates the real emitted cleanup script the way the generated worker loads it:
+ * via `importScripts()` from inside vite-plugin-pwa's asynchronous AMD `define()`
+ * factory, i.e. AFTER the worker's lifecycle events have already been dispatched.
+ * Nothing here dispatches `activate`, which is the whole point - a build that only
+ * retires the caches from an `activate` listener never retires them at all, which is
+ * exactly what a real Chromium showed before this was fixed.
+ */
+async function evaluateCleanupWithoutActivate(
+  cacheStorage: FakeCacheStorage,
+): Promise<{ activateListeners: number }> {
+  const listeners: Record<string, ((event: unknown) => void)[]> = {}
+  const workerScope = {
+    addEventListener: (type: string, handler: (event: unknown) => void) => {
+      listeners[type] = [...(listeners[type] ?? []), handler]
+    },
+    registration: { active: null },
+    clients: { claim: () => Promise.resolve() },
+    skipWaiting: () => {},
+  }
+
+  const pending: Promise<unknown>[] = []
+  const trackedCaches = new Proxy(cacheStorage as unknown as Record<string, unknown>, {
+    get(target, property) {
+      const value = Reflect.get(target, property)
+      if (typeof value !== 'function') return value
+      return (...args: unknown[]) => {
+        const result = (value as (...a: unknown[]) => unknown).apply(target, args)
+        if (result instanceof Promise) pending.push(result)
+        return result
+      }
+    },
+  })
+
+  const evaluate = new Function('self', 'caches', 'console', loadGeneratedCleanupScript())
+  evaluate(workerScope, trackedCaches, { warn: () => {} })
+
+  // Drain whatever the script started at evaluation time.
+  for (let index = 0; index < 25; index += 1) {
+    await Promise.allSettled([...pending])
+    await Promise.resolve()
+  }
+
+  return { activateListeners: listeners.activate?.length ?? 0 }
+}
+
 function buildWithNestedApiBase(): void {
   const projectRoot = resolve(fileURLToPath(import.meta.url), '..', '..')
   const viteBin = resolve(projectRoot, 'node_modules', 'vite', 'bin', 'vite.js')
@@ -63,6 +149,43 @@ describe('generated PWA worker runtime-cache contract', () => {
       expect(localeMatcher.test(url)).toBe(false)
       expect(staticMatcher.test(url)).toBe(false)
     }
+  })
+
+  it('retires the runtime caches the generated worker names, without an activate event', async () => {
+    const runtimeCacheNames = generatedRuntimeCacheNames()
+    expect(runtimeCacheNames).toContain('taskdeck-static-assets')
+
+    const cacheStorage = createFakeCacheStorage({
+      ...Object.fromEntries(
+        runtimeCacheNames.map((name) => [name, ['https://taskdeck.example/seeded-' + name + '.png']]),
+      ),
+      'taskdeck-api-cache-v2': ['https://taskdeck.example/api/boards'],
+      'taskdeck-share-target': ['https://taskdeck.example/queued-share'],
+    })
+
+    const { activateListeners } = await evaluateCleanupWithoutActivate(cacheStorage)
+
+    // The listener must still exist for a worker that imports this file synchronously.
+    expect(activateListeners).toBe(1)
+    // ...but the sweep may not DEPEND on it: no activate event was dispatched here.
+    const remaining = [...cacheStorage.storage.keys()]
+    expect(remaining).not.toContain('taskdeck-static-assets')
+    expect(remaining.some((name) => name.startsWith('taskdeck-api-cache'))).toBe(false)
+    // The explicit offline share queue is never collateral.
+    expect([...(cacheStorage.storage.get('taskdeck-share-target') ?? [])])
+      .toContain('https://taskdeck.example/queued-share')
+  })
+
+  it('does not repeat the migration once the marker cache records it', async () => {
+    const cacheStorage = createFakeCacheStorage({
+      'taskdeck-pwa-cache-policy-v2': [],
+      'taskdeck-static-assets': ['https://taskdeck.example/legitimate-asset.png'],
+    })
+
+    await evaluateCleanupWithoutActivate(cacheStorage)
+
+    expect([...(cacheStorage.storage.get('taskdeck-static-assets') ?? [])])
+      .toContain('https://taskdeck.example/legitimate-asset.png')
   })
 
   it('excludes a prefixed API base that the /api denial cannot see', () => {
