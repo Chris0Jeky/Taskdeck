@@ -100,6 +100,18 @@ export default {
     errorFallback: 'Please try again when the connection is available.',
     metadataCompatibilityLead: 'Capture saved without its due date or labels.',
     metadataCompatibilityDetail: 'This server version ignored that metadata. Do not retry—the capture is already in Inbox.',
+    // GH-2141 -- the Paper composer can file a transcript without leaving the
+    // skin. `transcriptNote` must stay explicit: a transcript source is what
+    // routes the text to the configured assistant, and that is not something a
+    // capture surface may imply.
+    source: {
+      legend: 'Source',
+      typed: 'Typed note',
+      transcript: 'Transcript',
+      transcriptNote:
+        'Transcript captures are sent to the configured assistant for task extraction. Typed notes are not.',
+      tooLong: 'This transcript is too long. Maximum length is {max} characters.',
+    },
   },
   nib: {
     eyebrow: 'Quick capture · {shortcut}',

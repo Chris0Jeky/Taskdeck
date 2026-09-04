@@ -71,6 +71,14 @@ export default {
     errorFallback: 'Riprova quando la connessione è disponibile.',
     metadataCompatibilityLead: 'Cattura salvata senza scadenza né etichette.',
     metadataCompatibilityDetail: 'Questa versione del server ha ignorato quei metadati. Non riprovare: la cattura è già nell’Inbox.',
+    source: {
+      legend: 'Origine',
+      typed: 'Nota scritta',
+      transcript: 'Trascrizione',
+      transcriptNote:
+        'Le catture di trascrizione vengono inviate all’assistente configurato per estrarre le attività. Le note scritte no.',
+      tooLong: 'Questa trascrizione è troppo lunga. La lunghezza massima è di {max} caratteri.',
+    },
   },
   nib: {
     eyebrow: 'Cattura rapida · {shortcut}',
