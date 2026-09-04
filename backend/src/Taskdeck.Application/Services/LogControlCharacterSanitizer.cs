@@ -1,9 +1,11 @@
+using System.Globalization;
 using System.Text;
 
 namespace Taskdeck.Application.Services;
 
 /// <summary>
-/// Removes terminal control characters from values that will be written to logs.
+/// Removes terminal control characters and invisible Unicode format characters from values that
+/// will be written to logs.
 /// </summary>
 internal static class LogControlCharacterSanitizer
 {
@@ -43,8 +45,16 @@ internal static class LogControlCharacterSanitizer
             (index == 0 || !char.IsHighSurrogate(value[index - 1]));
     }
 
+    // C0, DEL and C1 controls, the Unicode line and paragraph separators, and every Unicode format
+    // character (general category Cf). Cf covers the zero-width and bidirectional overrides
+    // (U+200B..U+200F, U+202A..U+202E, U+2060..U+2064, U+FEFF, and the soft hyphen): they are
+    // invisible in a log viewer and can reverse the rendered order of the text that follows, so a
+    // caller-controlled value carrying them can make a log line read as something it is not.
+    // Surrogates are category Cs, not Cf, so a valid surrogate pair is untouched here and unpaired
+    // halves stay the business of IsUnpairedSurrogate.
     private static bool IsControlCharacter(char character) =>
         character <= '\u001F'
         || (character >= '\u007F' && character <= '\u009F')
-        || character is '\u2028' or '\u2029';
+        || character is '\u2028' or '\u2029'
+        || CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format;
 }
