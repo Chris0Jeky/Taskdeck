@@ -5,6 +5,7 @@ import {
   proposalDeepReviewApi,
   type CardHistoryRowDto,
   type ConflictRowDto,
+  type ProvenanceRowDto,
 } from '../../api/proposalDeepReviewApi'
 import { captureApi } from '../../api/captureApi'
 import type { Proposal as ApiProposal } from '../../types/automation'
@@ -537,22 +538,74 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.similarPastApplyRate.value.ratio).toBeCloseTo(0.667, 2)
   })
 
-  it('gracefully handles individual endpoint failures', async () => {
+  it('fails an exact batch and retries it instead of caching partial evidence as settled', async () => {
     mockAllEndpointsEmpty()
-    vi.mocked(proposalDeepReviewApi.getProvenance).mockRejectedValue(new Error('fail'))
-    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValue(new Error('fail'))
-
-    const proposal = ref<ApiProposal | null>(makeProposal())
+    vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValueOnce([
+      { tone: 0, key: 'existing-warning', value: 'Review this first' },
+    ])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
     const activeProposal = computed(() => proposal.value)
     const selectors = usePaperReviewSelectors(activeProposal)
 
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-1')).resolves.toBe('settled')
+    expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
+
+    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValueOnce(new Error('fail'))
+    proposal.value = makeProposal({ latestRevisionId: 'rev-2' })
+    await nextTick()
+
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('failed')
+    expect(selectors.loading.value).toBe(false)
+    // A partial rev-2 answer is not published as measured-empty evidence, and
+    // the coherent rev-1 batch is dropped rather than shown as rev-2 evidence.
+    expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(2)
+
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(3)
+    expect(selectors.conflicts.value).toEqual([])
+  })
+
+  it('drops the previous key evidence when the next batch fails', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValueOnce([
+      { tone: 0, key: 'existing-warning', value: 'Review this first' },
+    ])
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await expect(selectors.waitForCoreBatch('p-1', null)).resolves.toBe('settled')
+    expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
+
+    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValueOnce(new Error('fail'))
+    proposal.value = makeProposal({ id: 'p-2' })
+    await nextTick()
+
+    await expect(selectors.waitForCoreBatch('p-2', null)).resolves.toBe('failed')
+    // p-1 evidence must never render under the p-2 header. The same drop
+    // applies to a revision move within one proposal (covered above).
+    expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.provenance.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
+    expect(selectors.loading.value).toBe(false)
+  })
+
+  it('does not publish successful siblings from an incomplete automatic batch', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockRejectedValue(new Error('fail'))
+
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
     await vi.waitFor(() => {
-      expect(selectors.confidenceBreakdown.value.overall).toBe(0.5)
+      expect(selectors.loading.value).toBe(false)
     })
 
     expect(selectors.provenance.value).toEqual([])
     expect(selectors.history.value).toEqual([])
     expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
   })
 
   it('discards stale responses when proposal changes rapidly', async () => {
@@ -580,6 +633,383 @@ describe('usePaperReviewSelectors', () => {
 
     const hasStale = selectors.provenance.value.some((r) => r.key === 'stale')
     expect(hasStale).toBe(false)
+  })
+
+  it('starts and awaits one exact revision selector batch without waiting for capture metadata', async () => {
+    mockAllEndpointsEmpty()
+    let resolveHistory!: (rows: CardHistoryRowDto[]) => void
+    vi.mocked(proposalDeepReviewApi.getHistory).mockReturnValueOnce(
+      new Promise<CardHistoryRowDto[]>((resolve) => {
+        resolveHistory = resolve
+      }),
+    )
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(new Promise<CaptureItem>(() => {}))
+    const proposal = ref<ApiProposal | null>(null)
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    proposal.value = makeProposal({
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-1',
+      latestRevisionId: 'rev-2',
+    })
+    let settled = false
+    const batch = selectors.waitForCoreBatch('P-1', 'REV-2').then((outcome) => {
+      settled = true
+      return outcome
+    })
+    await nextTick()
+
+    expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledOnce()
+    expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledOnce()
+    expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledOnce()
+    expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledOnce()
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledOnce()
+    expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledOnce()
+    expect(captureApi.getItem).toHaveBeenCalledOnce()
+    expect(settled).toBe(false)
+
+    resolveHistory([])
+    await expect(batch).resolves.toBe('settled')
+    expect(settled).toBe(true)
+    expect(selectors.loading.value).toBe(false)
+  })
+
+  it('supersedes an exact selector waiter when proposal context moves', async () => {
+    mockAllEndpointsEmpty()
+    let resolveFirst!: (rows: ProvenanceRowDto[]) => void
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockReturnValueOnce(
+      new Promise<ProvenanceRowDto[]>((resolve) => {
+        resolveFirst = resolve
+      }),
+    )
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    const first = selectors.waitForCoreBatch('p-1', 'rev-1')
+
+    proposal.value = makeProposal({ id: 'p-2', latestRevisionId: 'rev-1' })
+    await nextTick()
+
+    await expect(first).resolves.toBe('superseded')
+    resolveFirst([{ icon: 'stale', key: 'stale', value: 'old', weight: 'Primary' }])
+    await vi.waitFor(() => {
+      expect(selectors.loading.value).toBe(false)
+    })
+    expect(selectors.provenance.value.some((row) => row.key === 'stale')).toBe(false)
+  })
+
+  it('supersedes an active B batch when returning to already-settled A', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockResolvedValueOnce([
+      { icon: 'a', key: 'proposal-a', value: 'A', weight: 'Primary' },
+    ])
+    const proposal = ref<ApiProposal | null>(
+      makeProposal({ id: 'proposal-a', latestRevisionId: 'rev-a' }),
+    )
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    let resolveB!: (rows: ProvenanceRowDto[]) => void
+    let bSignal: AbortSignal | undefined
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockImplementationOnce((_id, options) => {
+      bSignal = options?.signal
+      return new Promise<ProvenanceRowDto[]>((resolve) => {
+        resolveB = resolve
+      })
+    })
+    proposal.value = makeProposal({ id: 'proposal-b', latestRevisionId: 'rev-b' })
+    await nextTick()
+    const bBatch = selectors.waitForCoreBatch('proposal-b', 'rev-b')
+    expect(selectors.loading.value).toBe(true)
+
+    proposal.value = makeProposal({ id: 'proposal-a', latestRevisionId: 'rev-a' })
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    expect(bSignal?.aborted).toBe(true)
+    await expect(bBatch).resolves.toBe('superseded')
+    expect(selectors.loading.value).toBe(false)
+    expect(selectors.provenance.value[0]?.key).toBe('proposal-a')
+
+    resolveB([{ icon: 'b', key: 'proposal-b', value: 'B', weight: 'Primary' }])
+    await nextTick()
+    expect(selectors.provenance.value[0]?.key).toBe('proposal-a')
+  })
+
+  it('restarts pending capture metadata when returning to settled A', async () => {
+    mockAllEndpointsEmpty()
+    let aCaptureSignal: AbortSignal | undefined
+    let bCaptureSignal: AbortSignal | undefined
+    vi.mocked(captureApi.getItem)
+      .mockImplementationOnce((_id, options) => {
+        aCaptureSignal = options?.signal
+        return new Promise<CaptureItem>(() => {})
+      })
+      .mockImplementationOnce((_id, options) => {
+        bCaptureSignal = options?.signal
+        return new Promise<CaptureItem>(() => {})
+      })
+      .mockResolvedValueOnce(
+        captureDetail({
+          captureItemId: 'capture-a',
+          proposalId: 'proposal-a',
+          provider: 'OpenAI',
+          model: 'gpt-4o-mini',
+          promptVersion: 'llm-triage.v2',
+        }, { id: 'capture-a' }),
+      )
+    const proposal = ref<ApiProposal | null>(makeProposal({
+      id: 'proposal-a',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-a',
+      latestRevisionId: 'rev-a',
+    }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    let resolveB!: (rows: ProvenanceRowDto[]) => void
+    vi.mocked(proposalDeepReviewApi.getProvenance).mockImplementationOnce(
+      () => new Promise<ProvenanceRowDto[]>((resolve) => { resolveB = resolve }),
+    )
+    proposal.value = makeProposal({
+      id: 'proposal-b',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-b',
+      latestRevisionId: 'rev-b',
+    })
+    await nextTick()
+    expect(aCaptureSignal?.aborted).toBe(true)
+
+    proposal.value = makeProposal({
+      id: 'proposal-a',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-a',
+      latestRevisionId: 'rev-a',
+    })
+    await expect(selectors.waitForCoreBatch('proposal-a', 'rev-a')).resolves.toBe('settled')
+
+    expect(bCaptureSignal?.aborted).toBe(true)
+    expect(captureApi.getItem).toHaveBeenCalledTimes(3)
+    expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledTimes(2)
+    await vi.waitFor(() => {
+      expect(selectors.provenanceMetadata.value?.provider).toBe('OpenAI')
+    })
+
+    resolveB([])
+  })
+
+  it('reuses an already-settled exact selector batch without duplicate requests', async () => {
+    mockAllEndpointsEmpty()
+    const proposal = ref<ApiProposal | null>(
+      makeProposal({ latestRevisionId: 'rev-1' }),
+    )
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-1')).resolves.toBe('settled')
+    const calls = [
+      proposalDeepReviewApi.getProvenance,
+      proposalDeepReviewApi.getConfidence,
+      proposalDeepReviewApi.getSideEffects,
+      proposalDeepReviewApi.getConflicts,
+      proposalDeepReviewApi.getHistory,
+      proposalDeepReviewApi.getSimilarPast,
+    ].map((endpoint) => vi.mocked(endpoint).mock.calls.length)
+
+    await expect(selectors.waitForCoreBatch('P-1', 'REV-1')).resolves.toBe('settled')
+    expect([
+      proposalDeepReviewApi.getProvenance,
+      proposalDeepReviewApi.getConfidence,
+      proposalDeepReviewApi.getSideEffects,
+      proposalDeepReviewApi.getConflicts,
+      proposalDeepReviewApi.getHistory,
+      proposalDeepReviewApi.getSimilarPast,
+    ].map((endpoint) => vi.mocked(endpoint).mock.calls.length)).toEqual(calls)
+  })
+
+  it('reports unavailable when the requested revision is not the active selector key', async () => {
+    mockAllEndpointsEmpty()
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-2' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-1')).resolves.toBe('unavailable')
+  })
+
+  it('restarts deep-review selectors for a moved revision and reuses capture metadata', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(captureApi.getItem).mockResolvedValue(
+      captureDetail({
+        provider: 'OpenAI',
+        model: 'gpt-4o-mini',
+        promptVersion: 'llm-triage.v2',
+      }),
+    )
+
+    let resolveFirst: (rows: never[]) => void
+    const first = new Promise<never[]>((resolve) => { resolveFirst = resolve })
+    let resolveSecond: (rows: never[]) => void
+    const second = new Promise<never[]>((resolve) => { resolveSecond = resolve })
+    let firstSignal: AbortSignal | undefined
+    let secondSignal: AbortSignal | undefined
+    vi.mocked(proposalDeepReviewApi.getProvenance)
+      .mockImplementationOnce((_id, options) => {
+        firstSignal = options?.signal
+        return first
+      })
+      .mockImplementationOnce((_id, options) => {
+        secondSignal = options?.signal
+        return second
+      })
+    vi.mocked(proposalDeepReviewApi.getConfidence)
+      .mockResolvedValueOnce({
+        overall: 0.2,
+        components: [],
+        note: null,
+        threshold: null,
+        source: 'model-reported',
+        meetsThreshold: null,
+      })
+      .mockResolvedValueOnce({
+        overall: 0.9,
+        components: [],
+        note: null,
+        threshold: null,
+        source: 'model-reported',
+        meetsThreshold: null,
+      })
+
+    const proposal = ref<ApiProposal | null>(makeProposal({
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-1',
+      latestRevisionId: 'rev-1',
+    }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await vi.waitFor(() => {
+      expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledOnce()
+    })
+    expect(selectors.loading.value).toBe(true)
+
+    proposal.value = makeProposal({
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-1',
+      latestRevisionId: 'rev-2',
+    })
+
+    await vi.waitFor(() => {
+      expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledTimes(2)
+      expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledTimes(2)
+      expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledTimes(2)
+      expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledTimes(2)
+      expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(2)
+      expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledTimes(2)
+    })
+    expect(firstSignal?.aborted).toBe(true)
+    expect(secondSignal?.aborted).toBe(false)
+    expect(selectors.loading.value).toBe(true)
+    expect(captureApi.getItem).toHaveBeenCalledOnce()
+
+    resolveFirst!([{ icon: 'ðŸ“„', key: 'stale', value: 'old', weight: 'primary' }] as never[])
+    await nextTick()
+    expect(selectors.provenance.value.some((row) => row.key === 'stale')).toBe(false)
+    expect(selectors.loading.value).toBe(true)
+
+    resolveSecond!([{ icon: 'âœ¦', key: 'fresh', value: 'new', weight: 'primary' }] as never[])
+    await vi.waitFor(() => {
+      expect(selectors.loading.value).toBe(false)
+      expect(selectors.provenance.value[0]?.key).toBe('fresh')
+    })
+    expect(selectors.provenanceMetadata.value?.confidence).toBe(0.9)
+    expect(captureApi.getItem).toHaveBeenCalledOnce()
+  })
+
+  it('does not reload when latest revision moves to its approved revision', async () => {
+    mockAllEndpointsEmpty()
+    const proposal = ref<ApiProposal | null>(makeProposal({
+      latestRevisionId: 'rev-1',
+      approvedRevisionId: null,
+    }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await vi.waitFor(() => {
+      expect(selectors.loading.value).toBe(false)
+    })
+    const calls = [
+      proposalDeepReviewApi.getProvenance,
+      proposalDeepReviewApi.getConfidence,
+      proposalDeepReviewApi.getSideEffects,
+      proposalDeepReviewApi.getConflicts,
+      proposalDeepReviewApi.getHistory,
+      proposalDeepReviewApi.getSimilarPast,
+    ].map((endpoint) => vi.mocked(endpoint).mock.calls.length)
+
+    proposal.value = makeProposal({
+      latestRevisionId: null,
+      approvedRevisionId: 'rev-1',
+    })
+    await nextTick()
+    await nextTick()
+
+    const callsAfterApproval = [
+      proposalDeepReviewApi.getProvenance,
+      proposalDeepReviewApi.getConfidence,
+      proposalDeepReviewApi.getSideEffects,
+      proposalDeepReviewApi.getConflicts,
+      proposalDeepReviewApi.getHistory,
+      proposalDeepReviewApi.getSimilarPast,
+    ].map((endpoint) => vi.mocked(endpoint).mock.calls.length)
+    expect(callsAfterApproval).toEqual(calls)
+  })
+
+  it('refetches capture metadata when the proposal changes with the same reference', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(captureApi.getItem).mockResolvedValue(captureDetail())
+    const proposal = ref<ApiProposal | null>(makeProposal({
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-1',
+    }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await vi.waitFor(() => {
+      expect(selectors.loading.value).toBe(false)
+      expect(captureApi.getItem).toHaveBeenCalledOnce()
+    })
+
+    proposal.value = makeProposal({
+      id: 'p-2',
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-1',
+    })
+    await vi.waitFor(() => {
+      expect(selectors.loading.value).toBe(false)
+      expect(captureApi.getItem).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('aborts a pending capture lookup when its queue reference is removed', async () => {
+    mockAllEndpointsEmpty()
+    let captureSignal: AbortSignal | undefined
+    vi.mocked(captureApi.getItem).mockImplementation((_id, options) => {
+      captureSignal = options?.signal
+      return new Promise<CaptureItem>(() => {})
+    })
+    const proposal = ref<ApiProposal | null>(makeProposal({
+      sourceType: 'Queue',
+      sourceReferenceId: 'capture-1',
+    }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await vi.waitFor(() => {
+      expect(selectors.loading.value).toBe(false)
+      expect(captureSignal?.aborted).toBe(false)
+    })
+
+    proposal.value = makeProposal({
+      sourceType: 'Queue',
+      sourceReferenceId: null,
+    })
+    await vi.waitFor(() => {
+      expect(captureSignal?.aborted).toBe(true)
+      expect(selectors.provenanceMetadata.value).toBeNull()
+    })
+    expect(captureApi.getItem).toHaveBeenCalledOnce()
   })
 
   it('commits fresh core review data while optional capture metadata is still pending', async () => {

@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -29,15 +30,15 @@ namespace Taskdeck.Api.Tests;
 /// End-to-end coverage for <c>POST /api/automation/proposals/execute</c> (#1307, q-14 C): a bounded
 /// per-proposal batch execute with partial success, per-item idempotency, and per-item board access.
 /// </summary>
-public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFactory>
+public class BatchExecuteProposalsApiTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
     private static readonly JsonSerializerOptions Web = new(JsonSerializerDefaults.Web);
 
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
     private readonly ITestOutputHelper _output;
 
     public BatchExecuteProposalsApiTests(
-        TestWebApplicationFactory factory,
+        HostedWorkerDisabledTestWebApplicationFactory factory,
         ITestOutputHelper output)
     {
         _factory = factory;
@@ -347,6 +348,13 @@ public class BatchExecuteProposalsApiTests : IClassFixture<TestWebApplicationFac
                         .AddInterceptors(interceptor);
                 });
             }));
+        var applicationWorkers = factory.Services
+            .GetServices<IHostedService>()
+            .Where(service =>
+                HostedWorkerDisabledTestWebApplicationFactory.IsApplicationWorkerType(service.GetType()));
+        applicationWorkers.Should().BeEmpty(
+            "command-shape samples must belong only to the measured request; " +
+            "an API worker can issue unrelated SQL between Clear and Snapshot");
         var client = factory.CreateClient();
         var owner = await ApiTestHarness.AuthenticateAsync(client, "batch-timing-owner");
         var foreignBoardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-timing-foreign-board");

@@ -46,6 +46,10 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
 - MCP read tools apply that boundary to directly returned failed `Result` values from board detail,
   board listing, and card search operations. Invalid input and known domain messages stay specific;
   silent child-result handling and arbitrary thrown exceptions remain separate contracts.
+- MCP write tools apply that boundary to directly returned failed `Result` values from board
+  write authorization, proposal creation, capture creation, and the column append-position and
+  operation-contract validators. Invalid input strings, `Not authorized ...` literals, and known
+  domain messages stay specific; arbitrary thrown exceptions remain a separate contract.
 - The standalone `Taskdeck.Cli` entry point wraps its whole run in an unknown-exception boundary
   (`CliUnexpectedFailure`): an unexpected exception prints only the stable generic failure message
   and exits with the normal failure code, instead of letting the runtime print raw exception text

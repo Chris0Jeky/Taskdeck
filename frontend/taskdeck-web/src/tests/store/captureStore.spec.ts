@@ -1333,6 +1333,194 @@ describe('captureStore', () => {
   // pre-batch status — and with it no `errorMessage`, so the degradation
   // notice stayed invisible until a manual refresh.
 
+  describe('capture write generation', () => {
+    it('keeps a capture created while a batch list poll is in flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const createdAt = new Date().toISOString()
+        store.items = [{
+          id: 'tracked', userId: 'u1', boardId: null, status: 'Triaging', source: 'Typed',
+          textExcerpt: 'already triaging', createdAt, processedAt: null,
+        }]
+
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems).mockReturnValueOnce(
+          new Promise((resolve) => { resolveList = resolve }) as never,
+        )
+        vi.mocked(captureApi.createItem).mockResolvedValue({
+          id: 'new-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'new capture', rawText: 'new capture', createdAt, processedAt: null,
+          retryCount: 0, provenance: null,
+        })
+
+        const stop = store.pollBatchTriageCompletion(['tracked'])
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+        await store.createItem({ boardId: null, text: 'new capture' })
+        resolveList([{
+          id: 'tracked', userId: 'u1', boardId: null, status: 'Triaging', source: 'Typed',
+          textExcerpt: 'already triaging', createdAt, processedAt: null,
+        }])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.items.map((item) => item.id)).toEqual(['new-capture', 'tracked'])
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps a newer disposition while a batch list poll is in flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const createdAt = new Date().toISOString()
+        store.items = [{
+          id: 'kept-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'keep this', createdAt, processedAt: null, disposition: null,
+        }]
+
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems).mockReturnValueOnce(
+          new Promise((resolve) => { resolveList = resolve }) as never,
+        )
+        vi.mocked(captureApi.keepItem).mockResolvedValue({
+          id: 'kept-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'keep this', rawText: 'keep this', createdAt, processedAt: null,
+          retryCount: 0, provenance: null,
+          disposition: { kind: 'Kept', at: createdAt, byUserId: 'u1', boardId: null },
+        })
+
+        const stop = store.pollBatchTriageCompletion(['kept-capture'])
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+        await store.keepItem('kept-capture')
+        resolveList([{
+          id: 'kept-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'keep this', createdAt, processedAt: null, disposition: null,
+        }])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.items[0]?.disposition?.kind).toBe('Kept')
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps a successful suggestion update when an older detail read lands later', async () => {
+      const store = useCaptureStore()
+      const createdAt = new Date().toISOString()
+      let resolveDetail!: (value: unknown) => void
+      vi.mocked(captureApi.getItem).mockReturnValueOnce(
+        new Promise((resolve) => { resolveDetail = resolve }) as never,
+      )
+      vi.mocked(captureApi.updateSuggestion).mockResolvedValue({
+        id: 'edited-capture', userId: 'u1', boardId: null, status: 'ProposalCreated', source: 'Typed',
+        textExcerpt: 'edited text', rawText: 'edited text', createdAt, processedAt: createdAt,
+        retryCount: 0, provenance: null,
+      })
+
+      const staleRead = store.fetchDetail('edited-capture', { forceRefresh: true })
+      await store.updateSuggestion('edited-capture', { text: 'edited text' })
+      resolveDetail({
+        id: 'edited-capture', userId: 'u1', boardId: null, status: 'ProposalCreated', source: 'Typed',
+        textExcerpt: 'stale text', rawText: 'stale text', createdAt, processedAt: createdAt,
+        retryCount: 0, provenance: null,
+      })
+      await staleRead
+
+      expect(store.detailById['edited-capture']?.rawText).toBe('edited text')
+      expect(store.items[0]?.textExcerpt).toBe('edited text')
+    })
+
+    it('keeps an ignored disposition while a batch list poll is in flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const createdAt = new Date().toISOString()
+        store.items = [{
+          id: 'ignored-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'ignore this', createdAt, processedAt: null, disposition: null,
+        }]
+
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems).mockReturnValueOnce(
+          new Promise((resolve) => { resolveList = resolve }) as never,
+        )
+        vi.mocked(captureApi.ignoreItem).mockResolvedValue(undefined as never)
+        vi.mocked(captureApi.getItem).mockResolvedValue({
+          id: 'ignored-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'ignore this', rawText: 'ignore this', createdAt, processedAt: null,
+          retryCount: 0, provenance: null,
+          disposition: { kind: 'Ignored', at: createdAt, byUserId: 'u1', boardId: null },
+        } as never)
+
+        const stop = store.pollBatchTriageCompletion(['ignored-capture'])
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+        await store.ignoreItem('ignored-capture')
+        resolveList([{
+          id: 'ignored-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'ignore this', createdAt, processedAt: null, disposition: null,
+        }])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.items[0]?.disposition?.kind).toBe('Ignored')
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps an optimistic triage status while a batch list poll is in flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const createdAt = new Date().toISOString()
+        store.items = [{
+          id: 'queued-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'queue this', createdAt, processedAt: null,
+        }]
+
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems).mockReturnValueOnce(
+          new Promise((resolve) => { resolveList = resolve }) as never,
+        )
+        vi.mocked(captureApi.enqueueTriage).mockResolvedValue({
+          status: 'Triaging', alreadyTriaging: false,
+        } as never)
+        // The post-enqueue detail read is best-effort; a rejection must not
+        // change what this regression proves about the summary generation.
+        vi.mocked(captureApi.getItem).mockRejectedValue(new Error('detail unavailable'))
+
+        const stop = store.pollBatchTriageCompletion(['queued-capture'])
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+        await store.triageItem('queued-capture')
+        resolveList([{
+          id: 'queued-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+          textExcerpt: 'queue this', createdAt, processedAt: null,
+        }])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.items[0]?.status).toBe('Triaging')
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   function degradedDetail(status: string, errorMessage: string | null) {
     return {
       id: 'c-deg',

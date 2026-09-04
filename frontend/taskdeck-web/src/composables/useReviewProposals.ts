@@ -60,6 +60,14 @@ export const REVIEW_QUEUE_REQUEST_DEADLINE_MS = 8_000
 export const REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD = 3
 
 /**
+ * A tagged result for callers that must know whether an explicit queue read
+ * actually became the rendered authority. The ordinary `loadProposals` wrapper
+ * intentionally keeps its historical `Promise<void>` contract for action
+ * composables that only need a best-effort refresh.
+ */
+export type ProposalLoadOutcome = 'landed' | 'failed' | 'superseded'
+
+/**
  * Decision rules shared by every review surface (Paper deep-review and the
  * Legacy card). These are pure functions so the prop-driven Legacy components
  * can reuse the exact same gating without importing the composable. The
@@ -503,9 +511,10 @@ export function useReviewProposals() {
     await safeReplace({ name: 'workspace-review', query: route.query })
   }
 
-  async function loadProposals() {
+  async function loadProposalsWithOutcome(): Promise<ProposalLoadOutcome> {
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
+    let outcome: ProposalLoadOutcome = 'landed'
 
     try {
       proposalsLoading.value = true
@@ -513,7 +522,7 @@ export function useReviewProposals() {
         limit: 200,
         boardId: activeBoardFilter.value || undefined,
       })
-      if (requestId !== latestProposalLoadRequestId) return
+      if (requestId !== latestProposalLoadRequestId) return 'superseded'
       proposals.value = loadedProposals
       // An explicit successful load is as trustworthy as a successful poll and
       // clears any older degraded indication without changing load semantics.
@@ -524,8 +533,9 @@ export function useReviewProposals() {
       queueAccessRevoked.value = false
       if (accessWasRevoked) resumeQueueRefreshAfterPermissionRecovery()
     } catch (e: unknown) {
-      if (requestId !== latestProposalLoadRequestId) return
+      if (requestId !== latestProposalLoadRequestId) return 'superseded'
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
+      outcome = 'failed'
     } finally {
       if (requestId === latestProposalLoadRequestId) proposalsLoading.value = false
       reviewLoadPerf.end()
@@ -534,6 +544,12 @@ export function useReviewProposals() {
     if (requestId === latestProposalLoadRequestId) {
       await openProposalFromHash()
     }
+    if (requestId !== latestProposalLoadRequestId) return 'superseded'
+    return outcome
+  }
+
+  async function loadProposals(): Promise<void> {
+    await loadProposalsWithOutcome()
   }
 
   // --- Background queue refresh (#2194) ---------------------------------
@@ -1055,6 +1071,7 @@ export function useReviewProposals() {
     isStaleProposal,
     clearProposalDeepLink,
     loadProposals,
+    loadProposalsWithOutcome,
     refreshProposals,
     invalidateQueueReads,
     loadBoardOptions,

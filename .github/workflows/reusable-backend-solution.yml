@@ -46,3 +46,4 @@ jobs:
           name: backend-solution-trx
           path: backend/TestResults/backend-solution
           if-no-files-found: ignore
+          retention-days: 14

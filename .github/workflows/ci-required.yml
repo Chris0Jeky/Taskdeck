@@ -127,6 +127,9 @@ jobs:
       - name: Validate release-desktop dispatch hardening contract
         run: node --test scripts/ci/release-desktop-dispatch.test.mjs
 
+      - name: Validate release cache trust contract
+        run: node --test scripts/ci/release-cache-contract.test.mjs
+
   backend-architecture:
     name: Backend Architecture
     uses: ./.github/workflows/reusable-backend-architecture.yml

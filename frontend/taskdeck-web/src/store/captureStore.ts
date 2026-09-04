@@ -102,6 +102,9 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   let latestListLoadRequestId = 0
+  let nextCaptureWriteGeneration = 0
+  let latestListWriteGeneration = 0
+  const latestDetailWriteGenerationById = new Map<string, number>()
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -126,8 +129,26 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  /**
+   * Mark a successful server write before its response enters either cache.
+   * Reads that started before this generation may still return to their
+   * callers, but they must not replace the newer mutation response.
+   */
+  function recordCaptureWrite(itemId: string, syncSummary: boolean) {
+    const generation = ++nextCaptureWriteGeneration
+    latestDetailWriteGenerationById.set(itemId, generation)
+    if (syncSummary) {
+      latestListWriteGeneration = generation
+    }
+  }
+
+  function detailWriteGeneration(itemId: string): number {
+    return latestDetailWriteGenerationById.get(itemId) ?? 0
+  }
+
   async function fetchItems(query?: CaptureListQuery) {
     const requestId = ++latestListLoadRequestId
+    const observedListWriteGeneration = latestListWriteGeneration
     if (isDemoMode) {
       loadingList.value = true
       listError.value = null
@@ -143,6 +164,7 @@ export const useCaptureStore = defineStore('capture', () => {
       listError.value = null
       const loadedItems = await captureApi.listItems(query)
       if (requestId !== latestListLoadRequestId) return
+      if (observedListWriteGeneration !== latestListWriteGeneration) return
       items.value = loadedItems
     } catch (e: unknown) {
       if (requestId !== latestListLoadRequestId) return
@@ -180,6 +202,7 @@ export const useCaptureStore = defineStore('capture', () => {
       }
     }
 
+    const observedDetailWriteGeneration = detailWriteGeneration(itemId)
     try {
       loadingDetail.value = true
       if (recordError) {
@@ -189,6 +212,7 @@ export const useCaptureStore = defineStore('capture', () => {
         ? await captureApi.getItem(itemId, requestOptions)
         : await captureApi.getItem(itemId)
       if (!shouldCache()) return detail
+      if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) return detail
       cacheDetail(detail, syncSummary)
       return detail
     } catch (e: unknown) {
@@ -241,6 +265,7 @@ export const useCaptureStore = defineStore('capture', () => {
     try {
       actionError.value = null
       const created = await captureApi.createItem(dto)
+      recordCaptureWrite(created.id, true)
       detailById.value[created.id] = created
       upsertSummary(toSummary(created))
       // SAVED, not APPLIED (#1970): a capture sitting in the inbox has touched
@@ -264,6 +289,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       await captureApi.ignoreItem(itemId)
+      recordCaptureWrite(itemId, true)
       await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item ignored')
       notifyTriageCountChanged()
@@ -283,7 +309,9 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const kept = await captureApi.keepItem(itemId)
-      cacheDetail(kept, items.value.some((item) => item.id === itemId))
+      const syncSummary = items.value.some((item) => item.id === itemId)
+      recordCaptureWrite(itemId, syncSummary)
+      cacheDetail(kept, syncSummary)
       toast.success('Capture kept for later', undefined, { label: 'saved' })
       notifyTriageCountChanged()
       return kept
@@ -303,7 +331,9 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const archived = await captureApi.archiveItem(itemId)
-      cacheDetail(archived, items.value.some((item) => item.id === itemId))
+      const syncSummary = items.value.some((item) => item.id === itemId)
+      recordCaptureWrite(itemId, syncSummary)
+      cacheDetail(archived, syncSummary)
       toast.success('Capture archived', undefined, { label: 'saved' })
       notifyTriageCountChanged()
       return archived
@@ -323,6 +353,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       await captureApi.cancelItem(itemId)
+      recordCaptureWrite(itemId, true)
       await fetchDetail(itemId, { forceRefresh: true })
       toast.success('Capture item cancelled')
       notifyTriageCountChanged()
@@ -358,16 +389,19 @@ export const useCaptureStore = defineStore('capture', () => {
       pollCount++
 
       try {
+        const observedDetailWriteGeneration = detailWriteGeneration(itemId)
         const detail = await captureApi.getItem(itemId)
         if (stopped) return
-        cacheDetail(detail)
+        if (observedDetailWriteGeneration === detailWriteGeneration(itemId)) {
+          cacheDetail(detail)
 
-        if (isTriageTerminalStatus(detail.status)) {
-          // Triage finished while the user watched: the badge moves again here
-          // (a `Failed` outcome puts the capture back into the pending count).
-          notifyTriageCountChanged()
-          stop()
-          return
+          if (isTriageTerminalStatus(detail.status)) {
+            // Triage finished while the user watched: the badge moves again here
+            // (a `Failed` outcome puts the capture back into the pending count).
+            notifyTriageCountChanged()
+            stop()
+            return
+          }
         }
       } catch {
         // Silently retry on transient errors; the manual refresh button is still available.
@@ -405,6 +439,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const triageResult = await captureApi.enqueueTriage(itemId, boardId)
+      recordCaptureWrite(itemId, true)
 
       const existingDetail = detailById.value[itemId]
       const existingSummary = items.value.find((item) => item.id === itemId)
@@ -590,6 +625,7 @@ export const useCaptureStore = defineStore('capture', () => {
       }
 
       const observedListLoadRequestId = latestListLoadRequestId
+      const observedListWriteGeneration = latestListWriteGeneration
       const controller = new AbortController()
       activeRequest = controller
       const requestOptions = { signal: controller.signal, skipRetry: true }
@@ -597,7 +633,8 @@ export const useCaptureStore = defineStore('capture', () => {
         !stopped &&
         !controller.signal.aborted &&
         activeRequest === controller &&
-        observedListLoadRequestId === latestListLoadRequestId
+        observedListLoadRequestId === latestListLoadRequestId &&
+        observedListWriteGeneration === latestListWriteGeneration
 
       try {
         const loadedItems = await captureApi.listItems(query, requestOptions)
@@ -702,6 +739,7 @@ export const useCaptureStore = defineStore('capture', () => {
       actionBusyItemId.value = itemId
       actionError.value = null
       const updated = await captureApi.updateSuggestion(itemId, dto)
+      recordCaptureWrite(itemId, true)
       cacheDetail(updated)
       // SAVED, not APPLIED (GH-1970): correcting capture text or metadata
       // rewrites the capture and nothing else — no triage ran, no board was

@@ -97,6 +97,7 @@ jobs:
           name: playwright-report-${{ matrix.project }}
           path: frontend/taskdeck-web/playwright-report
           if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload Playwright test results
         if: failure()
@@ -105,3 +106,4 @@ jobs:
           name: playwright-test-results-${{ matrix.project }}
           path: frontend/taskdeck-web/test-results
           if-no-files-found: ignore
+          retention-days: 14

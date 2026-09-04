@@ -36,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   getBoards: vi.fn(),
   getColumns: vi.fn(),
   getConfidence: vi.fn(),
+  getSideEffects: vi.fn(),
   createRevision: vi.fn(),
   getRevisions: vi.fn(),
   getLatestRevision: vi.fn(),
@@ -83,8 +84,8 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
     // Hoisted so a single test can return a NON-EMPTY components array; the
     // default below keeps every other test on the empty-breakdown fixture.
     getConfidence: mocks.getConfidence,
-    // Rejected so the CATALOG fallback copy is what renders, not a server string.
-    getSideEffects: vi.fn().mockRejectedValue(new Error('unavailable')),
+    // Hoisted so the fallback-copy spec can fail this required read explicitly.
+    getSideEffects: mocks.getSideEffects,
     getConflicts: vi.fn().mockResolvedValue([]),
     getHistory: vi.fn().mockResolvedValue([]),
     getSimilarPast: vi.fn().mockResolvedValue({ decisions: [], applyRate: 0 }),
@@ -195,6 +196,14 @@ describe('PaperReviewView — language', () => {
       source: 'model-reported',
       meetsThreshold: null,
     })
+    mocks.getSideEffects.mockResolvedValue({
+      rows: [],
+      reversibility: {
+        summary: 'Low risk · confirm before apply',
+        description: 'Confirm affected items.',
+        windowMs: 21600000,
+      },
+    })
     i18n.global.locale.value = DEFAULT_LOCALE
   })
 
@@ -272,9 +281,10 @@ describe('PaperReviewView — language', () => {
   })
 
   it('translates the fallback copy the composables own, not just template copy', async () => {
-    // `getSideEffects` is rejected above, so the apply-risk card shows the
+    // A failed initial read leaves the apply-risk card on the unmeasured
     // catalog fallback built inside `usePaperReviewSelectors` — the composable
     // path that resolves keys through the module-scoped i18n runtime.
+    mocks.getSideEffects.mockRejectedValueOnce(new Error('unavailable'))
     const wrapper = await mountView([makeProposal()])
     expect(wrapper.find('[data-testid="apply-risk-posture"]').text()).toContain(
       'Risk details unavailable',
