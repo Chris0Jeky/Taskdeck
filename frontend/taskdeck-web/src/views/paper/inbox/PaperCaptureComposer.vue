@@ -128,6 +128,7 @@ function submit() {
 
 function resetDraft() {
   body.value = ''
+  labelInput.value = ''
   labels.value = []
   dueAt.value = ''
 }
