@@ -1806,7 +1806,7 @@ for (const platform of platforms) {
     }
   })
 
-  test(`${platform.name}: high-volume stdout and stderr cannot deadlock marker acceptance`, { concurrency: false }, async () => {
+  test(`${platform.name}: high-volume stdout and stderr cannot deadlock marker acceptance`, { concurrency: false, timeout: 60_000 }, async () => {
     const fixture = await createFixture(platform)
     const apiPort = await getFreePort()
     const frontendPort = await getFreePort()
@@ -1814,7 +1814,13 @@ for (const platform of platforms) {
       const result = runLauncher(platform, fixture, {
         apiPort,
         timeout: 30_000,
-        env: { FAKE_FRONTEND_PORT: String(frontendPort), FAKE_FRONTEND_MODE: 'high-volume' },
+        env: {
+          FAKE_FRONTEND_PORT: String(frontendPort),
+          FAKE_FRONTEND_MODE: 'high-volume',
+          // Git Bash on Windows needs more time to drain the synthetic 4,000-line burst;
+          // the production default remains 60 seconds.
+          TASKDECK_DEV_FRONTEND_READY_TIMEOUT_SECONDS: '10',
+        },
       })
       assert.ifError(result.error)
       assert.equal(result.status, 0, combinedOutput(result))
