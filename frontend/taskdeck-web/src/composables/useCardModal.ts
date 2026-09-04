@@ -1,7 +1,7 @@
 import { onBeforeUnmount, ref, computed, watch } from 'vue'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
-import type { Card, CardCaptureProvenance, Label } from '../types/board'
+import type { Card, CardCaptureProvenance, Label, UpdateCardDto } from '../types/board'
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
@@ -214,17 +214,22 @@ export function useCardModal(options: UseCardModalOptions) {
 
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
+    const currentDueDateKey = toCalendarDateKey(targetCard.dueDate) ?? ''
+    const dueDateChanged = dueDate.value !== currentDueDateKey
+    const update: UpdateCardDto = {
+      title: title.value !== targetCard.title ? title.value : null,
+      description: description.value !== targetCard.description ? description.value : null,
+      isBlocked: isBlocked.value !== targetCard.isBlocked ? isBlocked.value : null,
+      blockReason: isBlocked.value ? blockReason.value : null,
+      labelIds: selectedLabelIds.value,
+      expectedUpdatedAt: expectedUpdatedAt.value,
+    }
+    if (dueDateChanged) {
+      update.dueDate = dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null
+      update.clearDueDate = Boolean(targetCard.dueDate) && !dueDate.value
+    }
     try {
-      await boardStore.updateCard(targetCard.boardId, targetCard.id, {
-        title: title.value !== targetCard.title ? title.value : null,
-        description: description.value !== targetCard.description ? description.value : null,
-        dueDate: dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null,
-        clearDueDate: Boolean(targetCard.dueDate) && !dueDate.value,
-        isBlocked: isBlocked.value !== targetCard.isBlocked ? isBlocked.value : null,
-        blockReason: isBlocked.value ? blockReason.value : null,
-        labelIds: selectedLabelIds.value,
-        expectedUpdatedAt: expectedUpdatedAt.value,
-      })
+      await boardStore.updateCard(targetCard.boardId, targetCard.id, update)
 
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       options.onUpdated()
