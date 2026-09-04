@@ -11,15 +11,15 @@ import { useI18n } from 'vue-i18n'
  * `debounceMs` is exposed so tests can drop the timer without forcing real
  * 500ms waits.
  *
- * Lifecycle copy (issue 1939): the note is saved under, and read back for, the
- * SAME date — no day shift happens anywhere in the chain (issue 1640). The meta
- * therefore describes that, and must not promise a tomorrow hand-off. If 1640
- * decides in favour of the shift, this copy moves with it.
+ * Lifecycle copy (issues 1939, 1640): the note is persisted under the day AFTER
+ * the day it was written (`useTodayDossier.saveLineForTomorrow` shifts the
+ * `saveDate` by one), and the tomorrow-self reads it back on that day. The meta
+ * therefore describes a real hand-off, not a same-day scratch note.
  *
  * That lifecycle line is state-dependent (issue 1983): when a save is rejected
  * nothing was written — `flush` sets `error` either because the localStorage
  * write threw before any backend call, or because `props.save` rejected — so
- * the line must not keep describing a note "saved with today's date" next to a
+ * the line must not keep describing a note "saved for tomorrow" next to a
  * status that reads "Save unavailable".
  */
 const props = withDefaults(
