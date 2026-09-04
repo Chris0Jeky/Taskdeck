@@ -43,6 +43,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Test Paper color audit scanner
+        run: node --test scripts/ci/check-paper-color-components.test.mjs
+
       - name: Audit Paper component primitives have no hex literals
         shell: bash
         run: |
