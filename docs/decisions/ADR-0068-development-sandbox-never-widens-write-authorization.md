@@ -72,4 +72,5 @@ demos a poor rehearsal for production behaviour.
   `DevelopmentSandboxSettings` dependency at all — the divergence cannot silently return.
 - Residual, out of scope for this ADR and left on `#1866` for follow-up: `LlmQueueService` (:133)
   still relaxes its cross-user ownership check under sandbox, and `BoardJsonExportImportService`
-  (:239) retains a sandbox branch on the export/import lane.
+  (:239) retains a sandbox branch on a **read** check, which is consistent with the read bypasses
+  kept above but is left named rather than silently folded in.

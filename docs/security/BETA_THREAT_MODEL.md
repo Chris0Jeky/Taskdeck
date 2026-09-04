@@ -189,8 +189,12 @@ unverified.
    codes; recovery codes are hashed, the seed is not.
 3. **Prompt injection is mitigated, not solved**, and the hostile-fixture suite is still not bound to
    the effective prompt/parser path (`#1323`). Human review remains a load-bearing control.
-4. **Authorization has a known sandbox divergence** (`#1866`) and a known persist-before-validate
-   ordering defect (`#1433`, fix in flight as PR `#2219`).
+4. **Authorization** no longer diverges under the development sandbox (ADR-0068, `#1866`: write,
+   delete, manage-access and proposal-execute gates are membership-backed in every environment).
+   Two residuals still branch on the flag, both tracked on `#1866`: `LlmQueueService` (`:133`)
+   relaxes its cross-user request-ownership check, and `BoardJsonExportImportService` (`:239`)
+   relaxes a read check, consistent with the read bypasses this ADR deliberately kept. The known
+   persist-before-validate ordering defect stands (`#1433`, fix in flight as PR `#2219`).
 5. **Quota is bounded, not exact** (`#1435`); worst-case overshoot is roughly one call's real usage
    beyond the estimate per boundary crossing.
 6. **Availability is unprotected beyond rate limits** — one SQLite file, no per-account resource

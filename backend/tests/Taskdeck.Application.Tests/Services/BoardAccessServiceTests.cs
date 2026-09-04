@@ -311,7 +311,7 @@ public class BoardAccessServiceTests
     // manage-capable membership is refused in every environment; an Admin membership row still
     // grants — the fixture supplies a real row rather than relying on a bypass.
     [Fact]
-    public async Task GrantAccessAsync_ShouldStillRefuseNonManager_WhenSandboxModeIsEnabled()
+    public async Task GrantAccessAsync_ShouldRefuseNonManager_WithNoSandboxBypassAvailable()
     {
         var owner = CreateUser("owner");
         var granter = CreateUser("granter");

@@ -2616,12 +2616,23 @@ Rehearsals are distinct from the automated failure-injection drill suite (`docs/
 
 ## Development Sandbox Mode
 
-For local development only, authorization bypass can be enabled via:
+For local development only, a read convenience can be enabled via:
 - `backend/src/Taskdeck.Api/appsettings.Development.json`
 - `DevelopmentSandbox.Enabled = true`
 
+What the flag does (ADR-0068, `#1866`):
+- It relaxes **read** authorization only -- board read checks and readable-board-set resolution --
+  so seeded fixtures are browsable without hand-granting access.
+- It **gates** the database and board JSON export/import endpoints, which return `403` unless it is
+  on. Those endpoints are gated *on* the sandbox, not widened *by* it.
+
+What it never does:
+- Write, delete, manage-access and proposal-execute authorization are **never** bypassed. A test
+  fixture that needs to write, delete, manage access or execute a proposal must seed a real
+  `BoardAccess` row (or board ownership); the sandbox will not stand in for one.
+
 Safety boundary:
-- Sandbox bypass is forced off outside Development environment.
+- The flag is forced off outside the Development environment.
 - Validation and data integrity rules still apply.
 
 ## Webhook HMAC Signature Verification Coverage (PR #750, delivered 2026-04-04)
