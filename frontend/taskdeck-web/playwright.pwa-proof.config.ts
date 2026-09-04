@@ -15,6 +15,9 @@ const frontendBaseUrl = process.env.TASKDECK_E2E_FRONTEND_BASE_URL ?? 'http://lo
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Only the two preview-gated PWA regressions. Without this an operator running the
+  // config without --grep would drive the whole e2e suite at the preview server.
+  testMatch: ['pwa-api-cache.spec.ts', 'pwa-proof-strict.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 90_000,
