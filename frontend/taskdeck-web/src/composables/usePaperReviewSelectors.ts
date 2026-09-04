@@ -610,6 +610,15 @@ export function usePaperReviewSelectors(
         // These six reads form one evidence snapshot. Publishing successful
         // siblings would turn unavailable evidence into affirmative empty
         // states and let this revision key masquerade as fully refreshed.
+        if (settledCoreKey && !proposalIdsEqual(settledCoreKey.proposalId, key.proposalId)) {
+          // Retaining the last coherent batch is only safe within one proposal.
+          // Across proposals it would render the previous proposal's evidence
+          // under this header, so drop it rather than misattribute it.
+          settledCoreKey = null
+          settledCaptureMetadata = null
+          discardCaptureLookup()
+          clearSelectorData()
+        }
         isLoading.value = false
         return 'failed'
       }

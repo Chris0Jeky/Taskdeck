@@ -566,6 +566,29 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.conflicts.value).toEqual([])
   })
 
+  it('drops the previous proposal evidence when the next proposal batch fails', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValueOnce([
+      { tone: 0, key: 'existing-warning', value: 'Review this first' },
+    ])
+    const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+
+    await expect(selectors.waitForCoreBatch('p-1', null)).resolves.toBe('settled')
+    expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
+
+    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValueOnce(new Error('fail'))
+    proposal.value = makeProposal({ id: 'p-2' })
+    await nextTick()
+
+    await expect(selectors.waitForCoreBatch('p-2', null)).resolves.toBe('failed')
+    // p-1 evidence must never render under the p-2 header.
+    expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.provenance.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
+    expect(selectors.loading.value).toBe(false)
+  })
+
   it('does not publish successful siblings from an incomplete automatic batch', async () => {
     mockAllEndpointsEmpty()
     vi.mocked(proposalDeepReviewApi.getProvenance).mockRejectedValue(new Error('fail'))
