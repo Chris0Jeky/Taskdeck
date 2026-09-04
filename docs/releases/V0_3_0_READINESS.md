@@ -1,6 +1,6 @@
 # v0.3.0 release readiness
 
-Last Updated: 2026-09-03 (measured against `main` `cca2db22f`)
+Last Updated: 2026-09-04 (measured against `main` `a865637a6`)
 
 **What this file is.** A standing view of what actually stands between `main` and the final `v0.3.0`
 tag, so the open v0.3 milestone count is never mistaken for the blocker count. It classifies work into
@@ -13,14 +13,14 @@ issue numbers below.
 
 ## 1. The gate
 
-The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. State measured 2026-09-03.
+The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Clauses 2 and 4 re-measured 2026-09-04 against `main` `a865637a6`; clauses 1, 3 and 5 and sections 2 to 5 below still carry their 2026-09-03 measurement.
 
 | # | Gate clause | State | What it waits on |
 |---|---|---|---|
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
-| 2 | Milestone closed or explicitly re-ruled | **Not met.** 51 open. **Ruled 2026-09-03: nothing else is re-ruled out; the one exception is `#1972`, moved to v0.5 with CF-21** | Every open issue closing on evidence, sections 2 to 5 below |
+| 2 | Milestone closed or explicitly re-ruled | **Not met.** 51 open (re-measured 2026-09-04; the total is unchanged, the §5 label split is not re-measured). **Ruled 2026-09-03: nothing else is re-ruled out; the one exception is `#1972`, moved to v0.5 with CF-21** | Every open issue closing on evidence, sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
-| 4 | `main` green | **Green** at `cca2db22f` (`ci-required` 2026-09-03 21:15Z) | Two known intermittent reds, section 2 |
+| 4 | `main` green | **Green** at `a865637a6` (`ci-required` run `33875657367`, completed 2026-09-04 13:29Z: 16 of its 17 reported jobs success and `Secret Scan` skipped, no failure) | Two known intermittent reds, section 2 |
 | 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
 
 Clause 2 does not by itself require every open issue to close. "Explicitly re-ruled" means each one
