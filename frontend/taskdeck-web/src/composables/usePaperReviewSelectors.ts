@@ -556,13 +556,18 @@ export function usePaperReviewSelectors(
   }
 
   /**
-   * Cancel whatever core batch is currently in flight without disturbing the
-   * generation bookkeeping. `invalidateCoreBatch` is the stronger neighbour: it
-   * also supersedes the batch's waiters. Here the waiter reports its own
-   * outcome, so the batch is left to reach its ordinary failure branch (which
-   * clears `loading`) instead of being declared superseded.
+   * Cancel the in-flight batch for ONE key without disturbing the generation
+   * bookkeeping. `invalidateCoreBatch` is the stronger neighbour: it also
+   * supersedes the batch's waiters. Here the waiter reports its own outcome, so
+   * the batch is left to reach its ordinary failure branch (which clears
+   * `loading`) instead of being declared superseded.
+   *
+   * The key check matters: a reviewer who moved to another proposal while the
+   * caller was waiting has a NEW batch in flight, and a late cancellation from
+   * the abandoned wait must not tear that one down.
    */
-  function abortInFlightCoreBatch() {
+  function abortInFlightCoreBatchForKey(key: SelectorKey) {
+    if (!activeCoreBatch || !selectorKeysEqual(activeCoreBatch.key, key)) return
     abortController?.abort()
   }
 
@@ -793,7 +798,7 @@ export function usePaperReviewSelectors(
       onAbort = () => {
         // Cancel the reads this wait is holding open before reporting, so the
         // abandoned batch stops occupying the transport.
-        abortInFlightCoreBatch()
+        abortInFlightCoreBatchForKey(key)
         resolve('aborted')
       }
       signal.addEventListener('abort', onAbort, { once: true })
