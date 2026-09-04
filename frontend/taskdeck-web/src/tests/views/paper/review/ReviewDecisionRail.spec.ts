@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import ReviewDecisionRail from '../../../../views/paper/review/ReviewDecisionRail.vue'
@@ -376,20 +376,29 @@ describe('ReviewDecisionRail', () => {
   describe('external decision lock description (#2461)', () => {
     const EXTERNAL_ID = 'external-refresh-lock'
 
-    function renderExternalNote(): HTMLElement {
+    // Registered by each test, run even when an assertion throws, so a leaked
+    // note id cannot resolve for a later test that expects it to be absent.
+    const cleanups: Array<() => void> = []
+
+    afterEach(() => {
+      for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+    })
+
+    function renderExternalNote(): void {
       const note = document.createElement('p')
       note.id = EXTERNAL_ID
       note.textContent = 'Refreshing this proposal before your decision.'
       document.body.appendChild(note)
-      return note
+      cleanups.push(() => note.remove())
     }
 
     it('describes every disabled decision control with the external explanation', () => {
-      const note = renderExternalNote()
+      renderExternalNote()
       const wrapper = mountRail(
         { busy: true, decisionDescriptionIds: EXTERNAL_ID },
         { attachTo: true },
       )
+      cleanups.push(() => wrapper.unmount())
 
       for (const testid of DECISION_TESTIDS) {
         const button = wrapper.get(`[data-testid="${testid}"]`)
@@ -401,17 +410,15 @@ describe('ReviewDecisionRail', () => {
           expect(document.getElementById(id)).not.toBeNull()
         }
       }
-
-      wrapper.unmount()
-      note.remove()
     })
 
     it('carries the external explanation and its own edit-lock note together', () => {
-      const note = renderExternalNote()
+      renderExternalNote()
       const wrapper = mountRail(
         { busy: true, editLock: 'editing', decisionDescriptionIds: EXTERNAL_ID },
         { attachTo: true },
       )
+      cleanups.push(() => wrapper.unmount())
 
       const noteId = wrapper.get('[data-testid="decision-lock-note"]').attributes('id')
       expect(noteId).toBeTruthy()
@@ -424,25 +431,20 @@ describe('ReviewDecisionRail', () => {
           expect(document.getElementById(id)).not.toBeNull()
         }
       }
-
-      wrapper.unmount()
-      note.remove()
     })
 
     it('describes the only remaining control when a receipt leaves Apply alone', () => {
-      const note = renderExternalNote()
+      renderExternalNote()
       const wrapper = mountRail(
         { busy: true, applyOnly: true, decisionDescriptionIds: EXTERNAL_ID },
         { attachTo: true },
       )
+      cleanups.push(() => wrapper.unmount())
 
       expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
       const apply = wrapper.get('[data-testid="decision-apply"]')
       expect(apply.attributes('disabled')).toBeDefined()
       expect(apply.attributes('aria-describedby')).toBe(EXTERNAL_ID)
-
-      wrapper.unmount()
-      note.remove()
     })
 
     it('adds no attribute when there is no explanation to point at', () => {

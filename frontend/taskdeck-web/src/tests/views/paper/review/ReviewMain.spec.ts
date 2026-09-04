@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
@@ -253,16 +253,30 @@ describe('ReviewMain', () => {
       'decision-apply',
     ]
 
-    it('forwards the column description ids to every disabled decision control', () => {
+    // Registered by each test, run even when an assertion throws, so a leaked
+    // note id cannot resolve for a later test that expects it to be absent.
+    const cleanups: Array<() => void> = []
+
+    afterEach(() => {
+      for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+    })
+
+    function renderLockNote(): void {
       const note = document.createElement('p')
       note.id = LOCK_ID
       note.textContent = 'Refreshing this proposal before your decision.'
       document.body.appendChild(note)
+      cleanups.push(() => note.remove())
+    }
+
+    it('forwards the column description ids to every disabled decision control', () => {
+      renderLockNote()
 
       const wrapper = mountMain(
         {},
         { attachTo: true, busy: true, attrs: { 'aria-describedby': LOCK_ID } },
       )
+      cleanups.push(() => wrapper.unmount())
 
       // The wrapper keeps the attribute: those notes describe the whole column,
       // and the Review view asserts that association.
@@ -279,13 +293,11 @@ describe('ReviewMain', () => {
           expect(document.getElementById(id)).not.toBeNull()
         }
       }
-
-      wrapper.unmount()
-      note.remove()
     })
 
     it('leaves the decision controls undescribed when the column has no explanation', () => {
       const wrapper = mountMain({}, { attachTo: true, busy: true })
+      cleanups.push(() => wrapper.unmount())
 
       expect(wrapper.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
         .toBeUndefined()
@@ -293,18 +305,37 @@ describe('ReviewMain', () => {
         expect(wrapper.get(`[data-testid="${testid}"]`).attributes('aria-describedby'))
           .toBeUndefined()
       }
+    })
 
-      wrapper.unmount()
+    it('never describes ENABLED decision controls, even while a column note is on screen', () => {
+      // The ids the Review view passes are a union: the refresh-lock note is
+      // drawn only during the refresh, but the evidence-unavailable note it can
+      // leave behind outlives the lock. Reject, Request edit and Defer are then
+      // enabled and have nothing to retry, so "no decision was made, choose the
+      // current action again" must not be their description (#2461 review).
+      renderLockNote()
+
+      const wrapper = mountMain(
+        {},
+        { attachTo: true, busy: false, attrs: { 'aria-describedby': LOCK_ID } },
+      )
+      cleanups.push(() => wrapper.unmount())
+
+      // The column itself is still described: the note is genuinely about it.
+      expect(wrapper.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
+        .toBe(LOCK_ID)
+      for (const testid of decisionTestIds) {
+        const button = wrapper.get(`[data-testid="${testid}"]`)
+        expect(button.attributes('disabled')).toBeUndefined()
+        expect(button.attributes('aria-describedby')).toBeUndefined()
+      }
     })
 
     it('drops the association from the controls when the lock clears', async () => {
       // Fallthrough attributes are not reactive, so a cached read would keep
       // pointing at a note the Review view has already removed. Driven from a
       // host that re-renders, exactly as the Review view does.
-      const note = document.createElement('p')
-      note.id = LOCK_ID
-      note.textContent = 'Refreshing this proposal before your decision.'
-      document.body.appendChild(note)
+      renderLockNote()
 
       const describedBy = ref<string | undefined>(LOCK_ID)
       const host = mount(
@@ -317,11 +348,11 @@ describe('ReviewMain', () => {
         },
         { attachTo: document.body },
       )
+      cleanups.push(() => host.unmount())
 
       expect(host.get('[data-testid="decision-apply"]').attributes('aria-describedby'))
         .toBe(LOCK_ID)
 
-      note.remove()
       describedBy.value = undefined
       await nextTick()
 
@@ -329,8 +360,6 @@ describe('ReviewMain', () => {
         .toBeUndefined()
       expect(host.get('[data-testid="decision-apply"]').attributes('aria-describedby'))
         .toBeUndefined()
-
-      host.unmount()
     })
   })
 

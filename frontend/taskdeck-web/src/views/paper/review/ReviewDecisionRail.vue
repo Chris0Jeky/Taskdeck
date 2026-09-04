@@ -62,13 +62,17 @@ const props = withDefaults(
     applyOnly?: boolean
     /**
      * Space-separated DOM ids of explanations rendered OUTSIDE the rail that say
-     * why the decision controls are in their current state. The shipped one is
-     * the post-revision refresh lock, which the Review view draws above this
-     * column while it re-reads the proposal (#2461).
+     * why the decision controls are locked. The shipped one is the post-revision
+     * refresh lock, which the Review view draws above this column while it
+     * re-reads the proposal (#2461).
      *
-     * The caller owns the existence of these ids: the rail forwards exactly what
-     * it is given, so pass nothing while no such explanation is on screen rather
-     * than a constant id for an element that may not be rendered.
+     * The rail attaches exactly what it is given to all four decision controls,
+     * unconditionally, so the caller owns two obligations. The ids must resolve
+     * to elements that are actually rendered — a dangling reference reports
+     * nothing while the markup claims otherwise. And they must describe the
+     * CURRENT state of those controls: `ReviewMain` therefore forwards them only
+     * while `busy` holds the controls disabled, because the notes it draws from
+     * are a union and one of them outlives the lock that produced it.
      */
     decisionDescriptionIds?: string
   }>(),

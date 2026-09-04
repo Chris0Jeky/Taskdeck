@@ -111,6 +111,13 @@ const { t } = useI18n()
  * Read through a function rather than a `computed`: fallthrough attrs are not
  * reactive, so a cached computed would keep the value the column had on its
  * first render and never drop it when the lock clears.
+ *
+ * The rail only receives them while `busy` holds the controls disabled. The
+ * incoming ids are a union: the refresh-lock note is drawn only while the
+ * refresh runs, but the evidence-unavailable note survives the failed refresh
+ * that produced it. Without the gate, Reject, Request edit and Defer would
+ * announce "no decision was made, choose the current action again to retry"
+ * while they were enabled and had nothing to retry (#2461 review round).
  */
 const attrs = useAttrs()
 function decisionDescriptionIds(): string | undefined {
@@ -340,7 +347,7 @@ watch(
       :apply-phase="applyPhase"
       :edit-lock="editLock"
       :apply-only="decisionReceipt === 'approved'"
-      :decision-description-ids="decisionDescriptionIds()"
+      :decision-description-ids="busy ? decisionDescriptionIds() : undefined"
       data-testid="paper-review-decision-rail"
       @apply="emit('apply')"
       @reject="emit('reject')"
