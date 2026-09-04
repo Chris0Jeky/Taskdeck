@@ -120,22 +120,33 @@ onUnmounted(() => {
   /* Bound to the VISUAL viewport, not the layout viewport: a software keyboard
    * contracts the visual viewport only, and `inset: 0` would keep the dialog
    * (and its footer actions) spanning the full layout viewport underneath it.
-   * `--td-dialog-visual-viewport-*` come from `useVisualViewport`; when the
-   * browser has no VisualViewport API they are never set and the `100dvh`
-   * fallback inside the `@supports (height: 100dvh)` block below applies. */
+   * `--td-dialog-visual-viewport-*` come from `useVisualViewport` under its
+   * `'unset'` fallback, so on a browser with no VisualViewport API they are
+   * never set and each `var()` below keeps its own fallback. */
   left: 0;
   right: 0;
   top: var(--td-dialog-visual-viewport-offset-top, 0px);
-  /* Unconditional layout-viewport floor. The visual-viewport form deliberately
-   * lives in the `@supports (height: 100dvh)` block below rather than as the
-   * next declaration here: `var()` is parse-valid in EVERY browser that has
-   * custom properties, so an unguarded
-   * `height: var(--td-dialog-visual-viewport-height, 100dvh)` would discard this
-   * declaration even on a browser without `dvh`. Substitution would then yield
-   * `100dvh` — invalid at computed-value time — and per the CSS Variables spec
-   * this non-inherited property would compute to its INITIAL value (`auto`);
-   * the discarded declaration does not resurface. */
+  /* Three declarations, one per browser class. `top` is consumed
+   * unconditionally, so `height` must be too: a browser with the VisualViewport
+   * API but no `dvh` would otherwise take the offset while staying `100vh`
+   * tall, and the sheet would hang off the bottom of the screen by exactly
+   * `offsetTop` — footer actions under the keyboard, the precise bug this
+   * binding exists to prevent.
+   *
+   *   1. No custom properties -> `var()` does not parse, the next two
+   *      declarations are dropped at parse time, and this floor stands.
+   *   2. Custom properties, no `dvh` -> the live visual-viewport height, or
+   *      `100vh` when the `'unset'` fallback emits nothing.
+   *   3. `dvh` too -> same, with the fallback upgraded to `100dvh` below.
+   *
+   * The fallback inside `var()` here MUST be `100vh`, never `100dvh`. `var()`
+   * is parse-valid in EVERY browser that has custom properties, so an unguarded
+   * `100dvh` fallback would discard the floor above and then substitute a value
+   * that is invalid at computed-value time on a `dvh`-less browser; per the CSS
+   * Variables spec this non-inherited property would compute to its INITIAL
+   * value (`auto`) and the discarded declaration does not resurface. */
   height: 100vh;
+  height: var(--td-dialog-visual-viewport-height, 100vh);
   background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
@@ -146,12 +157,16 @@ onUnmounted(() => {
 
 .td-dialog {
   width: min(560px, 100%);
-  /* Unconditional layout-viewport floor — same reasoning as the backdrop above.
-   * Without the `@supports` guard this would compute to `max-height: none` on a
-   * browser with custom properties but no `dvh`, `overflow-y: auto` would never
-   * engage, and a long dialog's footer would become unreachable — the exact bug
-   * this component's visual-viewport binding exists to prevent. */
+  /* Same three-declaration ladder as the backdrop above, and for the same
+   * reason: without the visual-viewport form here, a browser with the
+   * VisualViewport API and no `dvh` would cap the dialog at the full layout
+   * viewport inside a backdrop already shortened to the visual one, so
+   * `overflow-y: auto` would never engage and a long dialog's footer would
+   * become unreachable. The `100vh` fallback is again load-bearing: a `100dvh`
+   * fallback would substitute a value that is invalid at computed-value time on
+   * a `dvh`-less browser, computing to the initial `max-height: none`. */
   max-height: calc(100vh - 2 * var(--td-space-8));
+  max-height: calc(var(--td-dialog-visual-viewport-height, 100vh) - 2 * var(--td-space-8));
   overflow-y: auto;
   background: var(--td-surface-container);
   border: 1px solid var(--td-border-default);
@@ -163,19 +178,23 @@ onUnmounted(() => {
   gap: var(--td-space-3);
 }
 
-/* The visual-viewport / dynamic-viewport upgrade, guarded so it can only ever
- * REPLACE a working declaration, never strand one.
+/* The dynamic-viewport FALLBACK upgrade, guarded so it can only ever REPLACE a
+ * working declaration, never strand one.
  *
- * This is the first `@supports` usage in the repo. The feature query is not
- * decoration: it splits the third column of the browser matrix off from the
- * first two. Columns, and what each gets:
+ * The visual-viewport binding itself is unconditional above; this block changes
+ * only what happens when the custom property is absent. The feature query is
+ * not decoration — it is the only way to name `100dvh` without risking an
+ * invalid computed value. The browser matrix, and what each column gets:
  *   1. `dvh` + VisualViewport API -> the custom property, i.e. the true visual
- *      viewport (the case this component exists for).
+ *      viewport (the case this component exists for). Byte-identical to what
+ *      the unconditional declaration above already produces.
  *   2. `dvh`, no VisualViewport API -> the `100dvh` fallback inside `var()`.
- *   3. No `dvh` (browsers predating the VisualViewport API too) -> the query
- *      fails, this whole block is skipped, and the unconditional `100vh` forms
- *      above stay in force. Declaring the `var()` forms unguarded would instead
- *      leave these browsers with `height: auto` / `max-height: none`.
+ *   3. No `dvh`, VisualViewport API present -> the query fails, this block is
+ *      skipped, and the unconditional `var(..., 100vh)` forms above supply the
+ *      live visual viewport. Before #2180 these rules stopped at `100vh` while
+ *      `top` still took the offset, so the sheet hung off the bottom.
+ *   4. Neither -> the `100vh` fallback, or the plain `100vh` floor on a browser
+ *      with no custom properties at all.
  * Must stay ABOVE the `@media (max-width: 640px)` block: these rules carry no
  * extra specificity, so the mobile sheet's `height: 100%` / `max-height: 100%`
  * win on source order alone. */
