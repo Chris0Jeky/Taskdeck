@@ -899,7 +899,13 @@ function summarizeOperation(operation: ProposalOperation): string {
 
 function afterOperationTitle(proposal: ApiProposal, operation: ProposalOperation, index: number): string {
   const suppliedHeadline = proposal.presentation?.operationHeadlines?.[index]?.trim()
-  if (suppliedHeadline && operation.actionType.trim().toLowerCase() === 'movecard') {
+  // Canonical card move: actionType "move" + targetType "card", the only pair the backend
+  // emits and the only one Apply dispatch accepts.
+  if (
+    suppliedHeadline
+    && operation.actionType.trim().toLowerCase() === 'move'
+    && operation.targetType.trim().toLowerCase() === 'card'
+  ) {
     return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
   }
   return `${formatActionLabel(operation.actionType)} · ${operation.targetType}`

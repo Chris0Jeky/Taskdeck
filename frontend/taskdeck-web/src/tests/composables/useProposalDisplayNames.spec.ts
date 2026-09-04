@@ -216,7 +216,8 @@ describe('useProposalDisplayNames cache lifecycle', () => {
     const resolver = createProposalDisplayNameResolver()
     const proposal = makeProposal('board-1', 'column-1')
     const operation = proposal.operations[0]
-    operation.targetType = 'Card'
+    operation.actionType = 'move'
+    operation.targetType = 'card'
     operation.targetId = 'card-1'
     operation.parameters = JSON.stringify({ boardId: 'board-1', cardId: 'card-1', columnId: 'column-1' })
 
@@ -233,9 +234,47 @@ describe('useProposalDisplayNames cache lifecycle', () => {
     const resolver = createProposalDisplayNameResolver()
     const proposal = makeProposal('board-1', 'column-missing')
     const operation = proposal.operations[0]
-    operation.targetType = 'Card'
+    operation.actionType = 'move'
+    operation.targetType = 'card'
     operation.targetId = 'card-1'
     operation.parameters = JSON.stringify({ boardId: 'board-1', cardId: 'card-1', columnId: 'column-missing' })
+
+    await resolver.ensure([proposal])
+
+    expect(resolver.operationHeadline(proposal, operation, 'Move card.')).toBe('Move card.')
+  })
+
+  // Regression guard for the shape the backend actually emits. ProposeMoveCardExecutor writes
+  // parameters of exactly { cardId, columnId } with NO boardId, so enrichment has to fall back to
+  // proposal.boardId. A fixture that carries boardId (or that spells the action "MoveCard") passes
+  // whether or not the gate matches production, which is how the original gate bug stayed hidden.
+  it('enriches a backend-shaped move operation whose parameters carry no boardId', async () => {
+    mocks.getBoards.mockResolvedValue([makeBoard('board-1', 'Support Triage')])
+    mocks.getColumns.mockResolvedValue([{ id: 'column-1', boardId: 'board-1', name: 'Done' }])
+    const resolver = createProposalDisplayNameResolver()
+    const proposal = makeProposal('board-1', 'column-1')
+    const operation = proposal.operations[0]
+    operation.actionType = 'move'
+    operation.targetType = 'card'
+    operation.targetId = 'card-1'
+    operation.parameters = JSON.stringify({ cardId: 'card-1', columnId: 'column-1' })
+
+    await resolver.ensure([proposal])
+
+    expect(resolver.operationHeadline(proposal, operation, 'Move card.'))
+      .toBe('Move card to “Done”.')
+  })
+
+  it('does not enrich an action spelling the backend never emits', async () => {
+    mocks.getBoards.mockResolvedValue([makeBoard('board-1', 'Support Triage')])
+    mocks.getColumns.mockResolvedValue([{ id: 'column-1', boardId: 'board-1', name: 'Done' }])
+    const resolver = createProposalDisplayNameResolver()
+    const proposal = makeProposal('board-1', 'column-1')
+    const operation = proposal.operations[0]
+    operation.actionType = 'MoveCard'
+    operation.targetType = 'Card'
+    operation.targetId = 'card-1'
+    operation.parameters = JSON.stringify({ cardId: 'card-1', columnId: 'column-1' })
 
     await resolver.ensure([proposal])
 

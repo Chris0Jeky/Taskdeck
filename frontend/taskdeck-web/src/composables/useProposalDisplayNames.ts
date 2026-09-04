@@ -217,8 +217,16 @@ export function createProposalDisplayNameResolver() {
           : null)
   }
 
+  // The canonical card-move operation as the backend emits it: actionType "move" with
+  // targetType "card" (WriteTools.cs, ProposeMoveCardExecutor.cs, ProposeBulkMoveExecutor.cs,
+  // AutomationPlannerService.cs). Apply dispatch accepts only that pair
+  // (OperationHandlerRegistry.cs), so no other spelling ever reaches the reviewer.
+  function isMoveCardOperation(operation: ProposalOperation): boolean {
+    return operation.actionType.trim().toLowerCase() === 'move' && targetType(operation) === 'card'
+  }
+
   function resolvedMoveCardColumnLabel(proposal: Proposal, operation: ProposalOperation): string | null {
-    if (operation.actionType.trim().toLowerCase() !== 'movecard') return null
+    if (!isMoveCardOperation(operation)) return null
     const boardKey = key(operationBoardId(proposal, operation))
     const columnKey = key(operationColumnId(operation))
     if (!boardKey || !columnKey || !accessibleBoards.has(boardKey)) return null
@@ -268,10 +276,10 @@ export function createProposalDisplayNameResolver() {
     suppliedHeadline?: string | null,
   ): string {
     const supplied = suppliedHeadline?.trim()
-    // Normal MoveCard presentations only name the action because the backend payload carries
+    // Normal card-move presentations only name the action because the backend payload carries
     // IDs. Enrich that exact incomplete shape only from a column loaded for this proposal; an
     // unavailable placeholder is not a destination guess.
-    if (supplied && operation.actionType.trim().toLowerCase() === 'movecard' && /^move\s+card\s*\.?$/i.test(supplied)) {
+    if (supplied && isMoveCardOperation(operation) && /^move\s+card\s*\.?$/i.test(supplied)) {
       const destination = resolvedMoveCardColumnLabel(proposal, operation)
       if (destination) return `${supplied.replace(/\s*\.\s*$/, '')} to “${destination}”.`
     }
