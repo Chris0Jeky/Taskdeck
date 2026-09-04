@@ -5,6 +5,7 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Pipeline;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Api.Mcp;
@@ -102,7 +103,7 @@ public class WriteTools
 
         var canWrite = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
         if (!canWrite.IsSuccess)
-            return Error(canWrite.ErrorMessage);
+            return Error(canWrite);
         if (!canWrite.Value)
             return Error("Not authorized to create cards on this board");
 
@@ -171,7 +172,7 @@ public class WriteTools
 
         var result = await _proposalService.CreateProposalAsync(dto);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         return ProposalCreated(result.Value.Id, "Proposal created. Review and approve in Taskdeck to create the card.");
     }
@@ -230,7 +231,7 @@ public class WriteTools
 
         var result = await _proposalService.CreateProposalAsync(dto);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         return ProposalCreated(result.Value.Id, "Proposal created. Review and approve in Taskdeck to move the card.");
     }
@@ -322,7 +323,7 @@ public class WriteTools
 
         var result = await _proposalService.CreateProposalAsync(dto);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         return ProposalCreated(result.Value.Id, "Proposal created. Review and approve in Taskdeck to update the card.");
     }
@@ -375,7 +376,7 @@ public class WriteTools
 
         var result = await _proposalService.CreateProposalAsync(dto);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         return ProposalCreated(
             result.Value.Id,
@@ -414,7 +415,7 @@ public class WriteTools
 
         var result = await _captureService.CreateAsync(userId, captureDto);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         return JsonSerializer.Serialize(new
         {
@@ -447,14 +448,14 @@ public class WriteTools
 
         var canWrite = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
         if (!canWrite.IsSuccess)
-            return Error(canWrite.ErrorMessage);
+            return Error(canWrite);
         if (!canWrite.Value)
             return Error("Not authorized to create columns on this board");
 
         var columns = (await _unitOfWork.Columns.GetByBoardIdAsync(boardGuid)).ToList();
         var appendPositionResult = ProposalOperationContractValidator.ResolveAppendPosition(columns);
         if (!appendPositionResult.IsSuccess)
-            return Error(appendPositionResult.ErrorMessage);
+            return Error(appendPositionResult);
 
         var parameters = new Dictionary<string, object?>
         {
@@ -487,7 +488,7 @@ public class WriteTools
             boardGuid,
             new[] { operation });
         if (!contractValidation.IsSuccess)
-            return Error(contractValidation.ErrorMessage);
+            return Error(contractValidation);
 
         var dto = new CreateProposalDto(
             SourceType: ProposalSourceType.Manual,
@@ -503,7 +504,7 @@ public class WriteTools
 
         var result = await _proposalService.CreateProposalAsync(dto);
         if (!result.IsSuccess)
-            return Error(result.ErrorMessage);
+            return Error(result);
 
         return ProposalCreated(result.Value.Id, "Proposal created. Review and approve in Taskdeck to create the column.");
     }
@@ -546,6 +547,18 @@ public class WriteTools
     private static string Error(string message)
     {
         return JsonSerializer.Serialize(new { error = message }, BoardResources.SerializerOptions);
+    }
+
+    /// <summary>
+    /// Serializes a failed application <see cref="Result"/> for an MCP caller. A result
+    /// classified <c>UnexpectedError</c> collapses to the stable generic failure message so
+    /// unknown-exception text never reaches the model; known domain messages stay specific.
+    /// </summary>
+    private static string Error(Result result)
+    {
+        return Error(SensitiveDataRedactor.SanitizeLlmFailureMessage(
+            result.ErrorCode,
+            result.ErrorMessage));
     }
 
     private static string ProposalCreated(Guid proposalId, string message)
