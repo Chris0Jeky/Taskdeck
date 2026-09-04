@@ -48,12 +48,25 @@ function captureLauncher(page: Page) {
 async function installSyntheticVisualViewport(page: Page) {
   await page.addInitScript(() => {
     const events = new EventTarget()
-    let height = window.innerHeight
+    // Height is LAZY on purpose. An init script runs before the page's own
+    // scripts and before the viewport emulation has settled, so reading
+    // `window.innerHeight` here froze whatever height the browser happened to
+    // have at that instant — not the mobile project's emulated height. Report
+    // the live layout viewport until a test explicitly contracts the synthetic
+    // one, so an uncontracted read is never a stale pre-emulation number.
+    let heightOverride: number | null = null
     let offsetTop = 0
+
+    // Keep the engine's real VisualViewport reachable for diagnostics: the
+    // synthetic object replaces `window.visualViewport`, and triaging a
+    // geometry failure needs the engine's own `offsetTop` to tell a product
+    // bug apart from the coordinate-space artifact `measureFixedOrigin`
+    // documents below.
+    const realVisualViewport = window.visualViewport
 
     const visualViewport = {
       get height() {
-        return height
+        return heightOverride ?? window.innerHeight
       },
       get offsetTop() {
         return offsetTop
@@ -66,15 +79,63 @@ async function installSyntheticVisualViewport(page: Page) {
       configurable: true,
       value: visualViewport,
     })
+    Object.defineProperty(window, '__taskdeckRealVisualViewport', {
+      configurable: true,
+      value: realVisualViewport,
+    })
     Object.defineProperty(window, '__taskdeckSetVisualViewport', {
       configurable: true,
       value: (next: { height: number; offsetTop: number }) => {
-        height = next.height
+        heightOverride = next.height
         offsetTop = next.offsetTop
         events.dispatchEvent(new Event('resize'))
         events.dispatchEvent(new Event('scroll'))
       },
     })
+  })
+}
+
+/**
+ * The client-rect y coordinate of the LAYOUT viewport's origin.
+ *
+ * Two coordinate spaces are in play and they are not the same space:
+ *
+ * - `position: fixed` resolves against the LAYOUT viewport.
+ * - `getBoundingClientRect()`, and therefore Playwright's `boundingBox()`, is
+ *   expressed in VISUAL viewport coordinates.
+ *
+ * They coincide only while `visualViewport.offsetTop` is 0, because
+ * `clientTop = cssTop - visualViewport.offsetTop`.
+ *
+ * On Chromium the offset stays 0 here and this returns 0. On WebKit it does
+ * not: `src/style.css` styles `::-webkit-scrollbar` with an explicit width, so
+ * WebKit gives the root scroller classic space-taking scrollbars and the visual
+ * viewport ends up 8px shorter than the layout viewport. Once the document is
+ * scrolled, WebKit parks the visual viewport at the bottom of that 8px slack,
+ * `offsetTop` becomes 8, and every fixed element measures 8px HIGHER than its
+ * CSS `top`. That is the whole of issue #2180's nightly red: the dialog was
+ * positioned correctly and the assertions were written in the wrong space.
+ *
+ * The origin is MEASURED, never assumed: a `position: fixed; top: 0` sentinel
+ * is read back with `getBoundingClientRect()`, so this reports whatever the
+ * engine actually does. Add it to a CSS `top` to get the expected client-rect
+ * y. It is deliberately not a tolerance band — an 8px slop would also hide a
+ * real 8px regression.
+ */
+async function measureFixedOrigin(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const sentinel = document.createElement('div')
+    sentinel.style.position = 'fixed'
+    sentinel.style.top = '0'
+    sentinel.style.left = '0'
+    sentinel.style.width = '1px'
+    sentinel.style.height = '1px'
+    sentinel.style.visibility = 'hidden'
+    sentinel.style.pointerEvents = 'none'
+    document.body.appendChild(sentinel)
+    const { top } = sentinel.getBoundingClientRect()
+    sentinel.remove()
+    return top
   })
 }
 
@@ -181,10 +242,18 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   const layoutViewportHeight = await page.evaluate(() => window.innerHeight)
   await contractSyntheticVisualViewport(page, 420, 120)
 
+  // The dialog's CSS `top` is 120px in LAYOUT space (the synthetic
+  // `offsetTop`, published as a custom property). `boundingBox()` answers in
+  // VISUAL space, so the expected y is `120 + fixedOrigin`: 120 on Chromium,
+  // 112 on a WebKit run whose visual viewport is parked 8px down. See
+  // `measureFixedOrigin`. Nothing scrolls the document between here and the
+  // last assertion of this test, so one reading holds for all of them.
+  const fixedOrigin = await measureFixedOrigin(page)
+
   await expect.poll(async () => {
     const box = await editModal.boundingBox()
     return box ? { y: Math.round(box.y), height: Math.round(box.height) } : null
-  }).toEqual({ y: 120, height: 420 })
+  }).toEqual({ y: Math.round(120 + fixedOrigin), height: 420 })
 
   const viewportState = await page.evaluate(() => ({
     layoutHeight: window.innerHeight,
@@ -206,7 +275,9 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   // `toBeVisible()` alone cannot carry this claim: Playwright treats any
   // element with a non-empty rendered box as visible, including one the
   // software keyboard covers.
-  const visualTop = 120
+  // The contracted visual band starts at CSS top 120 in layout space, which is
+  // `120 + fixedOrigin` in the client-rect space `boundingBox()` reports.
+  const visualTop = 120 + fixedOrigin
   const visualBottom = visualTop + 420
   for (const name of ['Save Changes', 'Cancel', 'Delete Card']) {
     const action = editModal.getByRole('button', { name, exact: true })
@@ -234,7 +305,7 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   await expect.poll(async () => {
     const box = await deleteDialog.boundingBox()
     return box ? { y: Math.round(box.y), height: Math.round(box.height) } : null
-  }).toEqual({ y: visualTop, height: 420 })
+  }).toEqual({ y: Math.round(visualTop), height: 420 })
 
   const deleteDialogBox = await deleteDialog.boundingBox()
   expect(deleteDialogBox).not.toBeNull()
@@ -297,6 +368,36 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
       const visual = window.visualViewport
       const visualHeight = visual?.height ?? window.innerHeight
       const visualOffsetTop = visual?.offsetTop ?? 0
+
+      // The layout viewport's origin in client-rect coordinates, measured the
+      // same way as the module-level `measureFixedOrigin` helper and inlined
+      // here on purpose: `page.evaluate` cannot close over module scope, and
+      // reading the origin in a second round-trip would let a scroll settle in
+      // between and compare skewed samples — the same reason the dialog and the
+      // viewport are read together.
+      //
+      // `position: fixed` is layout-viewport space, `getBoundingClientRect()`
+      // is visual-viewport space, and `clientTop = cssTop - offsetTop`. On
+      // WebKit the app's classic 8px scrollbars leave the visual viewport 8px
+      // short of the layout viewport, so a scrolled document parks it at
+      // `offsetTop: 8` and every fixed element measures 8px higher than its
+      // CSS `top`. This
+      // conversion is why issue #2180's nightly red was an assertion bug and
+      // not a product one.
+      const sentinel = document.createElement('div')
+      sentinel.style.position = 'fixed'
+      sentinel.style.top = '0'
+      sentinel.style.left = '0'
+      sentinel.style.width = '1px'
+      sentinel.style.height = '1px'
+      sentinel.style.visibility = 'hidden'
+      sentinel.style.pointerEvents = 'none'
+      document.body.appendChild(sentinel)
+      const fixedOrigin = sentinel.getBoundingClientRect().top
+      sentinel.remove()
+
+      // The contracted-or-not visual band, expressed in client-rect space.
+      const visualTopInClientSpace = fixedOrigin + visualOffsetTop
       const footer = Array.from(dialog.querySelectorAll('button'))
         .filter((button) => ['Cancel', 'Delete'].includes(button.textContent?.trim() ?? ''))
         .map((button) => {
@@ -314,12 +415,19 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
         // `window.innerHeight` even with nothing contracting it, so "still a
         // full sheet" is a ratio, not an equality.
         spansMostOfLayoutViewport: rect.height >= window.innerHeight * 0.9,
-        topMatchesVisualTop: Math.abs(rect.top - visualOffsetTop) <= 1,
+        topMatchesVisualTop: Math.abs(rect.top - visualTopInClientSpace) <= 1,
         heightMatchesVisualHeight: Math.abs(rect.height - visualHeight) <= 1,
+        // The coordinate-space artifact itself, pinned as tested behaviour
+        // rather than absorbed into a tolerance: a fixed element's client-rect
+        // origin is exactly the negated visual-viewport offset. 0 === -0 on
+        // Chromium; -8 === -8 on a WebKit run parked in the scrollbar slack.
+        // The 1px allowance is sub-pixel rounding and cannot swallow 8px.
+        fixedOriginNegatesVisualOffsetTop: Math.abs(fixedOrigin + visualOffsetTop) <= 1,
         footerCount: footer.length,
         footerInsideVisualBounds: footer.every(
           (entry) =>
-            entry.top >= visualOffsetTop - 1 && entry.bottom <= visualOffsetTop + visualHeight + 1,
+            entry.top >= visualTopInClientSpace - 1 &&
+            entry.bottom <= visualTopInClientSpace + visualHeight + 1,
         ),
       }
     })
@@ -332,6 +440,7 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
             spansMostOfLayoutViewport: measured.spansMostOfLayoutViewport,
             topMatchesVisualTop: measured.topMatchesVisualTop,
             heightMatchesVisualHeight: measured.heightMatchesVisualHeight,
+            fixedOriginNegatesVisualOffsetTop: measured.fixedOriginNegatesVisualOffsetTop,
             footerCount: measured.footerCount,
             footerInsideVisualBounds: measured.footerInsideVisualBounds,
           }
@@ -343,6 +452,7 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
       spansMostOfLayoutViewport: true,
       topMatchesVisualTop: true,
       heightMatchesVisualHeight: true,
+      fixedOriginNegatesVisualOffsetTop: true,
       footerCount: 2,
       footerInsideVisualBounds: true,
     })
