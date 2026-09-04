@@ -435,6 +435,22 @@ describe('useInboxOrchestrator', () => {
       expect(orch.activeBoardName.value).toBe('Board B')
       expect(orch.activeColumnName.value).toBe('Column B')
     })
+
+    it('marks a route-scope list load as a replacement until it succeeds', async () => {
+      const pendingLoad = deferred<unknown>()
+      mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
+      const orch = createOrchestrator()
+
+      mockRoute.query = { boardId: 'board-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', null, () => {})
+
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      pendingLoad.resolve(undefined)
+      await flushAsyncWork()
+
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
   })
 
   describe('suggestion editing', () => {
@@ -767,6 +783,43 @@ describe('useInboxOrchestrator', () => {
       const orch = createOrchestrator()
       await orch.loadInbox()
       expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
+    })
+
+    it('clears the scope-replacement state only after the latest scoped load succeeds', async () => {
+      const pendingLoad = deferred<void>()
+      mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
+      const orch = createOrchestrator()
+
+      const load = orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      pendingLoad.resolve()
+      await load
+
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    it('keeps the scope-replacement state after failure so retained rows stay hidden', async () => {
+      mockCaptureStore.fetchItems.mockRejectedValueOnce(new Error('scope load failed'))
+      const orch = createOrchestrator()
+
+      await orch.loadInboxForScopeReplacement()
+
+      expect(orch.isScopeReplacement.value).toBe(true)
+    })
+
+    it('lets a successful retry clear a failed scope replacement', async () => {
+      mockCaptureStore.fetchItems
+        .mockRejectedValueOnce(new Error('scope load failed'))
+        .mockResolvedValueOnce(undefined)
+      const orch = createOrchestrator()
+
+      await orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      await orch.loadInbox()
+
+      expect(orch.isScopeReplacement.value).toBe(false)
     })
   })
 

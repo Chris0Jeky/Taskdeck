@@ -24,6 +24,8 @@ export function useInboxOrchestrator(options: {
   const activeBatchTriagePollStops = new Set<() => void>()
   let batchActionGeneration = 0
   let scopedBoardLoadGeneration = 0
+  let latestInboxLoadRequestId = 0
+  const isScopeReplacement = ref(false)
 
   // Batch selection state
   const selectedIds = ref<Set<string>>(new Set())
@@ -347,18 +349,41 @@ export function useInboxOrchestrator(options: {
 
   // ---- Inbox loading ----
 
-  async function loadInbox() {
+  async function loadInboxInternal(scopeReplacement = false) {
+    const requestId = ++latestInboxLoadRequestId
+    const requestScopeKey = JSON.stringify({
+      boardId: activeBoardId.value,
+      archived: isArchivedHistory.value,
+    })
+    if (scopeReplacement) {
+      isScopeReplacement.value = true
+    }
     inboxLoadPerf.start()
     try {
       await captureStore.fetchItems({
         limit: 200,
         ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
       })
+      const currentScopeKey = JSON.stringify({
+        boardId: activeBoardId.value,
+        archived: isArchivedHistory.value,
+      })
+      if (requestId === latestInboxLoadRequestId && requestScopeKey === currentScopeKey) {
+        isScopeReplacement.value = false
+      }
     } catch {
       // Store handles toast + error state.
     }
     await openItemFromHash()
     inboxLoadPerf.end()
+  }
+
+  function loadInbox() {
+    return loadInboxInternal()
+  }
+
+  function loadInboxForScopeReplacement() {
+    return loadInboxInternal(true)
   }
 
   async function openItemFromList(item: CaptureItemSummary, index: number) {
@@ -534,7 +559,7 @@ export function useInboxOrchestrator(options: {
   watch(activeBoardId, () => {
     resetScopedState()
     void loadScopedBoard()
-    void loadInbox()
+    void loadInboxForScopeReplacement()
   })
 
   // Entering or leaving archived history (#1973) is a scope change of its own:
@@ -546,7 +571,7 @@ export function useInboxOrchestrator(options: {
   watch(isArchivedHistory, () => {
     resetScopedState()
     void loadScopedBoard()
-    void loadInbox()
+    void loadInboxForScopeReplacement()
   })
 
   watch(
@@ -600,6 +625,7 @@ export function useInboxOrchestrator(options: {
     activeBoardId,
     activeColumnId,
     isArchivedHistory,
+    isScopeReplacement,
     activeBoardName,
     activeColumnName,
     showCaptureModal,
@@ -610,6 +636,7 @@ export function useInboxOrchestrator(options: {
 
     // Actions
     loadInbox,
+    loadInboxForScopeReplacement,
     openItemFromList,
     setActiveIndex,
     handleKeydown,

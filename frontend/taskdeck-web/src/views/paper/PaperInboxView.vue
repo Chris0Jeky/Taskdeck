@@ -83,6 +83,7 @@ const {
   activeBoardId,
   activeColumnId,
   isArchivedHistory,
+  isScopeReplacement,
   activeBoardName,
   activeColumnName,
   loadInbox,
@@ -610,6 +611,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       :items="items"
       :loading-list="captureStore.loadingList"
       :list-error="captureStore.listError"
+      :scope-replacement="isScopeReplacement"
       :action-busy-item-id="captureStore.actionBusyItemId"
       :triage-polling-item-id="captureStore.triagePollingItemId"
       :scope-label="scopeLabel"

@@ -54,6 +54,8 @@ const props = withDefaults(defineProps<{
   items: CaptureItemSummary[]
   loadingList?: boolean
   listError?: string | null
+  /** True while the retained rows belong to a route scope being replaced. */
+  scopeReplacement?: boolean
   actionBusyItemId?: string | null
   triagePollingItemId?: string | null
   scopeLabel?: string
@@ -71,6 +73,7 @@ const props = withDefaults(defineProps<{
   detailProposalRoute?: string | null
 }>(), {
   readOnly: false,
+  scopeReplacement: false,
   detailItemId: null,
   detail: null,
   detailLoading: false,
@@ -537,7 +540,7 @@ function recordedOr(value: string | null | undefined): string {
   >
     <header class="paper-triage__header">
       <h2 class="tk-h3 paper-triage__title">{{ readOnly ? t('inbox.history.tableTitle') : "Today's captures" }}</h2>
-      <span v-if="!loadingList && !listError" class="tk-meta">
+      <span v-if="!scopeReplacement && (hasItems || (!loadingList && !listError))" class="tk-meta">
         {{ hasItems ? `${items.length} item${items.length === 1 ? '' : 's'} · most recent first` : 'No captures yet' }}
       </span>
     </header>
@@ -549,7 +552,7 @@ function recordedOr(value: string | null | undefined): string {
       </button>
     </div>
 
-    <div v-else-if="loadingList" class="paper-triage__empty" role="status">
+    <div v-else-if="loadingList && (scopeReplacement || !hasItems)" class="paper-triage__empty" role="status">
       <span class="tk-meta">Loading…</span>
     </div>
 
@@ -575,7 +578,7 @@ function recordedOr(value: string | null | undefined): string {
     <ul
       v-if="hasItems"
       class="paper-triage__list"
-      :style="loadingList || listError ? { display: 'none' } : undefined"
+      :style="scopeReplacement ? { display: 'none' } : undefined"
     >
       <li
         v-for="item in items"
