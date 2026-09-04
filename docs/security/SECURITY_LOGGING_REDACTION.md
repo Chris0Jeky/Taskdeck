@@ -46,6 +46,10 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
 - MCP read tools apply that boundary to directly returned failed `Result` values from board detail,
   board listing, and card search operations. Invalid input and known domain messages stay specific;
   silent child-result handling and arbitrary thrown exceptions remain separate contracts.
+- MCP write tools apply that boundary to directly returned failed `Result` values from board
+  write authorization, proposal creation, capture creation, and the column append-position and
+  operation-contract validators. Invalid input strings, `Not authorized ...` literals, and known
+  domain messages stay specific; arbitrary thrown exceptions remain a separate contract.
 - Capture-source validation errors use generic wording (`Invalid capture source value`) instead of reflecting the untrusted source string.
 - Opt-in Sentry keeps server-side exception tracking and the existing event/breadcrumb scrubbing, but does not decorate the registered OpenAI, OpenAICompatible, Ollama, or outbound-webhook clients.
 - The web host enforces `Warning` as the minimum for
