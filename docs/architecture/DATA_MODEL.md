@@ -1388,17 +1388,20 @@ A short free-text note, at most one per user per date.
 line-for-tomorrow editor a `save-date` of the current dossier day
 (`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue`, the `dossierLocalDate` computed) and
 `useTodayDossier.saveLineForTomorrow` shifts it by one local calendar day
-(`nextLocalDossierDate`) before calling `PUT /today/tomorrow-note`. The read side is unchanged:
-`useTodayDossier` fetches `todayApi.getTomorrowNote(formatLocalDossierDate(now.value))`, so a note
-written on day X persists as `Date = X+1` and is read back by the X+1 self at first open -- the
-hand-off the UI copy, `TodayController.GetTomorrowNote` and the `TomorrowNote` entity summary all
-describe.
+(`nextLocalDossierDate`) before calling `PUT /today/tomorrow-note`. `useTodayDossier` reads TWO notes
+per day so the editor round-trips against the key it writes: `getTomorrowNote(today)` is the inbound
+note left by the previous day (display only, rendered as "your line from yesterday" and never seeded
+into the editor), and `getTomorrowNote(today + 1)` seeds the editor and is the key saves target. A
+note written on day X therefore persists as `Date = X+1`, is re-read into the editor for the rest of
+day X, and is read back by the X+1 self at first open -- the hand-off the UI copy,
+`TodayController.GetTomorrowNote` and the `TomorrowNote` entity summary all describe.
 
 The shift lives entirely on the client: neither `TomorrowNoteService` nor `TodayController` applies
 `AddDays(1)`, and the API contract is unchanged -- the request's `date` is simply defined as the day
-the note is FOR. Notes written before this change persist under the authoring day and are therefore
-read back on that same day (that is, one day earlier than a note written after it); there is no
-migration, the rows stay valid, and the stale key is superseded by the next save.
+the note is FOR. Notes written before this change persist under their authoring day X and are NOT
+rewritten by any later save: a save now targets X+1, so it creates or updates a different row and
+leaves the legacy row untouched. A legacy row surfaces as day X's inbound note ("your line from
+yesterday") rather than as the editor's content. There is no migration and the rows stay valid.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|

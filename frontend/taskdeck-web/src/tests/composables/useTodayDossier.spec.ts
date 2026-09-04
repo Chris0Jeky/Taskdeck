@@ -407,9 +407,10 @@ describe('useTodayDossier', () => {
     await save
 
     expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-02-01', 'Call the bank')
-    // The read side is unshifted, so the key written above is exactly the key the
-    // next day's first open queries.
+    // Both keys are read: today's row is the inbound note, tomorrow's row is the
+    // one the editor authors — the same key the save above targets.
     expect(todayApi.getTomorrowNote).toHaveBeenCalledWith('2026-01-31')
+    expect(todayApi.getTomorrowNote).toHaveBeenCalledWith('2026-02-01')
   })
 
   it('rejects autosave promise when the backend save fails', async () => {
@@ -734,5 +735,115 @@ describe('useTodayDossier', () => {
     expect(dossier.value.stats.find(stat => stat.id === 'due-today')?.value).toBe(6)
     expect(dossier.value.carryOver).toEqual([])
     expect(dossier.value.serial).toContain('2026-01-16')
+  })
+  // --- issue 1640 fix round: the editor must read the key it writes ---------
+
+  function noteByDate(rows: Record<string, string>) {
+    return async (date: string) => {
+      const text = rows[date]
+      if (text === undefined) return null
+      return { ...tomorrowNoteResponse, date, text }
+    }
+  }
+
+  it('seeds the editor from the day+1 key it saves under, and exposes the current-day row as the inbound note', async () => {
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockImplementation(noteByDate({
+      '2026-01-15': 'Line from yesterday',
+      '2026-01-16': 'Draft for tomorrow',
+    }))
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const { dossier } = useTodayDossier({ now: new Date(2026, 0, 15, 12, 0, 0) })
+
+    await vi.waitFor(() => {
+      expect(dossier.value.lineForTomorrow).toBe('Draft for tomorrow')
+    })
+    expect(dossier.value.inboundNote).toBe('Line from yesterday')
+  })
+
+  it('round-trips an edit to the same key on reload the same day, leaving the inbound note untouched', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    const rows: Record<string, string> = { '2026-01-15': 'Line from yesterday' }
+    vi.mocked(todayApi.getTomorrowNote).mockImplementation(noteByDate(rows))
+    vi.mocked(todayApi.saveTomorrowNote).mockImplementation(async (date: string, text: string) => {
+      rows[date] = text
+      return { ...tomorrowNoteResponse, date, text }
+    })
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const first = useTodayDossier({ now: new Date(2026, 0, 15, 12, 0, 0) })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const save = first.saveLineForTomorrow('Ship the fix round')
+    await vi.advanceTimersByTimeAsync(850)
+    await save
+
+    expect(todayApi.saveTomorrowNote).toHaveBeenCalledWith('2026-01-16', 'Ship the fix round')
+    // The write must not have forked the inbound row a day forward.
+    expect(rows['2026-01-15']).toBe('Line from yesterday')
+
+    // Reload on the SAME day: the editor gets its own note back, not an empty field.
+    const reloaded = useTodayDossier({ now: new Date(2026, 0, 15, 12, 5, 0) })
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(reloaded.dossier.value.lineForTomorrow).toBe('Ship the fix round')
+    expect(reloaded.dossier.value.inboundNote).toBe('Line from yesterday')
+  })
+
+  it('does not fork the note forward when the seeded editor content is edited again', async () => {
+    vi.useFakeTimers()
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    const rows: Record<string, string> = { '2026-01-16': 'First draft' }
+    vi.mocked(todayApi.getTomorrowNote).mockImplementation(noteByDate(rows))
+    vi.mocked(todayApi.saveTomorrowNote).mockImplementation(async (date: string, text: string) => {
+      rows[date] = text
+      return { ...tomorrowNoteResponse, date, text }
+    })
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const { dossier, saveLineForTomorrow } = useTodayDossier({ now: new Date(2026, 0, 15, 12, 0, 0) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(dossier.value.lineForTomorrow).toBe('First draft')
+
+    const save = saveLineForTomorrow('First draft, edited')
+    await vi.advanceTimersByTimeAsync(850)
+    await save
+
+    expect(Object.keys(rows)).toEqual(['2026-01-16'])
+    expect(rows['2026-01-16']).toBe('First draft, edited')
+  })
+
+  it('refetches both note keys after a local-day rollover', async () => {
+    vi.mocked(todayApi.getCadence).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getStreak).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getSealStatus).mockRejectedValue(new Error('skip'))
+    vi.mocked(todayApi.getTomorrowNote).mockImplementation(noteByDate({
+      '2026-01-16': 'Written yesterday, for today',
+      '2026-01-17': 'Written today, for tomorrow',
+    }))
+
+    const { useTodayDossier } = await import('../../composables/useTodayDossier')
+    const nowRef = ref(new Date(2026, 0, 15, 23, 59, 59))
+    const { dossier } = useTodayDossier({ now: nowRef })
+
+    await vi.waitFor(() => {
+      expect(todayApi.getTomorrowNote).toHaveBeenCalledWith('2026-01-16')
+    })
+
+    nowRef.value = new Date(2026, 0, 16, 0, 0, 1)
+
+    await vi.waitFor(() => {
+      expect(dossier.value.inboundNote).toBe('Written yesterday, for today')
+    })
+    expect(dossier.value.lineForTomorrow).toBe('Written today, for tomorrow')
+    expect(todayApi.getTomorrowNote).toHaveBeenCalledWith('2026-01-17')
   })
 })

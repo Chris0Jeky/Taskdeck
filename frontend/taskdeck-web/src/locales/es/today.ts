@@ -33,6 +33,7 @@ export default {
     toastFailed: 'No se pudo sellar el día. Inténtalo otra vez.',
   },
   note: {
+    inboundLabel: 'Tu línea de ayer',
     action: 'Escribe una nota',
     hint: 'Va a tu línea para mañana, aquí abajo.',
     sectionSub: 'Guardada para mañana · la verás mañana al abrir Hoy',

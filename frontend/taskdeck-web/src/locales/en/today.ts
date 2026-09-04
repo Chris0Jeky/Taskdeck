@@ -53,6 +53,7 @@ export default {
     toastFailed: 'Failed to seal the day. Please try again.',
   },
   note: {
+    inboundLabel: 'Your line from yesterday',
     action: 'Write a note',
     hint: 'Goes to your line for tomorrow, below.',
     sectionSub: 'Saved for tomorrow · your tomorrow-self sees it at first open',

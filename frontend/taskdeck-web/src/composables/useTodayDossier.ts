@@ -80,6 +80,16 @@ export interface DossierData {
   carryOver: DossierCarryOverCard[]
   streak: DossierStreak
   streakAvailable: boolean
+  /**
+   * The note the PREVIOUS day left for today, read under today's key. Display
+   * only: it is never seeded into the editor and never overwritten by a save
+   * (issue 1640).
+   */
+  inboundNote: string
+  /**
+   * The note being authored today FOR tomorrow, read under today+1 — the same
+   * key `saveLineForTomorrow` writes, so the editor round-trips.
+   */
   lineForTomorrow: string
 }
 
@@ -252,6 +262,7 @@ function buildHonestDossier(now: Date, summary: TodaySummary | null): DossierDat
       longestThisYear: 0,
     },
     streakAvailable: false,
+    inboundNote: '',
     lineForTomorrow: '',
   }
 }
@@ -301,6 +312,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
   let sealMutationGeneration = 0
   const liveCadence = ref<DossierCadence | null>(null)
   const liveStreak = ref<DossierStreak | null>(null)
+  const liveInboundNote = ref('')
   const liveLineForTomorrow = ref('')
   // `cadenceAvailable` / `streakAvailable` are false both before the request
   // resolves and after it fails, so on their own they cannot tell a caller
@@ -319,6 +331,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
     cadenceAvailable: liveCadence.value !== null,
     streak: liveStreak.value ?? honestDossier.value.streak,
     streakAvailable: liveStreak.value !== null,
+    inboundNote: liveInboundNote.value,
     lineForTomorrow: liveLineForTomorrow.value,
   }))
 
@@ -413,6 +426,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
         todayApi.getStreak(90),
         todayApi.getSealStatus(dateStr),
         todayApi.getTomorrowNote(dateStr),
+        todayApi.getTomorrowNote(nextLocalDossierDate(dateStr)),
       ])
 
       if (generation !== fetchGeneration) return
@@ -426,9 +440,14 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
       if (sealMutationAtFetch === sealMutationGeneration && results[2].status === 'fulfilled') {
         sealed.value = results[2].value.isSealed
       }
+      // The inbound note is read-only, so no local-edit generation guards it:
+      // nothing in this composable ever writes under today's key.
+      liveInboundNote.value = results[3].status === 'fulfilled'
+        ? (results[3].value?.text ?? '')
+        : ''
       if (noteMutationAtFetch === tomorrowNoteMutationGeneration) {
-        liveLineForTomorrow.value = results[3].status === 'fulfilled'
-          ? (results[3].value?.text ?? '')
+        liveLineForTomorrow.value = results[4].status === 'fulfilled'
+          ? (results[4].value?.text ?? '')
           : ''
       }
     } finally {
@@ -449,6 +468,7 @@ export function useTodayDossier(options: UseTodayDossierOptions = {}) {
 
     liveCadence.value = null
     liveStreak.value = null
+    liveInboundNote.value = ''
     liveLineForTomorrow.value = ''
     tomorrowNoteMutationGeneration += 1
     sealMutationGeneration += 1

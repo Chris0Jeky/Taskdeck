@@ -33,6 +33,7 @@ export default {
     toastFailed: 'Non è stato possibile sigillare il giorno. Riprova.',
   },
   note: {
+    inboundLabel: 'La tua riga di ieri',
     action: 'Scrivi una nota',
     hint: 'Porta alla tua riga per domani, qui sotto.',
     sectionSub: 'Salvata per domani · la rivedrai domani aprendo Oggi',
