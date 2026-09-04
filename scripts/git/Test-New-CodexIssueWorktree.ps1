@@ -909,7 +909,6 @@ finally {
             } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $projectAcceptEditsSettingsPath -Encoding Ascii
             $projectConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $projectAcceptEditsSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
             Assert-Equal "acceptEdits" $projectConfiguration.PermissionMode "A project-scope acceptEdits default should apply in the modeled configuration (#2395)."
-            Complete-Test "project-scope acceptEdits remains an effective file-backed mode"
 
             $inheritedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
             Assert-Equal "acceptEdits" $inheritedConfiguration.PermissionMode "A supported main-checkout local default mode should apply to a linked worktree when local settings are enabled."
