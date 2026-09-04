@@ -2342,6 +2342,73 @@ describe('captureStore', () => {
       }
     })
 
+    it('refreshes workload counts for a partial batch outcome and not for unchanged snapshots', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-a', 'ProposalCreated'),
+          summaryRow('c-b', 'Triaging'),
+        ] as never)
+
+        store.pollBatchTriageCompletion(['c-a', 'c-b'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        // One tracked item reached a terminal outcome while its sibling is
+        // still running: the workload count already moved server-side.
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+
+        await vi.advanceTimersByTimeAsync(9_000)
+        expect(vi.mocked(captureApi.listItems).mock.calls.length).toBeGreaterThan(1)
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-a', 'ProposalCreated'),
+          summaryRow('c-b', 'Failed'),
+        ] as never)
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(2)
+
+        const callsAtCompletion = vi.mocked(captureApi.listItems).mock.calls.length
+        await vi.advanceTimersByTimeAsync(9_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtCompletion)
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('refreshes workload counts once at the deadline for an outcome observed but not reconciled', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        store.detailById['c-1'] = detailFor('c-1', 'Triaging')
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-1', 'ProposalCreated'),
+        ] as never)
+        // The detail reconciliation for the terminal row never returns, so the
+        // tick that observed the outcome cannot finish before the deadline.
+        vi.mocked(captureApi.getItem).mockReturnValueOnce(new Promise(() => {}) as never)
+
+        store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+        expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
+
+        await vi.advanceTimersByTimeAsync(BATCH_TRIAGE_POLL_MAX_DURATION_MS - 3_000)
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+        expect(store.batchError).toBe(
+          'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
+        )
+        expect(toastMocks.warning).toHaveBeenCalledTimes(1)
+
+        await vi.advanceTimersByTimeAsync(9_000)
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it.each([401, 403])(
       'keeps a foreground list error when the background poll loses access (%s)',
       async (status) => {

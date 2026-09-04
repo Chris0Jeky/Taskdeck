@@ -594,7 +594,49 @@ export const useCaptureStore = defineStore('capture', () => {
     let deadlineTimerId: ReturnType<typeof setTimeout> | null = null
     let activeRequest: AbortController | null = null
     const refreshedDetailIds = new Set<string>()
+    const countedTerminalIds = new Set<string>()
     let observedPostEnqueueList = false
+
+    /**
+     * A tracked item whose terminal outcome this poll has actually observed
+     * since the batch was enqueued — the same truth `isComplete` reads, one id
+     * at a time. Cached pre-batch state never qualifies.
+     */
+    function isObservedTerminal(itemId: string): boolean {
+      const summary = items.value.find((item) => item.id === itemId)
+      if (summary) {
+        return observedPostEnqueueList && isTriageTerminalStatus(summary.status)
+      }
+      const detail = detailById.value[itemId]
+      return Boolean(
+        detail &&
+        refreshedDetailIds.has(itemId) &&
+        isTriageTerminalStatus(detail.status),
+      )
+    }
+
+    /**
+     * Move the badges for outcomes this poll observed but has not counted yet
+     * (#2303).
+     *
+     * The count is `New + Failed`, so a single item finishing changes it —
+     * waiting for the whole batch left the sidebar and Home stale for up to a
+     * minute whenever one item lagged, and stale forever when the deadline
+     * stopped the poll first. The counted set makes this idempotent: an
+     * unchanged snapshot notifies nobody.
+     */
+    function refreshCountsForNewTerminalOutcomes() {
+      let observedNewOutcome = false
+      for (const id of trackedIds) {
+        if (countedTerminalIds.has(id)) continue
+        if (!isObservedTerminal(id)) continue
+        countedTerminalIds.add(id)
+        observedNewOutcome = true
+      }
+      if (observedNewOutcome) {
+        notifyTriageCountChanged()
+      }
+    }
 
     function stop() {
       if (stopped) return
@@ -615,6 +657,9 @@ export const useCaptureStore = defineStore('capture', () => {
 
     function stopAtDeadline() {
       if (stopped) return
+      // An outcome this poll already observed still moved the workload count,
+      // even when the tick that saw it was aborted here before reconciling.
+      refreshCountsForNewTerminalOutcomes()
       // The batch write already succeeded. A deadline only means automatic
       // checking stopped; the server-side triage may still be running.
       if (!isComplete()) {
@@ -695,8 +740,8 @@ export const useCaptureStore = defineStore('capture', () => {
           onRefreshed: (id) => refreshedDetailIds.add(id),
         })
         if (!isCurrent()) return
+        refreshCountsForNewTerminalOutcomes()
         if (isComplete()) {
-          notifyTriageCountChanged()
           stop()
           return
         }
