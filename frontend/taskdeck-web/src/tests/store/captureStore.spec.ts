@@ -2424,6 +2424,27 @@ describe('captureStore', () => {
       }
     })
 
+    it('does not refresh workload counts from cached state when every poll read fails', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        // Terminal rows cached before the batch: nothing this poll observed.
+        store.items = [summaryRow('c-1', 'ProposalCreated')]
+        vi.mocked(captureApi.listItems).mockRejectedValue(new Error('list unavailable'))
+
+        store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(BATCH_TRIAGE_POLL_MAX_DURATION_MS)
+
+        expect(vi.mocked(captureApi.listItems).mock.calls.length).toBeGreaterThan(0)
+        expect(workspaceMocks.refreshWorkloadCounts).not.toHaveBeenCalled()
+        expect(store.batchError).toBe(
+          'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
+        )
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('refreshes workload counts once at the deadline for an outcome observed but not reconciled', async () => {
       vi.useFakeTimers()
       try {
