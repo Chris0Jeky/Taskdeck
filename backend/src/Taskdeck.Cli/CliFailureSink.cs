@@ -82,10 +82,43 @@ internal sealed class CliFailureSink
     /// CLI first-run bootstrap uses. When the data source cannot be resolved to a path (for example
     /// <c>:memory:</c>) that resolution falls back to the current working directory, exactly as
     /// <see cref="CliFirstRunBootstrapper"/> does for <c>appsettings.local.json</c>.
+    ///
+    /// Resolution parses operator input, and it runs before the CLI's unknown-exception boundary
+    /// exists, so every failure is absorbed here. The parse can raise types the resolution chain
+    /// does not filter: <c>SqliteConnectionStringBuilder</c> converts the Foreign Keys, Recursive
+    /// Triggers, Pooling and Default Timeout keywords with <c>Convert</c>, which raises
+    /// <see cref="FormatException"/> or <see cref="OverflowException"/> rather than
+    /// <see cref="ArgumentException"/>. A malformed connection string must fail through the
+    /// boundary later, never escape as an unhandled exception with a raw stack trace.
     /// </summary>
-    internal static CliFailureSink ForConnectionString(string? connectionString) =>
-        ForDataDirectory(CliFirstRunBootstrapper.ResolveDataDirectory(
-            string.IsNullOrWhiteSpace(connectionString) ? "Data Source=taskdeck.db" : connectionString));
+    internal static CliFailureSink ForConnectionString(string? connectionString)
+    {
+        try
+        {
+            return ForDataDirectory(CliFirstRunBootstrapper.ResolveDataDirectory(
+                string.IsNullOrWhiteSpace(connectionString) ? "Data Source=taskdeck.db" : connectionString));
+        }
+        catch (Exception)
+        {
+            // Same current-directory root the resolver itself falls back to for a data source it
+            // cannot turn into a path, so diagnostics still land somewhere for this run.
+            return ForDataDirectory(TryGetCurrentDirectory());
+        }
+    }
+
+    private static string? TryGetCurrentDirectory()
+    {
+        try
+        {
+            return Directory.GetCurrentDirectory();
+        }
+        catch (Exception)
+        {
+            // A deleted or inaccessible working directory leaves the sink without a root; the
+            // caller then reports that diagnostics were not captured.
+            return null;
+        }
+    }
 
     /// <summary>
     /// Builds a sink from the environment alone, before any host or configuration is built, so a
