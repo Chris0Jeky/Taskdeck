@@ -101,7 +101,7 @@ the section E Windows contract: the retained full Windows suite is local-runner 
 **`#2425`** (Windows worktree helper scenario 28, the forced 5s timeout lands in the checkout phase)
 and **`#2399`** (Windows batch command-shape sample contamination, seen again on PR `#2432`). Neither
 is a product defect; both are noise in clause 4 and in the SC-4 observation window.
-**`#2378`** (Priority I) is the same class for the Windows Frontend Unit launcher timeout.
+**`#2378`** (Priority I) is the same class for the Windows Frontend Unit launcher timeout. PR `#2427` (merge `7d8deef12`) removed that leg from the required E2E prerequisites, so its timeout can no longer leave `E2E Smoke` skipped; the launcher timeout itself is still open.
 
 ## 3. Human gates
 
