@@ -95,19 +95,30 @@ outside the two regions the guard inspects, so none is suppressed by an allowlis
 regions above where a regression would be silent. It is allowlist-based and deliberately narrow: it
 never inspects log statements and never inspects known-domain catches.
 
-- **Rule 1 (`mcp-error-message`)** — in `backend/src/Taskdeck.Api/Mcp/*.cs`, a statement in a
-  `return` / `throw` / `Error(...)` / `JsonSerializer.Serialize(...)` position that references
-  `.ErrorMessage` must also carry a sanitizer token (`SanitizeLlmFailureMessage`,
-  `GenericUnexpectedFailureMessage`, `PublicFailureMessage`, `SummarizeException`, or any
-  `SensitiveDataRedactor.` call).
-- **Rule 2 (`persisted-unknown-failure`)** — in the files listed in `PERSISTED_STATE_FILES`
-  (`AgentRuntime.cs`, `OpsCliService.cs`), a statement inside a `catch (Exception <var>)` block may
-  not reference `<var>.Message`, `<var>.StackTrace` or `<var>.ToString()` unless it is a logging call
-  or carries a sanitizer token. `catch (DomainException ex)` blocks are never matched, because the
-  catch filter is what makes their message curated.
-- **Allowlist** — one entry: `CaptureResources.cs` `errorMessage = c.ErrorMessage` (`#2443`), safe
-  because the write side sanitizes. Each entry must state a path, a pattern, an issue and a reason;
-  a test enforces that shape.
+- **Rule 1 (`mcp-error-message`)** — in `backend/src/Taskdeck.Api/Mcp/*.cs`, within a statement in a
+  `return` / `throw` / `Error(...)` / `JsonSerializer.Serialize(...)` position, **each individual**
+  `.ErrorMessage` occurrence must itself be wrapped in a sanitizing call (`SanitizeLlmFailureMessage`,
+  `Redact`, `PublicFailureMessage`, `SummarizeException`, `SafeExceptionDescription`). Sanitization is
+  judged per occurrence, not per statement: in
+  `new { error = PublicFailureMessage(result), detail = result.ErrorMessage }` the sanitized `error`
+  member does not excuse the raw `detail` member. The one exception is the reviewed guarded ternary
+  (`ProposalTools.cs:187-196`), where the `UnexpectedError` code selects
+  `GenericUnexpectedFailureMessage` and the alternative arm keeps curated domain text.
+- **Rule 2 (`unknown-exception-text`)** — in `backend/src/Taskdeck.Api/Mcp/*.cs` **and** in the files
+  listed in `PERSISTED_STATE_FILES` (`AgentRuntime.cs`, `OpsCliService.cs`), a statement inside a
+  `catch (Exception <var>)` block may not reference `<var>.Message`, `<var>.StackTrace` or
+  `<var>.ToString()` unless it is a logging call or carries a sanitizer token. This is what stops a
+  new MCP tool from writing `catch (Exception ex) { return Error(ex.Message); }`, which rule 1 cannot
+  see because it keys on the `ErrorMessage` member name. `catch (DomainException ex)` blocks are
+  never matched, because the catch filter is what makes their message curated. The existing bare
+  catches in `McpTelemetryMiddleware.cs:112` and `McpOperationLogger.cs:155,202,249` are exempt on
+  their merits — they log only, and report the exception *type* name rather than its message — not by
+  allowlist.
+- **Allowlist** — one entry: `CaptureResources.cs`, line `errorMessage = c.ErrorMessage` (`#2443`),
+  safe because the write side sanitizes. Entries are keyed to a path plus the **exact source line**,
+  never the enclosing statement, so a new raw member added to an already-allowlisted multi-line
+  `Serialize` statement is still flagged. Each entry must state a path, a single line, an issue and a
+  reason; a test enforces that shape.
 
 Everything else is out of guard scope by design. A new persisted-state surface joins the guard by
 being added to `PERSISTED_STATE_FILES` in the same PR that introduces it.
