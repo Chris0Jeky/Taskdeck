@@ -549,6 +549,9 @@ export function useReviewProposals() {
         ? await automationApi.getProposals(filters, { signal })
         : await automationApi.getProposals(filters)
       if (requestId !== latestProposalLoadRequestId) return 'superseded'
+      // An answer the caller stopped waiting for must not become the rendered
+      // authority behind its back, and proves nothing about queue freshness.
+      if (signal?.aborted) return 'aborted'
       proposals.value = loadedProposals
       // An explicit successful load is as trustworthy as a successful poll and
       // clears any older degraded indication without changing load semantics.

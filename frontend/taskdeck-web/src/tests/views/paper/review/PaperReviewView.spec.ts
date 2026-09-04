@@ -5461,4 +5461,295 @@ describe('PaperReviewView', () => {
       expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
     })
   })
+
+  describe('post-revision truth refresh deadline (#2460)', () => {
+    // Mirrors POST_REVISION_REVIEW_DEADLINE_MS in PaperReviewView.vue. Kept as a
+    // literal so raising the view's cap has to be a deliberate change here too.
+    const DEADLINE_MS = 12_000
+    const TIMED_OUT_COPY =
+      'Refreshing the review took too long, so it was stopped. No decision was made. Choose the current action again to retry.'
+    const FAILED_COPY =
+      'Review evidence could not be refreshed. No decision was made. Choose the current action again to retry.'
+    const REFRESHED_COPY =
+      'Review refreshed after your save attempt. Check the current evidence, then choose the action again.'
+    const REVISED_PAYLOAD = '{"operations":[{"sequence":0,"actionType":"CreateCard"}]}'
+
+    /** Arm the post-revision barrier the way the composer does. */
+    async function armBarrier(
+      wrapper: Awaited<ReturnType<typeof mountView>>,
+      proposalId: string,
+      revisionId: string,
+    ) {
+      const now = new Date().toISOString()
+      mocks.createRevision.mockResolvedValueOnce({
+        id: revisionId,
+        proposalId,
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: REVISED_PAYLOAD,
+        revisedAt: now,
+        reason: 'Deadline coverage',
+        createdAt: now,
+      })
+      await wrapper.get('[data-testid="decision-edit"]').trigger('click')
+      await flushPromises()
+      wrapper.findComponent(ReviewRevisionEditor).vm.$emit('save', {
+        revisedPayload: REVISED_PAYLOAD,
+        reason: 'Deadline coverage',
+      })
+      await flushPromises()
+    }
+
+    function rejectEveryCoreRead(times: number) {
+      const reads = [
+        mocks.getProvenance,
+        mocks.getConfidence,
+        mocks.getSideEffects,
+        mocks.getConflicts,
+        mocks.getHistory,
+        mocks.getSimilarPast,
+      ]
+      for (const read of reads) {
+        for (let attempt = 0; attempt < times; attempt += 1) {
+          read.mockRejectedValueOnce(new Error('core evidence unavailable'))
+        }
+      }
+    }
+
+    it('releases the rail on its deadline when the authoritative queue read never answers', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        const original = makeProposal({ id: 'stalled-queue' })
+        const refreshed = makeProposal({
+          id: 'stalled-queue',
+          latestRevisionId: 'rev-stalled-1',
+        })
+        mocks.approveProposal.mockResolvedValueOnce(
+          makeProposal({
+            id: 'stalled-queue',
+            status: 'Approved',
+            approvedRevisionId: 'rev-stalled-1',
+          }),
+        )
+        const wrapper = await mountView([original])
+        await armBarrier(wrapper, 'stalled-queue', 'rev-stalled-1')
+
+        let resolveStalled!: (proposals: Proposal[]) => void
+        mocks.getProposals.mockImplementationOnce(
+          () => new Promise<Proposal[]>((resolve) => { resolveStalled = resolve }),
+        )
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+
+        // The shared decision lock is held while the read is outstanding.
+        expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(true)
+        expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeDefined()
+
+        await vi.advanceTimersByTimeAsync(DEADLINE_MS)
+        await flushPromises()
+
+        // The rail is handed back with a truthful, retryable explanation.
+        expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+        expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
+          'Refreshing the review took too long',
+        )
+        expect(mocks.errorToast).toHaveBeenCalledWith(TIMED_OUT_COPY)
+        expect(mocks.errorToast).not.toHaveBeenCalledWith(FAILED_COPY)
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+        expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+        // The abandoned attempt answering late changes nothing: it neither
+        // becomes the rendered queue nor clears the barrier it gave up on.
+        resolveStalled([refreshed])
+        await flushPromises()
+        expect(mocks.infoToast).not.toHaveBeenCalledWith(REFRESHED_COPY)
+        expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
+          'Refreshing the review took too long',
+        )
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+        // The barrier survived the timeout, so the next explicit action still
+        // refreshes rather than deciding on pre-revision evidence.
+        mocks.getProposals.mockResolvedValue([refreshed])
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.infoToast).toHaveBeenCalledWith(REFRESHED_COPY)
+        expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+        // Only the second explicit action after a clean refresh decides.
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.approveProposal).toHaveBeenCalledOnce()
+        expect(mocks.executeProposal).not.toHaveBeenCalled()
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('releases the rail on its deadline when a core evidence read never answers', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        const original = makeProposal({ id: 'stalled-evidence' })
+        const refreshed = makeProposal({
+          id: 'stalled-evidence',
+          latestRevisionId: 'rev-evidence-1',
+        })
+        mocks.approveProposal.mockResolvedValueOnce(
+          makeProposal({
+            id: 'stalled-evidence',
+            status: 'Approved',
+            approvedRevisionId: 'rev-evidence-1',
+          }),
+        )
+        const wrapper = await mountView([original])
+        await armBarrier(wrapper, 'stalled-evidence', 'rev-evidence-1')
+
+        mocks.getProposals.mockResolvedValue([refreshed])
+        let resolveHistory!: (rows: unknown[]) => void
+        mocks.getHistory.mockImplementationOnce(
+          () => new Promise((resolve) => { resolveHistory = resolve }),
+        )
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(true)
+        expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeDefined()
+
+        await vi.advanceTimersByTimeAsync(DEADLINE_MS)
+        await flushPromises()
+
+        expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+        expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
+          'Refreshing the review took too long',
+        )
+        expect(mocks.errorToast).toHaveBeenCalledWith(TIMED_OUT_COPY)
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+        expect(mocks.executeProposal).not.toHaveBeenCalled()
+
+        // A late evidence answer may repopulate the panels, but it must not
+        // clear a barrier the timed-out attempt no longer owns.
+        resolveHistory([])
+        await flushPromises()
+        expect(mocks.infoToast).not.toHaveBeenCalledWith(REFRESHED_COPY)
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.infoToast).toHaveBeenCalledWith(REFRESHED_COPY)
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.approveProposal).toHaveBeenCalledOnce()
+        expect(mocks.executeProposal).not.toHaveBeenCalled()
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('names a partial core evidence failure as a failure, never as a timeout', async () => {
+      const original = makeProposal({ id: 'partial-failure' })
+      const refreshed = makeProposal({
+        id: 'partial-failure',
+        latestRevisionId: 'rev-partial-1',
+      })
+      const wrapper = await mountView([original])
+      await armBarrier(wrapper, 'partial-failure', 'rev-partial-1')
+
+      mocks.getProposals.mockResolvedValue([refreshed])
+      // One of the six rejects, through the automatic batch and its same-action retry.
+      mocks.getHistory
+        .mockRejectedValueOnce(new Error('history unavailable'))
+        .mockRejectedValueOnce(new Error('history still unavailable'))
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(mocks.errorToast).toHaveBeenCalledWith(FAILED_COPY)
+      expect(mocks.errorToast).not.toHaveBeenCalledWith(TIMED_OUT_COPY)
+      expect(wrapper.get('[data-testid="paper-review-evidence-unavailable"]').text()).toContain(
+        'Review evidence could not be refreshed',
+      )
+      // The rail is unlocked for the retry even though the refresh failed.
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('names a total core evidence failure as a failure and retains the barrier', async () => {
+      const original = makeProposal({ id: 'total-failure' })
+      const refreshed = makeProposal({
+        id: 'total-failure',
+        latestRevisionId: 'rev-total-1',
+      })
+      mocks.approveProposal.mockResolvedValueOnce(
+        makeProposal({
+          id: 'total-failure',
+          status: 'Approved',
+          approvedRevisionId: 'rev-total-1',
+        }),
+      )
+      const wrapper = await mountView([original])
+      await armBarrier(wrapper, 'total-failure', 'rev-total-1')
+
+      mocks.getProposals.mockResolvedValue([refreshed])
+      rejectEveryCoreRead(2)
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+
+      expect(mocks.errorToast).toHaveBeenCalledWith(FAILED_COPY)
+      expect(mocks.errorToast).not.toHaveBeenCalledWith(TIMED_OUT_COPY)
+      expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      // The barrier is retained: the next action refreshes, and only the one
+      // after a clean refresh may approve.
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.infoToast).toHaveBeenCalledWith(REFRESHED_COPY)
+      expect(mocks.approveProposal).not.toHaveBeenCalled()
+
+      await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+      await flushPromises()
+      expect(mocks.approveProposal).toHaveBeenCalledOnce()
+      expect(mocks.executeProposal).not.toHaveBeenCalled()
+      wrapper.unmount()
+    })
+
+    it('disarms its deadline once the refresh lands, so no late timeout note appears', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        const original = makeProposal({ id: 'clean-refresh' })
+        const refreshed = makeProposal({
+          id: 'clean-refresh',
+          latestRevisionId: 'rev-clean-1',
+        })
+        const wrapper = await mountView([original])
+        await armBarrier(wrapper, 'clean-refresh', 'rev-clean-1')
+
+        mocks.getProposals.mockResolvedValue([refreshed])
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.infoToast).toHaveBeenCalledWith(REFRESHED_COPY)
+
+        await vi.advanceTimersByTimeAsync(DEADLINE_MS)
+        await flushPromises()
+
+        expect(mocks.errorToast).not.toHaveBeenCalledWith(TIMED_OUT_COPY)
+        expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+        expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
 })

@@ -697,6 +697,64 @@ describe('useReviewProposals', () => {
       expect(rp.proposalsLoading.value).toBe(false)
     })
 
+    // #2460 -- a caller that owns a deadline needs its own cancellation told
+    // apart from a server failure, or a timeout would be blamed on the backend.
+    it('reports a caller-aborted explicit load as aborted rather than failed', async () => {
+      const controller = new AbortController()
+      let rejectRead!: (error: Error) => void
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectRead = reject
+        }),
+      )
+      const rp = useReviewProposals()
+
+      const load = rp.loadProposalsWithOutcome({ signal: controller.signal })
+      controller.abort()
+      rejectRead(new Error('canceled'))
+
+      await expect(load).resolves.toBe('aborted')
+      expect(mockToast.error).not.toHaveBeenCalled()
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 200 }),
+        expect.objectContaining({ signal: controller.signal }),
+      )
+    })
+
+    it('does not issue an explicit load whose caller has already given up', async () => {
+      const controller = new AbortController()
+      controller.abort()
+      const rp = useReviewProposals()
+
+      await expect(
+        rp.loadProposalsWithOutcome({ signal: controller.signal }),
+      ).resolves.toBe('aborted')
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+      expect(mockToast.error).not.toHaveBeenCalled()
+    })
+
+    it('reports an aborted deep-link leg as aborted and raises no lookup error', async () => {
+      mockRoute.hash = '#proposal-p-remote'
+      const controller = new AbortController()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      let rejectLookup!: (error: Error) => void
+      mockAutomationApi.getProposal.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectLookup = reject
+        }),
+      )
+      const rp = useReviewProposals()
+
+      const load = rp.loadProposalsWithOutcome({ signal: controller.signal })
+      await Promise.resolve()
+      await Promise.resolve()
+      controller.abort()
+      rejectLookup(new Error('canceled'))
+
+      await expect(load).resolves.toBe('aborted')
+      expect(mockToast.error).not.toHaveBeenCalled()
+    })
+
     it('does not report landed until its deep-link lookup completes', async () => {
       mockRoute.hash = '#proposal-p-remote'
       mockAutomationApi.getProposals.mockResolvedValueOnce([])
