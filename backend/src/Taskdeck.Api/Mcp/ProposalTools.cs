@@ -186,12 +186,11 @@ public class ProposalTools
 
     private static string Error(Result result)
     {
-        var message = string.Equals(
+        // Identical sanitization to ReadTools/WriteTools: the generic constant for unknown
+        // exceptions, pattern redaction for deliberate domain messages.
+        var message = SensitiveDataRedactor.SanitizeLlmFailureMessage(
             result.ErrorCode,
-            ErrorCodes.UnexpectedError,
-            StringComparison.Ordinal)
-                ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
-                : result.ErrorMessage;
+            result.ErrorMessage);
 
         return Error(message);
     }
