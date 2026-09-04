@@ -55,17 +55,46 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
         return Result.Success(dto);
     }
 
+    public async Task<Result<ProposalSideEffectsDto>> AnalyzeAsync(
+        ProposalDto effectiveProposal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(effectiveProposal);
+
+        var hasActiveWebhooks = false;
+        if (effectiveProposal.BoardId.HasValue)
+        {
+            var webhookSubs = await _unitOfWork.OutboundWebhookSubscriptions
+                .GetActiveByBoardAsync(effectiveProposal.BoardId.Value, cancellationToken);
+            hasActiveWebhooks = webhookSubs.Count > 0;
+        }
+
+        var rows = BuildSideEffectRows(effectiveProposal.Operations, hasActiveWebhooks);
+        var applyRisk = ComputeApplyRiskPosture(effectiveProposal.Operations, effectiveProposal.RiskLevel);
+
+        return Result.Success(new ProposalSideEffectsDto(
+            Rows: rows.Select(r => new SideEffectRowDto(r.Key, r.Value, r.Tone.ToString().ToLowerInvariant())).ToList(),
+            Reversibility: new ReversibilityDto(applyRisk.Summary, applyRisk.Description, applyRisk.WindowMs)));
+    }
+
     internal static IReadOnlyList<SideEffectRow> BuildSideEffectRows(
         IReadOnlyList<AutomationProposalOperation> operations,
         bool hasActiveWebhooks)
     {
-        bool hasCardMutation = operations.Any(op =>
+        return BuildSideEffectRows(operations.Select(ToDto).ToList(), hasActiveWebhooks);
+    }
+
+    internal static IReadOnlyList<SideEffectRow> BuildSideEffectRows(
+        IReadOnlyList<ProposalOperationDto> operations,
+        bool hasActiveWebhooks)
+    {
+        var hasCardMutation = operations.Any(op =>
             CardMutatingActions.Contains(op.ActionType) &&
             string.Equals(op.TargetType, "card", StringComparison.OrdinalIgnoreCase));
-        bool hasColumnMutation = operations.Any(op =>
+        var hasColumnMutation = operations.Any(op =>
             string.Equals(op.TargetType, "column", StringComparison.OrdinalIgnoreCase));
-        bool hasBoardMutation = hasCardMutation || hasColumnMutation;
-        bool hasAnyOperation = operations.Count > 0;
+        var hasBoardMutation = hasCardMutation || hasColumnMutation;
+        var hasAnyOperation = operations.Count > 0;
 
         return new List<SideEffectRow>
         {
@@ -79,31 +108,16 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
                             : "Adds columns to the board (no direct card mutations)"
                     : "No board mutations",
                 hasBoardMutation ? SideEffectTone.Active : SideEffectTone.Passive),
-
-            new(
-                "Subtasks",
-                "Subtask management not yet supported",
-                SideEffectTone.Passive),
-
-            new(
-                "Comments",
-                "Proposals do not create comments",
-                SideEffectTone.Passive),
-
+            new("Subtasks", "Subtask management not yet supported", SideEffectTone.Passive),
+            new("Comments", "Proposals do not create comments", SideEffectTone.Passive),
             new(
                 "Activity log",
-                hasAnyOperation
-                    ? "Audit entries will be recorded for all applied operations"
-                    : "No operations to log",
+                hasAnyOperation ? "Audit entries will be recorded for all applied operations" : "No operations to log",
                 hasAnyOperation ? SideEffectTone.Active : SideEffectTone.Passive),
-
             new(
                 "Notifications",
-                hasAnyOperation
-                    ? "Approval or rejection generates notifications"
-                    : "No notifications generated",
+                hasAnyOperation ? "Approval or rejection generates notifications" : "No notifications generated",
                 hasAnyOperation ? SideEffectTone.Active : SideEffectTone.Passive),
-
             new(
                 "Webhooks",
                 hasActiveWebhooks && hasAnyOperation
@@ -112,17 +126,25 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
                         ? "Outbound webhooks configured but no operations to trigger them"
                         : "No outbound webhooks configured",
                 hasActiveWebhooks && hasAnyOperation ? SideEffectTone.Active : SideEffectTone.Passive),
-
-            new(
-                "Calendar",
-                "Calendar integration not yet available",
-                SideEffectTone.Passive)
+            new("Calendar", "Calendar integration not yet available", SideEffectTone.Passive)
         };
     }
 
     internal static Reversibility ComputeApplyRiskPosture(
         IReadOnlyList<AutomationProposalOperation> operations,
         RiskLevel riskLevel)
+    {
+        return ComputeApplyRiskPostureForCount(operations.Count, riskLevel);
+    }
+
+    internal static Reversibility ComputeApplyRiskPosture(
+        IReadOnlyList<ProposalOperationDto> operations,
+        RiskLevel riskLevel)
+    {
+        return ComputeApplyRiskPostureForCount(operations.Count, riskLevel);
+    }
+
+    private static Reversibility ComputeApplyRiskPostureForCount(int operationCount, RiskLevel riskLevel)
     {
         // WindowMs is retained for the stable side-effect endpoint contract. It is a legacy
         // review-attention horizon, not an undo or recovery guarantee.
@@ -160,7 +182,7 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
                 break;
         }
 
-        if (operations.Count == 0)
+        if (operationCount == 0)
         {
             summary = "No operations to apply";
             description = "This proposal contains no operations and will have no effect.";
@@ -169,4 +191,15 @@ public sealed class SideEffectAnalyzer : ISideEffectAnalyzer
 
         return new Reversibility(summary, description, windowMs);
     }
+
+    private static ProposalOperationDto ToDto(AutomationProposalOperation operation) => new(
+        operation.Id,
+        operation.ProposalId,
+        operation.Sequence,
+        operation.ActionType,
+        operation.TargetType,
+        operation.TargetId,
+        operation.Parameters,
+        operation.IdempotencyKey,
+        operation.ExpectedVersion);
 }

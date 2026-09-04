@@ -12,6 +12,14 @@ import {
   proposalRevisionMoved,
 } from '../utils/proposalIdentity'
 
+export type SaveRevisionResult = {
+  proposalId: string
+  /** Whether the API response confirmed persistence or left it unknown. */
+  outcome: 'persisted' | 'indeterminate'
+  /** The active proposal/save generation still owns this continuation. */
+  current: boolean
+}
+
 export function useProposalRevisions(
   activeProposal: Ref<ApiProposal | null>,
   /**
@@ -20,8 +28,15 @@ export function useProposalRevisions(
    * queue GET in flight at that moment still carries the pre-revision summary,
    * operations and latestRevisionId, and writing it would silently undo the
    * saved edit on screen (#2194 review round).
+   *
+   * `onRevisionStateUncertain` fires when a POST response does not prove whether
+   * the server committed. It invalidates the same pre-write queue reads without
+   * claiming a successful save or changing the editor's retryable draft.
    */
-  options?: { onRevisionSaved?: () => void },
+  options?: {
+    onRevisionSaved?: () => void
+    onRevisionStateUncertain?: () => void
+  },
 ) {
   const toast = useToastStore()
 
@@ -36,6 +51,21 @@ export function useProposalRevisions(
   const revisionsLoaded = ref(false)
   let loadGeneration = 0
   let saveGeneration = 0
+
+  /**
+   * A save can outlive an A -> B -> A navigation. If A is active again when its
+   * old continuation lands, its current metadata may have been read before that
+   * save committed. Mark only that matching active state unknown and suppress
+   * its pending GET; a B selection must keep its own authoritative metadata.
+   */
+  function invalidateActiveRevisionMetadata(proposalId: string) {
+    if (activeProposal.value?.id !== proposalId) return false
+    loadGeneration += 1
+    revisionCount.value = 0
+    latestRevision.value = null
+    revisionsLoaded.value = false
+    return true
+  }
 
   // `silent: true` suppresses the failure toast — for augment-only callers
   // (e.g. the read-only stored preview, which is already rendered locally and
@@ -128,16 +158,26 @@ export function useProposalRevisions(
     editing.value = false
   }
 
-  async function saveRevision(payload: CreateRevisionPayload) {
+  async function saveRevision(payload: CreateRevisionPayload): Promise<SaveRevisionResult | null> {
     const proposal = activeProposal.value
-    if (!proposal) return
+    if (!proposal) return null
 
     const proposalId = proposal.id
     const gen = ++saveGeneration
     try {
       saving.value = true
       const revision = await proposalRevisionsApi.createRevision(proposalId, payload)
-      if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
+      const current = gen === saveGeneration && activeProposal.value?.id === proposalId
+      if (!current) {
+        // The persisted A1 response is stale as an editor continuation, but it
+        // still makes matching re-entered A metadata (and any pending A GET)
+        // unsafe to treat as an authoritative empty revision list.
+        invalidateActiveRevisionMetadata(proposalId)
+        // Same hazard, different list: a queue GET that predates this save must
+        // not restore the pre-revision proposal, even if this UI continuation is stale.
+        options?.onRevisionSaved?.()
+        return { proposalId, outcome: 'persisted', current: false }
+      }
       // Invalidate any in-flight revision load so a pre-save (stale, empty) list
       // can't overwrite this save's state when it resolves after the save.
       loadGeneration += 1
@@ -151,9 +191,21 @@ export function useProposalRevisions(
       revisionsLoaded.value = true
       editing.value = false
       toast.success('Revision saved')
+      return { proposalId, outcome: 'persisted', current: true }
     } catch (e: unknown) {
-      if (gen !== saveGeneration || activeProposal.value?.id !== proposalId) return
-      toast.error(getErrorDisplay(e, 'Failed to save revision').message)
+      const current = gen === saveGeneration && activeProposal.value?.id === proposalId
+      // A rejected POST can have committed before a timeout, network break, or
+      // 5xx reached the client. Invalidate queue reads synchronously even for a
+      // stale continuation: a pre-write answer can restore old operations after
+      // an unseen commit. This is uncertainty, not a success notification.
+      options?.onRevisionStateUncertain?.()
+      // Its active proposal's revision metadata is then unknown, but the editor
+      // draft remains a separate concern for the view.
+      invalidateActiveRevisionMetadata(proposalId)
+      if (current) {
+        toast.error(getErrorDisplay(e, 'Failed to save revision').message)
+      }
+      return { proposalId, outcome: 'indeterminate', current }
     } finally {
       if (gen === saveGeneration && activeProposal.value?.id === proposalId) {
         saving.value = false

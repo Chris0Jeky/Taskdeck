@@ -85,6 +85,43 @@ public class SimilarDecisionService : ISimilarDecisionService
         return Result.Success(ToDto(result));
     }
 
+    public async Task<Result<SimilarPastResultDto>> GetSimilarPastAsync(
+        ProposalDto effectiveProposal,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(effectiveProposal);
+
+        var actionType = GetPrimaryActionType(effectiveProposal.Operations);
+        if (string.IsNullOrWhiteSpace(actionType))
+            return Result.Success(ToDto(SimilarPastResult.Empty));
+
+        var pastProposals = (await _unitOfWork.AutomationProposals
+            .GetTerminalByActionTypeAsync(actionType, effectiveProposal.BoardId, userId, LookbackLimit, cancellationToken))
+            ?? Array.Empty<AutomationProposal>();
+
+        var filtered = pastProposals
+            .Where(p => p.Id != effectiveProposal.Id)
+            .ToList();
+
+        if (filtered.Count == 0)
+            return Result.Success(ToDto(SimilarPastResult.Empty));
+
+        var appliedCount = filtered.Count(p => p.Status == ProposalStatus.Applied);
+        var rejectedCount = filtered.Count(p => p.Status == ProposalStatus.Rejected);
+        var applyRate = SimilarPastResult.ComputeApplyRate(appliedCount, rejectedCount);
+        var topDecisions = filtered
+            .Take(MaxDecisions)
+            .Select((p, index) => SimilarPastDecision.Create(
+                serial: $"#{(index + 1):D3}",
+                title: GetProposalTitle(p),
+                verdict: MapVerdict(p.Status),
+                date: FormatWeekDate(p.DecidedAt ?? p.CreatedAt)))
+            .ToList();
+
+        return Result.Success(ToDto(new SimilarPastResult(topDecisions, applyRate)));
+    }
+
     /// <summary>
     /// Gets the primary action type from the first operation of a proposal.
     /// The "action class" is the ActionType string of the first (or most representative) operation.
@@ -101,6 +138,13 @@ public class SimilarDecisionService : ISimilarDecisionService
             .OrderBy(op => op.Sequence)
             .First()
             .ActionType;
+    }
+
+    internal static string? GetPrimaryActionType(IReadOnlyList<ProposalOperationDto> operations)
+    {
+        return operations.Count == 0
+            ? null
+            : operations.OrderBy(operation => operation.Sequence).First().ActionType;
     }
 
     /// <summary>
