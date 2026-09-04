@@ -4833,7 +4833,11 @@ describe('PaperReviewView', () => {
 
     it('consumes one Approve after an indeterminate save even when the revision key is unchanged', async () => {
       const original = makeProposal({ id: 'uncertain-truth' })
-      mocks.createRevision.mockRejectedValueOnce(new Error('Request timed out after commit'))
+      // A 409 can be raised after a competing writer has committed the next
+      // revision. It must take the same refresh barrier as a timeout.
+      mocks.createRevision.mockRejectedValueOnce({
+        response: { status: 409 },
+      })
       mocks.approveProposal.mockResolvedValueOnce(
         makeProposal({ id: 'uncertain-truth', status: 'Approved' }),
       )
