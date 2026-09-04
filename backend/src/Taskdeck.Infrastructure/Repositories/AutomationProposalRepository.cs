@@ -319,7 +319,6 @@ public class AutomationProposalRepository : Repository<AutomationProposal>, IAut
             .Where(p =>
                 !p.BoardId.HasValue ||
                 !_context.Boards.Any(board => board.Id == p.BoardId.Value && board.IsArchived))
-            .Include(p => p.Operations)
             .ToListAsync(cancellationToken);
 
         // Counted with the complementary predicate rather than by subtracting from a total, so the
