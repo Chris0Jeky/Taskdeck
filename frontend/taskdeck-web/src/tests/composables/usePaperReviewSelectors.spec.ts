@@ -556,9 +556,10 @@ describe('usePaperReviewSelectors', () => {
 
     await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('failed')
     expect(selectors.loading.value).toBe(false)
-    // A partial rev-2 answer is not published as measured-empty evidence. Keep
-    // the last coherent batch visible until a complete current-key retry lands.
-    expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
+    // A partial rev-2 answer is not published as measured-empty evidence, and
+    // the coherent rev-1 batch is dropped rather than shown as rev-2 evidence.
+    expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
     expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(2)
 
     await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
@@ -566,7 +567,7 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.conflicts.value).toEqual([])
   })
 
-  it('drops the previous proposal evidence when the next proposal batch fails', async () => {
+  it('drops the previous key evidence when the next batch fails', async () => {
     mockAllEndpointsEmpty()
     vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValueOnce([
       { tone: 0, key: 'existing-warning', value: 'Review this first' },
@@ -582,7 +583,8 @@ describe('usePaperReviewSelectors', () => {
     await nextTick()
 
     await expect(selectors.waitForCoreBatch('p-2', null)).resolves.toBe('failed')
-    // p-1 evidence must never render under the p-2 header.
+    // p-1 evidence must never render under the p-2 header. The same drop
+    // applies to a revision move within one proposal (covered above).
     expect(selectors.conflicts.value).toEqual([])
     expect(selectors.provenance.value).toEqual([])
     expect(selectors.confidenceBreakdown.value.overall).toBeNull()

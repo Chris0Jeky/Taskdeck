@@ -610,10 +610,11 @@ export function usePaperReviewSelectors(
         // These six reads form one evidence snapshot. Publishing successful
         // siblings would turn unavailable evidence into affirmative empty
         // states and let this revision key masquerade as fully refreshed.
-        if (settledCoreKey && !proposalIdsEqual(settledCoreKey.proposalId, key.proposalId)) {
-          // Retaining the last coherent batch is only safe within one proposal.
-          // Across proposals it would render the previous proposal's evidence
-          // under this header, so drop it rather than misattribute it.
+        if (settledCoreKey && !selectorKeysEqual(settledCoreKey, key)) {
+          // The last coherent batch answers a different key, so it is evidence
+          // for another proposal or another revision. Rendering it under this
+          // header would present superseded evidence as current, which is
+          // worse than an honest empty panel: drop it instead.
           settledCoreKey = null
           settledCaptureMetadata = null
           discardCaptureLookup()
