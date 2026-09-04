@@ -28,4 +28,25 @@ public class LogControlCharacterSanitizerTests
 
         sanitized.Should().Be("beforenext-linelineparagraph after");
     }
+
+    [Fact]
+    public void LogValueSanitizer_ShouldNotSplitSurrogatePairWhenControlsShiftBoundary()
+    {
+        var value = new string('x', 199) + "\u001B😀tail";
+
+        var sanitized = LogValueSanitizer.Sanitize(value);
+
+        sanitized.Should().Be(new string('x', 199) + "...");
+        sanitized.Should().NotContain("\uD83D").And.NotContain("\uDE00");
+    }
+
+    [Fact]
+    public void Strip_ShouldRemoveUnpairedSurrogates()
+    {
+        const string value = "before\uD83Dmiddle\uDE00after";
+
+        var sanitized = LogControlCharacterSanitizer.Strip(value);
+
+        sanitized.Should().Be("beforemiddleafter");
+    }
 }
