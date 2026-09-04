@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -1672,5 +1672,125 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         result.BoardId.Should().NotBeNull();
 
         return result.BoardId!.Value;
+    }
+
+    // ----- GET {id}/provenance/metadata (#1987) -----
+
+    /// <summary>
+    /// Stamps the producer triple directly on the stored provenance row. Proposals created through
+    /// the HTTP contract can never carry it (the inputs are JsonIgnore'd on purpose), so the test
+    /// writes what capture triage would have written.
+    /// </summary>
+    private async Task StampProducerTripleAsync(Guid proposalId, string provider, string promptVersion)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var provenance = await db.ProposalProvenances.SingleAsync(item => item.ProposalId == proposalId);
+        var entry = db.Entry(provenance);
+        entry.Property(nameof(ProposalProvenance.Provider)).CurrentValue = provider;
+        entry.Property(nameof(ProposalProvenance.PromptVersion)).CurrentValue = promptVersion;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<ProposalProvenanceMetadataDto> ReadMetadataAsync(HttpResponseMessage response)
+    {
+        var json = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"response body: {json}");
+        return JsonSerializer.Deserialize<ProposalProvenanceMetadataDto>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+    }
+
+    [Fact]
+    public async Task GetProposalProvenanceMetadata_ShouldReturnServerRecordedTriple_ForTheOwner()
+    {
+        var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "provenance-metadata-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "provenance-metadata-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+        await StampProducerTripleAsync(proposal.Id, "openai", "llm-triage.v2");
+
+        var response = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance/metadata");
+
+        var metadata = await ReadMetadataAsync(response);
+        metadata.Provider.Should().Be("openai");
+        metadata.PromptVersion.Should().Be("llm-triage.v2");
+        metadata.Model.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task GetProposalProvenanceMetadata_ShouldServeABoardCollaborator_WhoCannotReadCaptureDetail()
+    {
+        // #2315 state 3: a board-authorized reviewer needs the producer metadata for the proposal
+        // they are reviewing without gaining access to the owner-only capture detail.
+        var ownerClient = _factory.CreateClient();
+        var viewerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "provenance-metadata-collab-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "provenance-metadata-collab-viewer");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "provenance-metadata-collab-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var grantResponse = await ownerClient.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/access",
+            new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer));
+        grantResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await StampProducerTripleAsync(proposal.Id, "deterministic", "triage.v1");
+
+        var response = await viewerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance/metadata");
+
+        var metadata = await ReadMetadataAsync(response);
+        metadata.Provider.Should().Be("deterministic");
+        metadata.PromptVersion.Should().Be("triage.v1");
+    }
+
+    [Fact]
+    public async Task GetProposalProvenanceMetadata_ShouldReturnNullFields_WhenNoProducerWasRecorded()
+    {
+        var ownerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "provenance-metadata-unrecorded");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "provenance-metadata-unrecorded-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+
+        var response = await ownerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance/metadata");
+
+        // 200 with nulls, not an error: absence is an answer, and the surface makes no claim.
+        var metadata = await ReadMetadataAsync(response);
+        metadata.Provider.Should().BeNull();
+        metadata.Model.Should().BeNull();
+        metadata.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProposalProvenanceMetadata_ShouldMatchProvenanceAuthorizationParity_ForAStranger()
+    {
+        var ownerClient = _factory.CreateClient();
+        var strangerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "provenance-metadata-parity-owner");
+        await ApiTestHarness.AuthenticateAsync(strangerClient, "provenance-metadata-parity-stranger");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "provenance-metadata-parity-board");
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+        await StampProducerTripleAsync(proposal.Id, "openai", "llm-triage.v2");
+
+        var rowsResponse = await strangerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance");
+        var metadataResponse = await strangerClient.GetAsync($"/api/automation/proposals/{proposal.Id}/provenance/metadata");
+
+        // The new endpoint must not be a softer door than the one it sits beside.
+        rowsResponse.StatusCode.Should().BeOneOf(HttpStatusCode.NotFound, HttpStatusCode.Forbidden);
+        metadataResponse.StatusCode.Should().Be(rowsResponse.StatusCode);
+        var body = await metadataResponse.Content.ReadAsStringAsync();
+        body.Should().NotContain("openai");
+        body.Should().NotContain("llm-triage.v2");
+    }
+
+    [Fact]
+    public async Task GetProposalProvenanceMetadata_ShouldRequireAuthentication()
+    {
+        var anonymousClient = _factory.CreateClient();
+
+        var response = await anonymousClient.GetAsync(
+            $"/api/automation/proposals/{Guid.NewGuid()}/provenance/metadata");
+
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
     }
 }

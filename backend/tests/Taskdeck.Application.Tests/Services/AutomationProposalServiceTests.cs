@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -4834,4 +4834,100 @@ public class AutomationProposalServiceTests
     }
 
     #endregion
+
+    // ----- Producer triple stamping (#1987) -----
+
+    [Theory]
+    // The live-provider case: the dispatched provider and its schema-v2 prompt contract.
+    [InlineData("openai", "llm-triage.v2")]
+    // The deterministic case: no model ran, and the extractor says so honestly.
+    [InlineData("deterministic", "triage.v1")]
+    public async Task CreateProposalAsync_ShouldStampProducerTripleFromTrustedInputs(
+        string provider,
+        string promptVersion)
+    {
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured task",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations: [new(0, "create", "card", "{\"title\":\"Test\"}", "key1")],
+            ProvenanceModelId: "gpt-5.6-luna")
+        {
+            ProvenanceProvider = provider,
+            ProvenancePromptVersion = promptVersion
+        };
+        _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
+            .ReturnsAsync((AutomationProposal p, CancellationToken _) => p);
+        ProposalProvenance? captured = null;
+        _provenanceRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ProposalProvenance>(), default))
+            .Callback<ProposalProvenance, CancellationToken>((p, _) => captured = p)
+            .ReturnsAsync((ProposalProvenance p, CancellationToken _) => p);
+
+        var result = await _service.CreateProposalAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        captured!.Provider.Should().Be(provider);
+        captured.PromptVersion.Should().Be(promptVersion);
+        captured.ModelId.Should().Be("gpt-5.6-luna");
+    }
+
+    [Fact]
+    public async Task CreateProposalAsync_ShouldLeaveProducerTripleUnrecorded_WhenNoTrustedInputsSupplied()
+    {
+        // A Chat-origin proposal names no producer, so provenance must record none rather than
+        // let the "chat-tools" origin sentinel be read back as a provider.
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Create card from chat",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations: [new(0, "create", "card", "{\"title\":\"Test\"}", "key1")]);
+        _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
+            .ReturnsAsync((AutomationProposal p, CancellationToken _) => p);
+        ProposalProvenance? captured = null;
+        _provenanceRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ProposalProvenance>(), default))
+            .Callback<ProposalProvenance, CancellationToken>((p, _) => captured = p)
+            .ReturnsAsync((ProposalProvenance p, CancellationToken _) => p);
+
+        var result = await _service.CreateProposalAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        captured!.Provider.Should().BeNull();
+        captured.PromptVersion.Should().BeNull();
+        captured.ModelId.Should().Be("chat-tools");
+    }
+
+    [Fact]
+    public async Task CreateProposalAsync_ShouldTruncateOverlongProducerTriple_RatherThanFailTheProposal()
+    {
+        var dto = new CreateProposalDto(
+            ProposalSourceType.Queue,
+            Guid.NewGuid(),
+            "Create captured task",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            Operations: [new(0, "create", "card", "{\"title\":\"Test\"}", "key1")])
+        {
+            ProvenanceProvider = new string('p', ProposalProvenance.MaxProviderLength + 10),
+            ProvenancePromptVersion = new string('v', ProposalProvenance.MaxPromptVersionLength + 10)
+        };
+        _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
+            .ReturnsAsync((AutomationProposal p, CancellationToken _) => p);
+        ProposalProvenance? captured = null;
+        _provenanceRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ProposalProvenance>(), default))
+            .Callback<ProposalProvenance, CancellationToken>((p, _) => captured = p)
+            .ReturnsAsync((ProposalProvenance p, CancellationToken _) => p);
+
+        var result = await _service.CreateProposalAsync(dto);
+
+        result.IsSuccess.Should().BeTrue();
+        captured!.Provider.Should().HaveLength(ProposalProvenance.MaxProviderLength);
+        captured.PromptVersion.Should().HaveLength(ProposalProvenance.MaxPromptVersionLength);
+    }
 }
