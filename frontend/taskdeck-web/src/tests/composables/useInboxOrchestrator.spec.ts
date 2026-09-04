@@ -673,6 +673,24 @@ describe('useInboxOrchestrator', () => {
       expect(mockCaptureStore.fetchItems).toHaveBeenCalled()
     })
 
+    it('treats the mount load as a scope replacement so a failed first load hides rows retained from a previous board', async () => {
+      // Simulate re-entering Inbox at a different board with rows left in the store
+      // from the previously visited board (the store is not reset on route leave).
+      mockCaptureStore.items = [{ id: 'stale-1' }, { id: 'stale-2' }]
+      mockRoute.query = { boardId: 'board-2' }
+      mockCaptureStore.fetchItems.mockRejectedValueOnce(new Error('scope load failed'))
+
+      const orch = createOrchestrator()
+      await mountedCallback!()
+
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith(
+        expect.objectContaining({ boardId: 'board-2', limit: 200 }),
+      )
+      // scopeReplacement stays set, so PaperTriageTable hides the stale rows and
+      // suppresses their count under the new board's label.
+      expect(orch.isScopeReplacement.value).toBe(true)
+    })
+
     it('onUnmounted stops active triage polling', async () => {
       const stopPoll = vi.fn()
       mockCaptureStore.pollTriageCompletion.mockReturnValueOnce(stopPoll)

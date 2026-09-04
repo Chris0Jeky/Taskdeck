@@ -602,7 +602,10 @@ export function useInboxOrchestrator(options: {
 
   onMounted(() => {
     void loadScopedBoard()
-    void loadInbox()
+    // Mount is always a fresh scope: captureStore.items can still hold rows from a
+    // previously visited board (the store is not reset on route leave), so the first
+    // load must replace scope rather than retain stale rows on failure.
+    void loadInboxForScopeReplacement()
   })
 
   onUnmounted(() => {
