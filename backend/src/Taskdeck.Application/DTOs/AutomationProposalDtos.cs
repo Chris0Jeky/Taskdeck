@@ -26,6 +26,13 @@ public record ProposalDto(
     List<ProposalOperationDto> Operations
 )
 {
+    /// <summary>
+    /// The username of the actor who approved or rejected this proposal, when the actor still
+    /// resolves to a user. The id remains available separately for technical correlation, but the
+    /// review surface must not present that opaque id as the actor's name (#2195).
+    /// </summary>
+    public string? DecidedByUserName { get; init; }
+
     public ProposalPresentationDto Presentation { get; init; } = ProposalPresentationDto.Empty;
 
     /// <summary>

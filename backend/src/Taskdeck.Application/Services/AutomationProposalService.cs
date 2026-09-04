@@ -430,11 +430,13 @@ public class AutomationProposalService : IAutomationProposalService
         // revision" — exactly the null the single-proposal read produces — so the builder maps the
         // proposal's original operations for those items.
         var effectiveRevisions = await GetEffectiveRevisionsAsync(page, cancellationToken);
+        var decidedByUserNames = await ResolveDecidedByUserNamesAsync(page, cancellationToken);
 
         var dtos = page
             .Select(proposal => BuildEffectiveProposalDto(
                 proposal,
-                effectiveRevisions.TryGetValue(proposal.Id, out var revision) ? revision : null))
+                effectiveRevisions.TryGetValue(proposal.Id, out var revision) ? revision : null,
+                GetDecidedByUserName(proposal, decidedByUserNames)))
             .ToList();
 
         return Result.Success<IEnumerable<ProposalDto>>(dtos);
@@ -532,7 +534,11 @@ public class AutomationProposalService : IAutomationProposalService
             // Echo the effective (pinned) operations Apply will run, not the stale originals (#1424).
             // latestRevision IS the pinned revision (its id was stored as ApprovedRevisionId), so map
             // the DTO from it directly rather than re-reading it via GetEffectiveRevisionAsync.
-            return Result.Success(BuildEffectiveProposalDto(proposal, latestRevision));
+            var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+            return Result.Success(BuildEffectiveProposalDto(
+                proposal,
+                latestRevision,
+                GetDecidedByUserName(proposal, decidedByUserNames)));
         }
         catch (DomainException ex)
         {
@@ -1076,7 +1082,11 @@ public class AutomationProposalService : IAutomationProposalService
         CancellationToken cancellationToken)
     {
         var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
-        return Result.Success(BuildEffectiveProposalDto(proposal, effectiveRevision));
+        var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+        return Result.Success(BuildEffectiveProposalDto(
+            proposal,
+            effectiveRevision,
+            GetDecidedByUserName(proposal, decidedByUserNames)));
     }
 
     /// <summary>
@@ -1103,9 +1113,10 @@ public class AutomationProposalService : IAutomationProposalService
     /// </summary>
     private static ProposalDto BuildEffectiveProposalDto(
         AutomationProposal proposal,
-        ProposalRevision? effectiveRevision)
+        ProposalRevision? effectiveRevision,
+        string? decidedByUserName = null)
     {
-        var dto = MapToDto(proposal) with
+        var dto = MapToDto(proposal, decidedByUserName) with
         {
             LatestRevisionId = proposal.Status == ProposalStatus.PendingReview
                 ? effectiveRevision?.Id
@@ -1216,7 +1227,8 @@ public class AutomationProposalService : IAutomationProposalService
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
 
-            return Result.Success(MapToDto(proposal));
+            var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+            return Result.Success(MapToDto(proposal, GetDecidedByUserName(proposal, decidedByUserNames)));
         }
         catch (DomainException ex)
         {
@@ -1243,7 +1255,8 @@ public class AutomationProposalService : IAutomationProposalService
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
 
-            return Result.Success(MapToDto(proposal));
+            var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+            return Result.Success(MapToDto(proposal, GetDecidedByUserName(proposal, decidedByUserNames)));
         }
         catch (DomainException ex)
         {
@@ -1603,7 +1616,36 @@ public class AutomationProposalService : IAutomationProposalService
         CancellationToken cancellationToken) =>
         _policyEngine.GuardProposalDecisionWritesAsync(new[] { boardId }, cancellationToken);
 
-    private static ProposalDto MapToDto(AutomationProposal proposal)
+    private async Task<IReadOnlyDictionary<Guid, string>> ResolveDecidedByUserNamesAsync(
+        IEnumerable<AutomationProposal> proposals,
+        CancellationToken cancellationToken)
+    {
+        var ids = proposals
+            .Select(proposal => proposal.DecidedByUserId)
+            .Where(id => id.HasValue && id.Value != Guid.Empty)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        if (ids.Count == 0 || _unitOfWork.Users is null)
+            return new Dictionary<Guid, string>();
+
+        // Actor names are response enrichment. A missing user (for example, a legacy row whose
+        // actor was removed) stays explicitly unavailable rather than leaking the opaque id.
+        var names = await _unitOfWork.Users.GetUsernamesByIdsAsync(ids, cancellationToken);
+        return names ?? new Dictionary<Guid, string>();
+    }
+
+    private static string? GetDecidedByUserName(
+        AutomationProposal proposal,
+        IReadOnlyDictionary<Guid, string> names)
+    {
+        return proposal.DecidedByUserId is Guid id && names.TryGetValue(id, out var name)
+            ? name
+            : null;
+    }
+
+    private static ProposalDto MapToDto(AutomationProposal proposal, string? decidedByUserName = null)
     {
         var operationDtos = proposal.Operations.Select(MapOperationToDto).ToList();
 
@@ -1635,6 +1677,7 @@ public class AutomationProposalService : IAutomationProposalService
             Presentation = BuildPresentation(proposal.Summary, proposal.RiskLevel, proposal.SourceType, operationDtos),
             IsExpired = proposal.IsExpired,
             DeferredUntil = proposal.DeferredUntil,
+            DecidedByUserName = decidedByUserName,
             ApprovedRevisionId = proposal.ApprovedRevisionId
         };
     }

@@ -1309,6 +1309,7 @@ describe('PaperReviewView', () => {
         summary: 'Newer applied work',
         decidedAt: new Date(Date.now() - 35 * 60_000).toISOString(),
         decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+        decidedByUserName: 'Ada',
         appliedAt: newerAppliedAt,
         presentation: {
           plainSummary: 'Newer applied work',
@@ -1341,7 +1342,7 @@ describe('PaperReviewView', () => {
       'Create card "Exact applied work".',
     )
     expect(wrapper.get('[data-testid="applied-record-decision-actor"]').text()).toBe(
-      '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+      'Ada',
     )
     expect(wrapper.find('[data-testid="decision-apply"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
