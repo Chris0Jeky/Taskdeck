@@ -3,6 +3,7 @@ using System.Text.Json;
 using ModelContextProtocol.Server;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
 
 namespace Taskdeck.Api.Mcp;
 
@@ -53,11 +54,11 @@ public class ReadTools
 
             var boardResult = await _boardService.GetBoardDetailAsync(boardGuid, userId);
             if (!boardResult.IsSuccess)
-                return JsonSerializer.Serialize(new { error = boardResult.ErrorMessage }, BoardResources.SerializerOptions);
+                return Error(boardResult);
 
             var cardsResult = await _cardService.SearchCardsAsync(boardGuid, searchText: query);
             if (!cardsResult.IsSuccess)
-                return JsonSerializer.Serialize(new { error = cardsResult.ErrorMessage }, BoardResources.SerializerOptions);
+                return Error(cardsResult);
 
             var cards = cardsResult.Value.Take(max_results).Select(c => MapCard(c, boardResult.Value.Name, boardResult.Value.Columns));
             return JsonSerializer.Serialize(new { cards, totalCount = cardsResult.Value.Count() }, BoardResources.SerializerOptions);
@@ -66,7 +67,7 @@ public class ReadTools
         // Search across all accessible boards
         var boardsResult = await _boardService.ListBoardsAsync(userId, searchText: null, includeArchived: false);
         if (!boardsResult.IsSuccess)
-            return JsonSerializer.Serialize(new { error = boardsResult.ErrorMessage }, BoardResources.SerializerOptions);
+            return Error(boardsResult);
 
         var allCards = new List<object>();
         foreach (var board in boardsResult.Value)
@@ -103,7 +104,7 @@ public class ReadTools
 
         var detailResult = await _boardService.GetBoardDetailAsync(boardGuid, userId);
         if (!detailResult.IsSuccess)
-            return JsonSerializer.Serialize(new { error = detailResult.ErrorMessage }, BoardResources.SerializerOptions);
+            return Error(detailResult);
 
         var detail = detailResult.Value;
 
@@ -148,5 +149,13 @@ public class ReadTools
             position = card.Position,
             createdAt = card.CreatedAt
         };
+    }
+
+    private static string Error(Result result)
+    {
+        var message = SensitiveDataRedactor.SanitizeLlmFailureMessage(
+            result.ErrorCode,
+            result.ErrorMessage);
+        return JsonSerializer.Serialize(new { error = message }, BoardResources.SerializerOptions);
     }
 }
