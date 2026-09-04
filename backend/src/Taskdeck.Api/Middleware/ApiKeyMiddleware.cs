@@ -138,9 +138,9 @@ public sealed class ApiKeyMiddleware
             //
             // Stripping can in principle empty the slice; that is reported as "short" rather than as
             // an empty prefix, so an operator never sees a blank value that reads like a missing
-            // field. (Defensive only: the format gate above requires the token to start with the
-            // printable "tdsk_" literal, so the sanitized slice always keeps at least those five
-            // characters.)
+            // field. The format gate above checks for the "tdsk_" literal with a culture-sensitive
+            // StartsWith, under which ignorable characters may precede the literal, so the empty
+            // case is unlikely but not impossible and the fallback stays.
             var prefix = token.Length >= 8 ? LogSanitizer.StripControlChars(token[..8]) : string.Empty;
             _logger.LogWarning("MCP API key authentication failed: key not found (prefix: {Prefix})",
                 string.IsNullOrEmpty(prefix) ? "short" : prefix);

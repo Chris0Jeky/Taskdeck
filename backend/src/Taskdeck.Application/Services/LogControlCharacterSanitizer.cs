@@ -45,8 +45,10 @@ internal static class LogControlCharacterSanitizer
             (index == 0 || !char.IsHighSurrogate(value[index - 1]));
     }
 
-    // C0, DEL and C1 controls, the Unicode line and paragraph separators, and every Unicode format
-    // character (general category Cf). Cf covers the zero-width and bidirectional overrides
+    // C0, DEL and C1 controls, the Unicode line and paragraph separators, and every format
+    // character in the Basic Multilingual Plane (general category Cf; the check is per UTF-16 code
+    // unit, so supplementary-plane format characters are not covered). Cf covers the zero-width
+    // and bidirectional overrides
     // (U+200B..U+200F, U+202A..U+202E, U+2060..U+2064, U+FEFF, and the soft hyphen): they are
     // invisible in a log viewer and can reverse the rendered order of the text that follows, so a
     // caller-controlled value carrying them can make a log line read as something it is not.

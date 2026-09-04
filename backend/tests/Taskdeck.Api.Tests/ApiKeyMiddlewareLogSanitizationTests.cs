@@ -104,6 +104,32 @@ public sealed class ApiKeyMiddlewareLogSanitizationTests : IDisposable
         entry.Should().NotContain(token[..9], "at most eight characters of the presented token are logged");
     }
 
+    [Fact]
+    public async Task KeyNotFound_WithControlCharactersInsideTheWindow_DoesNotPullLaterTokenMaterialIntoTheLog()
+    {
+        // Discriminates the ordering: the first eight characters are "tdsk_" plus three carriage
+        // returns, and the secret material starts at index 8. Slicing first and sanitizing afterwards
+        // logs "tdsk_". Sanitizing first and slicing afterwards would log "tdsk_SEC", pulling three
+        // characters of the secret past the window into the log.
+        const string token = "tdsk_\r\r\rSECRETKEYMATERIAL";
+        await using var db = await CreateMigratedContextAsync();
+        var sink = new RecordingLoggerSink();
+        var middleware = new ApiKeyMiddleware(
+            _ => throw new InvalidOperationException("an unauthenticated request must not reach the endpoint"),
+            new RecordingLogger<ApiKeyMiddleware>(sink));
+
+        var context = CreateMcpContext(token);
+        await middleware.InvokeAsync(context, db);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+
+        var entry = sink.Messages.Should()
+            .ContainSingle(message => message.Contains(FailureMessage, StringComparison.Ordinal))
+            .Subject;
+        entry.Should().Contain("(prefix: tdsk_)", "the three stripped characters must not be replaced by later token material");
+        entry.Should().NotContain("SEC", "nothing past the eight-character window may reach the log");
+    }
+
     // ── Helpers ──
 
     private async Task<TaskdeckDbContext> CreateMigratedContextAsync()
