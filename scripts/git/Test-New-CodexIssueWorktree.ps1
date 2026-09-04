@@ -311,6 +311,7 @@ function Get-ModeledEffectivePermissionConfiguration {
     $effectiveAdditionalDirectories = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $effectiveEnvironment = @{}
     $effectivePermissionMode = $null
+    $projectScopedProtectedPermissionModes = @("auto", "bypassPermissions")
     foreach ($source in $SettingSources) {
         $settingsPath = switch ($source) {
             "project" { $ProjectSettingsPath }
@@ -328,7 +329,12 @@ function Get-ModeledEffectivePermissionConfiguration {
 
         $settings = Get-Content -Raw -LiteralPath $settingsPath | ConvertFrom-Json
         if (-not [string]::IsNullOrWhiteSpace($settings.permissions.defaultMode)) {
-            $effectivePermissionMode = [string]$settings.permissions.defaultMode
+            $candidatePermissionMode = [string]$settings.permissions.defaultMode
+            # Claude ignores protected permission modes in project and local settings. Keep the
+            # model aligned with that runtime boundary; command-line mode remains authoritative.
+            if ($projectScopedProtectedPermissionModes -notcontains $candidatePermissionMode) {
+                $effectivePermissionMode = $candidatePermissionMode
+            }
         }
         foreach ($rule in @($settings.permissions.allow)) {
             if (-not [string]::IsNullOrWhiteSpace($rule)) {
@@ -882,7 +888,7 @@ finally {
             New-Item -ItemType Directory -Path $mainCheckoutClaudeDirectory | Out-Null
             [ordered]@{
                 permissions = [ordered]@{
-                    defaultMode = "bypassPermissions"
+                    defaultMode = "acceptEdits"
                     allow = @($broadLocalRule)
                 }
             } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $mainCheckoutLocalSettingsPath -Encoding Ascii
@@ -892,12 +898,32 @@ finally {
             Assert-True (-not (Test-Path -LiteralPath $linkedWorktreeLocalSettingsPath)) "Permission fixture should not copy the local settings file into the linked worktree."
 
             $inheritedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
-            Assert-Equal "bypassPermissions" $inheritedConfiguration.PermissionMode "The main-checkout local default mode should apply to a linked worktree when local settings are enabled."
+            Assert-Equal "acceptEdits" $inheritedConfiguration.PermissionMode "A supported main-checkout local default mode should apply to a linked worktree when local settings are enabled."
             Assert-True ($inheritedConfiguration.Allow -contains $broadLocalRule) "A main-checkout local allow should remain effective for a linked worktree when the local source is enabled."
 
             $dontAskWithLocalConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project", "local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLinePermissionMode "dontAsk"
-            Assert-Equal "dontAsk" $dontAskWithLocalConfiguration.PermissionMode "The command-line dontAsk mode should override a local bypassPermissions default."
+            Assert-Equal "dontAsk" $dontAskWithLocalConfiguration.PermissionMode "The command-line dontAsk mode should override a local acceptEdits default."
             Assert-True ($dontAskWithLocalConfiguration.Allow -contains $broadLocalRule) "Command-line dontAsk should not erase a broad local allow while the local source remains enabled."
+
+            foreach ($protectedPermissionMode in @("bypassPermissions", "auto")) {
+                $protectedSettingsPath = Join-Path $testRoot "settings.$protectedPermissionMode.json"
+                [ordered]@{
+                    permissions = [ordered]@{
+                        defaultMode = $protectedPermissionMode
+                        allow = @($broadLocalRule)
+                    }
+                } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $protectedSettingsPath -Encoding Ascii
+
+                $protectedLocalConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $protectedSettingsPath
+                Assert-True ($null -eq $protectedLocalConfiguration.PermissionMode) "Protected $protectedPermissionMode mode must be ignored from local settings."
+                Assert-True ($protectedLocalConfiguration.Allow -contains $broadLocalRule) "Ignoring protected $protectedPermissionMode must not erase local allow rules."
+
+                $protectedProjectConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $protectedSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath
+                Assert-True ($null -eq $protectedProjectConfiguration.PermissionMode) "Protected $protectedPermissionMode mode must be ignored from project settings."
+            }
+
+            $commandLineProtectedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("local") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLinePermissionMode "bypassPermissions"
+            Assert-Equal "bypassPermissions" $commandLineProtectedConfiguration.PermissionMode "Command-line bypassPermissions should remain authoritative over file-backed modes."
 
             $taskLaunchRule = "Bash(dotnet test backend/Taskdeck.sln -c Release -m:1)"
             $reviewedConfiguration = Get-ModeledEffectivePermissionConfiguration -SettingSources @("project") -ProjectSettingsPath $claudeSettingsPath -MainCheckoutLocalSettingsPath $mainCheckoutLocalSettingsPath -CommandLineAllowRules @($powerShellGuardRule, $powerShellInitializerRule, $taskLaunchRule) -CommandLinePermissionMode "dontAsk"
