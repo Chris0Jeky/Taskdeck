@@ -114,6 +114,14 @@ Focused unknown-exception boundary proof:
 dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~UnknownExceptionBoundaryProofTests"
 ```
 
+Unknown-exception boundary guard (also runs in the CI `docs-governance` job). The reviewed surface
+list it enforces is `docs/security/UNKNOWN_EXCEPTION_SURFACE_INVENTORY.md`:
+
+```powershell
+node --test scripts/check-unknown-exception-boundary.test.mjs
+node scripts/check-unknown-exception-boundary.mjs
+```
+
 Full backend regression:
 
 ```powershell

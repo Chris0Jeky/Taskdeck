@@ -83,3 +83,8 @@ jobs:
         run: |
           node --test scripts/check-github-ops-governance.test.mjs
           node scripts/check-github-ops-governance.mjs
+
+      - name: Validate unknown-exception boundary invariants
+        run: |
+          node --test scripts/check-unknown-exception-boundary.test.mjs
+          node scripts/check-unknown-exception-boundary.mjs
