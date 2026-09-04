@@ -669,6 +669,11 @@ public class AutomationProposalServiceTests
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
+        _userRepoMock
+            .Setup(r => r.GetUsernamesByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.Single() == deciderId),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [deciderId] = "Ada" });
 
         // Act
         var result = await _service.ApproveProposalAsync(proposalId, deciderId);
@@ -677,6 +682,7 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Status.Should().Be(ProposalStatus.Approved);
         result.Value.DecidedByUserId.Should().Be(deciderId);
+        result.Value.DecidedByUserName.Should().Be("Ada");
         result.Value.DecidedAt.Should().NotBeNull();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
         _notificationServiceMock.Verify(

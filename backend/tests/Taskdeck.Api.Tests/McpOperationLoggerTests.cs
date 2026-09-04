@@ -156,6 +156,20 @@ public class McpOperationLoggerTests
     }
 
     [Fact]
+    public void Arguments_ShouldNotSplitSurrogatePairWhenControlsShiftBoundary()
+    {
+        var operationLogger = new McpOperationLogger(_logger);
+        var args = new string('x', 199) + "\u001B😀tail";
+
+        using var scope = operationLogger.BeginOperation(
+            "tool", "create_card", arguments: args);
+
+        var debugEntry = _logger.Entries.Single(e => e.Level == LogLevel.Debug);
+        debugEntry.Message.Should().Contain(new string('x', 199) + "...[truncated]");
+        debugEntry.Message.Should().NotContain("\uD83D").And.NotContain("\uDE00");
+    }
+
+    [Fact]
     public void Arguments_NullArguments_NoDebugLog()
     {
         var operationLogger = new McpOperationLogger(_logger);

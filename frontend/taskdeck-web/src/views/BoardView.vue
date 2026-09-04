@@ -84,7 +84,21 @@ const realtime = createBoardRealtimeController({
       return
     }
 
-    await boardStore.fetchBoard(id, options)
+    const boardLoadErrorAtStart = boardLoadError.value
+    const storeErrorAtStart = boardStore.error
+    const committed = await boardStore.fetchBoard(id, options)
+    if (
+      options.intent === 'background' &&
+      committed &&
+      !viewUnmounted &&
+      id === boardId.value &&
+      boardLoadError.value === boardLoadErrorAtStart
+    ) {
+      boardLoadError.value = null
+      if (boardStore.error === storeErrorAtStart && storeErrorAtStart === boardLoadErrorAtStart) {
+        boardStore.error = null
+      }
+    }
   },
   onPresenceChanged: (snapshot) => {
     if (snapshot.boardId !== boardId.value) {

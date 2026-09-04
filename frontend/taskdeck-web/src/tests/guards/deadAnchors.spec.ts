@@ -5,7 +5,8 @@ import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler
  * Dead-affordance source guard.
  *
  * WHAT THIS MECHANIZES: two source shapes that look interactive and do nothing:
- * an `<a>` tag whose href is the bare `#` placeholder and an enabled-looking
+ * an `<a>` tag whose href is a placeholder destination — the bare `#`, the
+ * empty string, or a `javascript:` scheme — and an enabled-looking
  * native `<button>` with no detectable action binding or native form semantics,
  * plus interactive `aria-label` semantics that are not native or keyboard
  * reachable. Labelled custom buttons must expose both Enter and Space
@@ -16,7 +17,8 @@ import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler
  * WHAT THIS DOES NOT MECHANIZE. The dogfooding pass that produced GH-1932 and
  * GH-1934 found dead affordances of several other shapes; this guard does not
  * cover them, and passing it is not evidence that they are gone:
- *  - `href="javascript:void(0)"` and `href=""` — not detected.
+ *  - HTML-entity or control-character obfuscation of a scheme
+ *    (`href="java&#115;cript:..."`) is not decoded, so it is not detected.
  *  - Runtime-assembled hrefs and dynamic event names are out of reach: this
  *    guard reads SFC source, not Vue's rendered event table.
  *  - Button action hidden behind a runtime-bound `:type` is not inferred.
@@ -72,6 +74,23 @@ const HREF_ATTR = /\s(:|v-bind:)?href\s*=\s*(["'])((?:(?!\2)[\s\S])*)\2/gi
 
 /** A bare `#` string literal — `'#'`, `"#"`, `` `#` `` — nothing after the hash. `'#section'` does not match. */
 const BARE_HASH_LITERAL = /(['"`])#\1/
+
+/**
+ * An empty string literal used as an href fallback. A bound
+ * :href="target ?? ''" renders <a href="">, which re-navigates to the current
+ * URL: the same dead affordance as the bare hash, reached a different way.
+ */
+const EMPTY_STRING_LITERAL = /(['"`])\1/
+
+/**
+ * A javascript: scheme literal inside a bound expression. void(0) is the
+ * canonical inert form, but every javascript: href is a placeholder standing
+ * in for a real destination as far as this guard is concerned.
+ */
+const JAVASCRIPT_SCHEME_LITERAL = /(['"`])\s*javascript:/i
+
+/** A static href whose value is the javascript: scheme. Leading space is tolerated as browsers do. */
+const JAVASCRIPT_SCHEME_VALUE = /^\s*javascript:/i
 
 /** Any click binding with a non-empty handler expression. Dynamic events are not matched. */
 const CLICK_BINDING =
@@ -199,11 +218,21 @@ function hasPlaceholderHref(tag: string): boolean {
     // it is the placeholder, however it is reached (`dead ?? '#'`).
     if (binding) {
       if (BARE_HASH_LITERAL.test(value)) return true
+      // GH-1949 residuals: the empty-string and `javascript:` fallbacks are the
+      // same defect as `?? '#'`. An expression that legitimately concatenates an
+      // empty literal (`'/x' + (q ? y : '')`) is a knowing false positive - the
+      // same trade this guard already makes for `'#' + id`; none exists today.
+      if (EMPTY_STRING_LITERAL.test(value)) return true
+      if (JAVASCRIPT_SCHEME_LITERAL.test(value)) return true
       continue
     }
     // A static href's value IS the URL. `#` alone is the placeholder;
     // `#section-id` is a real in-page target and must survive.
     if (value.trim() === '#') return true
+    // `href=""` is not "no destination" - it re-navigates to the current URL.
+    if (value.trim() === '') return true
+    // `href="javascript:void(0)"` is the classic inert-anchor placeholder.
+    if (JAVASCRIPT_SCHEME_VALUE.test(value)) return true
     if (BARE_HASH_LITERAL.test(value)) return true
   }
   return false
@@ -527,6 +556,33 @@ describe('dead affordances', () => {
     expect(findDeadAnchors(`<template><a :href='dead ?? "#"'>Dead</a></template>`)).toHaveLength(1)
     // A multi-line tag is still one tag.
     expect(findDeadAnchors('<template>\n<a\n  href="#"\n  class="x"\n>Dead</a>\n</template>')).toHaveLength(1)
+  })
+
+  it('detects empty and javascript: placeholder hrefs', () => {
+    // GH-1949 residuals. Both shapes were named as uncovered in this guard's
+    // own header from 2026-08-23 until this slice; neither exists in src/.
+    expect(findDeadAnchors('<template><a href="">Empty</a></template>')).toEqual(['<a href="">'])
+    expect(findDeadAnchors('<template><a href="   ">Whitespace only</a></template>')).toHaveLength(1)
+    expect(findDeadAnchors(`<template><a href=''>Single quoted empty</a></template>`)).toHaveLength(1)
+    expect(findDeadAnchors('<template><a href="javascript:void(0)">Inert</a></template>')).toHaveLength(1)
+    expect(findDeadAnchors('<template><a href="JavaScript:void(0)">Mixed case scheme</a></template>')).toHaveLength(1)
+    expect(findDeadAnchors('<template><a href=" javascript:void(0)">Leading space</a></template>')).toHaveLength(1)
+    expect(findDeadAnchors('<template><A HREF="javascript:void(0)">Uppercase tag</A></template>')).toHaveLength(1)
+    // The bound fallback forms, matching the GH-1941 shape for the bare hash.
+    expect(findDeadAnchors(`<template><a :href="dead ?? ''">Bound empty</a></template>`)).toHaveLength(1)
+    expect(findDeadAnchors(`<template><a :href="dead || 'javascript:void(0)'">Bound inert</a></template>`)).toHaveLength(1)
+    expect(findDeadAnchors(`<template><a v-bind:href="dead ?? ''">Longhand</a></template>`)).toHaveLength(1)
+
+    // A click binding still redeems every one of these, exactly as for `#`.
+    expect(findDeadAnchors('<template><a href="" @click.prevent="go">Live</a></template>')).toEqual([])
+    expect(
+      findDeadAnchors('<template><a href="javascript:void(0)" @click.prevent="go">Live</a></template>'),
+    ).toEqual([])
+
+    // Not placeholders: a real scheme that merely starts with the same letters,
+    // and an ordinary destination.
+    expect(findDeadAnchors('<template><a href="/javascript-guide">Real route</a></template>')).toEqual([])
+    expect(findDeadAnchors('<template><a href="https://example.com">External</a></template>')).toEqual([])
   })
 
   it('does not flag anchors that are bound, real, or only talked about', () => {

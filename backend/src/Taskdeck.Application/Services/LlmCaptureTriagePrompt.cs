@@ -75,17 +75,23 @@ public static class LlmCaptureTriagePrompt
     /// <summary>
     /// The server's current UTC calendar day. ADR-0058 makes a due date a calendar day rather than
     /// an instant, so what the model resolves against is a day, not a timestamp.
+    /// <para>
+    /// NOT the triage anchor (#2193). The day triage RUNS is not the day the capture happened: a
+    /// queued or retried capture can be triaged days later, and a capture made west of UTC is on a
+    /// different calendar day. Production callers resolve a
+    /// <see cref="Taskdeck.Application.DTOs.CaptureTriageAnchor"/> from the capture's server stamp
+    /// and pass its <c>ReferenceDate</c> to <see cref="BuildSystemPrompt"/>. This member remains
+    /// only as the last-resort default for a caller that holds no capture row at all.
+    /// </para>
     /// </summary>
     public static DateOnly CurrentReferenceDate => DateOnly.FromDateTime(DateTime.UtcNow);
 
     /// <summary>
     /// The prompt as it is sent when the caller holds no capture day of its own: the template
-    /// rendered against <see cref="CurrentReferenceDate"/>. A capture is triaged within seconds to
-    /// minutes of being created, and the plausibility window enforced by
-    /// <see cref="CaptureTriageOutputContract.MaxDueDateYearsBeforeReference"/> /
-    /// <see cref="CaptureTriageOutputContract.MaxDueDateYearsAfterReference"/> is years wide, so
-    /// that drift cannot change an outcome. A caller holding the capture's own day should pass it
-    /// to <see cref="BuildSystemPrompt"/> instead.
+    /// rendered against <see cref="CurrentReferenceDate"/>. The live extraction leg no longer uses
+    /// it — <see cref="Taskdeck.Application.Services.LlmCaptureTriageExtractor"/> renders against
+    /// the capture's own day (#2193), because "a capture is triaged within seconds of being
+    /// created" is not true of a retried or backlogged queue item.
     /// </summary>
     public static string SystemPrompt => BuildSystemPrompt(CurrentReferenceDate);
 
@@ -115,8 +121,10 @@ public static class LlmCaptureTriagePrompt
 
     /// <summary>
     /// Parses a schema-v2 LLM completion against the server's current UTC day
-    /// (<see cref="CurrentReferenceDate"/>) and discards the notes. This is the shape the live
-    /// extraction leg uses; see the four-argument overload for the reference date and notes.
+    /// (<see cref="CurrentReferenceDate"/>) and discards the notes. Convenience for callers with no
+    /// capture day; the live extraction leg uses the four-argument overload with the capture
+    /// anchor's reference date (#2193), so the plausibility window is measured from the same day the
+    /// prompt was rendered against.
     /// </summary>
     public static bool TryParseTasks(string? content, out List<CaptureTriageTaskV2> tasks) =>
         TryParseTasks(content, CurrentReferenceDate, out tasks, out _);

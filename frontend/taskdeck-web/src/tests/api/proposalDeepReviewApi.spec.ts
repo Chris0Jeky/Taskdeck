@@ -93,4 +93,70 @@ describe('proposalDeepReviewApi', () => {
 
     await expect(proposalDeepReviewApi.getConfidence('p-1')).rejects.toThrow('Network error')
   })
+
+  describe('getProvenanceMetadata', () => {
+    const unrecorded = { provider: null, model: null, promptVersion: null }
+
+    it('fetches the server-recorded producer triple for a proposal', async () => {
+      const metadata = { provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'llm-triage.v2' }
+      vi.mocked(http.get).mockResolvedValue({ data: metadata })
+
+      const result = await proposalDeepReviewApi.getProvenanceMetadata('p-1')
+
+      expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/provenance/metadata', {
+        signal: undefined,
+        expectedStatuses: [403, 404],
+      })
+      expect(result).toEqual(metadata)
+    })
+
+    it('passes an abort signal through', async () => {
+      vi.mocked(http.get).mockResolvedValue({ data: unrecorded })
+      const controller = new AbortController()
+
+      await proposalDeepReviewApi.getProvenanceMetadata('p-1', { signal: controller.signal })
+
+      expect(http.get).toHaveBeenCalledWith('/automation/proposals/p-1/provenance/metadata', {
+        signal: controller.signal,
+        expectedStatuses: [403, 404],
+      })
+    })
+
+    it('returns the all-null payload verbatim when nothing was recorded', async () => {
+      vi.mocked(http.get).mockResolvedValue({ data: unrecorded })
+
+      await expect(proposalDeepReviewApi.getProvenanceMetadata('p-1')).resolves.toEqual(unrecorded)
+    })
+
+    it.each([403, 404])('normalizes a %i to no recorded producer instead of throwing', async (status) => {
+      vi.mocked(http.get).mockRejectedValue({ response: { status } })
+
+      await expect(proposalDeepReviewApi.getProvenanceMetadata('p-1')).resolves.toEqual(unrecorded)
+    })
+
+    it('still rejects on a server error', async () => {
+      vi.mocked(http.get).mockRejectedValue({ response: { status: 500 } })
+
+      await expect(proposalDeepReviewApi.getProvenanceMetadata('p-1')).rejects.toMatchObject({
+        response: { status: 500 },
+      })
+    })
+
+    it('still rejects on a transport failure with no response', async () => {
+      vi.mocked(http.get).mockRejectedValue(new Error('Network error'))
+
+      await expect(proposalDeepReviewApi.getProvenanceMetadata('p-1')).rejects.toThrow('Network error')
+    })
+
+    it('encodes special characters in proposal IDs', async () => {
+      vi.mocked(http.get).mockResolvedValue({ data: unrecorded })
+
+      await proposalDeepReviewApi.getProvenanceMetadata('id/with spaces')
+
+      expect(http.get).toHaveBeenCalledWith(
+        '/automation/proposals/id%2Fwith%20spaces/provenance/metadata',
+        { signal: undefined, expectedStatuses: [403, 404] },
+      )
+    })
+  })
 })

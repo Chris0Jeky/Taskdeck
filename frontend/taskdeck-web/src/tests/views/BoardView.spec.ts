@@ -720,6 +720,116 @@ describe('BoardView', () => {
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
   })
 
+  it('clears a matching load error after a successful current-board background refresh', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = null
+        return true
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board refresh failed')
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-error"]').exists()).toBe(false)
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+  })
+
+  it('clears the store error when a successful background refresh leaves it unchanged', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => true)
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(mockBoardStore.error).toBe('Board refresh failed')
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(mockBoardStore.error).toBeNull()
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-error"]').exists()).toBe(false)
+  })
+
+  it('preserves a different mutation error raised during a successful background refresh', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Failed to create card'
+        return true
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="board-error"]').text()).toBe('Failed to create card')
+  })
+
+  it('does not let an older background refresh clear a newer route error', async () => {
+    const backgroundRefresh = createDeferred<boolean>()
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => true)
+      .mockImplementationOnce(() => backgroundRefresh.promise)
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board B unavailable'
+        throw new Error('board B offline')
+      })
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    const background = capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board B unavailable')
+
+    backgroundRefresh.resolve(true)
+    await background
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board B unavailable')
+  })
+
+  it('does not clear board errors after a background refresh resolves post-unmount', async () => {
+    const backgroundRefresh = createDeferred<boolean>()
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(() => backgroundRefresh.promise)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const background = capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+
+    wrapper.unmount()
+    backgroundRefresh.resolve(true)
+    await background
+
+    expect(mockBoardStore.error).toBe('Board refresh failed')
+  })
+
   it('does not let an old board Retry replace a newer route load error', async () => {
     const oldBoardRetry = createDeferred<boolean>()
     mockBoardStore.currentBoard = null as unknown as typeof mockBoardStore.currentBoard
