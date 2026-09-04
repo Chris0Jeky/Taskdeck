@@ -26,6 +26,7 @@ describe('telemetryStore', () => {
   afterEach(() => {
     const store = useTelemetryStore()
     store.stopFlushTimer()
+    vi.unstubAllEnvs()
   })
 
   describe('consent', () => {
@@ -57,7 +58,7 @@ describe('telemetryStore', () => {
         timestamp: new Date().toISOString(),
         sessionId: 'abc',
         workspaceMode: 'guided',
-        appVersion: '0.1.0',
+        appVersion: '0.0.0-dev',
         platform: 'web',
       })
       expect(store.eventBuffer.length).toBe(1)
@@ -115,6 +116,24 @@ describe('telemetryStore', () => {
       expect(store.eventBuffer.length).toBe(1)
       expect(store.eventBuffer[0].event).toBe('capture.submitted')
       expect(store.eventBuffer[0].properties).toEqual({ source: 'manual' })
+    })
+
+    it('uses the injected build version and falls back for an empty build value', () => {
+      vi.stubEnv('VITE_APP_VERSION', ' 0.2.0 ')
+      const store = useTelemetryStore()
+      store.setConsent(true)
+      store.serverConfig = {
+        sentry: { enabled: false, dsn: '', environment: 'test', tracesSampleRate: 0 },
+        analytics: { enabled: false, provider: '', scriptUrl: '', siteId: '' },
+        telemetry: { enabled: true },
+      }
+
+      store.emit('release.versioned')
+      expect(store.eventBuffer[0]?.appVersion).toBe('0.2.0')
+
+      vi.stubEnv('VITE_APP_VERSION', '   ')
+      store.emit('release.fallback')
+      expect(store.eventBuffer[1]?.appVersion).toBe('0.0.0-dev')
     })
 
     it('should cap buffer size to prevent unbounded growth', () => {
