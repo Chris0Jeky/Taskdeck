@@ -28,7 +28,11 @@ export default {
     cancel: 'Cancel',
     error: 'Could not add the card. Please try again.',
     capture: '+ capture',
-    captureAria: 'Capture a note into Inbox for {column}',
+    // The accessible name promises exactly what the control does (#1984
+    // finding 2). It used to read "for {column}", which a screen-reader user
+    // hears as a destination or a filter; the note lands in the board's Inbox
+    // for triage and the column is only where the capture was taken from.
+    captureAria: 'Capture a note into Inbox from {column}',
   },
   column: {
     settings: 'Column settings',

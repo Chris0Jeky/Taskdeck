@@ -20,7 +20,9 @@ export default {
     cancel: 'Annulla',
     error: 'Non è stato possibile aggiungere la scheda. Riprova.',
     capture: '+ appunto',
-    captureAria: 'Prendi un appunto in Inbox per {column}',
+    // "da {column}", non "per {column}" (#1984, constatazione 2): l'appunto
+    // finisce nell'Inbox della bacheca, la colonna è solo il punto di partenza.
+    captureAria: 'Prendi un appunto in Inbox da {column}',
   },
   column: {
     settings: 'Impostazioni colonna',

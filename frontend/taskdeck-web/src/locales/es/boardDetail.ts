@@ -20,7 +20,9 @@ export default {
     cancel: 'Cancelar',
     error: 'No se pudo añadir la tarjeta. Inténtalo de nuevo.',
     capture: '+ nota',
-    captureAria: 'Toma una nota en Inbox para {column}',
+    // "desde {column}", no "para {column}" (#1984, hallazgo 2): la nota llega
+    // al Inbox del tablero; la columna es solo el punto de partida.
+    captureAria: 'Toma una nota en Inbox desde {column}',
   },
   column: {
     settings: 'Ajustes de la columna',
