@@ -669,7 +669,8 @@ public class WorkerResilienceTests
     {
         public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromCaptureAsync(
             Guid captureItemId, Guid userId, Guid? boardId,
-            CapturePayloadV1 payload, CancellationToken cancellationToken = default)
+            CapturePayloadV1 payload, CaptureTriageAnchor? anchor = null,
+            CancellationToken cancellationToken = default)
         {
             var result = new CaptureTriageProposalResultDto(
                 captureItemId, Guid.NewGuid(), Guid.NewGuid(), 1, "v1", "mock", "mock-model");
@@ -679,8 +680,9 @@ public class WorkerResilienceTests
         public Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
             Guid captureItemId, Guid userId, Guid? boardId,
             Guid transcriptId, CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
-            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, anchor, cancellationToken);
     }
 
     private sealed class FakeAutomationProposalRepository : IAutomationProposalRepository
