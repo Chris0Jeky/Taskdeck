@@ -1040,4 +1040,121 @@ public class LlmCaptureTriageExtractorTests
 
         result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
     }
+
+    // ---- #2193: the reference date is the CAPTURE's day, not the day triage runs ----
+
+    private List<ChatCompletionRequest> CaptureRequests(string content)
+    {
+        var requests = new List<ChatCompletionRequest>();
+        _providerMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                requests.Add(request);
+                return new LlmCompletionResult(
+                    content,
+                    250,
+                    IsActionable: false,
+                    Provider: "OpenAI",
+                    Model: "gpt-4o-mini");
+            });
+        return requests;
+    }
+
+    private static string V2CompletionWithDueDate(string dueDateHint) =>
+        $$"""
+        {"tasks":[{"title":"Send the report","type":"action","assigneeHint":null,"dueDateHint":"{{dueDateHint}}","confidence":0.9,"evidenceQuote":"Alice: I'll send the report by Friday."}]}
+        """;
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRenderThePromptAgainstTheCaptureDay_NotToday()
+    {
+        var capturedAt = new DateTimeOffset(2026, 8, 29, 10, 0, 0, TimeSpan.Zero);
+        var requests = CaptureRequests(V2CompletionWithDueDate("2026-09-01"));
+
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(),
+            CaptureTriageAnchor.FromCapture(capturedAt));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("2026-08-29");
+        requests[0].SystemPrompt.Should().NotContain(
+            DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldAnchorToTheCaptureDay_WhenTriageRunsDaysLater()
+    {
+        // A backlogged or retried queue item: the run happens 12 days after the capture, and the
+        // prompt must still state the capture's day.
+        var capturedAt = DateTimeOffset.UtcNow.AddDays(-12);
+        var expected = capturedAt.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var requests = CaptureRequests(V2CompletionWithDueDate(expected));
+
+        await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(),
+            CaptureTriageAnchor.FromCapture(capturedAt));
+
+        requests[0].SystemPrompt.Should().Contain(expected);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldRenderTheSameReferenceDate_WhenTheSameCaptureIsRetried()
+    {
+        var anchor = CaptureTriageAnchor.FromCapture(new DateTimeOffset(2026, 8, 29, 10, 0, 0, TimeSpan.Zero));
+        var requests = CaptureRequests(V2CompletionWithDueDate("2026-09-01"));
+        var extractor = BuildExtractor();
+
+        await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(), anchor);
+        await extractor.ExtractAsync(_userId, _boardId, TranscriptPayload(), anchor);
+
+        requests.Should().HaveCount(2);
+        requests[1].SystemPrompt.Should().Be(requests[0].SystemPrompt);
+        requests[0].SystemPrompt.Should().Contain("2026-08-29");
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldKeepADueDateHint_ThatIsPlausibleAgainstTheCaptureDayButNotAgainstToday()
+    {
+        // Anchor three years back: the hint is the day after the capture (plausible against it) and
+        // roughly three years before today (implausible against the triage day). The window must be
+        // measured from the anchor, or a legitimately old capture loses its dates.
+        var capturedAt = DateTimeOffset.UtcNow.AddYears(-3);
+        var hint = DateOnly.FromDateTime(capturedAt.UtcDateTime).AddDays(1);
+        SetupCompletion(V2CompletionWithDueDate(hint.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
+
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(),
+            CaptureTriageAnchor.FromCapture(capturedAt));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        result.Output!.Tasks.Single().DueDateHint.Should()
+            .Be(hint.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldDropADueDateHint_ThatIsImplausibleAgainstTheCaptureDay()
+    {
+        // Today's date is well inside the window around NOW, and far outside the window around a
+        // capture made ten years ago. The task survives; only the hint is dropped.
+        var capturedAt = DateTimeOffset.UtcNow.AddYears(-10);
+        SetupCompletion(V2CompletionWithDueDate(
+            DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
+
+        var result = await BuildExtractor().ExtractAsync(
+            _userId,
+            _boardId,
+            TranscriptPayload(),
+            CaptureTriageAnchor.FromCapture(capturedAt));
+
+        result.Outcome.Should().Be(LlmCaptureTriageOutcome.Succeeded);
+        result.Output!.Tasks.Single().DueDateHint.Should().BeNull();
+    }
 }

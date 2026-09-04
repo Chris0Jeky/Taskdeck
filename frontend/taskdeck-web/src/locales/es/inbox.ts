@@ -73,6 +73,14 @@ export default {
     errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
     metadataCompatibilityLead: 'Captura guardada sin fecha ni etiquetas.',
     metadataCompatibilityDetail: 'Esta versión del servidor ignoró esos metadatos. No lo intentes de nuevo: la captura ya está en el Inbox.',
+    source: {
+      legend: 'Origen',
+      typed: 'Nota escrita',
+      transcript: 'Transcripción',
+      transcriptNote:
+        'Las capturas de transcripción se envían al asistente configurado para extraer tareas. Las notas escritas no.',
+      tooLong: 'Esta transcripción es demasiado larga. La longitud máxima es de {max} caracteres.',
+    },
   },
   nib: {
     eyebrow: 'Captura rapida · {shortcut}',
