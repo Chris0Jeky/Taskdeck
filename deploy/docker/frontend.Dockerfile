@@ -2,7 +2,9 @@ FROM node:24.13.1-bookworm-slim AS build
 WORKDIR /app
 
 COPY frontend/taskdeck-web/package.json frontend/taskdeck-web/package-lock.json ./
-RUN npm ci
+# Keep npm's cache inside this build stage. The default /root/.npm cache can
+# retain partial state across container builds and trigger cacache rename races.
+RUN npm ci --cache /tmp/taskdeck-npm-cache --no-audit --no-fund
 
 COPY frontend/taskdeck-web/ ./
 

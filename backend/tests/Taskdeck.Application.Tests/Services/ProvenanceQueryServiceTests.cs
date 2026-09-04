@@ -366,7 +366,7 @@ public class ProvenanceQueryServiceTests
     public void BuildValue_TruncatesLongQuotes()
     {
         var provenance = CreateProvenance();
-        var longQuote = new string('x', 200);
+        var longQuote = new string('x', 117) + "\uD83D\uDE00tail";
         var field = new ProvenanceField(
             "description",
             ProvenanceKind.Extractive,
@@ -376,9 +376,8 @@ public class ProvenanceQueryServiceTests
 
         var value = ProvenanceQueryService.BuildValue(field);
 
-        // The truncated value should end with "..." and not contain the full 200-char quote.
-        value.Should().Contain("...");
-        value.Length.Should().BeLessThan(longQuote.Length + 50);
+        value.Should().Be($"Extracted: \"{new string('x', 117)}...\" (90% match)");
+        value.Should().NotContain("\uD83D").And.NotContain("\uDE00");
     }
 
     [Fact]

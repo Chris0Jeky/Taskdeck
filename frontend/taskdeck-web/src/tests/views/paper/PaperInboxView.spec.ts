@@ -1170,6 +1170,28 @@ describe('PaperInboxView', () => {
       expect(stashed?.failure?.message).toBe('Your session expired before this capture was saved.')
     })
 
+    it('stashes and restores an uncommitted label across the redirect (GH-2490)', async () => {
+      mockBoardStore.boards = [{ id: 'board-9', name: 'Ops' }]
+      const wrapper = mount(PaperInboxView)
+      await flushPromises()
+
+      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Do not lose this')
+      await wrapper.find('input[aria-label="Add label"]').setValue('half-typed')
+
+      expireSession()
+
+      expect(peekCaptureDraft(mockSessionStore.userId)).toMatchObject({
+        variant: 'composer',
+        labelInput: 'half-typed',
+      })
+
+      const restored = mount(PaperInboxView)
+      await flushPromises()
+      expect(
+        restored.find<HTMLInputElement>('input[aria-label="Add label"]').element.value,
+      ).toBe('half-typed')
+    })
+
     it('carries an existing failure receipt into the stash instead of overwriting it', async () => {
       mockCaptureStore.createItem.mockRejectedValueOnce({
         response: { status: 401, data: { errorCode: 'AuthenticationFailed', message: 'Token expired' } },

@@ -80,6 +80,34 @@ async function flushMicrotasks() {
   await nextTick()
 }
 
+async function arrangeOverlappingSaves() {
+  const saveResolvers: Array<(revision: ProposalRevision) => void> = []
+  vi.mocked(proposalRevisionsApi.createRevision).mockImplementation(
+    () => new Promise((resolve) => saveResolvers.push(resolve)),
+  )
+  vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+
+  const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))
+  const revisions = useProposalRevisions(proposal)
+  await vi.waitFor(() => expect(revisions.revisionsLoaded.value).toBe(true))
+
+  revisions.startEditing()
+  const firstSave = revisions.saveRevision({ revisedPayload: '{"title":"A1"}', reason: 'A1' })
+  await vi.waitFor(() => expect(saveResolvers).toHaveLength(1))
+
+  proposal.value = makeProposal({ id: 'p-2' })
+  await nextTick()
+  await flushMicrotasks()
+  proposal.value = makeProposal({ id: 'p-1' })
+  await vi.waitFor(() => expect(revisions.revisionsLoaded.value).toBe(true))
+
+  revisions.startEditing()
+  const secondSave = revisions.saveRevision({ revisedPayload: '{"title":"A2"}', reason: 'A2' })
+  await vi.waitFor(() => expect(saveResolvers).toHaveLength(2))
+
+  return { proposal, revisions, saveResolvers, firstSave, secondSave }
+}
+
 describe('useProposalRevisions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -166,6 +194,111 @@ describe('useProposalRevisions', () => {
     expect(revisionsLoaded.value).toBe(false)
   })
 
+  it('preserves known revision metadata for a definite 4xx rejection', async () => {
+    const knownRevision = makeRevision({
+      revisedPayload: '{"title":"Existing revision"}',
+    })
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValueOnce([knownRevision])
+    vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce({
+      response: {
+        status: 400,
+        data: {
+          errorCode: 'ValidationError',
+          message: 'Revision payload is invalid',
+        },
+      },
+    })
+    const onRevisionSaved = vi.fn()
+    const onRevisionStateUncertain = vi.fn()
+    const proposal = ref<ApiProposal | null>(makeProposal())
+    const {
+      editing,
+      revisionCount,
+      latestRevision,
+      revisionsLoaded,
+      startEditing,
+      saveRevision,
+    } = useProposalRevisions(proposal, { onRevisionSaved, onRevisionStateUncertain })
+
+    await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+    startEditing()
+
+    await expect(
+      saveRevision({ revisedPayload: '{"title":"Invalid"}', reason: 'Try invalid payload' }),
+    ).resolves.toEqual({ proposalId: 'p-1', outcome: 'rejected', current: true })
+
+    expect(onRevisionSaved).not.toHaveBeenCalled()
+    expect(onRevisionStateUncertain).not.toHaveBeenCalled()
+    expect(editing.value).toBe(true)
+    expect(revisionCount.value).toBe(1)
+    expect(latestRevision.value).toEqual(knownRevision)
+    expect(revisionsLoaded.value).toBe(true)
+    expect(toastMocks.error).toHaveBeenCalledWith('Revision payload is invalid')
+  })
+
+  it('converges on both persisted revisions when A1 resolves before A2', async () => {
+    const { revisions, saveResolvers, firstSave, secondSave } = await arrangeOverlappingSaves()
+
+    saveResolvers[0](makeRevision({ id: 'rev-a1', revisionNumber: 1 }))
+    await flushMicrotasks()
+    saveResolvers[1](makeRevision({ id: 'rev-a2', revisionNumber: 2 }))
+    await Promise.all([firstSave, secondSave])
+
+    expect(revisions.revisionCount.value).toBe(2)
+    expect(revisions.latestRevision.value?.id).toBe('rev-a2')
+    expect(revisions.revisionsLoaded.value).toBe(true)
+  })
+
+  it('converges on both persisted revisions when A2 resolves before A1', async () => {
+    const { revisions, saveResolvers, firstSave, secondSave } = await arrangeOverlappingSaves()
+
+    saveResolvers[1](makeRevision({ id: 'rev-a2', revisionNumber: 2 }))
+    await flushMicrotasks()
+    expect(revisions.revisionsLoaded.value).toBe(false)
+    saveResolvers[0](makeRevision({ id: 'rev-a1', revisionNumber: 1 }))
+    await Promise.all([firstSave, secondSave])
+
+    expect(revisions.revisionCount.value).toBe(2)
+    expect(revisions.latestRevision.value?.id).toBe('rev-a2')
+    expect(revisions.revisionsLoaded.value).toBe(true)
+  })
+
+  it.each([404, 409, 500])(
+    'treats HTTP %s as indeterminate because revision persistence is unknown',
+    async (status) => {
+      const knownRevision = makeRevision()
+      vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValueOnce([knownRevision])
+      vi.mocked(proposalRevisionsApi.createRevision).mockRejectedValueOnce({
+        response: { status },
+      })
+      const onRevisionSaved = vi.fn()
+      const onRevisionStateUncertain = vi.fn()
+      const proposal = ref<ApiProposal | null>(makeProposal())
+      const {
+        editing,
+        revisionCount,
+        latestRevision,
+        revisionsLoaded,
+        startEditing,
+        saveRevision,
+      } = useProposalRevisions(proposal, { onRevisionSaved, onRevisionStateUncertain })
+
+      await vi.waitFor(() => expect(revisionsLoaded.value).toBe(true))
+      startEditing()
+
+      await expect(
+        saveRevision({ revisedPayload: '{"title":"Uncertain"}', reason: 'Check boundary' }),
+      ).resolves.toEqual({ proposalId: 'p-1', outcome: 'indeterminate', current: true })
+
+      expect(onRevisionSaved).not.toHaveBeenCalled()
+      expect(onRevisionStateUncertain).toHaveBeenCalledOnce()
+      expect(editing.value).toBe(true)
+      expect(revisionCount.value).toBe(0)
+      expect(latestRevision.value).toBeNull()
+      expect(revisionsLoaded.value).toBe(false)
+    },
+  )
+
   it('ignores a pre-save revision load that resolves after the save (no stale overwrite)', async () => {
     // Codex review: a getRevisions request in flight when a save lands must not
     // overwrite the save's state when it resolves with the pre-save (empty) list.
@@ -229,19 +362,20 @@ describe('useProposalRevisions', () => {
       current: false,
     })
 
-    // The response belongs to an old edit session, but it still persisted for
-    // the currently re-entered A. Empty metadata and the pending A GET can no
-    // longer certify that A has no revisions.
-    expect(revisionCount.value).toBe(0)
-    expect(latestRevision.value).toBeNull()
-    expect(revisionsLoaded.value).toBe(false)
+    // The response belongs to an old edit session, but the previously loaded
+    // revision 1 plus the returned revision 2 prove the complete chain. The
+    // pending GET must not replace that authoritative metadata with its old
+    // empty answer.
+    expect(revisionCount.value).toBe(2)
+    expect(latestRevision.value?.id).toBe('rev-saved')
+    expect(revisionsLoaded.value).toBe(true)
 
     resolveReopenedA([])
     await flushMicrotasks()
 
-    expect(revisionCount.value).toBe(0)
-    expect(latestRevision.value).toBeNull()
-    expect(revisionsLoaded.value).toBe(false)
+    expect(revisionCount.value).toBe(2)
+    expect(latestRevision.value?.id).toBe('rev-saved')
+    expect(revisionsLoaded.value).toBe(true)
   })
 
   it('keeps B metadata authoritative when a stale A save succeeds while B is active', async () => {

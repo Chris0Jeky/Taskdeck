@@ -35,6 +35,7 @@ function makeProposal(overrides: Partial<Proposal> = {}): Proposal {
     expiresAt: '2026-08-25T08:00:00.000Z',
     decidedAt: '2026-08-24T09:00:00.000Z',
     decidedByUserId: '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+    decidedByUserName: 'Ada',
     appliedAt: '2026-08-24T09:30:00.000Z',
     failureReason: null,
     correlationId: 'correlation-1',
@@ -66,7 +67,7 @@ describe('ReviewAppliedDecisionRecord', () => {
     expect(wrapper.get('[data-testid="applied-record-outcome"]').text()).toBe('Applied')
     expect(wrapper.get('[data-testid="applied-record-decision"]').text()).toBe('Approved')
     expect(wrapper.get('[data-testid="applied-record-decision-actor"]').text()).toBe(
-      '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+      'Ada',
     )
     expect(wrapper.get('[data-testid="applied-record-decision-time"]').text()).toContain('2026')
     expect(wrapper.get('[data-testid="applied-record-applied-time"]').text()).toContain('2026')
@@ -103,6 +104,7 @@ describe('ReviewAppliedDecisionRecord', () => {
         proposal: makeProposal({
           decidedAt: 'not-a-date',
           decidedByUserId: 'legacy-user',
+          decidedByUserName: null,
           appliedAt: null,
           operations: [],
           presentation: undefined,
@@ -114,5 +116,18 @@ describe('ReviewAppliedDecisionRecord', () => {
     expect(wrapper.get('[data-testid="applied-record-decision-time"]').text()).toBe('Not recorded')
     expect(wrapper.get('[data-testid="applied-record-applied-time"]').text()).toBe('Not recorded')
     expect(wrapper.get('[data-testid="applied-record-operations-empty"]').text()).toBe('Not recorded')
+  })
+
+  it('does not expose the actor id when the friendly name is unavailable', () => {
+    const wrapper = mount(ReviewAppliedDecisionRecord, {
+      props: {
+        proposal: makeProposal({ decidedByUserName: null }),
+      },
+    })
+
+    expect(wrapper.get('[data-testid="applied-record-decision-actor"]').text()).toBe('Not recorded')
+    expect(wrapper.get('[data-testid="applied-record-decision-actor"]').text()).not.toContain(
+      '31f21efa-8ce7-4e85-8c18-0eefac9edcb7',
+    )
   })
 })

@@ -141,13 +141,19 @@ recordLivePid()
 
 const stopWithServer = (server) => {
   const stopDelayMs = Number(process.env.FAKE_STOP_DELAY_MS ?? 0)
-  const stop = () => server.close(() => {
-    if (Number.isFinite(stopDelayMs) && stopDelayMs > 0) {
-      setTimeout(() => process.exit(0), stopDelayMs)
-      return
-    }
-    process.exit(0)
-  })
+  const stop = () => {
+    // server.close waits for active connections. A browser or health probe can keep one open
+    // forever, so close the accepted HTTP connections after stopping new accepts; otherwise TERM
+    // leaves this fixture alive until the launcher kills it.
+    server.close(() => {
+      if (Number.isFinite(stopDelayMs) && stopDelayMs > 0) {
+        setTimeout(() => process.exit(0), stopDelayMs)
+        return
+      }
+      process.exit(0)
+    })
+    server.closeAllConnections()
+  }
   process.on('SIGTERM', stop)
   process.on('SIGINT', stop)
 }
@@ -1027,7 +1033,62 @@ test('launchers encode the transactional lifecycle and custom-port environment b
   assert.match(sh, /redirect: "manual"/)
   assert.match(sh, /r\.headers\.get\("taskdeck-dev-run-id"\) === expectedRunId/)
   assert.doesNotMatch(sh, /export (?:TASKDECK_API_BASE_URL|VITE_API_BASE_URL)/)
+
+  const stopWithServerStart = helperSource.indexOf('const stopWithServer = (server) => {')
+  const stopWithServerEnd = helperSource.indexOf('\n\nif (kind ===', stopWithServerStart)
+  const stopWithServerSource = helperSource.slice(stopWithServerStart, stopWithServerEnd)
+  assert.match(stopWithServerSource, /server\.close\(\(\) => \{/)
+  assert.match(stopWithServerSource, /server\.closeAllConnections\(\)/)
+  assert.ok(
+    stopWithServerSource.indexOf('server.close(() => {') < stopWithServerSource.indexOf('server.closeAllConnections()'),
+    'stop must stop new accepts before closing active connections',
+  )
 })
+
+if (process.platform !== 'win32') {
+  test(
+    'Node helper: TERM closes an active frontend connection',
+    { concurrency: false, timeout: 10_000 },
+    async () => {
+      const platform = { name: 'Bash', launcher: 'dev-up.sh' }
+      const fixture = await createFixture(platform)
+      const frontendPort = await getFreePort()
+      const child = spawn(process.execPath, [fixture.helper, 'npm', 'run', 'dev'], {
+        cwd: fixture.root,
+        stdio: 'ignore',
+        env: fixtureEnvironment(platform, fixture, { FAKE_FRONTEND_PORT: String(frontendPort) }),
+      })
+      let socket
+      try {
+        await waitUntil(() => canBind(frontendPort, 'localhost').then((available) => !available), 'frontend helper did not bind')
+        socket = net.createConnection({ host: 'localhost', port: frontendPort })
+        await new Promise((resolve, reject) => {
+          socket.once('connect', resolve)
+          socket.once('error', reject)
+        })
+
+        const exitResult = new Promise((resolve) => {
+          const timer = setTimeout(() => resolve(null), 3000)
+          child.once('exit', (code, signal) => {
+            clearTimeout(timer)
+            resolve({ code, signal })
+          })
+        })
+        assert.equal(child.kill('SIGTERM'), true)
+        const result = await exitResult
+        assert.ok(result, 'frontend helper did not exit after TERM with an open connection')
+        assert.deepEqual(result, { code: 0, signal: null })
+      } finally {
+        socket?.destroy()
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL')
+          await new Promise((resolve) => child.once('exit', resolve))
+        }
+        await removeFixture(fixture)
+      }
+    },
+  )
+}
 
 for (const platform of platforms) {
   test(`${platform.name}: reset seed option is rejected before launcher side effects without seed`, { concurrency: false }, async () => {
@@ -1745,7 +1806,7 @@ for (const platform of platforms) {
     }
   })
 
-  test(`${platform.name}: high-volume stdout and stderr cannot deadlock marker acceptance`, { concurrency: false }, async () => {
+  test(`${platform.name}: high-volume stdout and stderr cannot deadlock marker acceptance`, { concurrency: false, timeout: 60_000 }, async () => {
     const fixture = await createFixture(platform)
     const apiPort = await getFreePort()
     const frontendPort = await getFreePort()
@@ -1753,7 +1814,13 @@ for (const platform of platforms) {
       const result = runLauncher(platform, fixture, {
         apiPort,
         timeout: 30_000,
-        env: { FAKE_FRONTEND_PORT: String(frontendPort), FAKE_FRONTEND_MODE: 'high-volume' },
+        env: {
+          FAKE_FRONTEND_PORT: String(frontendPort),
+          FAKE_FRONTEND_MODE: 'high-volume',
+          // Git Bash on Windows needs more time to drain the synthetic 4,000-line burst;
+          // the production default remains 60 seconds.
+          TASKDECK_DEV_FRONTEND_READY_TIMEOUT_SECONDS: '10',
+        },
       })
       assert.ifError(result.error)
       assert.equal(result.status, 0, combinedOutput(result))

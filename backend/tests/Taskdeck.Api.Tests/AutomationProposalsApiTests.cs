@@ -401,6 +401,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         approvedProposal.Should().NotBeNull();
         approvedProposal!.Status.Should().Be(ProposalStatus.Approved);
         approvedProposal.DecidedByUserId.Should().Be(userId);
+        approvedProposal.DecidedByUserName.Should().StartWith("automation-approve_");
+        approvedProposal.DecidedByUserName.Should().NotBe(approvedProposal.DecidedByUserId.ToString());
         approvedProposal.DecidedAt.Should().NotBeNull();
     }
 

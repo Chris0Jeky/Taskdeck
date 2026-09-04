@@ -126,6 +126,55 @@ public class AutomationPlannerServiceTests
     }
 
     [Fact]
+    public async Task ParseInstruction_ShouldTruncateLongSummaryWithoutSplittingSurrogatePair()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
+        var instruction = "create card '" + new string('x', 483) + "\uD83D\uDE00" + new string('y', 20) + "'";
+        CreateProposalDto? capturedDto = null;
+
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync(new List<Column> { column });
+
+        var expectedProposal = new ProposalDto(
+            Guid.NewGuid(),
+            ProposalSourceType.Manual,
+            null,
+            boardId,
+            userId,
+            ProposalStatus.PendingReview,
+            RiskLevel.Low,
+            instruction,
+            null,
+            null,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow,
+            DateTime.UtcNow.AddDays(1),
+            null,
+            null,
+            null,
+            null,
+            "corr1",
+            new List<ProposalOperationDto>());
+
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => capturedDto = dto)
+            .ReturnsAsync(Result.Success(expectedProposal));
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
+            .ReturnsAsync(Result.Success());
+
+        var result = await _service.ParseInstructionAsync(instruction, userId, boardId);
+
+        result.IsSuccess.Should().BeTrue();
+        capturedDto.Should().NotBeNull();
+        capturedDto!.Summary.Should().Be(string.Concat(instruction.AsSpan(0, 496), "..."));
+        capturedDto.Summary.Should().NotContain("\uD83D").And.NotContain("\uDE00");
+    }
+
+    [Fact]
     public async Task ParseInstruction_ShouldUseProvidedSourceMetadata_WhenSpecified()
     {
         // Arrange

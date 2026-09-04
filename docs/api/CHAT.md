@@ -92,7 +92,7 @@ Response (`200 OK`):
 | `text` | The server emits this for a regular conversational response. |
 | `proposal-reference` | The server emits this when the response includes an automation proposal; check `proposalId`. |
 | `error` | The server emits this when the request could not be completed and the message describes the error. |
-| `status` | The server emits this for a progress or status update for the current chat operation. |
+| `status` | The server emits this as a terminal fallback when an actionable response cannot become a proposal, such as when no board is bound to the session or proposal parsing fails without a parse hint. It does not represent streaming progress or imply that another status message will follow. |
 | `degraded` | The server emits this when the LLM provider returns a degraded response; check `degradedReason`. |
 | `clarification` | The server emits this when the assistant needs clarification before continuing. |
 | `parse-hint` | The server emits this when the assistant provides a supported input pattern or parsing hint. |

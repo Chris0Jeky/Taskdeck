@@ -565,15 +565,17 @@ describe('usePaperReviewSelectors', () => {
     proposal.value = makeProposal({ latestRevisionId: 'rev-2' })
     await nextTick()
 
-    await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('failed')
-    expect(selectors.loading.value).toBe(false)
-    // A partial rev-2 answer is not published as measured-empty evidence, and
-    // the coherent rev-1 batch is dropped rather than shown as rev-2 evidence.
-    expect(selectors.conflicts.value).toEqual([])
-    expect(selectors.confidenceBreakdown.value.overall).toBeNull()
-    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(2)
-
+    // The first explicit waiter consumes the failed automatic batch and starts
+    // its retry before resolving, so Apply does not spend a click on a stale
+    // failure result.
     await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
+    expect(selectors.loading.value).toBe(false)
+    // The failed automatic rev-2 answer was not published as measured-empty
+    // evidence, and the coherent rev-1 batch was dropped rather than shown as
+    // rev-2 evidence. The same-action retry now lands a complete empty rev-2
+    // batch, so the settled confidence is the retry's value.
+    expect(selectors.conflicts.value).toEqual([])
+    expect(selectors.confidenceBreakdown.value.overall).toBe(0.5)
     expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(3)
     expect(selectors.conflicts.value).toEqual([])
   })
@@ -589,10 +591,14 @@ describe('usePaperReviewSelectors', () => {
     await expect(selectors.waitForCoreBatch('p-1', null)).resolves.toBe('settled')
     expect(selectors.conflicts.value[0]?.key).toBe('existing-warning')
 
-    vi.mocked(proposalDeepReviewApi.getHistory).mockRejectedValueOnce(new Error('fail'))
+    vi.mocked(proposalDeepReviewApi.getHistory)
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockRejectedValueOnce(new Error('retry fail'))
     proposal.value = makeProposal({ id: 'p-2' })
     await nextTick()
 
+    // A failed retry still reports unavailable, while leaving that retry
+    // available for a later deliberate action.
     await expect(selectors.waitForCoreBatch('p-2', null)).resolves.toBe('failed')
     // p-1 evidence must never render under the p-2 header. The same drop
     // applies to a revision move within one proposal (covered above).
