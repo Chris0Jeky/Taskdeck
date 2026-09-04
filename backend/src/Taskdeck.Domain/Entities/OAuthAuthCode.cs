@@ -28,7 +28,10 @@ public class OAuthAuthCode : Entity
     }
 
     /// <summary>
-    /// The user ID this code authenticates (login flow) or Guid.Empty (link flow).
+    /// The user this code is bound to: the authenticated user for the login flow,
+    /// or the user who initiated the link flow. Non-empty in both flows --
+    /// <see cref="CreateForLinking"/> rejects <see cref="Guid.Empty"/>, and the
+    /// binding is load-bearing CSRF protection at link exchange.
     /// </summary>
     public Guid UserId { get; private set; }
 
