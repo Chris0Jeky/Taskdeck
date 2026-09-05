@@ -208,6 +208,21 @@ Explicit absolute database paths and
 `Data Source=:memory:` remain authoritative. Relative/default desktop paths
 resolve under the same per-user Taskdeck directory as the generated configuration.
 
+The standalone CLI keeps its own `appsettings.local.json` and does not use the
+paths above. `CliFirstRunBootstrapper` writes the connector encryption key it
+auto-generates next to the resolved SQLite data directory, which is the directory
+named by `ConnectionStrings:DefaultConnection` or by the
+`TASKDECK_CONNECTION_STRING` fallback. That directory must sit on a filesystem
+that can store owner-only permissions, such as NTFS, ext4, or APFS. The CLI
+creates the key file locked to the current user and re-applies that lockdown to a
+key file an older build left unprotected. Where the filesystem cannot store those
+permissions, which is the case on FAT32, exFAT, and some SMB shares, the CLI
+refuses to persist the key, warns on stderr, and falls back to a transient key
+generated for that run alone, so connector secrets encrypted in one run cannot be
+read in the next. The fix is to move the data directory onto a filesystem that
+stores permissions, or to set `Connectors__EncryptionKey` explicitly so the CLI
+never needs to persist a key of its own.
+
 ### `Auth:Registration`
 
 Bound to `RegistrationSettings`. The application default is `Open` so local
