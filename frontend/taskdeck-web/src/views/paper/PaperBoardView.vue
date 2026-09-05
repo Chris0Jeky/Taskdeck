@@ -435,9 +435,11 @@ function closeCard() {
  * route guard is holding a navigation for are gone, and the navigation
  * continues instead of being cancelled.
  *
- * This runs before the `close` that follows it, and clearing
- * `pendingNavigation` here is what stops `closeCard` from resolving the same
- * navigation `false` a moment later; `closeCard` still clears the editor.
+ * This runs before the `close` that follows it, so `closeCard` sees no pending
+ * navigation and only clears the editor. The nulling is not what makes that
+ * safe — the promise is already settled, so a later `resolve(false)` is a
+ * no-op either way — it is the same "take it, clear it, resolve it" shape the
+ * other two exits from this dialog use.
  */
 function handleCardUpdated() {
   const navigation = pendingNavigation.value

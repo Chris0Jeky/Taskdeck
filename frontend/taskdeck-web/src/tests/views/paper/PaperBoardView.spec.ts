@@ -165,10 +165,6 @@ describe('PaperBoardView', () => {
     mockBoardStore.error = null
     mockBoardStore.loading = false
     mockViewportMode.value = 'desktop'
-    // The locale tests below switch the shared i18n instance and every later
-    // test in this file asserts English copy, so the reset belongs here rather
-    // than at the end of each of them.
-    i18n.global.locale.value = 'en'
     routeMock.params.id = 'board-1'
     routeLeaveGuard = null
     routeUpdateGuard = null
@@ -431,16 +427,29 @@ describe('PaperBoardView', () => {
     expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
   })
 
-  it('leaves a successful save with no pending navigation unchanged', async () => {
+  it('clears the dirty editor on a successful save with no navigation pending', async () => {
     const wrapper = mountView()
     await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+    const modal = wrapper.findComponent({ name: 'CardModal' })
 
-    await emitSuccessfulSave(wrapper)
+    modal.vm.$emit('updated')
+    await nextTick()
+
+    /*
+     * Asserted between the two events on purpose. The card is still selected
+     * here, so `guardDirtyNavigation` cannot short-circuit on its absence and
+     * this is the one place the dirty flag cleared by the `updated` handler is
+     * pinned: were it still set, the guard would open the discard dialog and
+     * return a promise instead of `true`.
+     */
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(true)
+    expect(routeLeaveGuard!()).toBe(true)
+
+    modal.vm.$emit('close')
+    await nextTick()
 
     expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
-    // The editor is clean again, so the next navigation is not guarded at all.
-    expect(routeLeaveGuard!()).toBe(true)
   })
 
   it('requests the browser unload confirmation only for a dirty inspector', async () => {

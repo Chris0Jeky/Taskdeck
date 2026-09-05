@@ -7,9 +7,8 @@
  * controls on a single open board — add a card, edit a column, board settings.
  *
  * Extracted here: the controls added by #1945, the titles-only toggle added by
- * #2090, and the width and compact-density controls beside it. The rest of
- * `PaperBoardView` — the board eyebrow and heading, the card counts, the
- * discard dialog — is still hard-coded English; the ADR-0054 rollout is
+ * #2090, and the width and compact-density controls beside it. Other strings in
+ * `PaperBoardView` remain hard-coded English; the ADR-0054 rollout is
  * surface-by-surface and finishing this surface is a separate slice.
  *
  * Wording contract (ADR-0056): every label here names a *direct* human edit
