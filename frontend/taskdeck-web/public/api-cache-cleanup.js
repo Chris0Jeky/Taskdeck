@@ -1,6 +1,14 @@
 // Runtime caches are not covered by Workbox's cleanupOutdatedCaches. This
 // activation hook retires the entire legacy API namespace without touching the
 // explicit share-target offline queue.
+//
+// The generated worker must load this file with a TOP-LEVEL `importScripts` so the `activate`
+// listener below is attached during the worker's initial synchronous evaluation and cannot miss
+// its event. vite-plugin-pwa emits that call inside its asynchronous AMD factory, i.e. from a
+// promise continuation, which makes the attachment depend on the browser draining microtasks
+// before it dispatches the lifecycle event - something no specification promises. The build hoists
+// the call out of the factory and fails if it cannot; see src/pwa/hoistWorkerImportScripts.ts and
+// the structural case in tests/pwa-generated-worker.spec.ts (#2639).
 const TASKDECK_LEGACY_API_CACHE_PREFIX = 'taskdeck-api-cache'
 
 // The pre-#2350 static-asset route matched on file extension alone, so a
@@ -87,9 +95,15 @@ self.addEventListener('activate', (event) => {
     // still the controller and can still store an identity-bound response in
     // `taskdeck-static-assets`. Reusing the memo (or short-circuiting on the marker)
     // would let anything cached in that window survive the migration, which is the
-    // whole threat model. Activation therefore always re-sweeps, and still fails
-    // activation on error so a worker cannot control the page from a partially
-    // cleaned state.
+    // whole threat model. Activation therefore always re-sweeps.
+    //
+    // What the `waitUntil` buys, precisely: Handle Fetch holds every request until the
+    // worker leaves the `activating` state, so no response can be served out of a
+    // half-swept cache. It does NOT make activation fail - the spec only aborts on a
+    // rejected INSTALL, never on a rejected activate - so a rejection here is surfaced
+    // (console warning plus an unhandled rejection) and the worker still activates. A
+    // sweep that cannot complete therefore leaves the old entries in place; documented
+    // as a residual in docs/platform/PWA_OFFLINE_BEHAVIOR.md.
     await retireCaches({ force: true }).catch(reportFailure)
     try {
       // A page loaded under the vulnerable worker keeps getting API replay until
@@ -101,15 +115,22 @@ self.addEventListener('activate', (event) => {
   })())
 })
 
-// The generated worker loads this file with `importScripts()` from inside
-// vite-plugin-pwa's asynchronous AMD `define()` factory, which runs in a promise
-// continuation rather than during the worker's synchronous initial evaluation. By
-// the time the listener above is attached the `activate` event has already been
-// dispatched, so it never fires and the sweep never runs - measured in Chromium,
-// where a seeded `taskdeck-static-assets` entry survived the whole migration while
-// this same file's `message` listener answered normally. This evaluation-time sweep
-// is what actually retires the caches on such a build; the marker cache keeps it a
-// one-time migration rather than a purge on every worker restart.
+// Evaluation-time sweep. It runs while the replacement is INSTALLING, so it retires the
+// vulnerable namespaces as early as possible - but the old worker still controls every open
+// page at that moment and can re-admit an entry afterwards, which is why the `activate`
+// listener above re-sweeps with `force: true` inside `event.waitUntil`. The marker cache keeps
+// THIS pass a one-time migration rather than a purge on every worker restart; the forced pass
+// deliberately ignores it.
+//
+// #2639 reported that the `activate` listener never received its event, because
+// vite-plugin-pwa emitted the `importScripts` for this file inside its asynchronous AMD factory
+// (measured on PR #2416 as `__proofActivateFired: false`). Re-measured 2026-09-05 with breadcrumb
+// caches in Chromium 151.0.7922.34 (Playwright 1.62.1): the listener DID receive its event on every run -
+// first install, waiting-then-skip-waiting, and a worker killed over CDP and restarted straight
+// into activation, 3 of 3 each. The factory's microtask drains before the lifecycle event is
+// dispatched in that engine. It is not guaranteed to, in any engine, which is why the build now
+// hoists the call to the top of the generated worker (src/pwa/hoistWorkerImportScripts.ts): the
+// listener is attached during initial evaluation and the ordering stops being a race.
 void retireCachesOnce().catch(() => {
   // Already reported; the forced sweep at activation retries.
 })

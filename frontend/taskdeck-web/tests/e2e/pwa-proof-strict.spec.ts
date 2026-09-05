@@ -158,6 +158,12 @@ test('old #2350 worker -> v2 controller, static cache invalidated, share queue p
  *
  * The seed is written by the OLD worker's own CacheFirst handler, from a real network
  * response, not by page script reaching into CacheStorage.
+ *
+ * SCOPE, so nobody re-derives it: this case discriminates the forced re-sweep itself - reverting
+ * `retireCaches({ force: true })` to the memoised `retireCachesOnce()` turns it red. It does NOT
+ * discriminate the build-side importScripts hoist (#2639); measured 2026-09-05, it is green with
+ * and without that hoist, because the Chromium under test attaches the listener in time either
+ * way. The hoist is pinned structurally in tests/pwa-generated-worker.spec.ts instead.
  */
 test('a static entry the old worker caches between install and activation does not survive the migration', async ({ browser, request }) => {
   const account = await registerUserSession(request, 'pwa-proof-race')
@@ -304,6 +310,19 @@ test('a static entry the old worker caches between install and activation does n
     await page.getByRole('button', { name: 'Sign in' }).click()
     await page.waitForURL('**/workspace/home')
     await expect.poll(askPolicy, { timeout: 20_000 }).toBe('taskdeck-api-cache-policy-v2')
+
+    // A v2 answer is not yet the end of the migration. Per the Activate algorithm the
+    // registration's active worker - and therefore the page's controller - is swapped to the
+    // replacement BEFORE `activate` is dispatched, so the worker answers the handshake while
+    // its `event.waitUntil` sweep is still running. Nothing stale can be SERVED from that
+    // window (Handle Fetch holds requests until the worker reaches `activated`), but page
+    // script reading CacheStorage directly, as this case does, can observe it. Wait for
+    // `activated`, which is the point at which the sweep's waitUntil has settled.
+    await expect.poll(
+      () => page.evaluate(async () =>
+        (await navigator.serviceWorker.getRegistration())?.active?.state ?? null),
+      { timeout: 20_000 },
+    ).toBe('activated')
 
     const entriesAfter = await staticEntries()
     console.log('PROOF raceEntriesAfter =', JSON.stringify(entriesAfter))

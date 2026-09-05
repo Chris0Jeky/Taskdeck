@@ -71,33 +71,61 @@ survive an account switch for 30 days. Normal assets are cached again on their n
 request; the share-target queue is preserved.
 
 The sweep runs when `public/api-cache-cleanup.js` is **evaluated**, not only from its `activate`
-listener. `vite-plugin-pwa`'s generated worker loads that file with `importScripts()` from inside an
-asynchronous AMD `define()` factory, which runs in a promise continuation rather than during the
-worker's synchronous initial evaluation - so by the time the `activate` listener is attached the
-event has already been dispatched and never fires it. Measured in Chromium, a seeded
-`taskdeck-static-assets` entry survived the entire old-worker-to-v2 migration while that same file's
-`message` listener answered the policy handshake normally. A `taskdeck-pwa-cache-policy-v2` marker
-cache, written only after the sweep completes, keeps that evaluation-time pass a one-time migration
-instead of a purge on every worker restart, and a failed sweep is not memoised, so a later restart
-retries it.
+listener. A `taskdeck-pwa-cache-policy-v2` marker cache, written only after the sweep completes,
+keeps that evaluation-time pass a one-time migration instead of a purge on every worker restart,
+and a failed sweep is not memoised, so a later restart retries it.
 
-The `activate` listener is still registered, and it always re-sweeps **unconditionally** - it does
-not reuse the memoised evaluation-time promise and does not short-circuit on the marker cache. That
-matters because the evaluation-time sweep runs during *install*, while the old vulnerable worker is
-still the controller and can still store an identity-bound response in `taskdeck-static-assets`.
-Reusing the completed sweep would let anything cached in that install-to-activation window survive
-the migration, which is exactly the threat model. The forced sweep still fails activation on error,
-so a worker cannot control the page and report the current policy marker from a partially cleaned
-state, and it still leaves the share-target queue and the Workbox precache untouched.
+The `activate` listener always re-sweeps **unconditionally** - it does not reuse the memoised
+evaluation-time promise and does not short-circuit on the marker cache. That matters because the
+evaluation-time sweep runs during *install*, while the old vulnerable worker is still the controller
+and can still store an identity-bound response in `taskdeck-static-assets`. Reusing the completed
+sweep would let anything cached in that install-to-activation window survive the migration, which is
+exactly the threat model. The forced sweep leaves the share-target queue and the Workbox precache
+untouched.
+
+What the forced sweep's `event.waitUntil` does and does not buy, precisely. It holds the worker in
+`activating`, and Handle Fetch waits for `activated` before it lets the worker answer a request, so
+nothing can be **served** out of a half-swept cache. It does **not** make activation fail: the spec
+aborts only on a rejected *install*, never on a rejected activate, so a sweep that cannot complete
+is surfaced (console warning plus an unhandled rejection) and the worker still activates with the
+old entries in place. It also does not hide the window from page script: the registration's active
+worker is swapped to the replacement *before* `activate` is dispatched, so a page reading
+`CacheStorage` directly - as the browser regression below does - can observe the pre-sweep state
+until the worker reaches `activated`.
+
+The generated worker loads this file with `importScripts()`, which `vite-plugin-pwa` emits from
+inside an asynchronous AMD `define()` factory - a promise continuation, not the worker's synchronous
+initial evaluation. `#2411` (PR `#2416`) and `#2639` recorded that as the reason the `activate`
+listener never fired. **Re-measured 2026-09-05 with breadcrumb caches in Chromium 151.0.7922.34
+(Playwright 1.62.1): it does fire**, on first install, on the waiting-then-skip-waiting migration
+path, and on a worker killed over CDP and restarted straight into activation - 3 of 3 runs each. In
+that engine the factory's microtask drains before the lifecycle event is dispatched. No
+specification requires that, so `vite.config.ts` now hoists the `importScripts` call to the top of
+the emitted `dist/sw.js` (`src/pwa/hoistWorkerImportScripts.ts`): the listener is attached during
+initial evaluation and the ordering stops being a race. The rewrite fails the build if the emitted
+call is missing, duplicated, or not in statement position, so a `vite-plugin-pwa` upgrade cannot
+silently put it back inside the factory.
 
 `tests/pwa-generated-worker.spec.ts` pins this against the real emitted `dist/api-cache-cleanup.js`
-using the cache names parsed out of the generated `dist/sw.js`. One case deliberately never
-dispatches an `activate` event, so a build that retires the caches only from that listener fails it;
-another re-seeds the static cache after the evaluation-time sweep has written the marker and then
-dispatches `activate`, so a build whose activation reuses that completed sweep fails too. A third
-asserts the marker cache name carries the same version suffix as the policy handshake constant in
-`src/pwa/legacyApiCacheWorker.ts`, so a future bump cannot silently leave the migration keyed on the
-old version.
+using the cache names parsed out of the generated `dist/sw.js`. One case asserts the structure
+directly: the cleanup script's `importScripts` call must sit at offset 0 of `dist/sw.js`, ahead of
+the AMD shim and the `define()` call. Another deliberately never dispatches an `activate` event, so
+a build that retires the caches only from that listener fails it; another re-seeds the static cache
+after the evaluation-time sweep has written the marker and then dispatches `activate`, so a build
+whose activation reuses that completed sweep fails too. Those dispatch cases are handler contracts,
+not attachment proof - a fake event cannot show that the real listener exists in time, which is why
+the structural case is the one that pins the build shape. A fourth asserts the marker cache name
+carries the same version suffix as the policy handshake constant in `src/pwa/legacyApiCacheWorker.ts`,
+so a future bump cannot silently leave the migration keyed on the old version.
+`src/tests/pwa/hoistWorkerImportScripts.spec.ts` covers the rewrite itself, including the shapes it
+refuses to touch.
+
+At browser level, `tests/e2e/pwa-proof-strict.spec.ts` (gated on `TASKDECK_E2E_PWA_PREVIEW=1`, run
+through `playwright.pwa-proof.config.ts`) holds the install-to-activation window open with a waiting
+replacement, seeds `taskdeck-static-assets` through the old worker's own CacheFirst handler, and
+asserts the entry is gone once the replacement reaches `activated`. It discriminates the forced
+re-sweep. It does **not** discriminate the importScripts hoist: measured 2026-09-05, it is green
+with and without it.
 
 Normal (non-security) updates still go through the `SwUpdatePrompt` banner: only this migration sends
 skip-waiting.
