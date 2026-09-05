@@ -760,7 +760,7 @@ function recordedOr(value: string | null | undefined): string {
               :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
               :disabled="boardStore.boards.length === 0"
             >
-              <option :value="null" disabled>Select a board…</option>
+              <option :value="null" disabled>{{ t('inbox.boardPicker.selectPlaceholder') }}</option>
               <option
                 v-for="board in boardStore.boards"
                 :key="board.id"

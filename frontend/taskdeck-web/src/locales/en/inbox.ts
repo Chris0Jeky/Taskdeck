@@ -160,6 +160,8 @@ export default {
   // Read-only boards stay VISIBLE but disabled and annotated (#1836): silently
   // filtering them would leave a Viewer wondering where a board went.
   boardPicker: {
+    noBoardOption: 'No board · land in inbox',
+    selectPlaceholder: 'Select a board…',
     viewOnlyOption: '{name} · view-only',
     viewOnlyHint: 'Boards marked view-only need write access before anything can be triaged into them.',
   },
