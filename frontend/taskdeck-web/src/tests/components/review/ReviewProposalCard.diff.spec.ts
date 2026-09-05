@@ -335,6 +335,109 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(headlines).not.toContain(' to “')
   })
 
+  // #2563: `operationHeadlines` is built server-side in Sequence order, so headline n describes the
+  // n-th operation BY SEQUENCE. Pairing it with `operations[n]` matched a different operation
+  // whenever the wire array was not already sequence-ordered, and the reviewer read a headline
+  // enriched from the wrong change. These two mount the card with the operations deliberately out
+  // of sequence order and assert each headline lands on its own operation.
+  async function openPlannedChanges(wrapper: ReturnType<typeof mountCard>) {
+    const plannedChanges = wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('Planned changes'))
+    expect(plannedChanges).toBeDefined()
+    await plannedChanges!.trigger('click')
+    return wrapper
+      .findAll('.td-review-card__operation-list li')
+      .map((item) => item.text())
+  }
+
+  function moveOperation(sequence: number, columnId: string) {
+    return {
+      id: `op-move-${sequence}`,
+      proposalId: 'p-1',
+      sequence,
+      actionType: 'move',
+      targetType: 'card',
+      targetId: `card-${sequence}`,
+      parameters: JSON.stringify({ boardId: 'board-1', cardId: `card-${sequence}`, columnId }),
+      idempotencyKey: `k-move-${sequence}`,
+      expectedVersion: null,
+    }
+  }
+
+  it('pairs each headline with its own operation when operations arrive out of sequence order', async () => {
+    mocks.getBoards.mockResolvedValue([{ id: 'board-1', name: 'Support Triage' }])
+    mocks.getColumns.mockResolvedValue([
+      { id: 'column-review', boardId: 'board-1', name: 'In review' },
+      { id: 'column-done', boardId: 'board-1', name: 'Done' },
+    ])
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        // Sequence 1 first: the wire order disagrees with the headline order.
+        operations: [
+          moveOperation(1, 'column-done'),
+          moveOperation(0, 'column-review'),
+        ],
+        presentation: {
+          plainSummary: 'Move two cards',
+          impactSummary: 'Moves two cards.',
+          riskCue: 'Low risk',
+          sourceCue: 'Chat',
+          // Server order: sequence 0 then sequence 1.
+          operationHeadlines: ['Move card.', 'Move card.'],
+          affectedEntities: [],
+        },
+      }),
+    })
+    await flushPromises()
+
+    // Sequence 0 goes to "In review" and sequence 1 to "Done", in that order. Index pairing
+    // against the raw wire array reverses these two destinations.
+    expect(await openPlannedChanges(wrapper)).toEqual([
+      'Move card to “In review”.',
+      'Move card to “Done”.',
+    ])
+  })
+
+  it('keeps the MoveCard enrichment on the right headline when a later operation is listed first', async () => {
+    mocks.getBoards.mockResolvedValue([{ id: 'board-1', name: 'Support Triage' }])
+    mocks.getColumns.mockResolvedValue([{ id: 'column-done', boardId: 'board-1', name: 'Done' }])
+    const wrapper = mountCard({
+      proposal: makeProposal({
+        operations: [
+          {
+            id: 'op-create',
+            proposalId: 'p-1',
+            sequence: 1,
+            actionType: 'create',
+            targetType: 'card',
+            targetId: null,
+            parameters: JSON.stringify({ boardId: 'board-1', columnId: 'column-done', title: 'Alpha' }),
+            idempotencyKey: 'k-create',
+            expectedVersion: null,
+          },
+          moveOperation(0, 'column-done'),
+        ],
+        presentation: {
+          plainSummary: 'Move then create',
+          impactSummary: 'Two changes.',
+          riskCue: 'Low risk',
+          sourceCue: 'Chat',
+          operationHeadlines: ['Move card.', 'Create card "Alpha".'],
+          affectedEntities: [],
+        },
+      }),
+    })
+    await flushPromises()
+
+    // Paired by index against the wire array, the move headline is enriched from the CREATE
+    // operation, fails the actionType/targetType gate, and silently loses its destination.
+    expect(await openPlannedChanges(wrapper)).toEqual([
+      'Move card to “Done”.',
+      'Create card "Alpha".',
+    ])
+  })
+
   it('uses historical copy for applied API-shaped records and prospective copy for pending records', () => {
     const prospectivePresentation = {
       plainSummary: 'Dark mode support This would create card "Dark mode support".',
