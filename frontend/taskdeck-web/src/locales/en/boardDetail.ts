@@ -6,11 +6,10 @@
  * (`views/BoardsListView.vue`). This one covers the direct-manipulation
  * controls on a single open board — add a card, edit a column, board settings.
  *
- * Extracted here: the controls added by #1945, plus the titles-only toggle
- * added by #2090. The rest of `PaperBoardView` is still hard-coded English —
- * the width control and the compact-density toggle beside that new one
- * included; the ADR-0054 rollout is surface-by-surface and finishing this
- * surface is a separate slice.
+ * Extracted here: the controls added by #1945, the titles-only toggle added by
+ * #2090, and the width and compact-density controls beside it. Other strings in
+ * `PaperBoardView` remain hard-coded English; the ADR-0054 rollout is
+ * surface-by-surface and finishing this surface is a separate slice.
  *
  * Wording contract (ADR-0056): every label here names a *direct* human edit
  * that takes effect immediately. Nothing in this catalog may describe a
@@ -26,6 +25,21 @@ export default {
     // accessible name repeats the visible label first (WCAG 2.5.3).
     titlesOnly: 'Titles only',
     titlesOnlyAria: 'Titles only: hide card excerpts and details',
+    // Lane width. The visible label is the short one the row has space for;
+    // the select's accessible name says what is being sized, because "Width"
+    // alone names no object. The preset names are the option copy only — the
+    // stored preference is the option's English `value`.
+    width: 'Width',
+    widthAria: 'Column width',
+    widthNarrow: 'Narrow',
+    widthStandard: 'Standard',
+    widthWide: 'Wide',
+    // Board spacing. Compact tightens the gaps and padding; it hides nothing
+    // and edits nothing, so the accessible name says what tightens and why.
+    // It repeats the visible label first (WCAG 2.5.3), as the toggles beside
+    // it do.
+    compactDensity: 'Compact density',
+    compactDensityAria: 'Compact density: tighten the board spacing to fit more cards',
   },
   card: {
     add: '+ card',

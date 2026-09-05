@@ -16,6 +16,20 @@ export default {
     // (WCAG 2.5.3).
     titlesOnly: 'Solo títulos',
     titlesOnlyAria: 'Solo títulos: oculta los extractos y los detalles de las tarjetas',
+    // Ancho de las columnas. La etiqueta visible es breve porque la fila no da
+    // para más; el nombre accesible dice qué se está midiendo. Los nombres de
+    // los ajustes concuerdan con "columna": es la columna la que se estrecha o
+    // se ensancha. El valor guardado sigue siendo el `value` en inglés.
+    width: 'Ancho',
+    widthAria: 'Ancho de columna',
+    widthNarrow: 'Estrecha',
+    widthStandard: 'Estándar',
+    widthWide: 'Ancha',
+    // Espaciado del tablero. El modo compacto reduce huecos y márgenes; no
+    // oculta ni edita nada, así que el nombre accesible dice qué se reduce y
+    // para qué, y empieza por la etiqueta visible (WCAG 2.5.3).
+    compactDensity: 'Densidad compacta',
+    compactDensityAria: 'Densidad compacta: reduce el espaciado del tablero para ver más tarjetas',
   },
   card: {
     add: '+ tarjeta',
