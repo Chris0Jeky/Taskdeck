@@ -79,6 +79,7 @@ const {
   queueRefreshStale,
   queueRefreshRefused,
   queueRefreshRecovered,
+  queueRefreshRecoveredKind,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -2651,6 +2652,15 @@ async function onClearBoardScope() {
       cannot carry this — it is a state, and a state that is merely gone
       announces nothing. `queueRefreshRecovered` is the transition.
 
+      TWO sentences through this one region, because the composable retracts two
+      different disclosures and they claim different things (#2638 item 2). A
+      'degraded' recovery follows a completed read, so it may say the rows are
+      current; a 'refused' one is raised as soon as the LIST read answers, on a
+      tick that may never replace the queue, so it says only that the server is
+      accepting refreshes again. One region rather than two: they are the same
+      job — the retraction of whichever disclosure was standing — and only one
+      can stand at a time.
+
       It lives HERE, above the `v-if="activeProposal"` / `v-else` pair, and not
       once inside each arm. The recovering poll assigns the queue and records
       the success in one synchronous block, so a recovery that puts a proposal
@@ -2668,7 +2678,15 @@ async function onClearBoardScope() {
       aria-live="polite"
       aria-atomic="true"
       data-testid="paper-review-queue-recovered"
-    >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
+    >{{
+      queueRefreshRecovered && !queueAccessRevoked
+        ? $t(
+            queueRefreshRecoveredKind === 'refused'
+              ? 'review.queue.refused.recovered'
+              : 'review.queue.degraded.recovered',
+          )
+        : ''
+    }}</p>
 
     <!--
       The refused-refresh disclosure (#2214 item 2), built the same way and

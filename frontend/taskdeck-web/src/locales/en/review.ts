@@ -96,6 +96,15 @@ export default {
   // try. It shares the visible slot with `degraded.body` and takes precedence
   // over it, and it is also the text of a mounted sr-only live region in each
   // skin, so keep it speakable as one sentence run.
+  //
+  // `refused.recovered` is that failure's own recovery sentence, and it is
+  // deliberately NARROWER than `degraded.recovered` (#2638 item 2). The refusal
+  // is retracted the moment the LIST read answers, on a tick whose composite
+  // read can still fail at the deep-link leg and leave the rendered rows
+  // untouched, so this sentence must say only that the server is accepting the
+  // refresh again. Translators: do NOT add a clause about the proposals being
+  // current or up to date — that is `degraded.recovered`'s job, and saying it
+  // here overclaimed for up to two poll intervals before this key existed.
   queue: {
     degraded: {
       body: 'This review queue may be out of date. Showing the last available proposals while Taskdeck retries.',
@@ -103,6 +112,7 @@ export default {
     },
     refused: {
       body: 'This review queue has stopped updating. The server is refusing the refresh rather than failing temporarily, so these are the last proposals it confirmed. Reload the page, or check the board filter in the address bar.',
+      recovered: 'The server is accepting refreshes for this review queue again.',
     },
   },
 
