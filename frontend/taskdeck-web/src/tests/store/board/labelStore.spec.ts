@@ -33,6 +33,7 @@ function createMockHelpers() {
     handleApiError: vi.fn(),
     isDemoMode: false,
     toast: { success: vi.fn(), error: vi.fn() },
+    markBoardDetailMutation: vi.fn(),
   }
 }
 
@@ -91,6 +92,24 @@ describe('labelStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
+    it('advances the board detail mutation epoch so an older fan-out cannot overwrite it', async () => {
+      mockLabelsApi.createLabel.mockResolvedValueOnce({
+        id: 'lbl-3',
+        name: 'Chore',
+        colorHex: '#abc',
+      })
+      const { createLabel } = createLabelActions(state as any, helpers as any)
+      await createLabel('board-1', { name: 'Chore', colorHex: '#abc' } as any)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
+    })
+
+    it('does not advance the board detail mutation epoch when the write fails', async () => {
+      mockLabelsApi.createLabel.mockRejectedValueOnce(new Error('create fail'))
+      const { createLabel } = createLabelActions(state as any, helpers as any)
+      await expect(createLabel('board-1', { name: 'X' } as any)).rejects.toThrow('create fail')
+      expect(helpers.markBoardDetailMutation).not.toHaveBeenCalled()
+    })
+
     it('sets loading to true during call', async () => {
       let loadingDuringCall = false
       mockLabelsApi.createLabel.mockImplementationOnce(async () => {
@@ -146,6 +165,17 @@ describe('labelStore', () => {
       expect(state.loading.value).toBe(false)
     })
 
+    it('advances the board detail mutation epoch so an older fan-out cannot overwrite it', async () => {
+      mockLabelsApi.updateLabel.mockResolvedValueOnce({
+        id: 'lbl-1',
+        name: 'Critical Bug',
+        colorHex: '#f00',
+      })
+      const { updateLabel } = createLabelActions(state as any, helpers as any)
+      await updateLabel('board-1', 'lbl-1', { name: 'Critical Bug' } as any)
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
+    })
+
     it('does not modify array if label not found', async () => {
       const updated = { id: 'lbl-99', name: 'Ghost', colorHex: '#fff' }
       mockLabelsApi.updateLabel.mockResolvedValueOnce(updated)
@@ -199,6 +229,13 @@ describe('labelStore', () => {
       expect(state.currentBoardLabels.value[0].id).toBe('lbl-2')
       expect(helpers.toast.success).toHaveBeenCalledWith('Label deleted successfully')
       expect(state.loading.value).toBe(false)
+    })
+
+    it('advances the board detail mutation epoch so an older fan-out cannot restore it', async () => {
+      mockLabelsApi.deleteLabel.mockResolvedValueOnce(undefined)
+      const { deleteLabel } = createLabelActions(state as any, helpers as any)
+      await deleteLabel('board-1', 'lbl-1')
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
     })
 
     it('sets loading to true during call', async () => {
