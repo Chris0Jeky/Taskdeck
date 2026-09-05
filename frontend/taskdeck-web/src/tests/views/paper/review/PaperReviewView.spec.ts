@@ -1664,6 +1664,59 @@ describe('PaperReviewView', () => {
     )
   })
 
+  it('does not record a defer receipt for a proposal left during the await', async () => {
+    let resolveDefer!: (proposal: Proposal) => void
+    mocks.deferProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveDefer = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+
+    // The queue stays interactive while the defer request is in flight.
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    // Keep the current explicit selection while removing the route hash; this
+    // makes a stale receipt visible if the continuation re-anchors itself.
+    await wrapper.vm.$router.replace('/workspace/review')
+    await flushPromises()
+
+    resolveDefer(makeProposal({
+      id: 'aaa-1',
+      summary: 'First proposal',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    }))
+    await flushPromises()
+
+    expect(mocks.deferProposal).toHaveBeenCalledWith('aaa-1')
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('records a defer receipt when the current decision locus still matches', async () => {
+    let resolveDefer!: (proposal: Proposal) => void
+    mocks.deferProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveDefer = resolve }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'matching-defer' })])
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await Promise.resolve()
+    resolveDefer(makeProposal({
+      id: 'matching-defer',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    }))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'))
+      .toBe('deferred')
+  })
+
   it('removes a snoozed proposal from the visible queue after defer resolves', async () => {
     const deferred = makeProposal({
       id: 'snooze-me',
