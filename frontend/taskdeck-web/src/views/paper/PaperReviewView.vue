@@ -2585,7 +2585,7 @@ async function onClearBoardScope() {
       >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
       <p
         v-if="queueRefreshStale && !queueAccessRevoked"
-        class="paper-review-deep__queue-stale tk-meta"
+        class="paper-review-deep__queue-stale paper-review-deep__queue-stale--pinned tk-meta"
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -2954,6 +2954,35 @@ async function onClearBoardScope() {
 .paper-review-deep__main-col {
   overflow: auto;
   min-width: 0;
+}
+/*
+ * The main column is the scroller, and a reviewer acts from a scrolled
+ * position, so an in-flow warning at the top of the column is gone by the time
+ * the decision is made (#2214 item 4). Pinning keeps the queue's honesty on
+ * screen for as long as it is true.
+ *
+ * A DEDICATED modifier, not `__queue-stale` itself: the two sibling notes that
+ * share that class (the decision-refresh lock and the evidence-unavailable
+ * note) describe the record currently on screen, not the trustworthiness of the
+ * whole queue, and they belong in flow beside it.
+ *
+ * `z-index: 1` is above the column's card content (nothing else in this column
+ * is positioned) and deliberately BELOW `ReviewDecisionRail`'s own sticky
+ * `z-index: 2`. Where both are pinned — only when the reviewer has scrolled
+ * past the rail — the rail wins the band. Winning it here instead would put an
+ * opaque paragraph over the Approve/Reject controls and swallow clicks aimed at
+ * them, which is a worse defect than the one being fixed. Offsetting the two
+ * stickies properly means changing the rail's own `top`, which is outside this
+ * slice.
+ */
+.paper-review-deep__queue-stale--pinned {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Opaque, or the retained proposal scrolls through the warning's own text. */
+  background: var(--paper);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
 }
 .paper-review-deep__revision-badge {
   padding: 4px 12px;

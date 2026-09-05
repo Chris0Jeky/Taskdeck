@@ -13,6 +13,20 @@ import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionE
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 import enReview from '../../../../locales/en/review'
 
+// The pinned-warning rule lives in this SFC's scoped stylesheet, and vitest does
+// not process SFC styles, so the rule has to be read as source. Via
+// `import.meta.glob` rather than `node:fs`, for the reason
+// `src/tests/guards/nativeBrowserDialogs.spec.ts` documents: tsconfig.vitest.json
+// deliberately keeps node types out of the spec type-check project. See the spec
+// that uses it for exactly what that does and does not prove.
+const paperReviewSource = (
+  import.meta.glob('../../../../views/paper/PaperReviewView.vue', {
+    query: '?raw',
+    import: 'default',
+    eager: true,
+  }) as Record<string, string>
+)['../../../../views/paper/PaperReviewView.vue']
+
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
   refreshWorkloadCounts: vi.fn(),
@@ -3324,6 +3338,53 @@ describe('PaperReviewView', () => {
     }
   })
 
+
+  it('pins the degraded warning to the top of the scrolling main column (#2214)', async () => {
+    // HONEST LIMIT: happy-dom does not lay anything out, and vitest does not
+    // process an SFC's `<style scoped>` at all, so `getComputedStyle` here would
+    // report nothing for either the class or the rule. Nothing in this suite can
+    // prove the warning actually stays on screen while the column scrolls; that
+    // is a browser fact. What this pins is the two halves that a regression
+    // would break silently: the element carries the dedicated pinned modifier,
+    // and the stylesheet still declares that modifier as sticky at the top with
+    // an opaque background.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.get('[data-testid="paper-review-queue-stale"]')
+      const main = wrapper.get('.paper-review-deep__main-col')
+      expect(stale.classes()).toContain('paper-review-deep__queue-stale--pinned')
+      // Still a first-class child of the scroller, not moved into a new wrapper:
+      // sticky positions against the nearest scrolling ancestor.
+      expect(stale.element.parentElement).toBe(main.element)
+
+      // The modifier is the warning's alone. The sibling notes that share the
+      // base class describe the record on screen and belong in flow beside it.
+      const lockNote = wrapper.find('[data-testid="decision-lock-note"]')
+      if (lockNote.exists()) {
+        expect(lockNote.classes()).not.toContain('paper-review-deep__queue-stale--pinned')
+      }
+
+      const rule = paperReviewSource
+        .split('.paper-review-deep__queue-stale--pinned {')[1]
+        ?.split('}')[0]
+      expect(rule).toBeDefined()
+      expect(rule).toContain('position: sticky')
+      expect(rule).toContain('top: 0')
+      expect(rule).toContain('background: var(--paper)')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
