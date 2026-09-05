@@ -8,7 +8,7 @@ import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
-import type { BoardState } from './boardState'
+import type { BoardState, CardFilters } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
 // Minimum gap between board-list fetches.  Multiple views (BoardsListView,
@@ -39,6 +39,8 @@ interface QueuedBackgroundBoardFetch {
 
 export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
   let lastFetchBoardsAt = 0
+  let unfilteredFetchBoardsInFlight: Promise<void> | null = null
+  let boardListGeneration = 0
   let boardFetchGeneration = 0
   let activeBoardFetch: ActiveBoardFetch | null = null
   let queuedBackgroundBoardFetch: QueuedBackgroundBoardFetch | null = null
@@ -47,6 +49,16 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const now = Date.now()
     // Allow forced refreshes (search/archive filter changes) to bypass throttle.
     const isFilteredRequest = !!search || includeArchived
+    // The throttle stamp is only written after a success, so it cannot separate
+    // two callers that mount together on an empty store — the inbox composer
+    // and the triage table do exactly that.  Before this share they issued
+    // parallel unfiltered reads, and one could fail while the other confirmed
+    // an empty account, leaving the picker's three states disagreeing (#1961).
+    // Filtered reads are excluded in both directions: they never join this
+    // share and never populate it, because their payload is a different list.
+    if (!isFilteredRequest && unfilteredFetchBoardsInFlight) {
+      return unfilteredFetchBoardsInFlight
+    }
     if (!isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
       return
     }
@@ -58,28 +70,68 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       return
     }
 
-    try {
-      state.loading.value = true
-      state.error.value = null
-      const freshBoards = await boardsApi.getBoards(search, includeArchived)
-      lastFetchBoardsAt = Date.now()
-      state.boards.value = freshBoards
+    const requestGeneration = boardListGeneration
+    const isCurrentListGeneration = () => requestGeneration === boardListGeneration
 
-      // Preserve selection guard: only update activeBoardId if there is no
-      // current selection or the previously-selected board is no longer in the
-      // refreshed list (e.g. it was deleted). This prevents polling/subscription
-      // refreshes from resetting the user's active board to the first item.
-      const currentId = state.activeBoardId.value
-      const stillExists = currentId !== null && freshBoards.some((b) => b.id === currentId)
-      if (!stillExists) {
-        state.activeBoardId.value = freshBoards[0]?.id ?? null
+    const request = (async () => {
+      try {
+        state.loading.value = true
+        state.error.value = null
+        const freshBoards = await boardsApi.getBoards(search, includeArchived)
+        // A logout reset ran while this read was on the wire.  The payload
+        // belongs to the account that is now signed out, so neither it nor the
+        // throttle stamp it would write may reach the next session's store —
+        // and dropping the stamp is what lets that session refetch at once.
+        if (!isCurrentListGeneration()) {
+          return
+        }
+        lastFetchBoardsAt = Date.now()
+        state.boards.value = freshBoards
+
+        // Preserve selection guard: only update activeBoardId if there is no
+        // current selection or the previously-selected board is no longer in the
+        // refreshed list (e.g. it was deleted). This prevents polling/subscription
+        // refreshes from resetting the user's active board to the first item.
+        const currentId = state.activeBoardId.value
+        const stillExists = currentId !== null && freshBoards.some((b) => b.id === currentId)
+        if (!stillExists) {
+          state.activeBoardId.value = freshBoards[0]?.id ?? null
+        }
+      } catch (e: unknown) {
+        // A superseded read reports nothing, exactly as the detail path treats
+        // a stale generation: raising the signed-out account's failure would
+        // write an error surface into the state the reset just cleared.
+        if (!isCurrentListGeneration()) {
+          return
+        }
+        helpers.handleApiError(e, 'Failed to fetch boards')
+        throw e
+      } finally {
+        // Gated for the same reason the detail path gates its own loading
+        // write: by the time a superseded read settles, the flag belongs to
+        // the read that replaced it.  Clearing it here would drop the next
+        // session's skeleton and show that user an empty account until their
+        // own read resolves.
+        if (isCurrentListGeneration()) {
+          state.loading.value = false
+        }
       }
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to fetch boards')
-      throw e
-    } finally {
-      state.loading.value = false
+    })()
+
+    if (!isFilteredRequest) {
+      unfilteredFetchBoardsInFlight = request
+      const clearShareIfCurrent = () => {
+        // Only the request that owns the slot may clear it, so a reset or a
+        // newer request that already replaced it is left intact.  Clearing on
+        // rejection is what lets a retry start a fresh request.
+        if (unfilteredFetchBoardsInFlight === request) {
+          unfilteredFetchBoardsInFlight = null
+        }
+      }
+      void request.then(clearShareIfCurrent, clearShareIfCurrent)
     }
+
+    return request
   }
 
   function settleQueuedBackgroundBoardFetch(committed = false) {
@@ -401,6 +453,61 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     }
   }
 
+  /**
+   * Clears every board value and every board request that belonged to the
+   * session that just ended.
+   *
+   * The trigger is the shell's existing authenticated true-to-false
+   * transition, the same one that already resets the workspace and capture
+   * stores.  Nothing here is keyed on a user id or a token, so a routine token
+   * refresh and a session restore do not reach it: those change identity
+   * without ending the session, and clearing on them would drop the board the
+   * user is looking at.
+   *
+   * Two generations are bumped rather than one because the list and the detail
+   * read are separate lifecycles.  A bumped generation is what makes an
+   * already-issued request safe: the response still arrives, finds its
+   * generation stale, and returns without writing board state, the loading
+   * flag, a throttle stamp, or an error surface.  The loading flag is in that
+   * list because it outlives the read that set it: once a newer read owns it,
+   * a superseded response clearing it would strand the newer read's view in an
+   * empty state.  Clearing the state alone would not do it — a read that was
+   * in flight during the reset would land afterwards and repopulate the store
+   * with the previous account's boards.
+   */
+  function resetForLogout() {
+    boardListGeneration++
+    unfilteredFetchBoardsInFlight = null
+    lastFetchBoardsAt = 0
+
+    // The queued background successor is settled through the existing helper;
+    // the active read is aborted at any intent, which the intent-scoped
+    // cancelBackgroundBoardFetch deliberately does not do.
+    boardFetchGeneration++
+    activeBoardFetch?.controller.abort()
+    activeBoardFetch = null
+    settleQueuedBackgroundBoardFetch()
+
+    const initialFilters: CardFilters = {
+      searchText: '',
+      labelIds: [],
+      dueDateFilter: 'all',
+      showBlockedOnly: false,
+    }
+
+    state.boards.value = []
+    state.activeBoardId.value = null
+    state.currentBoard.value = null
+    state.currentBoardCards.value = []
+    state.currentBoardLabels.value = []
+    state.cardCommentsByCardId.value = {}
+    state.boardPresenceMembers.value = []
+    state.editingCardId.value = null
+    state.loading.value = false
+    state.error.value = null
+    state.filters.value = initialFilters
+  }
+
   return {
     fetchBoards,
     fetchBoard,
@@ -408,5 +515,6 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     createBoard,
     updateBoard,
     deleteBoard,
+    resetForLogout,
   }
 }

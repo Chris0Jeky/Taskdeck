@@ -176,6 +176,14 @@ vi.mock('../../store/captureStore', () => ({
   useCaptureStore: () => mockCapture,
 }))
 
+const mockBoard = {
+  resetForLogout: vi.fn(),
+}
+
+vi.mock('../../store/boardStore', () => ({
+  useBoardStore: () => mockBoard,
+}))
+
 const mockPaperTheme = reactive({
   mode: 'off' as 'off' | 'paper' | 'paper-night' | 'auto',
   isOn: false,
@@ -1051,9 +1059,12 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(mockWorkspace.fetchHomeSummary).not.toHaveBeenCalled()
   })
 
-  it('resets the workspace and capture stores when the session ends', async () => {
+  it('resets the workspace, capture and board stores when the session ends', async () => {
     mountedWrapper = mountShell()
     expect(mockCapture.resetForLogout).not.toHaveBeenCalled()
+    // Mounting authenticated is not a reset trigger: only the true-to-false
+    // transition is, so a session restore leaves the board store alone.
+    expect(mockBoard.resetForLogout).not.toHaveBeenCalled()
 
     mockSession.isAuthenticated = false
     await nextTick()
@@ -1062,5 +1073,8 @@ describe('AppShell workspace navigation and command palette', () => {
     // id, so they belong to the session that recorded them (#2571).
     expect(mockWorkspace.resetForLogout).toHaveBeenCalledOnce()
     expect(mockCapture.resetForLogout).toHaveBeenCalledOnce()
+    // Board list and detail state, and the reads still in flight for them,
+    // belong to the account that was signed in (#1961).
+    expect(mockBoard.resetForLogout).toHaveBeenCalledOnce()
   })
 })

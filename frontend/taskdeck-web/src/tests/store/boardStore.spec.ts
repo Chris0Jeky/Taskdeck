@@ -988,4 +988,52 @@ describe('boardStore', () => {
       expect(store.activeBoardId).toBe('board-b')
     })
   })
+
+  describe('resetForLogout', () => {
+    it('is exposed on the facade and clears the exposed board state', async () => {
+      const board: Board = {
+        id: 'board-a',
+        name: 'Board A',
+        description: '',
+        isArchived: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        columns: [],
+      }
+      vi.mocked(boardsApi.getBoards).mockResolvedValue([board])
+      await store.fetchBoards()
+      store.currentBoard = { ...board, columns: [] } as BoardDetail
+      store.currentBoardCards = [{ id: 'card-1' } as Card]
+      store.currentBoardLabels = [{ id: 'label-1' } as Label]
+      store.boardPresenceMembers = [{ connectionId: 'c-1' } as never]
+      store.editingCardId = 'card-1'
+      store.error = 'Failed to fetch boards'
+      store.filters = {
+        searchText: 'urgent',
+        labelIds: ['label-1'],
+        dueDateFilter: 'overdue',
+        showBlockedOnly: true,
+      }
+
+      expect(typeof store.resetForLogout).toBe('function')
+      store.resetForLogout()
+
+      expect(store.boards).toEqual([])
+      expect(store.activeBoardId).toBeNull()
+      expect(store.currentBoard).toBeNull()
+      expect(store.currentBoardCards).toEqual([])
+      expect(store.currentBoardLabels).toEqual([])
+      expect(store.cardCommentsByCardId).toEqual({})
+      expect(store.boardPresenceMembers).toEqual([])
+      expect(store.editingCardId).toBeNull()
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
+      expect(store.filters).toEqual({
+        searchText: '',
+        labelIds: [],
+        dueDateFilter: 'all',
+        showBlockedOnly: false,
+      })
+    })
+  })
 })

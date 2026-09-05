@@ -51,6 +51,7 @@ vi.mock('../../../utils/demoData', () => ({
 }))
 
 import { createBoardCrudActions } from '../../../store/board/boardCrudStore'
+import type { CardFilters } from '../../../store/board/boardState'
 
 function createMockState() {
   return {
@@ -67,6 +68,12 @@ function createMockState() {
     activeBoardId: ref<string | null>('board-1'),
     loading: ref(false),
     error: ref<string | null>(null),
+    filters: ref<CardFilters>({
+      searchText: '',
+      labelIds: [],
+      dueDateFilter: 'all',
+      showBlockedOnly: false,
+    }),
   }
 }
 
@@ -174,6 +181,94 @@ describe('boardCrudStore', () => {
       vi.advanceTimersByTime(5001)
       await fetchBoards()
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+    })
+
+    // The composer and the triage table both call fetchBoards() on an empty
+    // store when the inbox mounts.  The throttle stamp is only written after a
+    // success, so before the share these two mounts issued parallel unfiltered
+    // requests and one could fail while the other confirmed an empty account
+    // (#1961).
+    it('shares one in-flight unfiltered request between concurrent callers', async () => {
+      vi.useFakeTimers()
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const composerFetch = fetchBoards()
+      const tableFetch = fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      inFlight.resolve([{ id: 'board-1', name: 'First Board' }])
+      await expect(composerFetch).resolves.toBeUndefined()
+      await expect(tableFetch).resolves.toBeUndefined()
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'First Board' }])
+
+      // The post-success throttle still applies once the shared request settles.
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(5001)
+      mockBoardsApi.getBoards.mockResolvedValueOnce([{ id: 'board-2', name: 'Second Board' }])
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+    })
+
+    it('rejects both concurrent callers once and drops the share so a retry refetches', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'board-2', name: 'Recovered Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const composerFetch = fetchBoards()
+      const tableFetch = fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      inFlight.reject(new Error('network error'))
+      await expect(composerFetch).rejects.toThrow('network error')
+      await expect(tableFetch).rejects.toThrow('network error')
+      // One real request means one error surface, not one per mounted caller.
+      expect(helpers.handleApiError).toHaveBeenCalledTimes(1)
+
+      await expect(fetchBoards()).resolves.toBeUndefined()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(state.boards.value).toEqual([{ id: 'board-2', name: 'Recovered Board' }])
+    })
+
+    it('issues a separate request for a filtered caller during an unfiltered flight', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'board-search', name: 'Searched' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const unfilteredFetch = fetchBoards()
+      await fetchBoards('search term')
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, 'search term', false)
+
+      inFlight.resolve([{ id: 'board-1', name: 'First Board' }])
+      await expect(unfilteredFetch).resolves.toBeUndefined()
+    })
+
+    it('never lets an unfiltered caller join a filtered request in flight', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'board-1', name: 'First Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const filteredFetch = fetchBoards(undefined, true)
+      await fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(1, undefined, true)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, undefined, false)
+
+      inFlight.resolve([{ id: 'board-archived', name: 'Archived' }])
+      await expect(filteredFetch).resolves.toBeUndefined()
     })
 
     it('bypasses throttle for filtered requests with search', async () => {
@@ -980,6 +1075,173 @@ describe('boardCrudStore', () => {
       expect(state.error.value).toBe('You no longer have access to this board')
       expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Cached board' })
       expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('resetForLogout', () => {
+    it('clears list and detail state back to its initial values', () => {
+      state.boards.value = [{ id: 'board-1', name: 'My Board' }]
+      state.activeBoardId.value = 'board-1'
+      state.currentBoard.value = { id: 'board-1', name: 'My Board' }
+      state.currentBoardCards.value = [{ id: 'card-1' }]
+      state.currentBoardLabels.value = [{ id: 'label-1' }]
+      state.cardCommentsByCardId.value = { 'card-1': [{ id: 'comment-1' }] }
+      state.boardPresenceMembers.value = [{ id: 'member-1' }]
+      state.editingCardId.value = 'card-1'
+      state.loading.value = true
+      state.error.value = 'Failed to fetch boards'
+      state.filters.value = {
+        searchText: 'urgent',
+        labelIds: ['label-1'],
+        dueDateFilter: 'overdue',
+        showBlockedOnly: true,
+      }
+
+      const { resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      resetForLogout()
+
+      expect(state.boards.value).toEqual([])
+      expect(state.activeBoardId.value).toBeNull()
+      expect(state.currentBoard.value).toBeNull()
+      expect(state.currentBoardCards.value).toEqual([])
+      expect(state.currentBoardLabels.value).toEqual([])
+      expect(state.cardCommentsByCardId.value).toEqual({})
+      expect(state.boardPresenceMembers.value).toEqual([])
+      expect(state.editingCardId.value).toBeNull()
+      expect(state.loading.value).toBe(false)
+      expect(state.error.value).toBeNull()
+      expect(state.filters.value).toEqual({
+        searchText: '',
+        labelIds: [],
+        dueDateFilter: 'all',
+        showBlockedOnly: false,
+      })
+    })
+
+    it('discards a board-list response that settles after the reset', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const pending = fetchBoards()
+      resetForLogout()
+
+      inFlight.resolve([{ id: 'previous-account-board', name: 'Private' }])
+      await expect(pending).resolves.toBeUndefined()
+
+      expect(state.boards.value).toEqual([])
+      expect(state.activeBoardId.value).toBeNull()
+    })
+
+    it('drops the throttle stamp so the next session refetches immediately', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'next-session-board', name: 'Next' }])
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const pending = fetchBoards()
+      resetForLogout()
+      inFlight.resolve([{ id: 'previous-account-board', name: 'Private' }])
+      await expect(pending).resolves.toBeUndefined()
+
+      // The discarded read wrote no throttle stamp, and the share slot it held
+      // was dropped, so the next session's first caller issues a real request.
+      await expect(fetchBoards()).resolves.toBeUndefined()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(state.boards.value).toEqual([{ id: 'next-session-board', name: 'Next' }])
+    })
+
+    it('raises no error surface for a board-list request that fails after the reset', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const pending = fetchBoards()
+      resetForLogout()
+
+      inFlight.reject(new Error('network error'))
+      await expect(pending).resolves.toBeUndefined()
+
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.error.value).toBeNull()
+      expect(state.boards.value).toEqual([])
+    })
+
+    // A superseded read must not clear the loading flag a newer read owns.
+    // Otherwise BoardsListView drops its skeleton and shows the empty state to
+    // the next signed-in user until their own read resolves.
+    it('leaves a newer read loading when a superseded response resolves', async () => {
+      const supersededRead = createDeferred<Array<{ id: string; name: string }>>()
+      const nextSessionRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(supersededRead.promise)
+        .mockReturnValueOnce(nextSessionRead.promise)
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const previousSessionFetch = fetchBoards()
+      resetForLogout()
+      const nextSessionFetch = fetchBoards()
+      expect(state.loading.value).toBe(true)
+
+      supersededRead.resolve([{ id: 'previous-account-board', name: 'Private' }])
+      await expect(previousSessionFetch).resolves.toBeUndefined()
+
+      expect(state.loading.value).toBe(true)
+      expect(state.boards.value).toEqual([])
+
+      nextSessionRead.resolve([{ id: 'next-session-board', name: 'Next' }])
+      await expect(nextSessionFetch).resolves.toBeUndefined()
+
+      expect(state.boards.value).toEqual([{ id: 'next-session-board', name: 'Next' }])
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('leaves a newer read loading when a superseded response rejects', async () => {
+      const supersededRead = createDeferred<Array<{ id: string; name: string }>>()
+      const nextSessionRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(supersededRead.promise)
+        .mockReturnValueOnce(nextSessionRead.promise)
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const previousSessionFetch = fetchBoards()
+      resetForLogout()
+      const nextSessionFetch = fetchBoards()
+      expect(state.loading.value).toBe(true)
+
+      supersededRead.reject(new Error('network error'))
+      await expect(previousSessionFetch).resolves.toBeUndefined()
+
+      expect(state.loading.value).toBe(true)
+      expect(state.boards.value).toEqual([])
+      expect(state.error.value).toBeNull()
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+
+      nextSessionRead.resolve([{ id: 'next-session-board', name: 'Next' }])
+      await expect(nextSessionFetch).resolves.toBeUndefined()
+
+      expect(state.boards.value).toEqual([{ id: 'next-session-board', name: 'Next' }])
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('aborts an active detail fetch and discards its late response', async () => {
+      const board = createDeferred<{ id: string; name: string; columns: [] }>()
+      mockBoardsApi.getBoard.mockReturnValueOnce(board.promise)
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
+
+      const { fetchBoard, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const pending = fetchBoard('board-1')
+      resetForLogout()
+
+      board.resolve({ id: 'board-1', name: 'Private Board', columns: [] })
+      await expect(pending).resolves.toBe(false)
+
+      expect(state.currentBoard.value).toBeNull()
+      expect(state.currentBoardCards.value).toEqual([])
+      expect(state.currentBoardLabels.value).toEqual([])
+      expect(state.loading.value).toBe(false)
     })
   })
 
