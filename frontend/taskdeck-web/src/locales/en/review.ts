@@ -549,8 +549,22 @@ export default {
     title: 'Operation details',
     hint: 'Press Space to hide',
     loading: 'Loading diff…',
+    // The read-only banner names the content that is ACTUALLY on screen, in the
+    // three modes the pane can be in — #1434 finding 2. The first two are worded
+    // exactly as the Legacy card words them (ReviewProposalCard.vue
+    // `readOnlyDiffBanner`); the third deliberately drops Legacy's trailing
+    // "no stored preview is available" clause, for the reason four lines down.
+    // `storedBannerRecorded` is the common expired path: normal creation flows
+    // never populate `diffPreview`, so the pane synthesizes a listing from the
+    // proposal's own operations. That sentence lives HERE and nowhere else on
+    // the Paper pane, which renders no note under the banner.
     storedBanner:
       '{status} · read-only — showing the stored preview from the original submission.',
+    storedBannerRecorded: "{status} · read-only — showing the proposal's recorded operations.",
+    // Nothing to show: `storedEmpty` below is the empty state's own sentence and
+    // renders directly under this banner, so the banner states the status and
+    // the read-only fact and does not repeat it.
+    storedBannerNone: '{status} · read-only.',
     // Rendered `✎ {lead} <strong>{emphasis}</strong> {tail}` — the spaces come
     // from the template, so `lead` must not carry a trailing space.
     revised: {
@@ -689,10 +703,18 @@ export default {
   },
 
   // Rendered status labels. The wire values themselves are never keys.
+  // `appliedToBoard` is the read-only diff banner's form of `applied`: the
+  // Legacy card names that status "Applied to board" there (#1434 finding 3),
+  // and its `reviewStatusLabel` is component-local, so the two shells converge
+  // on the wording through this key rather than through a shared helper.
   status: {
     pendingReview: 'Pending review',
     approved: 'Approved',
+    // `appliedToBoard` supersedes `applied` for the read-only diff banner, the
+    // only surface reading this group today; `applied` is kept as the plain
+    // status label for any other surface that extracts into it.
     applied: 'Applied',
+    appliedToBoard: 'Applied to board',
     rejected: 'Rejected',
     failed: 'Failed',
     expired: 'Expired',

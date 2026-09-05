@@ -12,6 +12,7 @@ import {
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 import enReview from '../../../../locales/en/review'
+import { i18n, DEFAULT_LOCALE } from '../../../../i18n'
 
 // Two sticky rules decide whether the degraded warning is actually visible, and
 // both live in scoped stylesheets that vitest never processes, so they have to
@@ -2890,6 +2891,254 @@ describe('PaperReviewView', () => {
 
     wrapper.unmount()
   })
+
+  it('names the stored preview in the read-only banner when one was captured (#1434 finding 2)', async () => {
+    // Parity anchor for the three banner modes below: with a captured
+    // diffPreview on screen the banner keeps the Legacy card's exact sentence
+    // (ReviewProposalCard.vue readOnlyDiffBanner).
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-stored',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Archived plan"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired · read-only')
+    expect(banner.text()).toContain('showing the stored preview from the original submission')
+
+    wrapper.unmount()
+  })
+
+  it('names the recorded operations in the read-only banner when no stored preview was captured (#1434 finding 2)', async () => {
+    // The banner used to claim a "stored preview from the original submission"
+    // even for the synthesized recorded-operations fallback — the COMMON expired
+    // path, since normal creation flows never populate diffPreview. It must name
+    // what is actually on screen, in the Legacy card's wording.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-ops',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-stored-operations"]').exists()).toBe(true)
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired · read-only')
+    expect(banner.text()).toContain("showing the proposal's recorded operations")
+    expect(banner.text()).not.toContain('stored preview')
+    // Said ONCE: the Paper pane renders no separate note under the banner, so
+    // the banner alone carries the sentence (the LOW recorded on the Legacy
+    // side, where the banner repeats the note directly below it).
+    const section = wrapper.find('[data-testid="paper-review-diff"]')
+    expect(
+      section.text().split("showing the proposal's recorded operations").length - 1,
+    ).toBe(1)
+
+    wrapper.unmount()
+  })
+
+  it('does not claim a stored preview in the read-only banner when nothing was captured (#1434 finding 2)', async () => {
+    // Nothing to show at all: the banner states the status and that the record
+    // is read-only, and the empty state below keeps its own sentence. The banner
+    // must neither claim a preview exists nor repeat that sentence.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-none',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+        operations: [],
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired · read-only')
+    expect(banner.text()).not.toContain('stored preview')
+    expect(banner.text()).not.toContain('showing')
+    const storedEmpty = wrapper.find('[data-testid="paper-review-diff-stored-empty"]')
+    expect(storedEmpty.exists()).toBe(true)
+    expect(storedEmpty.text()).toContain('No stored preview is available for this proposal.')
+    const section = wrapper.find('[data-testid="paper-review-diff"]')
+    expect(section.text().toLowerCase().split('no stored preview').length - 1).toBe(1)
+
+    wrapper.unmount()
+  })
+
+  it('keeps the revised caveat consistent with the recorded-operations banner (#1434 finding 2)', async () => {
+    // Banner and caveat must describe the same content: the fallback tail already
+    // says "recorded operations", so the banner above it may not say "stored
+    // preview" for the same pane.
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'banner-ops-revised',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-ops-revised',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain("showing the proposal's recorded operations")
+    expect(banner.text()).not.toContain('stored preview')
+    const revisedNote = wrapper.find('[data-testid="paper-review-diff-revised-note"]')
+    expect(revisedNote.exists()).toBe(true)
+    expect(revisedNote.text()).toContain('recorded operations')
+    expect(revisedNote.text()).not.toContain('stored preview')
+
+    wrapper.unmount()
+  })
+
+  it('converges the read-only banner status on the Legacy card\'s "Applied to board" wording (#1434 finding 3)', async () => {
+    // Legacy renders Applied through reviewStatusLabel as "Applied to board"
+    // (ReviewProposalCard.vue); Paper's previewReadOnlyLabel rendered the bare
+    // normalized status. reviewStatusLabel is component-local — not a composable
+    // or util this view may import — so the convergence is the catalog key the
+    // banner reads.
+    expect(enReview.status.appliedToBoard).toBe('Applied to board')
+
+    // The preview key is inert on an applied record (useReviewKeymap's
+    // `isActionEnabled` allows only onReject while `activeAppliedProposal` is
+    // set), so the banner cannot be OPENED on one — asserted below. It is
+    // reached the other way instead: a pane opened before the apply converts to
+    // the stored presentation when the apply lands, which the next two specs
+    // drive end to end.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-applied',
+        status: 'Applied',
+        summary: 'Applied banner probe',
+        diffPreview: '0. Create card "Stored"',
+        appliedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      }),
+    ])
+
+    const row = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Applied banner probe'))!
+    await row.trigger('click')
+    await flushPromises()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  // The route that renders the Applied banner: open the live pane on a pending
+  // proposal, then approve and apply it (#1942's two clicks plus the phase-2
+  // dialog). Nothing on that path clears the pane — the proposal-change watcher
+  // sees the same id and a revision identity that only went to null, and the
+  // decision receipt keeps the applied proposal active — so the #1397 LOW-5
+  // watcher converts the open live pane to the stored read-only presentation.
+  async function applyWithOpenLivePane(id: string) {
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Live"')
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id, status: 'Approved', diffPreview: '0. Create card "Stored"' }),
+    )
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({
+        id,
+        status: 'Applied',
+        diffPreview: '0. Create card "Stored"',
+        appliedAt: new Date().toISOString(),
+      }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id, status: 'PendingReview', diffPreview: '0. Create card "Stored"' }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    // The pane is live and actionable at this point: no read-only banner yet.
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Live')
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    await confirmApplyDialog()
+    await wrapper.vm.$nextTick()
+
+    return wrapper
+  }
+
+  it('renders the Legacy "Applied to board" wording when the apply converts an open pane (#1434 finding 3)', async () => {
+    const wrapper = await applyWithOpenLivePane('banner-applied-live')
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Applied to board · read-only')
+    expect(banner.text()).toContain('showing the stored preview from the original submission')
+    // The conversion also swapped the live diff for the decision-time stored
+    // preview, which is the content the banner now names.
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored')
+
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['it', 'Applicata alla bacheca', 'sola lettura'],
+    ['es', 'Aplicada al tablero', 'solo lectura'],
+  ] as const)(
+    'renders the %s appliedToBoard label in the converted banner (#1434 finding 3)',
+    async (locale, label, readOnly) => {
+      // The banner label is the one string this catalog key reaches the DOM
+      // through, so the translated forms are proven here rather than only in the
+      // catalog-parity guard.
+      i18n.global.locale.value = locale
+      try {
+        const wrapper = await applyWithOpenLivePane(`banner-applied-${locale}`)
+
+        const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+        expect(banner.exists()).toBe(true)
+        expect(banner.text()).toContain(label)
+        expect(banner.text()).toContain(readOnly)
+        expect(banner.text()).not.toContain('Applied to board')
+
+        wrapper.unmount()
+      } finally {
+        i18n.global.locale.value = DEFAULT_LOCALE
+      }
+    },
+  )
 
   it('renders the invalid verdict with the backend reason (not a toast) when /diff 400s for a pending proposal (#1397)', async () => {
     mocks.getProposalDiff.mockRejectedValueOnce({

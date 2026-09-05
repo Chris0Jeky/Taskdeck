@@ -520,11 +520,21 @@ function clearPreviewDiff() {
 
 // The read-only banner label for the active proposal's stored preview: 'Expired'
 // when the clock/domain says so, otherwise its terminal status.
+//
+// #1434 finding 3: Applied is spelled "Applied to board" here, the way the
+// Legacy card's `reviewStatusLabel` spells it (ReviewProposalCard.vue). That
+// helper is component-local — not a composable or util this view may import —
+// so the two shells converge through the catalog key instead. Every other
+// status already matched. The Applied case reaches the screen through the
+// #1397 LOW-5 conversion — a pane opened before the apply, not a key press,
+// since the preview key is inert once the record is applied.
 const previewReadOnlyLabel = computed(() => {
   const p = activeProposal.value
   if (!p) return ''
   if (isProposalExpired(p)) return t('review.status.expired')
-  return t(`review.status.${statusKeySuffix(normalizeProposalStatus(p.status))}`)
+  const status = normalizeProposalStatus(p.status)
+  if (status === 'Applied') return t('review.status.appliedToBoard')
+  return t(`review.status.${statusKeySuffix(status)}`)
 })
 
 // Read-only fallback when the proposal never captured a `diffPreview` (normal
@@ -545,6 +555,24 @@ const storedOperationsFallback = computed(() => {
         `${index + 1}. ${formatActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
     )
     .join('\n')
+})
+
+// The read-only banner names the content actually on screen, the way the Legacy
+// card's `readOnlyDiffBanner` does (ReviewProposalCard.vue): the captured stored
+// preview, the recorded-operations fallback synthesized above (the COMMON
+// expired path — normal creation flows never populate `diffPreview`), or
+// neither. Claiming a "stored preview from the original submission" for the
+// synthesized listing was inaccurate, and claiming one when nothing was captured
+// contradicted the empty state right below it (#1434 finding 2).
+//
+// The recorded-operations sentence lives on the banner ALONE. Unlike the Legacy
+// card, which renders a note under its banner saying the same thing, this pane
+// has no such note — so the fact is stated once.
+const previewReadOnlyBanner = computed(() => {
+  const status = previewReadOnlyLabel.value
+  if (previewDiff.value) return t('review.diff.storedBanner', { status })
+  if (storedOperationsFallback.value) return t('review.diff.storedBannerRecorded', { status })
+  return t('review.diff.storedBannerNone', { status })
 })
 // Guards against a double-click firing two feedback POSTs (the backend is idempotent as a backstop).
 const reportingProposalId = ref<string | null>(null)
@@ -2805,14 +2833,15 @@ async function onClearBoardScope() {
           <h3 class="tk-h3 paper-review-deep__diff-title">{{ $t('review.diff.title') }}</h3>
           <span class="tk-meta paper-review-deep__diff-sub">{{ $t('review.diff.hint') }}</span>
         </header>
-        <!-- Read-only banner: a terminal/expired proposal's stored preview (#1397) -->
+        <!-- Read-only banner for a terminal/expired proposal (#1397), naming the
+             content mode actually on screen (#1434). -->
         <p
           v-if="previewDiffMode === 'stored'"
           class="paper-review-deep__diff-banner tk-meta"
           role="status"
           data-testid="paper-review-diff-banner"
         >
-          {{ $t('review.diff.storedBanner', { status: previewReadOnlyLabel }) }}
+          {{ previewReadOnlyBanner }}
         </p>
         <!-- diffPreview is creation-time content revisions never update, so a revised
              proposal's stored preview — or the recorded-operations fallback when no
