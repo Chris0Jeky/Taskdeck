@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive, ref } from 'vue'
+import { i18n } from '../../../i18n'
 import PaperBoardView from '../../../views/paper/PaperBoardView.vue'
 import PaperBoardColumn from '../../../views/paper/PaperBoardColumn.vue'
 import type { BoardDetail, Card, Column } from '../../../types/board'
@@ -170,6 +171,7 @@ describe('PaperBoardView', () => {
     window.localStorage.removeItem('td.paper.board-density.v1')
     window.localStorage.removeItem('td.paper.board-column-width.v1')
     window.localStorage.removeItem('td.paper.board-collapsed-columns.v1')
+    window.localStorage.removeItem('td.paper.board-card-detail.v1')
   })
 
   afterEach(() => {
@@ -399,6 +401,123 @@ describe('PaperBoardView', () => {
     await nextTick()
 
     expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('compact')
+  })
+
+  it('toggles and persists titles-only card detail through a keyboard-accessible button', async () => {
+    const wrapper = mountView()
+    const toggle = wrapper.get('[data-testid="paper-board-card-detail-toggle"]')
+
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('full')
+
+    // The board keymap listens on `window`; the toggle's own Enter and Space
+    // must stop there, exactly as the density toggle beside it stops them, so
+    // pressing the control cannot also fire a board shortcut.
+    const bubbledKeydown = vi.fn()
+    window.addEventListener('keydown', bubbledKeydown)
+    for (const key of ['Enter', ' ']) {
+      toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    }
+    window.removeEventListener('keydown', bubbledKeydown)
+    expect(bubbledKeydown).not.toHaveBeenCalled()
+
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+    expect(window.localStorage.getItem('td.paper.board-card-detail.v1')).toBe('titles')
+
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('full')
+    expect(window.localStorage.getItem('td.paper.board-card-detail.v1')).toBe('full')
+  })
+
+  it('restores the persisted titles-only card detail after the board unmounts and remounts', async () => {
+    const firstMount = mountView()
+    await firstMount.get('[data-testid="paper-board-card-detail-toggle"]').trigger('click')
+    firstMount.unmount()
+    mountedViews.splice(mountedViews.indexOf(firstMount), 1)
+
+    const reloaded = mountView()
+    await nextTick()
+
+    expect(reloaded.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+    expect(reloaded.get('[data-testid="paper-board-card-detail-toggle"]').attributes('aria-pressed'))
+      .toBe('true')
+  })
+
+  it('falls back to full card detail for invalid stored values', async () => {
+    window.localStorage.setItem('td.paper.board-card-detail.v1', 'headlines')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('full')
+    expect(wrapper.get('[data-testid="paper-board-card-detail-toggle"]').attributes('aria-pressed'))
+      .toBe('false')
+  })
+
+  /*
+   * Titles-only is an attribute plus scoped CSS, never a card prop: the excerpt
+   * and the meta row are hidden by the board's own `[data-card-detail="titles"]`
+   * rules while every card stays whole in the DOM. That is what keeps the
+   * opener, the drag handle and the column count reachable in the mode (#2090
+   * AC2) — a prop that stopped rendering them would not.
+   */
+  it('keeps card titles, column counts, the opener and the drag handle under titles-only', async () => {
+    window.localStorage.setItem('td.paper.board-card-detail.v1', 'titles')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+    expect(wrapper.findAll('[data-card-id]')).toHaveLength(4)
+
+    const card = wrapper.get('[data-card-id="card-1"]')
+    expect(card.get('.paper-board-card__title').text()).toBe('A')
+    expect(card.find('[data-action="open-card"]').exists()).toBe(true)
+    expect(card.find('[data-action="drag-card-handle"]').exists()).toBe(true)
+    expect(wrapper.get('[data-column-id="col-backlog"] .paper-board-column__count').text()).toBe('3/2')
+  })
+
+  it('reorders paper cards by drag while titles-only card detail is active', async () => {
+    window.localStorage.setItem('td.paper.board-card-detail.v1', 'titles')
+    const wrapper = mountView()
+    await nextTick()
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+
+    const handle = wrapper.get('[data-card-id="card-1"] [data-action="drag-card-handle"]')
+    const dragStart = makeDragEvent('dragstart')
+    handle.element.dispatchEvent(dragStart)
+    await nextTick()
+    expect(dragStart.defaultPrevented).toBe(false)
+
+    const targetCard = wrapper.get('[data-card-id="card-3"]')
+    targetCard.element.dispatchEvent(makeDragEvent('dragover'))
+    targetCard.element.dispatchEvent(makeDragEvent('drop'))
+    await flushPromises()
+
+    expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'col-backlog', 1)
+  })
+
+  it('localizes the titles-only toggle label and its accessible name', async () => {
+    const wrapper = mountView()
+    const toggle = () => wrapper.get('[data-testid="paper-board-card-detail-toggle"]')
+
+    expect(toggle().text()).toBe('Titles only')
+    expect(toggle().attributes('aria-label')).toBe('Titles only: hide card excerpts and details')
+
+    i18n.global.locale.value = 'es'
+    await flushPromises()
+    expect(toggle().text()).toBe('Solo títulos')
+    expect(toggle().attributes('aria-label'))
+      .toBe('Solo títulos: oculta los extractos y los detalles de las tarjetas')
+
+    i18n.global.locale.value = 'it'
+    await flushPromises()
+    expect(toggle().text()).toBe('Solo titoli')
+    expect(toggle().attributes('aria-label'))
+      .toBe('Solo titoli: nasconde gli estratti e i dettagli delle schede')
   })
 
   it('changes and persists named column-width presets through a labelled native select', async () => {
