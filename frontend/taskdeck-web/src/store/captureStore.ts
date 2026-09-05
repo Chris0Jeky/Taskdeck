@@ -1027,10 +1027,26 @@ export const useCaptureStore = defineStore('capture', () => {
    * starts with no recorded write for its id observes generation 0; if a write
    * then lands (generation N) and the map is cleared, the read's compare
    * becomes 0 !== 0, which is false, and the PRE-write body would be cached
-   * over the newer one and its status pushed back into the list. So the epoch
-   * moves here, after the clear: every detail read captures it when it issues
-   * its request and drops its response when it moved, before any generation
-   * compare. The shared clock itself stays monotonic.
+   * over the newer one and its status pushed back into the list. Clearing
+   * `latestSummaryGenerationById` inverts the summary half the same way, which
+   * is why the background list snapshot is guarded too (#2640). So the epoch
+   * moves here, after the clear: every read that is compared against these
+   * generations captures it when it issues its request and drops its response
+   * when it moved, before any generation compare. The shared clock itself stays
+   * monotonic.
+   *
+   * SCOPE, stated exactly: the reads that capture the epoch are `fetchDetail`,
+   * the single-item triage poll, and the batch poll's list snapshot. NOT
+   * `peekDetail` — it is compared against no generation because it writes
+   * neither cache. The `detailById` write on that path is the caller's:
+   * `useInboxOrchestrator.openBoardScopedHashItem` hands the body to
+   * `selectItemById` as `preloadedDetail` with `cacheSummary: false`, which
+   * reaches `cacheDetail` guarded only by the route-hash re-check. Capturing
+   * the epoch inside `peekDetail` would not cover that write, since the write
+   * is not `peekDetail`'s to drop; the guard would have to live in the
+   * composable, a per-mount surface the logout's route change tears down
+   * anyway. What the `cacheSummary: false` buys is that nothing from that path
+   * can reach `items`, so no row of a previous session's list survives it.
    */
   function resetForLogout() {
     latestDetailWriteGenerationById.clear()
