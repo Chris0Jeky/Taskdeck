@@ -104,6 +104,20 @@ describe('PaperShortcutsOverlay', () => {
     expect(rows).not.toContainEqual({ key: 'O', label: 'Open card' })
   })
 
+  it('claims the shared new-card key but not the Legacy-only filter key', () => {
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const displayedIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+
+    // `n` is skin-agnostic (#1945): PaperBoardColumn renders the same
+    // `[data-action="toggle-add-card"]` contract the handler drives.
+    expect(displayedIds).toContain('board-new-card')
+    // `f` is gated on `!paperOn` in BoardView, so Paper must not advertise it.
+    expect(displayedIds).not.toContain('board-toggle-filter')
+    expect(teleportContent().textContent).not.toContain('Filter panel')
+  })
+
   it('does not advertise an undo shortcut that the product does not implement', () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
     const root = teleportContent().querySelector('[data-paper-shortcuts]') as HTMLElement

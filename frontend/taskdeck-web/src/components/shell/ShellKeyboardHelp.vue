@@ -2,7 +2,7 @@
 import {
   formatShortcut,
   KEYBOARD_HELP_SHORTCUT,
-  PAPER_SHORTCUT_GROUPS,
+  LEGACY_SHORTCUT_GROUPS,
 } from '../../utils/keyboardShortcuts'
 
 /**
@@ -10,10 +10,11 @@ import {
  * PaperShortcutsOverlay instead).
  *
  * Rows come from the shared ledger in `utils/keyboardShortcuts.ts`, the same
- * source PaperShortcutsOverlay renders, so the two surfaces cannot drift and
- * every row named here has a named handler owner. Modifier notation goes
- * through `formatShortcut` so Apple platforms see the Command glyph instead of
- * a hardcoded `Ctrl+` literal.
+ * source PaperShortcutsOverlay renders, filtered to the rows whose handler can
+ * run in this skin. That is why the two surfaces differ by exactly one row:
+ * `f` toggles the Legacy filter panel and is gated on `!paperOn`. Modifier
+ * notation goes through `formatShortcut` so Apple platforms see the Command
+ * glyph instead of a hardcoded `Ctrl+` literal.
  *
  * Rows that no runtime implements (the former Editor section's Ctrl+S /
  * Ctrl+Enter / Alt+N jumps, and Shift+N "New column") were removed rather than
@@ -47,7 +48,7 @@ const emit = defineEmits<{
         </div>
         <div class="td-keyboard-help__content">
           <div
-            v-for="group in PAPER_SHORTCUT_GROUPS"
+            v-for="group in LEGACY_SHORTCUT_GROUPS"
             :key="group.title"
             class="td-keyboard-help__section"
             :data-group="group.title"

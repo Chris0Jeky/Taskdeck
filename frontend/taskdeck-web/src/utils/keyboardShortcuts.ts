@@ -1,6 +1,12 @@
 export type ShortcutGroupTitle = 'Navigate' | 'Capture & Review' | 'Boards'
 export type ShortcutHandlerOwner = 'app-shell' | 'review-keymap' | 'board-keymap'
 
+/**
+ * The two shipped skins. Each renders exactly one help surface:
+ * `paper` -> PaperShortcutsOverlay, `legacy` -> ShellKeyboardHelp.
+ */
+export type ShortcutSkin = 'paper' | 'legacy'
+
 export type ShortcutStroke = Readonly<{
   key: string
   mod?: boolean
@@ -21,6 +27,13 @@ type ShortcutBindingBase = Readonly<{
   note?: string
   group?: ShortcutGroupTitle
   handlerOwner: ShortcutHandlerOwner
+  /**
+   * The skins whose help surface may advertise this row. Absent means every
+   * skin, which is the case for all but the handful of bindings whose handler
+   * is itself gated on the skin (`f` runs only when Paper is off, because the
+   * Legacy filter panel is the control it toggles).
+   */
+  skins?: readonly ShortcutSkin[]
 }>
 
 export type AppShellShortcutBinding = ShortcutBindingBase & Readonly<{
@@ -339,6 +352,14 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerEvidence: "{ key: 'Enter', description: 'Open selected card'",
   },
   {
+    id: 'board-new-card',
+    descriptor: 'n',
+    label: 'New card in column',
+    group: 'Boards',
+    handlerOwner: 'board-keymap',
+    handlerEvidence: "{ key: 'n', description: 'New card in current column'",
+  },
+  {
     id: 'board-move-previous-column',
     descriptor: 'alt+arrowleft',
     label: 'Move card to previous column',
@@ -371,6 +392,18 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerEvidence: "{ key: 'ArrowDown', alt: true, description: 'Move card down in column'",
   },
   {
+    id: 'board-toggle-filter',
+    descriptor: 'f',
+    label: 'Filter panel',
+    group: 'Boards',
+    handlerOwner: 'board-keymap',
+    handlerEvidence: "{ key: 'f', description: 'Toggle filter panel'",
+    // `standardBoardOnlyShortcutsEnabled` in BoardView gates this on `!paperOn`:
+    // the filter panel it toggles exists only on the Legacy board, so the Paper
+    // overlay must not claim the key.
+    skins: ['legacy'],
+  },
+  {
     id: 'keyboard-help',
     descriptor: '?',
     label: 'Keyboard map',
@@ -382,10 +415,28 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
 
 const GROUP_ORDER: readonly ShortcutGroupTitle[] = ['Navigate', 'Capture & Review', 'Boards']
 
-export const PAPER_SHORTCUT_GROUPS = GROUP_ORDER.map((title) => ({
-  title,
-  rows: PAPER_SHORTCUT_BINDINGS.filter((binding) => binding.group === title),
-}))
+const ALL_SKINS: readonly ShortcutSkin[] = ['paper', 'legacy']
+
+/**
+ * A binding with no `skins` list applies everywhere; one that names skins is
+ * advertised only where its handler can actually run.
+ */
+export function bindingAppliesToSkin(binding: ShortcutBinding, skin: ShortcutSkin): boolean {
+  return (binding.skins ?? ALL_SKINS).includes(skin)
+}
+
+export function shortcutGroupsForSkin(skin: ShortcutSkin) {
+  return GROUP_ORDER.map((title) => ({
+    title,
+    rows: PAPER_SHORTCUT_BINDINGS.filter(
+      (binding) => binding.group === title && bindingAppliesToSkin(binding, skin),
+    ),
+  }))
+}
+
+export const PAPER_SHORTCUT_GROUPS = shortcutGroupsForSkin('paper')
+
+export const LEGACY_SHORTCUT_GROUPS = shortcutGroupsForSkin('legacy')
 
 export const APP_SHELL_SHORTCUT_BINDINGS = PAPER_SHORTCUT_BINDINGS.filter(
   (binding): binding is AppShellShortcutBinding => binding.handlerOwner === 'app-shell',
