@@ -497,11 +497,15 @@ export function useInboxOrchestrator(options: {
         if (scopeReplacementLatch.repairIssued) {
           // The repair was dropped too. Do not loop. Clear the flag instead and
           // let the table state the truth it has: the store's rows with their
-          // count, its empty state, or its error surface with Retry. Every
-          // read that can supersede this one resolves the SAME
-          // `currentListQuery` thunk at the moment it is issued (see
-          // `batchAction` and `captureStore.batchTriage`), so the rows that won
-          // are this scope's rows, not the retained previous scope's.
+          // count, its empty state, or its error surface with Retry. Clearing
+          // here is safe only while this orchestrator is the sole Paper-side
+          // `fetchItems` caller: a superseding read resolves the same
+          // `currentListQuery` thunk when it is issued, but issued is not
+          // applied, and until it applies `items` still holds the last APPLIED
+          // list, which can be the previous scope's rows. Today the only other
+          // caller is Legacy's `batchTriage` reconciliation read, and Legacy
+          // never renders this flag. A Paper batch surface must clear only once
+          // a read has applied since the latch was raised.
           isScopeReplacement.value = false
           scopeReplacementLatch = null
         } else {
@@ -512,7 +516,9 @@ export function useInboxOrchestrator(options: {
     } catch {
       // Store handles toast + error state. The flag stays raised deliberately:
       // a failed load leaves the previous scope's rows in the store, and the
-      // table's error surface already carries a Retry.
+      // table's error surface carries a Retry while `listError` is set. (A
+      // later background poll success clears `listError` without touching
+      // this flag; that failure-path shape is tracked on #2591.)
     }
     await openItemFromHash()
     inboxLoadPerf.end()
