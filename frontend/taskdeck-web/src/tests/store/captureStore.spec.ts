@@ -2443,6 +2443,70 @@ describe('captureStore', () => {
       }
     })
 
+    it('keeps a foreground list error when the poll is stopped mid-flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems)
+          .mockRejectedValueOnce(new Error('foreground-load-failed'))
+          .mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve }) as never)
+
+        await expect(store.fetchItems({ limit: 200 })).rejects.toThrow('foreground-load-failed')
+        expect(store.listError).toBe('Failed to load inbox items')
+
+        const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+
+        // The orchestrator cancels this poll on a board or archived-history
+        // change and on unmount, which aborts the tick's read in flight. A
+        // response that lands after that is not proof the list the user is
+        // looking at became readable, so it must not clear their error (#2305).
+        stop()
+        resolveList([summaryRow('c-1', 'ProposalCreated')])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.listError).toBe('Failed to load inbox items')
+        expect(store.items).toEqual([])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps a foreground list error when the deadline aborts a poll read mid-flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems)
+          .mockRejectedValueOnce(new Error('foreground-load-failed'))
+          .mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve }) as never)
+
+        await expect(store.fetchItems({ limit: 200 })).rejects.toThrow('foreground-load-failed')
+        expect(store.listError).toBe('Failed to load inbox items')
+
+        store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(BATCH_TRIAGE_POLL_MAX_DURATION_MS)
+
+        // The 60 s deadline aborted the one read that was still in flight.
+        expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+        expect(store.batchError).toBe(
+          'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
+        )
+
+        resolveList([summaryRow('c-1', 'ProposalCreated')])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.listError).toBe('Failed to load inbox items')
+        expect(store.items).toEqual([])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('leaves the store-wide detail loading flag alone during batch reconciliation', async () => {
       vi.useFakeTimers()
       try {
