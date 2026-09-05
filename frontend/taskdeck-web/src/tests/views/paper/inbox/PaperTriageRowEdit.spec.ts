@@ -418,4 +418,88 @@ describe('PaperTriageRowEdit', () => {
     expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
     expect(wrapper.emitted('close')).toHaveLength(1)
   })
+
+  // ── the draft hand-off, so a row that leaves the list can keep it (#1999) ──
+
+  it('hands out the unsaved draft, and nothing while there is nothing unsaved', async () => {
+    mockCaptureStore.fetchDetail.mockResolvedValue(
+      makeDetail({ metadata: { dueDate: '2026-05-01', labels: ['ops'] } }),
+    )
+    const wrapper = await mountEditor()
+
+    // An opened-but-untouched editor holds no correction; saying otherwise
+    // would have the table announce a loss that did not happen.
+    expect(wrapper.vm.readDraft()).toBeNull()
+
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('Ship the release notes')
+    await wrapper.get('[data-testid="capture-edit-label-input"]').setValue('release')
+
+    expect(wrapper.vm.readDraft()).toEqual({
+      text: 'Ship the release notes',
+      dueDate: '2026-05-01',
+      labels: ['ops'],
+      // The uncommitted label box travels too: Save would have flushed it.
+      labelInput: 'release',
+    })
+  })
+
+  it('hands out nothing while the capture text has not loaded', async () => {
+    let resolveDetail: (detail: CaptureItem) => void = () => {}
+    mockCaptureStore.fetchDetail.mockImplementation(
+      () => new Promise<CaptureItem>((resolve) => { resolveDetail = resolve }),
+    )
+    const wrapper = mount(PaperTriageRowEdit, { props: { itemId: 'capture-1' } })
+    await flushPromises()
+
+    // There is no textarea yet, so an empty `draft` is the absence of data and
+    // not an edit — handing it out would let the table keep a blank correction.
+    expect(wrapper.vm.readDraft()).toBeNull()
+    resolveDetail(makeDetail())
+    await flushPromises()
+    expect(wrapper.vm.readDraft()).toBeNull()
+  })
+
+  it('restores a kept draft over the server text it re-reads, and says it did', async () => {
+    const wrapper = mount(PaperTriageRowEdit, {
+      props: {
+        itemId: 'capture-1',
+        restoredDraft: {
+          text: 'Ship the release notes before Friday',
+          dueDate: '',
+          labels: [],
+          labelInput: '',
+        },
+      },
+    })
+    await flushPromises()
+
+    // The fetch still happens: the ORIGINAL the draft is compared against has
+    // to be the capture's current text, not the one it had when it left.
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith(
+      'capture-1',
+      expect.objectContaining({ forceRefresh: true }),
+    )
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe('Ship the release notes before Friday')
+    expect(wrapper.emitted('restored')?.[0]).toEqual(['capture-1'])
+    // Restoring is a local rehydration, never a write.
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+    // And Save is live, because the restored text differs from the server's.
+    expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('does not restore a draft into a capture the server refuses to edit', async () => {
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({ canEditSuggestion: false }))
+    const wrapper = mount(PaperTriageRowEdit, {
+      props: {
+        itemId: 'capture-1',
+        restoredDraft: { text: 'a correction with nowhere to land', dueDate: '', labels: [], labelInput: '' },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-edit-blocked"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="capture-edit-textarea"]').exists()).toBe(false)
+    expect(wrapper.emitted('restored')).toBeUndefined()
+  })
 })
