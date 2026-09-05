@@ -17,7 +17,8 @@
 // Verdicts
 //   no-change    the current tree SHA equals the last qualified tree SHA, or the diff maps only to
 //                path groups with no deep suite. Selected: none. This is the honest green receipt.
-//   affected     the union of the deep suites of the matched path groups.
+//   affected     the union of the deep suites of the matched path groups, closed under the
+//                `needs:` edges of the nightly workflows (SUITE_PREREQUISITES).
 //   weekly-full  the configured weekly UTC slot forces the complete sweep regardless of the diff.
 //   full-sweep   fail-closed escalation, or an explicit `--force-full` dispatch.
 // Precedence: full-sweep > weekly-full > no-change (identical tree) > affected.
@@ -44,7 +45,7 @@
 //     matchedGroups: string[],
 //     unmappedPaths: string[],
 //     controlPathsChanged: string[],
-//     selectedSuites: string[],        // canonical NIGHTLY_DEEP_SUITES order
+//     selectedSuites: string[],        // canonical order, closed under SUITE_PREREQUISITES
 //     skippedSuites: [{ suite: string, reason: string }]
 //   }
 //
@@ -85,6 +86,27 @@ export const NIGHTLY_DEEP_SUITES = Object.freeze([
   'dependency-security-signals',
 ]);
 
+/**
+ * The `needs:` edges of `.github/workflows/ci-nightly.yml`: five deep suites cannot start until
+ * `backend-solution` succeeds, because they consume the solution build it publishes.
+ * `nightly-quality.yml` declares no `needs:` at all, so its three suites appear here with none.
+ *
+ * A selected suite must drag its prerequisites in. GitHub Actions skips a job whose `needs:`
+ * dependency was skipped (unless its `if:` uses `always()`/`!cancelled()`, which these jobs do
+ * not), so selecting `e2e-smoke` without `backend-solution` would promise evidence that never
+ * runs — SMART_CI invariant 1, a skip must never read as evidence. The closure lives in this
+ * module rather than in each GROUP_DEEP_SUITES entry so a new group cannot reintroduce the gap.
+ * CI10-2, which wires the receipt into the workflows, must keep this table and the workflow
+ * graph in step; `nightlyCoordinatorSuiteGraphErrors()` and its test enforce the shape.
+ */
+export const SUITE_PREREQUISITES = Object.freeze({
+  'e2e-smoke': Object.freeze(['backend-solution']),
+  'load-concurrency-harness': Object.freeze(['backend-solution']),
+  'performance-regression-gate': Object.freeze(['backend-solution']),
+  'e2e-cross-browser': Object.freeze(['backend-solution']),
+  'container-images': Object.freeze(['backend-solution']),
+});
+
 const BACKEND_SUITES = Object.freeze([
   'backend-solution',
   'backend-coverage',
@@ -111,6 +133,10 @@ const API_CONTRACT_SUITES = Object.freeze(['openapi-guardrail', 'developer-porta
  * selects nothing. Dependency manifests and lockfiles are `controlPaths` in the policy, so they
  * escalate to the full sweep before this table is consulted; `backend-project-files` carries the
  * dependency suites for the manifests that are not control paths.
+ *
+ * An entry names the suites whose EVIDENCE the group needs; it does not have to name the suites
+ * those depend on. Every selection is closed under SUITE_PREREQUISITES before it reaches a receipt,
+ * so a frontend entry that names `e2e-smoke` still gets `backend-solution` in `selectedSuites`.
  *
  * CI10-2 moves this table into `ci/policy.v1.json` next to `pathGroups` so the policy digest covers
  * it; it lives here in slice 1 so the decision function can be proven before the policy schema
@@ -200,6 +226,51 @@ function uniqueSorted(values) {
 function orderSuites(suites) {
   const wanted = new Set(suites.map(String));
   return NIGHTLY_DEEP_SUITES.filter((suite) => wanted.has(suite));
+}
+
+/**
+ * Close a suite selection under SUITE_PREREQUISITES, transitively. Applied to every receipt, so
+ * `selectedSuites` is always a set the workflow can actually run: no entry depends on a suite the
+ * same receipt lists as skipped. Adding only, never removing, so it can never shrink a full sweep.
+ * @param {Iterable<string>} suites
+ * @returns {string[]} the closed set, unordered (buildReceipt applies the canonical order)
+ */
+export function closeUnderPrerequisites(suites) {
+  const closed = new Set([...suites].map(String));
+  const pending = [...closed];
+  while (pending.length > 0) {
+    const suite = pending.pop();
+    const needs = Object.hasOwn(SUITE_PREREQUISITES, suite) ? SUITE_PREREQUISITES[suite] : [];
+    for (const need of needs) {
+      if (!closed.has(need)) {
+        closed.add(need);
+        pending.push(need);
+      }
+    }
+  }
+  return [...closed];
+}
+
+/**
+ * Consistency errors in SUITE_PREREQUISITES itself: an edge may only name deep suites this module
+ * knows, and the graph must be acyclic so the closure terminates on a fixed point. Sorted so the
+ * message set is stable. The test additionally compares this table against the `needs:` edges
+ * parsed out of the nightly workflows, which is what catches drift when a workflow gains an edge.
+ * @returns {string[]}
+ */
+export function nightlyCoordinatorSuiteGraphErrors() {
+  const errors = [];
+  const known = new Set(NIGHTLY_DEEP_SUITES);
+  for (const [suite, needs] of Object.entries(SUITE_PREREQUISITES)) {
+    if (!known.has(suite)) errors.push(`prerequisite table names unknown deep suite ${suite}`);
+    for (const need of needs) {
+      if (!known.has(need)) errors.push(`deep suite ${suite} needs unknown deep suite ${need}`);
+    }
+    if (closeUnderPrerequisites(needs).includes(suite)) {
+      errors.push(`deep suite ${suite} depends on itself`);
+    }
+  }
+  return errors.sort();
 }
 
 /**
@@ -294,7 +365,7 @@ export function normaliseLastQualified(lastQualified, explicitReason = null) {
 }
 
 function buildReceipt(fields) {
-  const selected = orderSuites(fields.selectedSuites ?? []);
+  const selected = orderSuites(closeUnderPrerequisites(fields.selectedSuites ?? []));
   const selectedSet = new Set(selected);
   const skipReason = fields.skipReason ?? SKIP_REASONS.notAffected;
   return {

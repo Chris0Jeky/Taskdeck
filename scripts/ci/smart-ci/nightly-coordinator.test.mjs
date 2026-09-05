@@ -17,9 +17,12 @@ import {
   NIGHTLY_DEEP_SUITES,
   REASONS,
   SKIP_REASONS,
+  SUITE_PREREQUISITES,
+  closeUnderPrerequisites,
   decideNightlyPlan,
   detectDuplicateQualification,
   nightlyCoordinatorMappingErrors,
+  nightlyCoordinatorSuiteGraphErrors,
   normaliseLastQualified,
   parseArgs,
   parseChangedFileList,
@@ -132,15 +135,22 @@ test('a backend-only change selects the backend deep suites and not the browser 
   assert.equal(skipped.get('e2e-cross-browser'), SKIP_REASONS.notAffected);
 });
 
-test('a frontend-only change selects the browser suites and no backend solution run', () => {
+test('a frontend-only change selects the browser suites plus the backend-solution they need', () => {
   const receipt = decideNightlyPlan(coordinatorInput({
     changedFiles: ['frontend/taskdeck-web/src/views/BoardView.vue'],
   }));
 
   assert.equal(receipt.verdict, 'affected');
   assert.deepEqual(receipt.matchedGroups, ['frontend-src']);
-  assert.deepEqual(receipt.selectedSuites, ['e2e-smoke', 'e2e-cross-browser', 'frontend-coverage']);
-  assert.ok(!receipt.selectedSuites.includes('backend-solution'));
+  // `e2e-smoke` and `e2e-cross-browser` declare `needs: backend-solution` in ci-nightly.yml, so a
+  // receipt that promised them without it would promise evidence GitHub Actions would skip.
+  assert.deepEqual(receipt.selectedSuites, [
+    'backend-solution',
+    'e2e-smoke',
+    'e2e-cross-browser',
+    'frontend-coverage',
+  ]);
+  assert.ok(!receipt.selectedSuites.includes('backend-coverage'));
 });
 
 test('the weekly slot forces weekly-full even when the diff is empty', () => {
@@ -343,6 +353,114 @@ test('every policy path group has a deep-suite mapping and every mapped suite ex
   assert.deepEqual(nightlyCoordinatorMappingErrors(shrunk), [
     'deep-suite mapping names unknown policy path group load-and-evals',
   ]);
+});
+
+/**
+ * The `needs:` edges of a nightly workflow, as `{ jobId: [dependency, ...] }`, read straight from
+ * the YAML. Deliberately a narrow line scanner rather than a YAML dependency: it understands the
+ * two shapes these files use (`needs: job` and a `needs:` block of `- job` items) at their exact
+ * indentation, so an unexpected shape shows up as a missing edge and fails the drift assertion.
+ */
+function workflowNeedsEdges(workflowPath) {
+  const edges = new Map();
+  let job = null;
+  let inNeedsBlock = false;
+  for (const rawLine of readFileSync(workflowPath, 'utf8').split(/\r?\n/)) {
+    const jobMatch = /^ {2}([A-Za-z0-9_-]+):\s*$/.exec(rawLine);
+    if (jobMatch) {
+      job = jobMatch[1];
+      edges.set(job, []);
+      inNeedsBlock = false;
+      continue;
+    }
+    if (job === null) continue;
+    const inlineNeeds = /^ {4}needs:\s*(\S.*)$/.exec(rawLine);
+    if (inlineNeeds) {
+      edges.get(job).push(inlineNeeds[1].replace(/^\[|\]$/g, '').split(',').map((part) => part.trim())
+        .filter(Boolean));
+      inNeedsBlock = false;
+      continue;
+    }
+    if (/^ {4}needs:\s*$/.test(rawLine)) {
+      inNeedsBlock = true;
+      continue;
+    }
+    if (inNeedsBlock) {
+      const item = /^ {6}- (\S+)\s*$/.exec(rawLine);
+      if (item) {
+        edges.get(job).push([item[1]]);
+        continue;
+      }
+      inNeedsBlock = false;
+    }
+  }
+  return new Map([...edges].map(([id, groups]) => [id, groups.flat()]));
+}
+
+test('the prerequisite table matches the nightly workflows and the graph is well formed', () => {
+  assert.deepEqual(nightlyCoordinatorSuiteGraphErrors(), []);
+
+  const workflows = [
+    fileURLToPath(new URL('../../../.github/workflows/ci-nightly.yml', import.meta.url)),
+    fileURLToPath(new URL('../../../.github/workflows/nightly-quality.yml', import.meta.url)),
+  ];
+  const actual = new Map();
+  for (const workflow of workflows) {
+    for (const [job, needs] of workflowNeedsEdges(workflow)) {
+      if (!NIGHTLY_DEEP_SUITES.includes(job)) continue;
+      actual.set(job, needs.slice().sort());
+    }
+  }
+  // Every deep suite is a real job in one of the two workflows, and nothing is missed.
+  assert.deepEqual([...actual.keys()].sort(), [...NIGHTLY_DEEP_SUITES].sort());
+
+  const declared = new Map(NIGHTLY_DEEP_SUITES.map((suite) => [
+    suite,
+    (Object.hasOwn(SUITE_PREREQUISITES, suite) ? [...SUITE_PREREQUISITES[suite]] : []).sort(),
+  ]));
+  for (const suite of NIGHTLY_DEEP_SUITES) {
+    assert.deepEqual(declared.get(suite), actual.get(suite), `needs edges for ${suite}`);
+  }
+  // The scanner really did find the five documented edges, so an empty parse cannot pass above.
+  assert.equal([...actual.values()].filter((needs) => needs.length > 0).length, 5);
+});
+
+test('every receipt selection is closed under the workflow needs edges', () => {
+  const scenarios = [
+    ['frontend/taskdeck-web/src/views/BoardView.vue'],
+    ['frontend/taskdeck-web/tests/e2e/board.spec.ts'],
+    ['deploy/docker/frontend.Dockerfile'],
+    ['tests/load/board-read.js'],
+    ['backend/src/Taskdeck.Domain/Boards/Board.cs'],
+    ['.mcp.json'],
+    ['backend/src/Taskdeck.Api/Endpoints/BoardEndpoints.cs'],
+    ['docs/STATUS.md'],
+    // A fail-closed full sweep is closed too: every suite is selected.
+    ['some-new-top-level-thing.bin'],
+  ];
+  for (const changedFiles of scenarios) {
+    const receipt = decideNightlyPlan(coordinatorInput({ changedFiles }));
+    const selected = new Set(receipt.selectedSuites);
+    const skipped = new Set(receipt.skippedSuites.map((entry) => entry.suite));
+    for (const suite of selected) {
+      for (const need of (Object.hasOwn(SUITE_PREREQUISITES, suite) ? SUITE_PREREQUISITES[suite] : [])) {
+        assert.ok(selected.has(need), `${changedFiles[0]}: ${suite} selected without ${need}`);
+        assert.ok(!skipped.has(need), `${changedFiles[0]}: ${need} both needed and skipped`);
+      }
+    }
+  }
+
+  // The three groups the closure exists for: each names a dependent suite, none names the
+  // dependency, and the receipt supplies it.
+  for (const groupId of ['frontend-src', 'frontend-e2e', 'containers-deploy', 'load-and-evals']) {
+    assert.ok(!GROUP_DEEP_SUITES[groupId].includes('backend-solution'), groupId);
+    assert.ok(closeUnderPrerequisites(GROUP_DEEP_SUITES[groupId]).includes('backend-solution'), groupId);
+  }
+
+  // Closure adds only prerequisites; it never invents an unrelated suite or drops one.
+  assert.deepEqual(closeUnderPrerequisites([]), []);
+  assert.deepEqual(closeUnderPrerequisites(['backend-coverage']), ['backend-coverage']);
+  assert.deepEqual(closeUnderPrerequisites([...NIGHTLY_DEEP_SUITES]).sort(), [...NIGHTLY_DEEP_SUITES].sort());
 });
 
 test('two calls with the same input produce byte-identical JSON and markdown', () => {
