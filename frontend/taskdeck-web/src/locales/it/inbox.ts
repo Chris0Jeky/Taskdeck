@@ -85,6 +85,21 @@ export default {
       tooLong: 'Questa trascrizione è troppo lunga. La lunghezza massima è di {max} caratteri.',
     },
   },
+  // Etichette dei campi del Composer (#1871). "Testo" per `body`: è il testo
+  // della cattura, come in `triage.edit.label`, e "Corpo" in italiano richiama
+  // il corpo di un messaggio, non un appunto. Il segnaposto resta un
+  // suggerimento in minuscolo e non ripete il nome del campo.
+  composer: {
+    bodyLabel: 'Testo',
+    bodyAria: 'Testo della cattura',
+    bodyPlaceholder: 'Il pensiero, in parole semplici…',
+    labelsLabel: 'Etichette',
+    labelsAria: 'Aggiungi etichetta',
+    labelsPlaceholder: 'aggiungi e premi Enter',
+    dueLabel: 'Scadenza (facoltativa)',
+    dueAria: 'Data di scadenza',
+    attachmentsUnavailable: 'Gli allegati non vengono ancora salvati con le catture.',
+  },
   nib: {
     eyebrow: 'Cattura rapida · {shortcut}',
     destinationWithBoard: 'Questa cattura arriva nell’Inbox, collegata a {board}, per il triage.',
@@ -114,12 +129,22 @@ export default {
     composer: 'Composer',
   },
   boardPicker: {
+    // `label` sta sopra entrambi i selettori di bacheca. `composerAria` segue
+    // l'inglese ("Board picker"): in italiano il nome della testa va prima, e
+    // "bacheca" resta comunque dentro il nome accessibile. `triageAria` porta
+    // per intero la forma etichetta-visibile-per-prima (WCAG 2.5.3).
+    label: 'Bacheca',
+    composerAria: 'Selettore bacheca',
+    triageAria: 'Bacheca: scegli dove va questa cattura',
     noBoardOption: 'Nessuna bacheca · arriva nell’Inbox',
     selectPlaceholder: 'Seleziona una bacheca…',
     viewOnlyOption: '{name} · sola lettura',
     viewOnlyHint: 'Le bacheche in sola lettura richiedono un accesso in scrittura prima di poterci smistare qualcosa.',
   },
   triage: {
+    // Nome della regione dell'elenco catture: dice cosa contiene la regione,
+    // non quali catture, così resta stabile anche in sola lettura.
+    tableAria: 'Elementi catturati',
     boardPick: {
       loading: 'Caricamento delle bacheche…',
       loadFailed: 'Impossibile caricare le bacheche. Controlla la connessione e riprova.',

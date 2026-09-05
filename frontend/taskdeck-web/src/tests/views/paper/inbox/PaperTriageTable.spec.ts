@@ -409,6 +409,55 @@ describe('PaperTriageTable', () => {
     }
   })
 
+  // --- region name and board-pick chrome i18n (#1871) ----------------------
+
+  /**
+   * The table's region name and the board-pick eyebrow and accessible name, in
+   * the file's own locale idiom (the `it.each` above, from #2654).
+   *
+   * The Italian case fails on the pre-#1871 component in every assertion: the
+   * section's `aria-label`, the eyebrow and the select's `aria-label` were
+   * template literals that never varied by locale.
+   *
+   * The region name is read off the mounted root because the component's root
+   * IS the labelled `<section>`; the board-pick chrome is scoped by the
+   * existing `capture-board-pick` testid, so no selector reads a string this
+   * test is asserting.
+   */
+  it('names the capture region in English on the default locale', () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    expect(wrapper.attributes('aria-label')).toBe('Captured items')
+  })
+
+  it('re-renders the region name and the board-pick chrome in Italian', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'it' as SupportedLocale
+      const wrapper = await openBoardPicker(defaultBoards())
+
+      expect(wrapper.attributes('aria-label')).toBe('Elementi catturati')
+      const pick = wrapper.get('[data-testid="capture-board-pick"]')
+      expect(pick.get('.tk-eyebrow').text()).toBe('Bacheca')
+      expect(pick.get('select').attributes('aria-label')).toBe(
+        'Bacheca: scegli dove va questa cattura',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  it('labels the board-pick select with the visible eyebrow first in English', async () => {
+    // WCAG 2.5.3 / the PR #2675 pattern: the accessible name repeats the
+    // visible label before saying what the control does.
+    const wrapper = await openBoardPicker(defaultBoards())
+    const pick = wrapper.get('[data-testid="capture-board-pick"]')
+
+    expect(pick.get('.tk-eyebrow').text()).toBe('Board')
+    expect(pick.get('select').attributes('aria-label')).toBe(
+      'Board: choose where this capture goes',
+    )
+  })
+
   it('renders a read-only board visible but disabled and annotated view-only', async () => {
     const wrapper = await openBoardPicker([
       { id: 'board-alpha', name: 'Alpha', canWrite: true },
