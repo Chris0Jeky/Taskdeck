@@ -307,7 +307,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
             aria-label="Board picker"
             :disabled="inputsDisabled"
           >
-            <option :value="null">No board · land in inbox</option>
+            <option :value="null">{{ t('inbox.boardPicker.noBoardOption') }}</option>
             <option
               v-for="board in boardStore.boards"
               :key="board.id"

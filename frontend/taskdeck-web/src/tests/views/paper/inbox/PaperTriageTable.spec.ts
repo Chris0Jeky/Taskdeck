@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import PaperTriageTable from '../../../../views/paper/inbox/PaperTriageTable.vue'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../../types/capture'
+import { i18n, type SupportedLocale } from '../../../../i18n'
 
 type MockBoard = { id: string; name: string; canWrite?: boolean }
 
@@ -392,6 +393,21 @@ describe('PaperTriageTable', () => {
     await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
     return wrapper
   }
+
+  it.each([
+    ['en', 'Select a board…'],
+    ['it', 'Seleziona una bacheca…'],
+    ['es', 'Selecciona un tablero…'],
+  ] as const)('translates the board-picker placeholder in %s', async (locale, expected) => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = locale as SupportedLocale
+      const wrapper = await openBoardPicker(defaultBoards())
+      expect(wrapper.get('[data-testid="capture-board-pick"] option').text()).toBe(expected)
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
 
   it('renders a read-only board visible but disabled and annotated view-only', async () => {
     const wrapper = await openBoardPicker([

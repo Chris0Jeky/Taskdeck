@@ -116,6 +116,8 @@ export default {
     composer: 'Composer',
   },
   boardPicker: {
+    noBoardOption: 'Sin tablero · llega al Inbox',
+    selectPlaceholder: 'Selecciona un tablero…',
     viewOnlyOption: '{name} · solo lectura',
     viewOnlyHint: 'Los tableros de solo lectura necesitan acceso de escritura antes de poder clasificar nada en ellos.',
   },

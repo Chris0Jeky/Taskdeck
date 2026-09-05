@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import PaperCaptureComposer from '../../../../views/paper/inbox/PaperCaptureComposer.vue'
+import { i18n, type SupportedLocale } from '../../../../i18n'
 
 type MockBoard = { id: string; name: string; canWrite?: boolean }
 
@@ -115,6 +116,21 @@ describe('PaperCaptureComposer', () => {
 
     const submitted = wrapper.emitted('submit')?.[0]?.[0] as { boardId: string | null }
     expect(submitted.boardId).toBe('board-beta')
+  })
+
+  it.each([
+    ['en', 'No board · land in inbox'],
+    ['it', 'Nessuna bacheca · arriva nell’Inbox'],
+    ['es', 'Sin tablero · llega al Inbox'],
+  ] as const)('translates the no-board option in %s', (locale, expected) => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = locale as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      expect(wrapper.find('select option').text()).toBe(expected)
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
   })
 
   it('reflects label selections in the submit payload', async () => {
