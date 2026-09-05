@@ -199,6 +199,17 @@ function reviewStatusLabel(status: Proposal['status']): string {
   return statusLabels[normalized] ?? normalized
 }
 
+const readOnlyDiffBanner = computed(() => {
+  const prefix = `${reviewStatusLabel(props.proposal.status)} · read-only —`
+  if (props.selectedDiff) {
+    return `${prefix} showing the stored preview from the original submission.`
+  }
+  if (storedOperationsFallback.value) {
+    return `${prefix} showing the proposal's recorded operations.`
+  }
+  return `${prefix} no stored preview is available.`
+})
+
 function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
   const normalized = normalizeProposalRiskLevel(riskLevel)
   if (normalized === 'Low') return 'td-risk--low'
@@ -308,8 +319,7 @@ async function copyTechnicalDetails() {
       <!-- Read-only / terminal: stored preview under an explicit banner (#1397) -->
       <template v-if="selectedDiffMode === 'stored'">
         <span class="td-review-card__diff-banner" role="status" data-testid="review-diff-banner">
-          {{ reviewStatusLabel(proposal.status) }} · read-only — showing the stored preview from
-          the original submission.
+          {{ readOnlyDiffBanner }}
         </span>
         <!-- diffPreview is creation-time content revisions never update, so a
              revised proposal's stored preview — or the recorded-operations
