@@ -1250,6 +1250,36 @@ describe('captureStore', () => {
     expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
+  it('refreshes the list in the caller-supplied scope after a batch', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c1', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+
+    await store.batchTriage(['c1'], 'ignore', { limit: 200, boardId: 'board-7' })
+
+    expect(captureApi.listItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
+  })
+
+  it('refreshes the list unscoped when the caller supplies no scope', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c1', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+
+    await store.batchTriage(['c1'], 'ignore')
+
+    expect(captureApi.listItems).toHaveBeenCalledWith(undefined)
+  })
+
   it('reports partial batch failures with error toast', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.batchTriage).mockResolvedValue({

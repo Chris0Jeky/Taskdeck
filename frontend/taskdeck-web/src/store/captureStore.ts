@@ -817,7 +817,20 @@ export const useCaptureStore = defineStore('capture', () => {
   const batchBusy = ref(false)
   const batchError = ref<string | null>(null)
 
-  async function batchTriage(itemIds: string[], action: BatchTriageAction): Promise<BatchTriageResult> {
+  /**
+   * Enqueue a batch action, then reconcile the list.
+   *
+   * `query` is the CALLER'S current list scope (#2570). The reconciliation read
+   * replaces `items`, so an unscoped read under a board-scoped Inbox replaced
+   * the visible rows with the unscoped list — for `ignore` and `cancel` no poll
+   * follows, so those wrong rows persisted until the next scoped load. Callers
+   * that pass nothing keep the unscoped read they always had.
+   */
+  async function batchTriage(
+    itemIds: string[],
+    action: BatchTriageAction,
+    query?: CaptureListQuery,
+  ): Promise<BatchTriageResult> {
     guardDemoMutation()
     batchBusy.value = true
     batchError.value = null
@@ -858,7 +871,9 @@ export const useCaptureStore = defineStore('capture', () => {
       // reclassify a successfully queued batch as a failed write or prevent
       // the caller from starting its bounded completion poll.
       try {
-        await fetchItems()
+        // The applied boolean is deliberately ignored: a post-batch read that a
+        // newer list load superseded is not a failed write.
+        await fetchItems(query)
         await refreshTerminalDetails(itemIds)
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } } | null)?.response?.status
