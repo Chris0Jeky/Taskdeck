@@ -471,6 +471,36 @@ test('rejects a guarded-looking ternary whose condition tests a different result
   assert.equal(findMcpFindings(source, mcpPath).length, 1)
 })
 
+test('rejects an inverted guarded ternary that returns the raw message on the unexpected code', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+            ? result.ErrorMessage
+            : SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.match(lineOf(source, findings[0].line), /\? result\.ErrorMessage/)
+})
+
+test('rejects an inverted guarded ternary laundered through a local', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var message = string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+            ? result.ErrorMessage
+            : SensitiveDataRedactor.GenericUnexpectedFailureMessage;
+
+        return Error(message);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.match(lineOf(source, findings[0].line), /return Error\(message\);/)
+})
+
 // ---------------------------------------------------------------------------
 // #2473 blind spot 3 — rule 2 sanitization is judged per occurrence.
 // ---------------------------------------------------------------------------

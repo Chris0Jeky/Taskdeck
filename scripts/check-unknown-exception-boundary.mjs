@@ -389,6 +389,48 @@ function enclosingTernaryQuestion(scanText, index) {
 }
 
 /**
+ * The `:` that separates the arms of the conditional expression opened at `questionIndex`, or null
+ * when this sub-expression holds no such separator. Conditionals nested in the true arm are paired
+ * off; `::` is a namespace alias and `?.` / `?[` / `??` are not conditional operators.
+ */
+function ternaryColonIndex(scanText, questionIndex) {
+  let depth = 0
+  let pending = 0
+  for (let cursor = questionIndex + 1; cursor < scanText.length; cursor += 1) {
+    const char = scanText[cursor]
+    if (char === '(' || char === '[') {
+      depth += 1
+      continue
+    }
+    if (char === ')' || char === ']') {
+      if (depth === 0) return null
+      depth -= 1
+      continue
+    }
+    if (depth > 0) continue
+    if (char === ';' || char === ',' || char === '{' || char === '}') return null
+    if (char === '?') {
+      if (scanText[cursor + 1] === '.' || scanText[cursor + 1] === '[') continue
+      if (scanText[cursor + 1] === '?' || scanText[cursor - 1] === '?') continue
+      pending += 1
+      continue
+    }
+    if (char === ':') {
+      if (scanText[cursor - 1] === ':' || scanText[cursor + 1] === ':') {
+        cursor += 1
+        continue
+      }
+      if (pending > 0) {
+        pending -= 1
+        continue
+      }
+      return cursor
+    }
+  }
+  return null
+}
+
+/**
  * The receiver of a `.ErrorMessage` / `?.ErrorMessage` read: `result` in both `result.ErrorMessage`
  * and `result?.ErrorMessage`. Empty when the receiver is not a plain identifier chain.
  */
@@ -407,9 +449,10 @@ function receiverOf(scanText, dotIndex) {
 
 /**
  * The one reviewed exemption for rule 1: a conditional expression whose condition tests THIS
- * result's `ErrorCode` against `ErrorCodes.UnexpectedError` and whose other arm supplies
- * `GenericUnexpectedFailureMessage`. Anything else — a different receiver, a named argument, a
- * null-conditional read, a sibling argument next to such a ternary — is checked normally.
+ * result's `ErrorCode` against `ErrorCodes.UnexpectedError`, whose TRUE arm supplies
+ * `GenericUnexpectedFailureMessage`, and whose FALSE arm holds the read. Anything else — a
+ * different receiver, an inverted pair of arms, a named argument, a null-conditional read, a
+ * sibling argument next to such a ternary — is checked normally.
  */
 function isReviewedGuardedTernaryArm(scanText, occurrenceIndex) {
   const receiver = receiverOf(scanText, occurrenceIndex)
@@ -424,7 +467,14 @@ function isReviewedGuardedTernaryArm(scanText, occurrenceIndex) {
   const errorCodeRead = new RegExp(`\\b${escapeRegExp(receiver)}\\s*\\??\\s*\\.\\s*ErrorCode\\b`)
   if (!errorCodeRead.test(condition)) return false
 
-  return scanText.slice(questionIndex).includes('GenericUnexpectedFailureMessage')
+  // Arm polarity decides everything: the reviewed shape puts the curated message in the TRUE arm
+  // (taken when the code IS UnexpectedError) and the raw message in the FALSE arm. The inverted
+  // shape returns the raw unknown-exception text on exactly the code that must not expose it.
+  const colonIndex = ternaryColonIndex(scanText, questionIndex)
+  if (colonIndex === null) return false
+  if (occurrenceIndex < colonIndex) return false
+
+  return scanText.slice(questionIndex, colonIndex).includes('GenericUnexpectedFailureMessage')
 }
 
 /**

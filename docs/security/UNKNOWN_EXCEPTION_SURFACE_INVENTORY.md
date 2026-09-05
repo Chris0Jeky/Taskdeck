@@ -168,8 +168,12 @@ incomplete. `#2473` narrowed the four limits the `#2470` reviews called out; wha
   declaration and a bare `x = ...` are recognised as assignments.
 - **The guarded-ternary exemption is structural, not semantic.** It matches the receiver name
   textually: two different locals holding the same `Result` read as different receivers, and a
-  condition that tests a copy of the code rather than `result.ErrorCode` is not accepted. Both
-  failures point the same way, toward flagging.
+  condition that tests a copy of the code rather than `result.ErrorCode` is not accepted. It also
+  reads arm position, not condition truth: the read must sit in the arm after the `:`, with
+  `GenericUnexpectedFailureMessage` in the arm before it. An inverted pair of arms is therefore
+  flagged, and so is the safe-but-unreviewed shape that inverts the condition instead
+  (`!string.Equals(...) ? result.ErrorMessage : Generic`). Every one of these imprecisions points
+  toward flagging.
 - **Rule 2 judges wrapping, not effectiveness.** An occurrence enclosed by an accepted sanitizer is
   taken to be safe; the guard does not check that the sanitizer's own implementation still redacts.
   The sanitizers themselves are pinned by the backend tests listed above, not by this guard. Rule 2
