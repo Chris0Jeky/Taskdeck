@@ -1933,6 +1933,60 @@ describe('PaperReviewView', () => {
     },
   )
 
+  /**
+   * The #2511 server-primary path had no view-level coverage: every Paper Review view spec
+   * resolves `getProvenanceMetadata` to the all-null triple, so the only rendered-to-a-user
+   * provenance assertions above exercise the #2310 capture-detail fallback. This case pins the
+   * proposal-scoped endpoint as a user-visible source (#1284).
+   *
+   * A Chat-source proposal carries no capture reference, so `captureSourceReference` returns null
+   * and the capture-detail read is never attempted. Everything asserted here can therefore only
+   * have come from `GET /api/automation/proposals/{id}/provenance/metadata`.
+   */
+  it('surfaces the server-recorded producer triple for a chat-source proposal with no capture link', async () => {
+    mocks.getProvenanceMetadata.mockResolvedValue({
+      provider: 'OpenAI',
+      model: 'gpt-5.6-luna',
+      promptVersion: 'llm-triage.v2',
+    })
+
+    const wrapper = await mountView(
+      [makeProposal({ sourceType: 'Chat', sourceReferenceId: null })],
+      '/workspace/review#proposal-proposal-001',
+      [],
+      [],
+      { attachTo: true },
+    )
+
+    await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
+    await flushPromises()
+
+    // Asserted as rendered English (the setup installs i18n at the `en` default), not as a
+    // substring the untranslated key would also satisfy.
+    await vi.waitFor(() => {
+      const footnote = wrapper.get('[data-testid="paper-review-provenance-footnote"]').text()
+      expect(footnote).toContain('Recorded provenance: OpenAI/gpt-5.6-luna')
+      expect(footnote).toContain(
+        'your configured AI provider produced this proposal, so its source text was sent to that provider.',
+      )
+    })
+
+    await wrapper.get('.paper-review-prov__more').trigger('click')
+    await flushPromises()
+
+    const metadata = document.body.querySelector('.prov-drawer__meta')
+    expect(metadata).not.toBeNull()
+    const metadataText = metadata?.textContent ?? ''
+    expect(metadataText).toContain('Model')
+    expect(metadataText).toContain('OpenAI/gpt-5.6-luna')
+    expect(metadataText).toContain('Prompt version')
+    expect(metadataText).toContain('llm-triage.v2')
+    expect(metadataText).toContain('Confidence')
+    expect(metadataText).toContain('84%')
+
+    expect(mocks.getCaptureItem).not.toHaveBeenCalled()
+  })
+
   it('suppresses revised producer attribution, preserves drawer metadata, and resets for an unrevised selection', async () => {
     mocks.getRevisions.mockImplementation(async (proposalId: string) =>
       proposalId === 'proposal-revised'
