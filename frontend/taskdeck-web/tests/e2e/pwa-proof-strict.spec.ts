@@ -160,6 +160,20 @@ test('old #2350 worker -> v2 controller, static cache invalidated, share queue p
  * response, not by page script reaching into CacheStorage.
  */
 test('a static entry the old worker caches between install and activation does not survive the migration', async ({ browser, request }) => {
+  // EXPECTED FAILURE (#2475). This case is red against the current production build and is
+  // marked so the pwa-proof lane keeps a meaningful green/red verdict for the strict case
+  // above. The final assertion fails because the forced activate-time re-sweep described in
+  // the header never runs on the generated worker: public/api-cache-cleanup.js (see the
+  // comment at its end, landed with #2416) records that its `activate` listener is attached
+  // from inside vite-plugin-pwa's asynchronous AMD factory, after the activate event has
+  // already been dispatched, so only the memoised evaluation-time sweep ever fires and it has
+  // already resolved by the time this case seeds. The seed therefore survives the migration.
+  // When the production repair lands (an activation hook that registers synchronously, or the
+  // injectManifest move), this case starts passing and Playwright reports "expected to fail
+  // but passed": remove this modifier then. Nothing in CI runs this file, so the marker only
+  // governs the manually driven lane.
+  test.fail()
+
   const account = await registerUserSession(request, 'pwa-proof-race')
   const context = await browser.newContext({ serviceWorkers: 'allow' })
   const page = await context.newPage()
