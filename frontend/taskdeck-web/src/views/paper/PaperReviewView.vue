@@ -76,6 +76,7 @@ const {
   unavailableProposalId,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRecovered,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -1186,6 +1187,55 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 // is a shared primitive with no return-focus target prop and is deliberately
 // not touched here.
 const mainColRef = ref<HTMLElement | null>(null)
+
+/**
+ * Sticky-offset handshake between the pinned degraded warning and the decision
+ * rail (#2214 item 4, round 2).
+ *
+ * Both are `position: sticky; top: 0` inside the SAME scroller (the main
+ * column), and the rail is opaque (`card-lift`) and taller, so once the
+ * reviewer scrolled past the card header the rail covered the pinned warning
+ * completely — in exactly the scrolled state the pin exists for. The rail now
+ * sticks BELOW the warning by reading `--paper-review-sticky-offset`, and this
+ * view is the only place that knows the warning's rendered height.
+ *
+ * The property is written only while the warning is on screen; with no warning
+ * there is nothing to clear and the rail's own `var(..., 0)` fallback puts it
+ * back at the top of the scroller, which is its pre-#2214 behaviour.
+ */
+const queueStaleRef = ref<HTMLElement | null>(null)
+const stickyOffsetPx = ref(0)
+let stickyOffsetObserver: ResizeObserver | null = null
+
+const mainColStickyStyle = computed(() =>
+  queueRefreshStale.value && !queueAccessRevoked.value
+    ? { '--paper-review-sticky-offset': `${stickyOffsetPx.value}px` }
+    : {},
+)
+
+function disconnectStickyOffsetObserver() {
+  stickyOffsetObserver?.disconnect()
+  stickyOffsetObserver = null
+}
+
+watch(queueStaleRef, (element) => {
+  disconnectStickyOffsetObserver()
+  if (!element) {
+    stickyOffsetPx.value = 0
+    return
+  }
+  stickyOffsetPx.value = element.offsetHeight
+  // jsdom and happy-dom lay nothing out and may not implement ResizeObserver at
+  // all. The offset then stays 0, which is the pre-#2214 behaviour rather than
+  // a broken one: the rail pins to the top and the warning is behind it, as it
+  // was before this issue.
+  if (typeof ResizeObserver === 'undefined') return
+  stickyOffsetObserver = new ResizeObserver(() => {
+    stickyOffsetPx.value = element.offsetHeight
+  })
+  stickyOffsetObserver.observe(element)
+})
+
 const reviewViewRef = ref<HTMLElement | null>(null)
 const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
@@ -2472,6 +2522,7 @@ onUnmounted(() => {
   stopClock()
   stopQueueRefresh()
   collaboration.stop()
+  disconnectStickyOffsetObserver()
 })
 
 function selectProposal(id: string) {
@@ -2537,6 +2588,36 @@ async function onClearBoardScope() {
     data-testid="paper-review-view"
     :data-history-mode="isArchivedHistory ? 'archived' : undefined"
   >
+    <!--
+      Recovery is the half of the degraded disclosure that was missing (#2214).
+      The warning below simply disappears when the queue is trustworthy again,
+      which tells a reviewer who was not watching that corner nothing at all.
+
+      Same construction as the rail's count region (#2593): the region stays
+      MOUNTED and withholds its text, because a live region inserted at the same
+      moment its text appears is unreliably announced. `queueRefreshStale`
+      cannot carry this — it is a state, and a state that is merely gone
+      announces nothing. `queueRefreshRecovered` is the transition.
+
+      It lives HERE, above the `v-if="activeProposal"` / `v-else` pair, and not
+      once inside each arm. The recovering poll assigns the queue and records
+      the success in one synchronous block, so a recovery that puts a proposal
+      back into an empty queue flips the branch in the same render that the
+      sentence appears — a per-arm region would then mount already carrying its
+      text, which is the exact case this construction exists to avoid. One node
+      above the pair survives every branch flip.
+
+      Absolutely positioned by `.sr-only`, so it is not a grid item and does not
+      take a column of `.paper-review-deep`'s three-column track list.
+    -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-queue-recovered"
+    >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
+
     <ReviewQueueRail
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
@@ -2562,16 +2643,22 @@ async function onClearBoardScope() {
       @clear-scope="onClearBoardScope"
     />
 
-    <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
+    <div
+      v-if="activeProposal"
+      ref="mainColRef"
+      class="paper-review-deep__main-col"
+      :style="mainColStickyStyle"
+    >
       <p
         v-if="queueRefreshStale && !queueAccessRevoked"
-        class="paper-review-deep__queue-stale tk-meta"
+        ref="queueStaleRef"
+        class="paper-review-deep__queue-stale paper-review-deep__queue-stale--pinned tk-meta"
         role="status"
         aria-live="polite"
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        This review queue may be out of date. Showing the last available proposals while Taskdeck retries.
+        {{ $t('review.queue.degraded.body') }}
       </p>
       <div
         v-if="revisionCount > 0"
@@ -2786,7 +2873,7 @@ async function onClearBoardScope() {
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        This review queue may be out of date. Showing the last available proposals while Taskdeck retries.
+        {{ $t('review.queue.degraded.body') }}
       </p>
       <template v-if="queueAccessRevoked">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>
@@ -2925,6 +3012,38 @@ async function onClearBoardScope() {
 .paper-review-deep__main-col {
   overflow: auto;
   min-width: 0;
+}
+/*
+ * The main column is the scroller, and a reviewer acts from a scrolled
+ * position, so an in-flow warning at the top of the column is gone by the time
+ * the decision is made (#2214 item 4). Pinning keeps the queue's honesty on
+ * screen for as long as it is true.
+ *
+ * A DEDICATED modifier, not `__queue-stale` itself: the two sibling notes that
+ * share that class (the decision-refresh lock and the evidence-unavailable
+ * note) describe the record currently on screen, not the trustworthiness of the
+ * whole queue, and they belong in flow beside it.
+ *
+ * TWO STICKIES, ONE BAND. `ReviewDecisionRail` is also `position: sticky;
+ * top: 0` in this same scroller, and it is opaque (`card-lift`) and taller, so
+ * pinning the warning alone would have bought nothing: past the card header the
+ * rail covered it completely. The rail now sticks BELOW the warning by reading
+ * `--paper-review-sticky-offset`, which the view writes onto this column from
+ * the warning's measured height. Both stay visible.
+ *
+ * `z-index: 1` stays below the rail's own `2` anyway. Winning the band here
+ * instead would put an opaque paragraph over the Approve/Reject controls and
+ * swallow clicks aimed at them; the offset is what separates them, not the
+ * stacking order.
+ */
+.paper-review-deep__queue-stale--pinned {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Opaque, or the retained proposal scrolls through the warning's own text. */
+  background: var(--paper);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
 }
 .paper-review-deep__revision-badge {
   padding: 4px 12px;

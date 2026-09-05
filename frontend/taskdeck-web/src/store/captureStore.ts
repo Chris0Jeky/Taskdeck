@@ -119,6 +119,10 @@ export const useCaptureStore = defineStore('capture', () => {
   let latestListWriteGeneration = 0
   const latestDetailWriteGenerationById = new Map<string, number>()
   const latestSummaryGenerationById = new Map<string, number>()
+  // Bumped by `resetForLogout`. Every detail read captures it when the request
+  // is issued, so a read that crosses a logout is dropped outright instead of
+  // being compared against generations the reset has already discarded.
+  let sessionEpoch = 0
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -272,6 +276,7 @@ export const useCaptureStore = defineStore('capture', () => {
     }
 
     const observedDetailWriteGeneration = detailWriteGeneration(itemId)
+    const observedSessionEpoch = sessionEpoch
     try {
       if (trackLoading) {
         loadingDetail.value = true
@@ -283,6 +288,9 @@ export const useCaptureStore = defineStore('capture', () => {
         ? await captureApi.getItem(itemId, requestOptions)
         : await captureApi.getItem(itemId)
       if (!shouldCache()) return detail
+      // Before any generation compare: the reset discards the generations this
+      // read observed, so after a logout the compare is no longer meaningful.
+      if (observedSessionEpoch !== sessionEpoch) return detail
       if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) return detail
       cacheDetail(detail, syncSummary)
       return detail
@@ -463,9 +471,15 @@ export const useCaptureStore = defineStore('capture', () => {
 
       try {
         const observedDetailWriteGeneration = detailWriteGeneration(itemId)
+        const observedSessionEpoch = sessionEpoch
         const detail = await captureApi.getItem(itemId)
         if (stopped) return
-        if (observedDetailWriteGeneration === detailWriteGeneration(itemId)) {
+        // The epoch is checked first: a logout discards the generations this
+        // read observed, so its response can no longer be reconciled.
+        if (
+          observedSessionEpoch === sessionEpoch &&
+          observedDetailWriteGeneration === detailWriteGeneration(itemId)
+        ) {
           cacheDetail(detail)
 
           if (isTriageTerminalStatus(detail.status)) {
@@ -611,9 +625,25 @@ export const useCaptureStore = defineStore('capture', () => {
             // endpoint lags it briefly, do not regress the row back to Triaging
             // or reinsert an item that fell beyond the visible list cap.
             syncSummary: false,
-            // Quiet in every respect: this reconciliation runs for items the
-            // user may not have open, so it must not take the panel-wide
-            // loading flag away from whatever detail IS open (#2304).
+            // Quiet in every respect, for BOTH callers: this reconciliation
+            // runs over the tracked batch, not over whatever detail is open,
+            // so it must not take the panel-wide loading flag away from that
+            // detail (#2304).
+            //
+            // `batchTriage` is a FOREGROUND caller and still reconciles
+            // quietly on purpose (#2571). `loadingDetail` is one store-wide
+            // boolean: raising it here would blank the panel and disable
+            // Refresh Detail for an open capture that is not in the batch
+            // selection, and the first of these parallel reads to settle would
+            // clear the flag under any genuine foreground detail load still in
+            // flight. The foreground feedback for a batch is `batchBusy`,
+            // which stays true for the whole `batchTriage` body and renders
+            // "Processing..." on the Legacy skin's batch buttons
+            // (`LegacyInboxView.vue` -> `InboxListPanel.vue`). That is the only
+            // skin either flag reaches: nothing under `views/paper/` binds
+            // `batchBusy` or `loadingDetail`, so the Paper inbox neither gains
+            // nor loses anything here. The `trackLoading` docstring above
+            // describes the same Legacy panel.
             trackLoading: false,
             requestOptions: options.requestOptions,
             shouldCache: isCurrent,
@@ -923,6 +953,31 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  /**
+   * End the session's per-item generation bookkeeping (#2571).
+   *
+   * EVICTION, not a bound. Both maps are keyed by capture id and take an entry
+   * for every summary write and every successful mutation, and nothing else
+   * ever removes one, so a session's entries would otherwise live as long as
+   * the store. This is the only eviction point. WITHIN a session both still
+   * grow by one entry per distinct capture id touched, exactly as before.
+   *
+   * INVALIDATION is what makes an in-flight read safe, and clearing the maps
+   * alone would not: it would INVERT the detail write guard. A read that
+   * starts with no recorded write for its id observes generation 0; if a write
+   * then lands (generation N) and the map is cleared, the read's compare
+   * becomes 0 !== 0, which is false, and the PRE-write body would be cached
+   * over the newer one and its status pushed back into the list. So the epoch
+   * moves here, after the clear: every detail read captures it when it issues
+   * its request and drops its response when it moved, before any generation
+   * compare. The shared clock itself stays monotonic.
+   */
+  function resetForLogout() {
+    latestDetailWriteGenerationById.clear()
+    latestSummaryGenerationById.clear()
+    sessionEpoch += 1
+  }
+
   return {
     items,
     detailById,
@@ -950,5 +1005,6 @@ export const useCaptureStore = defineStore('capture', () => {
     pollBatchTriageCompletion,
     batchTriage,
     updateSuggestion,
+    resetForLogout,
   }
 })

@@ -302,7 +302,13 @@ const emit = defineEmits<{
   flex-wrap: wrap;
   gap: 12px;
   position: sticky;
-  top: 0;
+  /* The review surface's degraded-queue warning is pinned at the top of this
+   * same scroller (#2214 item 4). This rail is opaque and taller, so sticking
+   * at 0 covered it completely once the reviewer scrolled past the card header.
+   * PaperReviewView writes the warning's measured height onto the scrolling
+   * column as `--paper-review-sticky-offset`; with no warning the property is
+   * absent and this falls back to 0, the rail's original position. */
+  top: var(--paper-review-sticky-offset, 0);
   z-index: 2;
 }
 /* The text half. `flex: 1 1 0` is load-bearing twice over: it keeps the group

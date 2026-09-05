@@ -29,6 +29,7 @@ const {
   summaryCards,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRecovered,
   unavailableProposalId,
   dismissableProposalIds,
   isProposalExpired,
@@ -207,10 +208,12 @@ function handleReviewKeydown(event: KeyboardEvent) {
 
 const workspace = useWorkspaceStore()
 
-// This skin's own copy is hardcoded English, so the announcement is plain text,
-// matching the existing hardcoded copy above. (The refused-deep-link state
-// below is the one exception: it reuses the `review.empty.unavailable.*` keys
-// Paper already renders, rather than forking that wording per skin.)
+// Most of this skin's own copy is still hardcoded English, so the awaiting-count
+// announcement below is plain text, matching the hardcoded copy around it.
+// The states this skin SHARES with Paper are the exception and go through the
+// catalog rather than being forked per skin: the refused-deep-link panel reuses
+// `review.empty.unavailable.*`, and the degraded/recovered queue disclosure
+// reuses `review.queue.degraded.*` (#2214).
 const awaitingCount = computed(
   () => summaryCards.value.find((card) => card.id === 'pending-review')?.value ?? 0,
 )
@@ -320,6 +323,22 @@ onUnmounted(() => {
       {{ countIsAnnounceable ? awaitingAnnouncement : '' }}
     </p>
 
+    <!-- Recovery is the half of the degraded disclosure that was missing
+         (#2214). The warning below simply disappears when the queue is
+         trustworthy again, which tells a reviewer who was not watching that
+         corner nothing at all. Built like the count region above it: MOUNTED
+         throughout, withholding its text, because a live region inserted at the
+         same moment its text appears is unreliably announced (#2593). The
+         signal comes from the shared composable, so both skins announce the
+         same transition with the same sentence (ADR-0038 / #1124). -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="review-queue-recovered"
+    >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
+
     <div
       v-if="queueRefreshStale && !queueAccessRevoked"
       class="td-panel"
@@ -328,8 +347,7 @@ onUnmounted(() => {
       aria-atomic="true"
       data-testid="review-queue-stale"
     >
-      <p>This review queue may be out of date.</p>
-      <p>Showing the last available proposals while Taskdeck retries.</p>
+      <p>{{ $t('review.queue.degraded.body') }}</p>
     </div>
 
     <div

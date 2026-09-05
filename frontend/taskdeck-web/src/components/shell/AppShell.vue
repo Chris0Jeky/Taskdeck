@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { useCaptureStore } from '../../store/captureStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
@@ -43,6 +44,7 @@ type SidebarRef = {
 const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
+const capture = useCaptureStore()
 const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 
@@ -375,6 +377,9 @@ watch(
   (isAuthenticated) => {
     if (!isAuthenticated) {
       workspace.resetForLogout()
+      // The capture store's per-item generation guards are keyed by capture id
+      // and belong to the session that recorded them (#2571).
+      capture.resetForLogout()
       return
     }
 
