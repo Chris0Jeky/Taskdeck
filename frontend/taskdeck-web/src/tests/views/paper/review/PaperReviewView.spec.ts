@@ -1940,14 +1940,31 @@ describe('PaperReviewView', () => {
    * proposal-scoped endpoint as a user-visible source (#1284).
    *
    * A Chat-source proposal carries no capture reference, so `captureSourceReference` returns null
-   * and the capture-detail read is never attempted. Everything asserted here can therefore only
-   * have come from `GET /api/automation/proposals/{id}/provenance/metadata`.
+   * and the capture-detail read is never attempted. The producer triple asserted here — provider,
+   * model, prompt version — can therefore only have come from
+   * `GET /api/automation/proposals/{id}/provenance/metadata`.
+   *
+   * The confidence row is different: `mapServerProvenanceMetadata` copies its number from the
+   * separately fetched `/confidence` breakdown, so the row's VALUE is not evidence about the
+   * producer endpoint. Its PRESENCE is: the whole `.prov-drawer__meta` block renders only when
+   * `metadata` is non-null, which here requires the producer endpoint to have recorded a provider.
    */
   it('surfaces the server-recorded producer triple for a chat-source proposal with no capture link', async () => {
     mocks.getProvenanceMetadata.mockResolvedValue({
       provider: 'OpenAI',
       model: 'gpt-5.6-luna',
       promptVersion: 'llm-triage.v2',
+    })
+    // Stated locally rather than inherited from the shared `beforeEach`, so the `84%` assertion
+    // below names its own source: a model-reported breakdown. A deterministic source would make
+    // `mapConfidence` suppress the number and drop the row entirely.
+    mocks.getConfidence.mockResolvedValue({
+      overall: 0.84,
+      components: [],
+      note: null,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
     })
 
     const wrapper = await mountView(
@@ -1957,6 +1974,13 @@ describe('PaperReviewView', () => {
       [],
       { attachTo: true },
     )
+
+    await vi.waitFor(() => {
+      expect(mocks.getProvenanceMetadata).toHaveBeenCalledWith(
+        'proposal-001',
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      )
+    })
 
     await wrapper.get('[data-testid="paper-review-provenance-disclosure"]').trigger('click')
     await flushPromises()
