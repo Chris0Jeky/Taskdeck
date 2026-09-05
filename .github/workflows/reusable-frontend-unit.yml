@@ -39,7 +39,10 @@ jobs:
       # the job's remaining steps down with it. A passed windows-latest run of this step measured
       # 6m31s, so 10 minutes fails a hang fast while leaving ~1.5x headroom on a slow runner. The
       # suite's own watchdog trips at 9 minutes first and logs which launcher trees leaked.
+      # CI-07 #2331 under the SC-3 re-ruling (hosted minutes are Linux-only): the PowerShell launcher
+      # cases are local Windows evidence now, while the Bash launcher cases still run on the Linux leg.
       - name: Run source launcher regression suite
+        if: runner.os == 'Linux'
         timeout-minutes: 10
         run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
 
