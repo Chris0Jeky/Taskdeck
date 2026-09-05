@@ -72,16 +72,20 @@ onMounted(() => {
 /**
  * The Retry click. `force` skips the store's throttle window and nothing else.
  *
- * The stamp is written only after a success, so a retry that follows a FAILED
- * list read was never blocked by it — the earlier docblock here stated that as
- * if it settled the question, and it does not. `state.error` is shared by every
- * board action, so a create/rename/archive failure two seconds after a good
- * list read puts this view on its error branch with a live Retry button while
- * the throttle window from THAT success is still open. Unforced, the click
- * returned inside the store before `loading` was touched or any request was
- * made: no skeleton, no request, a dead button until the window passed (#2689
- * round-2 finding 1). The in-flight share is still respected — `force` does not
- * bypass it, so a click during a read already on the wire joins that read.
+ * The stamp is written only after a success, but a failure does not reopen the
+ * window: a stamp an earlier success left behind survives every later failure,
+ * including a filtered read's (the activity selector's `includeArchived` read
+ * writes the same shared `state.error` without touching the unfiltered stamp).
+ * So only `force` guarantees that a request goes out, and this path always
+ * forces. `state.error` is shared by every board action, so a create/rename/
+ * archive failure two seconds after a good list read puts this view on its
+ * error branch with a live Retry button while the throttle window from THAT
+ * success is still open. Unforced, the click returned inside the store before
+ * `loading` was touched or any request was made: no skeleton, no request, a
+ * dead button until the window passed (#2689 round-2 finding 1; this docblock
+ * corrected in #2689 item 7). The in-flight share is still respected — `force`
+ * does not bypass it, so a click during a read already on the wire joins that
+ * read.
  */
 async function retryLoad() {
   await loadBoards({ force: true })

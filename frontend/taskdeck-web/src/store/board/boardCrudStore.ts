@@ -28,14 +28,19 @@ export interface BoardListFetchOptions {
    * Skip the throttle window, and NOTHING else — an explicit user request for
    * fresh data, which the 5 s gap between mounts was never meant to answer.
    *
-   * The stamp is written only after a success, so a retry that follows a FAILED
-   * list read was never blocked by it. What this exists for is the stamp an
-   * EARLIER success left behind: `state.error` is shared by every board action,
-   * so a create/rename/archive failure two seconds after a good list read puts
-   * BoardsListView on its error branch with a Retry control, and without this
-   * the click returned here before touching `loading` or issuing a request —
+   * The stamp is written only after a success, but that is not the same as
+   * "a failure reopens the window": a stamp an EARLIER success left behind
+   * outlives every later failure, so the window is open for the whole 5 s
+   * regardless of what happened in between. Two ways in: `state.error` is
+   * shared by every board action, so a create/rename/archive failure two
+   * seconds after a good list read puts BoardsListView on its error branch
+   * with a Retry control; and a FILTERED list read (the activity selector's
+   * `includeArchived` one) writes the same shared `error` when it fails while
+   * leaving the unfiltered stamp intact. Only `force` guarantees that a
+   * request goes out — which is why the retry path always passes it. Without
+   * it the click returned here before touching `loading` or issuing a request:
    * no skeleton, no request, a dead button until the window passed (#2689
-   * round-2 finding 1).
+   * round-2 finding 1, docblock corrected in #2689 item 7).
    *
    * Deliberately NOT a bypass of the in-flight share: joining a read that is
    * already on the wire is the correct answer to a second caller, and forcing
@@ -174,6 +179,20 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         // error still identical to the one this path observed. The marker is
         // dropped on any current-generation success, matched or not, so a stale
         // message can never authorise a later clear.
+        //
+        // The documented limitation, at the same granularity as that
+        // precedent: the guard compares MESSAGES, and the copy collapses. Every
+        // client-side timeout maps to the one `boards.error.timeout` string and
+        // every offline failure to axios's "Network Error", so two different
+        // surfaces routinely produce byte-identical text and this comparison
+        // cannot tell them apart. Concretely: a list read times out, the user
+        // submits the create form, `createBoard` times out during the forced
+        // retry and writes the same sentence, and the retry's success then
+        // clears an alert the list read did not raise. It is not exotic — it is
+        // the ordinary offline case. Distinguishing them needs an owner tag on
+        // the error surface rather than a string compare, which is a wider
+        // change than this seam (#2689 item 8); the create's toast survives
+        // either way, so the failure is still reported.
         const listReadErrorToClear = lastListReadError
         lastListReadError = null
         if (listReadErrorToClear !== null && state.error.value === listReadErrorToClear) {
