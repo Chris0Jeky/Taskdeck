@@ -13,6 +13,7 @@ import './paper-legacy-bridge.css'
 import {
   installVueErrorHandler,
   installWindowErrorListeners,
+  logError,
 } from './utils/errorReporting'
 
 const app = createApp(App)
@@ -32,10 +33,24 @@ installWindowErrorListeners()
 // store keeps the committed locale on English until a lazy catalog is ready,
 // so waiting here preserves the no-flash guarantee without briefly claiming a
 // language whose messages are unavailable. Catalog failure is reported by the
-// mounted picker; it must not prevent the app from starting in English.
-void useLocaleStore(pinia)
+// mounted picker; it must not prevent the app from starting in English. The
+// wait is bounded: a lazy catalog request that stalls instead of failing must
+// not hold first paint hostage, so after LOCALE_RESTORE_MOUNT_BUDGET_MS the app
+// mounts in English and the store commits the locale atomically if the catalog
+// arrives later.
+const LOCALE_RESTORE_MOUNT_BUDGET_MS = 1500
+
+const localeRestore = useLocaleStore(pinia)
   .apply()
-  .catch(() => undefined)
+  .catch((error: unknown) => {
+    logError('[main] locale restore rejected before mount', error)
+  })
+
+const mountBudget = new Promise<void>((resolve) => {
+  window.setTimeout(resolve, LOCALE_RESTORE_MOUNT_BUDGET_MS)
+})
+
+void Promise.race([localeRestore, mountBudget])
   .finally(() => {
     app.mount('#app')
 

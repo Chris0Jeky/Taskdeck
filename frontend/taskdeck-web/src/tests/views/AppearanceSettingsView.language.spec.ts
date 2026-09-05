@@ -157,7 +157,9 @@ describe('AppearanceSettingsView — language', () => {
     window.localStorage.setItem(STORAGE_KEY, 'klingon')
     setActivePinia(createPinia())
 
-    expect(useLocaleStore().locale).toBe('en')
+    const store = useLocaleStore()
+    expect(store.preferredLocale).toBe('en')
+    expect(store.locale).toBe('en')
   })
 
   it('rejects an unsupported locale passed to setLocale', () => {
