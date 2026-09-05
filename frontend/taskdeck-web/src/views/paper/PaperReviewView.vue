@@ -76,6 +76,7 @@ const {
   unavailableProposalId,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRefused,
   queueRefreshRecovered,
   nowMs,
   visibleProposals,
@@ -1208,7 +1209,7 @@ const stickyOffsetPx = ref(0)
 let stickyOffsetObserver: ResizeObserver | null = null
 
 const mainColStickyStyle = computed(() =>
-  queueRefreshStale.value && !queueAccessRevoked.value
+  (queueRefreshStale.value || queueRefreshRefused.value) && !queueAccessRevoked.value
     ? { '--paper-review-sticky-offset': `${stickyOffsetPx.value}px` }
     : {},
 )
@@ -2640,6 +2641,28 @@ async function onClearBoardScope() {
       data-testid="paper-review-queue-recovered"
     >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
 
+    <!--
+      The refused-refresh disclosure (#2214 item 2), built the same way and
+      hoisted for the same reason: the visible warning is rendered inside the
+      `v-if="activeProposal"` / `v-else` pair below, so it can mount already
+      carrying its text, which a live region announces unreliably. This region
+      is above the pair, always mounted, and withholds its text until the
+      disclosure rises.
+
+      A separate region from the recovery one above rather than a shared slot:
+      they are different jobs and can be true in sequence within one poll
+      interval, and one region cannot speak twice about two different facts.
+      Both are `.sr-only` and therefore absolutely positioned, so neither takes
+      a column of the three-column track list.
+    -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-queue-refused"
+    >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
+
     <ReviewQueueRail
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
@@ -2671,8 +2694,14 @@ async function onClearBoardScope() {
       class="paper-review-deep__main-col"
       :style="mainColStickyStyle"
     >
+      <!-- ONE visible slot for both background-refresh disclosures. They are
+           alternatives, not additions: "refreshes are being refused" subsumes
+           "the queue may be out of date", and rendering both would put "while
+           Taskdeck retries" beside a sentence saying the retries are answered
+           and refused. Keeping it one element also keeps `queueStaleRef` and
+           the #2630 sticky-offset handshake exactly as they shipped. -->
       <p
-        v-if="queueRefreshStale && !queueAccessRevoked"
+        v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
         ref="queueStaleRef"
         class="paper-review-deep__queue-stale paper-review-deep__queue-stale--pinned tk-meta"
         role="status"
@@ -2680,7 +2709,7 @@ async function onClearBoardScope() {
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        {{ $t('review.queue.degraded.body') }}
+        {{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}
       </p>
       <div
         v-if="revisionCount > 0"
@@ -2888,14 +2917,14 @@ async function onClearBoardScope() {
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
       <p
-        v-if="queueRefreshStale && !queueAccessRevoked"
+        v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
         class="paper-review-deep__queue-stale tk-meta"
         role="status"
         aria-live="polite"
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        {{ $t('review.queue.degraded.body') }}
+        {{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}
       </p>
       <template v-if="queueAccessRevoked">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>

@@ -3496,12 +3496,15 @@ describe('PaperReviewView', () => {
       expect(queue.element.parentElement).toBe(root.element)
       expect(main.element.parentElement).toBe(root.element)
       expect(right.element.parentElement).toBe(root.element)
-      // The hoisted recovery region is the first child so it survives every
-      // flip of the branch pair below it (#2214 round 2); the three columns
-      // keep their order and their parent.
+      // The hoisted disclosure regions are the first children so they survive
+      // every flip of the branch pair below them (#2214 round 2); the three
+      // columns keep their order and their parent. Both are `.sr-only` and
+      // therefore absolutely positioned, so neither takes a grid column.
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
+        refused.element,
         queue.element,
         main.element,
         right.element,
@@ -3534,8 +3537,10 @@ describe('PaperReviewView', () => {
       const right = wrapper.get('.paper-review-deep__rail-empty')
       expect(stale.element.parentElement).toBe(empty.element)
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
+        refused.element,
         queue.element,
         empty.element,
         right.element,
@@ -3606,6 +3611,100 @@ describe('PaperReviewView', () => {
       // 15 seconds for as long as the surface is open.
       expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-review-queue-recovered"]').text()).toBe('')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('discloses a list read the server keeps refusing, from a region that was already mounted (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+
+      const before = wrapper.find('[data-testid="paper-review-queue-refused"]')
+      expect(before.exists()).toBe(true)
+      expect(before.attributes('role')).toBe('status')
+      expect(before.attributes('aria-live')).toBe('polite')
+      expect(before.attributes('aria-atomic')).toBe('true')
+      expect(before.text()).toBe('')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const after = wrapper.find('[data-testid="paper-review-queue-refused"]')
+      expect(after.text()).toBe(enReview.queue.refused.body)
+      expect(after.element).toBe(before.element)
+
+      // The visible warning is the SAME pinned slot the degraded state uses, so
+      // the sticky/offset handshake from #2630 keeps working unchanged; only
+      // its copy differs.
+      const visible = wrapper.get('[data-testid="paper-review-queue-stale"]')
+      expect(visible.text()).toBe(enReview.queue.refused.body)
+      expect(visible.classes()).toContain('paper-review-deep__queue-stale--pinned')
+      const main = wrapper.get('.paper-review-deep__main-col')
+      expect(visible.element.parentElement).toBe(main.element)
+      expect(main.attributes('style') ?? '').toContain('--paper-review-sticky-offset')
+      expect(wrapper.text()).toContain('Split "dark mode" into 3 cards')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders the refusal warning in the empty column too (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      mocks.getProposals.mockRejectedValue({ response: { status: 405 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.get('[data-testid="paper-review-queue-stale"]')
+      expect(stale.text()).toBe(enReview.queue.refused.body)
+      const empty = wrapper.get('[data-testid="paper-review-empty"]')
+      expect(stale.element.parentElement).toBe(empty.element)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('prefers the refusal copy over the degraded copy when both states stand (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-testid="paper-review-queue-stale"]').text()).toBe(
+        enReview.queue.degraded.body,
+      )
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 410 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      // "Showing the last available proposals while Taskdeck retries" is no
+      // longer true: the retries are being answered and refused.
+      expect(wrapper.get('[data-testid="paper-review-queue-stale"]').text()).toBe(
+        enReview.queue.refused.body,
+      )
       wrapper.unmount()
     } finally {
       vi.useRealTimers()

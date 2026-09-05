@@ -29,6 +29,7 @@ const {
   summaryCards,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRefused,
   queueRefreshRecovered,
   unavailableProposalId,
   dismissableProposalIds,
@@ -212,8 +213,8 @@ const workspace = useWorkspaceStore()
 // announcement below is plain text, matching the hardcoded copy around it.
 // The states this skin SHARES with Paper are the exception and go through the
 // catalog rather than being forked per skin: the refused-deep-link panel reuses
-// `review.empty.unavailable.*`, and the degraded/recovered queue disclosure
-// reuses `review.queue.degraded.*` (#2214).
+// `review.empty.unavailable.*`, and the background-refresh disclosures reuse
+// `review.queue.degraded.*` and `review.queue.refused.*` (#2214).
 const awaitingCount = computed(
   () => summaryCards.value.find((card) => card.id === 'pending-review')?.value ?? 0,
 )
@@ -339,15 +340,34 @@ onUnmounted(() => {
       data-testid="review-queue-recovered"
     >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
 
+    <!-- The refused-refresh disclosure (#2214 item 2). Same construction and
+         the same reason as the two regions above: the visible warning below
+         mounts at the same moment it gains its text, which is the case a live
+         region announces unreliably. This one is always mounted and withholds
+         its text until the disclosure rises. -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="review-queue-refused"
+    >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
+
+    <!-- ONE visible slot for both background-refresh disclosures, because they
+         are alternatives rather than additions: "refreshes are being refused"
+         subsumes "the queue may be out of date", and rendering both would put
+         "while Taskdeck retries" next to a sentence saying the retries are
+         being refused. The refusal wins when both stand — it is the stronger
+         statement and the only one with something for the reviewer to do. -->
     <div
-      v-if="queueRefreshStale && !queueAccessRevoked"
+      v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
       class="td-panel"
       role="status"
       aria-live="polite"
       aria-atomic="true"
       data-testid="review-queue-stale"
     >
-      <p>{{ $t('review.queue.degraded.body') }}</p>
+      <p>{{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}</p>
     </div>
 
     <div
