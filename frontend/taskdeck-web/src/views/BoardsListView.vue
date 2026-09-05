@@ -3,6 +3,11 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
+// Type-only, so the barrel adds no runtime import here: the view's load
+// signature is the store's own list-option type rather than a hand-copied
+// `{ force?: boolean }` that a second option would silently leave behind
+// (#2689 item 9).
+import type { BoardListFetchOptions } from '../store/board'
 import { logError } from '../utils/errorReporting'
 import { TdSkeleton } from '../components/ui'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
@@ -58,7 +63,7 @@ function formatCreatedAt(createdAt: string): string {
  * retry layer, and without a control the alert stayed until the user navigated
  * away and back (#2689 item 1).
  */
-async function loadBoards(options: { force?: boolean } = {}) {
+async function loadBoards(options: BoardListFetchOptions = {}) {
   // Catch the rethrown error — boardStore.error is already set by handleApiError
   // so the template can display it. Without this catch, Vue treats the unhandled
   // rejection as a lifecycle-hook error and may tear down the component.
@@ -72,16 +77,22 @@ onMounted(() => {
 /**
  * The Retry click. `force` skips the store's throttle window and nothing else.
  *
- * The stamp is written only after a success, so a retry that follows a FAILED
- * list read was never blocked by it — the earlier docblock here stated that as
- * if it settled the question, and it does not. `state.error` is shared by every
- * board action, so a create/rename/archive failure two seconds after a good
- * list read puts this view on its error branch with a live Retry button while
- * the throttle window from THAT success is still open. Unforced, the click
- * returned inside the store before `loading` was touched or any request was
- * made: no skeleton, no request, a dead button until the window passed (#2689
- * round-2 finding 1). The in-flight share is still respected — `force` does not
- * bypass it, so a click during a read already on the wire joins that read.
+ * The stamp is written only after a success, but a failure does not reopen the
+ * window: a stamp an earlier success left behind survives every later failure,
+ * including a filtered read's (the activity selector's `includeArchived` read
+ * writes the same shared `state.error` when it FAILS without touching the
+ * stamp; a filtered success writes the stamp like any other success).
+ * So only `force` gets past the THROTTLE — the in-flight share and demo mode
+ * still apply, so it is a skipped window rather than a guaranteed request —
+ * and this path always forces. `state.error` is shared by every board action,
+ * so a create/rename/archive failure two seconds after a good list read puts
+ * this view on its error branch with a live Retry button while the throttle
+ * window from THAT success is still open. Unforced, the click returned inside
+ * the store before `loading` was touched or any request was made: no skeleton,
+ * no request, a dead button until the window passed (#2689 round-2 finding 1;
+ * this docblock corrected in #2689 item 7). The in-flight share is still
+ * respected — `force` does not bypass it, so a click during a read already on
+ * the wire joins that read.
  */
 async function retryLoad() {
   await loadBoards({ force: true })
@@ -98,8 +109,20 @@ async function retryLoad() {
   // block is gone — so the optional call is also the "only on failure" guard.
   // The alert paragraph is a new node on each failure, so it is announced
   // again independently of this.
+  //
+  // The second guard is what keeps "restore" from meaning "steal". The read is
+  // bounded at 10 s and the create panel is rendered ABOVE the loading chain,
+  // so it stays interactive for the whole wait: a user who opens "+ New Board"
+  // and starts typing during a hung retry had the caret yanked back to the
+  // rebuilt button when the read finally failed, and their next Space or Enter
+  // re-fired Retry instead of typing (#2689 item 6). Focus is only put back
+  // when it was actually LOST — `document.activeElement` null or <body>, which
+  // is where the browser leaves it after the activated button unmounts.
   await nextTick()
-  retryButton.value?.focus()
+  const focused = document.activeElement
+  if (focused === null || focused === document.body) {
+    retryButton.value?.focus()
+  }
 }
 
 async function createBoard() {

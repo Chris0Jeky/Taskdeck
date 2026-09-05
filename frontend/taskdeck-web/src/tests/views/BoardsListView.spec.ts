@@ -262,6 +262,62 @@ describe('BoardsListView', () => {
       wrapper.unmount()
     })
 
+    // #2689 item 6, the other half of that restore. The retry read is bounded
+    // at 10 s and the create panel sits ABOVE the loading chain, so it stays
+    // interactive while the retry is in flight: the user can open "+ New Board"
+    // and start typing during those ten seconds. Restoring unconditionally then
+    // pulled the caret out of the name input the moment the read failed, and
+    // the next Space or Enter re-fired Retry instead of typing. The restore
+    // exists for focus that was LOST, so it is guarded on
+    // `document.activeElement` being null or <body>.
+    it('leaves the caret alone when the user moved into the create form during the retry', async () => {
+      mockBoardStore.error = 'Failed to load boards'
+
+      const wrapper = mount(BoardsListView, { attachTo: document.body })
+      await waitForUi()
+
+      const firstButton = wrapper.find('[data-action="retry-board-load"]')
+        .element as HTMLButtonElement
+      firstButton.focus()
+      expect(document.activeElement).toBe(firstButton)
+
+      let failRead!: () => void
+      mockBoardStore.fetchBoards.mockImplementation(() => {
+        mockBoardStore.loading = true
+        return new Promise<void>((_resolve, reject) => {
+          failRead = () => {
+            mockBoardStore.error = 'Failed to load boards'
+            mockBoardStore.loading = false
+            reject(new Error('still failing'))
+          }
+        })
+      })
+
+      await wrapper.find('[data-action="retry-board-load"]').trigger('click')
+
+      // The read is on the wire and the error block is gone with the button
+      // that was focused. The user opens the create panel and puts the caret in
+      // the name input.
+      const newBoardBtn = wrapper.findAll('button').find((b) => b.text().includes('+ New Board'))
+      expect(newBoardBtn).toBeDefined()
+      await newBoardBtn!.trigger('click')
+      await waitForUi()
+      const nameInput = wrapper.find('#new-board-name').element as HTMLInputElement
+      nameInput.focus()
+      expect(document.activeElement).toBe(nameInput)
+
+      failRead()
+      await flushPromises()
+
+      // The retry failed and the error block was rebuilt with a new Retry
+      // button, but focus was never lost — so it stays where the user put it.
+      const rebuiltButton = wrapper.find('[data-action="retry-board-load"]')
+      expect(rebuiltButton.exists()).toBe(true)
+      expect(document.activeElement).toBe(nameInput)
+
+      wrapper.unmount()
+    })
+
     it('shows the alert again, still retryable, when the retry also fails', async () => {
       mockBoardStore.error = 'Failed to load boards'
 
