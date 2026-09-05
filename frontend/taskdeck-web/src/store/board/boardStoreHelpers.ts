@@ -74,10 +74,20 @@ export function createBoardHelpers(state: BoardState) {
   const toast = useToastStore()
   const boardDetailMutationEpochs = new Map<string, number>()
 
-  const handleApiError = (err: unknown, fallback: string) => {
+  /**
+   * Writes the failure to both surfaces and RETURNS the message it wrote.
+   *
+   * The return exists so a caller can tell later whether `state.error` is still
+   * the message it raised or has since been replaced by another surface — the
+   * board state carries one shared `error` ref, so "clear the error on success"
+   * is only safe when the success owns that error (#2689 round-2 finding 2).
+   * Every existing caller ignores the return and is unaffected.
+   */
+  const handleApiError = (err: unknown, fallback: string): string => {
     const message = resolveErrorMessage(err, fallback)
     state.error.value = message
     toast.error(message)
+    return message
   }
 
   function guardDemoMutation(): never | void {

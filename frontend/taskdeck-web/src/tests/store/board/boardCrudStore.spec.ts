@@ -82,7 +82,10 @@ function createMockHelpers(overrides: { isDemoMode?: boolean } = {}) {
 
   return {
     guardDemoMutation: vi.fn(),
-    handleApiError: vi.fn(),
+    // Mirrors the real helper's contract: it returns the message it wrote, so
+    // the list read can tell later whether the alert on screen is still its own
+    // (#2689 round-2 finding 2).
+    handleApiError: vi.fn((_err: unknown, fallback: string) => fallback),
     isDemoMode: overrides.isDemoMode ?? false,
     toast: { success: vi.fn(), error: vi.fn() },
     getBoardDetailMutationEpoch: vi.fn(
@@ -373,6 +376,7 @@ describe('boardCrudStore', () => {
       // test is about what the two surfaces leave behind for each other.
       helpers.handleApiError.mockImplementation((_err: unknown, fallback: string) => {
         state.error.value = fallback
+        return fallback
       })
 
       const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
@@ -391,6 +395,62 @@ describe('boardCrudStore', () => {
 
       expect(state.boards.value).toEqual([{ id: 'board-1', name: 'My Board' }])
       expect(state.error.value).toBeNull()
+    })
+
+    // #2689 round-2 finding 2. The clear above must not overreach: `error` is
+    // one ref shared by every board action, so an unconditional clear on the
+    // success path erased alerts the list read never raised. Mount read slow,
+    // the user submits the create form at T+2 s, createBoard fails, the mount
+    // read commits at T+5 s — the failure the user was told about must not be
+    // silently wiped. At the merge base that alert survived.
+    it('leaves an alert another action raised while the read was in flight', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const listRead = fetchBoards()
+
+      // A mutation fails while the list read is on the wire. Nothing about this
+      // message belongs to the list read.
+      state.error.value = 'Board "Roadmap" already exists'
+
+      inFlight.resolve([{ id: 'board-1', name: 'My Board' }])
+      await listRead
+
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'My Board' }])
+      expect(state.error.value).toBe('Board "Roadmap" already exists')
+    })
+
+    // The marker is dropped on any current-generation success, so a message
+    // from an older failed read can never authorise a clear later on.
+    it('does not reuse a stale list-read message to clear a newer alert', async () => {
+      const thirdRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockRejectedValueOnce(new Error('network error'))
+        .mockResolvedValueOnce([{ id: 'board-1', name: 'My Board' }])
+        .mockReturnValueOnce(thirdRead.promise)
+      helpers.handleApiError.mockImplementation((_err: unknown, fallback: string) => {
+        state.error.value = fallback
+        return fallback
+      })
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      await expect(fetchBoards()).rejects.toThrow('network error')
+      expect(state.error.value).toBe('Failed to fetch boards')
+
+      // The first success consumes the marker.
+      await fetchBoards(undefined, false, { force: true })
+      expect(state.error.value).toBeNull()
+
+      // A third read is in flight when another surface raises the SAME wording
+      // the old list failure used. The marker is spent, so this success must
+      // not treat that alert as its own.
+      const listRead = fetchBoards(undefined, false, { force: true })
+      state.error.value = 'Failed to fetch boards'
+      thirdRead.resolve([{ id: 'board-1', name: 'My Board' }])
+      await listRead
+
+      expect(state.error.value).toBe('Failed to fetch boards')
     })
 
     it('issues a separate request for a filtered caller during an unfiltered flight', async () => {

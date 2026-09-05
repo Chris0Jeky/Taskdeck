@@ -62,6 +62,21 @@ describe('boardStoreHelpers', () => {
       expect(mockToastStore.error).toHaveBeenCalledWith('Something went wrong')
     })
 
+    // #2689 round-2 finding 2. The board state carries one shared `error` ref,
+    // so a caller that later wants to clear it needs to know whether the alert
+    // on screen is still the one it raised. The return is that handle, and it
+    // is the resolved message, not the fallback it was given.
+    it('returns the message it wrote to state and toast', () => {
+      mockGetErrorMessage.mockReturnValueOnce('Board "Roadmap" already exists')
+      const helpers = createBoardHelpers(state as any)
+
+      const written = helpers.handleApiError(new Error('oops'), 'Failed to create board')
+
+      expect(written).toBe('Board "Roadmap" already exists')
+      expect(state.error.value).toBe(written)
+      expect(mockToastStore.error).toHaveBeenCalledWith(written)
+    })
+
     it('uses fallback from getErrorMessage', () => {
       const helpers = createBoardHelpers(state as any)
       helpers.handleApiError(new Error(), 'My fallback')
