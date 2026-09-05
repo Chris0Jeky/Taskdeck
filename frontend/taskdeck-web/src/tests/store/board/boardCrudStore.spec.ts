@@ -51,7 +51,7 @@ vi.mock('../../../utils/demoData', () => ({
 }))
 
 import { createBoardCrudActions } from '../../../store/board/boardCrudStore'
-import type { CardFilters } from '../../../store/board/boardState'
+import { initialCardFilters, type CardFilters } from '../../../store/board/boardState'
 
 function createMockState() {
   return {
@@ -1187,6 +1187,25 @@ describe('boardCrudStore', () => {
         dueDateFilter: 'all',
         showBlockedOnly: false,
       })
+    })
+
+    it('resets filters to a fresh initialCardFilters() instance', () => {
+      state.filters.value = {
+        searchText: 'urgent',
+        labelIds: ['label-1'],
+        dueDateFilter: 'overdue',
+        showBlockedOnly: true,
+      }
+
+      const { resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      resetForLogout()
+
+      expect(state.filters.value).toEqual(initialCardFilters())
+      // A fresh object, not a shared default: the next session filtering its
+      // board must not reach the value a later reset restores.
+      expect(state.filters.value).not.toBe(initialCardFilters())
+      state.filters.value.labelIds.push('leaked')
+      expect(initialCardFilters().labelIds).toEqual([])
     })
 
     it('discards a board-list response that settles after the reset', async () => {

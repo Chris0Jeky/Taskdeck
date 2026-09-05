@@ -8,7 +8,7 @@ import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
-import type { BoardState, CardFilters } from './boardState'
+import { initialCardFilters, type BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
 // Minimum gap between board-list fetches.  Multiple views (BoardsListView,
@@ -548,13 +548,6 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     activeBoardFetch = null
     settleQueuedBackgroundBoardFetch()
 
-    const initialFilters: CardFilters = {
-      searchText: '',
-      labelIds: [],
-      dueDateFilter: 'all',
-      showBlockedOnly: false,
-    }
-
     state.boards.value = []
     state.activeBoardId.value = null
     state.currentBoard.value = null
@@ -565,7 +558,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     state.editingCardId.value = null
     state.loading.value = false
     state.error.value = null
-    state.filters.value = initialFilters
+    state.filters.value = initialCardFilters()
   }
 
   return {
