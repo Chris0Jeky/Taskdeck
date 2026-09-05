@@ -281,6 +281,120 @@ public sealed class CliFailureSinkTests
             Path.Combine(Directory.GetCurrentDirectory(), CliFailureSink.DirectoryName)));
     }
 
+    /// <summary>
+    /// #2577 item 1: eviction must run only after the new record is on disk. A stale file at the
+    /// exact target name makes the CreateNew write fail, and a failed write must delete nothing,
+    /// otherwise the failure mode is net diagnostic loss instead of fail-open-with-no-change.
+    /// </summary>
+    [Fact]
+    public void TryRecord_WhenTheWriteFailsAtTheCap_DeletesNoOlderRecord()
+    {
+        using var directory = new TemporaryDirectory();
+        var diagnostics = Path.Combine(directory.Path, CliFailureSink.DirectoryName);
+        Directory.CreateDirectory(diagnostics);
+
+        // Exactly the cap: one stale file planted at the target name, plus older records that a
+        // pre-write eviction would delete to make room for a write that then cannot happen.
+        var targetName = CliFailureSink.BuildFileName(Reference, FixedTimestamp);
+        const string planted = "planted-content";
+        File.WriteAllText(Path.Combine(diagnostics, targetName), planted);
+
+        var seeded = new List<string> { targetName };
+        for (var index = 1; index < CliFailureSink.MaximumRecordCount; index++)
+        {
+            var name = CliFailureSink.BuildFileName(
+                "aaaaaaaaaaaa",
+                FixedTimestamp.AddSeconds(index - CliFailureSink.MaximumRecordCount));
+            File.WriteAllText(Path.Combine(diagnostics, name), "seed");
+            seeded.Add(name);
+        }
+
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+        var captured = sink.TryRecord(CreateLeakyException(), Reference, arguments: null, FixedTimestamp);
+
+        captured.Should().BeFalse();
+        var remaining = Directory
+            .GetFiles(diagnostics, CliFailureSink.FileNameSearchPattern)
+            .Select(Path.GetFileName)
+            .ToArray();
+        remaining.Should().BeEquivalentTo(seeded);
+        File.ReadAllText(Path.Combine(diagnostics, targetName)).Should().Be(planted);
+    }
+
+    /// <summary>
+    /// #2577 item 2: the reference is interpolated into the record file name, so TryRecord checks
+    /// its shape itself instead of trusting the callers to keep the invariant. Only lowercase hex
+    /// of exactly 12 characters (the generated reference) or 32 (the harness trace correlation) is
+    /// accepted; anything else fails open, writing nothing anywhere under the data directory.
+    /// </summary>
+    [Theory]
+    [InlineData("../x")]
+    [InlineData("a/../../x")]
+    [InlineData("0A1B2C3D4E5F")]
+    [InlineData("0a1b2c3d4e5")]
+    [InlineData("0a1b2c3d4e5f0")]
+    [InlineData("zzzzzzzzzzzz")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryRecord_WithAReferenceThatIsNotLowercaseHex_FailsOpenAndWritesNothing(string reference)
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var captured = sink.TryRecord(CreateLeakyException(), reference, arguments: null, FixedTimestamp);
+
+        captured.Should().BeFalse();
+        Directory.GetFiles(directory.Path, "*", SearchOption.AllDirectories).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The 32-character lowercase-hex harness trace correlation stays accepted: it is the
+    /// reference a harness run's record is filed under.
+    /// </summary>
+    [Fact]
+    public void TryRecord_AcceptsTheThirtyTwoCharacterHarnessCorrelation()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+        var correlation = Guid.NewGuid().ToString("N");
+
+        sink.TryRecord(CreateLeakyException(), correlation, arguments: null, FixedTimestamp)
+            .Should().BeTrue();
+
+        File.Exists(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(correlation, FixedTimestamp))).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// #2577 item 3: the record keeps the command grammar (the group, the command and the flag
+    /// names) and replaces every other argv token with a fixed placeholder, so neither a
+    /// space-separated secret nor ordinary user content such as a card title reaches disk.
+    /// </summary>
+    [Fact]
+    public void TryRecord_KeepsCommandAndFlagNamesButNoArgumentValues()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var captured = sink.TryRecord(
+            CreateLeakyException(),
+            Reference,
+            new[] { "cards", "add", "--title", "Secret plan", "--token", "abc123" },
+            FixedTimestamp);
+
+        captured.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(Reference, FixedTimestamp)));
+
+        content.Should().Contain("argv: cards add --title [value] --token [value]");
+        content.Should().NotContain("Secret plan");
+        content.Should().NotContain("abc123");
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()
