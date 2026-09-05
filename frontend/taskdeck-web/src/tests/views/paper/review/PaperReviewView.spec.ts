@@ -12,6 +12,7 @@ import {
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 import enReview from '../../../../locales/en/review'
+import { i18n, DEFAULT_LOCALE } from '../../../../i18n'
 
 // Two sticky rules decide whether the degraded warning is actually visible, and
 // both live in scoped stylesheets that vitest never processes, so they have to
@@ -3029,11 +3030,12 @@ describe('PaperReviewView', () => {
     // banner reads.
     expect(enReview.status.appliedToBoard).toBe('Applied to board')
 
-    // Why there is no rendered-banner assertion for this one status: the preview
-    // key is inert on an applied record (useReviewKeymap `isActionEnabled` allows
-    // only onReject while `activeAppliedProposal` is set), so the read-only
-    // banner cannot be opened on one. Every other terminal status reaches it and
-    // is covered above.
+    // The preview key is inert on an applied record (useReviewKeymap's
+    // `isActionEnabled` allows only onReject while `activeAppliedProposal` is
+    // set), so the banner cannot be OPENED on one — asserted below. It is
+    // reached the other way instead: a pane opened before the apply converts to
+    // the stored presentation when the apply lands, which the next two specs
+    // drive end to end.
     const wrapper = await mountView([
       makeProposal({
         id: 'banner-applied',
@@ -3058,6 +3060,85 @@ describe('PaperReviewView', () => {
 
     wrapper.unmount()
   })
+
+  // The route that renders the Applied banner: open the live pane on a pending
+  // proposal, then approve and apply it (#1942's two clicks plus the phase-2
+  // dialog). Nothing on that path clears the pane — the proposal-change watcher
+  // sees the same id and a revision identity that only went to null, and the
+  // decision receipt keeps the applied proposal active — so the #1397 LOW-5
+  // watcher converts the open live pane to the stored read-only presentation.
+  async function applyWithOpenLivePane(id: string) {
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Live"')
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id, status: 'Approved', diffPreview: '0. Create card "Stored"' }),
+    )
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({
+        id,
+        status: 'Applied',
+        diffPreview: '0. Create card "Stored"',
+        appliedAt: new Date().toISOString(),
+      }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id, status: 'PendingReview', diffPreview: '0. Create card "Stored"' }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    // The pane is live and actionable at this point: no read-only banner yet.
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Live')
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    await confirmApplyDialog()
+    await wrapper.vm.$nextTick()
+
+    return wrapper
+  }
+
+  it('renders the Legacy "Applied to board" wording when the apply converts an open pane (#1434 finding 3)', async () => {
+    const wrapper = await applyWithOpenLivePane('banner-applied-live')
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Applied to board · read-only')
+    expect(banner.text()).toContain('showing the stored preview from the original submission')
+    // The conversion also swapped the live diff for the decision-time stored
+    // preview, which is the content the banner now names.
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored')
+
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['it', 'Applicata alla bacheca', 'sola lettura'],
+    ['es', 'Aplicada al tablero', 'solo lectura'],
+  ] as const)(
+    'renders the %s appliedToBoard label in the converted banner (#1434 finding 3)',
+    async (locale, label, readOnly) => {
+      // The banner label is the one string this catalog key reaches the DOM
+      // through, so the translated forms are proven here rather than only in the
+      // catalog-parity guard.
+      i18n.global.locale.value = locale
+      try {
+        const wrapper = await applyWithOpenLivePane(`banner-applied-${locale}`)
+
+        const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+        expect(banner.exists()).toBe(true)
+        expect(banner.text()).toContain(label)
+        expect(banner.text()).toContain(readOnly)
+        expect(banner.text()).not.toContain('Applied to board')
+
+        wrapper.unmount()
+      } finally {
+        i18n.global.locale.value = DEFAULT_LOCALE
+      }
+    },
+  )
 
   it('renders the invalid verdict with the backend reason (not a toast) when /diff 400s for a pending proposal (#1397)', async () => {
     mocks.getProposalDiff.mockRejectedValueOnce({

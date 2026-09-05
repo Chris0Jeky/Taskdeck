@@ -525,7 +525,9 @@ function clearPreviewDiff() {
 // Legacy card's `reviewStatusLabel` spells it (ReviewProposalCard.vue). That
 // helper is component-local — not a composable or util this view may import —
 // so the two shells converge through the catalog key instead. Every other
-// status already matched.
+// status already matched. The Applied case reaches the screen through the
+// #1397 LOW-5 conversion — a pane opened before the apply, not a key press,
+// since the preview key is inert once the record is applied.
 const previewReadOnlyLabel = computed(() => {
   const p = activeProposal.value
   if (!p) return ''

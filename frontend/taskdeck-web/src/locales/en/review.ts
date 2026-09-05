@@ -550,8 +550,10 @@ export default {
     hint: 'Press Space to hide',
     loading: 'Loading diff…',
     // The read-only banner names the content that is ACTUALLY on screen, in the
-    // three modes the pane can be in, worded exactly as the Legacy card words
-    // them (ReviewProposalCard.vue `readOnlyDiffBanner`) — #1434 finding 2.
+    // three modes the pane can be in — #1434 finding 2. The first two are worded
+    // exactly as the Legacy card words them (ReviewProposalCard.vue
+    // `readOnlyDiffBanner`); the third deliberately drops Legacy's trailing
+    // "no stored preview is available" clause, for the reason four lines down.
     // `storedBannerRecorded` is the common expired path: normal creation flows
     // never populate `diffPreview`, so the pane synthesizes a listing from the
     // proposal's own operations. That sentence lives HERE and nowhere else on
@@ -708,6 +710,9 @@ export default {
   status: {
     pendingReview: 'Pending review',
     approved: 'Approved',
+    // `appliedToBoard` supersedes `applied` for the read-only diff banner, the
+    // only surface reading this group today; `applied` is kept as the plain
+    // status label for any other surface that extracts into it.
     applied: 'Applied',
     appliedToBoard: 'Applied to board',
     rejected: 'Rejected',
