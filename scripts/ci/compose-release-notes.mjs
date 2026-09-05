@@ -26,6 +26,11 @@
 //   * RC      — both degrade to a warning: highlights are omitted, breaking
 //               changes fall back to "see UPGRADING.md".
 //
+// A MALFORMED UPGRADING section — one whose fenced code block is never closed —
+// is an ERROR for BOTH classes. Missing is recoverable by a pointer; silently
+// wrong is not, and an open fence would lift every older version's notes onto
+// the page under `## Breaking changes`.
+//
 // `composeReleaseNotes` is pure (strings in, string out) so the whole policy is
 // unit-testable without a runner: see `compose-release-notes.test.mjs`.
 //
@@ -93,6 +98,19 @@ export function parseChecksum(checksumText, assetName) {
 }
 
 /**
+ * Thrown by `extractUpgradingSection` when the section it lifted is not a
+ * well-formed Markdown document. The tag is carried on the error so the caller
+ * can name it on the `::error` line that fails the compose.
+ */
+export class MalformedUpgradingSectionError extends Error {
+  constructor(message, tag) {
+    super(message)
+    this.name = 'MalformedUpgradingSectionError'
+    this.tag = tag
+  }
+}
+
+/**
  * A CommonMark fenced-code-block delimiter: up to three leading spaces, then a
  * run of at least three backticks or tildes, then the info string (opening) or
  * trailing whitespace only (closing).
@@ -133,9 +151,13 @@ function advanceFenceState(state, line) {
  * The scan is fence-aware in both directions (#2250): a `#`/`##` line inside a
  * fenced block neither starts a section nor ends one, so a shell comment or a
  * Markdown sample can no longer truncate the section or be mistaken for its
- * heading. An UNTERMINATED fence runs to the end of the document, which is what
- * a Markdown renderer does with the same input — the section is then over-long
- * rather than silently cut at a sample line.
+ * heading. An UNTERMINATED fence would make the section run to the end of the
+ * document and publish every older version's notes under `## Breaking changes`,
+ * so it FAILS CLOSED instead: a `MalformedUpgradingSectionError` names the tag
+ * and stops the compose. The body-length guard cannot catch this — the whole of
+ * UPGRADING.md is far under `MAX_RELEASE_BODY_LENGTH`.
+ *
+ * @throws {MalformedUpgradingSectionError} the section ends inside an open fence
  */
 export function extractUpgradingSection(markdown, tag) {
   if (typeof markdown !== 'string') return null
@@ -166,6 +188,13 @@ export function extractUpgradingSection(markdown, tag) {
     if (!wasInFence && fence === null && /^#{1,2} +/.test(line)) break
     body.push(line)
   }
+  if (fence !== null) {
+    throw new MalformedUpgradingSectionError(
+      `unterminated fenced code block in the UPGRADING section for ${tag} — ` +
+        'close the fence in UPGRADING.md before tagging',
+      tag,
+    )
+  }
   const section = body.join('\n').trim()
   return section === '' ? null : section
 }
@@ -178,9 +207,16 @@ export function extractUpgradingSection(markdown, tag) {
  * Left exactly as written: any destination carrying a scheme (`https:`,
  * `mailto:`, and every other), and any root-relative `/path` — GitHub already
  * resolves those against the repository host.
+ *
+ * CommonMark's angle-bracket form (`](<docs/x.md>)`) is unwrapped, rewritten and
+ * re-wrapped: concatenating `<docs/x.md>` onto the blob base verbatim would
+ * publish a dead `.../blob/<tag>/<docs/x.md>` link.
  */
 function rewriteDestination(destination, base) {
   if (destination === '') return destination
+  if (destination.length > 1 && destination.startsWith('<') && destination.endsWith('>')) {
+    return `<${rewriteDestination(destination.slice(1, -1), base)}>`
+  }
   if (destination.startsWith('#')) return `${base}UPGRADING.md${destination}`
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(destination)) return destination
   if (destination.startsWith('/')) return destination
@@ -197,8 +233,14 @@ function rewriteDestination(destination, base) {
 /** `](dest)` or `](dest "title")`, the shape UPGRADING.md actually writes. */
 const INLINE_LINK = /(\]\()([^()\s]+)((?:[ \t]+(?:"[^"]*"|'[^']*'|\([^()]*\)))?[ \t]*\))/g
 
-/** `[id]: dest` at the start of a line, optionally followed by a title. */
-const REFERENCE_DEFINITION = /^( {0,3}\[[^\]]+\]:[ \t]*)(\S+)([ \t]*.*)$/
+/**
+ * `[id]: dest` at the start of a line, optionally followed by a title. The line
+ * must end after the destination or after a CommonMark title (`"…"`, `'…'` or
+ * `(…)`) — otherwise prose shaped `[Note]: see the guide …` would have its first
+ * word rewritten into a blob URL. A non-matching line falls through to the
+ * inline-link pass, so any real link on it is still rewritten.
+ */
+const REFERENCE_DEFINITION = /^( {0,3}\[[^\]]+\]:[ \t]*)(\S+)((?:[ \t]+(?:"[^"]*"|'[^']*'|\([^()]*\)))?[ \t]*)$/
 
 function rewriteLinksInText(text, base) {
   return text.replace(INLINE_LINK, (whole, open, destination, close) => {
@@ -391,11 +433,21 @@ export function composeReleaseNotes({
   // anchors lifted out of UPGRADING.md are dead here (#2250). Only this
   // section is rewritten: the curated notes file carries no relative-link
   // shapes today, and the generated changelog is already absolute.
-  const upgradingSection = extractUpgradingSection(upgradingText, tag)
+  // A MALFORMED section is an error for BOTH tag classes: publishing every older
+  // version's notes under this heading is worse than publishing none of them.
+  let upgradingSection = null
+  let upgradingMalformed = false
+  try {
+    upgradingSection = extractUpgradingSection(upgradingText, tag)
+  } catch (error) {
+    if (!(error instanceof MalformedUpgradingSectionError)) throw error
+    upgradingMalformed = true
+    errors.push(`compose-release-notes: ${error.message}`)
+  }
   if (upgradingSection) {
     sections.push(`## Breaking changes\n\n${rewriteRelativeLinks(upgradingSection, { repo, tag })}`)
   } else {
-    record(`UPGRADING.md has no "## ${tag}" section`)
+    if (!upgradingMalformed) record(`UPGRADING.md has no "## ${tag}" section`)
     sections.push(
       `## Breaking changes\n\nNo \`UPGRADING.md\` section was written for \`${tag}\` at tag time — ` +
         `read [UPGRADING.md](${upgradingUrl}) before upgrading.`,

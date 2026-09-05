@@ -26,6 +26,7 @@ import {
   parseChecksum,
   parseArgs,
   rewriteRelativeLinks,
+  MalformedUpgradingSectionError,
   MAX_RELEASE_BODY_LENGTH,
 } from './compose-release-notes.mjs'
 
@@ -282,20 +283,53 @@ test('a tag heading that only appears inside a fence is not a section start', ()
   assert.equal(extractUpgradingSection(doc, RC_TAG), null)
 })
 
-test('an unterminated fence runs to the end of the document', () => {
-  const doc = [
-    `## ${RC_TAG}`,
-    '',
-    '```bash',
-    '## looks like a heading',
-    '',
-    '## v0.2.0',
-    '',
-    'older notes',
-  ].join('\n')
-  const section = extractUpgradingSection(doc, RC_TAG)
-  assert.ok(section.includes('## v0.2.0'), 'an unclosed fence swallows the rest, as a Markdown renderer would')
-  assert.ok(section.includes('older notes'), section)
+// An unterminated fence would otherwise swallow every OLDER version's notes into
+// the Breaking-changes heading, and the body-length guard cannot catch it because
+// the whole of UPGRADING.md is far under the limit. The document is malformed, so
+// the compose fails at tag time instead of publishing a wrong page.
+const UNTERMINATED_FENCE = [
+  '# Version notes',
+  '',
+  `## ${RC_TAG}`,
+  '',
+  '```bash',
+  '## looks like a heading',
+  '',
+  '## v0.2.0',
+  '',
+  'older notes',
+  '',
+].join('\n')
+
+test('an unterminated fence in the section is a malformed document, not a longer section', () => {
+  assert.throws(
+    () => extractUpgradingSection(UNTERMINATED_FENCE, RC_TAG),
+    (error) => {
+      assert.ok(error instanceof MalformedUpgradingSectionError, `wrong error type: ${error}`)
+      assert.ok(error.message.includes(RC_TAG), error.message)
+      assert.match(error.message, /unterminated fenced code block in the UPGRADING section/)
+      return true
+    },
+  )
+})
+
+test('a malformed UPGRADING section is an ERROR for an RC as well as a stable tag', () => {
+  for (const prerelease of [true, false]) {
+    const tag = RC_TAG
+    const { errors } = composeReleaseNotes({
+      tag,
+      prerelease,
+      repo: REPO,
+      assetName: assetFor(tag),
+      checksumText: checksumFor(tag),
+      upgradingText: UNTERMINATED_FENCE,
+      notesText: NOTES,
+      generatedNotes: GENERATED,
+    })
+    const malformed = errors.find((e) => e.includes('unterminated fenced code block in the UPGRADING section'))
+    assert.ok(malformed, `prerelease=${prerelease}: expected a hard failure, got ${JSON.stringify(errors)}`)
+    assert.ok(malformed.includes(tag), malformed)
+  }
 })
 
 test('a closing fence must match the opening character and length', () => {
@@ -611,6 +645,27 @@ test('the CLI exits non-zero and writes NOTHING when a stable tag is missing its
   assert.equal(result.body, null, 'no half-rendered page may reach --notes-file')
 })
 
+test('the CLI fails closed on a malformed UPGRADING section, naming it on the ::error line', () => {
+  const result = runCli(
+    (paths) => [
+      '--tag', RC_TAG,
+      '--prerelease', 'true',
+      '--repo', REPO,
+      '--asset', assetFor(RC_TAG),
+      '--checksum-file', paths['checksum.sha256'],
+      '--upgrading', paths['UPGRADING.md'],
+      '--notes', paths['notes.md'],
+      '--generated-notes', paths['generated.json'],
+    ],
+    { ...cliFiles, 'UPGRADING.md': UNTERMINATED_FENCE },
+  )
+  assert.notEqual(result.status, 0, result.stderr)
+  assert.match(result.stderr, /::error::/)
+  assert.match(result.stderr, /unterminated fenced code block in the UPGRADING section/)
+  assert.ok(result.stderr.includes(RC_TAG), result.stderr)
+  assert.equal(result.body, null, 'a wrong page must never reach --notes-file')
+})
+
 test('the CLI refuses a missing required option with exit 2', () => {
   const result = runCli(() => ['--tag', RC_TAG], {})
   assert.equal(result.status, 2)
@@ -685,6 +740,26 @@ test('a reference-style link definition gets the same treatment', () => {
   assert.equal(rewrite('[guide]: docs/x.md'), `[guide]: ${LINK_BASE}/docs/x.md`)
   assert.equal(rewrite('[anchor]: #automatic-pre-migration-backups'), `[anchor]: ${LINK_BASE}/UPGRADING.md#automatic-pre-migration-backups`)
   assert.equal(rewrite('[keep]: https://example.com/x'), '[keep]: https://example.com/x')
+})
+
+test('an angle-bracketed destination is rewritten inside its brackets', () => {
+  assert.equal(rewrite('[x](<docs/x.md>)'), `[x](<${LINK_BASE}/docs/x.md>)`)
+  assert.equal(rewrite('[x](<./docs/x.md#a-section>)'), `[x](<${LINK_BASE}/docs/x.md#a-section>)`)
+  assert.equal(rewrite('[x](<#anchor>)'), `[x](<${LINK_BASE}/UPGRADING.md#anchor>)`)
+  assert.equal(rewrite('[x](<https://example.com/x>)'), '[x](<https://example.com/x>)')
+  assert.equal(rewrite('[ref]: <docs/x.md>'), `[ref]: <${LINK_BASE}/docs/x.md>`)
+})
+
+test('prose shaped like a reference definition is left alone, but its inline links are not', () => {
+  assert.equal(
+    rewrite('[Note]: see [the guide](docs/x.md) before upgrading'),
+    `[Note]: see [the guide](${LINK_BASE}/docs/x.md) before upgrading`,
+  )
+  assert.equal(rewrite('[Warning]: back up first, then run the migration'), '[Warning]: back up first, then run the migration')
+  // A real definition, with and without each CommonMark title form, still rewrites.
+  assert.equal(rewrite('[guide]: docs/x.md "The guide"'), `[guide]: ${LINK_BASE}/docs/x.md "The guide"`)
+  assert.equal(rewrite("[guide]: docs/x.md 'The guide'"), `[guide]: ${LINK_BASE}/docs/x.md 'The guide'`)
+  assert.equal(rewrite('[guide]: docs/x.md (The guide)'), `[guide]: ${LINK_BASE}/docs/x.md (The guide)`)
 })
 
 test('the tag is percent-encoded exactly as the UPGRADING fallback link encodes it', () => {
