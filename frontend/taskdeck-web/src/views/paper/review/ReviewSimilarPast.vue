@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import type {
   SimilarPastRow,
@@ -8,12 +8,35 @@ import type {
 /**
  * ReviewSimilarPast — list of 3 prior similar decisions with verdict
  * tagstamps and an aggregate apply-rate footer.
+ *
+ * Emptiness is stated on the card itself, never only inside the disclosure
+ * (#1940): a reviewer must not have to open a control to learn that it has
+ * nothing behind it. The disclosure stays present in every state because the
+ * review view specs and the required E2E smoke drive it on an empty fixture.
+ *
+ * KNOWN GAP, unfixable at this layer (#1940). This card receives rows and an
+ * apply rate, nothing about the fetch, so three different situations arrive as
+ * the same empty array:
+ *   - the selector batch is still in flight,
+ *   - the batch FAILED (`usePaperReviewSelectors` leaves `similarPastData` at
+ *     its empty default with no flag, and `evidenceUnavailable` is set only
+ *     from the Apply-time refresh, never from the page-load batch),
+ *   - the read succeeded and there genuinely is no comparable history.
+ * Only the third makes "No comparable past decisions." a true statement, and
+ * this card cannot tell which one it is holding. The composable does expose
+ * `loading`, but nothing threads it into `ReviewRightRail`, and the only place
+ * that could is `PaperReviewView.vue`.
+ *
+ * The wrong-state copy predates #1940: the same sentence rendered inside the
+ * disclosure. Hoisting it makes an existing false claim easier to see rather
+ * than creating one, and the gap stays tracked on #1940.
  */
-defineProps<{
+const props = defineProps<{
   rows: SimilarPastRow[]
   applyRate: { applied: number; total: number; ratio: number }
 }>()
 
+const isEmpty = computed(() => props.rows.length === 0)
 const detailsExpanded = ref(false)
 const detailsId = 'paper-review-similar-past-details'
 const disclosureId = 'paper-review-similar-past-disclosure'
@@ -22,6 +45,13 @@ const disclosureId = 'paper-review-similar-past-disclosure'
 <template>
   <section class="card paper-review-past">
     <div class="tk-eyebrow paper-review-past__eyebrow">{{ $t('review.similarPast.heading') }}</div>
+    <div
+      v-if="isEmpty"
+      class="tk-meta paper-review-past__empty"
+      data-testid="paper-review-similar-past-empty"
+    >
+      {{ $t('review.similarPast.empty') }}
+    </div>
     <button
       :id="disclosureId"
       type="button"
@@ -34,7 +64,9 @@ const disclosureId = 'paper-review-similar-past-disclosure'
       <span>{{
         detailsExpanded
           ? $t('review.similarPast.details.hide')
-          : $t('review.similarPast.details.show')
+          : isEmpty
+            ? $t('review.similarPast.details.showEmpty')
+            : $t('review.similarPast.details.show')
       }}</span>
       <span aria-hidden="true">{{ detailsExpanded ? '−' : '+' }}</span>
     </button>
@@ -44,10 +76,15 @@ const disclosureId = 'paper-review-similar-past-disclosure'
       data-testid="paper-review-similar-past-details"
       role="region"
       :aria-labelledby="disclosureId"
+      :hidden="!detailsExpanded"
     >
-      <div v-if="rows.length === 0" class="tk-meta paper-review-past__empty">
-        {{ $t('review.similarPast.empty') }}
-      </div>
+      <p
+        v-if="isEmpty"
+        class="tk-meta paper-review-past__empty-detail"
+        data-testid="paper-review-similar-past-empty-detail"
+      >
+        {{ $t('review.similarPast.emptyDetail') }}
+      </p>
       <div
         v-for="row in rows"
         :key="row.serial"
@@ -64,7 +101,7 @@ const disclosureId = 'paper-review-similar-past-disclosure'
           <div class="tk-meta paper-review-past__date">{{ row.date }}</div>
         </div>
       </div>
-      <div v-if="rows.length > 0" class="tk-meta paper-review-past__rate">
+      <div v-if="!isEmpty" class="tk-meta paper-review-past__rate">
         {{ $t('review.similarPast.rateLabel') }}
         <b>
           {{
@@ -112,6 +149,12 @@ const disclosureId = 'paper-review-similar-past-disclosure'
 }
 .paper-review-past__empty {
   font-size: 11px;
+  margin-bottom: 8px;
+}
+.paper-review-past__empty-detail {
+  font-size: 11px;
+  margin: 8px 0 0;
+  line-height: 1.45;
 }
 .paper-review-past__row {
   display: grid;
