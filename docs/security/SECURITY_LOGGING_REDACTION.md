@@ -97,6 +97,9 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
     listed: it covers a space-separated secret flag such as `--token abc123`, which the redactor's
     `key=value` rules do not match, and it keeps ordinary user content such as a card title or
     description off disk, since nothing was retained on an operator run before this sink existed.
+    A flag name is a dash-prefixed token with no whitespace; a value that starts with a dash and
+    contains whitespace is replaced like any other value, while a single dash-prefixed word used as
+    a value is indistinguishable from a flag name by shape and is retained.
     So `cards add --title "Secret plan" --token abc123` is recorded as
     `cards add --title [value] --token [value]`.
   The reference the CLI prints alongside the generic line is the trace correlation when a trace is

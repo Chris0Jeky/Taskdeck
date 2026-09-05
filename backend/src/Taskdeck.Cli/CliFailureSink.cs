@@ -424,7 +424,7 @@ internal sealed class CliFailureSink
             }
 
             var argument = arguments[index];
-            if (argument.StartsWith('-'))
+            if (IsFlagName(argument))
             {
                 // A flag name is retained, but its attached value is a value like any other: the
                 // redactor only masks the key=value forms whose key it knows, so --title=... or
@@ -456,6 +456,35 @@ internal sealed class CliFailureSink
 
         var redacted = SensitiveDataRedactor.Redact(builder.ToString());
         return string.IsNullOrWhiteSpace(redacted) ? "(none)" : redacted;
+    }
+
+    /// <summary>
+    /// A flag name is a dash-prefixed token with no whitespace, such as <c>--title</c> or
+    /// <c>-v</c>. <c>ArgParser.GetOption</c> accepts any following token as a value, so a value
+    /// that starts with a dash and contains whitespace (a card title such as "- fix login") is
+    /// a value, not a flag name, and is replaced like any other value. A single dash-prefixed
+    /// word used as a value is indistinguishable from a flag name by shape and is retained.
+    /// </summary>
+    private static bool IsFlagName(string argument)
+    {
+        // Only the name part matters: "--title=Secret plan" is a flag with an attached value,
+        // "- fix login" is a value that happens to start with a dash.
+        var separator = argument.IndexOf('=');
+        var name = separator < 0 ? argument : argument[..separator];
+        if (name.Length < 2 || name[0] != '-')
+        {
+            return false;
+        }
+
+        foreach (var character in name)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>

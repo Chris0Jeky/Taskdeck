@@ -515,6 +515,29 @@ public sealed class CliFailureSinkTests
     /// its flag name is one the redactor knows. Only the flag name survives.
     /// </summary>
     [Fact]
+    public void TryRecord_ReplacesADashLeadingValueThatContainsWhitespace()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var captured = sink.TryRecord(
+            CreateLeakyException(),
+            Reference,
+            new[] { "cards", "add", "--title", "- fix login for jane@acme.com", "--board", "b1" },
+            FixedTimestamp);
+
+        captured.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(Reference, FixedTimestamp)));
+
+        content.Should().Contain("argv: cards add --title [value] --board [value]");
+        content.Should().NotContain("fix login");
+        content.Should().NotContain("jane@acme.com");
+    }
+
+    [Fact]
     public void TryRecord_ReplacesAnAttachedValueEvenWhenTheFlagIsNotASecretKeyword()
     {
         using var directory = new TemporaryDirectory();
