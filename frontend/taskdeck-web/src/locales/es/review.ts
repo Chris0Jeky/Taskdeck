@@ -48,6 +48,7 @@ export default {
     },
     refused: {
       body: 'Esta cola de revisión ha dejado de actualizarse. El servidor está rechazando la actualización en lugar de fallar temporalmente, así que estas son las últimas propuestas que confirmó. Recarga la página o revisa el filtro de tablero en la barra de direcciones.',
+      recovered: 'El servidor vuelve a aceptar las actualizaciones de esta cola de revisión.',
     },
   },
 

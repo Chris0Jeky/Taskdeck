@@ -31,6 +31,7 @@ const {
   queueRefreshStale,
   queueRefreshRefused,
   queueRefreshRecovered,
+  queueRefreshRecoveredKind,
   unavailableProposalId,
   unavailableProposalMalformed,
   dismissableProposalIds,
@@ -332,14 +333,29 @@ onUnmounted(() => {
          throughout, withholding its text, because a live region inserted at the
          same moment its text appears is unreliably announced (#2593). The
          signal comes from the shared composable, so both skins announce the
-         same transition with the same sentence (ADR-0038 / #1124). -->
+         same transition with the same sentence (ADR-0038 / #1124).
+
+         TWO sentences through this one region (#2638 item 2), chosen by the
+         kind the composable reports: a 'degraded' recovery follows a completed
+         read and may say the rows are current, while a 'refused' one is raised
+         as soon as the LIST read answers — a tick that may never replace the
+         queue — so it says only that the server is accepting refreshes again.
+         Paper picks the key the same way. -->
     <p
       class="sr-only"
       role="status"
       aria-live="polite"
       aria-atomic="true"
       data-testid="review-queue-recovered"
-    >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
+    >{{
+      queueRefreshRecovered && !queueAccessRevoked
+        ? $t(
+            queueRefreshRecoveredKind === 'refused'
+              ? 'review.queue.refused.recovered'
+              : 'review.queue.degraded.recovered',
+          )
+        : ''
+    }}</p>
 
     <!-- The refused-refresh disclosure (#2214 item 2). Same construction and
          the same reason as the two regions above: the visible warning below

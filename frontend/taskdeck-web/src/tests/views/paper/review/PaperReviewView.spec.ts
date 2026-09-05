@@ -4015,6 +4015,45 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('announces a refusal retraction with the refusal sentence, not the queue one (#2638)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+      const region = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      expect(region.text()).toBe('')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-testid="paper-review-queue-refused"]').text()).toBe(
+        enReview.queue.refused.body,
+      )
+
+      mocks.getProposals.mockResolvedValue([makeProposal({ id: 'retained-1' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // One region, two sentences, picked by the kind the composable reports.
+      // The refusal retraction is raised by the LIST leg on a tick that may
+      // never replace the rendered rows, so "Showing current proposals" would
+      // overclaim (#2214, PR #2694 round 2); the degraded recovery beside it
+      // keeps saying exactly that, and its own test asserts so.
+      const after = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      expect(after.text()).toBe(enReview.queue.refused.recovered)
+      expect(after.text()).not.toBe(enReview.queue.degraded.recovered)
+      // Still the region that was mounted before anything went wrong (#2630).
+      expect(after.element).toBe(region.element)
+      expect(wrapper.find('[data-testid="paper-review-queue-refused"]').text()).toBe('')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('renders the refusal warning in the empty column too (#2214)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
     try {

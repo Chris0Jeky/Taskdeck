@@ -236,6 +236,23 @@ export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   return nowMs - createdMs >= STALE_PROPOSAL_MS
 }
 
+/**
+ * WHICH disclosure a standing recovery sentence retracts (#2638 item 2).
+ *
+ * The two are not interchangeable, because they are retracted on different
+ * evidence. 'degraded' ends the transient state, which is a claim about the
+ * RENDERED QUEUE, so its sentence may say the rows on screen are current: it is
+ * only raised by a read that completed and assigned `proposals.value`.
+ * 'refused' ends the refusal disclosure, which is a claim about the LIST
+ * REQUEST alone: it is raised the moment the list leg answers, on a tick whose
+ * composite read may still bail at the pin leg without replacing the queue, so
+ * its sentence must say the server is accepting refreshes again and NOTHING
+ * about the contents (#2214, from PR #2694's round-2 verification: the shared
+ * sentence's second clause overclaimed for up to two poll intervals on a
+ * list-success/pin-fail loop).
+ */
+export type QueueRecoveryKind = 'degraded' | 'refused'
+
 export function useReviewProposals() {
   const route = useRoute()
   const router = useRouter()
@@ -296,21 +313,77 @@ export function useReviewProposals() {
   // cannot arrive. Both can stand at once; the surfaces show the refusal,
   // which is the stronger and more actionable statement.
   const queueRefreshRefused = ref(false)
-  // The EVENT that pairs with the state above (#2214). Clearing
-  // `queueRefreshStale` unmounts the warning, which is silent: a reviewer who
+  // The EVENT that pairs with the two states above (#2214), and WHICH of them
+  // it retracts (#2638 item 2). Clearing `queueRefreshStale` or
+  // `queueRefreshRefused` unmounts the warning, which is silent: a reviewer who
   // was not looking at that corner is never told the queue is trustworthy
-  // again, and a screen-reader user is told nothing at all. This is true only
-  // after a degraded state was actually cleared by a successful read, so an
-  // ordinary success never announces anything, and it falls back to false at
-  // the next degraded onset so a second recovery is announced too (a live
-  // region only speaks when its TEXT changes). The FOLLOWING success also
-  // retires it, so the sentence lives for about one poll interval rather than
-  // the rest of the session.
+  // again, and a screen-reader user is told nothing at all. A kind is set only
+  // after a disclosure was actually retracted by a successful read, so an
+  // ordinary success never announces anything, and it falls back to null at the
+  // next degraded or refusal onset so a second recovery is announced too (a
+  // live region only speaks when its TEXT changes).
   //
   // It is deliberately NOT cleared on a 403: the surfaces already gate this
   // sentence on `!queueAccessRevoked`, the same guard the warning uses, so the
   // permission path keeps its single owner.
-  const queueRefreshRecovered = ref(false)
+  const queueRefreshRecoveredKind = ref<QueueRecoveryKind | null>(null)
+  const queueRefreshRecovered = computed(() => queueRefreshRecoveredKind.value !== null)
+  // WHEN the sentence was raised, counted in BACKGROUND reads (#2638 item 2).
+  //
+  // THE RETIREMENT RULE: a standing recovery sentence is retired by the next
+  // degraded or refusal onset, or by a BACKGROUND poll success belonging to a
+  // read LATER than the one the sentence is stamped with — never by an explicit
+  // load. The two stamps are set out below; the onsets are immediate for both,
+  // because there the sentence is false rather than merely old.
+  //
+  // Explicit loads take the same `recordQueueRefreshSuccess` path and are
+  // common within one poll interval of a recovery: the post-decision reloads in
+  // useReviewActions, the batch composables, the board-filter watcher,
+  // `dismissSettledElsewhereNotice` and the pre-decision refresh barrier all
+  // call `loadProposals`. A reviewer's already-clicked Approve can therefore
+  // land ~150 ms after the recovering poll and empty the region, and a polite
+  // live region whose text is reverted that fast may never be spoken at all
+  // (#2638 item 2, from PR #2630's verification pass). An explicit load that
+  // succeeds while the sentence stands leaves it standing; it still RAISES one
+  // when it is the read that ends a degraded state, which is the #2630
+  // behaviour and is unchanged.
+  //
+  // Counting background reads rather than wall-clock keeps the composable free
+  // of teardown state and still gives the sentence at least one full poll
+  // interval of life, which is what #2630 intended:
+  //
+  //  - a POLL-raised sentence is stamped with the read it was raised in, so it
+  //    survives that read and retires on the next later poll success;
+  //  - an EXPLICIT-raised sentence is stamped with the read that has not
+  //    started yet, so it survives the next poll success and retires on the one
+  //    after.
+  //
+  // The asymmetry is the whole point (round-2 review finding). An explicit load
+  // lands BETWEEN background reads, so the ordinal sitting on the counter names
+  // a read that already finished: stamping that would let the very next tick
+  // retire the sentence, and a post-decision reload that recovers the queue
+  // 14.9 s into a 15 s cycle would be blanked 100 ms later — the same defect
+  // this rule exists to close, with the roles swapped.
+  //
+  // One reachability-limited gap is accepted: if the poll never records another
+  // COMPOSITE success — a hash-pinned by-id read failing every tick with a
+  // status that is neither transient nor a pin-level outcome, so 405/410/409,
+  // which this route is documented not to emit — nothing retires the sentence
+  // for the rest of the session except a degraded or refusal onset, because an
+  // explicit success no longer bounds it either.
+  let backgroundQueueReadCount = 0
+  let queueRecoveryRaisedAtBackgroundRead: number | null = null
+
+  function raiseQueueRecovery(kind: QueueRecoveryKind, source: 'poll' | 'explicit') {
+    queueRefreshRecoveredKind.value = kind
+    queueRecoveryRaisedAtBackgroundRead =
+      source === 'poll' ? backgroundQueueReadCount : backgroundQueueReadCount + 1
+  }
+
+  function retireQueueRecovery() {
+    queueRefreshRecoveredKind.value = null
+    queueRecoveryRaisedAtBackgroundRead = null
+  }
   let latestProposalLoadRequestId = 0
   const availableBoards = ref<Board[]>([])
   const loadingBoards = ref(false)
@@ -704,7 +777,11 @@ export function useReviewProposals() {
       // An explicit successful load is as trustworthy as a successful poll and
       // clears any older degraded indication without changing load semantics.
       // It goes through the same accounting as a successful poll so both exits
-      // from the degraded state raise the recovery signal (#2214).
+      // from the degraded state raise the recovery signal (#2214) — but it
+      // never RETIRES a standing one, because it can land a few hundred
+      // milliseconds after the poll that raised it and blank the live region
+      // before it is spoken (#2638 item 2). No `source` is passed: the default
+      // is 'explicit'.
       recordQueueRefreshSuccess()
       // An explicit load that succeeded is proof access is back.
       const accessWasRevoked = queueAccessRevoked.value
@@ -783,10 +860,10 @@ export function useReviewProposals() {
       consecutiveQueueRefreshRefusals += 1
       if (consecutiveQueueRefreshRefusals >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
         queueRefreshRefused.value = true
-        // Same reason as the degraded onset below: a standing "up to date
-        // again" contradicts the warning beside it, and its unchanged text
-        // would silence the next real recovery.
-        queueRefreshRecovered.value = false
+        // Same reason as the degraded onset below: a standing recovery
+        // sentence of EITHER kind contradicts the warning beside it, and its
+        // unchanged text would silence the next real recovery.
+        retireQueueRecovery()
       }
     } else {
       // Anything that is not another qualifying list refusal interrupts the
@@ -806,11 +883,14 @@ export function useReviewProposals() {
     consecutiveQueueRefreshFailures += 1
     if (consecutiveQueueRefreshFailures >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
       queueRefreshStale.value = true
-      // A degraded onset retires the previous recovery announcement. Leaving it
-      // standing would both contradict the warning beside it and stop the NEXT
-      // recovery from being announced, because the live region's text would
-      // never change.
-      queueRefreshRecovered.value = false
+      // A degraded onset retires the previous recovery announcement, whichever
+      // disclosure it retracted. Leaving it standing would both contradict the
+      // warning beside it and stop the NEXT recovery from being announced,
+      // because the live region's text would never change. This is the one
+      // retirement that is deliberately not gated on the read kind (#2638): it
+      // is not "the sentence has been up long enough", it is "the sentence is
+      // now false".
+      retireQueueRecovery()
     }
   }
 
@@ -846,42 +926,81 @@ export function useReviewProposals() {
    * fabricate a freshness the surface does not have. Same tick, two different
    * claims, two different pieces of evidence — so #2445's composite semantics
    * for the transient counter are deliberately untouched here.
+   *
+   * `source` is the read this list leg belongs to, and it only decides how long
+   * the sentence raised here lives (the retirement rule at
+   * `backgroundQueueReadCount`); the retraction itself is the same either way.
    */
-  function recordQueueListReadSucceeded(): boolean {
+  function recordQueueListReadSucceeded(source: 'poll' | 'explicit'): boolean {
     consecutiveQueueRefreshRefusals = 0
     if (!queueRefreshRefused.value) return false
     queueRefreshRefused.value = false
     // Retracting a disclosure silently is exactly the #2630 defect: the warning
     // is simply gone on the next render and a reviewer who was not watching
     // that corner is never told the refusal claim no longer holds.
-    queueRefreshRecovered.value = true
+    //
+    // Its OWN sentence, not the queue one (#2638 item 2). All this evidence
+    // supports is that the list request is being answered again: the pin leg
+    // can still fail below and return before `proposals.value = next`, so
+    // "showing current proposals" would be false for up to two more poll
+    // intervals (#2214).
+    raiseQueueRecovery('refused', source)
     return true
   }
 
   /**
-   * The WHOLE composite read landed. `recoveryAlreadyRaised` is passed by the
-   * poll when `recordQueueListReadSucceeded` already announced a recovery
-   * earlier in this same read, so the retirement branch below cannot retire the
-   * sentence its own read just raised.
+   * The WHOLE composite read landed.
+   *
+   * `source` names the read that landed, because only a BACKGROUND one may
+   * retire a standing recovery sentence, and because a sentence raised HERE is
+   * stamped differently depending on it (#2638 item 2 — see the retirement rule
+   * at `backgroundQueueReadCount`). It defaults to 'explicit' so every caller
+   * that is not the poll is safe by construction.
+   *
+   * `recoveryAlreadyRaised` is passed by the poll when
+   * `recordQueueListReadSucceeded` already announced a recovery earlier in this
+   * same read, so the retirement branch below cannot retire the sentence its
+   * own read just raised (#2694). The read counter states the same fact for
+   * every kind of read; both are kept because they answer different questions —
+   * "did THIS read raise it" and "was it raised by an EARLIER read".
    */
-  function recordQueueRefreshSuccess(options?: { recoveryAlreadyRaised?: boolean }) {
+  function recordQueueRefreshSuccess(options?: {
+    source?: 'poll' | 'explicit'
+    recoveryAlreadyRaised?: boolean
+  }) {
+    const source = options?.source ?? 'explicit'
     consecutiveQueueRefreshFailures = 0
     // Idempotent: a no-op when the poll already ran it at the list-success
     // point, and the whole clear when an explicit load lands.
     const recoveryRaisedThisRead =
-      recordQueueListReadSucceeded() || options?.recoveryAlreadyRaised === true
-    // Only a success that ends a VISIBLE degraded state is a recovery. Setting
-    // this on every success would make both skins announce every 15 s.
+      recordQueueListReadSucceeded(source) || options?.recoveryAlreadyRaised === true
+    // The QUEUE sentence is spoken only when a read that COMPLETED ended a
+    // visible degraded state: `proposals.value` was replaced just above, so
+    // "showing current proposals" is provable. Raising it on every success
+    // would make both skins announce every 15 s, and raising it without the
+    // degraded state having been up would announce a recovery from nothing.
+    //
+    // It therefore also overwrites a 'refused' kind raised moments earlier in
+    // this same read, which is the stronger and now-provable statement. When
+    // NO degraded state was up, a refusal cleared by this same completed read
+    // keeps the refusal sentence instead: an under-claim, never a false one —
+    // it says the server is accepting refreshes again and stays silent about
+    // rows the reviewer can see for themselves.
     if (queueRefreshStale.value) {
-      queueRefreshRecovered.value = true
-    } else if (queueRefreshRecovered.value && !recoveryRaisedThisRead) {
-      // The FOLLOWING success retires the sentence, so it lives for about one
-      // poll interval instead of the whole session. An announcement is an
+      raiseQueueRecovery('degraded', source)
+    } else if (
+      source === 'poll' &&
+      !recoveryRaisedThisRead &&
+      queueRecoveryRaisedAtBackgroundRead !== null &&
+      backgroundQueueReadCount > queueRecoveryRaisedAtBackgroundRead
+    ) {
+      // A LATER background success retires the sentence, so it lives for about
+      // one poll interval instead of the whole session. An announcement is an
       // event; leaving its text standing indefinitely turns it into a claim
       // about the present that nothing is re-checking. Clearing it here rather
       // than on a timer keeps the composable free of teardown state, and the
       // clear is silent: a live region going empty announces nothing.
-      queueRefreshRecovered.value = false
+      retireQueueRecovery()
     }
     queueRefreshStale.value = false
   }
@@ -978,6 +1097,11 @@ export function useReviewProposals() {
   async function refreshProposals(): Promise<void> {
     // An explicit load is authoritative and about to replace the list wholesale.
     if (proposalsLoading.value || refreshInFlight) return
+    // This read's ordinal among background reads (#2638 item 2). Counted at the
+    // top, before any await, so a recovery raised anywhere inside this read
+    // belongs to THIS number and only a later read can retire it. Reads that
+    // return here never started, so they cannot age a standing sentence.
+    backgroundQueueReadCount += 1
     // Snapshot the load counter rather than incrementing it: bumping it here
     // would make an in-flight `loadProposals` discard its own result AND skip
     // the `proposalsLoading = false` reset in its finally block, wedging the
@@ -1043,7 +1167,7 @@ export function useReviewProposals() {
       // the refusal claim is falsified NOW -- before the pin leg gets a chance
       // to return early and strand it (round-2 review finding). The transient
       // accounting deliberately stays below, on the composite outcome.
-      const listRecoveryRaised = recordQueueListReadSucceeded()
+      const listRecoveryRaised = recordQueueListReadSucceeded('poll')
       const next = [...loadedProposals]
       let pinUnavailable = false
       let pinMalformed = false
@@ -1133,7 +1257,7 @@ export function useReviewProposals() {
         }
       }
       proposals.value = next
-      recordQueueRefreshSuccess({ recoveryAlreadyRaised: listRecoveryRaised })
+      recordQueueRefreshSuccess({ source: 'poll', recoveryAlreadyRaised: listRecoveryRaised })
       // The queue moved under a reviewer who did not ask for it. Surfaces use
       // this to notice that the row they were rendering has just been dropped
       // or reordered away, instead of silently sliding onto another one
@@ -1378,6 +1502,7 @@ export function useReviewProposals() {
     queueRefreshStale,
     queueRefreshRefused,
     queueRefreshRecovered,
+    queueRefreshRecoveredKind,
     availableBoards,
     loadingBoards,
     boardFilterInput,

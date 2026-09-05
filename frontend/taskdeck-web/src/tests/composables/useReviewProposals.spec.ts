@@ -2409,6 +2409,126 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
+    it('is not retired by an explicit load inside the poll interval (#2638 item 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The reviewer's already-clicked Approve completes a few hundred
+      // milliseconds after the recovering poll and reloads the queue. Every
+      // explicit reload took the same success path, so it emptied the region
+      // before a polite live region had any chance to speak the sentence --
+      // the #2638 defect. The load itself is unchanged: the fresh queue lands.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'after-decision' })])
+      await rp.loadProposals()
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['after-decision'])
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      expect(rp.queueRefreshRecoveredKind.value).toBe('degraded')
+
+      // Nor does a second one age it: explicit loads never retire, however many
+      // of them land inside the interval.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'and-again' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The next BACKGROUND success is what retires it, exactly as #2630
+      // intended -- about one poll interval of life.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+      rp.stopQueueRefresh()
+    })
+
+    it('is not retired by an explicit load that follows a FAILED background tick (#2638 item 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // A later background read alone is not the rule: that read has to SUCCEED
+      // and be the one recording the success. This tick fails (below the
+      // threshold, so nothing is disclosed), and the explicit load that follows
+      // is still an explicit load.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('gives an EXPLICIT-load recovery a full interval before a poll can retire it (#2638 round 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      // The post-decision reload is the read that ends the degraded state here,
+      // and it lands BETWEEN ticks -- 14.9 s into a 15 s cycle in the worst
+      // case. Stamping that raise with the ordinal already on the counter names
+      // a read that has finished, so the tick 100 ms later would retire the
+      // sentence: the same defect this rule exists to close, with the roles
+      // swapped (round-2 review finding).
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      expect(rp.queueRefreshRecoveredKind.value).toBe('degraded')
+
+      // The next poll success is the one the sentence lives THROUGH.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'first-poll' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The one after retires it, so it is bounded exactly as a poll-raised
+      // sentence is -- at least one full interval, never the session.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'second-poll' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+      rp.stopQueueRefresh()
+    })
+
+    it('still retires an explicit-load recovery immediately at a degraded onset (#2638 round 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The extra interval of life is about the sentence being OLD. An onset
+      // makes it FALSE, and that retirement stays immediate for either stamp,
+      // or the next real recovery would be silent.
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
     it('clears at the next degraded onset so a second recovery announces again', async () => {
       vi.useFakeTimers()
       mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
@@ -2558,6 +2678,24 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
+    it('announces the retraction with the refusal sentence, not the queue sentence (#2638 item 2)', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The retraction is raised by the LIST leg, and the composite success
+      // that follows it in the same read must not swap the sentence for the
+      // queue one: this signal's job is to retract the refusal claim, and the
+      // surfaces say only that refreshes are being accepted again.
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      expect(rp.queueRefreshRecoveredKind.value).toBe('refused')
+      rp.stopQueueRefresh()
+    })
+
     it('leaves the 403 authority path to its own owner', async () => {
       const rp = await startedWithCurrentQueue()
 
@@ -2630,6 +2768,50 @@ describe('useReviewProposals', () => {
       expect(rp.queueRefreshStale.value).toBe(true)
       // The degraded onset retires the recovery sentence, as it always has.
       expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('says nothing about the queue when the pin leg strands the composite read (#2638 item 2)', async () => {
+      // The copy defect PR #2694's round-2 verification recorded on #2214. On a
+      // list-success/pin-fail tick the composite read returns before
+      // `proposals.value = next`, so the rows on screen are exactly the ones
+      // that were there before -- and the shared #2630 sentence's second clause
+      // ("Showing current proposals") stood for up to two further poll
+      // intervals, because the next tick's list success returns early too and
+      // only the degraded onset after it retires the sentence.
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 404 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      // The list read answers again; only the pinned row's by-id read is down.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      // The kind is what the surfaces read to pick the sentence, and this is
+      // the tick that proves why the two cannot share one: the queue was NOT
+      // replaced.
+      expect(rp.queueRefreshRecoveredKind.value).toBe('refused')
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-pinned'])
+
+      // A LATER background success retires it, the same rule the queue sentence
+      // follows. This tick's list carries the pinned row, so there is no by-id
+      // leg and the composite read completes.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
       rp.stopQueueRefresh()
     })
 

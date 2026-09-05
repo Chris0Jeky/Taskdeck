@@ -49,6 +49,7 @@ export default {
     },
     refused: {
       body: 'Questa coda di revisione ha smesso di aggiornarsi. Il server sta rifiutando la richiesta di aggiornamento invece di fallire temporaneamente, quindi queste sono le ultime proposte che ha confermato. Ricarica la pagina oppure controlla il filtro bacheca nella barra degli indirizzi.',
+      recovered: 'Il server accetta di nuovo gli aggiornamenti di questa coda di revisione.',
     },
   },
 
