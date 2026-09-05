@@ -2571,7 +2571,7 @@ async function onClearBoardScope() {
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        This review queue may be out of date. Showing the last available proposals while Taskdeck retries.
+        {{ $t('review.queue.degraded.body') }}
       </p>
       <div
         v-if="revisionCount > 0"
@@ -2786,7 +2786,7 @@ async function onClearBoardScope() {
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        This review queue may be out of date. Showing the last available proposals while Taskdeck retries.
+        {{ $t('review.queue.degraded.body') }}
       </p>
       <template v-if="queueAccessRevoked">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>

@@ -42,6 +42,13 @@ export default {
     },
   },
 
+  queue: {
+    degraded: {
+      body: 'Questa coda di revisione potrebbe non essere aggiornata. Vengono mostrate le ultime proposte disponibili mentre Taskdeck riprova.',
+      recovered: 'Questa coda di revisione è di nuovo aggiornata. Vengono mostrate le proposte correnti.',
+    },
+  },
+
   // GH-1307 -- traduzione automatica (machine-translated), in attesa di revisione madrelingua.
   batchExecute: {
     request: 'Applica {count} approvata | Applica {count} approvate',

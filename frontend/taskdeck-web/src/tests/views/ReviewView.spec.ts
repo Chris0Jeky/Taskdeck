@@ -8,6 +8,7 @@ import {
   REVIEW_QUEUE_REFRESH_MS,
 } from '../../composables/useReviewProposals'
 import { resetProposalDisplayNamesForTests } from '../../composables/useProposalDisplayNames'
+import enReview from '../../locales/en/review'
 
 const vueHelpers = vi.hoisted(async () => {
   const { computed, ref, shallowRef } = await import('vue')
@@ -381,7 +382,7 @@ describe('ReviewView', () => {
       expect(stale.exists()).toBe(true)
       expect(stale.attributes('role')).toBe('status')
       expect(stale.attributes('aria-live')).toBe('polite')
-      expect(stale.text()).toContain('may be out of date')
+      expect(stale.text()).toBe(enReview.queue.degraded.body)
       expect(wrapper.find('[data-testid="review-queue-live"]').text()).toContain(
         '1 proposal awaiting review',
       )

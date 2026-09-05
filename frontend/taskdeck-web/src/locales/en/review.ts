@@ -72,6 +72,26 @@ export default {
     },
   },
 
+  // ── Background-refresh disclosure, shared by BOTH skins ───────────────────
+  //
+  // `degraded.body` is rendered by `views/paper/PaperReviewView.vue` (the
+  // active-proposal column AND the empty column) and by
+  // `views/LegacyReviewView.vue`. It was hardcoded English in all three places
+  // until #2214; one key keeps the two skins from drifting (ADR-0038 / #1124).
+  //
+  // `degraded.recovered` is the matching RECOVERY sentence. Clearing the warning
+  // is silent for a screen-reader user, so both skins keep a mounted sr-only
+  // live region that stays empty until the degraded state is cleared by a
+  // successful read. Translators: keep it in the same register as `body`, and
+  // keep it a statement of the CURRENT state — the surface does not promise that
+  // any particular proposal arrived, only that the queue is trustworthy again.
+  queue: {
+    degraded: {
+      body: 'This review queue may be out of date. Showing the last available proposals while Taskdeck retries.',
+      recovered: 'This review queue is up to date again. Showing current proposals.',
+    },
+  },
+
   batchExecute: {
     request: 'Apply {count} approved | Apply {count} approved',
     requestLabel: 'Apply {count} approved proposal | Apply {count} approved proposals',

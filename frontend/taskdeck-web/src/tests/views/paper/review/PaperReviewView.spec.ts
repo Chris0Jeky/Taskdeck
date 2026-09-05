@@ -11,6 +11,7 @@ import {
 } from '../../../../composables/useReviewProposals'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
+import enReview from '../../../../locales/en/review'
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
@@ -3204,7 +3205,7 @@ describe('PaperReviewView', () => {
       expect(stale.exists()).toBe(true)
       expect(stale.attributes('role')).toBe('status')
       expect(stale.attributes('aria-live')).toBe('polite')
-      expect(stale.text()).toContain('may be out of date')
+      expect(stale.text()).toBe(enReview.queue.degraded.body)
       expect(wrapper.text()).toContain('Split "dark mode" into 3 cards')
       const root = wrapper.get('[data-testid="paper-review-view"]')
       const queue = wrapper.get('[data-testid="paper-review-queue-rail"]')
@@ -3239,7 +3240,7 @@ describe('PaperReviewView', () => {
 
       const stale = wrapper.find('[data-testid="paper-review-queue-stale"]')
       expect(stale.exists()).toBe(true)
-      expect(stale.text()).toContain('may be out of date')
+      expect(stale.text()).toBe(enReview.queue.degraded.body)
 
       const root = wrapper.get('[data-testid="paper-review-view"]')
       const queue = wrapper.get('[data-testid="paper-review-queue-rail"]')
