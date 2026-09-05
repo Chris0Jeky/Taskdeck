@@ -4,8 +4,10 @@ import { test } from 'node:test'
 
 const requiredWorkflowUrl = new URL('../../../.github/workflows/ci-required.yml', import.meta.url)
 
-// A push run on the default branch must never be cancelled by the next merge:
-// the tip's own required run is the landed-commit evidence (#2582).
+// An in-progress push run on the default branch must not be cancelled by the next merge:
+// the run in flight completes and the newest tip runs next (GitHub keeps one in-progress
+// plus one pending run per group, so intermediate pending main runs are still superseded).
+// The tip's own required run is the landed-commit evidence (#2582).
 const EXPECTED_GROUP = '${{ github.workflow }}-${{ github.ref }}'
 const EXPECTED_CANCEL_IN_PROGRESS = "${{ github.ref != 'refs/heads/main' }}"
 
@@ -57,7 +59,7 @@ test('the top-level concurrency group stays per-workflow-and-ref', async () => {
   assert.equal(
     topLevel.entries.get('group'),
     EXPECTED_GROUP,
-    'ci-required.yml must keep one concurrency group per ref so main runs queue instead of running in parallel',
+    'ci-required.yml must keep one concurrency group per ref so at most one main run is in flight at a time (#2582)',
   )
 })
 
