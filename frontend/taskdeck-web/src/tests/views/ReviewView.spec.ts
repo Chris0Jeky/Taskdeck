@@ -504,7 +504,14 @@ describe('ReviewView', () => {
 
       expect(wrapper.find('[data-testid="review-queue-stale"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="review-queue-refused"]').text()).toBe('')
+      // The refusal's OWN retraction sentence (#2638 item 2). The queue
+      // sentence would add "Showing current proposals", which this signal does
+      // not prove: it is raised by the list leg, on a tick whose composite read
+      // can still bail before the rows are replaced.
       expect(wrapper.find('[data-testid="review-queue-recovered"]').text()).toBe(
+        enReview.queue.refused.recovered,
+      )
+      expect(wrapper.find('[data-testid="review-queue-recovered"]').text()).not.toBe(
         enReview.queue.degraded.recovered,
       )
     } finally {
