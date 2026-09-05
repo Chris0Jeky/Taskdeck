@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
@@ -15,6 +15,7 @@ const boardStore = useBoardStore()
 
 const newBoardName = ref('')
 const showCreateForm = ref(false)
+const retryButton = ref<HTMLButtonElement | null>(null)
 
 /**
  * Date formatting goes through `Intl` against the ACTIVE locale, not through a
@@ -84,6 +85,21 @@ onMounted(() => {
  */
 async function retryLoad() {
   await loadBoards({ force: true })
+
+  // Activating Retry unmounts the button that was just activated: the loading
+  // branch replaces the whole error block, and on a failed retry the error
+  // block is rebuilt with a BRAND NEW button, leaving focus fallen back to
+  // <body>. A keyboard or screen-reader user then has to tab from the top of
+  // the page to reach the control they just used (#2689 round-2 finding 3).
+  //
+  // Restored only here, never after the mount read: this runs on a user
+  // action, so moving focus is finishing what the user started rather than
+  // stealing it. `retryButton` is null when the retry SUCCEEDED — the error
+  // block is gone — so the optional call is also the "only on failure" guard.
+  // The alert paragraph is a new node on each failure, so it is announced
+  // again independently of this.
+  await nextTick()
+  retryButton.value?.focus()
 }
 
 async function createBoard() {
@@ -175,6 +191,7 @@ function goToBoard(id: string) {
           {{ boardStore.error }}
         </p>
         <button
+          ref="retryButton"
           type="button"
           class="paper-boards__retry"
           data-action="retry-board-load"

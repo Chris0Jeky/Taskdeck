@@ -216,6 +216,52 @@ describe('BoardsListView', () => {
       await flushPromises()
     })
 
+    // #2689 round-2 finding 3. Activating Retry unmounts the focused button
+    // (the loading branch replaces the error block) and a failed retry builds a
+    // NEW one, so focus fell back to <body> and a keyboard or screen-reader
+    // user had to tab from the top of the page to retry again. Attached to the
+    // document because focus and `document.activeElement` are meaningless for a
+    // detached tree.
+    it('returns focus to the Retry button when the retry fails', async () => {
+      mockBoardStore.error = 'Failed to load boards'
+
+      const wrapper = mount(BoardsListView, { attachTo: document.body })
+      await waitForUi()
+
+      const firstButton = wrapper.find('[data-action="retry-board-load"]')
+        .element as HTMLButtonElement
+      firstButton.focus()
+      expect(document.activeElement).toBe(firstButton)
+
+      let failRead!: () => void
+      mockBoardStore.fetchBoards.mockImplementation(() => {
+        mockBoardStore.loading = true
+        return new Promise<void>((_resolve, reject) => {
+          failRead = () => {
+            mockBoardStore.error = 'Failed to load boards'
+            mockBoardStore.loading = false
+            reject(new Error('still failing'))
+          }
+        })
+      })
+
+      await wrapper.find('[data-action="retry-board-load"]').trigger('click')
+
+      // In flight the error block is gone, so the focused element went with it.
+      expect(wrapper.find('[data-action="retry-board-load"]').exists()).toBe(false)
+      expect(document.activeElement).toBe(document.body)
+
+      failRead()
+      await flushPromises()
+
+      const rebuiltButton = wrapper.find('[data-action="retry-board-load"]')
+        .element as HTMLButtonElement
+      expect(rebuiltButton).not.toBe(firstButton)
+      expect(document.activeElement).toBe(rebuiltButton)
+
+      wrapper.unmount()
+    })
+
     it('shows the alert again, still retryable, when the retry also fails', async () => {
       mockBoardStore.error = 'Failed to load boards'
 
