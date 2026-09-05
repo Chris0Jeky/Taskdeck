@@ -7,12 +7,14 @@ import boardViewSource from '../../views/BoardView.vue?raw'
 import escapeStackSource from '../../composables/useEscapeStack.ts?raw'
 import reviewKeymapSource from '../../composables/useReviewKeymap.ts?raw'
 import {
+  bindingAppliesToSkin,
   LEGACY_SHORTCUT_GROUPS,
   PAPER_SHORTCUT_BINDINGS,
   PAPER_SHORTCUT_GROUPS,
   SHORTCUT_HANDLER_CONTRACTS,
   type ShortcutBinding,
   type ShortcutHandlerOwner,
+  type ShortcutSkin,
 } from '../../utils/keyboardShortcuts'
 
 /**
@@ -119,6 +121,33 @@ describe('keystroke ledger truth', () => {
 
     // The one row with no ledger binding still has a real handler behind it.
     expect(escapeStackSource).toContain("event.key !== 'Escape'")
+  })
+
+  it('renders a skin-scoped row on that skin surface and nowhere else', () => {
+    wrapper = mount(ShellKeyboardHelp, { props: { visible: true }, attachTo: document.body })
+    const legacyIds = new Set(renderedShortcutIds())
+
+    wrapper.unmount()
+    document.body.innerHTML = ''
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const paperIds = new Set(renderedShortcutIds())
+
+    const renderedBySkin: Record<ShortcutSkin, Set<string | undefined>> = {
+      legacy: legacyIds,
+      paper: paperIds,
+    }
+
+    const scoped = PAPER_SHORTCUT_BINDINGS.filter((binding) => binding.skins !== undefined)
+    // A scoping mechanism nothing uses would pass vacuously.
+    expect(scoped.length).toBeGreaterThan(0)
+
+    for (const binding of scoped) {
+      for (const skin of ['paper', 'legacy'] as const) {
+        const claimed = bindingAppliesToSkin(binding, skin)
+        expect({ id: binding.id, skin, rendered: renderedBySkin[skin].has(binding.id) })
+          .toEqual({ id: binding.id, skin, rendered: claimed })
+      }
+    }
   })
 
   it('gives h to the workspace Home navigation and to nothing on the board', () => {

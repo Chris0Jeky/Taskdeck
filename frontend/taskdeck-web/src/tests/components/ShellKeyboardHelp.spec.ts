@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShellKeyboardHelp from '../../components/shell/ShellKeyboardHelp.vue'
-import { LEGACY_SHORTCUT_GROUPS, PAPER_SHORTCUT_GROUPS } from '../../utils/keyboardShortcuts'
+import {
+  LEGACY_SHORTCUT_GROUPS,
+  PAPER_SHORTCUT_BINDINGS,
+  PAPER_SHORTCUT_GROUPS,
+} from '../../utils/keyboardShortcuts'
 
 function mountHelp(visible: boolean) {
   return mount(ShellKeyboardHelp, {
@@ -52,6 +56,39 @@ describe('ShellKeyboardHelp', () => {
     const renderedIds = renderedRows().map((row) => row.id)
 
     expect(renderedIds).toEqual([...ledgerIds, 'keyboard-help', 'escape'])
+    wrapper.unmount()
+  })
+
+  it('drops the review-keymap rows that only the Paper review surface implements', () => {
+    const wrapper = mountHelp(true)
+    const renderedIds = renderedRows().map((row) => row.id)
+
+    // `useReviewKeymap` is installed by PaperReviewView alone; LegacyReviewView
+    // has one element-scoped @keydown doing ArrowDown/ArrowUp. This map used to
+    // advertise all four anyway (#2007 AC1).
+    const reviewKeymapIds = PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.handlerOwner === 'review-keymap')
+      .map((binding) => binding.id)
+
+    expect(reviewKeymapIds).toEqual([
+      'review-apply',
+      'review-reject',
+      'review-request-edit',
+      'review-provenance',
+    ])
+    for (const id of reviewKeymapIds) {
+      expect(renderedIds).not.toContain(id)
+    }
+
+    const text = bodyText()
+    expect(text).not.toContain('Apply / commit decision')
+    expect(text).not.toContain('Reject / dismiss')
+    expect(text).not.toContain('Request edit')
+    expect(text).not.toContain('Provenance pane')
+
+    // The group survives because quick-capture is an app-shell row that runs in
+    // both skins, so the section is not left empty.
+    expect(renderedIds).toContain('quick-capture')
     wrapper.unmount()
   })
 

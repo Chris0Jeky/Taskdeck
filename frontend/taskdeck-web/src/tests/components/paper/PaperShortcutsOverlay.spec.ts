@@ -193,10 +193,13 @@ describe('PaperShortcutsOverlay', () => {
 
     const rowStyle = window.getComputedStyle(row)
     expect(rowStyle.display).toBe('grid')
-    // The regression was a fixed `56px` first track: `Ctrl+Shift+C` is wider
-    // than that and overran onto the label. No fixed track may return.
-    expect(rowStyle.gridTemplateColumns).toBe('max-content minmax(0, 1fr) auto')
-    expect(rowStyle.gridTemplateColumns).not.toMatch(/\d+px/)
+    // The regression was a hard `56px` first track that `Ctrl+Shift+C` overran
+    // onto the label. 56px survives only as a floor, because each row is its
+    // own grid: a bare `max-content` would size the track per row and scatter
+    // the label x-position down a group. Accepted consequence: a chip wider
+    // than the floor grows its own row and only that row.
+    expect(rowStyle.gridTemplateColumns).toBe('minmax(56px, max-content) minmax(0, 1fr) auto')
+    expect(rowStyle.gridTemplateColumns).not.toMatch(/(^|\s)\d+px(\s|$)/)
 
     // The label may shrink below its content width and wrap, so a content-sized
     // kbd column cannot push the row past the group.
@@ -212,7 +215,8 @@ describe('PaperShortcutsOverlay', () => {
 
     // Honest limit: happy-dom resolves the cascade but performs no layout, so
     // this asserts the declared track, not a measured pixel width. Nothing in
-    // the unit suite can observe the overrun itself.
+    // the unit suite can observe the overrun itself, and nothing here can see
+    // whether labels line up down a group either. Both are browser-only.
   })
 
   it('emits close when the close button is clicked', async () => {

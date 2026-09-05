@@ -29,9 +29,11 @@ type ShortcutBindingBase = Readonly<{
   handlerOwner: ShortcutHandlerOwner
   /**
    * The skins whose help surface may advertise this row. Absent means every
-   * skin, which is the case for all but the handful of bindings whose handler
-   * is itself gated on the skin (`f` runs only when Paper is off, because the
-   * Legacy filter panel is the control it toggles).
+   * skin. A row names skins when its handler is reachable in only some of
+   * them, which is true in both directions today: `f` runs only when Paper is
+   * off, because the Legacy filter panel is the control it toggles, and the
+   * four review-keymap rows run only when Paper is on, because
+   * `useReviewKeymap` is installed by `PaperReviewView` alone.
    */
   skins?: readonly ShortcutSkin[]
 }>
@@ -278,6 +280,11 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     sequence: [{ key: 'c', mod: true, shift: true }],
     action: { type: 'quick-capture' },
   },
+  // The review keymap is installed by `PaperReviewView.vue` alone.
+  // `LegacyReviewView.vue` has one element-scoped `@keydown` handling only
+  // ArrowDown/ArrowUp, so the Legacy `?` map used to advertise four keys that
+  // no Legacy runtime implements (#2007 AC1, and the 2026-08-29 MEDIUM on
+  // #1968). All four are scoped to Paper.
   {
     id: 'review-apply',
     descriptor: '\u23ce',
@@ -285,6 +292,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     group: 'Capture & Review',
     handlerOwner: 'review-keymap',
     handlerEvidence: "case 'Enter':",
+    skins: ['paper'],
   },
   {
     id: 'review-reject',
@@ -293,6 +301,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     group: 'Capture & Review',
     handlerOwner: 'review-keymap',
     handlerEvidence: "case 'Backspace':",
+    skins: ['paper'],
   },
   {
     id: 'review-request-edit',
@@ -301,6 +310,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     group: 'Capture & Review',
     handlerOwner: 'review-keymap',
     handlerEvidence: "if (k === 'e')",
+    skins: ['paper'],
   },
   {
     id: 'review-provenance',
@@ -310,6 +320,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     group: 'Capture & Review',
     handlerOwner: 'review-keymap',
     handlerEvidence: "if (k === 'p')",
+    skins: ['paper'],
   },
   {
     id: 'board-next-card',

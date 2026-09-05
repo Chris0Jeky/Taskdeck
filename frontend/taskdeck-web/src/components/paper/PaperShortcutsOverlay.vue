@@ -179,14 +179,17 @@ function onBackdropClick() {
 }
 
 /*
- * The kbd track is content-sized, not a fixed 56px: `Ctrl+Shift+C` is wider
- * than that and used to overrun the track onto the label (#2007 AC5). The
- * label column takes `minmax(0, 1fr)` so it can shrink below its content width
- * and wrap instead of pushing the row wide.
+ * The kbd track was a fixed 56px, which `Ctrl+Shift+C` overran onto the label
+ * (#2007 AC5). Each row is its own grid, so a bare `max-content` would size the
+ * track per row and break the shared label x-position down a group. The 56px
+ * floor keeps every chip that already fitted aligned exactly where it was, and
+ * only a chip wider than the floor grows, and only in its own row. The label
+ * column takes `minmax(0, 1fr)` so it shrinks and wraps instead of pushing the
+ * row wide.
  */
 .paper-shortcuts-overlay__row {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) auto;
+  grid-template-columns: minmax(56px, max-content) minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 5px 0;
