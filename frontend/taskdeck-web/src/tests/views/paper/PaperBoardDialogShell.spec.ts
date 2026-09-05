@@ -101,6 +101,34 @@ describe('PaperBoardDialogShell', () => {
     wrapper.unmount()
   })
 
+  it('writes both viewport custom properties for a browser with no dvh support', () => {
+    // The browser class issue #2180 exposed: VisualViewport API present, CSS
+    // `dvh` absent. Nothing about `dvh` is visible to this component, so it
+    // publishes both properties either way — and that is exactly why the
+    // stylesheet has to consume BOTH outside its `@supports (height: 100dvh)`
+    // guard. The shipped bug was the asymmetry: `top` took the offset
+    // unconditionally while `height` was upgraded only inside the guard, so
+    // this class of browser was pushed down by `offsetTop` while staying a full
+    // layout viewport tall and overflowed the screen by exactly that offset.
+    //
+    // The CSS half of the invariant lives in
+    // `src/tests/config/DialogVisualViewportCss.spec.ts`: the DOM environment
+    // vitest runs (happy-dom) evaluates neither feature queries nor viewport
+    // units, so no mounted spec can distinguish guarded from unguarded.
+    installVisualViewport(420, 120)
+    const wrapper = mountShell()
+    const backdrop = wrapper.get('[data-testid="paper-dialog-shell"]').element as HTMLElement
+
+    expect(
+      backdrop.style.getPropertyValue('--paper-board-dialog-visual-viewport-height'),
+    ).toBe('420px')
+    expect(
+      backdrop.style.getPropertyValue('--paper-board-dialog-visual-viewport-offset-top'),
+    ).toBe('120px')
+
+    wrapper.unmount()
+  })
+
   it('keeps the dynamic-viewport CSS fallback when VisualViewport is unavailable', () => {
     Object.defineProperty(window, 'visualViewport', { configurable: true, value: undefined })
     const wrapper = mountShell()
