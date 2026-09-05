@@ -54,11 +54,13 @@ export const SANITIZER_CALLS = new Set([
 
 // Rule 2 accepts a narrower set: a call that must generalize or redact the exception text it is
 // handed. Rule 1's `PublicFailureMessage` / `SafeExceptionDescription` helpers take a `Result` or
-// an `Exception`, not raw exception text, so they are not listed here.
+// an `Exception`, not raw exception text, so they are not listed here. Named as `Type.Member` pairs
+// and matched as such (a namespace-qualified receiver is allowed), so an unrelated receiver that
+// happens to expose a `Redact` method does not inherit the reviewed redactor's guarantees.
 export const EXCEPTION_TEXT_SANITIZERS = new Set([
-  'Redact',
-  'SummarizeException',
-  'SanitizeLlmFailureMessage',
+  'SensitiveDataRedactor.Redact',
+  'SensitiveDataRedactor.SummarizeException',
+  'SensitiveDataRedactor.SanitizeLlmFailureMessage',
 ])
 
 // Log sanitizer members that rule 2 accepts around exception text, named one by one rather than by
@@ -312,15 +314,21 @@ function wrappedBySanitizer(callees) {
   return callees.some((callee) => SANITIZER_CALLS.has(lastSegment(callee)))
 }
 
+/**
+ * Match the whole `Type.Member` pair, allowing a namespace-qualified receiver, so neither an
+ * unlisted member of an accepted type nor an accepted member name on an unrelated receiver is
+ * excused by half of the pair.
+ */
+function matchesQualifiedMember(callee, member) {
+  return callee === member || callee.endsWith(`.${member}`)
+}
+
 function wrappedByExceptionTextSanitizer(callees) {
-  return callees.some((callee) => {
-    if (EXCEPTION_TEXT_SANITIZERS.has(lastSegment(callee))) return true
-    // Match the whole `Type.Member` pair, allowing a namespace-qualified receiver, so an unlisted
-    // member of an accepted type is not excused by the type name alone.
-    return [...LOG_SANITIZER_MEMBERS].some(
-      (member) => callee === member || callee.endsWith(`.${member}`),
-    )
-  })
+  return callees.some((callee) =>
+    [...EXCEPTION_TEXT_SANITIZERS, ...LOG_SANITIZER_MEMBERS].some((member) =>
+      matchesQualifiedMember(callee, member),
+    ),
+  )
 }
 
 function lineNumberAt(text, index) {
@@ -451,6 +459,31 @@ function ternaryColonIndex(scanText, questionIndex) {
 }
 
 /**
+ * Drop any complete braceless statement header (`if (...)`, `while (...)`, ...) that statement
+ * grouping folded in ahead of the conditional expression. `if (!result.IsSuccess)` followed by a
+ * braceless `return cond ? a : b;` is one grouped statement, and the guard's own `!` is not the
+ * conditional expression's polarity — leaving it in would drop the exemption for the reviewed shape.
+ */
+function afterStatementHeaders(condition) {
+  const header = /\b(?:if|while|foreach|for|switch)\s*\(/g
+  let cut = 0
+  let match
+  while ((match = header.exec(condition)) !== null) {
+    let depth = 0
+    let cursor = header.lastIndex - 1
+    for (; cursor < condition.length; cursor += 1) {
+      if (condition[cursor] === '(') depth += 1
+      else if (condition[cursor] === ')' && --depth === 0) break
+    }
+    // An unbalanced header is not a complete one; leave the rest of the text alone.
+    if (depth !== 0) break
+    cut = cursor + 1
+    header.lastIndex = cut
+  }
+  return condition.slice(cut)
+}
+
+/**
  * The receiver of a `.ErrorMessage` / `?.ErrorMessage` read: `result` in both `result.ErrorMessage`
  * and `result?.ErrorMessage`. Empty when the receiver is not a plain identifier chain.
  */
@@ -481,7 +514,9 @@ function isReviewedGuardedTernaryArm(scanText, occurrenceIndex) {
   const questionIndex = enclosingTernaryQuestion(scanText, occurrenceIndex)
   if (questionIndex === null) return false
 
-  const condition = scanText.slice(subExpressionStart(scanText, questionIndex), questionIndex)
+  const condition = afterStatementHeaders(
+    scanText.slice(subExpressionStart(scanText, questionIndex), questionIndex),
+  )
   if (!condition.includes('ErrorCodes.UnexpectedError')) return false
 
   const errorCodeRead = new RegExp(`\\b${escapeRegExp(receiver)}\\s*\\??\\s*\\.\\s*ErrorCode\\b`)
@@ -489,10 +524,12 @@ function isReviewedGuardedTernaryArm(scanText, occurrenceIndex) {
 
   // Condition polarity: the reviewed shape asserts the code IS UnexpectedError, so the curated
   // message runs on it. A negated condition (`!string.Equals(...)`, `!=`, `is not`) inverts that
-  // and hands the raw message to exactly the code that must not expose it. Any negation anywhere
-  // in the condition drops the exemption; this errs toward flagging rather than reasoning about
+  // and hands the raw message to exactly the code that must not expose it. The inverted-literal
+  // spellings `== false` and `is false` say the same thing without a `!`, so they drop the
+  // exemption too (`!= true` and `is not true` already carry a `!` or an `is not`). Any negation
+  // anywhere in the condition drops it; this errs toward flagging rather than reasoning about
   // which operand the negation applies to.
-  if (/!|\bis\s+not\b/.test(condition)) return false
+  if (/!|\bis\s+not\b|==\s*false\b|\bis\s+false\b/.test(condition)) return false
 
   // Arm polarity decides everything: the reviewed shape puts the curated message in the TRUE arm
   // (taken when the code IS UnexpectedError) and the raw message in the FALSE arm. The inverted
@@ -521,12 +558,19 @@ function rawErrorMessageOccurrences(scanText) {
 }
 
 /**
- * True when the initializer that opens a local carries the message TEXT: its right-hand side is the
- * raw read itself, or a concatenation / interpolation that contains it. A right-hand side that only
- * INSPECTS the message yields something else — `x is null ? 0 : 1` and `x == null` yield a bool,
- * `x.Length` an int, and a call consumes the text and returns whatever it decides to return — so it
- * does not taint the local. Narrowing here is what keeps a later outbound use of such a local from
- * failing CI with a message about a leak that cannot happen.
+ * True when the initializer that opens a local carries the message TEXT. The default is that it
+ * DOES: the raw read itself, a null-coalescing fallback (`?? "unknown"`), a string-returning member
+ * call (`.Trim()`, `.Substring(..)`, `.ToUpperInvariant()`), a concatenation, an interpolation and a
+ * `string.Concat` / `Join` / `Format` argument all preserve the text, and an unrecognised call is
+ * assumed to as well, which errs toward flagging.
+ *
+ * An occurrence carries nothing only when it is consumed by an inspection rather than kept:
+ *   (a) it is an operand of a comparison or pattern test (`== null`, `!=`, `<`, `is null`), or
+ *   (b) it is followed by a property read that measures the text rather than returning it
+ *       (`.Length`, `.Count`).
+ * A whole initializer that is a boolean or int expression built from such reads therefore taints
+ * nothing, because every one of its occurrences is excluded. Narrowing here is what keeps a later
+ * outbound use of such a local from failing CI with a message about a leak that cannot happen.
  */
 function initializerCarriesRawText(scanText, equalsIndex, occurrences) {
   const semicolon = scanText.indexOf(';', equalsIndex)
@@ -535,14 +579,12 @@ function initializerCarriesRawText(scanText, equalsIndex, occurrences) {
   return occurrences.some((occurrence) => {
     if (occurrence.index < equalsIndex || occurrence.index >= rightHandEnd) return false
 
-    // An argument handed to a call is consumed by that call, not returned as the initializer value.
-    if (enclosingCallees(scanText, occurrence.index).length > 0) return false
-
     const after = scanText.slice(occurrence.end, rightHandEnd)
-    // A further member access, indexer or invocation derives something else from the text.
-    if (/^\s*[.?[(]/.test(after)) return false
-    // A comparison or a pattern test yields a bool.
-    if (/^\s*(?:[=!<>]=|[<>]|\bis\b)/.test(after)) return false
+    // (b) A property read that yields a measurement of the text, not the text.
+    if (/^\s*\??\s*\.\s*(?:Length|Count)\b/.test(after)) return false
+    // (a) A comparison or a pattern test yields a bool. `<=` / `>=` / `<` / `>` are comparisons;
+    // `==` and `!=` are equality. `??` is not a comparison and is handled by the default.
+    if (/^\s*(?:[=!<>]=|[<>](?!=)|\bis\b)/.test(after)) return false
 
     const before = scanText.slice(equalsIndex + 1, occurrence.index)
     if (/(?:[=!<>]=|[<>])\s*$/.test(before)) return false
