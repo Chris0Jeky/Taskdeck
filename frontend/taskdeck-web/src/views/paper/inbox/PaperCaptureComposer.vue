@@ -236,14 +236,14 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
     <div class="paper-composer__body">
       <div class="paper-composer__main">
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Body</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.bodyLabel') }}</span>
           <textarea
             ref="bodyRef"
             v-model="body"
             class="paper-composer__textarea"
             rows="6"
-            aria-label="Capture body"
-            placeholder="The thought, in plain language…"
+            :aria-label="t('inbox.composer.bodyAria')"
+            :placeholder="t('inbox.composer.bodyPlaceholder')"
             :disabled="inputsDisabled"
             :aria-invalid="invalid ? 'true' : undefined"
             :aria-describedby="errorId ?? undefined"
@@ -294,17 +294,17 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </p>
 
         <p class="paper-composer__drop tk-meta" data-testid="paper-composer-attachments-unavailable">
-          Attachments are not saved with captures yet.
+          {{ t('inbox.composer.attachmentsUnavailable') }}
         </p>
       </div>
 
       <aside class="paper-composer__aside">
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Board</span>
+          <span class="tk-eyebrow">{{ t('inbox.boardPicker.label') }}</span>
           <select
             v-model="boardId"
             class="paper-composer__select"
-            aria-label="Board picker"
+            :aria-label="t('inbox.boardPicker.composerAria')"
             :disabled="inputsDisabled"
           >
             <option :value="null">{{ t('inbox.boardPicker.noBoardOption') }}</option>
@@ -324,13 +324,13 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </label>
 
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Labels</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.labelsLabel') }}</span>
           <input
             v-model="labelInput"
             class="paper-composer__input"
             type="text"
-            aria-label="Add label"
-            placeholder="add and press Enter"
+            :aria-label="t('inbox.composer.labelsAria')"
+            :placeholder="t('inbox.composer.labelsPlaceholder')"
             :disabled="inputsDisabled"
             @keydown="onLabelKeydown"
           />
@@ -350,11 +350,11 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </label>
 
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Due (optional)</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.dueLabel') }}</span>
           <TdDateField
             v-model="dueAt"
             class="paper-composer__input"
-            aria-label="Due date"
+            :aria-label="t('inbox.composer.dueAria')"
             :disabled="inputsDisabled"
           />
         </label>

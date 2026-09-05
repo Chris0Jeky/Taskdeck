@@ -133,6 +133,70 @@ describe('PaperCaptureComposer', () => {
     }
   })
 
+  // --- field chrome i18n (#1871) -------------------------------------------
+
+  /**
+   * The eyebrows, accessible names and placeholders of the four Composer
+   * fields, in the file's own locale idiom (the `it.each` above, from #2654).
+   *
+   * The English case is the regression guard: `PaperInboxView.spec.ts` and
+   * three Playwright specs select these controls by their accessible name, so
+   * the extraction had to leave the English text byte for byte. The Italian
+   * case is the one that proves the catalogs reach the DOM at all — every
+   * assertion in it fails on the pre-#1871 component, which hardcoded English
+   * in the template regardless of locale.
+   *
+   * Selectors are locale-independent on purpose (tag and class, never the
+   * aria-label being asserted): a selector that reads the string under test
+   * cannot fail when that string is wrong, it just finds nothing.
+   */
+  function fieldChrome(wrapper: ReturnType<typeof mount>) {
+    return {
+      eyebrows: wrapper.findAll('.paper-composer__label .tk-eyebrow').map((node) => node.text()),
+      body: wrapper.get('textarea'),
+      board: wrapper.get('select'),
+      label: wrapper.get('input[type="text"]'),
+      due: wrapper.get('input[type="date"]'),
+      attachments: wrapper.get('[data-testid="paper-composer-attachments-unavailable"]'),
+    }
+  }
+
+  it('renders the field chrome in English on the default locale', () => {
+    const wrapper = mount(PaperCaptureComposer)
+    const chrome = fieldChrome(wrapper)
+
+    expect(chrome.eyebrows).toEqual(['Body', 'Board', 'Labels', 'Due (optional)'])
+    expect(chrome.body.attributes('aria-label')).toBe('Capture body')
+    expect(chrome.body.attributes('placeholder')).toBe('The thought, in plain language…')
+    expect(chrome.board.attributes('aria-label')).toBe('Board picker')
+    expect(chrome.label.attributes('aria-label')).toBe('Add label')
+    expect(chrome.label.attributes('placeholder')).toBe('add and press Enter')
+    expect(chrome.due.attributes('aria-label')).toBe('Due date')
+    expect(chrome.attachments.text()).toBe('Attachments are not saved with captures yet.')
+  })
+
+  it('re-renders the field chrome in Italian when the locale switches', () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'it' as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      const chrome = fieldChrome(wrapper)
+
+      expect(chrome.eyebrows).toEqual(['Testo', 'Bacheca', 'Etichette', 'Scadenza (facoltativa)'])
+      expect(chrome.body.attributes('aria-label')).toBe('Testo della cattura')
+      expect(chrome.body.attributes('placeholder')).toBe('Il pensiero, in parole semplici…')
+      expect(chrome.board.attributes('aria-label')).toBe('Selettore bacheca')
+      expect(chrome.label.attributes('aria-label')).toBe('Aggiungi etichetta')
+      expect(chrome.label.attributes('placeholder')).toBe('aggiungi e premi Enter')
+      expect(chrome.due.attributes('aria-label')).toBe('Data di scadenza')
+      expect(chrome.attachments.text()).toBe(
+        'Gli allegati non vengono ancora salvati con le catture.',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
   it('reflects label selections in the submit payload', async () => {
     const wrapper = mount(PaperCaptureComposer)
     const labelInput = wrapper.find('input[type="text"]')
