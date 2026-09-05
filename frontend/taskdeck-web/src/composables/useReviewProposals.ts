@@ -158,6 +158,32 @@ function isForbiddenError(err: unknown): boolean {
   return (err as { response?: { status?: number } }).response?.status === 403
 }
 
+/**
+ * A 400 on a PROPOSAL-LEVEL read means the id the URL names is not one this
+ * route can bind: `GetProposal(Guid id)` under `[ApiController]` answers a
+ * non-GUID `#proposal-<id>` with a model-binding 400 before the handler runs,
+ * and nothing client-side validates the hash. That is a permanent fact about
+ * the requested target, exactly like a 403 or a 404 — no later tick makes a
+ * malformed id readable. Routing it to the queue-level failure branch instead
+ * threw away a list answer that had already arrived, and did so silently: a 400
+ * is not transient, so the failure counter reset rather than climbing to the
+ * degraded threshold, and the refresh froze with no indication (#2214 item 8).
+ *
+ * Deliberately 400 alone. Only a malformed id is provably unusable; a 405 would
+ * be a routing defect affecting the whole surface rather than one target, and
+ * "gone" is already what a 404 says here. Neither is emitted by this route, so
+ * giving them pin-level meaning would be guessing.
+ *
+ * Sound for the BY-ID leg only, and it must not be moved to the outer catch: a
+ * 400 from the LIST read means the query was rejected (a malformed `boardId`,
+ * say), which says nothing about any pinned target and would silently downgrade
+ * a whole-queue failure into a pin-level outcome.
+ */
+function isMalformedTargetError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  return (err as { response?: { status?: number } }).response?.status === 400
+}
+
 function isTransientQueueRefreshFailure(err: unknown): boolean {
   const status = (err as { response?: { status?: number } } | null)?.response?.status
   // Network failures and deadline errors have no HTTP response. For HTTP,
@@ -189,9 +215,15 @@ export function useReviewProposals() {
 
   const proposals = ref<ApiProposal[]>([])
   const proposalsLoading = ref(false)
-  // A deep link is an explicit request, not a selection preference. Preserve a
-  // confirmed 404 separately so Paper can say what happened instead of
-  // presenting the ordinary empty queue or a different actionable proposal.
+  // A deep link is an explicit request, not a selection preference. Hold the
+  // requested id separately whenever the server has settled its fate, so the
+  // surfaces can say what happened instead of presenting the ordinary empty
+  // queue or a different actionable proposal. Three outcomes reach it, all
+  // permanent facts about that one target rather than about the queue: a 404
+  // (no such proposal, or it is gone), a 403 on the by-id read (this reviewer
+  // may not see it), and a 400 (the id in the hash is not one the by-id route
+  // can bind). A wrong-identity or cross-board answer fails closed into it too.
+  // Explicit navigation is narrower on purpose and still marks only the 404.
   const unavailableProposalId = ref<string | null>(null)
   // Set when a background read is refused with 403 (board access revoked
   // mid-session). The surfaces swap the ordinary "Nothing waiting" empty state
@@ -832,7 +864,20 @@ export function useReviewProposals() {
               // This is part of the background poll, not an explicit navigation.
               // Keep it in the same cancellation and fail-fast envelope as the
               // list request so teardown cannot leave a retry chain behind.
-              { skipRetry: true, signal: controller.signal },
+              //
+              // The three statuses below are this call's own contract, not
+              // failures: each one is turned into the explicit "pin
+              // unavailable" outcome a few lines down. Without naming them the
+              // shared interceptor logs every refused or unbindable pin as
+              // 'API Error:' on every tick, which reports a handled result as a
+              // defect and buries the real ones (#2214 item 7). Scoped to this
+              // background read alone -- `openProposalFromHash` is a read the
+              // reviewer asked for and keeps its logging.
+              {
+                skipRetry: true,
+                signal: controller.signal,
+                expectedStatuses: [400, 403, 404],
+              },
             ),
             controller,
             () => { refreshTimedOut = true },
@@ -864,9 +909,11 @@ export function useReviewProposals() {
           // transient accounting below.
           if (controller.signal.aborted && !refreshTimedOut) return
           if (!isCurrentRead() && !refreshTimedOut) return
-          if (isForbiddenError(e) || isHttpNotFound(e)) {
+          if (isForbiddenError(e) || isHttpNotFound(e) || isMalformedTargetError(e)) {
             // The list itself succeeded, so only the pin is unavailable. Do not
-            // turn a proposal-level refusal into whole-queue revocation.
+            // turn a proposal-level refusal — or a target this route cannot even
+            // bind — into whole-queue revocation, and do not discard a queue
+            // answer that already arrived.
             pinUnavailable = true
           } else {
             // The composite read is incomplete. Preserve the exact queue and
