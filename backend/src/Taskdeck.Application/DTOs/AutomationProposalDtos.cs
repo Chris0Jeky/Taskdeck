@@ -186,8 +186,7 @@ public record CreateProposalDto(
     Guid? BoardId = null,
     string? SourceReferenceId = null,
     int ExpiryMinutes = 1440,
-    List<CreateProposalOperationDto>? Operations = null,
-    int ProvenanceTotalTokens = 0
+    List<CreateProposalOperationDto>? Operations = null
 )
 {
     /// <summary>
@@ -225,6 +224,16 @@ public record CreateProposalDto(
     /// </summary>
     [JsonIgnore]
     public string? ProvenancePromptVersion { get; init; }
+
+    /// <summary>
+    /// Trusted application-side token count recorded with the proposal's provenance (#2604).
+    /// Excluded from the HTTP contract for the same reason as <see cref="ProvenanceProvider"/>:
+    /// a token count is a producer-side usage measurement, and no API, MCP or agent client may
+    /// self-report the tokens a proposal cost. Only application pipelines set it, from usage they
+    /// actually observed; anything created through the HTTP contract records 0.
+    /// </summary>
+    [JsonIgnore]
+    public int ProvenanceTotalTokens { get; init; }
 }
 
 public record CreateProposalOperationDto(

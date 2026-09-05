@@ -226,10 +226,10 @@ public class AutomationProposalServiceTests
             "Create captured task",
             RiskLevel.Low,
             Guid.NewGuid().ToString(),
-            Operations: operations,
-            ProvenanceTotalTokens: 123)
+            Operations: operations)
         {
-            ProvenanceModelId = "gpt-4.1-mini"
+            ProvenanceModelId = "gpt-4.1-mini",
+            ProvenanceTotalTokens = 123
         };
 
         _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
