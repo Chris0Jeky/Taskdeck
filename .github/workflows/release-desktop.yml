@@ -27,7 +27,31 @@
 # `--notes-file` on create and re-asserted on publish. A rehearsal dispatch
 # renders it too and uploads it as the `composed-page-body` artifact.
 #
-# Tracked by: #535 (PKG-03), #1795, #1806, #1878, #2217, #2234
+# Three composer follow-ups (#2250):
+#
+#   * `preview_tag` (rehearsal only) renders the page as a prospective tag, so a
+#     no-publish dispatch previews the real STABLE page instead of the
+#     `v0.0.0-dryrun+<sha7>` RC fallback. It is a RENDER-ONLY output of
+#     resolve-source (`render_tag` / `render_prerelease`), read by compose-notes
+#     and by nothing that builds, names an asset or writes a Release.
+#
+#   * The composer runs from a SECOND checkout of the WORKFLOW revision
+#     (`.workflow-tooling`, pinned to `github.workflow_sha`), because the release
+#     checkout is the TAGGED commit (#1795) and a pre-0.3 tag has no composer in
+#     its tree — re-dispatching `v0.2.0` (48c05e1dc) died with MODULE_NOT_FOUND
+#     after the whole Windows build. Only the page RENDERER moves: the ZIP and
+#     its SHA-256 are still produced from and verified against the tagged tree,
+#     and UPGRADING.md, `docs/releases/notes/<tag>.md` and the checksum are still
+#     read from the tagged checkout. A pre-0.3 tag that also lacks those release
+#     files still fails, but now at compose time with a named missing input
+#     rather than an opaque module error.
+#
+#   * The changelog base is the newest stable release that sorts STRICTLY BEFORE
+#     the tag being built (`scripts/ci/select-changelog-base.mjs`), not the
+#     globally newest stable one by release date, and the listing that feeds it
+#     retries like every other release API call.
+#
+# Tracked by: #535 (PKG-03), #1795, #1806, #1878, #2217, #2234, #2250
 # =============================================================================
 
 name: Release Desktop
@@ -37,6 +61,10 @@ on:
     inputs:
       tag:
         description: "Existing version tag to build and PUBLISH (e.g. v0.1.1). Leave BLANK when dispatching from a BRANCH for a rehearsal: builds and smoke-tests the Windows x64 archive, uploads artifacts, and publishes nothing. Dispatching from a TAG ref publishes that tag even with this left blank."
+        required: false
+        type: string
+      preview_tag:
+        description: "REHEARSAL ONLY (e.g. v0.3.0). Renders the release page as if this tag existed, so a no-publish dispatch previews the real stable page instead of the v0.0.0-dryrun placeholder. It NEVER names, creates, touches or publishes a Release, and it never reaches the built archive name or the version stamped into the binaries. Ignored with a notice when this dispatch actually publishes."
         required: false
         type: string
   push:
@@ -79,6 +107,10 @@ jobs:
       sha: ${{ steps.resolve.outputs.sha }}
       publish: ${{ steps.resolve.outputs.publish }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
+      # RENDER-ONLY (#2250). compose-notes is the single consumer; nothing that
+      # builds, names an asset or writes a Release ever reads these.
+      render_tag: ${{ steps.resolve.outputs.render_tag }}
+      render_prerelease: ${{ steps.resolve.outputs.render_prerelease }}
     steps:
       # Only the tag validator is needed here; nothing in this job writes to Git.
       - name: Checkout
@@ -95,15 +127,22 @@ jobs:
           # close the assignment or trigger command substitution before the
           # grammar check runs. The job that consumes it holds `contents: write`.
           RAW_TAG: ${{ inputs.tag }}
+          # UNTRUSTED, same handling as RAW_TAG. It renders a page and never
+          # publishes one, but it still reaches file paths and a Markdown body,
+          # so it clears the same grammar gate before any use.
+          RAW_PREVIEW_TAG: ${{ inputs.preview_tag }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
           raw_tag="${RAW_TAG:-}"
+          raw_preview_tag="${RAW_PREVIEW_TAG:-}"
           publish="false"
           prerelease="false"
           tag=""
           sha=""
+          render_tag=""
+          render_prerelease="false"
 
           # --- 1. Decide the tag, refusing anything outside the grammar -------
           if [ -n "${raw_tag}" ]; then
@@ -176,11 +215,44 @@ jobs:
             *)   prerelease="false" ;;
           esac
 
+          # --- 5. Decide the RENDER tag for a rehearsal preview (#2250) ------
+          # A blank-tag rehearsal resolves to v0.0.0-dryrun+<sha7>, which carries
+          # a prerelease segment, so the composer always took the RC fallback and
+          # the uploaded preview was never the page a stable tag would render.
+          # `preview_tag` supplies a prospective tag for RENDERING only.
+          #
+          # It is deliberately a SEPARATE output. `tag`, `publish`, `prerelease`,
+          # the stamped product version, the archive name and every `gh release`
+          # call keep using the resolved tag above, so no value of `preview_tag`
+          # can create, adopt, rename or touch a Release: the create-release job
+          # is still gated on `publish`, which a preview tag never sets.
+          render_tag="${tag}"
+          if [ -n "${raw_preview_tag}" ]; then
+            if [ "${publish}" = "true" ]; then
+              # A notice rather than an error: this dispatch publishes a real
+              # tag, and failing it over an input that changes nothing about
+              # what gets published would cost a build for no safety gain.
+              printf '::notice::preview_tag %q is ignored — this dispatch publishes %s.\n' \
+                "${raw_preview_tag}" "${tag}"
+            else
+              render_tag="$(bash scripts/ci/validate-release-tag.sh "${raw_preview_tag}")"
+              printf 'Rehearsal renders the release page as %s; nothing is published.\n' "${render_tag}"
+            fi
+          fi
+          # Derived from the render tag by the SAME grammar rule as step 4, so a
+          # preview of a stable tag exercises the stable fail-closed policy.
+          case "${render_tag}" in
+            *-*) render_prerelease="true" ;;
+            *)   render_prerelease="false" ;;
+          esac
+
           {
             printf 'tag=%s\n' "${tag}"
             printf 'sha=%s\n' "${sha}"
             printf 'publish=%s\n' "${publish}"
             printf 'prerelease=%s\n' "${prerelease}"
+            printf 'render_tag=%s\n' "${render_tag}"
+            printf 'render_prerelease=%s\n' "${render_prerelease}"
           } >> "${GITHUB_OUTPUT}"
 
           # The Markdown code-span delimiter is held in a variable and passed as a
@@ -195,6 +267,7 @@ jobs:
             printf '| commit | %s%s%s |\n' "${bt}" "${sha}" "${bt}"
             printf '| publishes a release | %s%s%s |\n' "${bt}" "${publish}" "${bt}"
             printf '| published as a prerelease | %s%s%s |\n' "${bt}" "${prerelease}" "${bt}"
+            printf '| page rendered as (render only) | %s%s%s |\n' "${bt}" "${render_tag}" "${bt}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   # ---------------------------------------------------------------------------
@@ -598,6 +671,39 @@ jobs:
           fi
           printf 'Release source commit verified: %s\n' "${actual_sha}"
 
+      # The workflow's own TOOLING, from the revision this workflow file came
+      # from (#2250 item 2). The release checkout above is the TAGGED commit by
+      # design (#1795), and a pre-0.3 tag has no composer in its tree, so a
+      # resumable re-publish of v0.2.0 died with MODULE_NOT_FOUND after the whole
+      # Windows build. Only the page RENDERER moves: the archive and its SHA-256
+      # are still produced from, and verified against, the tagged tree, and every
+      # byte of release CONTENT below (UPGRADING.md, the curated notes, the
+      # checksum file) is still read from the tagged checkout. `workflow_sha` is
+      # the commit of the workflow file that is actually running, so the tooling
+      # can never come from a ref the dispatcher did not select.
+      - name: Checkout workflow tooling
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .workflow-tooling
+          persist-credentials: false
+
+      - name: Verify the workflow tooling checkout carries the composer
+        shell: bash
+        env:
+          TOOLING_SHA: ${{ github.workflow_sha }}
+        run: |
+          set -euo pipefail
+          if [ ! -f .workflow-tooling/scripts/ci/compose-release-notes.mjs ]; then
+            printf '::error::The workflow tooling checkout has no scripts/ci/compose-release-notes.mjs; refusing to render a page.\n'
+            exit 1
+          fi
+          if [ ! -f .workflow-tooling/scripts/ci/select-changelog-base.mjs ]; then
+            printf '::error::The workflow tooling checkout has no scripts/ci/select-changelog-base.mjs; refusing to guess a changelog base.\n'
+            exit 1
+          fi
+          printf 'Workflow tooling checked out from %s.\n' "${TOOLING_SHA}"
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
@@ -618,10 +724,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.resolve-source.outputs.tag }}
-          RELEASE_PRERELEASE: ${{ needs.resolve-source.outputs.prerelease }}
           RELEASE_PUBLISH: ${{ needs.resolve-source.outputs.publish }}
+          # The tag the PAGE is rendered for. Equal to RELEASE_TAG unless a
+          # rehearsal supplied preview_tag (#2250); render-only either way.
+          RENDER_TAG: ${{ needs.resolve-source.outputs.render_tag }}
+          RENDER_PRERELEASE: ${{ needs.resolve-source.outputs.render_prerelease }}
         run: |
           set -euo pipefail
+          # The archive that was actually BUILT, and whose .sha256 exists. It
+          # stays on RELEASE_TAG even under a preview: the checksum printed on
+          # the page must belong to the file the page names.
           asset="taskdeck-${RELEASE_TAG}-win-x64.zip"
           generated="generated-notes.json"
 
@@ -634,20 +746,47 @@ jobs:
             # picks the previous release of ANY kind: once v0.3.0-rc.1 exists,
             # the stable v0.3.0 page would cover only rc.1 -> final and hide
             # everything since v0.2.0 from the people the stable page is for.
-            # The base is therefore the newest published, non-draft,
-            # NON-prerelease release, so both a stable page and an RC page span
-            # the whole gap since the last stable release. `gh release list`
-            # returns newest-first.
-            previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" \
-              --exclude-pre-releases --exclude-drafts --limit 1 \
-              --json tagName --jq '.[0].tagName // empty')"
+            # The base is therefore a published, non-draft, NON-prerelease
+            # release, so both a stable page and an RC page span the whole gap
+            # since the last stable release.
+            #
+            # WHICH stable release is decided by semver, not by release date
+            # (#2250 item 3). `--limit 1` returned the globally newest stable
+            # one: re-running v0.3.0-rc.1 after v0.3.0 had shipped would have
+            # sent previous_tag_name=v0.3.0 and rendered a changelog running
+            # backwards. The list is now bounded but wide, and
+            # scripts/ci/select-changelog-base.mjs picks the newest entry that
+            # sorts STRICTLY BEFORE this tag. The listing gets the same bounded
+            # retry as generate-notes below; it used to be a single unretried
+            # call under `set -e`.
+            stable_tags="stable-tags.txt"
+            listed_ok=0
+            for attempt in 1 2 3; do
+              if gh release list --repo "${GITHUB_REPOSITORY}" \
+                --exclude-pre-releases --exclude-drafts --limit 100 \
+                --json tagName --jq '.[].tagName' > "${stable_tags}"; then
+                listed_ok=1
+                break
+              fi
+              printf '::warning::release list failed (attempt %s/3).\n' "${attempt}"
+              if [ "${attempt}" -lt 3 ]; then
+                sleep "$((attempt * 10))"
+              fi
+            done
+            if [ "${listed_ok}" -ne 1 ]; then
+              printf '::error::Could not list published releases after 3 attempts; refusing to guess the changelog base.\n'
+              exit 1
+            fi
+            previous_tag="$(node .workflow-tooling/scripts/ci/select-changelog-base.mjs \
+              --tag "${RELEASE_TAG}" --candidates "${stable_tags}")"
             generate_args=(-f "tag_name=${RELEASE_TAG}")
-            # The inequality guard covers a RE-RUN after this very tag was
-            # already published as a stable release: it would then be its own
-            # newest stable release, and a self-comparison is empty.
+            # The selector already excludes the target tag, so the inequality
+            # guard is redundant defence in depth: it keeps a RE-RUN after this
+            # very tag was published from ever becoming its own changelog base,
+            # even if the selection above were replaced.
             if [ -n "${previous_tag}" ] && [ "${previous_tag}" != "${RELEASE_TAG}" ]; then
               generate_args+=(-f "previous_tag_name=${previous_tag}")
-              printf 'Changelog base: %s (newest published stable release).\n' "${previous_tag}"
+              printf 'Changelog base: %s (newest stable release before %s).\n' "${previous_tag}" "${RELEASE_TAG}"
             else
               printf 'No earlier stable release found; letting GitHub infer the changelog base.\n'
             fi
@@ -678,14 +817,22 @@ jobs:
           # Exits non-zero for a STABLE tag whose UPGRADING section or curated
           # highlights are missing, before anything is published; a release
           # candidate warns and falls back.
-          node scripts/ci/compose-release-notes.mjs \
-            --tag "${RELEASE_TAG}" \
-            --prerelease "${RELEASE_PRERELEASE}" \
+          #
+          # The RENDERER comes from the workflow revision (#2250 item 2); every
+          # path it READS — UPGRADING.md, the curated notes, the checksum — is
+          # relative to the tagged checkout, so no content from a later revision
+          # can be published under an older tag. Under a rehearsal preview,
+          # RENDER_TAG selects which UPGRADING section and which notes file the
+          # page is proved against, which is what makes the preview a preview of
+          # the STABLE page rather than the dry-run RC fallback.
+          node .workflow-tooling/scripts/ci/compose-release-notes.mjs \
+            --tag "${RENDER_TAG}" \
+            --prerelease "${RENDER_PRERELEASE}" \
             --repo "${GITHUB_REPOSITORY}" \
             --asset "${asset}" \
             --checksum-file "release-assets/${asset}.sha256" \
             --upgrading UPGRADING.md \
-            --notes "docs/releases/notes/${RELEASE_TAG}.md" \
+            --notes "docs/releases/notes/${RENDER_TAG}.md" \
             --generated-notes "${generated}" \
             --out release-notes.md
 

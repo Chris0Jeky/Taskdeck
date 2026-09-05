@@ -262,8 +262,8 @@ test('every checkout refuses to persist Git credentials', () => {
   const checkouts = workflow.match(/uses: actions\/checkout@[^\n]*\n(?: +[^\n]*\n)*/g) ?? []
   assert.equal(
     checkouts.length,
-    5,
-    'resolve-source, build-frontend, build-backend, compose-notes, create-release',
+    6,
+    'resolve-source, build-frontend, build-backend, compose-notes (release source + workflow tooling), create-release',
   )
   for (const block of checkouts) {
     assert.match(block, /persist-credentials: false/, `checkout without persist-credentials: false:\n${block}`)
@@ -651,13 +651,18 @@ test('a dedicated job composes the page body and runs on the rehearsal path too'
     /^\s+if: needs\.resolve-source\.outputs\.publish == 'true'$/m,
     'a rehearsal dispatch must reach the composer — previewing the page is its whole point',
   )
-  assert.match(job, /node scripts\/ci\/compose-release-notes\.mjs/, 'the bash calls the tested script')
+  assert.match(
+    job,
+    /node \.workflow-tooling\/scripts\/ci\/compose-release-notes\.mjs/,
+    'the bash calls the tested script, from the workflow revision (#2250 item 2)',
+  )
 })
 
-test('the composer receives the resolved tag, prerelease decision and repo through env', () => {
+test('the composer receives the render tag, prerelease decision and repo through env', () => {
   const job = jobBlock('compose-notes')
   assert.match(job, /RELEASE_TAG: \$\{\{ needs\.resolve-source\.outputs\.tag \}\}/)
-  assert.match(job, /RELEASE_PRERELEASE: \$\{\{ needs\.resolve-source\.outputs\.prerelease \}\}/)
+  assert.match(job, /RENDER_TAG: \$\{\{ needs\.resolve-source\.outputs\.render_tag \}\}/)
+  assert.match(job, /RENDER_PRERELEASE: \$\{\{ needs\.resolve-source\.outputs\.render_prerelease \}\}/)
   assert.match(job, /RELEASE_PUBLISH: \$\{\{ needs\.resolve-source\.outputs\.publish \}\}/)
   assert.match(job, /--repo "\$\{GITHUB_REPOSITORY\}"/, 'the repo is read from the runner, not hard-coded')
   assert.doesNotMatch(job, /\$\{\{ *inputs\./, 'the untrusted dispatch input never reaches this job')
@@ -667,7 +672,7 @@ test('the composer is fed the checksum, UPGRADING.md and the curated notes for t
   const job = jobBlock('compose-notes')
   assert.match(job, /--checksum-file "release-assets\/\$\{asset\}\.sha256"/)
   assert.match(job, /--upgrading UPGRADING\.md/)
-  assert.match(job, /--notes "docs\/releases\/notes\/\$\{RELEASE_TAG\}\.md"/)
+  assert.match(job, /--notes "docs\/releases\/notes\/\$\{RENDER_TAG\}\.md"/)
   assert.match(job, /--out release-notes\.md/)
   assert.match(
     job,
@@ -690,12 +695,27 @@ test('generate-notes is attempted only when a tag actually exists', () => {
   assert.match(job, /Rehearsal dispatch: no release tag exists/, 'the rehearsal branch says so in the log')
 })
 
-test('the changelog base is the newest published stable release, with bounded retries', () => {
+// The base is the newest stable release that sorts STRICTLY BEFORE the tag
+// being built, not the globally newest stable one (#2250 item 3).
+// `gh release list --limit 1` ordered by RELEASE DATE, so re-running
+// v0.3.0-rc.1 after v0.3.0 had shipped sent previous_tag_name=v0.3.0 and
+// rendered a changelog that ran backwards.
+test('the changelog base is the newest stable release before the target tag, with bounded retries', () => {
   const job = jobBlock('compose-notes')
   assert.match(
     job,
-    /gh release list --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--exclude-pre-releases --exclude-drafts --limit 1/,
-    'a prerelease must never become the base of the next stable page',
+    /gh release list --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--exclude-pre-releases --exclude-drafts --limit 100/,
+    'a prerelease must never become the base, and the candidate list is bounded but not truncated to one',
+  )
+  assert.doesNotMatch(
+    job,
+    /--exclude-pre-releases --exclude-drafts --limit 1\b/,
+    'the date-ordered single-row lookup is the defect and must not come back',
+  )
+  assert.match(
+    job,
+    /node \.workflow-tooling\/scripts\/ci\/select-changelog-base\.mjs \\\n\s+--tag "\$\{RELEASE_TAG\}" --candidates "\$\{stable_tags\}"/,
+    'the ordering is semver, decided by the unit-tested selector, not by release date',
   )
   assert.match(
     job,
@@ -708,9 +728,20 @@ test('the changelog base is the newest published stable release, with bounded re
     'a first release, and a re-run of an already-published stable tag, omit the field',
   )
   assert.match(job, /letting GitHub infer the changelog base/, 'the omission is logged, not silent')
-  assert.match(job, /for attempt in 1 2 3; do/, 'the API call retries a bounded number of times')
   assert.match(job, /sleep "\$\(\(attempt \* 10\)\)"/, 'the same 10/20s backoff as the asset upload')
   assert.match(job, /generate-notes failed after 3 attempts[\s\S]{0,120}?exit 1/, 'exhausted retries fail closed')
+
+  const retryLoops = job.match(/for attempt in 1 2 3; do/g) ?? []
+  assert.equal(
+    retryLoops.length,
+    2,
+    'the release listing gets the same bounded retry as generate-notes — it was unretried under set -e',
+  )
+  assert.match(
+    job,
+    /Could not list published releases after 3 attempts[\s\S]{0,120}?exit 1/,
+    'an exhausted listing fails closed instead of guessing a base',
+  )
 })
 
 // The bug this replaces a decorative assertion for: `actions/download-artifact`
@@ -821,5 +852,204 @@ test('the publish flip carries the prerelease flag in the same edit', () => {
     bindings.length,
     2,
     'the create and publish steps each read the decision from resolve-source through the environment',
+  )
+})
+
+// -----------------------------------------------------------------------------
+// 9. Rehearsal preview tag (#2250 item 1)
+//
+// A blank-tag no-publish dispatch resolves to `v0.0.0-dryrun+<sha7>`, which
+// carries a prerelease segment, so the composer always took the RC fallback and
+// the uploaded `composed-page-body` was never a preview of the page a stable tag
+// would render. `preview_tag` supplies a RENDER-ONLY tag. It is untrusted
+// dispatch text with the same reach as `inputs.tag` into the composer, so it
+// clears the same grammar gate; and it must not be readable by anything that
+// publishes.
+// -----------------------------------------------------------------------------
+
+test('the rehearsal preview tag reaches Bash only through a step env var', () => {
+  assert.match(
+    workflow,
+    /^\s+RAW_PREVIEW_TAG: \$\{\{ inputs\.preview_tag \}\}$/m,
+    'inputs.preview_tag must be bound to an env var, not spliced into a run block',
+  )
+
+  const uses = workflow.match(/\$\{\{ *inputs\.preview_tag[^}]*\}\}/g) ?? []
+  assert.deepEqual(
+    uses,
+    ['${{ inputs.preview_tag }}'],
+    'inputs.preview_tag may be referenced exactly once, by the RAW_PREVIEW_TAG env binding',
+  )
+})
+
+test('the preview tag input is declared rehearsal-only and never required', () => {
+  const inputs = /\n  workflow_dispatch:\n    inputs:\n([\s\S]*?)\n  push:\n/.exec(workflow)
+  assert.ok(inputs, 'the dispatch inputs block must exist')
+  const block = inputs[1]
+  assert.match(block, /^      preview_tag:$/m, 'the input is named preview_tag')
+  const declaration = /\n      preview_tag:\n([\s\S]*?)(?=\n      [a-z_]+:\n|$)/.exec(`\n${block}`)
+  assert.ok(declaration, 'preview_tag must carry its own declaration')
+  assert.match(declaration[1], /required: false/, 'a rehearsal input is never required')
+  assert.match(declaration[1], /type: string/)
+  assert.match(
+    declaration[1],
+    /never|NEVER/,
+    'the description must say the input never publishes — it is the only place a dispatcher reads',
+  )
+  assert.match(declaration[1], /REHEARSAL|rehearsal/, 'the description must name the rehearsal path')
+})
+
+test('the preview tag clears the same grammar gate as a real release tag', () => {
+  const job = jobBlock('resolve-source')
+  assert.match(
+    job,
+    /render_tag="\$\(bash scripts\/ci\/validate-release-tag\.sh "\$\{raw_preview_tag\}"\)"/,
+    'the preview tag is validated by the shared grammar gate, not trusted as given',
+  )
+  assert.match(
+    job,
+    /raw_preview_tag="\$\{RAW_PREVIEW_TAG:-\}"/,
+    'the untrusted value is assigned inside Bash from the environment',
+  )
+  const validatorCalls = job.match(/bash scripts\/ci\/validate-release-tag\.sh/g) ?? []
+  assert.ok(
+    validatorCalls.length >= 4,
+    'the dispatch input, the pushed tag ref, the final tag and the preview tag are each validated',
+  )
+})
+
+test('render_tag falls back to the resolved tag and is ignored on a publishing dispatch', () => {
+  const job = jobBlock('resolve-source')
+  const fallbackAt = job.indexOf('render_tag="${tag}"')
+  const guardAt = job.indexOf('if [ -n "${raw_preview_tag}" ]; then')
+  assert.ok(fallbackAt !== -1, 'render_tag defaults to the resolved release tag')
+  assert.ok(guardAt !== -1, 'the preview tag is only consulted when one was supplied')
+  assert.ok(fallbackAt < guardAt, 'the fallback is assigned before any preview tag can override it')
+  assert.match(
+    job,
+    /if \[ "\$\{publish\}" = "true" \]; then\n\s+#[\s\S]{0,400}?printf '::notice::preview_tag/,
+    'a publishing dispatch ignores the input with a notice instead of rendering an unpublished tag',
+  )
+  assert.match(
+    job,
+    /case "\$\{render_tag\}" in\n\s+\*-\*\) render_prerelease="true" ;;\n\s+\*\)\s+render_prerelease="false" ;;\n\s+esac/,
+    'the render prerelease flag is derived from render_tag by the same grammar rule as the real tag',
+  )
+})
+
+test('resolve-source publishes the render tag and its prerelease decision as outputs', () => {
+  const job = jobBlock('resolve-source')
+  assert.match(job, /render_tag: \$\{\{ steps\.resolve\.outputs\.render_tag \}\}/)
+  assert.match(job, /render_prerelease: \$\{\{ steps\.resolve\.outputs\.render_prerelease \}\}/)
+  assert.match(job, /printf 'render_tag=%s\\n' "\$\{render_tag\}"/, 'the output is written, not only computed')
+  assert.match(job, /printf 'render_prerelease=%s\\n' "\$\{render_prerelease\}"/)
+})
+
+test('no publishing step reads the preview tag or the render tag', () => {
+  // The whole safety claim of #2250 item 1 is that a preview_tag can never
+  // create or touch a Release, so the render outputs must be invisible to every
+  // job that holds a write path to one.
+  for (const job of ['build-frontend', 'build-backend', 'create-release']) {
+    const block = jobBlock(job)
+    assert.doesNotMatch(block, /render_tag|render_prerelease|RENDER_TAG|RENDER_PRERELEASE/, `${job} must not read the render tag`)
+    assert.doesNotMatch(block, /preview_tag|RAW_PREVIEW_TAG/, `${job} must not read the preview tag`)
+  }
+
+  const consumers = workflow.match(/needs\.resolve-source\.outputs\.render_[a-z_]+/g) ?? []
+  const composeConsumers = jobBlock('compose-notes').match(/needs\.resolve-source\.outputs\.render_[a-z_]+/g) ?? []
+  assert.equal(
+    consumers.length,
+    composeConsumers.length,
+    'compose-notes is the only consumer of the render outputs',
+  )
+  assert.equal(composeConsumers.length, 2, 'compose-notes reads exactly render_tag and render_prerelease')
+
+  // The build tag, the asset names and the provenance stay on the resolved tag.
+  assert.match(
+    jobBlock('build-backend'),
+    /RELEASE_TAG: \$\{\{ needs\.resolve-source\.outputs\.tag \}\}/,
+    'the stamped version and the archive name come from the resolved tag',
+  )
+  assert.match(
+    workflow,
+    /if: needs\.resolve-source\.outputs\.publish == 'true'/,
+    'the publish gate is still the publish decision, which a preview tag never changes',
+  )
+})
+
+test('the composer renders the preview tag while the asset stays the built one', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(job, /--tag "\$\{RENDER_TAG\}"/, 'the page is rendered for the tag being previewed')
+  assert.match(job, /--prerelease "\$\{RENDER_PRERELEASE\}"/, 'the RC-vs-stable policy follows the render tag')
+  assert.match(
+    job,
+    /asset="taskdeck-\$\{RELEASE_TAG\}-win-x64\.zip"/,
+    'the checksum on the page must belong to the archive that was actually built',
+  )
+})
+
+// -----------------------------------------------------------------------------
+// 10. Legacy-tag re-dispatch (#2250 item 2)
+//
+// The release checkout is pinned to the TAGGED commit (#1795), and the composer
+// was run from it. `v0.2.0` predates the composer, so re-dispatching that tag
+// died with MODULE_NOT_FOUND after the whole Windows build. The workflow's own
+// tooling now comes from the workflow revision in a separate checkout, while
+// every byte of release CONTENT — UPGRADING.md, the curated notes and the
+// checksum of the built archive — still comes from the tagged tree.
+// -----------------------------------------------------------------------------
+
+test('workflow tooling is checked out from the workflow revision into its own path', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(
+    job,
+    /ref: \$\{\{ github\.workflow_sha \}\}/,
+    'the tooling checkout is pinned to the commit the running workflow file came from',
+  )
+  assert.match(job, /path: \.workflow-tooling/, 'the tooling lands beside, never on top of, the release source')
+  assert.match(
+    job,
+    /ref: \$\{\{ github\.workflow_sha \}\}\n\s+path: \.workflow-tooling\n\s+persist-credentials: false/,
+    'the second checkout refuses to persist credentials, exactly like the first',
+  )
+
+  const releaseCheckoutAt = job.indexOf('ref: ${{ needs.resolve-source.outputs.sha }}')
+  const verifyAt = job.indexOf('Verify checkout matches the resolved release commit')
+  const toolingAt = job.indexOf('ref: ${{ github.workflow_sha }}')
+  assert.ok(releaseCheckoutAt !== -1 && verifyAt !== -1 && toolingAt !== -1)
+  assert.ok(
+    releaseCheckoutAt < verifyAt && verifyAt < toolingAt,
+    'the release source is checked out and verified before any tooling is added to the workspace',
+  )
+})
+
+test('the tooling checkout is proved to carry the composer before the build is spent', () => {
+  const job = jobBlock('compose-notes')
+  assert.match(
+    job,
+    /if \[ ! -f \.workflow-tooling\/scripts\/ci\/compose-release-notes\.mjs \]/,
+    'a missing composer is named explicitly rather than surfacing as MODULE_NOT_FOUND',
+  )
+  assert.match(job, /exit 1/, 'the guard fails closed')
+})
+
+test('release content is still read from the tagged checkout, not the tooling one', () => {
+  const job = jobBlock('compose-notes')
+  const renderStep = job.slice(job.indexOf('Render the release page body'))
+  assert.match(renderStep, /--upgrading UPGRADING\.md/, 'UPGRADING.md is the tagged tree, unprefixed')
+  assert.match(
+    renderStep,
+    /--notes "docs\/releases\/notes\/\$\{RENDER_TAG\}\.md"/,
+    'the curated notes are the tagged tree, unprefixed',
+  )
+  assert.match(
+    renderStep,
+    /--checksum-file "release-assets\/\$\{asset\}\.sha256"/,
+    'the checksum is the one built from the tagged commit',
+  )
+  assert.doesNotMatch(
+    renderStep,
+    /--upgrading \.workflow-tooling|--notes "\.workflow-tooling|--checksum-file "\.workflow-tooling/,
+    'release content must never be lifted from a later revision and published under an older tag',
   )
 })
