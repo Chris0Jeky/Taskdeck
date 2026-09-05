@@ -10,6 +10,12 @@
 export default {
   actions: {
     settings: 'Ajustes del tablero',
+    // Presentación de las tarjetas del tablero. El modo oculta el extracto y la
+    // fila de detalles; no borra ni edita nada, así que la copia nombra lo que
+    // se deja de ver. El nombre accesible empieza por la etiqueta visible
+    // (WCAG 2.5.3).
+    titlesOnly: 'Solo títulos',
+    titlesOnlyAria: 'Solo títulos: oculta los extractos y los detalles de las tarjetas',
   },
   card: {
     add: '+ tarjeta',

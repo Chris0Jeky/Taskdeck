@@ -225,6 +225,15 @@ function toggleDensity() {
   }
 }
 
+function toggleCardDetail() {
+  cardDetail.value = cardDetail.value === 'titles' ? 'full' : 'titles'
+  try {
+    window.localStorage.setItem(BOARD_CARD_DETAIL_KEY, cardDetail.value)
+  } catch {
+    // Local fallback only. The preference remains active for this mounted board.
+  }
+}
+
 function changeColumnWidth(event: Event) {
   const requestedWidth = (event.target as HTMLSelectElement).value
   columnWidth.value = isBoardColumnWidth(requestedWidth)
@@ -800,6 +809,22 @@ async function addStarterColumns() {
             @keydown.enter.stop
             @keydown.space.stop
             @click="toggleDensity"
+          />
+          <!--
+            The accessible name opens with the visible label, so it satisfies
+            WCAG 2.5.3 and a voice user can still say what they read. Enter and
+            Space stop here for the same reason they stop on the density toggle
+            beside it: the board keymap listens further up, and a control that
+            let its own activation keys through would fire a shortcut too.
+          -->
+          <PaperHLBtn
+            :label="t('boardDetail.actions.titlesOnly')"
+            :aria-label="t('boardDetail.actions.titlesOnlyAria')"
+            :aria-pressed="cardDetail === 'titles'"
+            data-testid="paper-board-card-detail-toggle"
+            @keydown.enter.stop
+            @keydown.space.stop
+            @click="toggleCardDetail"
           />
           <PaperHLBtn
             v-if="routedBoard"

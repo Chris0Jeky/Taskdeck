@@ -18,6 +18,12 @@
 export default {
   actions: {
     settings: 'Board settings',
+    // Board-level card presentation. The mode hides the excerpt and the meta
+    // row on every card; nothing is removed and nothing is edited, so the copy
+    // names what the reader stops seeing, not an action on the cards. The
+    // accessible name repeats the visible label first (WCAG 2.5.3).
+    titlesOnly: 'Titles only',
+    titlesOnlyAria: 'Titles only: hide card excerpts and details',
   },
   card: {
     add: '+ card',
