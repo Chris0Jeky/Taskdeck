@@ -85,11 +85,18 @@ pointer at `UPGRADING.md`. A missing or mismatched checksum fails either way.
 
 The `compose-notes` job runs on the rehearsal path too and uploads what it rendered as the **`composed-page-body`**
 artifact, so a `no-publish` dispatch previews the exact page before a tag is cut (the changelog section is a placeholder
-there, because `generate-notes` needs a tag that already exists). That artifact name must not match the `release-*` pattern
+there, because `generate-notes` needs a tag that already exists). Left blank, a rehearsal resolves to
+`v0.0.0-dryrun+<sha7>`, which carries a prerelease segment and so renders the release-candidate fallback; the optional
+`preview_tag` dispatch input renders the page as the prospective **stable** tag instead. It is render-only — it never
+names, creates, touches or publishes a Release — and supplying it on a dispatch that actually publishes is REFUSED in
+`resolve-source`, before any build runs, because the two inputs then state two different intents.
+That artifact name must not match the `release-*` pattern
 `create-release` uses to collect the built assets — `download-artifact` matches it with minimatch, and a matching name would
 have the rendered Markdown published as a stray asset beside the ZIP; the dispatch suite asserts it with a real glob match.
-On the publish path the changelog base is stated explicitly as the newest published **stable** release, so a stable page
-always spans the whole gap since the last stable release rather than only the last release candidate.
+On the publish path the changelog base is stated explicitly as the newest published **stable** release that sorts
+strictly before the tag being built by semver — not the globally newest stable one by release date — so a stable page
+always spans the whole gap since the last stable release rather than only the last release candidate, and re-running an
+older tag after a newer one has shipped cannot render a changelog that runs backwards.
 `create-release` downloads that artifact by name, refuses an empty
 or button-less body, passes it to `gh release create --notes-file`, and re-asserts it in the same `gh release edit` that
 clears the draft flag — which is what keeps the resumable adopt path ([#1806](https://github.com/Chris0Jeky/Taskdeck/issues/1806))
