@@ -81,7 +81,7 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer, {
       props: { invalid: true, errorId: 'paper-inbox-capture-error' },
     })
-    const textarea = wrapper.get('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.get('[data-testid="paper-composer-body"]')
 
     expect(textarea.attributes('aria-invalid')).toBe('true')
     expect(textarea.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
@@ -146,17 +146,17 @@ describe('PaperCaptureComposer', () => {
    * assertion in it fails on the pre-#1871 component, which hardcoded English
    * in the template regardless of locale.
    *
-   * Selectors are locale-independent on purpose (tag and class, never the
+   * Selectors are locale-independent on purpose (testid and class, never the
    * aria-label being asserted): a selector that reads the string under test
    * cannot fail when that string is wrong, it just finds nothing.
    */
   function fieldChrome(wrapper: ReturnType<typeof mount>) {
     return {
       eyebrows: wrapper.findAll('.paper-composer__label .tk-eyebrow').map((node) => node.text()),
-      body: wrapper.get('textarea'),
-      board: wrapper.get('select'),
-      label: wrapper.get('input[type="text"]'),
-      due: wrapper.get('input[type="date"]'),
+      body: wrapper.get('[data-testid="paper-composer-body"]'),
+      board: wrapper.get('[data-testid="paper-composer-board"]'),
+      label: wrapper.get('[data-testid="paper-composer-label-input"]'),
+      due: wrapper.get('[data-testid="paper-composer-due"]'),
       attachments: wrapper.get('[data-testid="paper-composer-attachments-unavailable"]'),
     }
   }
@@ -258,9 +258,9 @@ describe('PaperCaptureComposer', () => {
   it('does not submit while creation is already in flight', async () => {
     const wrapper = mount(PaperCaptureComposer, { props: { submitting: true } })
     expect(wrapper.find('textarea').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('select[aria-label="Board picker"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('input[aria-label="Add label"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('input[aria-label="Due date"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="paper-composer-board"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="paper-composer-label-input"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="paper-composer-due"]').attributes('disabled')).toBeDefined()
 
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
 
@@ -278,7 +278,7 @@ describe('PaperCaptureComposer', () => {
     ]
     const wrapper = mount(PaperCaptureComposer)
 
-    const options = wrapper.findAll('select[aria-label="Board picker"] option')
+    const options = wrapper.findAll('[data-testid="paper-composer-board"] option')
     const readOnly = options.find((option) => option.attributes('value') === 'board-readonly')
 
     // Visible, NOT filtered away.
@@ -294,7 +294,7 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer)
 
     const option = wrapper
-      .findAll('select[aria-label="Board picker"] option')
+      .findAll('[data-testid="paper-composer-board"] option')
       .find((o) => o.attributes('value') === 'board-alpha')
 
     expect(option!.attributes('disabled')).toBeUndefined()
@@ -308,7 +308,7 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer)
 
     const option = wrapper
-      .findAll('select[aria-label="Board picker"] option')
+      .findAll('[data-testid="paper-composer-board"] option')
       .find((o) => o.attributes('value') === 'board-alpha')
 
     expect(option!.attributes('disabled')).toBeUndefined()

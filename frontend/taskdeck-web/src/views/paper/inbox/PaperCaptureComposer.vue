@@ -242,6 +242,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
             v-model="body"
             class="paper-composer__textarea"
             rows="6"
+            data-testid="paper-composer-body"
             :aria-label="t('inbox.composer.bodyAria')"
             :placeholder="t('inbox.composer.bodyPlaceholder')"
             :disabled="inputsDisabled"
@@ -304,6 +305,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
           <select
             v-model="boardId"
             class="paper-composer__select"
+            data-testid="paper-composer-board"
             :aria-label="t('inbox.boardPicker.composerAria')"
             :disabled="inputsDisabled"
           >
@@ -329,6 +331,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
             v-model="labelInput"
             class="paper-composer__input"
             type="text"
+            data-testid="paper-composer-label-input"
             :aria-label="t('inbox.composer.labelsAria')"
             :placeholder="t('inbox.composer.labelsPlaceholder')"
             :disabled="inputsDisabled"
@@ -354,6 +357,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
           <TdDateField
             v-model="dueAt"
             class="paper-composer__input"
+            data-testid="paper-composer-due"
             :aria-label="t('inbox.composer.dueAria')"
             :disabled="inputsDisabled"
           />
