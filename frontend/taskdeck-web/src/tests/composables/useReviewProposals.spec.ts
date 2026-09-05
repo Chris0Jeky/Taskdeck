@@ -2152,6 +2152,33 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
+    it('retires the recovered sentence on the following success and does not re-fire', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // An announcement is an event. Left standing it becomes a claim about the
+      // present that nothing is re-checking, so the next healthy poll retires
+      // it -- about one poll interval of life, with no timer to tear down.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      // And it stays retired: clearing must not oscillate the live region.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
     it('clears at the next degraded onset so a second recovery announces again', async () => {
       vi.useFakeTimers()
       mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])

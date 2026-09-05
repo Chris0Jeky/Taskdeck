@@ -13,19 +13,14 @@ import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionE
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 import enReview from '../../../../locales/en/review'
 
-// The pinned-warning rule lives in this SFC's scoped stylesheet, and vitest does
-// not process SFC styles, so the rule has to be read as source. Via
-// `import.meta.glob` rather than `node:fs`, for the reason
-// `src/tests/guards/nativeBrowserDialogs.spec.ts` documents: tsconfig.vitest.json
-// deliberately keeps node types out of the spec type-check project. See the spec
-// that uses it for exactly what that does and does not prove.
-const paperReviewSource = (
-  import.meta.glob('../../../../views/paper/PaperReviewView.vue', {
-    query: '?raw',
-    import: 'default',
-    eager: true,
-  }) as Record<string, string>
-)['../../../../views/paper/PaperReviewView.vue']
+// Two sticky rules decide whether the degraded warning is actually visible, and
+// both live in scoped stylesheets that vitest never processes, so they have to
+// be read as source. Vite's `?raw` rather than `node:fs`, for the reason
+// `ReviewDecisionRail.spec.ts` documents: the spec tree is type-checked without
+// node types (tsconfig.vitest.json). See the specs that use these for exactly
+// what a source read does and does not prove.
+import paperReviewSource from '../../../../views/paper/PaperReviewView.vue?raw'
+import decisionRailSource from '../../../../views/paper/review/ReviewDecisionRail.vue?raw'
 
 const mocks = vi.hoisted(() => ({
   getProposals: vi.fn(),
@@ -3229,7 +3224,12 @@ describe('PaperReviewView', () => {
       expect(queue.element.parentElement).toBe(root.element)
       expect(main.element.parentElement).toBe(root.element)
       expect(right.element.parentElement).toBe(root.element)
+      // The hoisted recovery region is the first child so it survives every
+      // flip of the branch pair below it (#2214 round 2); the three columns
+      // keep their order and their parent.
+      const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
       expect(Array.from(root.element.children)).toEqual([
+        recovered.element,
         queue.element,
         main.element,
         right.element,
@@ -3261,7 +3261,9 @@ describe('PaperReviewView', () => {
       const empty = wrapper.get('[data-testid="paper-review-empty"]')
       const right = wrapper.get('.paper-review-deep__rail-empty')
       expect(stale.element.parentElement).toBe(empty.element)
+      const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
       expect(Array.from(root.element.children)).toEqual([
+        recovered.element,
         queue.element,
         empty.element,
         right.element,
@@ -3338,6 +3340,105 @@ describe('PaperReviewView', () => {
     }
   })
 
+
+  it('keeps one recovery region across an empty-to-active branch flip (#2214)', async () => {
+    // The case a per-arm region could not serve. The recovering poll assigns
+    // the queue and records the success in ONE synchronous block, so a recovery
+    // that puts a proposal back into an empty queue flips `v-if="activeProposal"`
+    // in the same render that the sentence appears. A region living inside each
+    // arm would mount already carrying its text, which is the insert-with-text
+    // case the whole construction exists to avoid.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(true)
+
+      const before = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      expect(before.text()).toBe('')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(true)
+
+      // The recovering poll also ends the empty state: the surface swaps to the
+      // active-proposal column in the same render.
+      mocks.getProposals.mockResolvedValue([makeProposal({ id: 'returned-1' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-empty"]').exists()).toBe(false)
+      expect(wrapper.find('.paper-review-deep__main-col').exists()).toBe(true)
+      const after = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      expect(after.text()).toBe(enReview.queue.degraded.recovered)
+      // The same node the reviewer's assistive technology was already watching,
+      // through a branch flip that replaced the entire centre column.
+      expect(after.element).toBe(before.element)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('offsets the decision rail below the pinned degraded warning (#2214)', async () => {
+    // HONEST LIMITS, twice over. vitest does not process an SFC's `<style
+    // scoped>`, so neither rule below is reachable through `getComputedStyle`
+    // and both are read as source. And happy-dom lays nothing out, so the
+    // warning measures 0 and the property's VALUE here proves nothing — only
+    // that the view writes the property when the warning is on screen and stops
+    // writing it when it is not. That the rail visibly clears the warning is a
+    // browser fact this suite cannot reach.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+
+      // Not degraded: nothing is pinned, so the rail keeps its own top of 0
+      // through the fallback and the column carries no offset.
+      expect(wrapper.get('.paper-review-deep__main-col').attributes('style') ?? '').not.toContain(
+        '--paper-review-sticky-offset',
+      )
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(true)
+      expect(wrapper.get('.paper-review-deep__main-col').attributes('style')).toContain(
+        '--paper-review-sticky-offset',
+      )
+
+      // The rail is sticky in the SAME scroller and is opaque, so a bare
+      // `top: 0` there covers the pinned warning completely. It must read the
+      // offset, with a 0 fallback for every surface that writes no property.
+      const railRule = decisionRailSource
+        .split('.paper-review-decision {')[1]
+        ?.split('}')[0]
+      expect(railRule).toBeDefined()
+      expect(railRule).toContain('position: sticky')
+      expect(railRule).toContain('top: var(--paper-review-sticky-offset, 0)')
+
+      // Recovery removes the pin, and with it the offset.
+      mocks.getProposals.mockResolvedValue([makeProposal({ id: 'retained-1' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(false)
+      expect(wrapper.get('.paper-review-deep__main-col').attributes('style') ?? '').not.toContain(
+        '--paper-review-sticky-offset',
+      )
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   it('renders the degraded warning beside a filtered-empty queue (#2214)', async () => {
     // The two degraded cases above cover an active proposal and an unfiltered

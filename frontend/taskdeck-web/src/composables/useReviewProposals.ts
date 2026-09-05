@@ -209,7 +209,9 @@ export function useReviewProposals() {
   // after a degraded state was actually cleared by a successful read, so an
   // ordinary success never announces anything, and it falls back to false at
   // the next degraded onset so a second recovery is announced too (a live
-  // region only speaks when its TEXT changes).
+  // region only speaks when its TEXT changes). The FOLLOWING success also
+  // retires it, so the sentence lives for about one poll interval rather than
+  // the rest of the session.
   //
   // It is deliberately NOT cleared on a 403: the surfaces already gate this
   // sentence on `!queueAccessRevoked`, the same guard the warning uses, so the
@@ -650,7 +652,17 @@ export function useReviewProposals() {
     consecutiveQueueRefreshFailures = 0
     // Only a success that ends a VISIBLE degraded state is a recovery. Setting
     // this on every success would make both skins announce every 15 s.
-    if (queueRefreshStale.value) queueRefreshRecovered.value = true
+    if (queueRefreshStale.value) {
+      queueRefreshRecovered.value = true
+    } else if (queueRefreshRecovered.value) {
+      // The FOLLOWING success retires the sentence, so it lives for about one
+      // poll interval instead of the whole session. An announcement is an
+      // event; leaving its text standing indefinitely turns it into a claim
+      // about the present that nothing is re-checking. Clearing it here rather
+      // than on a timer keeps the composable free of teardown state, and the
+      // clear is silent: a live region going empty announces nothing.
+      queueRefreshRecovered.value = false
+    }
     queueRefreshStale.value = false
   }
 
