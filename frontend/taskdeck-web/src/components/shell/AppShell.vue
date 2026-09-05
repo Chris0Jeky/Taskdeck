@@ -185,6 +185,31 @@ function activeKeyboardOwningSurfaces(): HTMLElement[] {
 }
 
 /**
+ * One surface scan per keydown, shared by the two guards below (#2636).
+ *
+ * The capture-phase listener always runs before the bubble-phase one for the
+ * same event, so whichever asks first pays for the `querySelectorAll` plus
+ * `getComputedStyle` sweep and the other reads the answer. Without the memo the
+ * bubble guard would double the per-keystroke cost #1968 went out of its way to
+ * make lazy.
+ *
+ * The answer is deliberately pinned to the event rather than re-read on the
+ * bubble: a surface handler may have closed its own surface on the way up (a
+ * palette option activating, say), and the key still belonged to the surface
+ * that was open when it was pressed.
+ */
+let scannedEvent: KeyboardEvent | null = null
+let scannedSurfaces: HTMLElement[] = []
+
+function keyboardOwningSurfacesFor(event: KeyboardEvent): HTMLElement[] {
+  if (scannedEvent !== event) {
+    scannedEvent = event
+    scannedSurfaces = activeKeyboardOwningSurfaces()
+  }
+  return scannedSurfaces
+}
+
+/**
  * True when this action's own surface is among the active ones and every active
  * surface belongs to the shell. That is what makes `?` and `mod+k` toggles
  * rather than one-way openers: the help dialog owns `?`, the command palette
@@ -278,6 +303,45 @@ function guardSurfaceFromPageShortcuts(event: KeyboardEvent, surfaces: readonly 
   event.stopPropagation()
 }
 
+/**
+ * The other half of the same guard, for keys pressed from INSIDE the surface
+ * (#2636).
+ *
+ * `guardSurfaceFromPageShortcuts` above runs in the capture phase and has to
+ * stand aside when the target is inside the surface, because at that point the
+ * surface's own handlers have not run yet. That carve-out was the leak PR #2635
+ * recorded: Tab into the open help dialog on a Legacy board and press `f` or
+ * `n`, and the event ran the dialog's handlers and then kept bubbling out to
+ * `BoardView`'s `useKeyboardShortcuts` window listener -- the filter panel
+ * toggled and the add-card composer pulled focus out of the dialog.
+ *
+ * This listener sits on `document` in the bubble phase, which is the one seam
+ * between the two: every handler from the target up to `document` has already
+ * run (all four surfaces bind their own keys on their own elements -- the
+ * palettes' `@keydown.down/up/enter`, `CaptureModal`'s `@keydown`), while the
+ * page-level listeners this has to silence all bind on `window`, one hop
+ * further out. So stopping here cannot take a key away from the surface that
+ * owns it, and that is why no surface component needed changing.
+ *
+ * Two carve-outs, for the same reasons the capture half has them:
+ *   - Escape is never stopped. `useEscapeStack` listens in the capture phase so
+ *     it is already past, but `BoardView.closeOpenUi` and
+ *     `PaperShortcutsOverlay` both take Escape on the window bubble, and
+ *     stopping it here would strand their surfaces open.
+ *   - Text-entry targets are left alone. Typing is not a page shortcut:
+ *     `useKeyboardShortcuts` ignores text entry outright, and honouring the
+ *     early-out keeps the #1968 promise that an ordinary keystroke in a field
+ *     never pays for the surface scan.
+ */
+function guardPageListenersFromSurfaceKeys(event: KeyboardEvent) {
+  if (event.key === 'Escape') return
+  if (event.isComposing) return
+  if (isTextEntryTarget(event.target)) return
+  if (keyboardOwningSurfacesFor(event).length === 0) return
+
+  event.stopPropagation()
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.isComposing) {
     clearPendingChord()
@@ -288,9 +352,9 @@ function handleKeydown(event: KeyboardEvent) {
 
   // Scanned at most once per event, and only once something actually needs the
   // answer, so an ordinary keystroke typed into a field never pays for the
-  // `querySelectorAll` plus `getComputedStyle` sweep (#1968).
-  let surfaces: HTMLElement[] | null = null
-  const keyboardOwningSurfaces = () => (surfaces ??= activeKeyboardOwningSurfaces())
+  // `querySelectorAll` plus `getComputedStyle` sweep (#1968). The memo is shared
+  // with the bubble-phase guard so the pair still scans only once (#2636).
+  const keyboardOwningSurfaces = () => keyboardOwningSurfacesFor(event)
 
   if (pendingChord) {
     const chord = pendingChord
@@ -366,6 +430,9 @@ function handleLogout() {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown, true)
+  // Bubble phase on `document`: after the surface's own handlers, before the
+  // page-level `window` listeners (#2636).
+  document.addEventListener('keydown', guardPageListenersFromSurfaceKeys)
 })
 
 function hydratePreferencesIfNeeded() {
@@ -403,6 +470,10 @@ watch(
 onUnmounted(() => {
   clearPendingChord()
   window.removeEventListener('keydown', handleKeydown, true)
+  document.removeEventListener('keydown', guardPageListenersFromSurfaceKeys)
+  // Nothing should outlive the shell holding a reference to a detached surface.
+  scannedEvent = null
+  scannedSurfaces = []
 })
 </script>
 
