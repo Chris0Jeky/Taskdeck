@@ -60,6 +60,28 @@ const props = withDefaults(
      * single-member answer. Stale is never removed.
      */
     authorPartitionAvailable?: boolean
+    /**
+     * Whether the queue read behind `awaitingCount` is still in flight (#2214).
+     * While it is, the count is 0 because nothing has been read yet — not
+     * because nothing is awaiting review — so the polite announcement is
+     * withheld rather than telling a screen-reader user "0 proposals awaiting
+     * review." under the loading state and then the real count.
+     *
+     * Optional and defaulting to `false`: an omitted flag keeps the existing
+     * announcement exactly as it is, so a parent that does not pass it is
+     * unaffected. `PaperReviewView` passes its own `proposalsLoading`.
+     */
+    loading?: boolean
+    /**
+     * Whether the queue was withdrawn rather than read (#2214 round 2). A
+     * current-scope 403 sets `queueAccessRevoked` AND clears the queue, so
+     * `awaitingCount` drops to 0 for a reason that is not "nothing is awaiting
+     * review" — and because that is a CHANGE, an ungated live region speaks it.
+     * Kept separate from `loading` so the parent passes its two real states
+     * rather than a derived boolean whose reason is lost at the call site;
+     * `PaperReviewView` passes its own `queueAccessRevoked`.
+     */
+    queueUnavailable?: boolean
   }>(),
   {
     dismissableCount: 0,
@@ -67,6 +89,8 @@ const props = withDefaults(
     batchExecutableCount: 0,
     busy: false,
     authorPartitionAvailable: true,
+    loading: false,
+    queueUnavailable: false,
   },
 )
 
@@ -93,6 +117,13 @@ const visible = computed<QueueRailItem[]>(() => {
       return props.items
   }
 })
+
+/**
+ * Whether `awaitingCount` is a real count right now (#2214). A queue that is
+ * still loading and one whose access was revoked both carry 0 because nothing
+ * has been read, not because nothing awaits review; neither is speakable.
+ */
+const countIsAnnounceable = computed<boolean>(() => !props.loading && !props.queueUnavailable)
 
 /** Real 7-day cadence to render; null hides the mini-cadence bars entirely. */
 const hasCadence = computed<boolean>(
@@ -155,13 +186,18 @@ function onFilterPillClick(key: QueueFilter) {
         under them. The eyebrow itself cannot carry the live region: it also
         renders the stale count and is rewritten by filter clicks, which would
         make it chatter on ordinary interaction.
+
+        The region stays MOUNTED while the count is unspeakable and only
+        withholds its content (#2214): a live region inserted at the same moment
+        its text appears is unreliably announced, so gating with `v-if` would
+        trade one defect for another.
       -->
       <p
         class="sr-only"
         role="status"
         aria-live="polite"
         data-testid="paper-review-queue-live"
-      >{{ $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) }}</p>
+      >{{ countIsAnnounceable ? $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) : '' }}</p>
       <PaperScopeDisclosure
         v-if="scopeLabel && scopeClearLabel"
         :label="scopeLabel"

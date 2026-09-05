@@ -31,13 +31,18 @@ function mountRail(props?: Partial<{
   cadence: number[]
   scopeLabel: string
   scopeClearLabel: string
+  loading: boolean
+  queueUnavailable: boolean
+  awaitingCount: number
 }>) {
   return mount(ReviewQueueRail, {
     props: {
       items: props?.items ?? [makeItem()],
       activeId: props?.activeId ?? null,
-      awaitingCount: 3,
+      awaitingCount: props?.awaitingCount ?? 3,
       staleCount: 2,
+      ...(props?.loading !== undefined ? { loading: props.loading } : {}),
+      ...(props?.queueUnavailable !== undefined ? { queueUnavailable: props.queueUnavailable } : {}),
       dismissableCount: props?.dismissableCount ?? 0,
       busy: props?.busy ?? false,
       batchSelectedCount: props?.batchSelectedCount ?? 0,
@@ -293,5 +298,44 @@ describe('ReviewQueueRail apply-approved action (#1307)', () => {
     const wrapper = mountRail({ batchExecutableCount: 2, batchSelectedCount: 1 })
     expect(wrapper.find('[data-testid="queue-batch-approve"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="queue-batch-execute"]').exists()).toBe(true)
+  })
+})
+
+describe('ReviewQueueRail queue announcement (#2214)', () => {
+  it('announces the awaiting count once the queue is loaded', () => {
+    const wrapper = mountRail({ awaitingCount: 3 })
+    const live = wrapper.get('[data-testid="paper-review-queue-live"]')
+    expect(live.attributes('role')).toBe('status')
+    expect(live.text()).toContain('3 proposals awaiting review')
+  })
+
+  it('announces nothing while the queue is still loading', () => {
+    // A loading rail carries awaitingCount 0 because nothing has been read yet,
+    // so an ungated region reads "0 proposals awaiting review." and then the
+    // real count. Only the content is withheld: the region stays mounted so a
+    // later change lands in a live region that was already present.
+    const wrapper = mountRail({ loading: true, awaitingCount: 0 })
+    const live = wrapper.get('[data-testid="paper-review-queue-live"]')
+    expect(live.attributes('role')).toBe('status')
+    expect(live.text()).toBe('')
+  })
+
+  it('announces nothing once queue access is revoked', () => {
+    // The revoked state clears the queue, so awaitingCount drops to 0 for a
+    // reason that is not "nothing is awaiting review". Same defect as loading,
+    // one branch over.
+    const wrapper = mountRail({ queueUnavailable: true, awaitingCount: 0, items: [] })
+    const live = wrapper.get('[data-testid="paper-review-queue-live"]')
+    expect(live.attributes('role')).toBe('status')
+    expect(live.text()).toBe('')
+  })
+
+  it('keeps announcing when no loading flag is supplied', () => {
+    // The prop is optional so the parent view needs no change to keep today's
+    // behaviour; an omitted flag must never silence the announcement.
+    const wrapper = mountRail({ awaitingCount: 2 })
+    expect(wrapper.get('[data-testid="paper-review-queue-live"]').text()).toContain(
+      '2 proposals awaiting review',
+    )
   })
 })

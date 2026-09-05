@@ -1441,4 +1441,156 @@ describe('ReviewView', () => {
     expect(invalid.text()).not.toContain('no operations')
     expect(mocks.errorToast).not.toHaveBeenCalled()
   })
+
+  // --- #2214: the hash-pinned target's own unavailable state ----------------
+
+  it('names a hash-pinned proposal that is unavailable instead of the generic empty queue (#2214)', async () => {
+    // The queue read succeeds and simply does not contain the pinned proposal;
+    // the proposal-level read then refuses it. That is an identity failure of
+    // the link the reviewer followed, not an empty queue.
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-gone')
+
+    const unavailable = wrapper.find('[data-testid="review-unavailable-target"]')
+    expect(unavailable.exists()).toBe(true)
+    expect(unavailable.attributes('role')).toBe('status')
+    expect(unavailable.text()).toContain('This proposal is unavailable.')
+    expect(unavailable.text()).toContain('proposal-gone')
+    // The ordinary empty queue must not stand in for a refused deep link.
+    expect(wrapper.find('.td-review-empty').exists()).toBe(false)
+  })
+
+  it('returns to the unpinned queue from the unavailable state (#2214)', async () => {
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper, router } = await mountAt('/workspace/review#proposal-proposal-gone')
+
+    const back = wrapper.get('[data-testid="review-unavailable-return"]')
+    await back.trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(router.currentRoute.value.hash).toBe('')
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+  })
+
+  it('recovers to the pinned proposal when the target resolves again (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([])
+      mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+      const { wrapper } = await mountAt('/workspace/review#proposal-proposal-flaky')
+      expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(true)
+
+      // The target is readable again and the next background read carries it,
+      // so the queue read alone settles the pin.
+      const restored = buildProposal({ id: 'proposal-flaky' })
+      mocks.getProposals.mockResolvedValue([restored])
+      mocks.getProposal.mockResolvedValue(restored)
+
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+      expect(wrapper.find('#proposal-proposal-flaky').exists()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('announces nothing from the queue live region while the queue is loading (#2214)', async () => {
+    // The live region sits above the skeleton, so an ungated one reads "0
+    // proposals awaiting review." under the loading state and then the real
+    // count — the first of which was never true.
+    const pending = createDeferred<Proposal[]>()
+    mocks.getProposals.mockReturnValue(pending.promise)
+
+    const { wrapper } = await mountAt('/workspace/review')
+
+    expect(wrapper.find('.td-review__skeleton').exists()).toBe(true)
+    const live = wrapper.get('[data-testid="review-queue-live"]')
+    // The region itself stays mounted so a later count change is announced in
+    // an already-present live region; only its content is withheld.
+    expect(live.attributes('role')).toBe('status')
+    expect(live.text()).toBe('')
+
+    pending.resolve([buildProposal({ id: 'proposal-loaded' })])
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="review-queue-live"]').text()).toContain(
+      '1 proposal awaiting review',
+    )
+  })
+
+  it('announces nothing from the queue live region once queue access is revoked (#2214)', async () => {
+    // A current-scope 403 sets queueAccessRevoked AND clears the queue, so the
+    // announcement changes from a real count to 0 — a change, therefore spoken —
+    // while the panel beside it says the queue is gone and has stopped updating.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-visible' })])
+      const { wrapper } = await mountAt('/workspace/review')
+      expect(wrapper.get('[data-testid="review-queue-live"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-access-revoked"]').exists()).toBe(true)
+      const live = wrapper.get('[data-testid="review-queue-live"]')
+      expect(live.attributes('role')).toBe('status')
+      expect(live.text()).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders the pinned proposal, not the unavailable panel, after moving from a dead pin to a live one (#2214)', async () => {
+    // What this pins: navigating from a refused pin X to a resolvable pin Y
+    // shows Y's card and no panel.
+    //
+    // What it does NOT pin, measured: the `renderedProposals.length === 0` half
+    // of the panel's own condition. Deleting that half leaves this test green.
+    // The window where the recorded id still names X while the hash names a
+    // renderable Y exists only while `proposalsLoading` is true, because
+    // `openProposalFromHash` early-returns there — and the loading branch
+    // precedes the panel in the same v-if chain, so the skeleton renders
+    // instead. When the read settles, `proposalsLoading = false` and the
+    // clearing of the recorded id happen in one synchronous block, so no
+    // intermediate state is ever rendered. The length half is therefore
+    // defence-in-depth against that ordering changing, not a live guard.
+    const y = buildProposal({ id: 'proposal-y' })
+    mocks.getProposals.mockResolvedValue([y])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper, router } = await mountAt('/workspace/review#proposal-proposal-x')
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(true)
+
+    const pending = createDeferred<Proposal[]>()
+    mocks.getProposals.mockReturnValue(pending.promise)
+    const refresh = wrapper.findAll('button').find((node) => node.text() === 'Refresh Review')!
+    await refresh.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await router.push('/workspace/review#proposal-proposal-y')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    pending.resolve([y])
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // The panel must never stand in front of a proposal that renders.
+    expect(wrapper.find('#proposal-proposal-y').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+  })
 })
