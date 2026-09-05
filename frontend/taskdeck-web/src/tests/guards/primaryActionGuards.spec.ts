@@ -37,20 +37,48 @@ import { expectGuardedPrimaryAction } from '../utils/guardedPrimaryAction'
  * disclosure toggle, a filter, a cancel and a re-read are not primary actions
  * and are deliberately absent — they have nothing to be silent about.
  *
- * COVERED, with every precondition each control can be blocked by:
+ * COVERED CONTROLS, and for each one EVERY precondition its `disabled` binding
+ * reads, marked registered or not. A precondition that is not marked
+ * "registered" is NOT proven by this file: read an unmarked entry as unexamined,
+ * never as safe. Registering one precondition of a control proves that the
+ * control honours its binding at all; it says nothing about the others.
+ *
  *  - `PaperTriageTable` accept-on-board (`data-action="accept-on-board"`),
- *    which enqueues triage for a capture. Its `boardPickBlock` states are
- *    `loading` / `loadFailed` / `noBoards` / `noBoard` / `viewOnly`; `noBoard`,
- *    `loadFailed` and `viewOnly` are registered below. `loading` and `noBoards`
- *    are the same disabled binding reached through the same computed and are
- *    not separately registered.
+ *    which enqueues triage for a capture.
+ *    Binding: `isActionDisabled(item) || boardPickBlock !== null`.
+ *      `boardPickBlock === 'noBoard'` — REGISTERED.
+ *      `boardPickBlock === 'loadFailed'` — REGISTERED.
+ *      `boardPickBlock === 'viewOnly'` — REGISTERED.
+ *      `boardPickBlock === 'loading'` — not registered: a transient state
+ *        between the picker opening and the board fetch settling, not a
+ *        standing condition a user acts against.
+ *      `boardPickBlock === 'noBoards'` — not registered: out of this slice.
+ *      `isActionDisabled`: `readOnly`, `hasMutationInFlight`,
+ *        `triagePollingItemId === item.id`, `!canMutate(item)`,
+ *        `isEditing(item)`, `isEditingElsewhere(item)` — six further
+ *        disjuncts, none registered, all out of this slice.
  *  - `PaperTriageRowEdit` save (`data-action="edit-save"`), which writes the
- *    capture suggestion. All three `saveBlock` states — `busyElsewhere`,
- *    `empty`, `unchanged` — are registered below.
- *  - `PaperCaptureNib` submit, which enqueues a capture. Its one precondition
- *    is `canSubmit`.
- *  - `PaperCaptureComposer` submit, which enqueues a capture. Its one
- *    precondition is a non-blank body.
+ *    capture suggestion.
+ *    Binding: `saveBlock !== null || saving`.
+ *      `saveBlock === 'busyElsewhere'` — REGISTERED.
+ *      `saveBlock === 'empty'` — REGISTERED.
+ *      `saveBlock === 'unchanged'` — REGISTERED.
+ *      `saving` — not registered: it is the in-flight state of a write the
+ *        user already started, not a precondition for starting one.
+ *    This is the only control here whose every standing precondition is
+ *    registered.
+ *  - `PaperCaptureNib` submit, which enqueues a capture.
+ *    Binding: `!canSubmit`, two conjuncts.
+ *      draft is non-blank — REGISTERED.
+ *      `!props.submitting` — not registered: parent-owned in-flight state.
+ *  - `PaperCaptureComposer` submit, which enqueues a capture.
+ *    Binding: `!canSubmit`, FOUR conjuncts.
+ *      body is non-blank — REGISTERED.
+ *      `!props.submitting` — not registered: parent-owned in-flight state.
+ *      `selectedBoardIsWritable` — not registered, out of this slice. It is
+ *        the composer's analogue of the table's `viewOnly`, and worth adding.
+ *      `!transcriptTooLong` — not registered, out of this slice. It is the one
+ *        conjunct here that is a content-length rule rather than a state flag.
  *
  * DELIBERATELY OUT, and why:
  *  - `PaperReviewView` approve / reject / execute — the review surface's
@@ -65,9 +93,9 @@ import { expectGuardedPrimaryAction } from '../utils/guardedPrimaryAction'
  *    evidence of a guarded action; it is the absence of evidence.
  *
  * NOT COVERED: whether the validation text is correct, whether a disabled
- * reason is announced to assistive tech, and every primary action absent from
- * the inventory above. Route-walking runtime coverage (AC4) remains open on
- * GH-1949.
+ * reason is announced to assistive tech, every precondition marked "not
+ * registered" above, and every primary action absent from the inventory
+ * entirely. Route-walking runtime coverage (AC4) remains open on GH-1949.
  */
 
 type MockBoard = { id: string; name: string; canWrite?: boolean }
@@ -327,8 +355,11 @@ describe('primary action guards (GH-1949 AC3)', () => {
     mockBoardStore.boards = []
     mockBoardStore.fetchBoards.mockRejectedValue(new Error('boards unavailable'))
     const wrapper = mount(PaperTriageTable, { props: { items: boardlessItems() } })
+    // The failing load is the one `onMounted` primes, not one the click starts:
+    // by the time the picker opens, `boardListLoadState` is already `failed`,
+    // and `onAccept` re-triggers a load only from `idle`.
+    await flushPromises()
 
-    // Opening the picker with no boards cached triggers the load that fails.
     await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
     await flushPromises()
 
