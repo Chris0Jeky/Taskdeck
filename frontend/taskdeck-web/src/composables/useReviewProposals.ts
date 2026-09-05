@@ -570,6 +570,53 @@ export function useReviewProposals() {
     ]
   })
 
+  /**
+   * The ORDERED ids of the proposals both skins count as "awaiting review"
+   * (#2214 item 4).
+   *
+   * One source for the count AND for its identity (#1124 / ADR-0038): Legacy
+   * read the number off `summaryCards`' `pending-review` card and Paper
+   * recomputed this same predicate inline, and neither skin had any notion of
+   * WHICH proposals the number stood for.
+   *
+   * That is the whole defect. Both queue live regions rendered a sentence
+   * derived from the count alone, and a live region only speaks when its text
+   * changes — so a poll that removed one pending proposal and added another in
+   * the same response produced a byte-identical "3 proposals awaiting review.",
+   * mutated nothing, and announced nothing. The queue moved under the reviewer
+   * in silence, which is the false-negative class #2194 exists to remove.
+   *
+   * Ordered, not a set: the rail renders the queue in this order, so a reorder
+   * is a queue that moved. A byte-identical answer is not.
+   */
+  const awaitingProposalIds = computed(() =>
+    visibleProposals.value
+      .filter(
+        (proposal) =>
+          normalizeProposalStatus(proposal.status) === 'PendingReview' &&
+          !isProposalExpired(proposal),
+      )
+      .map((proposal) => proposal.id),
+  )
+
+  /**
+   * The identity above as one primitive, for use as the `key` of the node each
+   * skin's queue live region wraps around its sentence.
+   *
+   * A KEY rather than part of the spoken text, deliberately. Re-keying replaces
+   * that node inside a live region that itself stays mounted, and a node
+   * addition is exactly what `aria-live`'s default
+   * `aria-relevant="additions text"` announces — so the same count-neutral
+   * replacement is spoken once, with the sentence and its count unchanged from
+   * what #2194 shipped. The alternative, blanking the text for a frame and
+   * restoring it, recreates the "inserted together with its text" shape that
+   * #2593 and #2630 both call unreliably announced.
+   *
+   * `\n` cannot appear in a proposal id, so distinct queues cannot collide on
+   * one key.
+   */
+  const queueAnnouncementKey = computed(() => awaitingProposalIds.value.join('\n'))
+
   function isProposalDismissable(proposal: ApiProposal): boolean {
     const status = normalizeProposalStatus(proposal.status)
     return (
@@ -802,11 +849,24 @@ export function useReviewProposals() {
       // removed" about a proposal that was none of those things -- the board
       // simply was not this reviewer's any more.
       //
-      // The toast stays: this read is one the caller asked for, and every
-      // action composable that calls `loadProposals` still gets its failure
-      // signal and its 'failed' outcome unchanged.
-      if (isForbiddenError(e)) recordQueueAccessRevoked()
-      toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
+      //
+      // ONE report for one fact (#2214, from PR #2694's round-2 verification).
+      // `recordQueueAccessRevoked` raises a DURABLE panel that is the first
+      // branch of both skins' empty chains and names the revocation and its
+      // remedy; the generic "Failed to load proposals" toast beside it named
+      // neither, was gone seconds later, and was contradicted by a panel that
+      // stayed — the same two-reports-for-one-fact shape #2694 removed on the
+      // pin leg. Every OTHER explicit failure keeps its toast: this read is one
+      // the caller asked for, and nothing else on screen reports it.
+      //
+      // The outcome contract is untouched either way: every action composable
+      // that calls `loadProposals` still gets its failure signal and its
+      // 'failed' outcome.
+      if (isForbiddenError(e)) {
+        recordQueueAccessRevoked()
+      } else {
+        toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
+      }
       outcome = 'failed'
     } finally {
       if (requestId === latestProposalLoadRequestId) proposalsLoading.value = false
@@ -1485,7 +1545,25 @@ export function useReviewProposals() {
 
   watch(
     () => route.hash,
-    () => { openProposalFromHash().catch(() => {}) },
+    () => {
+      // A revoked queue has ONE owner and ONE explanation — the same rule the
+      // explicit load already applies at its own `openProposalFromHash` call
+      // site. A `#proposal-` link followed while the revoked panel is up (a
+      // stale rail row, a bookmark, the back button) can only ask the by-id
+      // route about a target inside a board the server has refused wholesale,
+      // and its answer can only write a second, narrower and wrong account of
+      // that refusal into `unavailableProposalId`.
+      //
+      // Invisible today because the revoked panel is the first branch of both
+      // skins' empty chains, which makes it a LATENT contradiction rather than
+      // a visible one: the state is written, and the next surface to consume it
+      // reads a lifecycle claim ("applied, archived, or removed") about a
+      // proposal that was none of those things. A successful load clears
+      // `queueAccessRevoked` and re-runs the hash lookup itself, so nothing is
+      // lost by not asking here.
+      if (queueAccessRevoked.value) return
+      openProposalFromHash().catch(() => {})
+    },
   )
 
   watch(
@@ -1514,6 +1592,8 @@ export function useReviewProposals() {
     nowMs,
     visibleProposals,
     summaryCards,
+    awaitingProposalIds,
+    queueAnnouncementKey,
     dismissableProposalIds,
     matchesActiveBoardFilter,
     isProposalExpired,
