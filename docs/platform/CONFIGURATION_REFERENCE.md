@@ -225,8 +225,10 @@ cannot store those permissions, which is the case on FAT32, exFAT, and some SMB
 shares, the CLI refuses to persist a new key, warns on stderr, and falls back to a
 transient key generated for that run alone, so connector secrets encrypted in one
 run cannot be read in the next. A key file that already exists on such a volume is
-still used: the CLI keeps the persisted key and warns on every run that it could
-not restrict the file to the current user. The fix is the same in both cases: move
+still used: the CLI keeps the persisted key and warns on every run where the
+filesystem reports that the file could not be restricted to the current user; a
+volume that silently ignores permission changes produces no warning, so treat any
+such directory as unsupported. The fix is the same in both cases: move
 the data directory onto a filesystem that stores permissions, or set
 `Connectors__EncryptionKey` explicitly and remove the key file so the CLI never
 needs to persist or protect a key of its own.
