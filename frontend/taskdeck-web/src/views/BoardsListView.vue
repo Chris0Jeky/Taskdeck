@@ -98,8 +98,20 @@ async function retryLoad() {
   // block is gone — so the optional call is also the "only on failure" guard.
   // The alert paragraph is a new node on each failure, so it is announced
   // again independently of this.
+  //
+  // The second guard is what keeps "restore" from meaning "steal". The read is
+  // bounded at 10 s and the create panel is rendered ABOVE the loading chain,
+  // so it stays interactive for the whole wait: a user who opens "+ New Board"
+  // and starts typing during a hung retry had the caret yanked back to the
+  // rebuilt button when the read finally failed, and their next Space or Enter
+  // re-fired Retry instead of typing (#2689 item 6). Focus is only put back
+  // when it was actually LOST — `document.activeElement` null or <body>, which
+  // is where the browser leaves it after the activated button unmounts.
   await nextTick()
-  retryButton.value?.focus()
+  const focused = document.activeElement
+  if (focused === null || focused === document.body) {
+    retryButton.value?.focus()
+  }
 }
 
 async function createBoard() {
