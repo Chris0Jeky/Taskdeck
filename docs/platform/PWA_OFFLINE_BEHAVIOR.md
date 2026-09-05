@@ -168,9 +168,10 @@ Workbox handles cache versioning automatically via content hashing in precache m
 ## PWA Installability
 
 The generated frontend assets meet Chrome's PWA installability criteria when the deployment serves
-the same-origin manifest under its CSP. Exact packaged-desktop proof currently finds that the API
-CSP omits `manifest-src`, so Chrome blocks `manifest.webmanifest` on that surface; issue `#2045`
-tracks the directive and packaged reproof. The generated contract includes:
+the same-origin manifest under its CSP. The API's production CSP default (both the shipped
+`appsettings.json` and the code-side `SecurityHeadersSettings` default) now includes
+`manifest-src 'self'` (PR `#2626`); the packaged-desktop installability reproof is still owed and
+issue `#2045` tracks it. The generated contract includes:
 
 - Valid `manifest.webmanifest` with `name`, `short_name`, `start_url`, `display: standalone`, and icons (192x192 and 512x512 PNG).
 - Service worker with fetch handler (provided by Workbox).

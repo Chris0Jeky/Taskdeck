@@ -88,15 +88,24 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.TryGetValues("Content-Security-Policy", out var cspValues).Should().BeTrue();
         var csp = cspValues.Should().ContainSingle().Subject;
-        csp.Should().Contain("default-src 'none'");
+        var directives = csp.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        var manifestSrcDirective = csp
-            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        directives
+            .Should()
+            .ContainSingle(directive => directive.StartsWith("default-src ", StringComparison.Ordinal))
+            .Which.Should().Be("default-src 'none'");
+
+        directives
             .Should()
             .ContainSingle(directive => directive.StartsWith("manifest-src ", StringComparison.Ordinal))
-            .Which;
+            .Which.Should().Be("manifest-src 'self'");
 
-        manifestSrcDirective.Should().Be("manifest-src 'self'");
+        // The code-side default must carry the same directive, so a deployment whose
+        // configuration omits SecurityHeaders:ContentSecurityPolicy behaves the same way.
+        new SecurityHeadersSettings().ContentSecurityPolicy
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Should()
+            .Contain("manifest-src 'self'");
     }
 
     [Fact]
