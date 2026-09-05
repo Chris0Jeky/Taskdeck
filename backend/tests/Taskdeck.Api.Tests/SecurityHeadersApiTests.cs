@@ -79,6 +79,27 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task SecurityHeaders_CspManifestSrc_ShouldAllowOnlySameOriginManifests()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/health/live");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Security-Policy", out var cspValues).Should().BeTrue();
+        var csp = cspValues.Should().ContainSingle().Subject;
+        csp.Should().Contain("default-src 'none'");
+
+        var manifestSrcDirective = csp
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Should()
+            .ContainSingle(directive => directive.StartsWith("manifest-src ", StringComparison.Ordinal))
+            .Which;
+
+        manifestSrcDirective.Should().Be("manifest-src 'self'");
+    }
+
+    [Fact]
     public async Task SecurityHeaders_ShouldBePresent_OnUnauthorizedResponses()
     {
         using var client = _factory.CreateClient();
