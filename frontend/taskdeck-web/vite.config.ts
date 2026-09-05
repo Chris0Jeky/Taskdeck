@@ -17,8 +17,10 @@ const serviceWorkerImportScripts = ['api-cache-cleanup.js', 'share-target-handle
  * Moves the generated worker's `importScripts` call out of vite-plugin-pwa's asynchronous AMD
  * factory and up to the top of `dist/sw.js`, so the lifecycle listeners in
  * `public/api-cache-cleanup.js` are attached during the worker's initial synchronous evaluation
- * and its `activate` handler actually receives its event (#2639). The rewrite itself, and the
- * reasons it fails the build rather than degrading quietly, live in
+ * and its `activate` handler cannot depend on microtask ordering to receive its event (#2639).
+ * Only these two imported scripts move: Workbox's own `precacheAndRoute` install handler and
+ * `cleanupOutdatedCaches` activate handler stay inside the factory. The rewrite itself, that
+ * residual, and the reasons it fails the build rather than degrading quietly, live in
  * `src/pwa/hoistWorkerImportScripts.ts`.
  *
  * It runs in `closeBundle` with `order: 'post'`, which is what puts it after vite-plugin-pwa's own

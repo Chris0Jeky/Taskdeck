@@ -100,10 +100,13 @@ self.addEventListener('activate', (event) => {
     // What the `waitUntil` buys, precisely: Handle Fetch holds every request until the
     // worker leaves the `activating` state, so no response can be served out of a
     // half-swept cache. It does NOT make activation fail - the spec only aborts on a
-    // rejected INSTALL, never on a rejected activate - so a rejection here is surfaced
-    // (console warning plus an unhandled rejection) and the worker still activates. A
-    // sweep that cannot complete therefore leaves the old entries in place; documented
-    // as a residual in docs/platform/PWA_OFFLINE_BEHAVIOR.md.
+    // rejected INSTALL, never on a rejected activate - so a rejection here is reported
+    // by the browser (a console error in Chromium) and the worker still activates. A
+    // sweep that cannot complete therefore leaves the old entries in place, and because
+    // `reportFailure` rethrows, the rejection also aborts this async IIFE before
+    // `self.clients.claim()` below runs: pages already open under the old worker stay
+    // controlled by it until they reload. The page-side migration still fails closed on
+    // its policy probe. Documented as a residual in docs/platform/PWA_OFFLINE_BEHAVIOR.md.
     await retireCaches({ force: true }).catch(reportFailure)
     try {
       // A page loaded under the vulnerable worker keeps getting API replay until

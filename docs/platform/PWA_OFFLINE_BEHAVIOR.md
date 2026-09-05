@@ -87,8 +87,12 @@ What the forced sweep's `event.waitUntil` does and does not buy, precisely. It h
 `activating`, and Handle Fetch waits for `activated` before it lets the worker answer a request, so
 nothing can be **served** out of a half-swept cache. It does **not** make activation fail: the spec
 aborts only on a rejected *install*, never on a rejected activate, so a sweep that cannot complete
-is surfaced (console warning plus an unhandled rejection) and the worker still activates with the
-old entries in place. It also does not hide the window from page script: the registration's active
+is reported by the browser (a console error in Chromium) and the worker still activates with the
+old entries in place. `reportFailure` rethrows, so that rejection also aborts the listener's async
+body **before `self.clients.claim()` runs**: pages already open under the legacy worker keep it as
+their controller until they are reloaded, rather than being claimed by the replacement. The
+page-side migration still fails closed on its policy probe, so session establishment stays refused
+on those pages. It also does not hide the window from page script: the registration's active
 worker is swapped to the replacement *before* `activate` is dispatched, so a page reading
 `CacheStorage` directly - as the browser regression below does - can observe the pre-sweep state
 until the worker reaches `activated`.
@@ -104,7 +108,16 @@ specification requires that, so `vite.config.ts` now hoists the `importScripts` 
 the emitted `dist/sw.js` (`src/pwa/hoistWorkerImportScripts.ts`): the listener is attached during
 initial evaluation and the ordering stops being a race. The rewrite fails the build if the emitted
 call is missing, duplicated, or not in statement position, so a `vite-plugin-pwa` upgrade cannot
-silently put it back inside the factory.
+silently put it back inside the factory. The two measurements disagree and the disagreement is
+unexplained; the hoist removes the dependency either way rather than resolving it.
+
+**Residual: the hoist moves only the two imported scripts.** Workbox's own `precacheAndRoute()`
+install handler and its `cleanupOutdatedCaches()` activate handler are generated inside the AMD
+factory and stay there, so the app-shell precache still depends on the same microtask ordering. The
+precache is itself the strongest evidence that ordering has never actually failed: a browser that
+dispatched `install` before the factory drained would have registered no precache handler at all and
+produced an empty precache, which no measurement or report has shown. Hoisting those handlers is out
+of scope for `#2639`.
 
 `tests/pwa-generated-worker.spec.ts` pins this against the real emitted `dist/api-cache-cleanup.js`
 using the cache names parsed out of the generated `dist/sw.js`. One case asserts the structure
