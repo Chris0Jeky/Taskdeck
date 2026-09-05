@@ -897,7 +897,7 @@ finally {
                 throw "Askpass HTTP probe server did not start."
             }
 
-            # The readiness marker is written after a cold PowerShell host start plus an HttpListener
+            # The readiness marker is written after a cold PowerShell host start plus a TcpListener
             # bind, both of which are slow on the hosted Windows runner. A fixed 10 s deadline was the
             # same class of short fixed wait that #2664 hit; use the suite's 90 s host-start order and
             # report the elapsed time so a genuine bind failure stays distinguishable (#2670).
