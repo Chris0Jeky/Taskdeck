@@ -2472,6 +2472,63 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
+    it('gives an EXPLICIT-load recovery a full interval before a poll can retire it (#2638 round 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      // The post-decision reload is the read that ends the degraded state here,
+      // and it lands BETWEEN ticks -- 14.9 s into a 15 s cycle in the worst
+      // case. Stamping that raise with the ordinal already on the counter names
+      // a read that has finished, so the tick 100 ms later would retire the
+      // sentence: the same defect this rule exists to close, with the roles
+      // swapped (round-2 review finding).
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      expect(rp.queueRefreshRecoveredKind.value).toBe('degraded')
+
+      // The next poll success is the one the sentence lives THROUGH.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'first-poll' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The one after retires it, so it is bounded exactly as a poll-raised
+      // sentence is -- at least one full interval, never the session.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'second-poll' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+      rp.stopQueueRefresh()
+    })
+
+    it('still retires an explicit-load recovery immediately at a degraded onset (#2638 round 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The extra interval of life is about the sentence being OLD. An onset
+      // makes it FALSE, and that retirement stays immediate for either stamp,
+      // or the next real recovery would be silent.
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
     it('clears at the next degraded onset so a second recovery announces again', async () => {
       vi.useFakeTimers()
       mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])

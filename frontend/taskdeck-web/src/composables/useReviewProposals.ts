@@ -332,7 +332,9 @@ export function useReviewProposals() {
   //
   // THE RETIREMENT RULE: a standing recovery sentence is retired by the next
   // degraded or refusal onset, or by a BACKGROUND poll success belonging to a
-  // LATER read than the one that raised it — never by an explicit load.
+  // read LATER than the one the sentence is stamped with — never by an explicit
+  // load. The two stamps are set out below; the onsets are immediate for both,
+  // because there the sentence is false rather than merely old.
   //
   // Explicit loads take the same `recordQueueRefreshSuccess` path and are
   // common within one poll interval of a recovery: the post-decision reloads in
@@ -347,14 +349,35 @@ export function useReviewProposals() {
   // behaviour and is unchanged.
   //
   // Counting background reads rather than wall-clock keeps the composable free
-  // of teardown state and still gives the sentence about one poll interval of
-  // life, which is what #2630 intended.
+  // of teardown state and still gives the sentence at least one full poll
+  // interval of life, which is what #2630 intended:
+  //
+  //  - a POLL-raised sentence is stamped with the read it was raised in, so it
+  //    survives that read and retires on the next later poll success;
+  //  - an EXPLICIT-raised sentence is stamped with the read that has not
+  //    started yet, so it survives the next poll success and retires on the one
+  //    after.
+  //
+  // The asymmetry is the whole point (round-2 review finding). An explicit load
+  // lands BETWEEN background reads, so the ordinal sitting on the counter names
+  // a read that already finished: stamping that would let the very next tick
+  // retire the sentence, and a post-decision reload that recovers the queue
+  // 14.9 s into a 15 s cycle would be blanked 100 ms later — the same defect
+  // this rule exists to close, with the roles swapped.
+  //
+  // One reachability-limited gap is accepted: if the poll never records another
+  // COMPOSITE success — a hash-pinned by-id read failing every tick with a
+  // status that is neither transient nor a pin-level outcome, so 405/410/409,
+  // which this route is documented not to emit — nothing retires the sentence
+  // for the rest of the session except a degraded or refusal onset, because an
+  // explicit success no longer bounds it either.
   let backgroundQueueReadCount = 0
   let queueRecoveryRaisedAtBackgroundRead: number | null = null
 
-  function raiseQueueRecovery(kind: QueueRecoveryKind) {
+  function raiseQueueRecovery(kind: QueueRecoveryKind, source: 'poll' | 'explicit') {
     queueRefreshRecoveredKind.value = kind
-    queueRecoveryRaisedAtBackgroundRead = backgroundQueueReadCount
+    queueRecoveryRaisedAtBackgroundRead =
+      source === 'poll' ? backgroundQueueReadCount : backgroundQueueReadCount + 1
   }
 
   function retireQueueRecovery() {
@@ -903,8 +926,12 @@ export function useReviewProposals() {
    * fabricate a freshness the surface does not have. Same tick, two different
    * claims, two different pieces of evidence — so #2445's composite semantics
    * for the transient counter are deliberately untouched here.
+   *
+   * `source` is the read this list leg belongs to, and it only decides how long
+   * the sentence raised here lives (the retirement rule at
+   * `backgroundQueueReadCount`); the retraction itself is the same either way.
    */
-  function recordQueueListReadSucceeded(): boolean {
+  function recordQueueListReadSucceeded(source: 'poll' | 'explicit'): boolean {
     consecutiveQueueRefreshRefusals = 0
     if (!queueRefreshRefused.value) return false
     queueRefreshRefused.value = false
@@ -917,7 +944,7 @@ export function useReviewProposals() {
     // can still fail below and return before `proposals.value = next`, so
     // "showing current proposals" would be false for up to two more poll
     // intervals (#2214).
-    raiseQueueRecovery('refused')
+    raiseQueueRecovery('refused', source)
     return true
   }
 
@@ -925,7 +952,8 @@ export function useReviewProposals() {
    * The WHOLE composite read landed.
    *
    * `source` names the read that landed, because only a BACKGROUND one may
-   * retire a standing recovery sentence (#2638 item 2 — see the retirement rule
+   * retire a standing recovery sentence, and because a sentence raised HERE is
+   * stamped differently depending on it (#2638 item 2 — see the retirement rule
    * at `backgroundQueueReadCount`). It defaults to 'explicit' so every caller
    * that is not the poll is safe by construction.
    *
@@ -940,21 +968,28 @@ export function useReviewProposals() {
     source?: 'poll' | 'explicit'
     recoveryAlreadyRaised?: boolean
   }) {
+    const source = options?.source ?? 'explicit'
     consecutiveQueueRefreshFailures = 0
     // Idempotent: a no-op when the poll already ran it at the list-success
     // point, and the whole clear when an explicit load lands.
     const recoveryRaisedThisRead =
-      recordQueueListReadSucceeded() || options?.recoveryAlreadyRaised === true
-    // Only a success that ends a VISIBLE degraded state is a recovery. Setting
-    // this on every success would make both skins announce every 15 s. This
-    // read completed, so `proposals.value` was just replaced and the queue
-    // sentence's "showing current proposals" is true — including when it
-    // overwrites a 'refused' kind raised moments earlier in this same read,
-    // which is the stronger and now-provable statement.
+      recordQueueListReadSucceeded(source) || options?.recoveryAlreadyRaised === true
+    // The QUEUE sentence is spoken only when a read that COMPLETED ended a
+    // visible degraded state: `proposals.value` was replaced just above, so
+    // "showing current proposals" is provable. Raising it on every success
+    // would make both skins announce every 15 s, and raising it without the
+    // degraded state having been up would announce a recovery from nothing.
+    //
+    // It therefore also overwrites a 'refused' kind raised moments earlier in
+    // this same read, which is the stronger and now-provable statement. When
+    // NO degraded state was up, a refusal cleared by this same completed read
+    // keeps the refusal sentence instead: an under-claim, never a false one —
+    // it says the server is accepting refreshes again and stays silent about
+    // rows the reviewer can see for themselves.
     if (queueRefreshStale.value) {
-      raiseQueueRecovery('degraded')
+      raiseQueueRecovery('degraded', source)
     } else if (
-      options?.source === 'poll' &&
+      source === 'poll' &&
       !recoveryRaisedThisRead &&
       queueRecoveryRaisedAtBackgroundRead !== null &&
       backgroundQueueReadCount > queueRecoveryRaisedAtBackgroundRead
@@ -1132,7 +1167,7 @@ export function useReviewProposals() {
       // the refusal claim is falsified NOW -- before the pin leg gets a chance
       // to return early and strand it (round-2 review finding). The transient
       // accounting deliberately stays below, on the composite outcome.
-      const listRecoveryRaised = recordQueueListReadSucceeded()
+      const listRecoveryRaised = recordQueueListReadSucceeded('poll')
       const next = [...loadedProposals]
       let pinUnavailable = false
       let pinMalformed = false
