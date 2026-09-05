@@ -85,10 +85,24 @@ export default {
   // successful read. Translators: keep it in the same register as `body`, and
   // keep it a statement of the CURRENT state — the surface does not promise that
   // any particular proposal arrived, only that the queue is trustworthy again.
+  //
+  // `refused.body` is the OTHER failure (#2214 item 2), and it deliberately
+  // says something `degraded.body` does not. Degraded means "retrying"; refused
+  // means the server keeps ANSWERING and rejecting the query — a
+  // `?boardId=not-a-guid` in the address bar 400s every tick — so waiting for a
+  // recovery is exactly the wrong thing to do. Translators: all three clauses
+  // are load-bearing. The queue shown is the last one the server CONFIRMED;
+  // the refusal is not a temporary failure; and the reviewer has two things to
+  // try. It shares the visible slot with `degraded.body` and takes precedence
+  // over it, and it is also the text of a mounted sr-only live region in each
+  // skin, so keep it speakable as one sentence run.
   queue: {
     degraded: {
       body: 'This review queue may be out of date. Showing the last available proposals while Taskdeck retries.',
       recovered: 'This review queue is up to date again. Showing current proposals.',
+    },
+    refused: {
+      body: 'This review queue has stopped updating. The server is refusing the refresh rather than failing temporarily, so these are the last proposals it confirmed. Reload the page, or check the board filter in the address bar.',
     },
   },
 
@@ -635,10 +649,21 @@ export default {
       body: 'Someone else decided, withdrew, or deferred it while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
       return: 'Reload the queue',
     },
+    // Two different truths, deliberately not sharing a sentence (#2214).
+    // `title`/`body` describe a proposal that exists or existed and that this
+    // reviewer cannot see now (403), or that is gone (404) — a state a later
+    // read can legitimately reverse. `malformedTitle`/`malformedBody` describe
+    // an id the by-id route refuses to bind at all (400): the address never
+    // named a proposal, so there is nothing to wait for and retrying is
+    // pointless. Translators: keep that distinction. The malformed copy must
+    // not promise a recovery, and must point at the link rather than at the
+    // proposal. The eyebrow and the return control are shared by both.
     unavailable: {
       eyebrow: 'Requested proposal',
       title: 'This proposal is unavailable.',
       body: 'Proposal {id} is no longer available to review. It may have been applied, archived, or removed.',
+      malformedTitle: 'This link is not a valid proposal link.',
+      malformedBody: 'The address asks for {id}, which is not a proposal id, so there is nothing to open here. Retrying will not help. Go back to Review and pick a proposal from the queue.',
       return: 'Back to Review',
     },
   },

@@ -941,6 +941,156 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
       expect(mockToast.error).toHaveBeenCalled()
     })
+
+    /**
+     * The explicit path used to answer one fact two ways depending on which
+     * leg observed it. A 400 or a 403 on the reviewer's own deep-link read
+     * raised a generic "Failed to load proposal" toast and left no state, so
+     * the surface showed the ordinary empty queue; the very next background
+     * tick turned the same 400 or 403 into the pin-unavailable panel. The
+     * toast said nothing true about which of the two happened, and it was gone
+     * a few seconds later while the panel it contradicted stayed.
+     *
+     * The explicit path now uses exactly the three predicates the background
+     * pin leg uses, and reports one outcome per status CLASS. 404 already
+     * behaved this way; 400 and 403 join it. Everything else — 405, 410, 5xx,
+     * no response — stays a toast, because those are not facts about the
+     * target and a later tick can still resolve the pin.
+     */
+    describe('explicit-path outcome per status class (#2214)', () => {
+      async function openHash(hash: string, failure: unknown) {
+        mockRoute.hash = hash
+        mockAutomationApi.getProposals.mockResolvedValueOnce([])
+        mockAutomationApi.getProposal.mockRejectedValueOnce(failure)
+        const rp = useReviewProposals()
+        await rp.loadProposals()
+        return rp
+      }
+
+      it('turns a 400 into the malformed-link state without a toast', async () => {
+        const rp = await openHash('#proposal-not-a-guid', { response: { status: 400 } })
+        expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+        expect(rp.unavailableProposalMalformed.value).toBe(true)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it('turns a 403 into the unavailable-pin state without a toast', async () => {
+        const rp = await openHash('#proposal-p-forbidden', { response: { status: 403 } })
+        // The by-id 403 is authority over ONE target. The queue-level 403 and
+        // its `queueAccessRevoked` teardown are a different leg and untouched.
+        expect(rp.unavailableProposalId.value).toBe('p-forbidden')
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(rp.queueAccessRevoked.value).toBe(false)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it('keeps the 404 outcome it already had', async () => {
+        const rp = await openHash('#proposal-p-gone', { response: { status: 404 } })
+        expect(rp.unavailableProposalId.value).toBe('p-gone')
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it.each([
+        ['405', { response: { status: 405 } }],
+        ['410', { response: { status: 410 } }],
+        ['500', { response: { status: 500 } }],
+        ['no response', new Error('network down')],
+      ])('keeps the toast and pins nothing for %s', async (_label, failure) => {
+        const rp = await openHash('#proposal-p-transient', failure)
+        // Nothing here is a settled fact about the target: 405 and 410 are the
+        // route misbehaving rather than the id being refused (#2658 draws the
+        // same line on the pin leg), and 5xx or no response may resolve next
+        // tick. Claiming the pin is unavailable would be a false negative.
+        expect(rp.unavailableProposalId.value).toBeNull()
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(mockToast.error).toHaveBeenCalled()
+      })
+
+      // Review finding, round 2 (LOW): asserting both flags after ONE explicit
+      // failure could not fail, since both runs need three. This drives the
+      // threshold count, and drives it through the ROUTE-HASH watcher, which
+      // reaches `openProposalFromHash` without a list read -- otherwise each
+      // `loadProposals` success would reset the runs and mask a leak anyway.
+      it.each([
+        ['transient', 500],
+        ['refusal', 404],
+      ])('never feeds the background %s run from the explicit path', async (_class, status) => {
+        mockRoute.hash = '#proposal-p-flaky'
+        mockAutomationApi.getProposals.mockResolvedValueOnce([])
+        mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
+        const rp = useReviewProposals()
+        await rp.loadProposals()
+
+        const openHashAgain = watcherForCurrentSourceValue('#proposal-p-flaky')[1]
+        for (let attempt = 1; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+          mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
+          await openHashAgain()
+        }
+
+        // A deep link the reviewer followed says nothing about whether the
+        // QUEUE poll is healthy, so neither run may advance on it.
+        expect(rp.queueRefreshStale.value).toBe(false)
+        expect(rp.queueRefreshRefused.value).toBe(false)
+        expect(rp.queueAccessRevoked.value).toBe(false)
+      })
+    })
+  })
+
+  describe('explicit list read refused with 403 (#2214, round 2)', () => {
+    /**
+     * Review finding, round 2. Only the POLL's outer catch handled a 403 on the
+     * list read. On a cold entry to a board whose access had been revoked, the
+     * explicit load 403'd into the generic failure toast, and then
+     * `openProposalFromHash` 403'd on the by-id read and -- since this slice
+     * made that a pin-level outcome -- rendered "no longer available to review;
+     * it may have been applied, archived, or removed" about a proposal that was
+     * neither applied nor archived nor removed. The board was simply not this
+     * reviewer's any more. It stood until the next tick set the authority state.
+     */
+    it('sets the same authority state the poll would, and never marks the pin', async () => {
+      mockRoute.query = { boardId: 'board-revoked' }
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.proposals.value).toEqual([])
+      // The whole board is refused, so re-authorising one row inside it can
+      // only produce a second, wrong explanation of the same fact.
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
+    })
+
+    it('leaves an explicit non-403 list failure on the ordinary path', async () => {
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-pinned' }))
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      // A 5xx is not an authority answer: it must not tear the queue down, and
+      // the hash lookup still runs.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(mockAutomationApi.getProposal).toHaveBeenCalled()
+      expect(mockToast.error).toHaveBeenCalled()
+    })
+
+    it('keeps the pin-leg 403 as the single-proposal outcome #2593 shipped', async () => {
+      // A readable board with one proposal this reviewer may not open is the
+      // opposite case, and it must stay the unavailable pin rather than tearing
+      // down a queue the server just served.
+      mockRoute.hash = '#proposal-p-forbidden'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.unavailableProposalId.value).toBe('p-forbidden')
+    })
   })
 
   describe('navigation helpers', () => {
@@ -1325,10 +1475,13 @@ describe('useReviewProposals', () => {
       mockAutomationApi.getProposal.mockRejectedValue({ response: { status: 400 } })
       const rp = useReviewProposals()
       await rp.loadProposals()
-      // The explicit deep-link path is deliberately unchanged by this: only a
-      // 404 marks the target there, so a 400 still surfaces as a failure the
-      // reviewer asked for.
-      expect(rp.unavailableProposalId.value).toBeNull()
+      // The explicit deep-link path reaches the SAME conclusion from the same
+      // 400, and does so first. It used to raise a generic toast and set no
+      // state, which was the asymmetry #2658 recorded and this slice removed:
+      // one fact, one outcome, whichever leg observed it.
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
       mockToast.error.mockClear()
 
       const queueBeforePoll = rp.proposals.value
@@ -2279,6 +2432,311 @@ describe('useReviewProposals', () => {
       await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
       expect(rp.queueRefreshRecovered.value).toBe(true)
       rp.stopQueueRefresh()
+    })
+  })
+
+  describe('refused list-read disclosure (#2214 item 2)', () => {
+    /**
+     * The transient counter (`queueRefreshStale`) deliberately IGNORES a
+     * non-transient answer: a 400/404/405/410 on the LIST read resets its run
+     * and returns. That leaves the worst case of all completely silent — a
+     * `?boardId=not-a-guid` query 400s every single tick, the poll keeps
+     * running, the counter keeps resetting, no degraded state ever rises, and
+     * the surface shows an ordinary queue (or an ordinary empty state)
+     * indefinitely while the server has not confirmed a single one of those
+     * rows since the reviewer arrived.
+     *
+     * `queueRefreshRefused` is that second, separate threshold. Same threshold
+     * and same #2445 ruling as the transient one, but its own uninterrupted
+     * run, because the two facts are different: "the network keeps blipping"
+     * versus "the server is answering and refusing".
+     */
+    async function pollListFailures(count: number, failure: unknown) {
+      for (let attempt = 0; attempt < count; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce(failure)
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+    }
+
+    async function startedWithCurrentQueue() {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      return rp
+    }
+
+    it('rises only at the threshold, keeps the last trustworthy queue, and keeps polling', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      for (let failure = 1; failure <= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        await pollListFailures(1, { response: { status: 400 } })
+        expect(rp.queueRefreshRefused.value).toBe(
+          failure === REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+        )
+      }
+      // The retained queue is exactly what the server last confirmed.
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['current'])
+      // And this is a disclosure, not a stop: the next tick still asks.
+      const callsBefore = mockAutomationApi.getProposals.mock.calls.length
+      await pollListFailures(1, { response: { status: 400 } })
+      expect(mockAutomationApi.getProposals.mock.calls.length).toBe(callsBefore + 1)
+      // The transient counter is a different fact and stays where it was.
+      expect(rp.queueRefreshStale.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('counts 404, 405 and 410 as refusals too', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(1, { response: { status: 404 } })
+      await pollListFailures(1, { response: { status: 405 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      await pollListFailures(1, { response: { status: 410 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not rise on two refusals plus a success', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(2, { response: { status: 400 } })
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'fresh' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+
+      await pollListFailures(2, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('lets an intervening transient failure reset the run without raising it', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(2, { response: { status: 400 } })
+      // A 500 is not a refusal. It breaks the uninterrupted run the disclosure
+      // claims, so the next two 400s cannot complete a three-long streak.
+      await pollListFailures(1, { response: { status: 500 } })
+      await pollListFailures(2, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+
+      await pollListFailures(1, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not let an intervening transient failure clear a risen disclosure', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      // Symmetric to the #2445 ruling on the transient side: an interruption
+      // resets the RUN, it does not prove the retained queue is current, so it
+      // cannot take a standing disclosure off the screen.
+      await pollListFailures(1, { response: { status: 500 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('clears on the next successful list read and announces the recovery', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['recovered'])
+      // Clearing the warning is silent on its own, exactly as it is for the
+      // transient state (#2630): the recovery sentence is the announcement.
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('leaves the 403 authority path to its own owner', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 403 } })
+      // 403 is revoked access, not a refused refresh: it clears the queue, says
+      // so through `queueAccessRevoked`, and suspends the poll. Two owners for
+      // one fact would render two contradictory panels.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('excludes 401, which belongs to the HTTP interceptor', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 401 } })
+      // A 401 is the session ending; `api/http.ts` clears it and redirects to
+      // login. Telling the reviewer to check the board filter on the way out
+      // would be false.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('retracts a risen refusal as soon as the LIST read succeeds, even when the pin leg fails', async () => {
+      // Review finding, round 2. `queueRefreshRefused` was cleared only by
+      // `recordQueueRefreshSuccess`, which needs the WHOLE composite read; a
+      // pin-leg failure returns before it. So once the API recovered but the
+      // by-id read for a hash-pinned row kept failing, the surface went on
+      // saying "the server is refusing the refresh rather than failing
+      // temporarily" every tick, which was no longer true, and because the
+      // refusal copy has precedence the honest degraded copy could never
+      // appear. It survived until an explicit load.
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 404 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      // The list read answers again; only the pinned row's by-id read is down.
+      const pinLegDown = async () => {
+        mockAutomationApi.getProposals.mockResolvedValueOnce([])
+        mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      await pinLegDown()
+
+      // The claim is about the LIST read, and the list read demonstrably
+      // succeeded, so the claim is retracted on that evidence alone.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      // And retracting it silently is the #2630 defect, so it announces once.
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      // The composite read still bailed, so the queue was NOT replaced and the
+      // transient state is untouched by the retraction.
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-pinned'])
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      // The transient counter keeps its #2445 composite semantics: this pin-leg
+      // 500 was its first, and two more take it to the threshold.
+      await pinLegDown()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      await pinLegDown()
+      expect(rp.queueRefreshStale.value).toBe(true)
+      // The degraded onset retires the recovery sentence, as it always has.
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not count a pin-leg failure, whose tick read the list successfully', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      // The list answer arrives every tick; only the by-id re-authorization
+      // read fails. The disclosure claims the LIST read is being refused, and
+      // it demonstrably is not.
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+        mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'other' })])
+        mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 405 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+  })
+
+  describe('malformed vs unavailable pin (#2214)', () => {
+    /**
+     * `unavailableProposalId` collapses two different truths. "This proposal is
+     * no longer available to review; it may have been applied, archived, or
+     * removed" is right for a 403 or a 404 and wrong for a 400: an id the by-id
+     * route cannot bind never named a proposal at all, and no amount of waiting
+     * or retrying will make the link work. The reason rides alongside the id so
+     * both skins can say which one happened.
+     */
+    it('marks a pin the by-id route cannot bind as malformed', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'not-a-guid' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it.each([403, 404])('does not call a %s pin malformed', async (status) => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The link named a real proposal. Whether it is gone or forbidden, it is
+      // not a broken address, and telling the reviewer their link is malformed
+      // would send them to fix something that is correct.
+      expect(rp.unavailableProposalId.value).toBe('p-pinned')
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not call a wrong-identity or cross-scope answer malformed', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-different' }))
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.unavailableProposalId.value).toBe('p-pinned')
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('retires the malformed reason with the pin it describes', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'not-a-guid' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      rp.stopQueueRefresh()
+
+      // A reason that outlived its id would label the NEXT unavailable pin.
+      mockRoute.hash = ''
+      await watcherForCurrentSourceValue('')[1]()
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
     })
   })
 })

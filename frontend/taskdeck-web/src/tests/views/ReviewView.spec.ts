@@ -459,6 +459,115 @@ describe('ReviewView', () => {
     }
   })
 
+  it('discloses a list read the server keeps refusing, from a region that was already mounted (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      const { wrapper } = await mountAt('/workspace/review')
+
+      // Mounted and silent before anything goes wrong, for the same reason as
+      // the recovery region beside it (#2593/#2630): a live region inserted at
+      // the same moment its text appears is unreliably announced.
+      const before = wrapper.find('[data-testid="review-queue-refused"]')
+      expect(before.exists()).toBe(true)
+      expect(before.attributes('role')).toBe('status')
+      expect(before.attributes('aria-live')).toBe('polite')
+      expect(before.attributes('aria-atomic')).toBe('true')
+      expect(before.text()).toBe('')
+
+      // A `?boardId=not-a-guid` in the address bar answers every tick with a
+      // model-binding 400.
+      mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const after = wrapper.find('[data-testid="review-queue-refused"]')
+      expect(after.text()).toBe(enReview.queue.refused.body)
+      expect(after.element).toBe(before.element)
+
+      // Same visible slot as the degraded warning, carrying the copy that is
+      // actually true: this is a refusal, not a retry.
+      const visible = wrapper.find('[data-testid="review-queue-stale"]')
+      expect(visible.exists()).toBe(true)
+      expect(visible.text()).toBe(enReview.queue.refused.body)
+      expect(visible.text()).not.toBe(enReview.queue.degraded.body)
+      // The last queue the server confirmed is still on screen.
+      expect(wrapper.find('#proposal-retained-1').exists()).toBe(true)
+
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-queue-stale"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="review-queue-refused"]').text()).toBe('')
+      expect(wrapper.find('[data-testid="review-queue-recovered"]').text()).toBe(
+        enReview.queue.degraded.recovered,
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('prefers the refusal copy over the degraded copy when both states stand (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      const { wrapper } = await mountAt('/workspace/review')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('[data-testid="review-queue-stale"]').text()).toBe(
+        enReview.queue.degraded.body,
+      )
+      expect(wrapper.find('[data-testid="review-queue-refused"]').text()).toBe('')
+
+      // The transient state stays raised (nothing has proved the queue fresh),
+      // so both are true at once. The refusal is the stronger and more
+      // actionable statement, and "Taskdeck retries" would now be false.
+      mocks.getProposals.mockRejectedValue({ response: { status: 404 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-queue-stale"]').text()).toBe(
+        enReview.queue.refused.body,
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('leaves the refusal disclosure to the access-revoked panel on a 403 (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      const { wrapper } = await mountAt('/workspace/review')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-access-revoked"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="review-queue-stale"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="review-queue-refused"]').text()).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows guided empty-state actions when there are no proposals', async () => {
     const { wrapper } = await mountAt('/workspace/review')
 
@@ -1642,6 +1751,95 @@ describe('ReviewView', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('says a malformed pin is a broken link, not an unavailable proposal (#2214)', async () => {
+    // Two different truths shared one sentence. "It may have been applied,
+    // archived, or removed" describes a proposal that existed; a 400 says the
+    // id never named one, so there is nothing to wait for and nothing to
+    // retry. Sending a reviewer back to watch for a recovery that cannot
+    // arrive is the failure this copy exists to stop.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-not-a-guid' })])
+      const { wrapper } = await mountAt('/workspace/review#proposal-proposal-not-a-guid')
+
+      mocks.getProposals.mockResolvedValue([])
+      mocks.getProposal.mockRejectedValue({ response: { status: 400 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const unavailable = wrapper.get('[data-testid="review-unavailable-target"]')
+      expect(unavailable.text()).toContain(enReview.empty.unavailable.malformedTitle)
+      expect(unavailable.text()).not.toContain(enReview.empty.unavailable.title)
+      expect(unavailable.text()).toContain('proposal-not-a-guid')
+      // The only offered action stays the way back to the unpinned queue.
+      expect(wrapper.find('[data-testid="review-unavailable-return"]').exists()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the revoked-access panel, not the unavailable pin, on a cold entry to a revoked board (#2214)', async () => {
+    // Round-2 review finding. Only the poll used to recognise a 403 on the list
+    // read, so this entry produced a generic toast, no authority state, and
+    // then a by-id 403 that -- now that a by-id 403 is a pin-level outcome --
+    // rendered "may have been applied, archived, or removed" about a proposal
+    // that was none of those. The board was simply not this reviewer's any
+    // more, and that stood for a whole poll interval.
+    mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+    mocks.getProposal.mockRejectedValue({ response: { status: 403 } })
+
+    const { wrapper } = await mountAt('/workspace/review?boardId=board-revoked#proposal-p-pinned')
+
+    expect(wrapper.find('[data-testid="review-access-revoked"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain(enReview.empty.unavailable.title)
+    // The whole board is refused; there is nothing to re-authorise inside it.
+    expect(mocks.getProposal).not.toHaveBeenCalled()
+  })
+
+  it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {
+    // The reviewer followed a link and the by-id read was refused. A 403 is a
+    // settled fact about that target and now reads as the panel the background
+    // tick would have produced a moment later, instead of a generic toast that
+    // said neither what happened nor that the panel was about to contradict it.
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 403 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-forbidden')
+
+    const unavailable = wrapper.get('[data-testid="review-unavailable-target"]')
+    expect(unavailable.text()).toContain(enReview.empty.unavailable.title)
+    expect(unavailable.text()).toContain('proposal-forbidden')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    // The queue-level 403 owns the access-revoked panel; a by-id refusal is not
+    // whole-queue revocation.
+    expect(wrapper.find('[data-testid="review-access-revoked"]').exists()).toBe(false)
+  })
+
+  it('keeps the explicit deep-link toast for a transient class (#2214)', async () => {
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 500 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-flaky')
+
+    // A 5xx is not a fact about the target, so pinning it unavailable would be
+    // a false negative; a later tick can still resolve it.
+    expect(mocks.errorToast).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+  })
+
+  it('keeps the ordinary unavailable copy for a pin that is gone or forbidden (#2214)', async () => {
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-gone')
+
+    const unavailable = wrapper.get('[data-testid="review-unavailable-target"]')
+    expect(unavailable.text()).toContain(enReview.empty.unavailable.title)
+    expect(unavailable.text()).not.toContain(enReview.empty.unavailable.malformedTitle)
   })
 
   it('announces nothing from the queue live region while the queue is loading (#2214)', async () => {

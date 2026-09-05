@@ -192,6 +192,39 @@ function isTransientQueueRefreshFailure(err: unknown): boolean {
   return status === undefined || status === 408 || status === 429 || status >= 500
 }
 
+/**
+ * A LIST read the server ANSWERED and refused (#2214 item 2).
+ *
+ * The transient predicate above deliberately excludes this family, and
+ * `recordQueueRefreshFailure` then resets its run and returns — which leaves
+ * the worst failure mode of all completely silent. `?boardId=not-a-guid`
+ * reaches `GetProposals([FromQuery] Guid? boardId)` under `[ApiController]`
+ * (`normalizeBoardIdQueryParam` only trims), so it is a model-binding 400 on
+ * EVERY tick: the poll keeps running, the counter keeps resetting, no degraded
+ * state ever rises, and the surface goes on showing rows the server has not
+ * confirmed since the reviewer arrived. A 404, 405 or 410 on the same read is
+ * the same class of fact — the query is being refused, and no later tick makes
+ * it acceptable.
+ *
+ * Excluded, both with an owner elsewhere:
+ *  - 403 is the authority path. `refreshProposals` intercepts it before this
+ *    accounting is reached: it clears the queue, raises `queueAccessRevoked`
+ *    and suspends the poll. Counting it here as well would put two disclosures
+ *    on screen for one fact, one of which ("reload, or check the board
+ *    filter") is wrong for revoked access.
+ *  - 401 is `api/http.ts`'s: it clears the session and redirects to login.
+ *    Telling a reviewer on their way out to check the board filter is false.
+ *
+ * 408 and 429 need no exclusion — they are transient above, and this predicate
+ * is only consulted for failures that are not.
+ */
+function isRefusedQueueRefreshFailure(err: unknown): boolean {
+  if (isTransientQueueRefreshFailure(err)) return false
+  const status = (err as { response?: { status?: number } } | null)?.response?.status
+  if (status === undefined || status === 401 || status === 403) return false
+  return status >= 400 && status < 500
+}
+
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
   // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
@@ -225,6 +258,27 @@ export function useReviewProposals() {
   // can bind). A wrong-identity or cross-board answer fails closed into it too.
   // Explicit navigation is narrower on purpose and still marks only the 404.
   const unavailableProposalId = ref<string | null>(null)
+  // WHY that pin is unavailable, because the id alone collapses two different
+  // truths (#2214). A 403 or a 404 is about a proposal that exists or existed;
+  // a 400 is the by-id route refusing to bind the id at all, so the link never
+  // named a proposal and no later tick makes it work. Rendering "it may have
+  // been applied, archived, or removed" for the second sends the reviewer to
+  // wait for a recovery that cannot arrive.
+  //
+  // Kept in lockstep with the id through `markProposalUnavailable` /
+  // `clearProposalUnavailable` rather than assigned at each of the write sites:
+  // a reason that outlived its id would label the NEXT unavailable pin.
+  const unavailableProposalMalformed = ref(false)
+
+  function markProposalUnavailable(proposalId: string, reason: 'malformed' | 'refused') {
+    unavailableProposalId.value = proposalId
+    unavailableProposalMalformed.value = reason === 'malformed'
+  }
+
+  function clearProposalUnavailable() {
+    unavailableProposalId.value = null
+    unavailableProposalMalformed.value = false
+  }
   // Set when a background read is refused with 403 (board access revoked
   // mid-session). The surfaces swap the ordinary "Nothing waiting" empty state
   // for an honest one -- clearing the queue without saying why would turn a
@@ -234,6 +288,14 @@ export function useReviewProposals() {
   // Unlike `queueAccessRevoked`, this is not an authority result. It means the
   // last queue we could render is still shown while background reads retry.
   const queueRefreshStale = ref(false)
+  // The second, SEPARATE threshold (#2214 item 2). `queueRefreshStale` belongs
+  // to the transient counter and must keep belonging to it: "the network keeps
+  // blipping, we are retrying" and "the server is answering and refusing the
+  // query" are different facts with different remedies, and a reviewer who is
+  // told the first while the second is true will wait for a recovery that
+  // cannot arrive. Both can stand at once; the surfaces show the refusal,
+  // which is the stronger and more actionable statement.
+  const queueRefreshRefused = ref(false)
   // The EVENT that pairs with the state above (#2214). Clearing
   // `queueRefreshStale` unmounts the warning, which is silent: a reviewer who
   // was not looking at that corner is never told the queue is trustworthy
@@ -518,14 +580,14 @@ export function useReviewProposals() {
     if (proposalsLoading.value) return
     const proposalId = getProposalIdFromHash(route.hash)
     if (!proposalId) {
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
       return
     }
 
     // A different hash starts a fresh lookup. Keep the current unavailable
     // state only while it still describes the route the user asked for.
     if (!proposalIdsEqual(unavailableProposalId.value, proposalId)) {
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
     }
 
     const currentProposal = proposals.value.find((p) => proposalIdsEqual(p.id, proposalId))
@@ -533,7 +595,7 @@ export function useReviewProposals() {
       if (!matchesActiveBoardFilter(currentProposal.boardId)) {
         return
       }
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
       await scrollToProposalFromHash()
       return
     }
@@ -550,14 +612,16 @@ export function useReviewProposals() {
       // different record. Retain the hash as unavailable instead of upserting a
       // response whose identity does not match the requested proposal.
       if (!proposalIdsEqual(fetchedProposal.id, proposalId)) {
-        unavailableProposalId.value = proposalId
+        // A wrong record is not a broken address: the id bound fine, the
+        // server simply answered with something else.
+        markProposalUnavailable(proposalId, 'refused')
         return
       }
       if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
         return
       }
       upsertProposal(fetchedProposal)
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
       await nextTick()
       await scrollToProposalFromHash()
     } catch (e: unknown) {
@@ -565,10 +629,34 @@ export function useReviewProposals() {
       // was cut short deliberately and its caller reports the real outcome.
       if (options?.signal?.aborted) return
       if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
-      if (isHttpNotFound(e)) {
-        unavailableProposalId.value = proposalId
+      // One outcome per status CLASS, using exactly the three predicates the
+      // background pin leg uses, so the two paths cannot answer the same fact
+      // two different ways (#2214). Before this, a 400 or a 403 on the
+      // reviewer's own deep-link read raised a generic "Failed to load
+      // proposal" toast and set no state at all: the surface fell back to the
+      // ordinary empty queue, and the very next background tick converted the
+      // identical refusal into the pin-unavailable panel. The toast named
+      // neither fact and was gone seconds later, contradicted by a panel that
+      // stayed.
+      //
+      // A settled fact about the target gets the panel and no toast, because
+      // the panel is the durable report and two reports for one fact is the
+      // asymmetry being removed. 404 already behaved this way.
+      if (isMalformedTargetError(e)) {
+        markProposalUnavailable(proposalId, 'malformed')
         return
       }
+      if (isForbiddenError(e) || isHttpNotFound(e)) {
+        // By-id authority over ONE target. The queue-level 403 and its
+        // `queueAccessRevoked` teardown live on the list leg and are untouched.
+        markProposalUnavailable(proposalId, 'refused')
+        return
+      }
+      // 405, 410, 5xx and no response are not facts about this target — 405
+      // and 410 are the route misbehaving rather than the id being refused
+      // (#2658 draws the same line on the pin leg), and the rest may resolve on
+      // a later tick. Pinning the target unavailable would be a false negative,
+      // so the reviewer who asked keeps getting told the read failed.
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
     }
   }
@@ -628,6 +716,19 @@ export function useReviewProposals() {
       // must not raise the failure toast, and it must not be reported as
       // `failed`, or the caller would blame the server for its own timeout.
       if (signal?.aborted) return 'aborted'
+      // Only the POLL used to handle this, so a cold entry to a board whose
+      // access had been revoked fell through to the generic toast and left the
+      // authority state unset for a whole poll interval (round-2 review
+      // finding). Worse, the hash lookup below then 403'd on the by-id read
+      // and, since this slice made that a pin-level outcome, rendered "no
+      // longer available to review; it may have been applied, archived, or
+      // removed" about a proposal that was none of those things -- the board
+      // simply was not this reviewer's any more.
+      //
+      // The toast stays: this read is one the caller asked for, and every
+      // action composable that calls `loadProposals` still gets its failure
+      // signal and its 'failed' outcome unchanged.
+      if (isForbiddenError(e)) recordQueueAccessRevoked()
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
       outcome = 'failed'
     } finally {
@@ -636,7 +737,13 @@ export function useReviewProposals() {
     }
 
     if (signal?.aborted) return 'aborted'
-    if (requestId === latestProposalLoadRequestId) {
+    // A revoked queue has one owner and one explanation. Re-authorising a
+    // hash-pinned row inside a board the server just refused wholesale can only
+    // produce a second, narrower and wrong account of the same fact, so the
+    // pin-level outcome is not even asked for. A successful load clears
+    // `queueAccessRevoked` above, so this can only be true when THIS read
+    // revoked it or an earlier one did and nothing has restored access.
+    if (requestId === latestProposalLoadRequestId && !queueAccessRevoked.value) {
       await openProposalFromHash(options)
     }
     if (requestId !== latestProposalLoadRequestId) return 'superseded'
@@ -653,6 +760,7 @@ export function useReviewProposals() {
   let refreshInterval: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
   let consecutiveQueueRefreshFailures = 0
+  let consecutiveQueueRefreshRefusals = 0
   // A 403 pauses the configured poll without making it forget how the owning
   // surface asked it to behave. Permanent stop/disposal clears this state so a
   // late successful explicit load cannot resurrect a surface that has left.
@@ -661,7 +769,33 @@ export function useReviewProposals() {
   let shouldRefreshNow: (() => boolean) | null = null
   let refreshAbort: AbortController | null = null
 
-  function recordQueueRefreshFailure(err: unknown) {
+  /**
+   * `leg` names which request of the composite background read failed, because
+   * the two thresholds ask different questions of it (#2214 item 2).
+   *
+   * The transient run counts both legs, exactly as it has since #2445. The
+   * REFUSAL run is a claim about the LIST read alone, so a pin-leg failure not
+   * only fails to count toward it, it breaks it: reaching the by-id request at
+   * all means that tick's list read had already succeeded.
+   */
+  function recordQueueRefreshFailure(err: unknown, leg: 'list' | 'pin') {
+    if (leg === 'list' && isRefusedQueueRefreshFailure(err)) {
+      consecutiveQueueRefreshRefusals += 1
+      if (consecutiveQueueRefreshRefusals >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
+        queueRefreshRefused.value = true
+        // Same reason as the degraded onset below: a standing "up to date
+        // again" contradicts the warning beside it, and its unchanged text
+        // would silence the next real recovery.
+        queueRefreshRecovered.value = false
+      }
+    } else {
+      // Anything that is not another qualifying list refusal interrupts the
+      // uninterrupted run the disclosure claims. It resets the RUN only: a
+      // risen disclosure stays up, because an interruption is not evidence
+      // that the retained queue is current (the #2445 ruling, applied
+      // symmetrically to this second threshold).
+      consecutiveQueueRefreshRefusals = 0
+    }
     if (!isTransientQueueRefreshFailure(err)) {
       // A non-transient failure breaks the uninterrupted transient run, but it
       // does not prove that the retained queue is fresh enough to clear a
@@ -680,13 +814,67 @@ export function useReviewProposals() {
     }
   }
 
-  function recordQueueRefreshSuccess() {
+  /**
+   * A 403 on the QUEUE read is revoked board access, not a blip: stop polling
+   * an endpoint that will keep refusing, drop rows the server no longer
+   * authorises, and let the surface say exactly that.
+   *
+   * Shared by the poll's outer catch and the explicit load, because a 403 means
+   * the same thing whoever asked (round-2 review finding). Duplicating the
+   * three statements would be how the two legs drift into telling a reviewer
+   * two different stories about one revocation.
+   */
+  function recordQueueAccessRevoked() {
+    queueAccessRevoked.value = true
+    proposals.value = []
+    suspendQueueRefreshForPermission()
+  }
+
+  /**
+   * The LIST leg answered, whatever the rest of the composite read goes on to
+   * do. Returns whether it raised the recovery sentence.
+   *
+   * The refusal disclosure's clear is LIST-SCOPED while the transient state's
+   * stays COMPOSITE-SCOPED, and the asymmetry is in what each one claims. The
+   * refusal says "the server is refusing the refresh rather than failing
+   * temporarily", which is a statement about the list REQUEST; one successful
+   * list read falsifies it outright, and leaving it up afterwards is simply a
+   * lie. The transient state says "the queue you are looking at may be out of
+   * date", which is a statement about the RENDERED QUEUE; a composite read that
+   * bailed at the pin leg never reached `proposals.value = next`, so the queue
+   * on screen really is still the old one and clearing that warning would
+   * fabricate a freshness the surface does not have. Same tick, two different
+   * claims, two different pieces of evidence — so #2445's composite semantics
+   * for the transient counter are deliberately untouched here.
+   */
+  function recordQueueListReadSucceeded(): boolean {
+    consecutiveQueueRefreshRefusals = 0
+    if (!queueRefreshRefused.value) return false
+    queueRefreshRefused.value = false
+    // Retracting a disclosure silently is exactly the #2630 defect: the warning
+    // is simply gone on the next render and a reviewer who was not watching
+    // that corner is never told the refusal claim no longer holds.
+    queueRefreshRecovered.value = true
+    return true
+  }
+
+  /**
+   * The WHOLE composite read landed. `recoveryAlreadyRaised` is passed by the
+   * poll when `recordQueueListReadSucceeded` already announced a recovery
+   * earlier in this same read, so the retirement branch below cannot retire the
+   * sentence its own read just raised.
+   */
+  function recordQueueRefreshSuccess(options?: { recoveryAlreadyRaised?: boolean }) {
     consecutiveQueueRefreshFailures = 0
+    // Idempotent: a no-op when the poll already ran it at the list-success
+    // point, and the whole clear when an explicit load lands.
+    const recoveryRaisedThisRead =
+      recordQueueListReadSucceeded() || options?.recoveryAlreadyRaised === true
     // Only a success that ends a VISIBLE degraded state is a recovery. Setting
     // this on every success would make both skins announce every 15 s.
     if (queueRefreshStale.value) {
       queueRefreshRecovered.value = true
-    } else if (queueRefreshRecovered.value) {
+    } else if (queueRefreshRecovered.value && !recoveryRaisedThisRead) {
       // The FOLLOWING success retires the sentence, so it lives for about one
       // poll interval instead of the whole session. An announcement is an
       // event; leaving its text standing indefinitely turns it into a claim
@@ -851,8 +1039,14 @@ export function useReviewProposals() {
         () => { refreshTimedOut = true },
       )
       if (!isCurrentRead()) return
+      // The list leg answered and this read is still the current question, so
+      // the refusal claim is falsified NOW -- before the pin leg gets a chance
+      // to return early and strand it (round-2 review finding). The transient
+      // accounting deliberately stays below, on the composite outcome.
+      const listRecoveryRaised = recordQueueListReadSucceeded()
       const next = [...loadedProposals]
       let pinUnavailable = false
+      let pinMalformed = false
       if (
         hashTargetId &&
         !next.some((proposal) => proposalIdsEqual(proposal.id, hashTargetId))
@@ -915,11 +1109,15 @@ export function useReviewProposals() {
             // bind — into whole-queue revocation, and do not discard a queue
             // answer that already arrived.
             pinUnavailable = true
+            // Only the 400 says the ADDRESS is wrong. A 403 or a 404 is about a
+            // proposal that exists or existed, and the surfaces say different
+            // things about the two (#2214).
+            pinMalformed = isMalformedTargetError(e)
           } else {
             // The composite read is incomplete. Preserve the exact queue and
             // availability state currently rendered; a later tick can retry.
             if (isSupersededQueueRead()) return
-            recordQueueRefreshFailure(e)
+            recordQueueRefreshFailure(e, 'pin')
             logError('Review deep-link background refresh failed:', e)
             return
           }
@@ -929,13 +1127,13 @@ export function useReviewProposals() {
       if (!isCurrentRead()) return
       if (hashTargetId) {
         if (pinUnavailable) {
-          unavailableProposalId.value = hashTargetId
+          markProposalUnavailable(hashTargetId, pinMalformed ? 'malformed' : 'refused')
         } else if (proposalIdsEqual(unavailableProposalId.value, hashTargetId)) {
-          unavailableProposalId.value = null
+          clearProposalUnavailable()
         }
       }
       proposals.value = next
-      recordQueueRefreshSuccess()
+      recordQueueRefreshSuccess({ recoveryAlreadyRaised: listRecoveryRaised })
       // The queue moved under a reviewer who did not ask for it. Surfaces use
       // this to notice that the row they were rendering has just been dropped
       // or reordered away, instead of silently sliding onto another one
@@ -955,15 +1153,13 @@ export function useReviewProposals() {
         // Board access was revoked. Stop polling rather than hammering an
         // endpoint that will keep refusing, drop rows the server no longer
         // authorises, and let the surface say so.
-        queueAccessRevoked.value = true
-        proposals.value = []
-        suspendQueueRefreshForPermission()
+        recordQueueAccessRevoked()
         return
       }
       // A read for a board the reviewer has already left, or one superseded by
       // an explicit load, cannot make the current queue degraded.
       if (isSupersededQueueRead()) return
-      recordQueueRefreshFailure(e)
+      recordQueueRefreshFailure(e, 'list')
       logError('Review queue background refresh failed:', e)
     } finally {
       refreshInFlight = false
@@ -1177,8 +1373,10 @@ export function useReviewProposals() {
     proposals,
     proposalsLoading,
     unavailableProposalId,
+    unavailableProposalMalformed,
     queueAccessRevoked,
     queueRefreshStale,
+    queueRefreshRefused,
     queueRefreshRecovered,
     availableBoards,
     loadingBoards,
