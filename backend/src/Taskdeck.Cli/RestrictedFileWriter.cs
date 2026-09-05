@@ -6,16 +6,18 @@ using System.Text;
 namespace Taskdeck.Cli;
 
 /// <summary>
-/// Creates secret files that are born owner-only (#1262).
+/// Creates secret files that are born owner-only (#1262) and re-restricts existing ones (#2667).
 ///
 /// This is a deliberate, faithful copy of the API-side helper
 /// <c>Taskdeck.Api.FirstRun.FirstRunBootstrapper.WriteRestrictedFile</c> /
 /// <c>CreateRestrictedNewFile</c> / <c>CreateOwnerOnlyFileWindows</c> /
-/// <c>BuildOwnerOnlyFileSecurity</c> (backend/src/Taskdeck.Api/FirstRun/FirstRunBootstrapper.cs),
-/// shipped by PR #1267 for #1264. The CLI cannot reference the API project (Taskdeck.Cli references
-/// Application and Infrastructure only, and Taskdeck.Architecture.Tests enforces that), so the
+/// <c>BuildOwnerOnlyFileSecurity</c> / <c>RestrictFileToCurrentUser</c>
+/// (backend/src/Taskdeck.Api/FirstRun/FirstRunBootstrapper.cs), shipped by PR #1267 for #1264 and by
+/// #1241 for the forward-remediation helper. The CLI cannot reference the API project (Taskdeck.Cli
+/// references Application and Infrastructure only, and Taskdeck.Architecture.Tests enforces that), so the
 /// implementation is duplicated here rather than shared. Keep the two in sync: a change to the
-/// lockdown contract on either side belongs on both.
+/// lockdown contract on either side belongs on both, and
+/// <c>CliRestrictedFileWriterParityTests</c> fails when the two copies drift.
 /// </summary>
 internal static class RestrictedFileWriter
 {
@@ -151,6 +153,42 @@ internal static class RestrictedFileWriter
             stream.Dispose();
             try { File.Delete(path); } catch { /* ignore */ }
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Restricts an EXISTING file to the current user only (#1241). On Unix this is <c>0600</c>; on Windows
+    /// it replaces the DACL with a single owner-only ACE and disables inheritance (so the directory's
+    /// default ACEs -- e.g. BUILTIN\Users read -- do not apply). Used for forward remediation of a connector
+    /// key file that a pre-#1262 CLI build already wrote unprotected; NEW secret files are instead created
+    /// atomically restricted via <see cref="WriteRestrictedFile(string, string)"/>.
+    /// Any failure is normalized to <see cref="IOException"/> so callers'
+    /// <c>catch (IOException)</c> handle it uniformly.
+    ///
+    /// Faithful copy of <c>Taskdeck.Api.FirstRun.FirstRunBootstrapper.RestrictFileToCurrentUser</c>.
+    /// </summary>
+    internal static void RestrictFileToCurrentUser(string path)
+    {
+        try
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                return;
+            }
+
+            new FileInfo(path).SetAccessControl(BuildOwnerOnlyFileSecurity());
+        }
+        catch (IOException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Normalize (e.g. UnauthorizedAccessException, PlatformNotSupportedException) so the callers'
+            // catch(IOException) handles it uniformly -- never leave the plaintext secret in an unprotected file.
+            throw new IOException(
+                $"Could not restrict {path} to the current user; refusing to write the secret to it.", ex);
         }
     }
 

@@ -110,7 +110,9 @@ public class CliRestrictedFileWriterTests
         }
     }
 
-    private static void AssertOwnerOnly(string path)
+    // internal (not private) so the #2667 remediation and parity tests reuse the same assertions
+    // instead of growing a second, drifting copy of the owner-only contract.
+    internal static void AssertOwnerOnly(string path)
     {
         if (OperatingSystem.IsWindows())
         {
@@ -141,7 +143,7 @@ public class CliRestrictedFileWriterTests
         }
     }
 
-    private static string FindCliSourceFile(string fileName)
+    internal static string FindCliSourceFile(string fileName)
     {
         // Walk up from the test output directory to find the repo source.
         var dir = AppContext.BaseDirectory;
