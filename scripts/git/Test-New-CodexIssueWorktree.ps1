@@ -288,8 +288,9 @@ function Wait-ForScheduledWorktreeRemoval {
 
     # The initializer hands orphan removal to a detached PowerShell host that re-verifies the
     # worktree's top level, common directory and HEAD, re-inventories its content, and only then
-    # runs 'git worktree remove'. That is one host start plus six Git invocations against a fresh
-    # checkout; a fixed 5 s poll expired before it finished on the hosted Windows runner (#2664).
+    # runs 'git worktree remove'. That is one host start, a poll until the initializer process exits, and
+    # seven Git invocations against a fresh checkout; a fixed 5 s poll expired before it finished on the
+    # hosted Windows runner (#2664).
     # Wait on a deadline instead and report the elapsed time so a genuine orphan stays diagnosable.
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
