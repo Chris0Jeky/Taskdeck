@@ -115,7 +115,7 @@ const mockCaptureStore = reactive({
   pollTriageCompletion: vi.fn<(itemId: string) => () => void>(),
   batchBusy: false,
   batchError: null as string | null,
-  batchTriage: vi.fn<(itemIds: string[], action: string) => Promise<{
+  batchTriage: vi.fn<(itemIds: string[], action: string, query?: () => { limit?: number; boardId?: string }) => Promise<{
     total: number
     succeeded: number
     failed: number
@@ -1132,7 +1132,10 @@ describe('InboxView', () => {
     expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(
       expect.arrayContaining(['capture-1', 'capture-2']),
       'triage',
+      // A thunk: the store resolves the list scope when it issues the read.
+      expect.any(Function),
     )
+    expect(mockCaptureStore.batchTriage.mock.calls[0]?.[2]?.()).toEqual({ limit: 200 })
   })
 
   it('clears selection after successful batch action', async () => {
@@ -1154,7 +1157,8 @@ describe('InboxView', () => {
     await ignoreBatchBtn?.trigger('click')
     await waitForUi()
 
-    expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['capture-1'], 'ignore')
+    expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['capture-1'], 'ignore', expect.any(Function))
+    expect(mockCaptureStore.batchTriage.mock.calls[0]?.[2]?.()).toEqual({ limit: 200 })
     expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
   })
 
