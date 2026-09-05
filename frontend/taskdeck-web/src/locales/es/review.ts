@@ -41,6 +41,13 @@ export default {
     },
   },
 
+  queue: {
+    degraded: {
+      body: 'Es posible que esta cola de revisión no esté actualizada. Se muestran las últimas propuestas disponibles mientras Taskdeck lo vuelve a intentar.',
+      recovered: 'Esta cola de revisión vuelve a estar actualizada. Se muestran las propuestas actuales.',
+    },
+  },
+
   // GH-1307 -- traducción automática (machine-translated), pendiente de revisión nativa.
   batchExecute: {
     request: 'Aplicar {count} aprobada | Aplicar {count} aprobadas',

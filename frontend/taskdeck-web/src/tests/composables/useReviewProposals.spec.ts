@@ -2056,4 +2056,152 @@ describe('useReviewProposals', () => {
       expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
     })
   })
+
+  describe('degraded-queue recovery signal (#2214)', () => {
+    /**
+     * `queueRefreshStale` is the degraded STATE, and it is cleared silently: the
+     * warning is simply gone on the next render, so a reviewer who is not
+     * looking at that corner is never told the queue is trustworthy again. The
+     * recovery signal is the EVENT the surfaces announce, and it must fire only
+     * on a real degraded -> recovered transition. A signal that also fired on an
+     * ordinary success would announce "up to date again" every 15 seconds.
+     */
+    async function pollTransientFailures(count: number) {
+      for (let failure = 0; failure < count; failure += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+    }
+
+    it('fires when a successful poll clears a degraded queue', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      // Still degraded: there is nothing to announce yet.
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('stays silent when a successful poll follows a successful poll', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // Nothing was ever degraded, so nothing recovered. An ungated signal here
+      // would make both skins announce on every poll.
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('fires when an explicit load clears a degraded queue', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      // The explicit-load clear is the second way out of the degraded state and
+      // is just as invisible to a reviewer who is not watching the warning.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('stays silent when a non-transient failure resets the run with no visible stale state', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      // Two transient failures is below the threshold, so no warning was ever
+      // shown; the 400 then resets the run. The success that follows recovers
+      // nothing the reviewer was ever told about.
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD - 1)
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'quiet' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('retires the recovered sentence on the following success and does not re-fire', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // An announcement is an event. Left standing it becomes a claim about the
+      // present that nothing is re-checking, so the next healthy poll retires
+      // it -- about one poll interval of life, with no timer to tear down.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      // And it stays retired: clearing must not oscillate the live region.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('clears at the next degraded onset so a second recovery announces again', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'first' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // A live region only announces when its TEXT changes, so the signal has to
+      // fall back to false while the queue is degraded again or the second
+      // recovery would be silent.
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'second' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+  })
 })
