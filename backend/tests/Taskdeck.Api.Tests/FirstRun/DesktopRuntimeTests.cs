@@ -163,6 +163,26 @@ public class DesktopRuntimeTests
     }
 
     [Fact]
+    public void FormatFatalStartup_MapsMissingConnectorKeyToStaticActionableOutput()
+    {
+        const string secretLikeContent = "synthetic-secret-never-print";
+        var exception = new InvalidOperationException(
+            "SECURITY: The Connectors:EncryptionKey is not configured. " + secretLikeContent);
+
+        var output = DesktopRuntime.FormatFatalStartup(exception);
+
+        Assert.Equal(
+            [
+                "TASKDECK_DESKTOP_FATAL code=connector_encryption_key_missing",
+                "Taskdeck could not start because Connectors__EncryptionKey is missing. Set a stable " +
+                "base64-encoded 256-bit key (or reuse the existing key for this data) and restart. " +
+                "No settings were printed."
+            ],
+            output);
+        Assert.All(output, line => Assert.DoesNotContain(secretLikeContent, line));
+    }
+
+    [Fact]
     public void FormatFatalStartup_MapsUnrelatedExceptionToGenericOutputWithoutContentLeak()
     {
         const string secretLikeContent = "synthetic-secret-never-print\r\nsynthetic-stack-line";

@@ -259,6 +259,20 @@ internal static class DesktopRuntime
 
     internal static IReadOnlyList<string> FormatFatalStartup(Exception? exception)
     {
+        if (exception is InvalidOperationException validationFailure
+            && validationFailure.Message.StartsWith(
+                "SECURITY: The Connectors:EncryptionKey is not configured.",
+                StringComparison.Ordinal))
+        {
+            return
+            [
+                "TASKDECK_DESKTOP_FATAL code=connector_encryption_key_missing",
+                "Taskdeck could not start because Connectors__EncryptionKey is missing. Set a stable " +
+                "base64-encoded 256-bit key (or reuse the existing key for this data) and restart. " +
+                "No settings were printed."
+            ];
+        }
+
         if (exception is RetiredLlmProviderConfigurationException)
         {
             return
