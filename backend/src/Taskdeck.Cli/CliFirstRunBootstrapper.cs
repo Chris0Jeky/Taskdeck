@@ -365,18 +365,13 @@ internal static class CliFirstRunBootstrapper
         // observe a partially written file.
         var tempDir = string.IsNullOrEmpty(dir) ? Directory.GetCurrentDirectory() : dir;
         var tempPath = Path.Combine(tempDir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        File.WriteAllText(tempPath, payload);
 
-        if (!OperatingSystem.IsWindows())
-        {
-            // The payload is a base64 256-bit connector encryption key. On a default
-            // POSIX umask (022), File.WriteAllText creates the temp file 0644
-            // (world-readable), and File.Move preserves that mode -- exposing the key
-            // to other local users. Restrict to owner read/write (0600) BEFORE the
-            // move so the final file is never world-readable. No-op on Windows, where
-            // NTFS ACL inheritance governs access.
-            File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        }
+        // The payload is a base64 256-bit connector encryption key, so the temp file is created ATOMICALLY
+        // with owner-only permissions and the key is written through that same handle (#1262). Writing it
+        // first and restricting afterwards left the key exposed for an instant: on a default POSIX umask
+        // (022) the file was briefly 0644, and on Windows nothing restricted it at all -- it inherited the
+        // directory's DACL (typically BUILTIN\Users read) and File.Move preserves what it inherited.
+        RestrictedFileWriter.WriteRestrictedFile(tempPath, payload);
 
         try
         {

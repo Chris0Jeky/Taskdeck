@@ -32,6 +32,62 @@ public class CliRestrictedFileWriterTests
     }
 
     [Fact]
+    public void WriteRestrictedFile_FailsClosedOnNonAclFilesystems_StructuralCheck()
+    {
+        // On FAT32/exFAT/some SMB shares CreateFileW silently IGNORES the supplied security descriptor,
+        // and on non-POSIX mounts open(2)'s mode is ignored. Pin the two post-create guards that keep the
+        // helper fail-closed there: the Windows DACL read-back through the open handle and the Unix
+        // exact-mode pin (also umask-proof) through the open handle.
+        var source = File.ReadAllText(FindCliSourceFile("RestrictedFileWriter.cs"));
+
+        Assert.Contains("AreAccessRulesProtected", source);
+        Assert.Contains("File.SetUnixFileMode(stream.SafeFileHandle", source);
+        Assert.Contains("UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite", source);
+        Assert.Contains("BuildOwnerOnlyFileSecurity())", source);
+    }
+
+    [Fact]
+    public void WriteRestrictedFile_CreatesFileAtomicallyLockedToCurrentUser()
+    {
+        // The file must be BORN with owner-only permissions -- Unix 0600 via
+        // FileStreamOptions.UnixCreateMode, Windows via the protected owner-only DACL supplied to
+        // CreateFile -- and hold the exact written content. Each CI runner covers its own platform branch.
+        var path = Path.Combine(Path.GetTempPath(), $"td-cli-atomic-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            RestrictedFileWriter.WriteRestrictedFile(path, "{\"secret\":\"atomic\"}");
+
+            Assert.Equal("{\"secret\":\"atomic\"}", File.ReadAllText(path));
+            AssertOwnerOnly(path);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void WriteRestrictedFile_RefusesToAdoptAPreExistingFile()
+    {
+        // FileMode.CreateNew must fail on an already-occupied path rather than write the key into a file
+        // someone else created (whose handle/permissions we do not control) -- and it must not delete or
+        // overwrite that pre-existing file.
+        var path = Path.Combine(Path.GetTempPath(), $"td-cli-preexist-{Guid.NewGuid():N}.tmp");
+        File.WriteAllText(path, "pre-existing");
+        try
+        {
+            Assert.Throws<IOException>(() => RestrictedFileWriter.WriteRestrictedFile(path, "secret"));
+
+            Assert.True(File.Exists(path), "the pre-existing file must not be deleted on a refused create");
+            Assert.Equal("pre-existing", File.ReadAllText(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void EnsureKeyOnDisk_LockdownSurvivesAtomicMove()
     {
         // End-to-end property: PersistKey stages the key in a restricted temp file and then
