@@ -617,6 +617,33 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(helpDialog()).toBeNull()
   })
 
+  it('does not scan the DOM for modal surfaces on an ordinary keystroke in a field', async () => {
+    mountedWrapper = mountShell(document.body)
+    const field = document.createElement('input')
+    document.body.appendChild(field)
+
+    const querySelectorAll = vi.spyOn(document, 'querySelectorAll')
+    const surfaceScans = () => querySelectorAll.mock.calls
+      .filter(([selector]) => String(selector).includes('aria-modal'))
+
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', bubbles: true }))
+    await waitForUi()
+
+    // Typing pays for `isTextEntryTarget` alone; the `querySelectorAll` plus
+    // `getComputedStyle` sweep is only reached once an answer is needed (#1968).
+    expect(surfaceScans()).toHaveLength(0)
+
+    // mod+k is allowed inside text entry, so there the surface state decides
+    // whether it may open and the scan is the point.
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }))
+    await waitForUi()
+    expect(surfaceScans().length).toBeGreaterThan(0)
+
+    querySelectorAll.mockRestore()
+    field.remove()
+  })
+
   it('does not navigate when Shift is held with a bare-letter binding', async () => {
     mountedWrapper = mountShell()
 
