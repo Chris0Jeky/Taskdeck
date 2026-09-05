@@ -1201,9 +1201,9 @@ describe('boardCrudStore', () => {
       resetForLogout()
 
       expect(state.filters.value).toEqual(initialCardFilters())
-      // A fresh object, not a shared default: the next session filtering its
-      // board must not reach the value a later reset restores.
-      expect(state.filters.value).not.toBe(initialCardFilters())
+      // A fresh object, not a shared default: mutating the restored value must
+      // not reach what a later reset restores (the identity check that used to
+      // sit here could not fail, since every call allocates).
       state.filters.value.labelIds.push('leaked')
       expect(initialCardFilters().labelIds).toEqual([])
     })

@@ -98,7 +98,15 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         // parameter would be a trap for the next caller, and the only filtered
         // caller today (`useActivityQuery.loadSelectorData`) already delegates
         // its failure to this store's error surface rather than to the retry
-        // layer.  Retries do not help the wedged-socket case at all.
+        // layer.  `timeout` alone fixes the wedged socket; `skipRetry` is here
+        // because of the share above: every unfiltered caller on the page
+        // joins one promise, so a retry chain would not lengthen one mount's
+        // skeleton but pin the boards list, the inbox composer, the triage
+        // picker, Metrics and Saved Views together for up to four attempts
+        // plus three `Retry-After` waits, the same page-wide stall #2685
+        // exists to remove, only with a ceiling.  The cost is that a one-off
+        // 503 no longer heals itself on surfaces without a Retry control
+        // (tracked on the follow-up issue named in the PR).
         const freshBoards = await boardsApi.getBoards(search, includeArchived, {
           signal: controller.signal,
           timeout: BOARD_REQUEST_TIMEOUT_MS,
