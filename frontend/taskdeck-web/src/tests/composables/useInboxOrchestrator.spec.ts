@@ -796,6 +796,17 @@ describe('useInboxOrchestrator', () => {
       )
     })
 
+    // #1984 finding 2: a hand-written or bookmarked URL can still carry a
+    // column. The list request stays board-only, which is why nothing on the
+    // Inbox may present the column as an applied filter. The chip side of this
+    // contract is pinned in `views/paper/inbox/PaperInboxScopeTruth.spec.ts`.
+    it('ignores a columnId in the route and still requests the board only', async () => {
+      mockRoute.query = { boardId: 'board-1', columnId: 'col-ready' }
+      const orch = createOrchestrator()
+      await orch.loadInbox()
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-1' })
+    })
+
     it('calls fetchItems without boardId when none active', async () => {
       mockRoute.query = {}
       const orch = createOrchestrator()

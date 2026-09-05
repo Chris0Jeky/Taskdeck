@@ -909,14 +909,46 @@ describe('PaperBoardView — visible keyboard column selection', () => {
 })
 
 describe('PaperBoardView — the capture lane still exists', () => {
-  it('routes "+ capture" to the column-scoped Inbox composer', async () => {
+  // #1984 finding 2: this pin used to require `columnId` in the pushed query.
+  // Nothing consumes it — `CaptureListQuery` has no column key, the create DTO
+  // has no `ColumnId`, and triage targets the board's default column — so the
+  // only thing it did was make the Inbox chip claim a filter that was never
+  // applied. The board scope is the whole truth this control can carry.
+  it('routes "+ capture" to the board-scoped Inbox, carrying no column the Inbox cannot honour', async () => {
     const wrapper = mountView()
 
     await wrapper.findAll('[data-testid="paper-column-capture"]')[1]!.trigger('click')
 
     expect(routerMock.push).toHaveBeenCalledWith({
       name: 'workspace-inbox',
-      query: { boardId: 'board-1', columnId: 'col-today' },
+      query: { boardId: 'board-1' },
     })
+    expect(routerMock.push).not.toHaveBeenCalledWith(
+      expect.objectContaining({ query: expect.objectContaining({ columnId: 'col-today' }) }),
+    )
+  })
+
+  /**
+   * Every column's capture control now does the SAME thing — it pushes
+   * `{ boardId }`, exactly as the board-level "Capture here" does — so they all
+   * carry the same accessible name. Naming them per column ("from Backlog",
+   * "from Today", "from Done") would announce a distinction the system does not
+   * make, which is the same class of untruth #1984 finding 2 is about. Contrast
+   * `addAria`, which stays per column because that control really does differ.
+   */
+  it('gives every column capture control the same board-level accessible name', () => {
+    const wrapper = mountView()
+    const captures = wrapper.findAll('[data-testid="paper-column-capture"]')
+
+    expect(captures).toHaveLength(3)
+    const names = captures.map((capture) => capture.attributes('aria-label'))
+    expect(names).toEqual([
+      "Capture a note into this board's Inbox",
+      "Capture a note into this board's Inbox",
+      "Capture a note into this board's Inbox",
+    ])
+    // The per-column control that genuinely differs keeps its per-column name.
+    expect(wrapper.findAll('[data-testid="paper-column-add-card"]')[1]?.attributes('aria-label'))
+      .toBe('Add a card to Today')
   })
 })
