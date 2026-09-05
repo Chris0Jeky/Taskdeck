@@ -229,6 +229,78 @@ describe('boardStore', () => {
       expect(store.currentBoard?.columns[0]).toEqual(updatedColumn)
       expect(store.currentBoard?.name).toBe('Loaded board')
     })
+
+    it('rejects a delayed fan-out after a successful board settings write commits locally', async () => {
+      const boardRead = createDeferred<BoardDetail>()
+      const labelsRead = createDeferred<Label[]>()
+      const renamedBoard: Board = {
+        id: 'board-1',
+        name: 'Renamed board',
+        description: 'Renamed while the read was open',
+        isArchived: false,
+        createdAt: timestamp,
+        updatedAt: '2026-09-03T10:03:00Z',
+      }
+      store.currentBoard = structuredClone(loadedBoard)
+      store.currentBoardCards = [localCard]
+      vi.mocked(boardsApi.getBoard).mockReturnValueOnce(boardRead.promise)
+      vi.mocked(cardsApi.getCards).mockResolvedValueOnce([localCard])
+      vi.mocked(labelsApi.getLabels).mockReturnValueOnce(labelsRead.promise)
+      vi.mocked(boardsApi.updateBoard).mockResolvedValueOnce(renamedBoard)
+
+      // A Board Retry that overlapped the board-settings save.
+      const delayedRead = store.fetchBoard('board-1')
+      await Promise.resolve()
+      await Promise.resolve()
+
+      await store.updateBoard('board-1', {
+        name: renamedBoard.name,
+        description: renamedBoard.description,
+        isArchived: renamedBoard.isArchived,
+      })
+      expect(store.currentBoard?.name).toBe('Renamed board')
+
+      boardRead.resolve({ ...structuredClone(loadedBoard), name: 'Pre-save board name' })
+      labelsRead.resolve([])
+
+      await expect(delayedRead).resolves.toBe(false)
+      expect(store.currentBoard?.name).toBe('Renamed board')
+    })
+
+    it('rejects a delayed fan-out after a successful label write commits locally', async () => {
+      const boardRead = createDeferred<BoardDetail>()
+      const labelsRead = createDeferred<Label[]>()
+      const newLabel: Label = {
+        id: 'label-new',
+        boardId: 'board-1',
+        name: 'Blocked',
+        colorHex: '#ff0000',
+        createdAt: '2026-09-03T10:04:00Z',
+        updatedAt: '2026-09-03T10:04:00Z',
+      }
+      store.currentBoard = structuredClone(loadedBoard)
+      store.currentBoardCards = [localCard]
+      store.currentBoardLabels = []
+      vi.mocked(boardsApi.getBoard).mockReturnValueOnce(boardRead.promise)
+      vi.mocked(cardsApi.getCards).mockResolvedValueOnce([localCard])
+      vi.mocked(labelsApi.getLabels).mockReturnValueOnce(labelsRead.promise)
+      vi.mocked(labelsApi.createLabel).mockResolvedValueOnce(newLabel)
+
+      // A Board Retry that overlapped the label save.
+      const delayedRead = store.fetchBoard('board-1')
+      await Promise.resolve()
+      await Promise.resolve()
+
+      await store.createLabel('board-1', { name: newLabel.name, colorHex: newLabel.colorHex })
+      expect(store.currentBoardLabels).toEqual([newLabel])
+
+      boardRead.resolve({ ...structuredClone(loadedBoard), name: 'Pre-save board name' })
+      labelsRead.resolve([])
+
+      await expect(delayedRead).resolves.toBe(false)
+      expect(store.currentBoardLabels).toEqual([newLabel])
+      expect(store.currentBoard?.name).toBe('Loaded board')
+    })
   })
 
   describe('createBoard', () => {
