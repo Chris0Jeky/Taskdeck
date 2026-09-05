@@ -161,6 +161,28 @@ describe('generated PWA worker runtime-cache contract', () => {
     }
   })
 
+  it('loads the cleanup script from a top-level importScripts, ahead of the AMD factory', () => {
+    // The repair for #2639. vite-plugin-pwa emits the configured `importScripts` call INSIDE the
+    // asynchronous AMD `define()` factory it wraps the worker in, so the cleanup script's
+    // `activate` listener was attached after the event had already been dispatched and the forced
+    // re-sweep never ran (measured in Chromium on PR #2416 as `__proofActivateFired: false`).
+    // The build hoists that call to the top of the emitted worker - see
+    // src/pwa/hoistWorkerImportScripts.ts - so the listener exists during the worker's initial
+    // synchronous evaluation, which is what gives `event.waitUntil` on activate its real meaning.
+    //
+    // This is a STRUCTURAL assertion on purpose: no fake event can prove attachment order, and the
+    // handler-contract cases below dispatch `activate` by hand precisely because they cannot.
+    const worker = loadGeneratedWorker()
+    const cleanupImport = /importScripts\(\s*["']api-cache-cleanup\.js["']/g
+    const matches = [...worker.matchAll(cleanupImport)]
+    expect(matches).toHaveLength(1)
+
+    const [match] = matches
+    // Nothing at all may precede it: not the AMD shim, not the `define()` call, not a comment.
+    expect(worker.slice(0, match.index)).toBe('')
+    expect(worker.indexOf('define(')).toBeGreaterThan(match.index!)
+  })
+
   it('retires the runtime caches the generated worker names, without an activate event', async () => {
     const runtimeCacheNames = generatedRuntimeCacheNames()
     expect(runtimeCacheNames).toContain('taskdeck-static-assets')
