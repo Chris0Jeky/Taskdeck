@@ -74,6 +74,7 @@ const {
   proposals,
   proposalsLoading,
   unavailableProposalId,
+  unavailableProposalMalformed,
   queueAccessRevoked,
   queueRefreshStale,
   queueRefreshRefused,
@@ -2953,9 +2954,16 @@ async function onClearBoardScope() {
       </template>
       <template v-else-if="unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>
-        <h2 class="tk-h2">{{ $t('review.empty.unavailable.title') }}</h2>
+        <!-- A 400 means the by-id route could not bind the id, so the link
+             never named a proposal: it cannot be retried and it will not come
+             back. Saying "it may have been applied, archived, or removed"
+             there sends the reviewer to wait for a recovery that cannot
+             arrive (#2214). -->
+        <h2 class="tk-h2">
+          {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedTitle') : $t('review.empty.unavailable.title') }}
+        </h2>
         <p class="tk-lede">
-          {{ $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
+          {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedBody', { id: unavailableProposalId }) : $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
         </p>
         <button
           type="button"

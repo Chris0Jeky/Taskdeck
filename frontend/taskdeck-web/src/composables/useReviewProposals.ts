@@ -258,6 +258,27 @@ export function useReviewProposals() {
   // can bind). A wrong-identity or cross-board answer fails closed into it too.
   // Explicit navigation is narrower on purpose and still marks only the 404.
   const unavailableProposalId = ref<string | null>(null)
+  // WHY that pin is unavailable, because the id alone collapses two different
+  // truths (#2214). A 403 or a 404 is about a proposal that exists or existed;
+  // a 400 is the by-id route refusing to bind the id at all, so the link never
+  // named a proposal and no later tick makes it work. Rendering "it may have
+  // been applied, archived, or removed" for the second sends the reviewer to
+  // wait for a recovery that cannot arrive.
+  //
+  // Kept in lockstep with the id through `markProposalUnavailable` /
+  // `clearProposalUnavailable` rather than assigned at each of the write sites:
+  // a reason that outlived its id would label the NEXT unavailable pin.
+  const unavailableProposalMalformed = ref(false)
+
+  function markProposalUnavailable(proposalId: string, reason: 'malformed' | 'refused') {
+    unavailableProposalId.value = proposalId
+    unavailableProposalMalformed.value = reason === 'malformed'
+  }
+
+  function clearProposalUnavailable() {
+    unavailableProposalId.value = null
+    unavailableProposalMalformed.value = false
+  }
   // Set when a background read is refused with 403 (board access revoked
   // mid-session). The surfaces swap the ordinary "Nothing waiting" empty state
   // for an honest one -- clearing the queue without saying why would turn a
@@ -559,14 +580,14 @@ export function useReviewProposals() {
     if (proposalsLoading.value) return
     const proposalId = getProposalIdFromHash(route.hash)
     if (!proposalId) {
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
       return
     }
 
     // A different hash starts a fresh lookup. Keep the current unavailable
     // state only while it still describes the route the user asked for.
     if (!proposalIdsEqual(unavailableProposalId.value, proposalId)) {
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
     }
 
     const currentProposal = proposals.value.find((p) => proposalIdsEqual(p.id, proposalId))
@@ -574,7 +595,7 @@ export function useReviewProposals() {
       if (!matchesActiveBoardFilter(currentProposal.boardId)) {
         return
       }
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
       await scrollToProposalFromHash()
       return
     }
@@ -591,14 +612,16 @@ export function useReviewProposals() {
       // different record. Retain the hash as unavailable instead of upserting a
       // response whose identity does not match the requested proposal.
       if (!proposalIdsEqual(fetchedProposal.id, proposalId)) {
-        unavailableProposalId.value = proposalId
+        // A wrong record is not a broken address: the id bound fine, the
+        // server simply answered with something else.
+        markProposalUnavailable(proposalId, 'refused')
         return
       }
       if (!matchesActiveBoardFilter(fetchedProposal.boardId)) {
         return
       }
       upsertProposal(fetchedProposal)
-      unavailableProposalId.value = null
+      clearProposalUnavailable()
       await nextTick()
       await scrollToProposalFromHash()
     } catch (e: unknown) {
@@ -607,7 +630,7 @@ export function useReviewProposals() {
       if (options?.signal?.aborted) return
       if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
       if (isHttpNotFound(e)) {
-        unavailableProposalId.value = proposalId
+        markProposalUnavailable(proposalId, 'refused')
         return
       }
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
@@ -925,6 +948,7 @@ export function useReviewProposals() {
       if (!isCurrentRead()) return
       const next = [...loadedProposals]
       let pinUnavailable = false
+      let pinMalformed = false
       if (
         hashTargetId &&
         !next.some((proposal) => proposalIdsEqual(proposal.id, hashTargetId))
@@ -987,6 +1011,10 @@ export function useReviewProposals() {
             // bind — into whole-queue revocation, and do not discard a queue
             // answer that already arrived.
             pinUnavailable = true
+            // Only the 400 says the ADDRESS is wrong. A 403 or a 404 is about a
+            // proposal that exists or existed, and the surfaces say different
+            // things about the two (#2214).
+            pinMalformed = isMalformedTargetError(e)
           } else {
             // The composite read is incomplete. Preserve the exact queue and
             // availability state currently rendered; a later tick can retry.
@@ -1001,9 +1029,9 @@ export function useReviewProposals() {
       if (!isCurrentRead()) return
       if (hashTargetId) {
         if (pinUnavailable) {
-          unavailableProposalId.value = hashTargetId
+          markProposalUnavailable(hashTargetId, pinMalformed ? 'malformed' : 'refused')
         } else if (proposalIdsEqual(unavailableProposalId.value, hashTargetId)) {
-          unavailableProposalId.value = null
+          clearProposalUnavailable()
         }
       }
       proposals.value = next
@@ -1249,6 +1277,7 @@ export function useReviewProposals() {
     proposals,
     proposalsLoading,
     unavailableProposalId,
+    unavailableProposalMalformed,
     queueAccessRevoked,
     queueRefreshStale,
     queueRefreshRefused,

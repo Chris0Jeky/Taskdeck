@@ -535,6 +535,8 @@ export default {
       eyebrow: 'Proposta richiesta',
       title: 'Questa proposta non e disponibile.',
       body: 'La proposta {id} non e piu disponibile per la revisione. Potrebbe essere stata applicata, archiviata o rimossa.',
+      malformedTitle: 'Questo collegamento non e un collegamento valido a una proposta.',
+      malformedBody: 'La pagina richiede {id}, che non e un id di proposta: non esiste nulla da aprire e riprovare non serve. Torna alla revisione e scegli una proposta dalla coda.',
       return: 'Torna alla revisione',
     },
   },

@@ -1274,6 +1274,48 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
   })
 
+  it('says a malformed pin is a broken link, not an unavailable proposal (#2214)', async () => {
+    // A 400 from the by-id route is model binding refusing the id, so the link
+    // never named a proposal: "it may have been applied, archived, or removed"
+    // describes a proposal that existed, and pointing a reviewer at a recovery
+    // that cannot arrive is worse than saying nothing.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView(
+        [makeProposal({ id: 'proposal-not-a-guid' })],
+        '/workspace/review#proposal-proposal-not-a-guid',
+      )
+
+      mocks.getProposals.mockResolvedValue([])
+      mocks.getProposal.mockRejectedValue({ response: { status: 400 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const empty = wrapper.get('[data-testid="paper-review-empty"]')
+      expect(empty.text()).toContain(enReview.empty.unavailable.malformedTitle)
+      expect(empty.text()).not.toContain(enReview.empty.unavailable.title)
+      expect(empty.text()).toContain('proposal-not-a-guid')
+      expect(wrapper.find('[data-testid="paper-review-unavailable-return"]').exists()).toBe(true)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the ordinary unavailable copy for a pin that is gone (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+    )
+
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).toContain(enReview.empty.unavailable.title)
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.malformedTitle)
+    wrapper.unmount()
+  })
+
   it('updates the hash when manual queue selection replaces a deep-link target', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-first' }))
     const wrapper = await mountView(

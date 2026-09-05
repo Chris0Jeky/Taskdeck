@@ -1753,6 +1753,45 @@ describe('ReviewView', () => {
     }
   })
 
+  it('says a malformed pin is a broken link, not an unavailable proposal (#2214)', async () => {
+    // Two different truths shared one sentence. "It may have been applied,
+    // archived, or removed" describes a proposal that existed; a 400 says the
+    // id never named one, so there is nothing to wait for and nothing to
+    // retry. Sending a reviewer back to watch for a recovery that cannot
+    // arrive is the failure this copy exists to stop.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-not-a-guid' })])
+      const { wrapper } = await mountAt('/workspace/review#proposal-proposal-not-a-guid')
+
+      mocks.getProposals.mockResolvedValue([])
+      mocks.getProposal.mockRejectedValue({ response: { status: 400 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const unavailable = wrapper.get('[data-testid="review-unavailable-target"]')
+      expect(unavailable.text()).toContain(enReview.empty.unavailable.malformedTitle)
+      expect(unavailable.text()).not.toContain(enReview.empty.unavailable.title)
+      expect(unavailable.text()).toContain('proposal-not-a-guid')
+      // The only offered action stays the way back to the unpinned queue.
+      expect(wrapper.find('[data-testid="review-unavailable-return"]').exists()).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the ordinary unavailable copy for a pin that is gone or forbidden (#2214)', async () => {
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-gone')
+
+    const unavailable = wrapper.get('[data-testid="review-unavailable-target"]')
+    expect(unavailable.text()).toContain(enReview.empty.unavailable.title)
+    expect(unavailable.text()).not.toContain(enReview.empty.unavailable.malformedTitle)
+  })
+
   it('announces nothing from the queue live region while the queue is loading (#2214)', async () => {
     // The live region sits above the skeleton, so an ungated one reads "0
     // proposals awaiting review." under the loading state and then the real

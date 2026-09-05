@@ -32,6 +32,7 @@ const {
   queueRefreshRefused,
   queueRefreshRecovered,
   unavailableProposalId,
+  unavailableProposalMalformed,
   dismissableProposalIds,
   isProposalExpired,
   clearProposalDeepLink,
@@ -415,8 +416,12 @@ onUnmounted(() => {
       data-testid="review-unavailable-target"
     >
       <p>{{ $t('review.empty.unavailable.eyebrow') }}</p>
-      <p>{{ $t('review.empty.unavailable.title') }}</p>
-      <p>{{ $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}</p>
+      <!-- A 400 means the by-id route could not bind the id, so the link never
+           named a proposal: it cannot be retried and it will not come back.
+           Saying "it may have been applied, archived, or removed" there sends
+           the reviewer to wait for a recovery that cannot arrive (#2214). -->
+      <p>{{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedTitle') : $t('review.empty.unavailable.title') }}</p>
+      <p>{{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedBody', { id: unavailableProposalId }) : $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}</p>
       <button
         type="button"
         class="td-btn td-btn--secondary td-btn--sm"

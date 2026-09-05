@@ -533,6 +533,8 @@ export default {
       eyebrow: 'Propuesta solicitada',
       title: 'Esta propuesta no esta disponible.',
       body: 'La propuesta {id} ya no esta disponible para revisar. Puede haberse aplicado, archivado o eliminado.',
+      malformedTitle: 'Este enlace no es un enlace de propuesta valido.',
+      malformedBody: 'La direccion pide {id}, que no es un id de propuesta: no hay nada que abrir y reintentarlo no sirve. Vuelve a Revision y elige una propuesta de la cola.',
       return: 'Volver a Revision',
     },
   },

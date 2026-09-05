@@ -2448,4 +2448,90 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
   })
+
+  describe('malformed vs unavailable pin (#2214)', () => {
+    /**
+     * `unavailableProposalId` collapses two different truths. "This proposal is
+     * no longer available to review; it may have been applied, archived, or
+     * removed" is right for a 403 or a 404 and wrong for a 400: an id the by-id
+     * route cannot bind never named a proposal at all, and no amount of waiting
+     * or retrying will make the link work. The reason rides alongside the id so
+     * both skins can say which one happened.
+     */
+    it('marks a pin the by-id route cannot bind as malformed', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'not-a-guid' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it.each([403, 404])('does not call a %s pin malformed', async (status) => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The link named a real proposal. Whether it is gone or forbidden, it is
+      // not a broken address, and telling the reviewer their link is malformed
+      // would send them to fix something that is correct.
+      expect(rp.unavailableProposalId.value).toBe('p-pinned')
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not call a wrong-identity or cross-scope answer malformed', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-different' }))
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.unavailableProposalId.value).toBe('p-pinned')
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('retires the malformed reason with the pin it describes', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'not-a-guid' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      rp.stopQueueRefresh()
+
+      // A reason that outlived its id would label the NEXT unavailable pin.
+      mockRoute.hash = ''
+      await watcherForCurrentSourceValue('')[1]()
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+    })
+  })
 })

@@ -649,10 +649,21 @@ export default {
       body: 'Someone else decided, withdrew, or deferred it while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
       return: 'Reload the queue',
     },
+    // Two different truths, deliberately not sharing a sentence (#2214).
+    // `title`/`body` describe a proposal that exists or existed and that this
+    // reviewer cannot see now (403), or that is gone (404) — a state a later
+    // read can legitimately reverse. `malformedTitle`/`malformedBody` describe
+    // an id the by-id route refuses to bind at all (400): the address never
+    // named a proposal, so there is nothing to wait for and retrying is
+    // pointless. Translators: keep that distinction. The malformed copy must
+    // not promise a recovery, and must point at the link rather than at the
+    // proposal. The eyebrow and the return control are shared by both.
     unavailable: {
       eyebrow: 'Requested proposal',
       title: 'This proposal is unavailable.',
       body: 'Proposal {id} is no longer available to review. It may have been applied, archived, or removed.',
+      malformedTitle: 'This link is not a valid proposal link.',
+      malformedBody: 'The address asks for {id}, which is not a proposal id, so there is nothing to open here. Retrying will not help. Go back to Review and pick a proposal from the queue.',
       return: 'Back to Review',
     },
   },
