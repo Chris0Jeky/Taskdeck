@@ -1947,6 +1947,135 @@ describe('ReviewView', () => {
     }
   })
 
+  it('keeps the same announcement node across an explicit reload that did not change the queue (#2599 item 1)', async () => {
+    // The gate was `!proposalsLoading`, and an explicit `loadProposals` raises
+    // that flag WITHOUT clearing `proposals`: the node unmounted and remounted
+    // with the same sentence, so the live region wrote count -> '' -> count and
+    // the restore was spoken for a queue that had not moved. Reached by the
+    // header Refresh below, and by filing away a settled proposal.
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-first' })])
+    const { wrapper } = await mountAt('/workspace/review')
+
+    const region = wrapper.get('[data-testid="review-queue-live"]').element
+    const before = wrapper.get('[data-testid="review-queue-announcement"]')
+    expect(before.text()).toContain('1 proposal awaiting review')
+    const beforeEl = before.element
+
+    const pending = createDeferred<Proposal[]>()
+    mocks.getProposals.mockReturnValue(pending.promise)
+    const refresh = wrapper.findAll('button').find((node) => node.text() === 'Refresh Review')!
+    await refresh.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    // Mid-read: the skeleton is up, and the count beside it is still the last
+    // landed read's count of this same board.
+    expect(wrapper.find('.td-review__skeleton').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="review-queue-announcement"]').element).toBe(beforeEl)
+
+    pending.resolve([buildProposal({ id: 'proposal-first' })])
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // Byte-identical answer: the same node, so nothing was added to the region
+    // and nothing is spoken. A CHANGED reload still re-keys (the item-4 test
+    // above owns that half).
+    expect(wrapper.get('[data-testid="review-queue-announcement"]').element).toBe(beforeEl)
+    expect(wrapper.get('[data-testid="review-queue-live"]').element).toBe(region)
+  })
+
+  it('re-keys the announcement once when an explicit reload did change the queue (#2599 item 1)', async () => {
+    // The other half of the same gate: silence for a reload that changed
+    // nothing must not become silence for one that did. #2710's key still
+    // carries it, and now it carries it without the node being unmounted and
+    // rebuilt around the reload.
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-first' })])
+    const { wrapper } = await mountAt('/workspace/review')
+
+    const region = wrapper.get('[data-testid="review-queue-live"]').element
+    const beforeEl = wrapper.get('[data-testid="review-queue-announcement"]').element
+
+    // Same count, different proposal: the sentence is byte-identical, so only
+    // the key can carry the change.
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-second' })])
+    const refresh = wrapper.findAll('button').find((node) => node.text() === 'Refresh Review')!
+    await refresh.trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const after = wrapper.get('[data-testid="review-queue-announcement"]')
+    expect(after.text()).toContain('1 proposal awaiting review')
+    expect(after.element).not.toBe(beforeEl)
+    expect(wrapper.get('[data-testid="review-queue-live"]').element).toBe(region)
+  })
+
+  it('withholds the announcement across a board-filter change until the new scope lands (#2599 item 1)', async () => {
+    // The one reload where the rendered count genuinely stops being real: the
+    // queue on screen belongs to the previous board until the new scope's read
+    // replaces it.
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({ id: 'proposal-a', boardId: 'board-a' }),
+    ])
+    const { wrapper, router } = await mountAt('/workspace/review?boardId=board-a')
+    expect(wrapper.get('[data-testid="review-queue-announcement"]').text()).toContain(
+      '1 proposal awaiting review',
+    )
+
+    const pending = createDeferred<Proposal[]>()
+    mocks.getProposals.mockReturnValue(pending.promise)
+    await router.push('/workspace/review?boardId=board-b')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="review-queue-announcement"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="review-queue-live"]').text()).toBe('')
+
+    pending.resolve([
+      buildProposal({ id: 'proposal-b1', boardId: 'board-b' }),
+      buildProposal({ id: 'proposal-b2', boardId: 'board-b' }),
+    ])
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.get('[data-testid="review-queue-announcement"]').text()).toContain(
+      '2 proposals awaiting review',
+    )
+  })
+
+  it('moves focus to the queue after leaving an unavailable pin (#2599 item 2)', async () => {
+    // The panel the return control lives in is removed by the click, so focus
+    // fell to <body>: no announcement, and the next keystroke acts on nothing.
+    mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-live' })])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-gone')
+    const back = wrapper.get('[data-testid="review-unavailable-return"]')
+    expect(wrapper.find('.td-review__list').exists()).toBe(false)
+
+    await back.trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // The queue list is this skin's focusable queue: it carries the
+    // "Proposals awaiting review" label and the Arrow cursor that starts on the
+    // first row.
+    const list = wrapper.get('.td-review__list').element
+    expect(document.activeElement).toBe(list)
+  })
+
+  it('moves focus to the empty state after leaving an unavailable pin with nothing left to review (#2599 item 2)', async () => {
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-gone')
+    await wrapper.get('[data-testid="review-unavailable-return"]').trigger('click')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const empty = wrapper.get('.td-review-empty').element
+    expect(empty.getAttribute('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(empty)
+  })
+
   it('renders the pinned proposal, not the unavailable panel, after moving from a dead pin to a live one (#2214)', async () => {
     // What this pins: navigating from a refused pin X to a resolvable pin Y
     // shows Y's card and no panel.

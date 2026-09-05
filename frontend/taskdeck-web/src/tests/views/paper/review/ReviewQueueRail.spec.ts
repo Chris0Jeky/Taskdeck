@@ -31,18 +31,28 @@ function mountRail(props?: Partial<{
   cadence: number[]
   scopeLabel: string
   scopeClearLabel: string
-  loading: boolean
+  queueScopeLoaded: boolean
   queueUnavailable: boolean
   awaitingCount: number
   announcementKey: string
+  attachTo: boolean
+  /**
+   * The RETIRED pre-fix input (#2599 item 1). It is no longer a prop, so the
+   * rail receives it as an inert fallthrough attribute; only the regression pin
+   * below passes it, and only so that test fails on the pre-fix rail, where
+   * this was the announcement gate's first term.
+   */
+  loading: boolean
 }>) {
   return mount(ReviewQueueRail, {
+    ...(props?.attachTo ? { attachTo: document.body } : {}),
     props: {
       items: props?.items ?? [makeItem()],
       activeId: props?.activeId ?? null,
       awaitingCount: props?.awaitingCount ?? 3,
       staleCount: 2,
       ...(props?.announcementKey !== undefined ? { announcementKey: props.announcementKey } : {}),
+      ...(props?.queueScopeLoaded !== undefined ? { queueScopeLoaded: props.queueScopeLoaded } : {}),
       ...(props?.loading !== undefined ? { loading: props.loading } : {}),
       ...(props?.queueUnavailable !== undefined ? { queueUnavailable: props.queueUnavailable } : {}),
       dismissableCount: props?.dismissableCount ?? 0,
@@ -304,19 +314,20 @@ describe('ReviewQueueRail apply-approved action (#1307)', () => {
 })
 
 describe('ReviewQueueRail queue announcement (#2214)', () => {
-  it('announces the awaiting count once the queue is loaded', () => {
-    const wrapper = mountRail({ awaitingCount: 3 })
+  it('announces the awaiting count once a read has landed for the current scope', () => {
+    const wrapper = mountRail({ awaitingCount: 3, queueScopeLoaded: true })
     const live = wrapper.get('[data-testid="paper-review-queue-live"]')
     expect(live.attributes('role')).toBe('status')
     expect(live.text()).toContain('3 proposals awaiting review')
   })
 
-  it('announces nothing while the queue is still loading', () => {
-    // A loading rail carries awaitingCount 0 because nothing has been read yet,
-    // so an ungated region reads "0 proposals awaiting review." and then the
-    // real count. Only the content is withheld: the region stays mounted so a
-    // later change lands in a live region that was already present.
-    const wrapper = mountRail({ loading: true, awaitingCount: 0 })
+  it('announces nothing before a read has landed for the current scope', () => {
+    // Before the first read the rail carries awaitingCount 0 because nothing
+    // has been read yet, so an ungated region reads "0 proposals awaiting
+    // review." and then the real count. Only the content is withheld: the
+    // region stays mounted so a later change lands in a live region that was
+    // already present.
+    const wrapper = mountRail({ queueScopeLoaded: false, awaitingCount: 0 })
     const live = wrapper.get('[data-testid="paper-review-queue-live"]')
     expect(live.attributes('role')).toBe('status')
     expect(live.text()).toBe('')
@@ -324,21 +335,81 @@ describe('ReviewQueueRail queue announcement (#2214)', () => {
 
   it('announces nothing once queue access is revoked', () => {
     // The revoked state clears the queue, so awaitingCount drops to 0 for a
-    // reason that is not "nothing is awaiting review". Same defect as loading,
-    // one branch over.
-    const wrapper = mountRail({ queueUnavailable: true, awaitingCount: 0, items: [] })
+    // reason that is not "nothing is awaiting review". Its own gate, not the
+    // scope signal, is what must withhold it -- hence the landed read here.
+    const wrapper = mountRail({
+      queueScopeLoaded: true,
+      queueUnavailable: true,
+      awaitingCount: 0,
+      items: [],
+    })
     const live = wrapper.get('[data-testid="paper-review-queue-live"]')
     expect(live.attributes('role')).toBe('status')
     expect(live.text()).toBe('')
   })
 
-  it('keeps announcing when no loading flag is supplied', () => {
-    // The prop is optional so the parent view needs no change to keep today's
-    // behaviour; an omitted flag must never silence the announcement.
+  it('withholds the announcement when no scope flag is supplied', () => {
+    // The prop is optional and defaults to withholding: a parent that does not
+    // say a read has landed cannot have its count spoken, because 0 from a
+    // never-read queue is the #2593 defect (#2599 item 1).
     const wrapper = mountRail({ awaitingCount: 2 })
-    expect(wrapper.get('[data-testid="paper-review-queue-live"]').text()).toContain(
-      '2 proposals awaiting review',
+    expect(wrapper.get('[data-testid="paper-review-queue-live"]').text()).toBe('')
+    expect(wrapper.find('[data-testid="paper-review-queue-announcement"]').exists()).toBe(false)
+  })
+
+  it('keeps the announcement node across a reload of the same scope (#2599 item 1)', async () => {
+    // The rail's old gate was the parent's `loading` flag, so an explicit
+    // reload -- which raises it without clearing the queue -- unmounted this
+    // node and remounted it with the same sentence. A live region speaks a node
+    // addition, so the reviewer heard the same count read back for a queue that
+    // had not moved.
+    //
+    // A reload is invisible to the rail now, which is the fix and also why this
+    // case has nothing of its own to drive: re-setting identical props does not
+    // even re-render. So the pin is the retired input itself -- `loading: true`
+    // is what the parent sent mid-reload before, and it withheld the
+    // announcement. Here it is an inert fallthrough attribute and only the
+    // scope signal decides, which is why this test is RED on the pre-fix rail
+    // and green here. The end-to-end evidence that a real reload stays silent
+    // is at view level: ReviewView.spec's and PaperReviewView.spec's
+    // "keeps the same announcement node across an explicit reload" cases.
+    const wrapper = mountRail({
+      awaitingCount: 2,
+      queueScopeLoaded: true,
+      announcementKey: 'p-a\np-b',
+      loading: true,
+    })
+    const announced = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+    expect(announced.text()).toContain('2 proposals awaiting review')
+    const before = announced.element
+
+    // A genuine re-render for an unrelated reason must not rebuild the keyed
+    // node either: the identity key is what re-announces, never the render.
+    await wrapper.setProps({ staleCount: 3, busy: true })
+
+    expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(before)
+  })
+
+  it('withholds the announcement when the scope changes under it, without remounting the region', async () => {
+    // A board-filter change is the one reload where the rendered count really
+    // does stop being a count of what is on screen, so it is withheld until the
+    // new scope's read lands.
+    const wrapper = mountRail({
+      awaitingCount: 2,
+      queueScopeLoaded: true,
+      announcementKey: 'p-a\np-b',
+    })
+    const region = wrapper.get('[data-testid="paper-review-queue-live"]').element
+
+    await wrapper.setProps({ queueScopeLoaded: false })
+    expect(wrapper.find('[data-testid="paper-review-queue-announcement"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-queue-live"]').text()).toBe('')
+
+    await wrapper.setProps({ queueScopeLoaded: true, awaitingCount: 1, announcementKey: 'p-c' })
+    expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').text()).toContain(
+      '1 proposal awaiting review',
     )
+    expect(wrapper.get('[data-testid="paper-review-queue-live"]').element).toBe(region)
   })
 
   it('replaces the announcement node when the queue identity changes under an unchanged count (#2214 item 4)', async () => {
@@ -346,7 +417,11 @@ describe('ReviewQueueRail queue announcement (#2214)', () => {
     // not the awaiting set the count is about, and a rail-local derivation is
     // exactly how the two skins drift (#1124 / ADR-0038). The key comes from the
     // shared composable so Legacy and Paper re-announce on the same evidence.
-    const wrapper = mountRail({ awaitingCount: 2, announcementKey: 'p-a\np-b' })
+    const wrapper = mountRail({
+      awaitingCount: 2,
+      queueScopeLoaded: true,
+      announcementKey: 'p-a\np-b',
+    })
     const region = wrapper.get('[data-testid="paper-review-queue-live"]').element
     const announced = wrapper.get('[data-testid="paper-review-queue-announcement"]')
     expect(announced.text()).toContain('2 proposals awaiting review')
@@ -369,10 +444,45 @@ describe('ReviewQueueRail queue announcement (#2214)', () => {
     // The identity moves for a reason that is not "the awaiting queue changed"
     // when the queue is withdrawn: `recordQueueAccessRevoked` empties it. The
     // #2593 gate still wins over the re-announcement.
-    const wrapper = mountRail({ awaitingCount: 2, announcementKey: 'p-a\np-b' })
+    const wrapper = mountRail({
+      awaitingCount: 2,
+      queueScopeLoaded: true,
+      announcementKey: 'p-a\np-b',
+    })
     await wrapper.setProps({ queueUnavailable: true, awaitingCount: 0, announcementKey: '' })
     const live = wrapper.get('[data-testid="paper-review-queue-live"]')
     expect(live.text()).toBe('')
     expect(wrapper.find('[data-testid="paper-review-queue-announcement"]').exists()).toBe(false)
+  })
+})
+
+describe('ReviewQueueRail focus handoff (#2599 item 2)', () => {
+  it('focuses the first queue row on request and reports that it did', () => {
+    // The queue's own rows are the target the unavailable-pin panel hands focus
+    // to. The rail owns them, so it owns the handoff: a parent reaching into
+    // this subtree would be the drift seam (#1124 / ADR-0038).
+    const wrapper = mountRail({
+      attachTo: true,
+      items: [makeItem({ id: 'p-1', serial: '#0001' }), makeItem({ id: 'p-2', serial: '#0002' })],
+    })
+    try {
+      expect(wrapper.vm.focusFirstQueueRow()).toBe(true)
+      const first = wrapper.get('.paper-review-rail__queue-row button').element
+      expect(document.activeElement).toBe(first)
+      expect(first.getAttribute('data-serial')).toBe('#0001')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('reports that it did not when the queue has no rows', () => {
+    // The caller needs the honest answer: an empty queue has no row to hold
+    // focus, and the panel's own empty state must take it instead.
+    const wrapper = mountRail({ attachTo: true, items: [] })
+    try {
+      expect(wrapper.vm.focusFirstQueueRow()).toBe(false)
+    } finally {
+      wrapper.unmount()
+    }
   })
 })

@@ -3847,6 +3847,157 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('keeps the same announcement node across an explicit reload that did not change the queue (#2599 item 1)', async () => {
+    // The rail's gate was the parent's `loading` flag, which an explicit
+    // `loadProposals` raises without clearing the queue: the node unmounted and
+    // came back with the same sentence, and a node addition is exactly what a
+    // live region speaks. Filing away a settled proposal is the path #2599 item
+    // 1 names -- it reloads the queue and leaves the pending-review set
+    // identical, so the reviewer heard the same count read back for nothing.
+    const wrapper = await mountView([
+      makeProposal({ id: 'pending-1', status: 'PendingReview', summary: 'Still pending' }),
+      makeProposal({
+        id: 'settled-1',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Settled already',
+      }),
+      makeProposal({
+        id: 'settled-2',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Settled too',
+      }),
+    ])
+    try {
+      const region = wrapper.get('[data-testid="paper-review-queue-live"]').element
+      const before = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+      expect(before.text()).toContain('1 proposal awaiting review')
+      const beforeEl = before.element
+
+      let releaseReload!: (value: Proposal[]) => void
+      const reload = new Promise<Proposal[]>((resolve) => {
+        releaseReload = resolve
+      })
+      // Fewer dismissed than asked for, which is the branch that re-reads the
+      // queue authoritatively instead of patching it locally -- an explicit
+      // `loadProposals` that leaves the pending-review set untouched.
+      mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+      mocks.getProposals.mockReturnValue(reload)
+
+      await wrapper.get('[data-testid="queue-file-away-all"]').trigger('click')
+      await flushPromises()
+
+      // The reload really is in flight: without this the identity assertions
+      // below would pass on a surface that never reloaded at all.
+      expect(mocks.getProposals).toHaveBeenCalledTimes(2)
+      // Mid-read: the pending-review count on screen is still this board's.
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(beforeEl)
+
+      releaseReload([
+        makeProposal({ id: 'pending-1', status: 'PendingReview', summary: 'Still pending' }),
+      ])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(beforeEl)
+      expect(wrapper.get('[data-testid="paper-review-queue-live"]').element).toBe(region)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('withholds the rail announcement across a board-filter change until the new scope lands (#2599 item 1)', async () => {
+    // The one reload where the count really does stop being real: the rail is
+    // still rendering the previous board's queue.
+    const wrapper = await mountView(
+      [makeProposal({ id: 'board-a-1', status: 'PendingReview', boardId: 'board-a' })],
+      '/workspace/review?boardId=board-a',
+    )
+    try {
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+
+      let releaseScopeRead!: (value: Proposal[]) => void
+      mocks.getProposals.mockReturnValue(
+        new Promise<Proposal[]>((resolve) => {
+          releaseScopeRead = resolve
+        }),
+      )
+      await routerOf(wrapper).replace('/workspace/review?boardId=board-b')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-queue-announcement"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-queue-live"]').text()).toBe('')
+
+      releaseScopeRead([
+        makeProposal({ id: 'board-b-1', status: 'PendingReview', boardId: 'board-b' }),
+        makeProposal({ id: 'board-b-2', status: 'PendingReview', boardId: 'board-b' }),
+      ])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').text()).toContain(
+        '2 proposals awaiting review',
+      )
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('moves focus to the first queue row after leaving an unavailable pin (#2599 item 2)', async () => {
+    // The unavailable panel is the whole decision column, so the click that
+    // dismisses it removes the element focus is in and focus falls to <body>.
+    // Paper's settled-elsewhere notice already hands focus on (#2215); this is
+    // the same handoff one branch over, and the same target Legacy uses.
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+      [],
+      [],
+      { attachTo: true },
+    )
+    try {
+      expect(wrapper.get('[data-testid="paper-review-empty"]').text()).toContain(
+        'This proposal is unavailable.',
+      )
+
+      await wrapper.get('[data-testid="paper-review-unavailable-return"]').trigger('click')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const firstRow = wrapper.get('.paper-review-rail__queue-row button').element
+      expect(document.activeElement).toBe(firstRow)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('moves focus to the empty state after leaving an unavailable pin with nothing left to review (#2599 item 2)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+      [],
+      [],
+      { attachTo: true },
+    )
+    try {
+      await wrapper.get('[data-testid="paper-review-unavailable-return"]').trigger('click')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const empty = wrapper.get('[data-testid="paper-review-empty"]').element
+      expect(empty.getAttribute('tabindex')).toBe('-1')
+      expect(document.activeElement).toBe(empty)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('says the queue is no longer available when a poll is refused with 403 (#2194)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {

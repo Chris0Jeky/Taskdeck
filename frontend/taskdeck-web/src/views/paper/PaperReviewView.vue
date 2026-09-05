@@ -84,6 +84,7 @@ const {
   visibleProposals,
   awaitingProposalIds,
   queueAnnouncementKey,
+  queueScopeLoaded,
   dismissableProposalIds,
   activeBoardFilter,
   activeBoardName,
@@ -2597,9 +2598,37 @@ function selectProposal(id: string) {
   openProposal(id)
 }
 
-function returnToReview() {
+/**
+ * The queue rail, for the focus handoff below. The rail owns its rows, so it
+ * owns the "focus the first one" answer; this view only asks.
+ */
+const queueRailRef = ref<InstanceType<typeof ReviewQueueRail> | null>(null)
+
+/**
+ * The empty column, when nothing replaces the panel but another empty state.
+ * `tabindex="-1"` in the template makes it a programmatic focus target only.
+ */
+const emptyColRef = ref<HTMLElement | null>(null)
+
+/**
+ * Leave the refused deep link (#2214). Mirror of
+ * `LegacyReviewView.returnToReview` so the two skins cannot drift (#1124 /
+ * ADR-0038).
+ *
+ * The click removes the panel the control lives in, so focus is moved on
+ * deliberately (#2599 item 2) — the same handoff `settledElsewhereReturnRef`
+ * already makes one branch over. Without it focus falls to `<body>`: nothing is
+ * announced and the reviewer's next keystroke acts on nothing.
+ */
+async function returnToReview() {
   if (!unavailableProposalId.value) return
-  void clearProposalDeepLink(unavailableProposalId.value)
+  await clearProposalDeepLink(unavailableProposalId.value)
+  // After the DOM has settled on whichever of the two replaces the panel.
+  await nextTick()
+  // The queue the panel was standing in front of, at its first row; failing
+  // that, the empty state that stands in for it.
+  if (queueRailRef.value?.focusFirstQueueRow?.()) return
+  emptyColRef.value?.focus?.()
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
@@ -2718,6 +2747,7 @@ async function onClearBoardScope() {
     >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
 
     <ReviewQueueRail
+      ref="queueRailRef"
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
       :awaiting-count="awaitingCount"
@@ -2731,7 +2761,7 @@ async function onClearBoardScope() {
       :recently-applied="recentlyApplied"
       :cadence="cadence"
       :author-partition-available="authorPartitionAvailable"
-      :loading="proposalsLoading"
+      :queue-scope-loaded="queueScopeLoaded"
       :queue-unavailable="queueAccessRevoked"
       :announcement-key="queueAnnouncementKey"
       @filter-change="onQueueFilterChange"
@@ -2971,7 +3001,16 @@ async function onClearBoardScope() {
         @cancel="onCancelRevision"
       />
     </div>
-    <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
+    <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
+         else: leaving the unavailable pin with an empty queue hands focus here
+         (#2599 item 2), and it never enters the tab order. -->
+    <div
+      v-else
+      ref="emptyColRef"
+      class="paper-review-deep__empty"
+      tabindex="-1"
+      data-testid="paper-review-empty"
+    >
       <p
         v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
         class="paper-review-deep__queue-stale tk-meta"
