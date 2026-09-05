@@ -172,8 +172,11 @@ incomplete. `#2473` narrowed the four limits the `#2470` reviews called out; wha
   reads arm position, not condition truth: the read must sit in the arm after the `:`, with
   `GenericUnexpectedFailureMessage` in the arm before it. An inverted pair of arms is therefore
   flagged, and so is the safe-but-unreviewed shape that inverts the condition instead
-  (`!string.Equals(...) ? result.ErrorMessage : Generic`). Every one of these imprecisions points
-  toward flagging.
+  (`!string.Equals(...) ? result.ErrorMessage : Generic`). The exemption does not read condition
+  polarity, so a negated condition with the arms swapped
+  (`!string.Equals(...) ? Generic : result.ErrorMessage`, which returns the raw message on the
+  unexpected code) is still exempted; that is the one imprecision that does not point toward
+  flagging, and it is tracked in `#2606`. No guarded file contains either negated shape today.
 - **Rule 2 judges wrapping, not effectiveness.** An occurrence enclosed by an accepted sanitizer is
   taken to be safe; the guard does not check that the sanitizer's own implementation still redacts.
   The sanitizers themselves are pinned by the backend tests listed above, not by this guard. Rule 2
