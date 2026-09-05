@@ -129,7 +129,8 @@ function impactSummary(proposal: Proposal): string {
 
 function getOperationHeadlines(proposal: Proposal): string[] {
   void displayVersion.value
-  const operations = proposal.operations ?? []
+  const operations = [...(proposal.operations ?? [])]
+    .sort((left, right) => left.sequence - right.sequence)
   const suppliedHeadlines = proposal.presentation?.operationHeadlines ?? []
   const headlineCount = Math.max(operations.length, suppliedHeadlines.length)
   return Array.from({ length: headlineCount }, (_, index) => {

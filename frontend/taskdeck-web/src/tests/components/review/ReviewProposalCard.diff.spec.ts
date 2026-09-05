@@ -300,6 +300,59 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(headlines).not.toContain('Move card.')
   })
 
+  it('pairs generic headlines with sequence-ordered operations without mutating props', async () => {
+    mocks.getBoards.mockResolvedValue([{ id: 'board-1', name: 'Support Triage' }])
+    mocks.getColumns.mockResolvedValue([
+      { id: 'column-10', boardId: 'board-1', name: 'Ready' },
+      { id: 'column-20', boardId: 'board-1', name: 'Done' },
+    ])
+    const proposal = makeProposal({
+      operations: [
+        {
+          id: 'op-20',
+          proposalId: 'p-1',
+          sequence: 20,
+          actionType: 'move',
+          targetType: 'card',
+          targetId: 'card-20',
+          parameters: JSON.stringify({ boardId: 'board-1', cardId: 'card-20', columnId: 'column-20' }),
+          idempotencyKey: 'k-20',
+          expectedVersion: null,
+        },
+        {
+          id: 'op-10',
+          proposalId: 'p-1',
+          sequence: 10,
+          actionType: 'move',
+          targetType: 'card',
+          targetId: 'card-10',
+          parameters: JSON.stringify({ boardId: 'board-1', cardId: 'card-10', columnId: 'column-10' }),
+          idempotencyKey: 'k-10',
+          expectedVersion: null,
+        },
+      ],
+      presentation: {
+        plainSummary: 'Move two cards',
+        impactSummary: 'Moves two cards.',
+        riskCue: 'Low risk',
+        sourceCue: 'Chat',
+        operationHeadlines: ['Move card.', 'Move card.'],
+        affectedEntities: [],
+      },
+    })
+    const wrapper = mountCard({ proposal })
+    await flushPromises()
+
+    const plannedChanges = wrapper.findAll('button').find((button) => button.text().includes('Planned changes'))
+    expect(plannedChanges).toBeDefined()
+    await plannedChanges!.trigger('click')
+
+    const headlines = wrapper.find('.td-review-card__operation-list').text()
+    expect(headlines).toMatch(/Move card to “Ready”\.[\s\S]*Move card to “Done”\./)
+    expect(headlines).not.toMatch(/Move card to “Done”\.[\s\S]*Move card to “Ready”\./)
+    expect(proposal.operations.map((operation) => operation.sequence)).toEqual([20, 10])
+  })
+
   it('does not guess a destination for an incomplete MoveCard headline', async () => {
     const wrapper = mountCard({
       proposal: makeProposal({
