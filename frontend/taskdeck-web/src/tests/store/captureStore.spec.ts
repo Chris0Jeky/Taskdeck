@@ -2459,8 +2459,10 @@ describe('captureStore', () => {
         store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
         await vi.advanceTimersByTimeAsync(3_000)
 
-        // The reconciliation read is in flight. An unrelated open detail must
-        // keep its panel and its refresh control.
+        // The reconciliation read is in flight. It is a quiet read, so
+        // whatever detail the panel has open keeps its body and its Refresh
+        // Detail control — including this row, which is the one being
+        // reconciled here.
         expect(captureApi.getItem).toHaveBeenCalledTimes(1)
         expect(store.loadingDetail).toBe(false)
 
