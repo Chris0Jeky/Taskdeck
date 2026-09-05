@@ -739,14 +739,20 @@ public class AutomationProposalService : IAutomationProposalService
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             transactionStarted = true;
 
-            // The preflight write-bar check above is a snapshot taken OUTSIDE the commit boundary,
-            // so a grant revoked between it and the commit was invisible to the batch: the decision
-            // guard below advances each board row, which catches a concurrent board-row mutation
-            // but not a revoked grant. Re-validate the caller's write bar for each distinct board
-            // inside the transaction so the whole batch fails with the same 403 the preflight
-            // raises. It runs BEFORE the decision guard and before Approve(), so a failure rolls
-            // back a transaction in which nothing has been mutated. Boardless proposals carry no
-            // board bar to recheck.
+            // The preflight write-bar check above runs OUTSIDE the commit boundary, so a grant
+            // revoked after it was invisible to the batch: the decision guard below advances each
+            // board row, which catches a concurrent board-row mutation but not a revoked grant.
+            // Re-validating the caller's write bar for each distinct board here NARROWS that window
+            // to the transaction's own read snapshot; it does not close it through commit. A grant
+            // revoked by another connection AFTER this read is still unseen by the decision guard,
+            // by Approve(), and by the save (on SQLite WAL the write upgrade would most likely fail
+            // closed with SQLITE_BUSY_SNAPSHOT; a read-committed provider would commit). That
+            // residual stays acceptable because approve writes nothing to the board and execute
+            // rechecks the caller's bar inside its own transaction, so the worst outcome is a
+            // proposal left Approved that execute then refuses. The recheck runs BEFORE the
+            // decision guard and before Approve(), so a failure rolls back a transaction in which
+            // nothing has been mutated, and it fails with the same 403 the preflight raises.
+            // Boardless proposals carry no board bar to recheck.
             foreach (var recheckBoardId in proposals
                 .Where(proposal => proposal.BoardId.HasValue)
                 .Select(proposal => proposal.BoardId!.Value)

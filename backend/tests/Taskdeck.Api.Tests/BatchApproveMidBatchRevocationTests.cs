@@ -85,6 +85,9 @@ public class BatchApproveMidBatchRevocationTests : IClassFixture<TestWebApplicat
             });
 
         revoker.Revoked.Should().BeTrue("the test seam must actually have revoked access after the preflight");
+        revoker.ObservedCallerWriteChecks.Should().Be(
+            revoker.PreflightCheckCount,
+            "the seam must have fired on the LAST preflight write-bar check; another caller write-bar check in the batch approve path would move the trigger earlier and let the request answer 403 from the preflight even with the in-transaction recheck deleted");
         await ApiTestHarness.AssertForbiddenAsync(response);
 
         using var scope = factory.Services.CreateScope();
@@ -153,7 +156,7 @@ public class BatchApproveMidBatchRevocationTests : IClassFixture<TestWebApplicat
     /// <summary>Shared arming state; a singleton so it survives the per-request scopes.</summary>
     private sealed class RevokeAfterPreflight
     {
-        private int _preflightChecks;
+        private int _observedCallerWriteChecks;
         private int _fired;
 
         public Guid CallerId { get; private set; }
@@ -167,6 +170,17 @@ public class BatchApproveMidBatchRevocationTests : IClassFixture<TestWebApplicat
 
         public bool Revoked => Volatile.Read(ref _fired) == 1;
 
+        /// <summary>
+        /// Every caller write-bar <c>ValidatePermissionsAsync</c> observed since arming, counted
+        /// regardless of its own outcome. The test asserts this equals
+        /// <see cref="PreflightCheckCount"/>: if a future change adds another caller write-bar check
+        /// to the batch approve path, the trigger would fire on an EARLIER check and the later one
+        /// would then fail at the preflight, producing the same 403 with nothing approved even
+        /// without the in-transaction recheck. Counting outcome-independently is what makes that
+        /// drift visible - a check that fails because this seam already revoked access still counts.
+        /// </summary>
+        public int ObservedCallerWriteChecks => Volatile.Read(ref _observedCallerWriteChecks);
+
         public void Arm(Guid callerId, Guid boardId, int preflightCheckCount)
         {
             CallerId = callerId;
@@ -176,16 +190,23 @@ public class BatchApproveMidBatchRevocationTests : IClassFixture<TestWebApplicat
         }
 
         /// <summary>
-        /// Fires on the LAST preflight write-bar check - a call the service makes whether or not the
-        /// in-transaction recheck exists, and one the earlier items have already passed. Hanging the
-        /// trigger on a recheck-independent event is the point: it keeps this test honest as a
-        /// mutation target, because deleting the recheck must make the assertions about the OUTCOME
-        /// fail, not merely stop the seam from arming.
+        /// Records one observed caller write-bar check and reports whether it is the LAST preflight
+        /// check - a call the service makes whether or not the in-transaction recheck exists, and
+        /// one the earlier items have already passed. Hanging the trigger on a recheck-independent
+        /// event is the point: it keeps this test honest as a mutation target, because deleting the
+        /// recheck must make the assertions about the OUTCOME fail, not merely stop the seam from
+        /// arming.
         /// </summary>
-        public bool TryClaimOnLastPreflightCheck() =>
-            Armed &&
-            Interlocked.Increment(ref _preflightChecks) == PreflightCheckCount &&
-            Interlocked.CompareExchange(ref _fired, 1, 0) == 0;
+        public bool TryClaimOnLastPreflightCheck(bool succeeded)
+        {
+            if (!Armed)
+                return false;
+
+            var observed = Interlocked.Increment(ref _observedCallerWriteChecks);
+            return succeeded &&
+                observed == PreflightCheckCount &&
+                Interlocked.CompareExchange(ref _fired, 1, 0) == 0;
+        }
     }
 
     /// <summary>
@@ -247,9 +268,8 @@ public class BatchApproveMidBatchRevocationTests : IClassFixture<TestWebApplicat
 
             var isCallerWriteCheck = userId == _revoker.CallerId &&
                 boardId == _revoker.BoardId &&
-                accessBar == BoardAccessBar.Write &&
-                result.IsSuccess;
-            if (isCallerWriteCheck && _revoker.TryClaimOnLastPreflightCheck())
+                accessBar == BoardAccessBar.Write;
+            if (isCallerWriteCheck && _revoker.TryClaimOnLastPreflightCheck(result.IsSuccess))
             {
                 var access = await _db.BoardAccesses
                     .Where(row => row.BoardId == _revoker.BoardId && row.UserId == _revoker.CallerId)
