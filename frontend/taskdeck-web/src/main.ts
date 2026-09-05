@@ -22,33 +22,35 @@ app.use(pinia)
 app.use(i18n)
 app.use(router)
 
-// Restore the persisted language preference (ADR-0054 §7) and push it into the
-// i18n runtime + `<html lang>`. Statically imported and called synchronously on
-// purpose: this must happen after `app.use(pinia)` (the store needs an active
-// Pinia) and BEFORE `app.mount` below, so the first paint is already in the
-// user's language instead of flashing English. A dynamic import would resolve
-// after mount and produce exactly that flash.
-useLocaleStore(pinia).apply()
-
 // Install global crash-prevention hooks before mount so early errors are
 // captured. The Vue handler is the top-level backstop for render/lifecycle
 // errors; the window listeners catch async rejections and non-Vue errors.
 installVueErrorHandler(app)
 installWindowErrorListeners()
 
-app.mount('#app')
+// Restore the persisted language preference (ADR-0054 §7) before mount. The
+// store keeps the committed locale on English until a lazy catalog is ready,
+// so waiting here preserves the no-flash guarantee without briefly claiming a
+// language whose messages are unavailable. Catalog failure is reported by the
+// mounted picker; it must not prevent the app from starting in English.
+void useLocaleStore(pinia)
+  .apply()
+  .catch(() => undefined)
+  .finally(() => {
+    app.mount('#app')
 
-// Initialize telemetry after mount (non-blocking, opt-in).
-// This restores user consent from localStorage and fetches server config.
-// No events are emitted unless the user has explicitly opted in.
-import('./store/telemetryStore').then(({ useTelemetryStore }) => {
-  const telemetry = useTelemetryStore()
-  void telemetry.initialize()
-})
+    // Initialize telemetry after mount (non-blocking, opt-in).
+    // This restores user consent from localStorage and fetches server config.
+    // No events are emitted unless the user has explicitly opted in.
+    import('./store/telemetryStore').then(({ useTelemetryStore }) => {
+      const telemetry = useTelemetryStore()
+      void telemetry.initialize()
+    })
 
-// Initialize analytics script watcher after mount (non-blocking).
-// This watches the telemetry store's analyticsConfig and injects/removes
-// the analytics script based on user consent and server configuration.
-import('./composables/useAnalyticsScript').then(({ initAnalyticsScriptWatcher }) => {
-  initAnalyticsScriptWatcher()
-})
+    // Initialize analytics script watcher after mount (non-blocking).
+    // This watches the telemetry store's analyticsConfig and injects/removes
+    // the analytics script based on user consent and server configuration.
+    import('./composables/useAnalyticsScript').then(({ initAnalyticsScriptWatcher }) => {
+      initAnalyticsScriptWatcher()
+    })
+  })
