@@ -174,18 +174,25 @@ export default {
       state: 'Estado: {label}. Dónde está ahora mismo esta captura.',
       source: 'Origen: {label}. Cómo llegó esta captura — no es un estado.',
     },
-    // Destino de una corrección sin guardar cuya captura sale de la lista
+    // Dónde queda una corrección sin guardar cuya captura sale de la lista
     // (#1999, punto 3): un cambio del filtro de tablero, una recarga que ya no
-    // devuelve la fila, o el paso al historial de solo lectura.
+    // devuelve la fila, o el paso al historial de solo lectura. `{capture}` es
+    // el extracto de la propia fila.
     //
-    // Son RECIBOS, no avisos: cuando se muestran la decisión ya está tomada,
-    // así que cada uno dice qué pasó con la corrección y dónde está ahora.
-    // `{capture}` es el extracto de la propia fila.
+    // `kept` y `discarded` son recibos de un momento. `held`, `blocked` y
+    // `heldUneditable` son frases vigentes mientras se ven, así que cada una
+    // termina diciendo qué puede hacer quien lee.
+    //
+    // `kept` dice "esta lista" a propósito: la corrección vive en la tabla
+    // mientras la tabla exista, y prometerla tras recargar la página sería una
+    // promesa que este mecanismo no puede cumplir.
     draft: {
-      kept: 'La corrección sin guardar de “{capture}” no se ha perdido. Se conserva aquí y vuelve con esa captura cuando reaparezca en esta lista. No se guardó nada.',
-      restored: 'La corrección sin guardar de “{capture}” vuelve a estar en el editor, sobre el texto que la captura tiene ahora. Guárdala o cancela como siempre.',
+      kept: 'La corrección sin guardar de “{capture}” no se ha perdido. Se conserva mientras sigas en esta lista de Inbox y vuelve con esa captura cuando reaparezca. No se guardó nada.',
+      held: 'La corrección sin guardar de “{capture}” sigue conservada. Pulsa Editar captura en esa fila para recuperarla.',
       blocked: 'La corrección sin guardar de “{capture}” sigue conservada. Otra captura está abierta para editar: termina esa y luego pulsa Editar captura en esta fila para recuperarla.',
-      discarded: 'La corrección sin guardar de “{capture}” se descartó: la captura ahora está {status} y su texto ya no se puede editar aquí. No se guardó nada.',
+      heldUneditable: 'La corrección sin guardar de “{capture}” sigue conservada. Esta lista no edita una captura que está {status}, así que la corrección espera aquí hasta que esa captura vuelva a poder editarse.',
+      restored: 'La corrección sin guardar de “{capture}” vuelve a estar en el editor, sobre la captura tal como está ahora. Guárdala o cancela como siempre.',
+      discarded: 'La corrección sin guardar de “{capture}” se descartó: la captura ahora está {status} y su texto ya no se puede editar. No se guardó nada.',
       dismiss: 'Descartar estos avisos',
     },
     // Corrección del texto antes de clasificar (GH-1951).

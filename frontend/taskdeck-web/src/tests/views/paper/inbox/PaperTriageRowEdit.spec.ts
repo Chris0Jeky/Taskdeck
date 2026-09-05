@@ -421,7 +421,7 @@ describe('PaperTriageRowEdit', () => {
 
   // ── the draft hand-off, so a row that leaves the list can keep it (#1999) ──
 
-  it('hands out the unsaved draft, and nothing while there is nothing unsaved', async () => {
+  it('reports only the fields the user changed, and an empty draft when none are', async () => {
     mockCaptureStore.fetchDetail.mockResolvedValue(
       makeDetail({ metadata: { dueDate: '2026-05-01', labels: ['ops'] } }),
     )
@@ -429,21 +429,31 @@ describe('PaperTriageRowEdit', () => {
 
     // An opened-but-untouched editor holds no correction; saying otherwise
     // would have the table announce a loss that did not happen.
-    expect(wrapper.vm.readDraft()).toBeNull()
+    expect(wrapper.vm.readDraft()).toEqual({ state: 'ready', draft: null })
 
     await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('Ship the release notes')
     await wrapper.get('[data-testid="capture-edit-label-input"]').setValue('release')
 
+    // Per field: the untouched due date is absent rather than carried as the
+    // value this load happened to see, so it can never be laid back over a
+    // newer one.
     expect(wrapper.vm.readDraft()).toEqual({
-      text: 'Ship the release notes',
-      dueDate: '2026-05-01',
-      labels: ['ops'],
-      // The uncommitted label box travels too: Save would have flushed it.
-      labelInput: 'release',
+      state: 'ready',
+      draft: {
+        text: 'Ship the release notes',
+        // The uncommitted label box travels too: Save would have flushed it.
+        labelInput: 'release',
+      },
     })
   })
 
-  it('hands out nothing while the capture text has not loaded', async () => {
+  /**
+   * The distinction the whole hand-off rests on: "there is nothing unsaved" and
+   * "I cannot tell" are different answers. Collapsing them into one lets the
+   * table release a held correction while the editor is still loading, has
+   * failed to load, or was refused — none of which is evidence about the draft.
+   */
+  it('reports that it cannot answer while the capture text has not loaded', async () => {
     let resolveDetail: (detail: CaptureItem) => void = () => {}
     mockCaptureStore.fetchDetail.mockImplementation(
       () => new Promise<CaptureItem>((resolve) => { resolveDetail = resolve }),
@@ -451,30 +461,39 @@ describe('PaperTriageRowEdit', () => {
     const wrapper = mount(PaperTriageRowEdit, { props: { itemId: 'capture-1' } })
     await flushPromises()
 
-    // There is no textarea yet, so an empty `draft` is the absence of data and
-    // not an edit — handing it out would let the table keep a blank correction.
-    expect(wrapper.vm.readDraft()).toBeNull()
+    expect(wrapper.vm.readDraft()).toEqual({ state: 'unavailable' })
     resolveDetail(makeDetail())
     await flushPromises()
-    expect(wrapper.vm.readDraft()).toBeNull()
+    expect(wrapper.vm.readDraft()).toEqual({ state: 'ready', draft: null })
+  })
+
+  it('reports that it cannot answer when the load failed', async () => {
+    mockCaptureStore.fetchDetail.mockRejectedValue(new Error('offline'))
+    const wrapper = await mountEditor()
+
+    expect(wrapper.find('[data-testid="capture-edit-load-error"]').exists()).toBe(true)
+    expect(wrapper.vm.readDraft()).toEqual({ state: 'unavailable' })
+  })
+
+  it('reports that it cannot answer when the server refuses the edit', async () => {
+    mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({ canEditSuggestion: false }))
+    const wrapper = await mountEditor()
+
+    expect(wrapper.find('[data-testid="capture-edit-blocked"]').exists()).toBe(true)
+    expect(wrapper.vm.readDraft()).toEqual({ state: 'unavailable' })
   })
 
   it('restores a kept draft over the server text it re-reads, and says it did', async () => {
     const wrapper = mount(PaperTriageRowEdit, {
       props: {
         itemId: 'capture-1',
-        restoredDraft: {
-          text: 'Ship the release notes before Friday',
-          dueDate: '',
-          labels: [],
-          labelInput: '',
-        },
+        restoredDraft: { text: 'Ship the release notes before Friday' },
       },
     })
     await flushPromises()
 
-    // The fetch still happens: the ORIGINAL the draft is compared against has
-    // to be the capture's current text, not the one it had when it left.
+    // The fetch still happens: the values the draft is laid over have to be the
+    // capture's current ones, not the ones it had when it left.
     expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith(
       'capture-1',
       expect.objectContaining({ forceRefresh: true }),
@@ -488,12 +507,40 @@ describe('PaperTriageRowEdit', () => {
     expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeUndefined()
   })
 
+  it('lays only the changed fields over the values it re-reads, so a Save cannot revert the rest', async () => {
+    // The capture's metadata moved on the server while the correction was held.
+    // The user only ever touched the text.
+    mockCaptureStore.fetchDetail.mockResolvedValue(
+      makeDetail({ metadata: { dueDate: '2026-06-01', labels: ['ops'] } }),
+    )
+    const wrapper = mount(PaperTriageRowEdit, {
+      props: {
+        itemId: 'capture-1',
+        restoredDraft: { text: 'Ship the release notes before Friday' },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.get<HTMLInputElement>('[data-testid="capture-edit-due-date"]').element.value)
+      .toBe('2026-06-01')
+    expect(wrapper.get('[data-testid="capture-edit-label-chip"]').text()).toContain('ops')
+
+    await wrapper.get('button[data-action="edit-save"]').trigger('click')
+    await flushPromises()
+
+    // No metadata block at all: nothing the user touched was metadata, so the
+    // server's own due date and labels are left exactly where they are.
+    expect(mockCaptureStore.updateSuggestion).toHaveBeenCalledWith('capture-1', {
+      text: 'Ship the release notes before Friday',
+    })
+  })
+
   it('does not restore a draft into a capture the server refuses to edit', async () => {
     mockCaptureStore.fetchDetail.mockResolvedValue(makeDetail({ canEditSuggestion: false }))
     const wrapper = mount(PaperTriageRowEdit, {
       props: {
         itemId: 'capture-1',
-        restoredDraft: { text: 'a correction with nowhere to land', dueDate: '', labels: [], labelInput: '' },
+        restoredDraft: { text: 'a correction with nowhere to land' },
       },
     })
     await flushPromises()
