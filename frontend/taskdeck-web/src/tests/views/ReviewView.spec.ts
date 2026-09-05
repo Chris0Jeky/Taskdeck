@@ -1781,6 +1781,25 @@ describe('ReviewView', () => {
     }
   })
 
+  it('shows the revoked-access panel, not the unavailable pin, on a cold entry to a revoked board (#2214)', async () => {
+    // Round-2 review finding. Only the poll used to recognise a 403 on the list
+    // read, so this entry produced a generic toast, no authority state, and
+    // then a by-id 403 that -- now that a by-id 403 is a pin-level outcome --
+    // rendered "may have been applied, archived, or removed" about a proposal
+    // that was none of those. The board was simply not this reviewer's any
+    // more, and that stood for a whole poll interval.
+    mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+    mocks.getProposal.mockRejectedValue({ response: { status: 403 } })
+
+    const { wrapper } = await mountAt('/workspace/review?boardId=board-revoked#proposal-p-pinned')
+
+    expect(wrapper.find('[data-testid="review-access-revoked"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain(enReview.empty.unavailable.title)
+    // The whole board is refused; there is nothing to re-authorise inside it.
+    expect(mocks.getProposal).not.toHaveBeenCalled()
+  })
+
   it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {
     // The reviewer followed a link and the by-id read was refused. A 403 is a
     // settled fact about that target and now reads as the panel the background

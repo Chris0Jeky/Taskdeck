@@ -203,9 +203,17 @@ async function mountView(
   columns: unknown[] = [],
   // `document.activeElement` only tracks elements that are in the document, so
   // the focus specs need a real attachment; everything else mounts detached.
-  options: { attachTo?: boolean } = {},
+  options: { attachTo?: boolean; listReadRejectsWith?: unknown } = {},
 ) {
-  mocks.getProposals.mockResolvedValueOnce(proposals)
+  // A test that needs the FIRST list read to fail must route it through here.
+  // Queueing a rejection at the call site instead would leave the
+  // `mockResolvedValueOnce` below unconsumed, and that leftover entry shifts
+  // the once-queue for every later test in this file.
+  if ('listReadRejectsWith' in options) {
+    mocks.getProposals.mockRejectedValueOnce(options.listReadRejectsWith)
+  } else {
+    mocks.getProposals.mockResolvedValueOnce(proposals)
+  }
   // The Review surface re-reads its queue on a bounded poll while it is open
   // (#2194), so a `...Once` fixture alone would leave any timer-advancing test
   // facing a drained mock and an empty queue. A real server keeps answering
@@ -1301,6 +1309,23 @@ describe('PaperReviewView', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('shows the revoked-access panel, not the unavailable pin, on a cold entry to a revoked board (#2214)', async () => {
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review?boardId=board-revoked#proposal-p-pinned',
+      [],
+      [],
+      { listReadRejectsWith: { response: { status: 403 } } },
+    )
+
+    expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.title)
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.malformedTitle)
+    expect(mocks.getProposal).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {

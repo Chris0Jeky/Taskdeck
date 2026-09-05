@@ -716,6 +716,19 @@ export function useReviewProposals() {
       // must not raise the failure toast, and it must not be reported as
       // `failed`, or the caller would blame the server for its own timeout.
       if (signal?.aborted) return 'aborted'
+      // Only the POLL used to handle this, so a cold entry to a board whose
+      // access had been revoked fell through to the generic toast and left the
+      // authority state unset for a whole poll interval (round-2 review
+      // finding). Worse, the hash lookup below then 403'd on the by-id read
+      // and, since this slice made that a pin-level outcome, rendered "no
+      // longer available to review; it may have been applied, archived, or
+      // removed" about a proposal that was none of those things -- the board
+      // simply was not this reviewer's any more.
+      //
+      // The toast stays: this read is one the caller asked for, and every
+      // action composable that calls `loadProposals` still gets its failure
+      // signal and its 'failed' outcome unchanged.
+      if (isForbiddenError(e)) recordQueueAccessRevoked()
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
       outcome = 'failed'
     } finally {
@@ -724,7 +737,13 @@ export function useReviewProposals() {
     }
 
     if (signal?.aborted) return 'aborted'
-    if (requestId === latestProposalLoadRequestId) {
+    // A revoked queue has one owner and one explanation. Re-authorising a
+    // hash-pinned row inside a board the server just refused wholesale can only
+    // produce a second, narrower and wrong account of the same fact, so the
+    // pin-level outcome is not even asked for. A successful load clears
+    // `queueAccessRevoked` above, so this can only be true when THIS read
+    // revoked it or an earlier one did and nothing has restored access.
+    if (requestId === latestProposalLoadRequestId && !queueAccessRevoked.value) {
       await openProposalFromHash(options)
     }
     if (requestId !== latestProposalLoadRequestId) return 'superseded'
@@ -793,6 +812,22 @@ export function useReviewProposals() {
       // never change.
       queueRefreshRecovered.value = false
     }
+  }
+
+  /**
+   * A 403 on the QUEUE read is revoked board access, not a blip: stop polling
+   * an endpoint that will keep refusing, drop rows the server no longer
+   * authorises, and let the surface say exactly that.
+   *
+   * Shared by the poll's outer catch and the explicit load, because a 403 means
+   * the same thing whoever asked (round-2 review finding). Duplicating the
+   * three statements would be how the two legs drift into telling a reviewer
+   * two different stories about one revocation.
+   */
+  function recordQueueAccessRevoked() {
+    queueAccessRevoked.value = true
+    proposals.value = []
+    suspendQueueRefreshForPermission()
   }
 
   /**
@@ -1118,9 +1153,7 @@ export function useReviewProposals() {
         // Board access was revoked. Stop polling rather than hammering an
         // endpoint that will keep refusing, drop rows the server no longer
         // authorises, and let the surface say so.
-        queueAccessRevoked.value = true
-        proposals.value = []
-        suspendQueueRefreshForPermission()
+        recordQueueAccessRevoked()
         return
       }
       // A read for a board the reviewer has already left, or one superseded by
