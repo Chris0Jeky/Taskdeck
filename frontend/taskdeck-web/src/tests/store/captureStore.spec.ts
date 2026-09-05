@@ -2557,8 +2557,19 @@ describe('captureStore', () => {
         summaryRow('c-2', 'ProposalCreated'),
       ] as never)
       const pendingDetails = new Map<string, (value: unknown) => void>()
-      vi.mocked(captureApi.getItem).mockImplementation(((itemId: string) =>
-        new Promise((resolve) => { pendingDetails.set(itemId, resolve) })) as never)
+      // Bounded to this test's three reads (#2640). A PERSISTENT
+      // `mockImplementation` returning never-resolving promises outlives the
+      // test: the suite's only reset is `vi.clearAllMocks()`, which clears
+      // recorded calls but keeps implementations, so any later test that
+      // triggers an unconfigured detail read would hang on a promise this test
+      // installed instead of receiving `undefined`. A fourth read here fails on
+      // an absent `pendingDetails` entry, which is a visible failure.
+      const pendingDetail = ((itemId: string) =>
+        new Promise((resolve) => { pendingDetails.set(itemId, resolve) })) as never
+      vi.mocked(captureApi.getItem)
+        .mockImplementationOnce(pendingDetail)
+        .mockImplementationOnce(pendingDetail)
+        .mockImplementationOnce(pendingDetail)
 
       // Two stale ids, so the reconciliation runs two reads in parallel.
       const batch = store.batchTriage(['c-1', 'c-2'], 'triage')
@@ -2590,6 +2601,22 @@ describe('captureStore', () => {
       pendingDetails.get('c-3')!(detailFor('c-3', 'ProposalCreated'))
       await foreground
       expect(store.loadingDetail).toBe(false)
+    })
+
+    // Ordering-coupled on purpose (#2640). It sits directly after the test that
+    // installs never-resolving detail promises. `vi.clearAllMocks()` clears
+    // recorded calls but keeps implementations, so whatever that test installed
+    // is what the tests below inherit. A leaked `mockResolvedValue` from some
+    // earlier test is harmless — it settles — so the property that matters is
+    // not "unconfigured" but "settles": a leaked never-resolving implementation
+    // hangs whichever later test triggers an unconfigured detail read. A
+    // microtask always wins against a macrotask, so this race is deterministic.
+    it('leaves no never-resolving detail mock behind for the tests below', async () => {
+      const outcome = await Promise.race([
+        Promise.resolve(vi.mocked(captureApi.getItem)('c-unconfigured')).then(() => 'settles'),
+        new Promise((resolve) => { setTimeout(() => resolve('hangs'), 0) }),
+      ])
+      expect(outcome).toBe('settles')
     })
 
     it('still raises the detail loading flag for a foreground detail load', async () => {
@@ -2759,8 +2786,75 @@ describe('captureStore', () => {
       },
     )
 
+    /**
+     * `refreshedDetailIds` is the poll's record of ids it RECONCILED, and for a
+     * tracked item with no summary row it is the whole of `isComplete`'s and
+     * `isObservedTerminal`'s evidence. `onRefreshed` used to fire on
+     * `fetchDetail` RESOLVING, which a dropped read also does, so the poll
+     * could complete and move the badge on pre-batch detail state (#2640).
+     *
+     * Isolated on the write-generation drop path on purpose: with no summary
+     * row, `keepItem` records its write without moving the list write
+     * generation, so the tick's own `isCurrent()` stays true and the only
+     * thing rejecting the read is `fetchDetail`'s own compare.
+     */
+    it('does not claim a reconciliation for a detail read the store dropped', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        // Beyond the newest-first list cap, so the detail is the only surface
+        // this poll can complete on. It holds pre-batch state: the Failed
+        // outcome the capture was re-triaged for.
+        store.items = []
+        store.detailById['c-1'] = detailFor('c-1', 'Failed')
+        vi.mocked(captureApi.listItems).mockResolvedValue([] as never)
+
+        let resolveReconcile!: (value: unknown) => void
+        vi.mocked(captureApi.getItem).mockReturnValueOnce(
+          new Promise((resolve) => { resolveReconcile = resolve }) as never,
+        )
+
+        const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+
+        // The user keeps the capture while that reconciliation read is in
+        // flight. Keep leaves the triage status alone.
+        vi.mocked(captureApi.keepItem).mockResolvedValue(detailFor('c-1', 'Failed'))
+        await store.keepItem('c-1')
+        const countRefreshesAfterWrite = workspaceMocks.refreshWorkloadCounts.mock.calls.length
+
+        resolveReconcile(detailFor('c-1', 'ProposalCreated'))
+        await vi.advanceTimersByTimeAsync(0)
+
+        // The response never entered the caches, so the reconciled body is not
+        // what the store holds.
+        expect(store.detailById['c-1']?.status).toBe('Failed')
+        // Nothing was reconciled, so the poll must neither complete nor move
+        // the badge on the strength of a reconciliation that did not happen.
+        expect(workspaceMocks.refreshWorkloadCounts)
+          .toHaveBeenCalledTimes(countRefreshesAfterWrite)
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(vi.mocked(captureApi.listItems).mock.calls.length).toBeGreaterThan(1)
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     describe('resetForLogout', () => {
-      it('clears the per-item summary generation guard', async () => {
+      /**
+       * Both halves of the #2301 guard now carry ONE post-logout contract: a
+       * response issued before the reset is dropped, a response issued after it
+       * caches normally (#2640).
+       *
+       * This case used to assert the opposite for the summary half. Clearing
+       * `latestSummaryGenerationById` puts `applyBackgroundListSnapshot`'s read
+       * back at 0, so an older in-flight snapshot outranked a row a newer read
+       * had moved and pushed it back to Triaging — the same inversion the epoch
+       * was added to stop on the detail half.
+       */
+      it('drops a background list snapshot issued before the logout', async () => {
         vi.useFakeTimers()
         try {
           const store = useCaptureStore()
@@ -2787,7 +2881,32 @@ describe('captureStore', () => {
           await Promise.resolve()
           await Promise.resolve()
 
-          // The entry is gone, so nothing stale-high is left to pin the row.
+          // The snapshot was issued in the epoch the reset ended, so it is not
+          // applied at all and the row it would have regressed stands.
+          expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Failed')
+          stop()
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('applies a background list snapshot issued after the logout', async () => {
+        vi.useFakeTimers()
+        try {
+          const store = useCaptureStore()
+          store.items = [summaryRow('c-1', 'Failed')]
+          store.resetForLogout()
+
+          vi.mocked(captureApi.listItems).mockResolvedValue([
+            summaryRow('c-1', 'Triaging'),
+          ] as never)
+          const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+          await vi.advanceTimersByTimeAsync(3_000)
+
+          // The epoch drops what a reset CROSSED, not everything after it. A
+          // request issued in the current epoch is current, and the snapshot is
+          // still the authority for membership, order and status.
+          expect(captureApi.listItems).toHaveBeenCalledTimes(1)
           expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Triaging')
           stop()
         } finally {

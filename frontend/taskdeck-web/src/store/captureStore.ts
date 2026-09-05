@@ -24,6 +24,13 @@ function toSummary(item: CaptureItem): CaptureItemSummary {
   }
 }
 
+/**
+ * What `fetchDetail` did with a response it resolved with (#2640). `cached` is
+ * the only value that means `detailById` holds this item's detail; the other
+ * three name which guard rejected the response. See `onCacheOutcome`.
+ */
+export type DetailCacheOutcome = 'cached' | 'superseded' | 'generation' | 'epoch'
+
 type DetailLoadOptions = {
   forceRefresh?: boolean
   recordError?: boolean
@@ -41,6 +48,45 @@ type DetailLoadOptions = {
    * quiet reads pass `false` and leave the flag to foreground loads.
    */
   trackLoading?: boolean
+  /**
+   * REPORT what this call did with its response (#2640) — the detail-read
+   * counterpart of `fetchItems`'s applied boolean.
+   *
+   * `fetchDetail` has three paths that resolve with the body they fetched and
+   * write nothing, and resolution alone therefore never meant "the store now
+   * holds this detail". Callers that assumed it did acted on a response the
+   * store had dropped: `useInboxOrchestrator.selectItemById` left
+   * `selectedItemId` pointing at an id with no detail, which the Legacy panel
+   * renders as "Unable to load capture detail." for a read that succeeded, and
+   * `refreshTerminalDetails` announced a reconciliation that never reached
+   * `detailById`.
+   *
+   * The REASON is reported, not just the fact, because the three drops call for
+   * different handling and only one of them is post-logout-only:
+   *
+   * - `cached` — the response is in `detailById` now. Also covers the two paths
+   *   that resolve from state already present, the non-forced cached early
+   *   return and the demo branch: the question a caller asks is whether the
+   *   store holds this detail, not whether this call did the writing.
+   * - `superseded` — the caller's own `shouldCache` said no, so a newer read
+   *   for the same id is already the authority.
+   * - `generation` — a successful write for this id landed mid-read. Reachable
+   *   in a LIVE session, not only after a logout: a first open observes
+   *   generation 0 for an uncached item and a batch triage that includes it
+   *   moves that generation. The write has cached its own newer body only when
+   *   it went through the detail path; a batch write has not, so a caller that
+   *   needs a body must re-read rather than treat this as final.
+   * - `epoch` — `resetForLogout` moved the session epoch under this read.
+   *
+   * A read that THROWS reports nothing: failure and a drop stay
+   * distinguishable.
+   *
+   * A callback rather than a return value because `fetchDetail` resolves with
+   * the `CaptureItem` itself and a view annotates that type
+   * (`views/paper/inbox/PaperTriageRowEdit.vue`), so widening the return would
+   * change a surface outside this seam.
+   */
+  onCacheOutcome?: (outcome: DetailCacheOutcome) => void
 }
 
 export const BATCH_TRIAGE_POLL_INTERVAL_MS = 3_000
@@ -119,9 +165,12 @@ export const useCaptureStore = defineStore('capture', () => {
   let latestListWriteGeneration = 0
   const latestDetailWriteGenerationById = new Map<string, number>()
   const latestSummaryGenerationById = new Map<string, number>()
-  // Bumped by `resetForLogout`. Every detail read captures it when the request
-  // is issued, so a read that crosses a logout is dropped outright instead of
-  // being compared against generations the reset has already discarded.
+  // Bumped by `resetForLogout`. Every read that is compared against the
+  // generations above captures it when its request is issued — the detail reads
+  // through `fetchDetail`, the single-item triage poll, and the background list
+  // snapshot in `pollBatchTriageCompletion` (#2640) — so a response that
+  // crosses a logout is dropped outright instead of being compared against
+  // generations the reset has already discarded.
   let sessionEpoch = 0
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
@@ -180,6 +229,11 @@ export const useCaptureStore = defineStore('capture', () => {
    * authority for membership and order — the list still owns scope and the
    * newest-first cap — and only a row whose own summary is newer than this
    * read keeps its local value.
+   *
+   * This compare is only meaningful WITHIN one session. `resetForLogout` clears
+   * `latestSummaryGenerationById`, which puts the read below back at 0 for
+   * every row, so the caller drops a snapshot the reset crossed before calling
+   * here at all (#2640) rather than letting the cleared map invert the guard.
    */
   function applyBackgroundListSnapshot(
     loadedItems: CaptureItemSummary[],
@@ -260,9 +314,11 @@ export const useCaptureStore = defineStore('capture', () => {
       requestOptions,
       shouldCache = () => true,
       trackLoading = true,
+      onCacheOutcome,
     } = options
 
     if (!forceRefresh && detailById.value[itemId]) {
+      onCacheOutcome?.('cached')
       return detailById.value[itemId]
     }
 
@@ -271,6 +327,7 @@ export const useCaptureStore = defineStore('capture', () => {
       if (summary) {
         const detail = { ...summary, rawText: summary.textExcerpt, retryCount: 0, provenance: null }
         cacheDetail(detail, syncSummary)
+        onCacheOutcome?.('cached')
         return detail
       }
     }
@@ -287,12 +344,22 @@ export const useCaptureStore = defineStore('capture', () => {
       const detail = requestOptions
         ? await captureApi.getItem(itemId, requestOptions)
         : await captureApi.getItem(itemId)
-      if (!shouldCache()) return detail
-      // Before any generation compare: the reset discards the generations this
-      // read observed, so after a logout the compare is no longer meaningful.
-      if (observedSessionEpoch !== sessionEpoch) return detail
-      if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) return detail
-      cacheDetail(detail, syncSummary)
+      // The three drop paths, in the order they have always been checked and
+      // now named for the caller (#2640). The epoch comes before any generation
+      // compare: the reset discards the generations this read observed, so
+      // after a logout the compare is no longer meaningful.
+      let outcome: DetailCacheOutcome = 'cached'
+      if (!shouldCache()) {
+        outcome = 'superseded'
+      } else if (observedSessionEpoch !== sessionEpoch) {
+        outcome = 'epoch'
+      } else if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) {
+        outcome = 'generation'
+      }
+      if (outcome === 'cached') {
+        cacheDetail(detail, syncSummary)
+      }
+      onCacheOutcome?.(outcome)
       return detail
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox item').message
@@ -311,6 +378,9 @@ export const useCaptureStore = defineStore('capture', () => {
   }
 
   async function peekDetail(itemId: string, options: DetailLoadOptions = {}) {
+    // Shares `DetailLoadOptions` and therefore ACCEPTS `onCacheOutcome`, but
+    // never calls it: this read writes neither cache, so it has no cache
+    // outcome to report (#2640).
     const {
       forceRefresh = false,
       recordError = true,
@@ -617,6 +687,13 @@ export const useCaptureStore = defineStore('capture', () => {
     await Promise.all(
       stale.map(async (id) => {
         try {
+          // `onRefreshed` is the caller's record that this id was RECONCILED,
+          // and for a tracked item with no summary row it is the whole of the
+          // batch poll's completion evidence. `fetchDetail` resolves on its
+          // drop paths too, so firing on resolution alone claimed a
+          // reconciliation that never reached `detailById` and let the poll
+          // complete on pre-batch state (#2640).
+          let cached = false
           await fetchDetail(id, {
             forceRefresh: true,
             showToast: false,
@@ -647,8 +724,9 @@ export const useCaptureStore = defineStore('capture', () => {
             trackLoading: false,
             requestOptions: options.requestOptions,
             shouldCache: isCurrent,
+            onCacheOutcome: (outcome) => { cached = outcome === 'cached' },
           })
-          if (isCurrent()) options.onRefreshed?.(id)
+          if (cached && isCurrent()) options.onRefreshed?.(id)
         } catch {
           // A later poll tick retries transient detail failures.
         }
@@ -782,13 +860,22 @@ export const useCaptureStore = defineStore('capture', () => {
       const observedListLoadRequestId = latestListLoadRequestId
       const observedListWriteGeneration = latestListWriteGeneration
       const observedSummaryGeneration = nextCaptureGeneration
+      const observedSessionEpoch = sessionEpoch
       const controller = new AbortController()
       activeRequest = controller
       const requestOptions = { signal: controller.signal, skipRetry: true }
+      // The epoch is checked first, for the same reason the detail path checks
+      // it first (#2640). `applyBackgroundListSnapshot` keeps a locally newer
+      // row only while `latestSummaryGenerationById` outranks this read's
+      // observed generation, and the reset CLEARS that map: the read comes back
+      // 0, so an older in-flight snapshot would outrank a row a newer read had
+      // moved and regress it. Dropping a snapshot the reset crossed leaves both
+      // halves of the guard with one post-logout contract.
       const isCurrent = () =>
         !stopped &&
         !controller.signal.aborted &&
         activeRequest === controller &&
+        observedSessionEpoch === sessionEpoch &&
         observedListLoadRequestId === latestListLoadRequestId &&
         observedListWriteGeneration === latestListWriteGeneration
 
@@ -967,10 +1054,26 @@ export const useCaptureStore = defineStore('capture', () => {
    * starts with no recorded write for its id observes generation 0; if a write
    * then lands (generation N) and the map is cleared, the read's compare
    * becomes 0 !== 0, which is false, and the PRE-write body would be cached
-   * over the newer one and its status pushed back into the list. So the epoch
-   * moves here, after the clear: every detail read captures it when it issues
-   * its request and drops its response when it moved, before any generation
-   * compare. The shared clock itself stays monotonic.
+   * over the newer one and its status pushed back into the list. Clearing
+   * `latestSummaryGenerationById` inverts the summary half the same way, which
+   * is why the background list snapshot is guarded too (#2640). So the epoch
+   * moves here, after the clear: every read that is compared against these
+   * generations captures it when it issues its request and drops its response
+   * when it moved, before any generation compare. The shared clock itself stays
+   * monotonic.
+   *
+   * SCOPE, stated exactly: the reads that capture the epoch are `fetchDetail`,
+   * the single-item triage poll, and the batch poll's list snapshot. NOT
+   * `peekDetail` — it is compared against no generation because it writes
+   * neither cache. The `detailById` write on that path is the caller's:
+   * `useInboxOrchestrator.openBoardScopedHashItem` hands the body to
+   * `selectItemById` as `preloadedDetail` with `cacheSummary: false`, which
+   * reaches `cacheDetail` guarded only by the route-hash re-check. Capturing
+   * the epoch inside `peekDetail` would not cover that write, since the write
+   * is not `peekDetail`'s to drop; the guard would have to live in the
+   * composable, a per-mount surface the logout's route change tears down
+   * anyway. What the `cacheSummary: false` buys is that nothing from that path
+   * can reach `items`, so no row of a previous session's list survives it.
    */
   function resetForLogout() {
     latestDetailWriteGenerationById.clear()
