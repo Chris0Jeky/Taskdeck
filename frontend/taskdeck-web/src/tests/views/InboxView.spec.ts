@@ -77,7 +77,7 @@ const mockCaptureStore = reactive({
     } | null
     canEditSuggestion?: boolean
   }, syncSummary?: boolean) => void>(),
-  fetchItems: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  fetchItems: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
   fetchDetail: vi.fn<(itemId: string, options?: {
     forceRefresh?: boolean
     recordError?: boolean
@@ -235,7 +235,7 @@ describe('InboxView', () => {
     mockCaptureStore.listError = null
     mockCaptureStore.detailError = null
     mockCaptureStore.actionError = null
-    mockCaptureStore.fetchItems.mockResolvedValue(undefined)
+    mockCaptureStore.fetchItems.mockResolvedValue(true)
     mockCaptureStore.fetchDetail.mockImplementation(async (itemId: string, options) => {
       const forceRefresh = options?.forceRefresh ?? false
       if (!forceRefresh && mockCaptureStore.detailById[itemId]) {
