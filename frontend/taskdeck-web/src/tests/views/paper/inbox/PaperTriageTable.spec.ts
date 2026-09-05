@@ -123,7 +123,10 @@ describe('PaperTriageTable', () => {
       props: { items: makeItems(), loadingList: true, scopeReplacement: false },
     })
 
-    expect(wrapper.get('[data-testid="paper-triage-refreshing"]').text()).toContain('refreshing')
+    // The rendered English, not `toContain('refreshing')`: a missing catalog key
+    // renders the key itself, `inbox.refreshing`, which contains that substring
+    // and would have passed.
+    expect(wrapper.get('[data-testid="paper-triage-refreshing"]').text()).toBe('· refreshing…')
     expect(wrapper.get('.paper-triage').attributes('aria-busy')).toBe('true')
     expect(wrapper.get('.paper-triage__list').attributes('style')).toBeUndefined()
     expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)

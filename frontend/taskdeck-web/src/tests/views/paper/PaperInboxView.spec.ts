@@ -844,8 +844,37 @@ describe('PaperInboxView', () => {
     expect(eyebrow).not.toContain('awaiting triage')
     expect(eyebrow).not.toContain('captured')
     expect(eyebrow).not.toMatch(/\d/)
-    expect(eyebrow).toContain('Inbox · capture surface')
-    expect(eyebrow).toContain('loading captures')
+    expect(eyebrow).toBe('Inbox · capture surface')
+  })
+
+  /**
+   * `isScopeReplacement` is deliberately STICKY across failure — the
+   * orchestrator swallows the throw so the retained rows stay hidden rather
+   * than being presented as the new scope. So a failed replacement leaves the
+   * flag true indefinitely, and an eyebrow that said "loading captures…" on
+   * that flag alone would claim a load that had already stopped, permanently,
+   * directly above the table's own error and Retry. The replacement eyebrow
+   * therefore makes NO claim about the load at all; the table owns that state.
+   */
+  it('makes no loading claim in the eyebrow when the replacement has failed', () => {
+    orchestratorState.items.value = [
+      captureRow('old-scope-1', 'New'),
+      captureRow('old-scope-2', 'Converted'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+    mockCaptureStore.loadingList = false
+    mockCaptureStore.listError = 'Failed to load inbox items'
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    expect(eyebrow).not.toMatch(/\d/)
+    expect(eyebrow).not.toContain('loading captures')
+    expect(eyebrow.toLowerCase()).not.toContain('loading')
+    expect(eyebrow).toBe('Inbox · capture surface')
+    // The table still says what actually happened.
+    const table = wrapper.findComponent({ name: 'PaperTriageTable' })
+    expect(table.find('[role="alert"]').text()).toContain('Failed to load inbox items')
   })
 
   it('publishes the eyebrow counts again once the replacement resolves', async () => {
@@ -856,7 +885,7 @@ describe('PaperInboxView', () => {
     orchestratorState.isScopeReplacement.value = true
 
     const wrapper = mount(PaperInboxView)
-    expect(wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()).toContain('loading captures')
+    expect(wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()).toBe('Inbox · capture surface')
 
     orchestratorState.isScopeReplacement.value = false
     await wrapper.vm.$nextTick()

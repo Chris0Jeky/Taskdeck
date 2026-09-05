@@ -210,6 +210,10 @@ export const useCaptureStore = defineStore('capture', () => {
     if (isDemoMode) {
       loadingList.value = true
       listError.value = null
+      // The guard is pre-existing and cannot currently fail: nothing awaits
+      // between the id bump above and this check, so no other call can have
+      // superseded this one. It is kept, with its `false` arm, so the branch
+      // stays correct and total if the demo path ever becomes genuinely async.
       if (requestId === latestListLoadRequestId) {
         items.value = buildDemoCaptureItems()
         loadingList.value = false

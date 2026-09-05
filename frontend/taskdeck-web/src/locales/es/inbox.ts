@@ -20,8 +20,9 @@ export default {
     'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
   // Se muestra EN LUGAR de `eyebrow` mientras se sustituye el ámbito (#2501):
   // los recuentos serían del ámbito que el usuario acaba de dejar. Sin plural:
-  // no hay ningún número con el que concordar.
-  eyebrowLoading: 'Inbox · superficie de captura · cargando las capturas…',
+  // no hay ningún número con el que concordar. Y sin ninguna palabra sobre la
+  // carga: la tabla es la dueña del estado de carga, del error y del reintento.
+  eyebrowUncounted: 'Inbox · superficie de captura',
   title: {
     lead: '¿Qué tienes en mente,',
     emphasis: 'en dos palabras?',

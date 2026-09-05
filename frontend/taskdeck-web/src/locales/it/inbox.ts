@@ -18,8 +18,9 @@ export default {
     'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
   // Mostrato AL POSTO di `eyebrow` durante la sostituzione dell'ambito (#2501):
   // i conteggi apparterrebbero all'ambito appena lasciato. Nessun plurale: non
-  // c'è alcun numero con cui concordare.
-  eyebrowLoading: 'Inbox · superficie di cattura · caricamento delle catture…',
+  // c'è alcun numero con cui concordare. E nessuna parola sul caricamento: la
+  // tabella possiede stato di caricamento, errore e riprova.
+  eyebrowUncounted: 'Inbox · superficie di cattura',
   title: {
     lead: 'Cosa hai in mente,',
     emphasis: 'in breve?',
