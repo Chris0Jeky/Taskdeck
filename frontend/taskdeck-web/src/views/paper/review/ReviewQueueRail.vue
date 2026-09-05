@@ -69,12 +69,7 @@ const props = withDefaults(
      *
      * Optional and defaulting to `false`: an omitted flag keeps the existing
      * announcement exactly as it is, so a parent that does not pass it is
-     * unaffected.
-     *
-     * NOT YET WIRED FROM `PaperReviewView.vue`: that file is held by open
-     * PR #2576, so Paper still announces under both states in production. The
-     * follow-up is `:loading="proposalsLoading" :queue-unavailable="queueAccessRevoked"`
-     * on the `<ReviewQueueRail>` element there, tracked on #2214.
+     * unaffected. `PaperReviewView` passes its own `proposalsLoading`.
      */
     loading?: boolean
     /**
@@ -83,7 +78,8 @@ const props = withDefaults(
      * `awaitingCount` drops to 0 for a reason that is not "nothing is awaiting
      * review" — and because that is a CHANGE, an ungated live region speaks it.
      * Kept separate from `loading` so the parent passes its two real states
-     * rather than a derived boolean whose reason is lost at the call site.
+     * rather than a derived boolean whose reason is lost at the call site;
+     * `PaperReviewView` passes its own `queueAccessRevoked`.
      */
     queueUnavailable?: boolean
   }>(),

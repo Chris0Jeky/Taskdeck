@@ -2551,6 +2551,8 @@ async function onClearBoardScope() {
       :recently-applied="recentlyApplied"
       :cadence="cadence"
       :author-partition-available="authorPartitionAvailable"
+      :loading="proposalsLoading"
+      :queue-unavailable="queueAccessRevoked"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @toggle-batch="toggleBatchSelection"

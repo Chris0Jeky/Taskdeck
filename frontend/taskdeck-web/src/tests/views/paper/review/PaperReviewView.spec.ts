@@ -3030,6 +3030,66 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('speaks the awaiting count only while it is a real count (#2214)', async () => {
+    // The rail's count is 0 both before the first read lands and after a 403
+    // clears the queue, and neither 0 means "nothing is awaiting review". The
+    // second is the worse of the two: it is a CHANGE from a real count, so an
+    // ungated region speaks it beside a panel saying the queue is gone.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    let wrapper: ReturnType<typeof mount> | null = null
+    try {
+      let resolveQueue!: (value: Proposal[]) => void
+      const pendingQueue = new Promise<Proposal[]>((resolve) => {
+        resolveQueue = resolve
+      })
+      mocks.getProposals.mockReturnValue(pendingQueue)
+      mocks.getBoards.mockResolvedValue([])
+      mocks.getColumns.mockResolvedValue([])
+
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [
+          { path: '/workspace/review', name: 'workspace-review', component: PaperReviewView },
+        ],
+      })
+      router.push('/workspace/review')
+      await router.isReady()
+      wrapper = mount(PaperReviewView, { global: { plugins: [router] } })
+      await nextTick()
+
+      // Still reading: the region is mounted (so a later change lands in a live
+      // region that was already there) and says nothing.
+      const loadingLive = wrapper.find('[data-testid="paper-review-queue-live"]')
+      expect(loadingLive.exists()).toBe(true)
+      expect(loadingLive.attributes('role')).toBe('status')
+      expect(loadingLive.text()).toBe('')
+
+      const proposal = makeProposal({ id: 'announce-1', status: 'PendingReview' })
+      mocks.getProposals.mockResolvedValue([proposal])
+      resolveQueue([proposal])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-queue-live"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+
+      // Access is withdrawn: the queue is cleared, so the count would fall to 0.
+      mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
+      const revokedLive = wrapper.find('[data-testid="paper-review-queue-live"]')
+      expect(revokedLive.attributes('role')).toBe('status')
+      expect(revokedLive.text()).toBe('')
+    } finally {
+      wrapper?.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('says the queue is no longer available when a poll is refused with 403 (#2194)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {
