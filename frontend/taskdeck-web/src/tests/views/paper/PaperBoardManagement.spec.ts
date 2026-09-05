@@ -928,13 +928,27 @@ describe('PaperBoardView — the capture lane still exists', () => {
     )
   })
 
-  // The accessible name is the promise a screen-reader user hears before
-  // pressing the control, so it names where the note lands (the Inbox) and only
-  // describes the column as the place the capture was taken from.
-  it('names the capture control by what it does, not by a column filter it cannot apply', () => {
+  /**
+   * Every column's capture control now does the SAME thing — it pushes
+   * `{ boardId }`, exactly as the board-level "Capture here" does — so they all
+   * carry the same accessible name. Naming them per column ("from Backlog",
+   * "from Today", "from Done") would announce a distinction the system does not
+   * make, which is the same class of untruth #1984 finding 2 is about. Contrast
+   * `addAria`, which stays per column because that control really does differ.
+   */
+  it('gives every column capture control the same board-level accessible name', () => {
     const wrapper = mountView()
-    const capture = wrapper.findAll('[data-testid="paper-column-capture"]')[1]!
+    const captures = wrapper.findAll('[data-testid="paper-column-capture"]')
 
-    expect(capture.attributes('aria-label')).toBe('Capture a note into Inbox from Today')
+    expect(captures).toHaveLength(3)
+    const names = captures.map((capture) => capture.attributes('aria-label'))
+    expect(names).toEqual([
+      "Capture a note into this board's Inbox",
+      "Capture a note into this board's Inbox",
+      "Capture a note into this board's Inbox",
+    ])
+    // The per-column control that genuinely differs keeps its per-column name.
+    expect(wrapper.findAll('[data-testid="paper-column-add-card"]')[1]?.attributes('aria-label'))
+      .toBe('Add a card to Today')
   })
 })

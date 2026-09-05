@@ -20,9 +20,11 @@ export default {
     cancel: 'Cancelar',
     error: 'No se pudo añadir la tarjeta. Inténtalo de nuevo.',
     capture: '+ nota',
-    // "desde {column}", no "para {column}" (#1984, hallazgo 2): la nota llega
-    // al Inbox del tablero; la columna es solo el punto de partida.
-    captureAria: 'Toma una nota en Inbox desde {column}',
+    // Sin columna en el nombre accesible (#1984, hallazgo 2): el control de
+    // cada columna abre el Inbox del tablero y nada más, así que un nombre por
+    // columna anunciaría una distinción que no existe. `addAria` conserva
+    // `{column}` porque ese control sí cambia según la columna.
+    captureAria: 'Toma una nota en el Inbox de este tablero',
   },
   column: {
     settings: 'Ajustes de la columna',

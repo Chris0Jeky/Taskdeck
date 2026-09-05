@@ -29,10 +29,16 @@ export default {
     error: 'Could not add the card. Please try again.',
     capture: '+ capture',
     // The accessible name promises exactly what the control does (#1984
-    // finding 2). It used to read "for {column}", which a screen-reader user
-    // hears as a destination or a filter; the note lands in the board's Inbox
-    // for triage and the column is only where the capture was taken from.
-    captureAria: 'Capture a note into Inbox from {column}',
+    // finding 2), and it carries NO column.
+    //
+    // It used to read "for {column}", which a screen-reader user hears as a
+    // destination or a filter. Naming the column at all — even as "from
+    // {column}" — is still wrong here: every column's capture control pushes
+    // `{ boardId }` and nothing else, the same as the board-level "Capture
+    // here", so per-column names would announce a distinction the system does
+    // not make. `addAria` above keeps its `{column}` because that control
+    // really does differ per column.
+    captureAria: "Capture a note into this board's Inbox",
   },
   column: {
     settings: 'Column settings',
