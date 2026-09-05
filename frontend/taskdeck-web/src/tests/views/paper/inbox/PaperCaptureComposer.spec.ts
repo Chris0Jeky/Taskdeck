@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import PaperCaptureComposer from '../../../../views/paper/inbox/PaperCaptureComposer.vue'
 import { i18n, type SupportedLocale } from '../../../../i18n'
 
@@ -139,12 +139,14 @@ describe('PaperCaptureComposer', () => {
    * The eyebrows, accessible names and placeholders of the four Composer
    * fields, in the file's own locale idiom (the `it.each` above, from #2654).
    *
-   * The English case is the regression guard: `PaperInboxView.spec.ts` and
-   * three Playwright specs select these controls by their accessible name, so
-   * the extraction had to leave the English text byte for byte. The Italian
-   * case is the one that proves the catalogs reach the DOM at all — every
-   * assertion in it fails on the pre-#1871 component, which hardcoded English
-   * in the template regardless of locale.
+   * The English case is the regression guard, and since the selector-to-testid
+   * migration in this PR it can assert the names the a11y rule wants rather
+   * than the pre-extraction English the old selectors froze: every accessible
+   * name leads with its visible eyebrow and then says what the control does
+   * (WCAG 2.5.3, the PR #2675 pattern). The Italian case is the one that proves
+   * the catalogs reach the DOM at all — every assertion in it fails on the
+   * pre-#1871 component, which hardcoded English in the template regardless of
+   * locale.
    *
    * Selectors are locale-independent on purpose (testid and class, never the
    * aria-label being asserted): a selector that reads the string under test
@@ -166,13 +168,43 @@ describe('PaperCaptureComposer', () => {
     const chrome = fieldChrome(wrapper)
 
     expect(chrome.eyebrows).toEqual(['Body', 'Board', 'Labels', 'Due (optional)'])
-    expect(chrome.body.attributes('aria-label')).toBe('Capture body')
+    expect(chrome.body.attributes('aria-label')).toBe('Body: write the text of this capture')
     expect(chrome.body.attributes('placeholder')).toBe('The thought, in plain language…')
-    expect(chrome.board.attributes('aria-label')).toBe('Board picker')
-    expect(chrome.label.attributes('aria-label')).toBe('Add label')
+    expect(chrome.board.attributes('aria-label')).toBe(
+      'Board: choose where this new capture will land',
+    )
+    expect(chrome.label.attributes('aria-label')).toBe(
+      'Labels: type a label and press Enter to add it',
+    )
     expect(chrome.label.attributes('placeholder')).toBe('add and press Enter')
-    expect(chrome.due.attributes('aria-label')).toBe('Due date')
+    expect(chrome.due.attributes('aria-label')).toBe(
+      'Due (optional): set a due date for this capture',
+    )
     expect(chrome.attachments.text()).toBe('Attachments are not saved with captures yet.')
+  })
+
+  /**
+   * WCAG 2.5.3 label-in-name, asserted as a RELATION rather than as four more
+   * literals: each accessible name must START with the eyebrow rendered above
+   * its control. Written this way it keeps holding when the copy is reworded
+   * and it fails on the pre-rewrite names, where `Add label` did not contain
+   * the visible `Labels` and `Due date` did not contain `Due (optional)`.
+   */
+  it('starts every field accessible name with the visible eyebrow above it', () => {
+    const wrapper = mount(PaperCaptureComposer)
+    const chrome = fieldChrome(wrapper)
+    const [bodyEyebrow, boardEyebrow, labelsEyebrow, dueEyebrow] = chrome.eyebrows
+
+    const named = [
+      [bodyEyebrow, chrome.body.attributes('aria-label')],
+      [boardEyebrow, chrome.board.attributes('aria-label')],
+      [labelsEyebrow, chrome.label.attributes('aria-label')],
+      [dueEyebrow, chrome.due.attributes('aria-label')],
+    ] as const
+
+    // Reported as pairs so a failure names the eyebrow AND the name that broke
+    // the rule, instead of four indistinguishable `false`s.
+    expect(named.filter(([eyebrow, name]) => !name?.startsWith(`${eyebrow}: `))).toEqual([])
   })
 
   it('re-renders the field chrome in Italian when the locale switches', () => {
@@ -183,14 +215,49 @@ describe('PaperCaptureComposer', () => {
       const chrome = fieldChrome(wrapper)
 
       expect(chrome.eyebrows).toEqual(['Testo', 'Bacheca', 'Etichette', 'Scadenza (facoltativa)'])
-      expect(chrome.body.attributes('aria-label')).toBe('Testo della cattura')
+      expect(chrome.body.attributes('aria-label')).toBe(
+        'Testo: scrivi il contenuto di questa cattura',
+      )
       expect(chrome.body.attributes('placeholder')).toBe('Il pensiero, in parole semplici…')
-      expect(chrome.board.attributes('aria-label')).toBe('Selettore bacheca')
-      expect(chrome.label.attributes('aria-label')).toBe('Aggiungi etichetta')
+      expect(chrome.board.attributes('aria-label')).toBe(
+        'Bacheca: scegli dove arriverà questa nuova cattura',
+      )
+      expect(chrome.label.attributes('aria-label')).toBe(
+        'Etichette: scrivi un’etichetta e premi Enter per aggiungerla',
+      )
       expect(chrome.label.attributes('placeholder')).toBe('aggiungi e premi Enter')
-      expect(chrome.due.attributes('aria-label')).toBe('Data di scadenza')
+      expect(chrome.due.attributes('aria-label')).toBe(
+        'Scadenza (facoltativa): scegli quando scade questa cattura',
+      )
       expect(chrome.attachments.text()).toBe(
         'Gli allegati non vengono ancora salvati con le catture.',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  /**
+   * The case above sets the locale BEFORE mounting, so it proves first render
+   * only — a component that read `t()` once into a non-reactive snapshot would
+   * still pass it. This one mounts in English and switches AFTER, so the
+   * eyebrows and an accessible name have to change on an already-rendered
+   * component or the assertion fails.
+   */
+  it('re-renders the field chrome when the locale switches after mount', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'en' as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      expect(fieldChrome(wrapper).eyebrows).toEqual(['Body', 'Board', 'Labels', 'Due (optional)'])
+
+      i18n.global.locale.value = 'it' as SupportedLocale
+      await nextTick()
+
+      const chrome = fieldChrome(wrapper)
+      expect(chrome.eyebrows).toEqual(['Testo', 'Bacheca', 'Etichette', 'Scadenza (facoltativa)'])
+      expect(chrome.body.attributes('aria-label')).toBe(
+        'Testo: scrivi il contenuto di questa cattura',
       )
     } finally {
       i18n.global.locale.value = previousLocale

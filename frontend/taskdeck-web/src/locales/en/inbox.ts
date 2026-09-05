@@ -131,26 +131,28 @@ export default {
   // capture vocabulary — receipts, draft restoration, the source radios the Nib
   // shares — while these four labels exist only on the Composer's form.
   //
-  // The four `*Aria` names keep their pre-extraction English BYTE FOR BYTE.
-  // `views/paper/PaperInboxView.spec.ts` and three Playwright specs select
-  // these controls by their accessible name, so editing the English here is a
-  // test change and not a copy change. That is also why `labelsAria` and
-  // `dueAria` do not yet repeat their visible eyebrow first the way
-  // `boardPicker.triageAria` does (WCAG 2.5.3, the PR #2675 pattern): closing
-  // that gap needs those selectors migrated to testids first.
+  // Every `*Aria` name here leads with the field's visible eyebrow and then
+  // says what the control does (WCAG 2.5.3 label-in-name, the PR #2675 pattern
+  // the board controls and `boardPicker.triageAria` already follow). The four
+  // names could only take that shape once the specs stopped selecting these
+  // controls by accessible name: they now use the composer's `data-testid`
+  // attributes, so this copy is copy again and not test API. Keep the eyebrow
+  // and the name in step — `PaperCaptureComposer.spec.ts` asserts the relation,
+  // not just the strings, in every locale it covers.
   //
   // The placeholders stay placeholders — a hint about the shape of the value,
   // never the name of the field, which is what the eyebrow and the accessible
-  // name are for.
+  // name are for. `bodyPlaceholder` is a sentence and is capitalized;
+  // `labelsPlaceholder` is a fragment continuing the box and is not.
   composer: {
     bodyLabel: 'Body',
-    bodyAria: 'Capture body',
+    bodyAria: 'Body: write the text of this capture',
     bodyPlaceholder: 'The thought, in plain language…',
     labelsLabel: 'Labels',
-    labelsAria: 'Add label',
+    labelsAria: 'Labels: type a label and press Enter to add it',
     labelsPlaceholder: 'add and press Enter',
     dueLabel: 'Due (optional)',
-    dueAria: 'Due date',
+    dueAria: 'Due (optional): set a due date for this capture',
     // A statement about the product, not about this draft: attachments are not
     // stored with a capture at all yet, so it never varies by row or state.
     attachmentsUnavailable: 'Attachments are not saved with captures yet.',
@@ -196,14 +198,13 @@ export default {
     // different things: the Composer's chooses where a NEW capture will land,
     // the triage one chooses a board for the capture already in the row.
     //
-    // `composerAria` keeps its pre-extraction English exactly — see the note on
-    // `composer` above; it happens to already lead with the visible label.
-    // `triageAria` is free of external selectors, so it takes the full PR #2675
-    // shape: the visible label first, then what the control does (WCAG 2.5.3).
-    // The it/es forms mirror the English rather than expanding on it; Romance
-    // word order puts the head noun first in `composerAria`, which still leaves
-    // the visible label inside the accessible name.
-    composerAria: 'Board picker',
+    // Both take the PR #2675 shape: the visible label first, then what the
+    // control does (WCAG 2.5.3). They must stay distinguishable by that second
+    // half alone — a screen-reader user meeting one of them has no other cue
+    // about which of the two selects is focused. "this new capture" is the
+    // Composer's, the draft that has not been filed yet; "this capture" is the
+    // triage row's, an item already in the Inbox.
+    composerAria: 'Board: choose where this new capture will land',
     triageAria: 'Board: choose where this capture goes',
     noBoardOption: 'No board · land in inbox',
     selectPlaceholder: 'Select a board…',

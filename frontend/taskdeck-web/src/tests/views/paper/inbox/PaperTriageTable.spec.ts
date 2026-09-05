@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import PaperTriageTable from '../../../../views/paper/inbox/PaperTriageTable.vue'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../../types/capture'
 import { i18n, type SupportedLocale } from '../../../../i18n'
@@ -434,6 +434,34 @@ describe('PaperTriageTable', () => {
     try {
       i18n.global.locale.value = 'it' as SupportedLocale
       const wrapper = await openBoardPicker(defaultBoards())
+
+      expect(wrapper.attributes('aria-label')).toBe('Elementi catturati')
+      const pick = wrapper.get('[data-testid="capture-board-pick"]')
+      expect(pick.get('.tk-eyebrow').text()).toBe('Bacheca')
+      expect(pick.get('select').attributes('aria-label')).toBe(
+        'Bacheca: scegli dove va questa cattura',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  /**
+   * The Italian case above sets the locale BEFORE mounting, so it proves first
+   * render only — a component that read `t()` once into a non-reactive snapshot
+   * would still pass it. This one mounts in English and switches AFTER, so the
+   * region name and the board-pick chrome have to change on an already-rendered
+   * component or the assertion fails.
+   */
+  it('re-renders the region name and the board-pick chrome when the locale switches after mount', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'en' as SupportedLocale
+      const wrapper = await openBoardPicker(defaultBoards())
+      expect(wrapper.attributes('aria-label')).toBe('Captured items')
+
+      i18n.global.locale.value = 'it' as SupportedLocale
+      await nextTick()
 
       expect(wrapper.attributes('aria-label')).toBe('Elementi catturati')
       const pick = wrapper.get('[data-testid="capture-board-pick"]')
