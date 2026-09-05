@@ -1527,4 +1527,70 @@ describe('ReviewView', () => {
       '1 proposal awaiting review',
     )
   })
+
+  it('announces nothing from the queue live region once queue access is revoked (#2214)', async () => {
+    // A current-scope 403 sets queueAccessRevoked AND clears the queue, so the
+    // announcement changes from a real count to 0 — a change, therefore spoken —
+    // while the panel beside it says the queue is gone and has stopped updating.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-visible' })])
+      const { wrapper } = await mountAt('/workspace/review')
+      expect(wrapper.get('[data-testid="review-queue-live"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 403 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-access-revoked"]').exists()).toBe(true)
+      const live = wrapper.get('[data-testid="review-queue-live"]')
+      expect(live.attributes('role')).toBe('status')
+      expect(live.text()).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders the pinned proposal, not the unavailable panel, after moving from a dead pin to a live one (#2214)', async () => {
+    // What this pins: navigating from a refused pin X to a resolvable pin Y
+    // shows Y's card and no panel.
+    //
+    // What it does NOT pin, measured: the `renderedProposals.length === 0` half
+    // of the panel's own condition. Deleting that half leaves this test green.
+    // The window where the recorded id still names X while the hash names a
+    // renderable Y exists only while `proposalsLoading` is true, because
+    // `openProposalFromHash` early-returns there — and the loading branch
+    // precedes the panel in the same v-if chain, so the skeleton renders
+    // instead. When the read settles, `proposalsLoading = false` and the
+    // clearing of the recorded id happen in one synchronous block, so no
+    // intermediate state is ever rendered. The length half is therefore
+    // defence-in-depth against that ordering changing, not a live guard.
+    const y = buildProposal({ id: 'proposal-y' })
+    mocks.getProposals.mockResolvedValue([y])
+    mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
+
+    const { wrapper, router } = await mountAt('/workspace/review#proposal-proposal-x')
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(true)
+
+    const pending = createDeferred<Proposal[]>()
+    mocks.getProposals.mockReturnValue(pending.promise)
+    const refresh = wrapper.findAll('button').find((node) => node.text() === 'Refresh Review')!
+    await refresh.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await router.push('/workspace/review#proposal-proposal-y')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    pending.resolve([y])
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    // The panel must never stand in front of a proposal that renders.
+    expect(wrapper.find('#proposal-proposal-y').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+  })
 })

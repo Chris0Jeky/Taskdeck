@@ -70,8 +70,22 @@ const props = withDefaults(
      * Optional and defaulting to `false`: an omitted flag keeps the existing
      * announcement exactly as it is, so a parent that does not pass it is
      * unaffected.
+     *
+     * NOT YET WIRED FROM `PaperReviewView.vue`: that file is held by open
+     * PR #2576, so Paper still announces under both states in production. The
+     * follow-up is `:loading="proposalsLoading" :queue-unavailable="queueAccessRevoked"`
+     * on the `<ReviewQueueRail>` element there, tracked on #2214.
      */
     loading?: boolean
+    /**
+     * Whether the queue was withdrawn rather than read (#2214 round 2). A
+     * current-scope 403 sets `queueAccessRevoked` AND clears the queue, so
+     * `awaitingCount` drops to 0 for a reason that is not "nothing is awaiting
+     * review" — and because that is a CHANGE, an ungated live region speaks it.
+     * Kept separate from `loading` so the parent passes its two real states
+     * rather than a derived boolean whose reason is lost at the call site.
+     */
+    queueUnavailable?: boolean
   }>(),
   {
     dismissableCount: 0,
@@ -80,6 +94,7 @@ const props = withDefaults(
     busy: false,
     authorPartitionAvailable: true,
     loading: false,
+    queueUnavailable: false,
   },
 )
 
@@ -106,6 +121,13 @@ const visible = computed<QueueRailItem[]>(() => {
       return props.items
   }
 })
+
+/**
+ * Whether `awaitingCount` is a real count right now (#2214). A queue that is
+ * still loading and one whose access was revoked both carry 0 because nothing
+ * has been read, not because nothing awaits review; neither is speakable.
+ */
+const countIsAnnounceable = computed<boolean>(() => !props.loading && !props.queueUnavailable)
 
 /** Real 7-day cadence to render; null hides the mini-cadence bars entirely. */
 const hasCadence = computed<boolean>(
@@ -169,17 +191,17 @@ function onFilterPillClick(key: QueueFilter) {
         renders the stale count and is rewritten by filter clicks, which would
         make it chatter on ordinary interaction.
 
-        The region stays MOUNTED while loading and only withholds its content
-        (#2214): a live region inserted at the same moment its text appears is
-        unreliably announced, so gating with `v-if` would trade one defect for
-        another.
+        The region stays MOUNTED while the count is unspeakable and only
+        withholds its content (#2214): a live region inserted at the same moment
+        its text appears is unreliably announced, so gating with `v-if` would
+        trade one defect for another.
       -->
       <p
         class="sr-only"
         role="status"
         aria-live="polite"
         data-testid="paper-review-queue-live"
-      >{{ loading ? '' : $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) }}</p>
+      >{{ countIsAnnounceable ? $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) : '' }}</p>
       <PaperScopeDisclosure
         v-if="scopeLabel && scopeClearLabel"
         :label="scopeLabel"

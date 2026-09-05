@@ -221,6 +221,15 @@ const awaitingAnnouncement = computed(() =>
 )
 
 /**
+ * Whether `awaitingCount` is a real count right now (#2214). Kept in step with
+ * `ReviewQueueRail.countIsAnnounceable`, which gates the Paper skin's identical
+ * region on the same two states (#1124 / ADR-0038).
+ */
+const countIsAnnounceable = computed(
+  () => !proposalsLoading.value && !queueAccessRevoked.value,
+)
+
+/**
  * Same badge contract as the Paper skin (#2194 acceptance 3): the shell's
  * `Review · N` count is a home-summary workload figure AppShell reads once at
  * sign-in, and nothing here ever refreshed it. Triggered on the queue ARRAY so a
@@ -300,14 +309,15 @@ onUnmounted(() => {
     <ReviewSummaryCards :cards="summaryCards" />
 
     <!-- The queue now changes without user action (#2194); announce it politely.
-         While the queue read is in flight the count is 0 because nothing has
-         been read yet, so the region withholds its CONTENT rather than being
-         unmounted (#2214): it sits above the skeleton, and announcing there
-         would read "0 proposals awaiting review." and then the real count. The
-         element stays mounted because a live region inserted at the same moment
-         its text appears is unreliably announced. -->
+         The count is only speakable when it is a real count (#2214). While the
+         read is in flight it is 0 because nothing has been read yet, and once
+         access is revoked it is 0 because the queue was withdrawn and cleared —
+         a CHANGE, so an ungated region speaks "0 proposals awaiting review."
+         beside a panel saying the queue is gone. The region withholds its
+         CONTENT rather than being unmounted, because a live region inserted at
+         the same moment its text appears is unreliably announced. -->
     <p class="sr-only" role="status" aria-live="polite" data-testid="review-queue-live">
-      {{ proposalsLoading ? '' : awaitingAnnouncement }}
+      {{ countIsAnnounceable ? awaitingAnnouncement : '' }}
     </p>
 
     <div

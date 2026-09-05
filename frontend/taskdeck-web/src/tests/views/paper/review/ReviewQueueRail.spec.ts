@@ -32,6 +32,7 @@ function mountRail(props?: Partial<{
   scopeLabel: string
   scopeClearLabel: string
   loading: boolean
+  queueUnavailable: boolean
   awaitingCount: number
 }>) {
   return mount(ReviewQueueRail, {
@@ -41,6 +42,7 @@ function mountRail(props?: Partial<{
       awaitingCount: props?.awaitingCount ?? 3,
       staleCount: 2,
       ...(props?.loading !== undefined ? { loading: props.loading } : {}),
+      ...(props?.queueUnavailable !== undefined ? { queueUnavailable: props.queueUnavailable } : {}),
       dismissableCount: props?.dismissableCount ?? 0,
       busy: props?.busy ?? false,
       batchSelectedCount: props?.batchSelectedCount ?? 0,
@@ -313,6 +315,16 @@ describe('ReviewQueueRail queue announcement (#2214)', () => {
     // real count. Only the content is withheld: the region stays mounted so a
     // later change lands in a live region that was already present.
     const wrapper = mountRail({ loading: true, awaitingCount: 0 })
+    const live = wrapper.get('[data-testid="paper-review-queue-live"]')
+    expect(live.attributes('role')).toBe('status')
+    expect(live.text()).toBe('')
+  })
+
+  it('announces nothing once queue access is revoked', () => {
+    // The revoked state clears the queue, so awaitingCount drops to 0 for a
+    // reason that is not "nothing is awaiting review". Same defect as loading,
+    // one branch over.
+    const wrapper = mountRail({ queueUnavailable: true, awaitingCount: 0, items: [] })
     const live = wrapper.get('[data-testid="paper-review-queue-live"]')
     expect(live.attributes('role')).toBe('status')
     expect(live.text()).toBe('')
