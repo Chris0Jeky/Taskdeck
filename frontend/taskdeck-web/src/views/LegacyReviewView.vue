@@ -29,6 +29,7 @@ const {
   summaryCards,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRecovered,
   unavailableProposalId,
   dismissableProposalIds,
   isProposalExpired,
@@ -321,6 +322,22 @@ onUnmounted(() => {
     <p class="sr-only" role="status" aria-live="polite" data-testid="review-queue-live">
       {{ countIsAnnounceable ? awaitingAnnouncement : '' }}
     </p>
+
+    <!-- Recovery is the half of the degraded disclosure that was missing
+         (#2214). The warning below simply disappears when the queue is
+         trustworthy again, which tells a reviewer who was not watching that
+         corner nothing at all. Built like the count region above it: MOUNTED
+         throughout, withholding its text, because a live region inserted at the
+         same moment its text appears is unreliably announced (#2593). The
+         signal comes from the shared composable, so both skins announce the
+         same transition with the same sentence (ADR-0038 / #1124). -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="review-queue-recovered"
+    >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
 
     <div
       v-if="queueRefreshStale && !queueAccessRevoked"

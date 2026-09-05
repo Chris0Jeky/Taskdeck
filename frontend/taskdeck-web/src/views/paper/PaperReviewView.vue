@@ -76,6 +76,7 @@ const {
   unavailableProposalId,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRecovered,
   nowMs,
   visibleProposals,
   dismissableProposalIds,
@@ -2563,6 +2564,25 @@ async function onClearBoardScope() {
     />
 
     <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
+      <!--
+        Recovery is the half of the degraded disclosure that was missing (#2214).
+        The warning below simply disappears when the queue is trustworthy again,
+        which tells a reviewer who was not watching that corner nothing at all.
+
+        Same construction as the rail's count region (#2593): the region stays
+        MOUNTED and withholds its text, because a live region inserted at the
+        same moment its text appears is unreliably announced. `queueRefreshStale`
+        cannot carry this — it is a state, and a state that is merely gone
+        announces nothing. `queueRefreshRecovered` is the transition, and the
+        sentence stays until the next degraded onset clears the signal.
+      -->
+      <p
+        class="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="paper-review-queue-recovered"
+      >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
       <p
         v-if="queueRefreshStale && !queueAccessRevoked"
         class="paper-review-deep__queue-stale tk-meta"
@@ -2778,6 +2798,15 @@ async function onClearBoardScope() {
       />
     </div>
     <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
+      <!-- The empty column is the other half of the same disclosure; see the
+           note on the identical region in the active-proposal column above. -->
+      <p
+        class="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-testid="paper-review-queue-recovered"
+      >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
       <p
         v-if="queueRefreshStale && !queueAccessRevoked"
         class="paper-review-deep__queue-stale tk-meta"

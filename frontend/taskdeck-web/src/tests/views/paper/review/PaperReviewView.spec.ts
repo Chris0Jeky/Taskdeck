@@ -3258,6 +3258,73 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('announces recovery from a degraded queue in a region that was already mounted (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+
+      // Mounted and SILENT before anything goes wrong. A live region inserted at
+      // the same moment its text appears is unreliably announced (#2593), which
+      // is exactly why this cannot be a `v-if` on the recovery state.
+      const before = wrapper.find('[data-testid="paper-review-queue-recovered"]')
+      expect(before.exists()).toBe(true)
+      expect(before.attributes('role')).toBe('status')
+      expect(before.attributes('aria-live')).toBe('polite')
+      expect(before.attributes('aria-atomic')).toBe('true')
+      expect(before.text()).toBe('')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(true)
+      // Degraded is not recovered: announcing here would contradict the warning.
+      expect(wrapper.find('[data-testid="paper-review-queue-recovered"]').text()).toBe('')
+
+      mocks.getProposals.mockResolvedValue([makeProposal({ id: 'retained-1' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // The warning going away is the silent part; this sentence is the part a
+      // reviewer who was not watching that corner can actually receive.
+      expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(false)
+      const after = wrapper.find('[data-testid="paper-review-queue-recovered"]')
+      expect(after.text()).toBe(enReview.queue.degraded.recovered)
+      // The same DOM node throughout: the text changed inside a region that was
+      // already there, rather than a region arriving with its text.
+      expect(after.element).toBe(before.element)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the recovery region silent when an ordinary poll succeeds (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'quiet-1' })])
+
+      for (let poll = 0; poll < 3; poll += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      // Nothing was ever degraded. A region that spoke here would announce every
+      // 15 seconds for as long as the surface is open.
+      expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-review-queue-recovered"]').text()).toBe('')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+
   it('re-reads the shell Review badge when the queue count moves (#2194 acceptance 3)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {

@@ -202,6 +202,19 @@ export function useReviewProposals() {
   // Unlike `queueAccessRevoked`, this is not an authority result. It means the
   // last queue we could render is still shown while background reads retry.
   const queueRefreshStale = ref(false)
+  // The EVENT that pairs with the state above (#2214). Clearing
+  // `queueRefreshStale` unmounts the warning, which is silent: a reviewer who
+  // was not looking at that corner is never told the queue is trustworthy
+  // again, and a screen-reader user is told nothing at all. This is true only
+  // after a degraded state was actually cleared by a successful read, so an
+  // ordinary success never announces anything, and it falls back to false at
+  // the next degraded onset so a second recovery is announced too (a live
+  // region only speaks when its TEXT changes).
+  //
+  // It is deliberately NOT cleared on a 403: the surfaces already gate this
+  // sentence on `!queueAccessRevoked`, the same guard the warning uses, so the
+  // permission path keeps its single owner.
+  const queueRefreshRecovered = ref(false)
   let latestProposalLoadRequestId = 0
   const availableBoards = ref<Board[]>([])
   const loadingBoards = ref(false)
@@ -568,8 +581,9 @@ export function useReviewProposals() {
       proposals.value = loadedProposals
       // An explicit successful load is as trustworthy as a successful poll and
       // clears any older degraded indication without changing load semantics.
-      consecutiveQueueRefreshFailures = 0
-      queueRefreshStale.value = false
+      // It goes through the same accounting as a successful poll so both exits
+      // from the degraded state raise the recovery signal (#2214).
+      recordQueueRefreshSuccess()
       // An explicit load that succeeded is proof access is back.
       const accessWasRevoked = queueAccessRevoked.value
       queueAccessRevoked.value = false
@@ -624,11 +638,19 @@ export function useReviewProposals() {
     consecutiveQueueRefreshFailures += 1
     if (consecutiveQueueRefreshFailures >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
       queueRefreshStale.value = true
+      // A degraded onset retires the previous recovery announcement. Leaving it
+      // standing would both contradict the warning beside it and stop the NEXT
+      // recovery from being announced, because the live region's text would
+      // never change.
+      queueRefreshRecovered.value = false
     }
   }
 
   function recordQueueRefreshSuccess() {
     consecutiveQueueRefreshFailures = 0
+    // Only a success that ends a VISIBLE degraded state is a recovery. Setting
+    // this on every success would make both skins announce every 15 s.
+    if (queueRefreshStale.value) queueRefreshRecovered.value = true
     queueRefreshStale.value = false
   }
 
@@ -1098,6 +1120,7 @@ export function useReviewProposals() {
     unavailableProposalId,
     queueAccessRevoked,
     queueRefreshStale,
+    queueRefreshRecovered,
     availableBoards,
     loadingBoards,
     boardFilterInput,

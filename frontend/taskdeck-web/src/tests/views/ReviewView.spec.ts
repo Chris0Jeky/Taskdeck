@@ -393,6 +393,72 @@ describe('ReviewView', () => {
     }
   })
 
+  it('announces recovery from a degraded queue in a region that was already mounted (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      const { wrapper } = await mountAt('/workspace/review')
+
+      // Mounted and SILENT before anything goes wrong, for the same reason the
+      // count region beside it is (#2593): a live region inserted at the same
+      // moment its text appears is unreliably announced.
+      const before = wrapper.find('[data-testid="review-queue-recovered"]')
+      expect(before.exists()).toBe(true)
+      expect(before.attributes('role')).toBe('status')
+      expect(before.attributes('aria-live')).toBe('polite')
+      expect(before.attributes('aria-atomic')).toBe('true')
+      expect(before.text()).toBe('')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-queue-stale"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="review-queue-recovered"]').text()).toBe('')
+
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'retained-1' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-queue-stale"]').exists()).toBe(false)
+      const after = wrapper.find('[data-testid="review-queue-recovered"]')
+      expect(after.text()).toBe(enReview.queue.degraded.recovered)
+      // The same DOM node throughout, and the shared catalog sentence: both
+      // skins say the same thing through one composable signal (ADR-0038).
+      expect(after.element).toBe(before.element)
+      // The count region is a different region with a different job; the
+      // recovery announcement must not overwrite it.
+      expect(wrapper.find('[data-testid="review-queue-live"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the recovery region silent when an ordinary poll succeeds (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'quiet-1' })])
+      const { wrapper } = await mountAt('/workspace/review')
+
+      for (let poll = 0; poll < 3; poll += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="review-queue-stale"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="review-queue-recovered"]').text()).toBe('')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows guided empty-state actions when there are no proposals', async () => {
     const { wrapper } = await mountAt('/workspace/review')
 
