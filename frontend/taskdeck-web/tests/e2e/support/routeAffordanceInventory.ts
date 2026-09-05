@@ -78,15 +78,20 @@ export type AffordanceSelector =
  * places only: `url.pathPattern`, `response.urlPattern`, `value.value`,
  * `text.text` and `textChangedFrom.from` — plus the `name` of a `role` selector
  * (see `AffordanceSelector` above). Everywhere else the string is used
- * VERBATIM: `attribute`'s `selector`, `attribute` and `value`, the `enabled`
- * selector, the `node` and `focus` test ids, and every `css` and `testId`
- * selector value. A token written into one of those is matched literally, so
- * the row quietly fails to find its node rather than reporting a bad token.
+ * VERBATIM — the complete list: `attribute`'s `selector`, `attribute` and
+ * `value`; the `enabled` selector; the `selector` of `value`, `text` and
+ * `textChangedFrom` (only their `value`/`text`/`from` payloads are filled, not
+ * the node they are read from); the `node` and `focus` test ids; and every
+ * `css` and `testId` selector value. A token written into one of those is
+ * matched literally, so the row quietly fails to find its node rather than
+ * reporting a bad token.
  *
- * Which token appears where today: `{boardId}` in three `url.pathPattern`s and
- * nowhere else; `{metricsBoardId}` in three `response.urlPattern`s and in the
- * `value.value` of the metrics board-select post-condition; `{boardName}` in
- * one `role` selector name; and `{openingMonthLabel}` in exactly two places —
+ * Which token appears where today: `{boardId}` in three `url.pathPattern`s, and
+ * once more in the `workspace-board` entry's `entryPath`, where nothing
+ * substitutes it (see `RouteEntry.entryPath` below); `{metricsBoardId}` in
+ * three `response.urlPattern`s and in the `value.value` of the metrics
+ * board-select post-condition; `{boardName}` in one `role` selector name; and
+ * `{openingMonthLabel}` in exactly two places —
  * the `textChangedFrom.from` of `calendar.previous-month` and the `text.text`
  * of `calendar.next-month`. `{openingMonthLabel}` appears in no `url` or
  * `response` pattern at all, which is what the sentence this replaced got

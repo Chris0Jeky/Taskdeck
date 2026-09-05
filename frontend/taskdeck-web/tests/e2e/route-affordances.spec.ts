@@ -55,8 +55,11 @@
  * reports its own actionability failure rather than an unhandled rejection.
  * The mount reads those routes consume first are armed before `page.goto` for
  * the same reason and parked the same way (see `readOnMount`), so a `goto` that
- * throws reports its own failure instead of trailing a stray 30 s
- * `waitForResponse` rejection that lands on the worker with no test to own it.
+ * throws reports its own failure instead of trailing a `waitForResponse`
+ * settlement with no test left to own it. Note the asymmetry in what BOUNDS the
+ * two: `activate` passes `{ timeout: 15_000 }`, while the mount reads pass no
+ * timeout and this config gives them none, so they are bounded only by the test
+ * timeout. `readOnMount` explains that; bounding them is tracked on #2682.
  *
  * COMPLETENESS. Every block ends with `assertBlockCompleted`, which proves the
  * declared `WALK_PLAN` still names exactly the inventory's `activate: true` and
@@ -507,12 +510,33 @@ async function assertReachableButNotActivated(
  * WHY THE OUTCOME IS PARKED. The wait must be armed BEFORE `page.goto` — that
  * is the whole point, the response can arrive during the navigation — but a
  * `goto` that throws would then leave the `waitForResponse` promise with
- * nothing awaiting it, and its 30 s default rejection would surface later as an
- * unhandled rejection attributed to the worker rather than as the navigation
- * failure that actually happened. Parking the outcome the moment it is armed,
- * exactly as `activate` does for row waits, keeps the navigation's own error
- * first while still failing on a mount read that never arrives. The success
- * path is unchanged: armed before, awaited after, asserted 2xx.
+ * nothing awaiting it. Parking the outcome the moment it is armed, exactly as
+ * `activate` does for row waits, keeps the navigation's own error first while
+ * still failing on a mount read that never arrives. The success path is
+ * unchanged: armed before, awaited after, asserted 2xx.
+ *
+ * WHAT AN UNPARKED WAIT WOULD ACTUALLY DO HERE — NOT TIME OUT. These calls pass
+ * no `timeout`, and under this repo's config nothing supplies a default one, so
+ * the wait has NO event timeout of its own. The chain, read in the installed
+ * tree: `playwright/lib/index.js:259` defaults the `actionTimeout` fixture to
+ * `0` and `playwright.config.ts` never sets it (it sets only `timeout: 45_000`
+ * and `expect.timeout: 8_000`, and nothing under `tests/` calls
+ * `setDefaultTimeout`); `playwright/lib/index.js:349` then assigns
+ * `_defaultContextTimeout = actionTimeout || 0`; `coreBundle.js:57160-57169`
+ * returns that `0` rather than falling through to Playwright's own default;
+ * and `coreBundle.js:58412` arms a timer only `if (timeout)`, which `0` is not.
+ * So a mount read whose response never arrives does not reject after 30 s — it
+ * HANGS until the test timeout (90 s in the board-seeded walk, 45 s in the
+ * Home/Inbox block) and reports "Test timeout exceeded". Parking still earns
+ * its place: an unawaited wait is rejected at page close with a
+ * `TargetClosedError` (`coreBundle.js:61278-61279` and `:61265-61267`), and by
+ * then the test that would have owned it is over.
+ *
+ * NOT BOUNDED LIKE `activate`. `activate` caps its row waits at
+ * `{ timeout: 15_000 }` precisely so a dead control does not burn the shared
+ * E2E Smoke budget; these mount reads take no such cap and are left to the test
+ * timeout. That asymmetry is deliberate for now, not an oversight — giving them
+ * their own bound is a behavioural change and is tracked on #2682.
  */
 async function readOnMount(
   page: Page,
