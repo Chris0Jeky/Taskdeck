@@ -89,9 +89,11 @@ permissions:
   # The required-lane gitleaks job runs in PR scan-mode, which reads the PR commit context. (#1132 review)
   pull-requests: read
 
+# A push run on refs/heads/main is the landed-commit evidence for that tip, so it is never
+# cancelled: during a merge wave main runs queue behind each other, PR refs still cancel (#2582).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   docs-governance:
