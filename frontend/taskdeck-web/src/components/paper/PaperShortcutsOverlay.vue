@@ -56,6 +56,7 @@ function onBackdropClick() {
       role="dialog"
       aria-modal="true"
       aria-labelledby="paper-shortcuts-title"
+      data-shell-surface="keyboard-help"
       @click.self="onBackdropClick"
     >
       <div class="paper-shortcuts-overlay card-lift" data-paper-shortcuts>

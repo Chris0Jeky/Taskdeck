@@ -40,6 +40,7 @@ const emit = defineEmits<{
       role="dialog"
       aria-label="Keyboard shortcuts"
       aria-modal="true"
+      data-shell-surface="keyboard-help"
       @click.self="emit('close')"
       @keydown.escape="emit('close')"
     >
