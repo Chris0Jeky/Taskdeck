@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
+import { SHELL_KEYBOARD_HELP } from '../../composables/useShellKeyboardHelp'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
 import type { Card } from '../../types/board'
@@ -140,10 +141,11 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
-function mountView() {
+function mountView(provide: Record<symbol | string, unknown> = {}) {
   const wrapper = mount(BoardView, {
     attachTo: document.body,
     global: {
+      provide,
       stubs: {
         ColumnLane: {
           props: ['column'],
@@ -270,11 +272,29 @@ describe('BoardView', () => {
     // `n` is ungated *by skin* as of #1945: PaperBoardColumn now renders the
     // `[data-action="toggle-add-card"]` button and `[data-action="add-card-input"]`
     // textarea that `createCardInSelectedColumn` drives, so the shortcut is live
-    // in BOTH skins. `?` and `f` stay gated — Paper has its own shortcuts
-    // overlay and no filter panel, so those controls really are hidden.
+    // in BOTH skins. `f` stays gated — Paper has no filter panel, so that
+    // control really is hidden.
     expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(true)
-    expect(shortcut('?', 'Toggle keyboard shortcuts help')?.enabled?.()).toBe(false)
     expect(shortcut('f', 'Toggle filter panel')?.enabled?.()).toBe(false)
+    // `?` is not registered here at all any more (#2007): AppShell consumes it
+    // in the capture phase, so the board binding could never fire.
+    expect(shortcuts.some((s) => s.key === '?')).toBe(false)
+  })
+
+  it('opens the shell keyboard map from the toolbar help button', async () => {
+    const open = vi.fn()
+
+    const wrapper = mountView({ [SHELL_KEYBOARD_HELP]: { open } })
+    await waitForUi()
+
+    const helpButton = wrapper.get('[aria-label="Keyboard Shortcuts"]')
+    // The title still promises `?`, and after #2007 that is true: both routes
+    // lead to AppShell's single help surface.
+    expect(helpButton.attributes('title')).toBe('Keyboard Shortcuts (Press ?)')
+
+    await helpButton.trigger('click')
+
+    expect(open).toHaveBeenCalledTimes(1)
   })
 
   it('makes the board shortcuts inert while a Paper dialog is open', async () => {

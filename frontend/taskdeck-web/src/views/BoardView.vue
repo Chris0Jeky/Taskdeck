@@ -8,6 +8,7 @@ import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
 import { useBoardKeyboardNav } from '../composables/useBoardKeyboardNav'
+import { useShellKeyboardHelp } from '../composables/useShellKeyboardHelp'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
 import BoardToolbar from '../components/board/BoardToolbar.vue'
 import BoardActionRail from '../components/board/BoardActionRail.vue'
@@ -30,6 +31,7 @@ const boardStore = useBoardStore()
 const sessionStore = useSessionStore()
 const paperTheme = usePaperThemeStore()
 const paperOn = computed(() => paperTheme.isOn)
+const shellKeyboardHelp = useShellKeyboardHelp()
 
 const newColumnName = ref('')
 const showColumnForm = ref(false)
@@ -348,8 +350,19 @@ function goBack() {
   router.push('/boards')
 }
 
-function toggleKeyboardHelp() {
-  showKeyboardHelp.value = !showKeyboardHelp.value
+/**
+ * The toolbar help button opens the shell's keyboard map -- the same surface
+ * `?` opens -- instead of a board-local dialog with its own hardcoded key list
+ * (#2007). AppShell consumes `?` in the capture phase, so a board-local `?`
+ * binding could never have run and is gone with the dialog.
+ */
+function openShellKeyboardHelp() {
+  if (!shellKeyboardHelp) {
+    logError('Keyboard help requested from a board rendered outside the workspace shell')
+    return
+  }
+
+  shellKeyboardHelp.open()
 }
 
 function toggleFilterPanel() {
@@ -505,7 +518,9 @@ useKeyboardShortcuts([
   { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
 
   // Help
-  { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp, enabled: standardBoardOnlyShortcutsEnabled },
+  // `?` is deliberately NOT bound here. AppShell owns it in the capture phase
+  // and calls stopImmediatePropagation, so this bubble-phase listener never saw
+  // it: the binding advertised a board dialog that `?` did not actually open.
   { key: 'f', description: 'Toggle filter panel', action: toggleFilterPanel, enabled: standardBoardOnlyShortcutsEnabled },
 ])
 </script>
@@ -537,7 +552,7 @@ useKeyboardShortcuts([
           :total-card-count="boardStore.totalCardCount"
           @back="goBack"
           @toggle-filter="toggleFilterPanel"
-          @show-keyboard-help="showKeyboardHelp = true"
+          @show-keyboard-help="openShellKeyboardHelp"
           @show-label-manager="showLabelManager = true"
           @show-starter-pack-catalog="showStarterPackCatalog = true"
           @show-board-settings="showBoardSettings = true"
