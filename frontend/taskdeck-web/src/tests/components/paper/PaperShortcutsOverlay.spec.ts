@@ -112,27 +112,26 @@ describe('PaperShortcutsOverlay', () => {
    * advertises can: a row whose declared stroke its own matcher rejects is
    * exactly the dead affordance the ledger exists to prevent.
    */
-  it('advertises app-shell rows whose declared stroke the shipped matcher accepts', () => {
+  it('prints each app-shell row as the key the shell dispatches it from', () => {
     wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
-    const displayedIds = new Set(Array.from(
+
+    const printed = new Map(Array.from(
       teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
-    ).map((row) => row.dataset.shortcutId))
+    ).map((row) => [
+      row.dataset.shortcutId,
+      row.querySelector('.paper-shortcuts-overlay__row-kbd')?.textContent?.trim(),
+    ]))
 
     const displayedAppShellBindings = APP_SHELL_SHORTCUT_BINDINGS
-      .filter((binding) => displayedIds.has(binding.id))
+      .filter((binding) => printed.has(binding.id))
     expect(displayedAppShellBindings.length).toBeGreaterThan(0)
 
+    // Couples the chip the user reads to the ledger row the shell dispatches:
+    // change one side and this reddens. Asserting the stroke against an event
+    // built from that same stroke could not.
     for (const binding of displayedAppShellBindings) {
-      for (const stroke of binding.sequence) {
-        const pressed = new KeyboardEvent('keydown', {
-          key: stroke.key,
-          ctrlKey: stroke.mod === true,
-          shiftKey: stroke.shift === true,
-          altKey: stroke.alt === true,
-        })
-        expect({ id: binding.id, key: stroke.key, matched: strokeMatches(pressed, stroke) })
-          .toEqual({ id: binding.id, key: stroke.key, matched: true })
-      }
+      expect({ id: binding.id, chip: printed.get(binding.id) })
+        .toEqual({ id: binding.id, chip: formatShortcut(binding.descriptor) })
     }
 
     // The overlay prints the help key in its footer rather than as a grouped

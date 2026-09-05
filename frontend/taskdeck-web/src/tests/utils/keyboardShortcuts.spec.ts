@@ -121,20 +121,50 @@ describe('strokeMatches', () => {
     expect(strokeMatches(keydown({ key: '?', metaKey: true }), helpStroke)).toBe(false)
   })
 
-  it('matches every app-shell binding against the stroke it advertises', () => {
+  /**
+   * Building the event out of the stroke's own fields would make this pass for
+   * any stroke at all. The descriptor is the independent side: it is the string
+   * the help surfaces PRINT, so pressing what the user is told to press has to
+   * reach the stroke the shell listens for. A row whose descriptor and sequence
+   * drift apart is the dead affordance the ledger exists to prevent.
+   */
+  function strokesFromDescriptor(descriptor: string) {
+    return descriptor.trim().split(/\s+/).map((chord) => {
+      const tokens = chord.split('+').map((token) => token.toLowerCase())
+      const modifiers = ['mod', 'shift', 'alt']
+      return {
+        key: tokens.filter((token) => !modifiers.includes(token)).join('+'),
+        ...(tokens.includes('mod') ? { mod: true } : {}),
+        ...(tokens.includes('shift') ? { shift: true } : {}),
+        ...(tokens.includes('alt') ? { alt: true } : {}),
+      }
+    })
+  }
+
+  it('presses what each app-shell row prints and reaches the stroke it dispatches', () => {
     expect(APP_SHELL_SHORTCUT_BINDINGS.length).toBeGreaterThan(0)
 
     for (const binding of APP_SHELL_SHORTCUT_BINDINGS) {
-      for (const stroke of binding.sequence) {
+      const printed = strokesFromDescriptor(binding.descriptor)
+      const declared = binding.sequence.map((stroke) => ({
+        key: stroke.key.toLowerCase(),
+        ...(stroke.mod ? { mod: true } : {}),
+        ...(stroke.shift ? { shift: true } : {}),
+        ...(stroke.alt ? { alt: true } : {}),
+      }))
+      expect({ id: binding.id, strokes: declared }).toEqual({ id: binding.id, strokes: printed })
+
+      binding.sequence.forEach((stroke, index) => {
+        const asPrinted = printed[index]!
         const event = keydown({
-          key: stroke.key,
-          ctrlKey: stroke.mod === true,
-          shiftKey: stroke.shift === true,
-          altKey: stroke.alt === true,
+          key: asPrinted.key,
+          ctrlKey: asPrinted.mod === true,
+          shiftKey: asPrinted.shift === true,
+          altKey: asPrinted.alt === true,
         })
-        expect({ id: binding.id, key: stroke.key, matches: strokeMatches(event, stroke) })
-          .toEqual({ id: binding.id, key: stroke.key, matches: true })
-      }
+        expect({ id: binding.id, step: index, reaches: strokeMatches(event, stroke) })
+          .toEqual({ id: binding.id, step: index, reaches: true })
+      })
     }
   })
 })
