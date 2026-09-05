@@ -165,6 +165,10 @@ describe('PaperBoardView', () => {
     mockBoardStore.error = null
     mockBoardStore.loading = false
     mockViewportMode.value = 'desktop'
+    // The locale tests below switch the shared i18n instance and every later
+    // test in this file asserts English copy, so the reset belongs here rather
+    // than at the end of each of them.
+    i18n.global.locale.value = 'en'
     routeMock.params.id = 'board-1'
     routeLeaveGuard = null
     routeUpdateGuard = null
@@ -609,6 +613,49 @@ describe('PaperBoardView', () => {
     expect(toggle().text()).toBe('Solo titoli')
     expect(toggle().attributes('aria-label'))
       .toBe('Solo titoli: nasconde gli estratti e i dettagli delle schede')
+  })
+
+  /*
+   * The width and density controls were the last English-only strings in the
+   * actions row, beside the localized collapse and titles-only controls. The
+   * preset options are part of the control, so they re-render with the locale
+   * too; their `value`s are the stored preference and stay English identifiers.
+   */
+  it('localizes the width and density controls in the actions row', async () => {
+    const wrapper = mountView()
+    const widthLabel = () => wrapper.get('.paper-board-view__width-label')
+    const widthSelect = () => wrapper.get('[data-testid="paper-board-width-select"]')
+    const presets = () => widthSelect().findAll('option').map((option) => option.text())
+    const densityToggle = () => wrapper.get('[data-testid="paper-board-density-toggle"]')
+
+    expect(widthLabel().text()).toBe('Width')
+    expect(widthSelect().attributes('aria-label')).toBe('Column width')
+    expect(presets()).toEqual(['Narrow', 'Standard', 'Wide'])
+    expect(densityToggle().text()).toBe('Compact density')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Compact density: tighten the board spacing to fit more cards')
+
+    i18n.global.locale.value = 'es'
+    await flushPromises()
+    expect(widthLabel().text()).toBe('Ancho')
+    expect(widthSelect().attributes('aria-label')).toBe('Ancho de columna')
+    expect(presets()).toEqual(['Estrecha', 'Estándar', 'Ancha'])
+    expect(densityToggle().text()).toBe('Densidad compacta')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Densidad compacta: reduce el espaciado del tablero para ver más tarjetas')
+
+    i18n.global.locale.value = 'it'
+    await flushPromises()
+    expect(widthLabel().text()).toBe('Larghezza')
+    expect(widthSelect().attributes('aria-label')).toBe('Larghezza della colonna')
+    expect(presets()).toEqual(['Stretta', 'Standard', 'Ampia'])
+    expect(densityToggle().text()).toBe('Densità compatta')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Densità compatta: riduce le spaziature della bacheca per mostrare più schede')
+
+    // The option values are the persisted preference, not copy.
+    expect(widthSelect().findAll('option').map((option) => option.attributes('value')))
+      .toEqual(['narrow', 'standard', 'wide'])
   })
 
   it('changes and persists named column-width presets through a labelled native select', async () => {
