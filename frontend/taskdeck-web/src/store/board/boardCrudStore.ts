@@ -102,6 +102,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     return promise
   }
 
+  // Runs after any detail read settles: the queue holds either a background
+  // refresh that waited behind an explicit load, or the successor of a read
+  // that a local mutation invalidated.  Both are single-slot, so at most one
+  // read follows and none runs in parallel with the request that queued it.
   function drainQueuedBackgroundBoardFetch(completedFetch: ActiveBoardFetch) {
     const queued = queuedBackgroundBoardFetch
     if (!queued || queued.boardId !== completedFetch.boardId) {
@@ -176,6 +180,26 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const isCommitEligible = () =>
       isCurrentGeneration() && helpers.getBoardDetailMutationEpoch(id) === mutationEpoch
 
+    // A payload that predates a completed local mutation is dropped rather than
+    // committed, which leaves server-side effects the local patch cannot
+    // describe — sibling reordering after a move — unrepaired.  The initiating
+    // client receives its own realtime event before the mutation response, so
+    // waiting for another event can strand that stale ordering.  Queue exactly
+    // one successor read instead.  The bound holds through two mechanisms: a
+    // background request that arrives while this read is open joins its promise
+    // rather than starting a fan-out (see `fetchBoard`), and this check runs at
+    // most once per read, so however many mutation events land during the
+    // window they produce a single successor and never a parallel read.  The
+    // queue is single-slot in any case.  Explicit reads are excluded: their
+    // outcome is owned by the view that started them.
+    const queueSuccessorForInvalidatedRead = () => {
+      if (intent !== 'background' || !isCurrentGeneration()) {
+        return
+      }
+
+      void queueBackgroundBoardFetch(id)
+    }
+
     const performFetch = async (): Promise<boolean> => {
       if (helpers.isDemoMode) {
         if (intent === 'explicit') {
@@ -214,6 +238,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         ])
 
         if (!isCommitEligible()) {
+          queueSuccessorForInvalidatedRead()
           return false
         }
 
@@ -234,11 +259,19 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         // Ensure held-open siblings are cancelled before exposing a current
         // explicit failure or silently dropping stale/background work.
         controller.abort()
-        if (!isCommitEligible() || axios.isCancel(e)) {
+        // Request generation and cancellation are the only gates on a failure
+        // outcome: a superseded or cancelled read reports nothing.
+        if (!isCurrentGeneration() || axios.isCancel(e)) {
           return false
         }
 
         if (intent === 'background') {
+          // Authorization freshness is a separate rule from board-payload
+          // commits.  A completed local mutation advances the data epoch, which
+          // only says this payload is too old to install; it says nothing about
+          // whether the reader still has access.  So a 403 from a current,
+          // uncancelled read stays authoritative even when the epoch moved
+          // while it was in flight (#2435).
           const status = (e as { response?: { status?: number } } | null)?.response?.status
           if (status === 403) {
             helpers.handleApiError(
@@ -246,6 +279,15 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
               BOARD_ACCESS_REVOKED_MESSAGE,
             )
           }
+          return false
+        }
+
+        // Explicit failures stay epoch-gated at every status, 403 included: the
+        // view that started the read owns its outcome and its error surface
+        // (#2434), so a load a local write already superseded must not raise a
+        // failure over state the user just changed successfully.  #2435 scopes
+        // the authorization carve-out above to the background 403 only.
+        if (!isCommitEligible()) {
           return false
         }
 
@@ -264,9 +306,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       }
 
       activeBoardFetch = null
-      if (request.intent === 'explicit') {
-        drainQueuedBackgroundBoardFetch(request)
-      }
+      drainQueuedBackgroundBoardFetch(request)
     })
     request.promise = promise
     activeBoardFetch = request
@@ -296,6 +336,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       state.loading.value = true
       state.error.value = null
       const updatedBoard = await boardsApi.updateBoard(boardId, board)
+      // Board settings are part of the board-detail fan-out, so a detail read
+      // that captured the pre-save state must not replace this update (#2435).
+      helpers.markBoardDetailMutation(boardId)
 
       // Update in boards list
       const index = state.boards.value.findIndex((b) => b.id === boardId)
