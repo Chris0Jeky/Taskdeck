@@ -176,6 +176,94 @@ describe('boardCrudStore', () => {
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
     })
 
+    // The composer and the triage table both call fetchBoards() on an empty
+    // store when the inbox mounts.  The throttle stamp is only written after a
+    // success, so before the share these two mounts issued parallel unfiltered
+    // requests and one could fail while the other confirmed an empty account
+    // (#1961).
+    it('shares one in-flight unfiltered request between concurrent callers', async () => {
+      vi.useFakeTimers()
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const composerFetch = fetchBoards()
+      const tableFetch = fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      inFlight.resolve([{ id: 'board-1', name: 'First Board' }])
+      await expect(composerFetch).resolves.toBeUndefined()
+      await expect(tableFetch).resolves.toBeUndefined()
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'First Board' }])
+
+      // The post-success throttle still applies once the shared request settles.
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(5001)
+      mockBoardsApi.getBoards.mockResolvedValueOnce([{ id: 'board-2', name: 'Second Board' }])
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+    })
+
+    it('rejects both concurrent callers once and drops the share so a retry refetches', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'board-2', name: 'Recovered Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const composerFetch = fetchBoards()
+      const tableFetch = fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      inFlight.reject(new Error('network error'))
+      await expect(composerFetch).rejects.toThrow('network error')
+      await expect(tableFetch).rejects.toThrow('network error')
+      // One real request means one error surface, not one per mounted caller.
+      expect(helpers.handleApiError).toHaveBeenCalledTimes(1)
+
+      await expect(fetchBoards()).resolves.toBeUndefined()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(state.boards.value).toEqual([{ id: 'board-2', name: 'Recovered Board' }])
+    })
+
+    it('issues a separate request for a filtered caller during an unfiltered flight', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'board-search', name: 'Searched' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const unfilteredFetch = fetchBoards()
+      await fetchBoards('search term')
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, 'search term', false)
+
+      inFlight.resolve([{ id: 'board-1', name: 'First Board' }])
+      await expect(unfilteredFetch).resolves.toBeUndefined()
+    })
+
+    it('never lets an unfiltered caller join a filtered request in flight', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'board-1', name: 'First Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const filteredFetch = fetchBoards(undefined, true)
+      await fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(1, undefined, true)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, undefined, false)
+
+      inFlight.resolve([{ id: 'board-archived', name: 'Archived' }])
+      await expect(filteredFetch).resolves.toBeUndefined()
+    })
+
     it('bypasses throttle for filtered requests with search', async () => {
       vi.useFakeTimers()
       const freshBoards = [{ id: 'board-1', name: 'My Board' }]

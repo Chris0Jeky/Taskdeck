@@ -39,6 +39,7 @@ interface QueuedBackgroundBoardFetch {
 
 export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
   let lastFetchBoardsAt = 0
+  let unfilteredFetchBoardsInFlight: Promise<void> | null = null
   let boardFetchGeneration = 0
   let activeBoardFetch: ActiveBoardFetch | null = null
   let queuedBackgroundBoardFetch: QueuedBackgroundBoardFetch | null = null
@@ -47,6 +48,16 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const now = Date.now()
     // Allow forced refreshes (search/archive filter changes) to bypass throttle.
     const isFilteredRequest = !!search || includeArchived
+    // The throttle stamp is only written after a success, so it cannot separate
+    // two callers that mount together on an empty store — the inbox composer
+    // and the triage table do exactly that.  Before this share they issued
+    // parallel unfiltered reads, and one could fail while the other confirmed
+    // an empty account, leaving the picker's three states disagreeing (#1961).
+    // Filtered reads are excluded in both directions: they never join this
+    // share and never populate it, because their payload is a different list.
+    if (!isFilteredRequest && unfilteredFetchBoardsInFlight) {
+      return unfilteredFetchBoardsInFlight
+    }
     if (!isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
       return
     }
@@ -58,28 +69,45 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       return
     }
 
-    try {
-      state.loading.value = true
-      state.error.value = null
-      const freshBoards = await boardsApi.getBoards(search, includeArchived)
-      lastFetchBoardsAt = Date.now()
-      state.boards.value = freshBoards
+    const request = (async () => {
+      try {
+        state.loading.value = true
+        state.error.value = null
+        const freshBoards = await boardsApi.getBoards(search, includeArchived)
+        lastFetchBoardsAt = Date.now()
+        state.boards.value = freshBoards
 
-      // Preserve selection guard: only update activeBoardId if there is no
-      // current selection or the previously-selected board is no longer in the
-      // refreshed list (e.g. it was deleted). This prevents polling/subscription
-      // refreshes from resetting the user's active board to the first item.
-      const currentId = state.activeBoardId.value
-      const stillExists = currentId !== null && freshBoards.some((b) => b.id === currentId)
-      if (!stillExists) {
-        state.activeBoardId.value = freshBoards[0]?.id ?? null
+        // Preserve selection guard: only update activeBoardId if there is no
+        // current selection or the previously-selected board is no longer in the
+        // refreshed list (e.g. it was deleted). This prevents polling/subscription
+        // refreshes from resetting the user's active board to the first item.
+        const currentId = state.activeBoardId.value
+        const stillExists = currentId !== null && freshBoards.some((b) => b.id === currentId)
+        if (!stillExists) {
+          state.activeBoardId.value = freshBoards[0]?.id ?? null
+        }
+      } catch (e: unknown) {
+        helpers.handleApiError(e, 'Failed to fetch boards')
+        throw e
+      } finally {
+        state.loading.value = false
       }
-    } catch (e: unknown) {
-      helpers.handleApiError(e, 'Failed to fetch boards')
-      throw e
-    } finally {
-      state.loading.value = false
+    })()
+
+    if (!isFilteredRequest) {
+      unfilteredFetchBoardsInFlight = request
+      const clearShareIfCurrent = () => {
+        // Only the request that owns the slot may clear it, so a reset or a
+        // newer request that already replaced it is left intact.  Clearing on
+        // rejection is what lets a retry start a fresh request.
+        if (unfilteredFetchBoardsInFlight === request) {
+          unfilteredFetchBoardsInFlight = null
+        }
+      }
+      void request.then(clearShareIfCurrent, clearShareIfCurrent)
     }
+
+    return request
   }
 
   function settleQueuedBackgroundBoardFetch(committed = false) {
