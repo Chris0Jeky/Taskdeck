@@ -18,6 +18,11 @@ vi.mock('../../api/http', () => ({
     patch: vi.fn(),
     delete: vi.fn(),
   },
+  // The store's bounded board reads import this named export alongside the
+  // axios instance, so the double has to carry it too.  Kept in step with
+  // BOARD_REQUEST_TIMEOUT_MS in src/api/http.ts by the store specs, which
+  // assert the real constant reaches boardsApi.
+  BOARD_REQUEST_TIMEOUT_MS: 10_000,
 }))
 
 vi.mock('../../store/toastStore', () => ({
