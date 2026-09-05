@@ -1672,6 +1672,55 @@ describe('usePaperReviewSelectors', () => {
       expect(evidence.confidenceBreakdown.source).toBe('deterministic')
     })
 
+    /**
+     * The snapshot and the watcher must answer "does the settled read still
+     * cover what is on screen?" the same way.
+     *
+     * `proposalRevisionMoved` is deliberately asymmetric: `rev-Y` becoming null
+     * is NOT a move, because a revision identity can only reach null by the
+     * proposal leaving PendingReview. The watcher therefore starts no new batch
+     * on that transition and no record is ever written for the new key. A
+     * snapshot that demanded an EXACT key match would hold a record for a key
+     * that never arrives and report `loading` forever — on the ordinary path of
+     * rejecting a revised proposal, where the receipt keeps it on screen.
+     */
+    it('keeps the settled read when a decision drops the revision identity to null', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getSimilarPast).mockResolvedValue({
+        decisions: [A_ROW],
+        applyRate: 1,
+      })
+      const proposal = ref<ApiProposal | null>(proposalA())
+      const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('settled')
+      })
+      const readsBefore = vi.mocked(proposalDeepReviewApi.getSimilarPast).mock.calls.length
+
+      // The rejected DTO as the backend returns it: non-pending, and
+      // `AutomationProposal.Reject` pins no approved revision, so BOTH revision
+      // fields come back null while the proposal stays selected.
+      proposal.value = makeProposal({
+        id: 'p-1',
+        sourceType: 'Queue',
+        sourceReferenceId: 'capture-1',
+        status: 'Rejected',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+      })
+      await nextTick()
+      await nextTick()
+
+      const evidence = selectors.railEvidence.value
+      expect(evidence.status).toBe('settled')
+      expect(evidence.similarPast[0]?.serial).toBe('#PAST-A')
+      expect(evidence.confidenceBreakdown.components).toHaveLength(1)
+      expect(selectors.loading.value).toBe(false)
+      // And no new read was issued: which transitions start a batch is the
+      // watcher's decision and this change does not touch it.
+      expect(vi.mocked(proposalDeepReviewApi.getSimilarPast).mock.calls.length).toBe(readsBefore)
+    })
+
     it('is idle with no active proposal, so the rail states nothing at all', async () => {
       const selectors = usePaperReviewSelectors(computed(() => null))
 

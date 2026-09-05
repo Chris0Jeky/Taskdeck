@@ -7186,6 +7186,64 @@ describe('PaperReviewView', () => {
       ).not.toContain('none found')
     })
 
+    /**
+     * A decision takes `latestRevisionId` to null and pins no replacement, and
+     * the receipt keeps the proposal on screen, so the rail must still show the
+     * evidence rather than an endless "reading" line (#1940 round 2).
+     *
+     * A GUARD, not a red-first case: it passed before the round-2 fix too. The
+     * composable-level defect it guards against is real and is proven red in
+     * usePaperReviewSelectors.spec.ts, but this flow does not depend on it —
+     * measured here, the decision issues a SECOND evidence batch (one read
+     * before it, two after), so the rail is repopulated by a fresh read rather
+     * than by the record it already held. Nothing in this flow asks for that
+     * restart, which is exactly why the snapshot must not depend on it; this
+     * case fails the day the restart stops happening.
+     */
+    it('keeps the settled evidence on screen after a decision drops the revision identity', async () => {
+      mocks.getSimilarPast.mockResolvedValue({ decisions: [A_ROW], applyRate: 1 })
+      const rejected = makeProposal({
+        id: 'proposal-a',
+        summary: 'First proposal',
+        status: 'Rejected',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+      })
+      mocks.rejectProposal.mockResolvedValueOnce(rejected)
+      const wrapper = await mountView([
+        makeProposal({ id: 'proposal-a', summary: 'First proposal', latestRevisionId: 'rev-1' }),
+      ])
+      // `latestRevisionId` is PendingReview-only on the wire, so every read
+      // after the decision answers with it null. Without this the standing list
+      // fixture would hand `rev-1` back on the next refresh and restore the
+      // identity the decision just retired.
+      mocks.getProposals.mockResolvedValue([rejected])
+
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+
+      await wrapper.get('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+      await acceptRejectDialog('not needed')
+
+      expect(
+        wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'),
+      ).toBe('rejected')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-similar-past-state"]').exists(),
+      ).toBe(false)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-author-confidence-state"]').exists(),
+      ).toBe(false)
+    })
+
     it('keeps the settled empty sentences from #2662 exactly as they were', async () => {
       const wrapper = await mountView([makeProposal()])
 

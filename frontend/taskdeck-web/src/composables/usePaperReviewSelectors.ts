@@ -326,6 +326,29 @@ function selectorKeysEqual(left: SelectorKey | null, right: SelectorKey | null):
 }
 
 /**
+ * Whether a read taken for `readKey` still covers what `activeKey` renders.
+ *
+ * This is the SAME question the watcher answers when it decides NOT to start a
+ * new batch, and the two must ask it once: `proposalRevisionMoved` is
+ * deliberately asymmetric — a revision identity reaching null means the proposal
+ * left PendingReview, not that a different revision is on screen — so an exact
+ * key comparison calls the settled read stale exactly where the watcher calls it
+ * current. A surface deciding by exact match would then hold a record for a key
+ * no batch is ever started for, and report `loading` with no end (#1940).
+ *
+ * Strictly weaker than `selectorKeysEqual`, which stays the right test wherever
+ * the exact read identity matters (the settled-cache fast path, the publication
+ * guards): this one answers "still current", not "the same read".
+ */
+function selectorKeyStillCovers(readKey: SelectorKey, activeKey: SelectorKey): boolean {
+  return (
+    proposalIdsEqual(readKey.proposalId, activeKey.proposalId) &&
+    nullableIdentifiersEqual(readKey.captureReference, activeKey.captureReference) &&
+    !proposalRevisionMoved(readKey.revisionIdentity, activeKey.revisionIdentity)
+  )
+}
+
+/**
  * Only Queue proposals carry capture ids in `sourceReferenceId`. Chat and Manual
  * references belong to different domains and must never be probed as capture ids.
  */
@@ -931,22 +954,37 @@ export function usePaperReviewSelectors(
       const [previousProposalId, previousCaptureReference, previousRevisionIdentity] =
         previousValues ?? []
       const initialLoad = previousValues === undefined
-      const proposalChanged = initialLoad
-        ? true
-        : previousProposalId == null || proposalId == null
-          ? previousProposalId !== proposalId
-          : !proposalIdsEqual(previousProposalId, proposalId)
-      const captureChanged = initialLoad
-        ? true
-        : !nullableIdentifiersEqual(previousCaptureReference, captureReference)
-      const revisionChanged = initialLoad
-        ? true
-        : proposalRevisionMoved(previousRevisionIdentity ?? null, revisionIdentity ?? null)
 
       // Vue also invokes this watcher when a raw revision field changes but its
-      // effective identity does not (for example approve pins latest -> null).
-      // Keep the current review data in that terminal transition.
-      if (!initialLoad && !proposalChanged && !captureChanged && !revisionChanged) return
+      // effective identity does not (for example approve pins latest -> null,
+      // and reject pins nothing at all). Keep the current review data in that
+      // terminal transition.
+      //
+      // The question goes through `selectorKeyStillCovers`, the one predicate
+      // `railEvidence` also uses, so the watcher can never decide the settled
+      // read is still current while the snapshot decides it is stale — the
+      // disagreement that left the rail loading with no end (#1940 round 2).
+      // Which transitions start a batch is unchanged: for two present proposal
+      // ids this is exactly the previous three-flag condition, and when either
+      // id is absent both forms proceed (all three watch sources derive from
+      // the same proposal, so the watcher cannot fire with none of them set).
+      const stillCovered =
+        !initialLoad &&
+        previousProposalId != null &&
+        proposalId != null &&
+        selectorKeyStillCovers(
+          {
+            proposalId: previousProposalId,
+            captureReference: previousCaptureReference ?? null,
+            revisionIdentity: previousRevisionIdentity ?? null,
+          },
+          {
+            proposalId,
+            captureReference: captureReference ?? null,
+            revisionIdentity: revisionIdentity ?? null,
+          },
+        )
+      if (stillCovered) return
 
       if (!proposalId) {
         invalidateCoreBatch()
@@ -1005,7 +1043,10 @@ export function usePaperReviewSelectors(
     }
 
     const record = batchRecord.value
-    const current = record && selectorKeysEqual(record.key, activeKey) ? record : null
+    // "Still covers", not "is the same read": the watcher starts no new batch
+    // for a revision identity that only went to null, so demanding an exact
+    // match here would wait for a record that never arrives (#1940 round 2).
+    const current = record && selectorKeyStillCovers(record.key, activeKey) ? record : null
     if (!current || current.status !== 'settled') {
       return {
         status: current?.status ?? 'loading',
@@ -1020,7 +1061,10 @@ export function usePaperReviewSelectors(
     return {
       status: 'settled',
       failure: null,
-      key: activeKey,
+      // The identity the values were READ under, which after a decision retires
+      // the revision is no longer identical to the active one. Naming the read
+      // is the honest answer to "where did these come from".
+      key: current.key,
       confidenceBreakdown: confidenceData.value,
       similarPast: similarPastData.value,
       similarPastApplyRate: applyRateOf(similarPastData.value),
