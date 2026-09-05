@@ -21,7 +21,6 @@ describe('BoardDialogHost', () => {
         showBoardSettings: true,
         showLabelManager: false,
         showStarterPackCatalog: false,
-        showKeyboardHelp: false,
         showCaptureModal: false,
       },
       global: {
@@ -36,7 +35,6 @@ describe('BoardDialogHost', () => {
           },
           StarterPackCatalogModal: true,
           LabelManagerModal: true,
-          KeyboardShortcutsHelp: true,
           CaptureModal: true,
         },
       },
@@ -48,7 +46,7 @@ describe('BoardDialogHost', () => {
     expect(wrapper.emitted('update:showBoardSettings')).toEqual([[false], [false]])
   })
 
-  it('wires starter pack, label manager, and keyboard help close flows', async () => {
+  it('wires starter pack and label manager close flows', async () => {
     const wrapper = mount(BoardDialogHost, {
       props: {
         board,
@@ -57,7 +55,6 @@ describe('BoardDialogHost', () => {
         showBoardSettings: false,
         showLabelManager: true,
         showStarterPackCatalog: true,
-        showKeyboardHelp: true,
         showCaptureModal: false,
       },
       global: {
@@ -75,12 +72,6 @@ describe('BoardDialogHost', () => {
               <button data-testid="label-close" type="button" @click="$emit('close')">close</button>
             `,
           },
-          KeyboardShortcutsHelp: {
-            props: ['isOpen'],
-            template: `
-              <button data-testid="keyboard-close" type="button" @click="$emit('close')">close</button>
-            `,
-          },
           CaptureModal: true,
         },
       },
@@ -88,11 +79,12 @@ describe('BoardDialogHost', () => {
 
     await wrapper.get('[data-testid="starter-pack-applied"]').trigger('click')
     await wrapper.get('[data-testid="label-close"]').trigger('click')
-    await wrapper.get('[data-testid="keyboard-close"]').trigger('click')
 
     expect(wrapper.emitted('update:showStarterPackCatalog')).toEqual([[false]])
     expect(wrapper.emitted('update:showLabelManager')).toEqual([[false]])
-    expect(wrapper.emitted('update:showKeyboardHelp')).toEqual([[false]])
+    // The host no longer carries a keyboard help dialog: the shell renders the
+    // one help surface per skin and the toolbar opens it directly (#2007).
+    expect(wrapper.emitted('update:showKeyboardHelp')).toBeUndefined()
   })
 
   it('shows capture modal only when both board and visibility are present', async () => {
@@ -104,7 +96,6 @@ describe('BoardDialogHost', () => {
         showBoardSettings: false,
         showLabelManager: false,
         showStarterPackCatalog: false,
-        showKeyboardHelp: false,
         showCaptureModal: true,
       },
       global: {
@@ -112,7 +103,6 @@ describe('BoardDialogHost', () => {
           BoardSettingsModal: true,
           StarterPackCatalogModal: true,
           LabelManagerModal: true,
-          KeyboardShortcutsHelp: true,
           CaptureModal: {
             props: ['boardId', 'boardName'],
             template: `

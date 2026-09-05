@@ -1,8 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { defineComponent, h, reactive } from 'vue'
 import AppShell from '../../components/shell/AppShell.vue'
+import {
+  useShellKeyboardHelp,
+  type ShellKeyboardHelpControl,
+} from '../../composables/useShellKeyboardHelp'
 import type { FeatureFlags } from '../../types/feature-flags'
+
+/**
+ * Stands in for a routed view (the Legacy board is the real one) that reaches
+ * the shell's single help surface through the provide/inject seam instead of
+ * rendering a second help dialog of its own (#2007).
+ */
+let injectedShellHelp: ShellKeyboardHelpControl | null = null
+
+const ShellHelpProbe = defineComponent({
+  setup() {
+    injectedShellHelp = useShellKeyboardHelp()
+    return () => h('div', { 'data-testid': 'shell-help-probe' })
+  },
+})
 
 const mockRouter = {
   push: vi.fn(),
@@ -81,13 +99,14 @@ vi.mock('../../composables/useCaptureQueueSync', () => ({
   useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: false }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
 }))
 
-function mountShell(attachTo?: HTMLElement) {
+function mountShell(attachTo?: HTMLElement, extraStubs: Record<string, unknown> = {}) {
   return mount(AppShell, {
     attachTo,
     global: {
       stubs: {
         RouterView: true,
         Teleport: true,
+        ...extraStubs,
         CaptureModal: {
           template: `
             <div role="dialog" aria-modal="true" aria-label="Capture modal">
@@ -129,6 +148,8 @@ describe('AppShell workspace navigation and command palette', () => {
     mockWorkspace.preferenceLoading = false
     mockWorkspace.preferencesHydrated = false
     mockFeatureFlags.isEnabled = vi.fn((_flag: keyof FeatureFlags) => true)
+    mockPaperTheme.isOn = false
+    injectedShellHelp = null
   })
 
   afterEach(() => {
@@ -509,6 +530,56 @@ describe('AppShell workspace navigation and command palette', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
     await waitForUi()
     expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+  })
+
+  it('opens the same help surface from the routed-view seam that ? opens', async () => {
+    mountedWrapper = mountShell(undefined, { RouterView: ShellHelpProbe })
+    const wrapper = mountedWrapper
+    await waitForUi()
+
+    expect(wrapper.find('[data-testid="shell-help-probe"]').exists()).toBe(true)
+    expect(injectedShellHelp).not.toBeNull()
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
+    await waitForUi()
+    const fromKey = wrapper.findAll('[aria-label="Keyboard shortcuts"]')
+    expect(fromKey).toHaveLength(1)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+
+    injectedShellHelp?.open()
+    await waitForUi()
+    const fromSeam = wrapper.findAll('[aria-label="Keyboard shortcuts"]')
+    expect(fromSeam).toHaveLength(1)
+    expect(fromSeam[0].element.className).toBe(fromKey[0].element.className)
+
+    // The decisive check that it is one surface and not a look-alike: `?`
+    // closes what the seam opened, so both drive the same shell state.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?' }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-paper-shortcuts]')).toHaveLength(0)
+  })
+
+  it('renders exactly one keyboard help surface for the Paper skin', async () => {
+    mockPaperTheme.isOn = true
+    mountedWrapper = mountShell(undefined, {
+      PaperSidebar: true,
+      PaperTopBar: true,
+      PaperCommandPalette: true,
+      RouterView: ShellHelpProbe,
+    })
+    const wrapper = mountedWrapper
+    await waitForUi()
+
+    injectedShellHelp?.open()
+    await waitForUi()
+
+    expect(wrapper.findAll('[data-paper-shortcuts]')).toHaveLength(1)
+    expect(wrapper.findAll('[aria-label="Keyboard shortcuts"]')).toHaveLength(0)
   })
 
   it('shows nav badges when inbox and review have pending items', async () => {
