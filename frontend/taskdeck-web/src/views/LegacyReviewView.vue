@@ -381,8 +381,9 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- A hash-pinned proposal the server refused (403/404) is an identity
-         failure of the link the reviewer followed, not an empty queue (#2214).
+    <!-- A hash-pinned proposal the server refused or could not bind (400/403/404)
+         is an identity failure of the link the reviewer followed, not an empty
+         queue (#2214).
          Saying so — and offering the way back — is the whole difference between
          "your link is dead" and "there is nothing to review". Ordered before
          the empty state, and still requiring an empty render, so a pin that has
