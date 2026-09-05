@@ -2121,6 +2121,14 @@ async function onConfirmExecute() {
     ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
     : undefined
   if (applied && normalizeProposalStatus(applied.status) === 'Applied') {
+    // The queue stays interactive across the execute round trip, so the
+    // reviewer can be on another proposal by the time it lands. Only surface a
+    // receipt when they are still at the decision locus this execute started
+    // from. Prefer the explicit selection over the route hash, because router
+    // navigation can lag behind a queue click: a late response must never pull
+    // them back to proposal A after they have selected proposal B.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, applied.id)) return
     recordDecisionReceipt(applied.id, 'applied')
   }
 }
@@ -2132,6 +2140,12 @@ async function onConfirmReject(reason: string) {
     ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
     : undefined
   if (rejected && normalizeProposalStatus(rejected.status) === 'Rejected') {
+    // Reject shares that interactive-queue window with execute above, and with
+    // approve (#2069) and defer (PR #2629): the same locus check decides only
+    // whether the receipt is surfaced. The collected reason and the status
+    // check are untouched — the rejection itself already stands.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, rejected.id)) return
     recordDecisionReceipt(rejected.id, 'rejected')
   }
 }
