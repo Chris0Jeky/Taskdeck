@@ -38,7 +38,6 @@ const showColumnForm = ref(false)
 const showBoardSettings = ref(false)
 const showLabelManager = ref(false)
 const showStarterPackCatalog = ref(false)
-const showKeyboardHelp = ref(false)
 const showFilterPanel = ref(false)
 const showBoardCaptureModal = ref(false)
 const presenceMembers = ref<BoardPresenceMember[]>([])
@@ -410,11 +409,9 @@ function handleFiltersUpdate(newFilters: CardFilters) {
 }
 
 function closeOpenUi() {
-  if (showKeyboardHelp.value) {
-    showKeyboardHelp.value = false
-    return
-  }
-
+  // The shell's keyboard map is not listed here: it registers its own handler
+  // on the shared escape stack, whose capture-phase listener stops propagation
+  // before this bubble-phase one runs.
   if (showLabelManager.value) {
     showLabelManager.value = false
     return
@@ -709,12 +706,10 @@ useKeyboardShortcuts([
       :show-board-settings="showBoardSettings"
       :show-label-manager="showLabelManager"
       :show-starter-pack-catalog="showStarterPackCatalog"
-      :show-keyboard-help="showKeyboardHelp"
       :show-capture-modal="showBoardCaptureModal"
       @update:show-board-settings="showBoardSettings = $event"
       @update:show-label-manager="showLabelManager = $event"
       @update:show-starter-pack-catalog="showStarterPackCatalog = $event"
-      @update:show-keyboard-help="showKeyboardHelp = $event"
       @update:show-capture-modal="showBoardCaptureModal = $event"
     />
   </div>

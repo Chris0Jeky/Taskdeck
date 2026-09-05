@@ -164,7 +164,6 @@ function mountView(provide: Record<symbol | string, unknown> = {}) {
         BoardSettingsModal: { template: '<div />' },
         LabelManagerModal: { template: '<div />' },
         StarterPackCatalogModal: { template: '<div />' },
-        KeyboardShortcutsHelp: { template: '<div />' },
         FilterPanel: { template: '<div />' },
         CaptureModal: {
           props: ['boardId', 'boardName'],

@@ -136,7 +136,6 @@ function mountView() {
         BoardSettingsModal: { template: '<div />' },
         LabelManagerModal: { template: '<div />' },
         StarterPackCatalogModal: { template: '<div />' },
-        KeyboardShortcutsHelp: { template: '<div />' },
         FilterPanel: { template: '<div />' },
         CaptureModal: { template: '<div />' },
         PaperBoardView: PaperBoardViewStub,
