@@ -2443,6 +2443,70 @@ describe('captureStore', () => {
       }
     })
 
+    it('keeps a foreground list error when the poll is stopped mid-flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems)
+          .mockRejectedValueOnce(new Error('foreground-load-failed'))
+          .mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve }) as never)
+
+        await expect(store.fetchItems({ limit: 200 })).rejects.toThrow('foreground-load-failed')
+        expect(store.listError).toBe('Failed to load inbox items')
+
+        const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+
+        // The orchestrator cancels this poll on a board or archived-history
+        // change and on unmount, which aborts the tick's read in flight. A
+        // response that lands after that is not proof the list the user is
+        // looking at became readable, so it must not clear their error (#2305).
+        stop()
+        resolveList([summaryRow('c-1', 'ProposalCreated')])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.listError).toBe('Failed to load inbox items')
+        expect(store.items).toEqual([])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('keeps a foreground list error when the deadline aborts a poll read mid-flight', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        let resolveList!: (value: unknown[]) => void
+        vi.mocked(captureApi.listItems)
+          .mockRejectedValueOnce(new Error('foreground-load-failed'))
+          .mockReturnValueOnce(new Promise((resolve) => { resolveList = resolve }) as never)
+
+        await expect(store.fetchItems({ limit: 200 })).rejects.toThrow('foreground-load-failed')
+        expect(store.listError).toBe('Failed to load inbox items')
+
+        store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(BATCH_TRIAGE_POLL_MAX_DURATION_MS)
+
+        // The 60 s deadline aborted the one read that was still in flight.
+        expect(captureApi.listItems).toHaveBeenCalledTimes(2)
+        expect(store.batchError).toBe(
+          'Automatic checking stopped after 60 seconds. Triage may still be running. Use Refresh Detail to check the result.',
+        )
+
+        resolveList([summaryRow('c-1', 'ProposalCreated')])
+        await Promise.resolve()
+        await Promise.resolve()
+
+        expect(store.listError).toBe('Failed to load inbox items')
+        expect(store.items).toEqual([])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('leaves the store-wide detail loading flag alone during batch reconciliation', async () => {
       vi.useFakeTimers()
       try {
@@ -2459,8 +2523,10 @@ describe('captureStore', () => {
         store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
         await vi.advanceTimersByTimeAsync(3_000)
 
-        // The reconciliation read is in flight. An unrelated open detail must
-        // keep its panel and its refresh control.
+        // The reconciliation read is in flight. It is a quiet read, so
+        // whatever detail the panel has open keeps its body and its Refresh
+        // Detail control — including this row, which is the one being
+        // reconciled here.
         expect(captureApi.getItem).toHaveBeenCalledTimes(1)
         expect(store.loadingDetail).toBe(false)
 
@@ -2471,6 +2537,59 @@ describe('captureStore', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+
+    it('leaves the store-wide detail loading flag alone through a foreground batch triage', async () => {
+      const store = useCaptureStore()
+      store.detailById['c-1'] = detailFor('c-1', 'Triaging')
+      store.detailById['c-2'] = detailFor('c-2', 'Triaging')
+      vi.mocked(captureApi.batchTriage).mockResolvedValue({
+        total: 2,
+        succeeded: 2,
+        failed: 0,
+        results: [
+          { itemId: 'c-1', success: true },
+          { itemId: 'c-2', success: true },
+        ],
+      })
+      vi.mocked(captureApi.listItems).mockResolvedValue([
+        summaryRow('c-1', 'ProposalCreated'),
+        summaryRow('c-2', 'ProposalCreated'),
+      ] as never)
+      const pendingDetails = new Map<string, (value: unknown) => void>()
+      vi.mocked(captureApi.getItem).mockImplementation(((itemId: string) =>
+        new Promise((resolve) => { pendingDetails.set(itemId, resolve) })) as never)
+
+      // Two stale ids, so the reconciliation runs two reads in parallel.
+      const batch = store.batchTriage(['c-1', 'c-2'], 'triage')
+      await vi.waitFor(() => expect(captureApi.getItem).toHaveBeenCalledTimes(2))
+
+      // `batchTriage` is a foreground action and its reconciliation is still
+      // quiet (#2571). `batchBusy` is the foreground state for a batch and it
+      // is up for the whole body.
+      expect(store.batchBusy).toBe(true)
+      expect(store.loadingDetail).toBe(false)
+
+      // A genuine foreground detail load starts while both reconciliation
+      // reads are still in flight. It owns the store-wide flag.
+      const foreground = store.fetchDetail('c-3', { forceRefresh: true })
+      expect(store.loadingDetail).toBe(true)
+
+      // The first reconciliation leg settles. Were those reads tracking the
+      // flag, this would clear it under the load that still owns it.
+      pendingDetails.get('c-1')!(detailFor('c-1', 'ProposalCreated'))
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(store.loadingDetail).toBe(true)
+
+      pendingDetails.get('c-2')!(detailFor('c-2', 'ProposalCreated'))
+      await batch
+      expect(store.batchBusy).toBe(false)
+      expect(store.loadingDetail).toBe(true)
+
+      pendingDetails.get('c-3')!(detailFor('c-3', 'ProposalCreated'))
+      await foreground
+      expect(store.loadingDetail).toBe(false)
     })
 
     it('still raises the detail loading flag for a foreground detail load', async () => {
@@ -2519,6 +2638,42 @@ describe('captureStore', () => {
         const callsAtCompletion = vi.mocked(captureApi.listItems).mock.calls.length
         await vi.advanceTimersByTimeAsync(9_000)
         expect(captureApi.listItems).toHaveBeenCalledTimes(callsAtCompletion)
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('coalesces the workload count refresh to one call per poll tick', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-a', 'ProposalCreated'),
+          summaryRow('c-b', 'ProposalCreated'),
+          summaryRow('c-c', 'ProposalCreated'),
+          summaryRow('c-d', 'Triaging'),
+        ] as never)
+
+        store.pollBatchTriageCompletion(['c-a', 'c-b', 'c-c', 'c-d'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        // Three tracked ids reached a terminal outcome in the SAME tick.
+        // `New + Failed` is one number read from one endpoint — the heaviest on
+        // the surface — so the tick refreshes it once, not once per id (#2571).
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-a', 'ProposalCreated'),
+          summaryRow('c-b', 'ProposalCreated'),
+          summaryRow('c-c', 'ProposalCreated'),
+          summaryRow('c-d', 'Failed'),
+        ] as never)
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        // A second tick with its own new outcome is a second refresh: the
+        // coalescing is per tick, which is what keeps the badge honest while
+        // a batch finishes over the poll window.
         expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(2)
       } finally {
         vi.useRealTimers()
@@ -2603,6 +2758,117 @@ describe('captureStore', () => {
         }
       },
     )
+
+    describe('resetForLogout', () => {
+      it('clears the per-item summary generation guard', async () => {
+        vi.useFakeTimers()
+        try {
+          const store = useCaptureStore()
+          store.items = [summaryRow('c-1', 'Triaging')]
+
+          let resolveList!: (value: unknown[]) => void
+          vi.mocked(captureApi.listItems).mockReturnValueOnce(
+            new Promise((resolve) => { resolveList = resolve }) as never,
+          )
+
+          const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+          await vi.advanceTimersByTimeAsync(3_000)
+          expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+          // A newer explicit read stamps c-1's summary generation above the
+          // in-flight snapshot's, which is what pins the row (#2301).
+          vi.mocked(captureApi.getItem).mockResolvedValue(detailFor('c-1', 'Failed'))
+          await store.fetchDetail('c-1', { forceRefresh: true })
+          expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Failed')
+
+          store.resetForLogout()
+
+          resolveList([summaryRow('c-1', 'Triaging')])
+          await Promise.resolve()
+          await Promise.resolve()
+
+          // The entry is gone, so nothing stale-high is left to pin the row.
+          expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Triaging')
+          stop()
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('drops a detail read that a write and a logout crossed', async () => {
+        const store = useCaptureStore()
+
+        // Nothing has been written for c-1 yet, so this read observes
+        // generation 0 — the value a cleared map also reads back.
+        let resolveDetail!: (value: unknown) => void
+        vi.mocked(captureApi.getItem).mockReturnValueOnce(
+          new Promise((resolve) => { resolveDetail = resolve }) as never,
+        )
+        const load = store.fetchDetail('c-1', { forceRefresh: true })
+
+        // A successful write lands while that read is in flight. It is the
+        // write generation that would normally reject the older response.
+        vi.mocked(captureApi.batchTriage).mockResolvedValue({
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          results: [{ itemId: 'c-1', success: true }],
+        })
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-1', 'ProposalCreated'),
+        ] as never)
+        await store.batchTriage(['c-1'], 'triage')
+        expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('ProposalCreated')
+
+        store.resetForLogout()
+
+        resolveDetail(detailFor('c-1', 'Triaging'))
+        await load
+
+        // Clearing the maps alone would put the compare back at 0 !== 0 and
+        // cache this pre-write body. The session epoch drops it instead.
+        expect(store.detailById['c-1']).toBeUndefined()
+        expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('ProposalCreated')
+      })
+
+      it('drops a single-item triage poll read that a write and a logout crossed', async () => {
+        vi.useFakeTimers()
+        try {
+          const store = useCaptureStore()
+          let resolveDetail!: (value: unknown) => void
+          vi.mocked(captureApi.getItem).mockReturnValueOnce(
+            new Promise((resolve) => { resolveDetail = resolve }) as never,
+          )
+
+          const stop = store.pollTriageCompletion('c-1')
+          await vi.advanceTimersByTimeAsync(2_000)
+          expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+
+          vi.mocked(captureApi.batchTriage).mockResolvedValue({
+            total: 1,
+            succeeded: 1,
+            failed: 0,
+            results: [{ itemId: 'c-1', success: true }],
+          })
+          vi.mocked(captureApi.listItems).mockResolvedValue([
+            summaryRow('c-1', 'ProposalCreated'),
+          ] as never)
+          await store.batchTriage(['c-1'], 'triage')
+
+          store.resetForLogout()
+
+          resolveDetail(detailFor('c-1', 'Triaging'))
+          await Promise.resolve()
+          await Promise.resolve()
+
+          expect(store.detailById['c-1']).toBeUndefined()
+          expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('ProposalCreated')
+          stop()
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+    })
   })
 
 })
