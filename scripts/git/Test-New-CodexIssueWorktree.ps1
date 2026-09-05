@@ -278,10 +278,27 @@ function Assert-NormalizedContains {
     Assert-Contains ($Text -replace '\s+', ' ') ($ExpectedSubstring -replace '\s+', ' ') $Message
 }
 
+function Assert-NormalizedNotContains {
+    param(
+        [string]$Text,
+        [string]$ForbiddenSubstring,
+        [string]$Message
+    )
+
+    $normalizedText = $Text -replace '\s+', ' '
+    $normalizedForbidden = $ForbiddenSubstring -replace '\s+', ' '
+    if ($normalizedText.Contains($normalizedForbidden)) {
+        throw "$Message`nForbidden substring: <$ForbiddenSubstring>`nActual output:`n$Text"
+    }
+}
+
 function Wait-ForScheduledWorktreeRemoval {
     param(
         [Parameter(Mandatory = $true)]
         [string]$LiteralPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RegistrationRepositoryPath,
 
         [int]$TimeoutSeconds = 90
     )
@@ -292,15 +309,35 @@ function Wait-ForScheduledWorktreeRemoval {
     # seven Git invocations against a fresh checkout; a fixed 5 s poll expired before it finished on the
     # hosted Windows runner (#2664).
     # Wait on a deadline instead and report the elapsed time so a genuine orphan stays diagnosable.
+    #
+    # 'git worktree remove' deletes the working directory before it deletes the admin entry under
+    # .git/worktrees, so a strict registration check taken the moment the directory disappears can
+    # race that second step. Wait for both facts on the same deadline and report them separately, so
+    # a leftover admin entry fails as a stale registration instead of as a timing flake (#2670).
+    # Git prints registration paths with forward slashes on Windows while the fixture paths are
+    # backslash-separated, so both sides are normalized before comparison.
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
-    while ((Test-Path -LiteralPath $LiteralPath) -and [DateTimeOffset]::UtcNow -lt $deadline) {
+    $normalizedPath = $LiteralPath.Replace('\', '/')
+    $removed = $false
+    $unregistered = $false
+    $registrations = ""
+    while ($true) {
+        $removed = -not (Test-Path -LiteralPath $LiteralPath)
+        $registrations = Invoke-Git -WorkingDirectory $RegistrationRepositoryPath -Arguments @("worktree", "list", "--porcelain")
+        $unregistered = -not $registrations.Replace('\', '/').Contains($normalizedPath)
+        if (($removed -and $unregistered) -or [DateTimeOffset]::UtcNow -ge $deadline) {
+            break
+        }
+
         Start-Sleep -Milliseconds 100
     }
     $stopwatch.Stop()
 
     return [pscustomobject]@{
-        Removed        = -not (Test-Path -LiteralPath $LiteralPath)
+        Removed        = $removed
+        Unregistered   = $unregistered
+        Registrations  = $registrations
         ElapsedSeconds = [Math]::Round($stopwatch.Elapsed.TotalSeconds, 1)
     }
 }
@@ -860,13 +897,20 @@ finally {
                 throw "Askpass HTTP probe server did not start."
             }
 
-            $serverReadyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+            # The readiness marker is written after a cold PowerShell host start plus an HttpListener
+            # bind, both of which are slow on the hosted Windows runner. A fixed 10 s deadline was the
+            # same class of short fixed wait that #2664 hit; use the suite's 90 s host-start order and
+            # report the elapsed time so a genuine bind failure stays distinguishable (#2670).
+            $serverReadyStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+            $serverReadyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(90)
             while (-not (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) -and
                 -not $serverProcess.HasExited -and
                 [DateTimeOffset]::UtcNow -lt $serverReadyDeadline) {
                 Start-Sleep -Milliseconds 50
             }
-            Assert-True (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) "Askpass HTTP probe server did not become ready."
+            $serverReadyStopwatch.Stop()
+            $serverReadyElapsedSeconds = [Math]::Round($serverReadyStopwatch.Elapsed.TotalSeconds, 1)
+            Assert-True (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) "Askpass HTTP probe server did not become ready (waited $serverReadyElapsedSeconds s; host exited: $($serverProcess.HasExited))."
 
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @(
                 "remote", "add", "askpass-probe", "http://127.0.0.1:$askPassPort/repo.git"
@@ -1412,10 +1456,9 @@ finally {
         Assert-True ($collision.ExitCode -ne 0) "A post-helper branch collision should fail the initializer."
         Assert-NormalizedContains $collision.Output "git switch -c failed" "Branch collision should retain its switch failure diagnostic."
         Assert-NormalizedContains $collision.Output "removal of the unused helper-created worktree was scheduled" "Late branch collision should report cleanup scheduling."
-        $collisionRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $initializerWorktree
-        $registrationsAfterCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
-        Assert-True $collisionRemoval.Removed "Late branch collision must not leave an orphan helper-created worktree (waited $($collisionRemoval.ElapsedSeconds) s for the scheduled removal).`n$registrationsAfterCollision"
-        Assert-True (-not $registrationsAfterCollision.Contains($initializerWorktree)) "Late branch collision must remove the worktree registration."
+        $collisionRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $initializerWorktree -RegistrationRepositoryPath $callerPath
+        Assert-True $collisionRemoval.Removed "Late branch collision must not leave an orphan helper-created worktree (waited $($collisionRemoval.ElapsedSeconds) s for the scheduled removal).`n$($collisionRemoval.Registrations)"
+        Assert-True $collisionRemoval.Unregistered "Late branch collision must remove the worktree registration for '$initializerWorktree' (waited $($collisionRemoval.ElapsedSeconds) s for the scheduled removal).`n$($collisionRemoval.Registrations)"
 
         $ignoredCollisionResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "498", "-Slug", "ignored-collision")
         Assert-Equal 0 $ignoredCollisionResult.ExitCode "Ignored-collision fixture worktree creation should succeed.`n$($ignoredCollisionResult.Output)"
@@ -1441,7 +1484,10 @@ finally {
         Assert-True ($ignoredCollision.ExitCode -ne 0) "A late branch collision with ignored content should fail the initializer."
         Assert-NormalizedContains $ignoredCollision.Output "cleanup was refused because the helper-created worktree contains tracked, untracked, or ignored content" "Ignored-content collision should explain why cleanup was refused."
         Assert-NormalizedContains $ignoredCollision.Output "the worktree was preserved at" "Ignored-content collision should report preservation instead of scheduled removal."
-        Start-Sleep -Milliseconds 500
+        # A wrongly scheduled detached cleanup host deletes the canary one host start and seven Git
+        # invocations later, so no settle delay proves preservation. Assert positively that no cleanup
+        # was scheduled, then assert the content that a scheduled cleanup would have destroyed (#2670).
+        Assert-NormalizedNotContains $ignoredCollision.Output "removal of the unused helper-created worktree was scheduled" "Ignored-content collision must refuse cleanup outright, never schedule the detached removal host."
         Assert-True (Test-Path -LiteralPath $ignoredCanaryPath -PathType Leaf) "Refused collision cleanup deleted ignored worktree content."
         Assert-True (Test-Path -LiteralPath $ignoredCollisionWorktree -PathType Container) "Refused collision cleanup deleted the helper-created worktree."
         $ignoredRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
@@ -1466,6 +1512,7 @@ finally {
             $hiddenCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $hiddenCollisionScript) -WorkingDirectory $hiddenWorktree
             Assert-True ($hiddenCollision.ExitCode -ne 0) "Hidden-index collision must fail for $hiddenFlag."
             Assert-NormalizedContains $hiddenCollision.Output "index-hidden entries" "Hidden-index collision must explain preservation for $hiddenFlag."
+            Assert-NormalizedNotContains $hiddenCollision.Output "removal of the unused helper-created worktree was scheduled" "Hidden-index collision must refuse cleanup outright for $hiddenFlag, never schedule the detached removal host."
             Assert-Contains (Get-Content -Raw -LiteralPath $hiddenTarget) "hidden initializer collision $hiddenFlag" "Hidden bytes must survive $hiddenFlag cleanup refusal."
             Assert-True (Test-Path -LiteralPath $hiddenWorktree -PathType Container) "Hidden worktree must survive $hiddenFlag cleanup refusal."
             $hiddenRegistration = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
@@ -1493,10 +1540,9 @@ finally {
         $separateCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $separateCollisionScript) -WorkingDirectory $separateWorktree
         Assert-True ($separateCollision.ExitCode -ne 0) "A separate-Git-dir post-helper branch collision should fail the initializer."
         Assert-NormalizedContains $separateCollision.Output "removal of the unused helper-created worktree was scheduled" "Separate-Git-dir collision should report cleanup scheduling."
-        $separateRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $separateWorktree
-        $separateRegistrationsAfter = Invoke-Git -WorkingDirectory $separateGitCaller -Arguments @("worktree", "list", "--porcelain")
-        Assert-True $separateRemoval.Removed "Separate-Git-dir late collision must remove the helper-created worktree path (waited $($separateRemoval.ElapsedSeconds) s for the scheduled removal).`n$separateRegistrationsAfter"
-        Assert-True (-not $separateRegistrationsAfter.Replace('\', '/').Contains($normalizedSeparateWorktree)) "Separate-Git-dir late collision must remove the worktree registration."
+        $separateRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $separateWorktree -RegistrationRepositoryPath $separateGitCaller
+        Assert-True $separateRemoval.Removed "Separate-Git-dir late collision must remove the helper-created worktree path (waited $($separateRemoval.ElapsedSeconds) s for the scheduled removal).`n$($separateRemoval.Registrations)"
+        Assert-True $separateRemoval.Unregistered "Separate-Git-dir late collision must remove the worktree registration for '$separateWorktree' (waited $($separateRemoval.ElapsedSeconds) s for the scheduled removal).`n$($separateRemoval.Registrations)"
         Assert-True (Test-Path -LiteralPath $separateGitDirectory -PathType Container) "Separate-Git-dir cleanup removed the repository's common Git directory."
 
         $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "490", "-Slug", "initializer-validation-continued")
