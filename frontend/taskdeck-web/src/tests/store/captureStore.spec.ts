@@ -2475,6 +2475,41 @@ describe('captureStore', () => {
       }
     })
 
+    it('leaves the store-wide detail loading flag alone through a foreground batch triage', async () => {
+      const store = useCaptureStore()
+      store.detailById['c-1'] = detailFor('c-1', 'Triaging')
+      vi.mocked(captureApi.batchTriage).mockResolvedValue({
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        results: [{ itemId: 'c-1', success: true }],
+      })
+      vi.mocked(captureApi.listItems).mockResolvedValue([
+        summaryRow('c-1', 'ProposalCreated'),
+      ] as never)
+      let resolveDetail!: (value: unknown) => void
+      vi.mocked(captureApi.getItem).mockReturnValueOnce(
+        new Promise((resolve) => { resolveDetail = resolve }) as never,
+      )
+
+      const batch = store.batchTriage(['c-1'], 'triage')
+      await vi.waitFor(() => expect(captureApi.getItem).toHaveBeenCalledTimes(1))
+
+      // `batchTriage` is a foreground action, and its reconciliation is still
+      // quiet (#2571). `loadingDetail` is one store-wide flag, so raising it
+      // for the batch would spin an open capture outside the selection and
+      // would be cleared by the first parallel read to settle. `batchBusy` is
+      // the foreground state for a batch and it is up for the whole body.
+      expect(store.batchBusy).toBe(true)
+      expect(store.loadingDetail).toBe(false)
+
+      resolveDetail(detailFor('c-1', 'ProposalCreated'))
+      await batch
+
+      expect(store.loadingDetail).toBe(false)
+      expect(store.batchBusy).toBe(false)
+    })
+
     it('still raises the detail loading flag for a foreground detail load', async () => {
       const store = useCaptureStore()
       let resolveDetail!: (value: unknown) => void

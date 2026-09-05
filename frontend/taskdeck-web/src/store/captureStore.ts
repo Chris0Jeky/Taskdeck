@@ -611,9 +611,20 @@ export const useCaptureStore = defineStore('capture', () => {
             // endpoint lags it briefly, do not regress the row back to Triaging
             // or reinsert an item that fell beyond the visible list cap.
             syncSummary: false,
-            // Quiet in every respect: this reconciliation runs for items the
-            // user may not have open, so it must not take the panel-wide
-            // loading flag away from whatever detail IS open (#2304).
+            // Quiet in every respect, for BOTH callers: this reconciliation
+            // runs over the tracked batch, not over whatever detail is open,
+            // so it must not take the panel-wide loading flag away from that
+            // detail (#2304).
+            //
+            // `batchTriage` is a FOREGROUND caller and still reconciles
+            // quietly on purpose (#2571). `loadingDetail` is one store-wide
+            // boolean: raising it here would blank the panel and disable
+            // Refresh Detail for an open capture that is not in the batch
+            // selection, and the first of these parallel reads to settle would
+            // clear the flag under any genuine foreground detail load still in
+            // flight. The foreground feedback for a batch is `batchBusy`,
+            // which stays true for the whole `batchTriage` body and renders
+            // "Processing" in the list panel.
             trackLoading: false,
             requestOptions: options.requestOptions,
             shouldCache: isCurrent,
