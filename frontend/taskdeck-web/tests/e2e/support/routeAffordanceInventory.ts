@@ -70,13 +70,21 @@ export type AffordanceSelector =
 
 /**
  * What must become observably true after the affordance is activated. `url` and
- * `response` pattern strings are regular-expression SOURCES; the `{boardId}`
- * and `{metricsBoardId}` tokens in either are substituted before use.
+ * `response` pattern strings are regular-expression SOURCES; the `{boardId}`,
+ * `{metricsBoardId}` and `{openingMonthLabel}` tokens in any of these strings
+ * are substituted from the walk's runtime context before use.
  *
  * A `response` consequence proves an endpoint answered, which on its own cannot
  * tell the click's own request apart from one the view already had in flight.
  * Rows that can carry an independent DOM post-condition declare it in
  * `postCondition`, and the walk asserts it after the response.
+ *
+ * ADDING A KIND. Every kind here must be classified in
+ * `CONSEQUENCE_ASSERTION_SITE` in `src/tests/guards/routeAffordanceCoverage.spec.ts`
+ * (a `Record` keyed by this union, so a new kind fails `npm run typecheck`
+ * until it is classified) and handled by `expectConsequence` in
+ * `tests/e2e/route-affordances.spec.ts` (an exhaustive switch whose default
+ * throws, because that file is not type-checked by any gate).
  */
 export type AffordanceConsequence =
   | { kind: 'url'; pathPattern: string }
@@ -87,8 +95,22 @@ export type AffordanceConsequence =
   | { kind: 'focus'; testId: string }
   /** The named control is present and enabled without being activated. */
   | { kind: 'enabled'; selector: string }
-  /** A form control's own value, which no network wait can vouch for. */
+  /**
+   * A form control's own DOM value. Read the note on the metrics rows before
+   * trusting this to catch a dead control: when the walk drives a `<select>`
+   * with `selectOption`, the browser sets that value itself, so the check
+   * passes whether or not the control is wired to anything.
+   */
   | { kind: 'value'; selector: string; value: string }
+  /** The named node's rendered text, after token substitution. */
+  | { kind: 'text'; selector: string; text: string }
+  /**
+   * The named node's rendered text must no longer read `from`. For a control
+   * whose new text depends on the runtime clock (the calendar month label),
+   * this is the strongest claim the inventory can make without re-implementing
+   * the view's own date formatting inside the test.
+   */
+  | { kind: 'textChangedFrom'; selector: string; from: string }
 
 /** Why a row is or is not activated by the walk. */
 export type AffordanceStatus =
@@ -118,10 +140,17 @@ export interface RouteAffordance {
   precondition: AffordancePrecondition
   consequence: AffordanceConsequence
   /**
-   * An independent second assertion, checked after `consequence`. It exists for
-   * `response` rows: a network wait alone can be satisfied by a request the view
-   * issued on mount, so a control that does nothing would still pass. Omitted
-   * where the surface renders nothing that changes (see the notifications rows).
+   * A second assertion, checked after `consequence`. It exists for `response`
+   * rows: a network wait alone can be satisfied by a request the view issued on
+   * mount, so a control that does nothing would still pass. Omitted where the
+   * surface renders nothing that changes (see the notifications rows).
+   *
+   * HOW INDEPENDENT IT IS DEPENDS ON THE KIND. A `text` or `textChangedFrom`
+   * post-condition reads state the view itself rendered, so it fails for a
+   * control that did nothing (the calendar rows). A `value` post-condition on a
+   * `<select>` the walk drove with `selectOption` does NOT: the browser assigns
+   * the DOM value, so the check passes on a dead control too (the metrics rows,
+   * whose real defences are documented there).
    */
   postCondition?: AffordanceConsequence
   status: AffordanceStatus
@@ -459,20 +488,39 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
     affordances: [
       {
         id: 'calendar.previous-month',
-        label: 'Previous month re-reads the calendar window',
+        label: 'Previous month re-reads the calendar window and moves the month label',
         selector: { kind: 'role', role: 'button', name: 'Previous month' },
         source: 'src/views/CalendarView.vue:218',
         precondition: 'session',
+        // CalendarView fetches in `onMounted` and again on every `viewDate`
+        // change (CalendarView.vue:178-179), so the walk consumes the mount read
+        // before arming this one. The post-condition is the independent half:
+        // the label is rendered from `viewDate` (CalendarView.vue:36-39), so a
+        // button that did not move the month cannot satisfy it.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/workspace/calendar' },
+        postCondition: {
+          kind: 'textChangedFrom',
+          selector: '.paper-calendar__month-label',
+          from: '{openingMonthLabel}',
+        },
         status: { activate: true },
       },
       {
         id: 'calendar.next-month',
-        label: 'Next month re-reads the calendar window',
+        label: 'Next month re-reads the calendar window and returns the month label',
         selector: { kind: 'role', role: 'button', name: 'Next month' },
         source: 'src/views/CalendarView.vue:227',
         precondition: 'session',
+        // Walked immediately after `calendar.previous-month`, which is why the
+        // post-condition can name an exact string: stepping forward from the
+        // previous month lands back on the label the route opened with, with no
+        // date formatting re-implemented in the test.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/workspace/calendar' },
+        postCondition: {
+          kind: 'text',
+          selector: '.paper-calendar__month-label',
+          text: '{openingMonthLabel}',
+        },
         status: { activate: true },
       },
       {
@@ -500,10 +548,16 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '#board-select' },
         source: 'src/views/MetricsView.vue:167',
         precondition: 'seeded-board',
-        // Pinned to the board the walk SELECTS, which is deliberately not the
-        // one MetricsView auto-selects on mount (MetricsView.vue:86), so the
-        // mount read cannot satisfy this wait.
+        // THE DEFENCES AGAINST A DEAD SELECT ARE THE PIN AND THE ANCHOR, not the
+        // post-condition. The board id is the one the walk SELECTS, deliberately
+        // not the one MetricsView auto-selects on mount (MetricsView.vue:86),
+        // and `?from=` anchors the pattern to a metrics read; together they mean
+        // only a request this selection caused can settle the wait.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/{metricsBoardId}\\?from=' },
+        // A VALUE CHECK ONLY. `selectOption` makes the browser assign the DOM
+        // value, and nothing re-renders it away, so this passes for a select
+        // wired to nothing. It records that the walk drove the control it meant
+        // to drive; it cannot catch a dead one.
         postCondition: { kind: 'value', selector: '#board-select', value: '{metricsBoardId}' },
         status: { activate: true },
       },
@@ -513,8 +567,13 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '#range-select' },
         source: 'src/views/MetricsView.vue:181',
         precondition: 'seeded-board',
-        // from= pins this to a metrics read rather than any /metrics/boards/ URL.
+        // Same two defences as the row above: the board id is pinned to the one
+        // the walk selected (never the mount's auto-selection) and `?from=`
+        // anchors the pattern to a metrics read, so this row can only be settled
+        // by a request the range change caused.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/{metricsBoardId}\\?from=' },
+        // A VALUE CHECK ONLY, for the same reason as the board select: the
+        // browser sets `#range-select` to 90 whether or not the view listens.
         postCondition: { kind: 'value', selector: '#range-select', value: '90' },
         status: { activate: true },
       },
