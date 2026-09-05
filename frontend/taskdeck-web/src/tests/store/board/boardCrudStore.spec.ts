@@ -307,6 +307,46 @@ describe('boardCrudStore', () => {
       expect(state.boards.value).toEqual([{ id: 'board-2', name: 'Recovered Board' }])
     })
 
+    // #2689 item 4. Two list reads genuinely overlap: a filtered
+    // (`includeArchived`) read never joins the share and never populates it, so
+    // the activity selector's can still be on the wire when the boards list
+    // mounts its unfiltered one. Clearing `error` only on ENTRY to a read is
+    // not enough for that pair — the failing half writes its alert after the
+    // surviving half has already cleared — and BoardsListView's
+    // `v-if loading / v-else-if error / … / v-else grid` chain then shows the
+    // alert instead of the boards it already holds. The #2685 bound made the
+    // failing half deterministic at 10 s, so this stopped being a race nobody
+    // reaches.
+    it('clears an overlapping failure’s alert when a current-generation read succeeds', async () => {
+      const archivedRead = createDeferred<Array<{ id: string; name: string }>>()
+      const unfilteredRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(archivedRead.promise)
+        .mockReturnValueOnce(unfilteredRead.promise)
+      // The real helper writes state.error; the shared mock does not, and this
+      // test is about what the two surfaces leave behind for each other.
+      helpers.handleApiError.mockImplementation((_err: unknown, fallback: string) => {
+        state.error.value = fallback
+      })
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const archived = fetchBoards(undefined, true)
+      const unfiltered = fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+
+      // The archived read fails while the unfiltered one is still in flight, so
+      // its alert lands AFTER the survivor cleared `error` on entry.
+      archivedRead.reject(new Error('network error'))
+      await expect(archived).rejects.toThrow('network error')
+      expect(state.error.value).toBe('Failed to fetch boards')
+
+      unfilteredRead.resolve([{ id: 'board-1', name: 'My Board' }])
+      await unfiltered
+
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'My Board' }])
+      expect(state.error.value).toBeNull()
+    })
+
     it('issues a separate request for a filtered caller during an unfiltered flight', async () => {
       const inFlight = createDeferred<Array<{ id: string; name: string }>>()
       mockBoardsApi.getBoards

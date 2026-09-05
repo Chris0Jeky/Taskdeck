@@ -121,6 +121,17 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         }
         lastFetchBoardsAt = Date.now()
         state.boards.value = freshBoards
+        // A current-generation success owns the error surface as well as the
+        // list. Clearing at the START of a read is not enough, because two list
+        // reads overlap: the activity selector's `includeArchived` read never
+        // joins the share, so it can still be on the wire when the boards list
+        // mounts an unfiltered one. If the earlier of the pair fails after the
+        // later has cleared and committed, `error` is left set beside a
+        // populated `boards`, and BoardsListView's `v-if loading / v-else-if
+        // error / … / v-else grid` chain shows the alert INSTEAD of the boards
+        // it already has (#2689 item 4). The bound made the failing half
+        // deterministic at 10 s, so it stopped being a race nobody hits.
+        state.error.value = null
 
         // Preserve selection guard: only update activeBoardId if there is no
         // current selection or the previously-selected board is no longer in the
