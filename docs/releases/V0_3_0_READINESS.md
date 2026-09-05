@@ -13,7 +13,7 @@ issue numbers below.
 
 ## 1. The gate
 
-The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Clause 2 and the section 5 label split re-measured 2026-09-05 at 15:15Z against `main` `42d3007f0`, clause 4 re-read at 18:16Z from the completed tip run (a dated snapshot; the lanes were still merging when it was taken); the section 3 human-gate table carries its 04:00Z measurement, re-checked at 08:50Z with no change and at 15:15Z with one change, the SC-10 row now counts twelve; the section 2 clause-5 chain carries its earlier 2026-09-04 measurement and clauses 1 and 3 their 2026-09-03 one.
+The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Clause 2 and the section 5 label split re-measured 2026-09-05 at 15:15Z against `main` `42d3007f0` (a dated snapshot; the lanes were still merging when it was taken), clause 4 re-read at 18:16Z from the completed tip run; the section 3 human-gate table carries its 04:00Z measurement, re-checked at 08:50Z with no change and at 15:15Z with one change, the SC-10 row now counts twelve; the section 2 clause-5 chain carries its earlier 2026-09-04 measurement and clauses 1 and 3 their 2026-09-03 one.
 
 | # | Gate clause | State | What it waits on |
 |---|---|---|---|
