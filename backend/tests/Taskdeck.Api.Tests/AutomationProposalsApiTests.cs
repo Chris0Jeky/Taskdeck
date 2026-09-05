@@ -243,6 +243,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             provenanceModelId = plantedModel,
             provenanceProvider = "openai",
             provenancePromptVersion = "llm-triage.v2",
+            provenanceTotalTokens = 987654,
         };
 
         var createResponse = await _client.PostAsJsonAsync("/api/automation/proposals", request);
@@ -262,6 +263,10 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         provenance.ModelId.Should().Be("chat-tools");
         provenance.Provider.Should().BeNull();
         provenance.PromptVersion.Should().BeNull();
+
+        // #2604: the token count is producer-side usage the server measures, not a caller claim.
+        // An API-created proposal records 0 no matter what the body asked for.
+        provenance.TotalTokens.Should().Be(0);
     }
 
     [Fact]
