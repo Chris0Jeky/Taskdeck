@@ -8,7 +8,7 @@ import axios from 'axios'
 import { BOARD_REQUEST_TIMEOUT_MS, type BoardReadOptions } from '../../api/http'
 import { buildDemoBoardList, buildDemoBoardDetail } from '../../utils/demoData'
 import type { CreateBoardDto, UpdateBoardDto } from '../../types/board'
-import type { BoardState } from './boardState'
+import type { BoardState, CardFilters } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
 // Minimum gap between board-list fetches.  Multiple views (BoardsListView,
@@ -40,6 +40,7 @@ interface QueuedBackgroundBoardFetch {
 export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers) {
   let lastFetchBoardsAt = 0
   let unfilteredFetchBoardsInFlight: Promise<void> | null = null
+  let boardListGeneration = 0
   let boardFetchGeneration = 0
   let activeBoardFetch: ActiveBoardFetch | null = null
   let queuedBackgroundBoardFetch: QueuedBackgroundBoardFetch | null = null
@@ -69,11 +70,21 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       return
     }
 
+    const requestGeneration = boardListGeneration
+    const isCurrentListGeneration = () => requestGeneration === boardListGeneration
+
     const request = (async () => {
       try {
         state.loading.value = true
         state.error.value = null
         const freshBoards = await boardsApi.getBoards(search, includeArchived)
+        // A logout reset ran while this read was on the wire.  The payload
+        // belongs to the account that is now signed out, so neither it nor the
+        // throttle stamp it would write may reach the next session's store —
+        // and dropping the stamp is what lets that session refetch at once.
+        if (!isCurrentListGeneration()) {
+          return
+        }
         lastFetchBoardsAt = Date.now()
         state.boards.value = freshBoards
 
@@ -87,6 +98,12 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           state.activeBoardId.value = freshBoards[0]?.id ?? null
         }
       } catch (e: unknown) {
+        // A superseded read reports nothing, exactly as the detail path treats
+        // a stale generation: raising the signed-out account's failure would
+        // write an error surface into the state the reset just cleared.
+        if (!isCurrentListGeneration()) {
+          return
+        }
         helpers.handleApiError(e, 'Failed to fetch boards')
         throw e
       } finally {
@@ -429,6 +446,58 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     }
   }
 
+  /**
+   * Clears every board value and every board request that belonged to the
+   * session that just ended.
+   *
+   * The trigger is the shell's existing authenticated true-to-false
+   * transition, the same one that already resets the workspace and capture
+   * stores.  Nothing here is keyed on a user id or a token, so a routine token
+   * refresh and a session restore do not reach it: those change identity
+   * without ending the session, and clearing on them would drop the board the
+   * user is looking at.
+   *
+   * Two generations are bumped rather than one because the list and the detail
+   * read are separate lifecycles.  A bumped generation is what makes an
+   * already-issued request safe: the response still arrives, finds its
+   * generation stale, and returns without writing state, a throttle stamp, or
+   * an error surface.  Clearing the state alone would not do it — a read that
+   * was in flight during the reset would land afterwards and repopulate the
+   * store with the previous account's boards.
+   */
+  function resetForLogout() {
+    boardListGeneration++
+    unfilteredFetchBoardsInFlight = null
+    lastFetchBoardsAt = 0
+
+    // The queued background successor is settled through the existing helper;
+    // the active read is aborted at any intent, which the intent-scoped
+    // cancelBackgroundBoardFetch deliberately does not do.
+    boardFetchGeneration++
+    activeBoardFetch?.controller.abort()
+    activeBoardFetch = null
+    settleQueuedBackgroundBoardFetch()
+
+    const initialFilters: CardFilters = {
+      searchText: '',
+      labelIds: [],
+      dueDateFilter: 'all',
+      showBlockedOnly: false,
+    }
+
+    state.boards.value = []
+    state.activeBoardId.value = null
+    state.currentBoard.value = null
+    state.currentBoardCards.value = []
+    state.currentBoardLabels.value = []
+    state.cardCommentsByCardId.value = {}
+    state.boardPresenceMembers.value = []
+    state.editingCardId.value = null
+    state.loading.value = false
+    state.error.value = null
+    state.filters.value = initialFilters
+  }
+
   return {
     fetchBoards,
     fetchBoard,
@@ -436,5 +505,6 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     createBoard,
     updateBoard,
     deleteBoard,
+    resetForLogout,
   }
 }

@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
+import { useBoardStore } from '../../store/boardStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
@@ -45,6 +46,7 @@ const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
 const capture = useCaptureStore()
+const board = useBoardStore()
 const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 
@@ -380,6 +382,9 @@ watch(
       // The capture store's per-item generation guards are keyed by capture id
       // and belong to the session that recorded them (#2571).
       capture.resetForLogout()
+      // Board list and detail state, and the reads still in flight for them,
+      // belong to the account that was signed in (#1961).
+      board.resetForLogout()
       return
     }
 
