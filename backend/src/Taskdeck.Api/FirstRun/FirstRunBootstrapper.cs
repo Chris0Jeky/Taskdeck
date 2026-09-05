@@ -27,6 +27,13 @@ internal readonly record struct BootstrapIdentityLifecycle(
 /// </summary>
 public static class FirstRunBootstrapper
 {
+    /// <summary>
+    /// Ordinal prefix of the Production missing-connector-key failure. <see cref="DesktopRuntime.FormatFatalStartup"/>
+    /// classifies on this exact prefix, so the throw site and the classifier must share it.
+    /// </summary>
+    internal const string MissingConnectorEncryptionKeyMessagePrefix =
+        "SECURITY: The Connectors:EncryptionKey is not configured.";
+
     private const string LocalConfigFileName = "appsettings.local.json";
 
     // Placeholder values that indicate "not configured".
@@ -648,7 +655,7 @@ public static class FirstRunBootstrapper
         if (string.IsNullOrWhiteSpace(connectorKey))
         {
             throw new InvalidOperationException(
-                "SECURITY: The Connectors:EncryptionKey is not configured. " +
+                MissingConnectorEncryptionKeyMessagePrefix + " " +
                 "Generate a base64-encoded 256-bit key with 'openssl rand -base64 32' and set it via the " +
                 "Connectors__EncryptionKey environment variable. The application cannot start without a " +
                 $"real encryption key in Production. (If this used to run as a desktop install, an existing " +
