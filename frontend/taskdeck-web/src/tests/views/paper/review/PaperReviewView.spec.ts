@@ -272,6 +272,25 @@ async function confirmApplyDialog() {
   await flushPromises()
 }
 
+/**
+ * `mountView` keeps its router private, so the live instance is reached through
+ * the mounted component. Structural casts, matching the `$route` idiom the
+ * deep-link specs above already use: the spec tree is type-checked without the
+ * router's own generics (tsconfig.vitest.json).
+ */
+function routerOf(wrapper: { vm: unknown }) {
+  return (wrapper.vm as {
+    $router: {
+      beforeEach: (guard: (to: { hash: string }) => false | undefined) => () => void
+      replace: (path: string) => Promise<unknown>
+    }
+  }).$router
+}
+
+function hashOf(wrapper: { vm: unknown }): string {
+  return (wrapper.vm as { $route: { hash: string } }).$route.hash
+}
+
 describe('PaperReviewView', () => {
   // Unmount every mounted wrapper after each test. PaperReviewView attaches a
   // window keydown listener (review keymap) and a 60s clock interval; without
@@ -1715,6 +1734,206 @@ describe('PaperReviewView', () => {
 
     expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'))
       .toBe('deferred')
+  })
+
+  // #2128: the two confirm-gated recorders are the siblings of the approve
+  // (#2069) and defer (PR #2629) guards. Same locus expression, same hazard —
+  // the queue stays interactive across the execute/reject round trip, so the
+  // continuation must not pull the reviewer back to the proposal they left.
+  it('does not record an applied receipt for a proposal left during the execute confirmation', async () => {
+    let resolveExecute!: (proposal: Proposal) => void
+    mocks.executeProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveExecute = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', status: 'Approved', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await confirmApplyDialog()
+
+    // The queue stays interactive while the execute request is in flight.
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    // Keep the current explicit selection while removing the route hash; this
+    // makes a stale receipt visible if the continuation re-anchors itself.
+    await wrapper.vm.$router.replace('/workspace/review')
+    await flushPromises()
+
+    resolveExecute(makeProposal({
+      id: 'aaa-1',
+      status: 'Applied',
+      summary: 'First proposal',
+      appliedAt: new Date().toISOString(),
+    }))
+    await flushPromises()
+
+    expect(mocks.executeProposal).toHaveBeenCalledWith('aaa-1', expect.any(String))
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('records an applied receipt when the current decision locus still matches', async () => {
+    let resolveExecute!: (proposal: Proposal) => void
+    mocks.executeProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveExecute = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'matching-execute', status: 'Approved' }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await confirmApplyDialog()
+    resolveExecute(makeProposal({
+      id: 'matching-execute',
+      status: 'Applied',
+      appliedAt: new Date().toISOString(),
+    }))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'))
+      .toBe('applied')
+  })
+
+  it('suppresses the applied receipt while the deep-link hash still names the proposal the reviewer left', async () => {
+    let resolveExecute!: (proposal: Proposal) => void
+    mocks.executeProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveExecute = resolve }),
+    )
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'aaa-1', status: 'Approved', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ],
+      '/workspace/review#proposal-aaa-1',
+    )
+    const router = routerOf(wrapper)
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await confirmApplyDialog()
+
+    // Router navigation can lag behind a queue click — the reason the locus
+    // reads the explicit selection FIRST and the hash only as a fallback. Hold
+    // the hash on the proposal the reviewer left so the two disagree at the
+    // moment the response lands.
+    const releaseHash = router.beforeEach((to) => (to.hash === '#proposal-bbb-1' ? false : undefined))
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    releaseHash()
+
+    resolveExecute(makeProposal({
+      id: 'aaa-1',
+      status: 'Applied',
+      summary: 'First proposal',
+      appliedAt: new Date().toISOString(),
+    }))
+    await flushPromises()
+
+    // Neither confirm recorder touches the deep link (only onDefer/onFileAway
+    // do), so the hash is exactly where the queue click left it and the
+    // visibleProposals carve-out still anchors the surface on the linked row.
+    expect(hashOf(wrapper)).toBe('#proposal-aaa-1')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+
+    // Dropping the hash reveals the locus underneath: still the reviewer's own
+    // selection, not the proposal a stale receipt would have re-pinned.
+    await router.replace('/workspace/review')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('does not record a rejected receipt for a proposal left during the reject confirmation', async () => {
+    let resolveReject!: (proposal: Proposal) => void
+    mocks.rejectProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveReject = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+    await acceptRejectDialog()
+
+    // The queue stays interactive while the reject request is in flight.
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    // Keep the current explicit selection while removing the route hash; this
+    // makes a stale receipt visible if the continuation re-anchors itself.
+    await wrapper.vm.$router.replace('/workspace/review')
+    await flushPromises()
+
+    resolveReject(makeProposal({ id: 'aaa-1', status: 'Rejected', summary: 'First proposal' }))
+    await flushPromises()
+
+    expect(mocks.rejectProposal).toHaveBeenCalledWith('aaa-1', null)
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('records a rejected receipt when the current decision locus still matches', async () => {
+    let resolveReject!: (proposal: Proposal) => void
+    mocks.rejectProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveReject = resolve }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'matching-reject' })])
+
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+    await acceptRejectDialog('no longer needed')
+    resolveReject(makeProposal({ id: 'matching-reject', status: 'Rejected' }))
+    await flushPromises()
+
+    expect(mocks.rejectProposal).toHaveBeenCalledWith('matching-reject', 'no longer needed')
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'))
+      .toBe('rejected')
+  })
+
+  it('suppresses the rejected receipt while the deep-link hash still names the proposal the reviewer left', async () => {
+    let resolveReject!: (proposal: Proposal) => void
+    mocks.rejectProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveReject = resolve }),
+    )
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ],
+      '/workspace/review#proposal-aaa-1',
+    )
+    const router = routerOf(wrapper)
+
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+    await acceptRejectDialog()
+
+    // Same lagging-navigation window as the execute sibling above.
+    const releaseHash = router.beforeEach((to) => (to.hash === '#proposal-bbb-1' ? false : undefined))
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    releaseHash()
+
+    resolveReject(makeProposal({ id: 'aaa-1', status: 'Rejected', summary: 'First proposal' }))
+    await flushPromises()
+
+    expect(hashOf(wrapper)).toBe('#proposal-aaa-1')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+
+    await router.replace('/workspace/review')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
   })
 
   it('removes a snoozed proposal from the visible queue after defer resolves', async () => {
