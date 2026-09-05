@@ -2562,6 +2562,42 @@ describe('captureStore', () => {
       }
     })
 
+    it('coalesces the workload count refresh to one call per poll tick', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-a', 'ProposalCreated'),
+          summaryRow('c-b', 'ProposalCreated'),
+          summaryRow('c-c', 'ProposalCreated'),
+          summaryRow('c-d', 'Triaging'),
+        ] as never)
+
+        store.pollBatchTriageCompletion(['c-a', 'c-b', 'c-c', 'c-d'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        // Three tracked ids reached a terminal outcome in the SAME tick.
+        // `New + Failed` is one number read from one endpoint — the heaviest on
+        // the surface — so the tick refreshes it once, not once per id (#2571).
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
+
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-a', 'ProposalCreated'),
+          summaryRow('c-b', 'ProposalCreated'),
+          summaryRow('c-c', 'ProposalCreated'),
+          summaryRow('c-d', 'Failed'),
+        ] as never)
+        await vi.advanceTimersByTimeAsync(3_000)
+
+        // A second tick with its own new outcome is a second refresh: the
+        // coalescing is per tick, which is what keeps the badge honest while
+        // a batch finishes over the poll window.
+        expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('does not refresh workload counts from cached state when every poll read fails', async () => {
       vi.useFakeTimers()
       try {
