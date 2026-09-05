@@ -6,9 +6,11 @@
  * (`views/BoardsListView.vue`). This one covers the direct-manipulation
  * controls on a single open board — add a card, edit a column, board settings.
  *
- * Only the controls added by #1945 are extracted here. The rest of
- * `PaperBoardView` is still hard-coded English; the ADR-0054 rollout is
- * surface-by-surface and finishing this surface is a separate slice.
+ * Extracted here: the controls added by #1945, plus the titles-only toggle
+ * added by #2090. The rest of `PaperBoardView` is still hard-coded English —
+ * the width control and the compact-density toggle beside that new one
+ * included; the ADR-0054 rollout is surface-by-surface and finishing this
+ * surface is a separate slice.
  *
  * Wording contract (ADR-0056): every label here names a *direct* human edit
  * that takes effect immediately. Nothing in this catalog may describe a
