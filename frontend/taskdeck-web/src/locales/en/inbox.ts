@@ -246,6 +246,31 @@ export default {
       state: 'State: {label}. Where this capture stands right now.',
       source: 'Source: {label}. How this capture arrived — not a state.',
     },
+    // Where an unsaved correction stands once its capture left the list (#1999
+    // item 3) — a board-filter change, a refresh that no longer returns the
+    // row, or the switch into archived history. `{capture}` is the row's own
+    // excerpt, so the sentence names the same thing the list did.
+    //
+    // `kept` and `discarded` are receipts about a moment. `held`, `blocked` and
+    // `heldUneditable` are standing statements, true for as long as they are on
+    // screen, so each ends by saying what the reader can do about it.
+    //
+    // `kept` says "this Inbox list" on purpose. The correction lives in the
+    // table for as long as the table does; promising it back after a reload
+    // would be a promise this mechanism cannot keep.
+    //
+    // `discarded` is the only sentence about a loss, and it is reached only
+    // from a status the SERVER itself would refuse the edit in. It states that
+    // status rather than leaving the drop unexplained.
+    draft: {
+      kept: 'The unsaved correction to “{capture}” was not lost. It is held while you stay on this Inbox list, and comes back with that capture when it returns. Nothing was saved.',
+      held: 'The unsaved correction to “{capture}” is still held. Choose Edit capture on that row to bring it back.',
+      blocked: 'The unsaved correction to “{capture}” is still held. Another capture is open for editing — finish that one, then choose Edit capture on this row to bring the correction back.',
+      heldUneditable: 'The unsaved correction to “{capture}” is still held. This list does not edit a capture that is {status}, so the correction waits here until that capture can be edited again.',
+      restored: 'The unsaved correction to “{capture}” is back in the editor, over the capture as it stands now. Save it or cancel as usual.',
+      discarded: 'The unsaved correction to “{capture}” was dropped: the capture is now {status}, and its text can no longer be edited. Nothing was saved.',
+      dismiss: 'Dismiss these notes',
+    },
     // Pre-triage text correction (GH-1951) — the Legacy detail panel's
     // "Edit Text" affordance, ported to the Paper row.
     //

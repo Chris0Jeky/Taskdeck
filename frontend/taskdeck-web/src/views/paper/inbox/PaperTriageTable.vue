@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
-import PaperTriageRowEdit from './PaperTriageRowEdit.vue'
+import PaperTriageRowEdit, {
+  type PaperTriageDraft,
+  type PaperTriageDraftReport,
+} from './PaperTriageRowEdit.vue'
 import { useBoardStore } from '../../../store/boardStore'
 import {
   canMutateSelection,
@@ -107,6 +110,210 @@ const boardListLoadState = ref<BoardListLoadState>(
 const editItemId = ref<string | null>(null)
 
 /**
+ * How the open editor's row is named once it is gone.
+ *
+ * Recorded when the editor opens, because the receipt below is written at the
+ * moment the row LEAVES the list — by then the summary that carries the
+ * excerpt is no longer in `items`, and a receipt that cannot say which capture
+ * it is about is barely a receipt.
+ */
+const editItemLabel = ref<string | null>(null)
+
+/**
+ * The open editor, so the table can read its unsaved draft at the one moment
+ * the close is involuntary (#1999 item 3).
+ *
+ * `shallowRef` and an array: the ref sits inside `v-for`, so Vue maintains it
+ * as a list. Only one editor is ever mounted (`isEditing`), so the list holds
+ * at most one entry.
+ */
+const openEditorRefs = shallowRef<InstanceType<typeof PaperTriageRowEdit>[]>([])
+
+/**
+ * Unsaved corrections whose captures are currently off the list (#1999 item 3).
+ *
+ * Switching the Inbox board filter replaces `items`; a row being edited is
+ * usually not in the replacement, and the watcher below then closes its
+ * editor. That used to destroy the draft without a word — the same silent loss
+ * the sibling-edit gate and the decision block already refuse one row over.
+ *
+ * So the draft is held here instead, keyed by capture id, and put back when
+ * the capture returns. This is COMPONENT state and nothing else: nothing is
+ * persisted, and nothing reaches the server until the user presses Save in a
+ * restored editor exactly as they would have before. It lives as long as the
+ * table does, which is the span of the promise the receipt makes.
+ */
+type KeptDraft = { itemId: string; label: string; draft: PaperTriageDraft }
+const keptDrafts = ref(new Map<string, KeptDraft>())
+
+/**
+ * What the notices region says, and the rule for what stands there (#1999).
+ *
+ * ONE LINE PER CAPTURE, and lines for different captures never displace each
+ * other: a receipt saying one correction was dropped cannot be wiped by
+ * another correction coming back in the same list change.
+ *
+ * Two kinds of line, with deliberately different lifetimes.
+ *
+ * STANDING lines (`held`, `blocked`, `heldUneditable`) are DERIVED from the
+ * current state rather than pushed by an event. While a correction is held and
+ * its capture is on this list, the line is recomputed from `items`,
+ * `keptDrafts` and the open editor, so it is always true, it states itself for
+ * every capture that qualifies (never just the last one, never a missed
+ * second), and it disappears on its own the moment it stops being true. They
+ * are not dismissable: they are the current situation, not news.
+ *
+ * RECEIPTS (`kept`, `restored`, `discarded`) record something that happened at
+ * a moment. One per capture, replaced by that capture's next receipt, cleared
+ * when the edit they describe ends from a loaded editor, and dismissable. A
+ * capture with a standing line shows that instead — the current truth outranks
+ * the history.
+ */
+type DraftLineKind = 'kept' | 'restored' | 'discarded' | 'held' | 'blocked' | 'heldUneditable'
+type DraftLine = {
+  captureId: string
+  kind: DraftLineKind
+  capture: string
+  status: string
+  dismissable: boolean
+}
+const draftReceipts = ref(new Map<string, DraftLine>())
+
+function setReceipt(
+  kind: 'kept' | 'restored' | 'discarded',
+  captureId: string,
+  capture: string,
+  status = '',
+) {
+  draftReceipts.value.set(captureId, { captureId, kind, capture, status, dismissable: true })
+}
+
+/**
+ * Statuses in which the SERVER itself would refuse a text edit.
+ *
+ * `CaptureService.IsSuggestionEditableStatus` allows New, Failed and Triaged,
+ * and `Triaging` is a transient the capture is only passing through — so the
+ * settled refusals are exactly these three. A held correction is dropped for
+ * one of them and nothing else.
+ *
+ * Deliberately NOT this list's own `canMutate` gate: dropping a correction is
+ * irreversible, and that gate is a product policy (#1999 item 2, the D-13
+ * ruling on editing Triaged rows) which a decision can move. A Triaged capture
+ * keeps its correction and says the list will not edit it; only the server's
+ * settled no drops one. An out-of-contract status is not in the set either:
+ * the conservative answer to "I do not recognise this" is to keep.
+ */
+function isPastEditing(status: CaptureStatusValue): boolean {
+  return status === 3 || status === 'ProposalCreated' ||
+    status === 4 || status === 'Converted' ||
+    status === 5 || status === 'Ignored'
+}
+
+/**
+ * The capture as this list names it. The excerpt is what the row shows, so the
+ * line and the row agree; the id is the fallback the open button already uses
+ * when there is nothing else to say.
+ */
+function captureLabel(item: CaptureItemSummary): string {
+  const excerpt = typeof item.textExcerpt === 'string' ? item.textExcerpt.trim() : ''
+  return excerpt || item.id
+}
+
+function restoredDraftFor(item: CaptureItemSummary): PaperTriageDraft | null {
+  return keptDrafts.value.get(item.id)?.draft ?? null
+}
+
+/**
+ * Why a held correction is not simply being offered back right now: another
+ * editor owns the single slot, or this list will not edit the capture in the
+ * state it is in (a Triaged row under the current gate, or one still being
+ * triaged).
+ */
+function standingLineKind(item: CaptureItemSummary): DraftLineKind {
+  if (editItemId.value !== null) return 'blocked'
+  return canMutate(item) ? 'held' : 'heldUneditable'
+}
+
+const draftNoticeLines = computed<DraftLine[]>(() => {
+  const lines: DraftLine[] = []
+  const standing = new Set<string>()
+  // Archived history has no Edit affordance to point at, so it carries the
+  // receipts only; nothing there invites the reader to bring a correction back.
+  if (!props.readOnly) {
+    for (const item of props.items) {
+      const kept = keptDrafts.value.get(item.id)
+      // A capture whose editor is open needs no line: the correction is either
+      // in the textarea or about to be, in front of the reader.
+      if (!kept || editItemId.value === item.id) continue
+      standing.add(item.id)
+      lines.push({
+        captureId: item.id,
+        kind: standingLineKind(item),
+        capture: kept.label,
+        status: statusLabel(item.status),
+        dismissable: false,
+      })
+    }
+  }
+  for (const receipt of draftReceipts.value.values()) {
+    if (standing.has(receipt.captureId)) continue
+    lines.push(receipt)
+  }
+  return lines
+})
+
+const hasDismissableNotice = computed(() => draftNoticeLines.value.some((line) => line.dismissable))
+
+/**
+ * Dismiss the receipts. Standing lines are untouched, because they describe
+ * corrections that are still held — dismissing those would be the surface
+ * forgetting out loud.
+ *
+ * Focus moves to the region itself, which stays mounted: the same rule
+ * `closeLoadingDetail` follows, so removing what the reader was on does not
+ * drop focus to the document.
+ */
+async function dismissDraftNotices(event: MouseEvent) {
+  const region = (event.currentTarget as HTMLElement | null)
+    ?.closest<HTMLElement>('.paper-triage__draft-notices')
+  draftReceipts.value.clear()
+  await nextTick()
+  region?.focus()
+}
+
+function readOpenEditor(): PaperTriageDraftReport {
+  return openEditorRefs.value[0]?.readDraft() ?? { state: 'unavailable' }
+}
+
+/**
+ * Take the open editor's unsaved correction into the held map before the
+ * editor goes away.
+ *
+ * The three-way answer is the point. `ready` with a draft holds it; `ready`
+ * with none releases what was held, because a correction typed back to the
+ * server's own text is no longer a correction; and `unavailable` — loading,
+ * failed to load, or refused — changes NOTHING, because an editor that never
+ * showed the reader a textarea is no evidence at all about what is held. The
+ * older shape collapsed the last two into `null` and quietly destroyed a
+ * correction whose restore had not finished loading.
+ */
+function keepOpenDraft() {
+  const itemId = editItemId.value
+  if (itemId === null) return
+  const label = editItemLabel.value ?? itemId
+  const report = readOpenEditor()
+  if (report.state === 'ready') {
+    if (report.draft === null) {
+      keptDrafts.value.delete(itemId)
+      draftReceipts.value.delete(itemId)
+      return
+    }
+    keptDrafts.value.set(itemId, { itemId, label, draft: report.draft })
+  }
+  if (keptDrafts.value.has(itemId)) setReceipt('kept', itemId, label)
+}
+
+/**
  * Which action this table started, for which row (#1944).
  *
  * `actionBusyItemId` mirrors the captureStore's single busy slot and is action-
@@ -136,13 +343,42 @@ watch(
   },
 )
 
+/**
+ * What a list replacement does to an unsaved correction (#1999 item 3).
+ *
+ * The board filter is not visible from here: switching it makes the
+ * orchestrator load the new scope and hand this table a different `items`
+ * array, which is also what a refresh that no longer returns the row does. One
+ * watcher therefore answers both.
+ *
+ * It does two things and no more. Nothing here reopens an editor: a held
+ * correction comes back only through the reader's own Edit, so no editor
+ * appears seeded with text nobody asked for, no board pick in progress is
+ * cancelled by a list arriving, and a return that cannot be honoured needs no
+ * silent exception. The offer to bring it back is a standing line, derived
+ * from the current state rather than pushed from here, so it cannot miss a
+ * second correction or go stale.
+ */
 watch(
   () => props.items,
   (rows) => {
-    // A row that has left the list can no longer be edited, and leaving the id
-    // set would silently reopen the editor if a row with that id came back.
+    // A held correction is dropped only when its capture has settled where the
+    // server itself would refuse the edit. A capture whose editor is OPEN is
+    // never swept: the correction is on screen, so announcing it was dropped
+    // would be false, and dropping it would take what the reader is looking at.
+    for (const row of rows) {
+      const kept = keptDrafts.value.get(row.id)
+      if (!kept || editItemId.value === row.id || !isPastEditing(row.status)) continue
+      keptDrafts.value.delete(row.id)
+      setReceipt('discarded', row.id, kept.label, statusLabel(row.status))
+    }
+
+    // The edited row is not in the replacement. The editor still closes — the
+    // row it belongs to is gone — but its draft is taken first.
     if (editItemId.value !== null && !rows.some((row) => row.id === editItemId.value)) {
+      keepOpenDraft()
       editItemId.value = null
+      editItemLabel.value = null
     }
   },
 )
@@ -151,7 +387,12 @@ watch(
   () => props.readOnly,
   (readOnly) => {
     if (!readOnly) return
+    // Entering archived history closes the editor through this watcher rather
+    // than through the list, so it is a second door onto the same loss: take
+    // the correction the same way, and say so.
+    keepOpenDraft()
     editItemId.value = null
+    editItemLabel.value = null
     boardPickItemId.value = null
     pickedBoardId.value = null
   },
@@ -295,10 +536,42 @@ function onEdit(item: CaptureItemSummary) {
   // pick confirm against text that is being rewritten.
   cancelBoardPick()
   editItemId.value = item.id
+  // Recorded here because the line about this correction is written at the
+  // moment the row LEAVES the list, when the summary carrying the excerpt is
+  // no longer in `items`.
+  editItemLabel.value = captureLabel(item)
 }
 
+/**
+ * The editor emitted `close` — from FOUR places with two different meanings,
+ * so the editor is asked which before anything is released.
+ *
+ * Cancel and a landed Save come from a loaded editor: the correction is either
+ * on the server or deliberately abandoned, and the receipts about it are spent
+ * with it. Cancel on the load-error panel and Close on the refused panel come
+ * from an editor that never showed a textarea — those buttons answer the
+ * failed read, not a correction the reader was never shown, so what is held
+ * stays held and says so.
+ */
 function closeEdit() {
+  const itemId = editItemId.value
+  if (itemId !== null) {
+    const report = readOpenEditor()
+    if (report.state === 'ready') {
+      keptDrafts.value.delete(itemId)
+      draftReceipts.value.delete(itemId)
+    } else if (keptDrafts.value.has(itemId)) {
+      setReceipt('kept', itemId, editItemLabel.value ?? itemId)
+    }
+  }
   editItemId.value = null
+  editItemLabel.value = null
+}
+
+/** The editor has put a held correction back; say which one, once it is true. */
+function onDraftRestored(itemId: string) {
+  const label = keptDrafts.value.get(itemId)?.label ?? editItemLabel.value ?? itemId
+  setReceipt('restored', itemId, label)
 }
 
 function hasBoard(item: CaptureItemSummary): boolean {
@@ -566,6 +839,53 @@ function recordedOr(value: string | null | undefined): string {
         >&nbsp;· {{ t('inbox.refreshing') }}</span>
       </span>
     </header>
+
+    <!--
+      Where an unsaved correction stands once its capture left the list (#1999
+      item 3). It sits above the list rather than on a row because the capture
+      it is about is often not on screen, and because it outlives the row that
+      produced it.
+
+      MOUNTED AND SILENT until it has something to say (#2593/#2630): a live
+      region inserted at the same moment its text appears is announced
+      unreliably, so the region is always here and only its lines come and go.
+      It is never `display: none` either, which would take it back out of the
+      accessibility tree and undo exactly that.
+
+      `role="status"` and not `alert`: five of the six lines are about a
+      correction that is safe, and the sixth is a stated consequence rather
+      than a failure. `aria-atomic="false"` because the region carries one
+      independent line per capture — a change about one correction must not
+      re-read the others.
+    -->
+    <div
+      class="paper-triage__draft-notices"
+      :class="{ 'paper-triage__draft-notices--speaking': draftNoticeLines.length > 0 }"
+      role="status"
+      aria-live="polite"
+      aria-atomic="false"
+      tabindex="-1"
+      data-testid="capture-draft-notices"
+    >
+      <p
+        v-for="line in draftNoticeLines"
+        :key="line.captureId"
+        class="paper-triage__draft-notice"
+        :data-notice="line.kind"
+        :data-capture-id="line.captureId"
+      >
+        {{ t(`inbox.triage.draft.${line.kind}`, { capture: line.capture, status: line.status }) }}
+      </p>
+      <button
+        v-if="hasDismissableNotice"
+        type="button"
+        class="paper-triage__retry paper-triage__draft-dismiss"
+        data-action="dismiss-draft-notice"
+        @click="dismissDraftNotices"
+      >
+        {{ t('inbox.triage.draft.dismiss') }}
+      </button>
+    </div>
 
     <div v-if="listError" class="paper-triage__empty paper-triage__empty--error" role="alert">
       <p class="tk-body">{{ listError }}</p>
@@ -875,10 +1195,22 @@ function recordedOr(value: string | null | undefined): string {
             mid-flight, and the early release re-opens a second enqueue. The
             editor cannot see the slot, so the table hands it over.
           -->
+          <!--
+            `restored-draft` is the correction this table held while the
+            capture was off the list (#1999). It carries only the fields the
+            reader actually changed, and the editor lays those over the values
+            it re-reads on mount — so an untouched due date or label is the
+            server's current one, not the one the old load happened to see.
+            Save is still last-write-wins, exactly as it is from an editor
+            opened fresh: the hold buys no extra staleness, and claims none.
+          -->
           <PaperTriageRowEdit
+            ref="openEditorRefs"
             :item-id="item.id"
             :mutation-in-flight="hasMutationInFlight"
+            :restored-draft="restoredDraftFor(item)"
             @close="closeEdit"
+            @restored="onDraftRestored"
           />
         </div>
 
@@ -940,6 +1272,39 @@ function recordedOr(value: string | null | undefined): string {
   padding: 6px 10px;
   text-transform: uppercase;
   cursor: pointer;
+}
+/*
+ * The draft-fate region (#1999 item 3). Set in the note palette rather than
+ * the failure one: five of its six sentences are about a correction that is
+ * safe, and the sixth is a stated consequence, not an error.
+ *
+ * The region is always mounted, so the bare class must occupy nothing — no
+ * border, no padding, no margin. `display: none` is deliberately NOT used: it
+ * would remove the live region from the accessibility tree, which is the one
+ * thing being always-mounted exists to avoid.
+ */
+.paper-triage__draft-notices:focus {
+  outline: none;
+}
+.paper-triage__draft-notices--speaking {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-left: 2px solid var(--ember);
+  border-radius: 3px;
+  background: var(--paper-card);
+}
+.paper-triage__draft-notice {
+  margin: 0 0 4px;
+  max-width: 72ch;
+  font-family: var(--sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.paper-triage__draft-dismiss {
+  margin-top: 6px;
 }
 .paper-triage__list {
   margin: 0;

@@ -171,6 +171,27 @@ export default {
       state: 'Stato: {label}. Il punto in cui si trova ora questa cattura.',
       source: 'Origine: {label}. Come è arrivata questa cattura — non è uno stato.',
     },
+    // Dove resta una correzione non salvata la cui cattura esce dall'elenco
+    // (#1999, punto 3): un cambio del filtro bacheca, un aggiornamento che non
+    // restituisce più la riga, oppure il passaggio allo storico in sola
+    // lettura. `{capture}` è l'estratto della riga stessa.
+    //
+    // `kept` e `discarded` sono ricevute di un momento. `held`, `blocked` e
+    // `heldUneditable` sono frasi valide finché restano a schermo, quindi
+    // ognuna finisce dicendo che cosa può fare chi legge.
+    //
+    // `kept` dice "questo elenco" di proposito: la correzione vive nella
+    // tabella finché la tabella esiste, e prometterla dopo un ricaricamento
+    // sarebbe una promessa che questo meccanismo non può mantenere.
+    draft: {
+      kept: 'La correzione non salvata di “{capture}” non è andata persa. Resta conservata finché rimani su questo elenco Inbox e torna con quella cattura quando ricompare. Non è stato salvato nulla.',
+      held: 'La correzione non salvata di “{capture}” è ancora conservata. Premi Modifica cattura su quella riga per riprenderla.',
+      blocked: 'La correzione non salvata di “{capture}” è ancora conservata. Un\'altra cattura è aperta in modifica: concludi quella, poi premi Modifica cattura su questa riga per riprenderla.',
+      heldUneditable: 'La correzione non salvata di “{capture}” è ancora conservata. Questo elenco non modifica una cattura che è {status}, quindi la correzione resta qui finché quella cattura non torna modificabile.',
+      restored: 'La correzione non salvata di “{capture}” è di nuovo nell\'editor, sopra la cattura così com\'è ora. Salvala o annulla come sempre.',
+      discarded: 'La correzione non salvata di “{capture}” è stata scartata: la cattura ora è {status} e il suo testo non è più modificabile. Non è stato salvato nulla.',
+      dismiss: 'Chiudi queste note',
+    },
     // Correzione del testo prima dello smistamento (GH-1951).
     //
     // `blocked.notEditable` dichiara il FATTO, non la causa: il server rifiuta
