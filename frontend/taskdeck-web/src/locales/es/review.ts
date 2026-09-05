@@ -457,6 +457,8 @@ export default {
     hint: 'Pulsa Espacio para ocultar',
     loading: 'Cargando el diff…',
     storedBanner: '{status} · solo lectura — muestra la vista previa guardada del envío original.',
+    storedBannerRecorded: '{status} · solo lectura — muestra las operaciones registradas de la propuesta.',
+    storedBannerNone: '{status} · solo lectura.',
     revised: {
       lead: 'Esta propuesta se',
       emphasis: 'revisó',
@@ -562,6 +564,7 @@ export default {
     pendingReview: 'En espera de revisión',
     approved: 'Aprobada',
     applied: 'Aplicada',
+    appliedToBoard: 'Aplicada al tablero',
     rejected: 'Rechazada',
     failed: 'Fallida',
     expired: 'Caducada',

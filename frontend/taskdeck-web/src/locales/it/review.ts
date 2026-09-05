@@ -459,6 +459,9 @@ export default {
     loading: 'Caricamento del diff…',
     storedBanner:
       '{status} · sola lettura — mostra l’anteprima salvata dell’invio originale.',
+    storedBannerRecorded:
+      '{status} · sola lettura — mostra le operazioni registrate della proposta.',
+    storedBannerNone: '{status} · sola lettura.',
     revised: {
       lead: 'Questa proposta è stata',
       emphasis: 'revisionata',
@@ -564,6 +567,7 @@ export default {
     pendingReview: 'In attesa di revisione',
     approved: 'Approvata',
     applied: 'Applicata',
+    appliedToBoard: 'Applicata alla bacheca',
     rejected: 'Rifiutata',
     failed: 'Non riuscita',
     expired: 'Scaduta',
