@@ -546,7 +546,7 @@ function recordedOr(value: string | null | undefined): string {
 <template>
   <section
     class="paper-triage"
-    aria-label="Captured items"
+    :aria-label="t('inbox.triage.tableAria')"
     :aria-busy="loadingList && !listError"
   >
     <header class="paper-triage__header">
@@ -752,11 +752,11 @@ function recordedOr(value: string | null | undefined): string {
           :aria-busy="boardPickBlock === 'loading'"
         >
           <label class="paper-triage__board-label">
-            <span class="tk-eyebrow">Board</span>
+            <span class="tk-eyebrow">{{ t('inbox.boardPicker.label') }}</span>
             <select
               v-model="pickedBoardId"
               class="paper-triage__board-select"
-              aria-label="Choose a board for this capture"
+              :aria-label="t('inbox.boardPicker.triageAria')"
               :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
               :disabled="boardStore.boards.length === 0"
             >

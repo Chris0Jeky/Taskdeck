@@ -152,6 +152,12 @@ describe('TranscriptEvidenceViewer', () => {
         i18n.global.locale.value = 'es'
         await flushPromises()
         expect(errorText()).toBe('No has iniciado sesión para ver esta transcripción.')
+
+        // The name says "every supported locale"; without this it asserted two
+        // of the three (#1871, the LOW on PR #2625).
+        i18n.global.locale.value = 'it'
+        await flushPromises()
+        expect(errorText()).toBe('Non hai eseguito l’accesso per vedere questa trascrizione.')
       } finally {
         i18n.global.locale.value = previousLocale
       }
