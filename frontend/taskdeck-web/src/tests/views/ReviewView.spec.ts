@@ -900,6 +900,39 @@ describe('ReviewView', () => {
     expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-99&history=archived')
   })
 
+  it('keeps a dismissed archived proposal addressable by a Legacy history deep link', async () => {
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-dismissed-history',
+        boardId: 'board-99',
+        status: 'Dismissed',
+        summary: 'Dismissed archived decision',
+        diffPreview: 'stored dismissed preview',
+      }),
+      buildProposal({
+        id: 'proposal-other-history',
+        boardId: 'board-99',
+        status: 'Applied',
+        summary: 'Other archived decision',
+      }),
+    ])
+
+    const { wrapper, router } = await mountAt(
+      '/workspace/review?boardId=board-99&history=archived#proposal-proposal-dismissed-history',
+    )
+
+    expect(router.currentRoute.value.hash).toBe('#proposal-proposal-dismissed-history')
+    expect(wrapper.get('#proposal-proposal-dismissed-history').text()).toContain(
+      'Dismissed archived decision',
+    )
+    expect(wrapper.find('#proposal-proposal-other-history').exists()).toBe(false)
+    expect(wrapper.find('.td-review__toggle-input').exists()).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Approve for board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Reject')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Apply to board')).toBe(false)
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Dismiss')).toBe(false)
+  })
+
   it('closes a pending apply gate when the route enters archived history', async () => {
     mocks.getProposals.mockResolvedValue([
       buildProposal({
