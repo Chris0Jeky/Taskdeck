@@ -484,6 +484,11 @@ export default {
     derivedConfidence: '{value} derived average',
     deterministic: 'Deterministic extraction · no model confidence',
     notReported: 'No model confidence reported',
+    // The two sentences above are claims about a response that has landed. While
+    // the read is in flight, or after it failed, the card says which of those it
+    // is holding instead of asserting an absence it cannot know (#1940).
+    confidenceLoading: 'Reading the confidence evidence for this proposal…',
+    confidenceFailed: 'Confidence evidence could not be read, so its source is unknown.',
     actor: {
       assistant: 'Assistant',
       capture: 'Capture',
@@ -502,6 +507,12 @@ export default {
     // Shown inside the disclosure when there is nothing to list, so opening the
     // control explains itself instead of revealing an empty region (#1940).
     emptyDetail: 'Decisions on comparable proposals will be listed here.',
+    // `empty` is a fact only once the read has landed. These two say what is
+    // true of the other states instead of claiming an absence (#1940).
+    loading: 'Reading comparable past decisions…',
+    loadingDetail: 'Comparable decisions will be listed here once this read finishes.',
+    failed: 'Comparable past decisions could not be read.',
+    failedDetail: 'The read failed, so whether there are comparable past decisions is unknown.',
     details: {
       show: 'Show similar decisions',
       // The empty-state label. It keeps the `show` wording and adds the count,
