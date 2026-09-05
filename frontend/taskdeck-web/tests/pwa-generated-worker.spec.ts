@@ -166,11 +166,16 @@ describe('generated PWA worker runtime-cache contract', () => {
   it('loads the cleanup script from a top-level importScripts, ahead of the AMD factory', () => {
     // The repair for #2639. vite-plugin-pwa emits the configured `importScripts` call INSIDE the
     // asynchronous AMD `define()` factory it wraps the worker in, so the cleanup script's
-    // `activate` listener was attached after the event had already been dispatched and the forced
-    // re-sweep never ran (measured in Chromium on PR #2416 as `__proofActivateFired: false`).
-    // The build hoists that call to the top of the emitted worker - see
+    // listeners are attached from a promise continuation - only after that factory's microtasks
+    // drain. PR #2416 measured that as a missed `activate` (`__proofActivateFired: false`); the
+    // 2026-09-05 re-measurement in Chromium 151.0.7922.34 saw the listener fire on every run
+    // (3 of 3 on each of first install, skip-waiting, and restart-into-activation), so the two
+    // measurements disagree and the older one is not treated as fact here. What is not in dispute
+    // is that the attachment order depends on microtask draining no specification promises. The
+    // build hoists that call to the top of the emitted worker - see
     // src/pwa/hoistWorkerImportScripts.ts - so the listener exists during the worker's initial
-    // synchronous evaluation, which is what gives `event.waitUntil` on activate its real meaning.
+    // synchronous evaluation and the dependency is gone, which is what gives `event.waitUntil` on
+    // activate its unconditional meaning.
     //
     // This is a STRUCTURAL assertion on purpose: no fake event can prove attachment order, and the
     // handler-contract cases below dispatch `activate` by hand precisely because they cannot.

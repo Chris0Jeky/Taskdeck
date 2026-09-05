@@ -1,24 +1,39 @@
 /**
- * Build-time repair for the inert `activate` listener in the generated service worker (#2639).
+ * Build-time repair for the `importScripts` placement in the generated service worker (#2639).
  *
  * `vite-plugin-pwa`'s `generateSW` strategy emits the configured `workbox.importScripts` call at
  * the top of the worker SOURCE, but then bundles that source through Rollup's off-main-thread
  * plugin, which wraps the whole module in an asynchronous AMD `define()` factory. The emitted
  * `dist/sw.js` therefore reaches `importScripts('api-cache-cleanup.js', ...)` from inside a promise
- * continuation rather than during the worker's initial synchronous evaluation, and every listener
- * that file registers is attached after the lifecycle events have been dispatched. Measured in
- * Chromium (PR #2416, `__proofActivateFired: false`; reproduced under #2475): the `message`
- * listener answers normally and the `install` listener still receives its event, but `activate`
- * never fires, so the forced re-sweep inside `event.waitUntil` never runs.
+ * continuation rather than during the worker's initial synchronous evaluation, so every listener
+ * that file registers is attached only once that factory's microtasks have drained.
+ *
+ * That ordering was recorded as the cause of an inert `activate` listener (PR #2416 measured
+ * `__proofActivateFired: false`; #2639 restated it). Re-measured 2026-09-05 with breadcrumb caches
+ * in Chromium 151.0.7922.34 / Playwright 1.62.1, the listeners DID receive their events on every
+ * run - first install, waiting-then-skip-waiting, and a worker killed over CDP and restarted
+ * straight into activation, 3 of 3 each. The earlier measurement is therefore an unexplained
+ * disagreement with this one, not an established fact about the current build. What holds either
+ * way is that attachment inside the factory's promise continuation depends on the engine draining
+ * microtasks before it dispatches the lifecycle event, and no specification promises that. The
+ * hoist removes the dependency; it is not a fix for an observed failure.
  *
  * This function moves that one call to offset 0 of the emitted worker, ahead of the AMD shim and
  * the `define()` call. Nothing else about the generated worker changes: the precache manifest, the
  * navigation fallback and denylist, both runtime-caching handlers, the share-target handler and the
  * skip-waiting message listener are all emitted exactly as before.
  *
+ * RESIDUAL - only the imported scripts move. Workbox's own `precacheAndRoute()` install handler and
+ * its `cleanupOutdatedCaches()` activate handler are generated INSIDE the AMD factory and stay
+ * there, so the app-shell precache still depends on the same microtask ordering. That the ordering
+ * has never actually failed is what the precache itself attests: a browser dispatching `install`
+ * before the factory drained would have registered no precache handler and produced an empty
+ * precache, which no measurement or bug report has shown. Hoisting those handlers is out of scope
+ * here.
+ *
  * It is deliberately strict. A `vite-plugin-pwa` or `workbox-build` upgrade that changes the shape
- * of the emitted call must fail the build loudly rather than silently restore the vulnerability, so
- * every unexpected shape throws instead of returning the source unchanged.
+ * of the emitted call must fail the build loudly rather than silently reintroduce the ordering
+ * dependency, so every unexpected shape throws instead of returning the source unchanged.
  */
 
 function escapeForRegExp(value: string): string {
