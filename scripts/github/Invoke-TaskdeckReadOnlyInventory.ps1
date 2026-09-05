@@ -583,19 +583,19 @@ function Assert-GhReadCommand {
         }
     }
 
-    $group = $Arguments[0].ToLowerInvariant()
-    if ($group -eq "api") {
+    $group = $Arguments[0]
+    if ($group -ceq "api") {
         Assert-GhApiReadCommand -Arguments @($Arguments | Select-Object -Skip 1)
         return
     }
-    if ($group -eq "status") {
+    if ($group -ceq "status") {
         return
     }
 
     if ($Arguments.Count -lt 2) {
         Deny-InventoryCommand "gh group '$group' requires an allowlisted read action"
     }
-    $action = $Arguments[1].ToLowerInvariant()
+    $action = $Arguments[1]
     $allowedActions = @{
         "cache" = @("list")
         "issue" = @("list", "status", "view")
@@ -609,8 +609,11 @@ function Assert-GhReadCommand {
         "workflow" = @("list", "view")
     }
 
-    if (-not $allowedActions.ContainsKey($group) -or $allowedActions[$group] -notcontains $action) {
-        Deny-InventoryCommand "gh action '$group $action' is not allowlisted"
+    if ($allowedActions.Keys -cnotcontains $group) {
+        Deny-InventoryCommand "gh group '$group' is not allowlisted; command groups must use their exact lowercase token"
+    }
+    if ($allowedActions[$group] -cnotcontains $action) {
+        Deny-InventoryCommand "gh action '$group $action' is not allowlisted; command actions must use their exact lowercase token"
     }
 }
 
@@ -721,6 +724,12 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Allowed @("gh", "api", "repos/example/repo/pulls/1/comments")
     Assert-Allowed @("gh", "api", "--method", "GET", "repos/example/repo/issues", "-f", "state=open")
     Assert-Allowed @("gh", "api", "graphql", "-f", 'query=query($owner:String!){repositoryOwner(login:$owner){login}}', "-F", "owner=example")
+
+    # gh command names are forwarded verbatim, so a case variant must be rejected at the wrapper
+    # boundary instead of being validated under a lowercased spelling and launched unchanged.
+    Assert-Denied @("gh", "API", "repos/example/repo/issues") "exact lowercase token"
+    Assert-Denied @("gh", "PR", "list") "exact lowercase token"
+    Assert-Denied @("gh", "pr", "LIST") "exact lowercase token"
 
     # Argument-content policy: the wrapper launches through argv with no shell, so CR/LF inside the
     # value of a gh api field flag cannot splice a command and a real multi-line GraphQL document
@@ -856,6 +865,25 @@ function Invoke-ReadOnlyInventorySelfTest {
             throw "Denied command reached the launcher."
         }
         $state.Checks++
+    }
+
+    $launchCountBeforeCaseChecks = $state.LaunchCount
+    foreach ($caseVariant in @(
+        @("gh", "API", "repos/example/repo/issues"),
+        @("gh", "PR", "list"),
+        @("gh", "pr", "LIST")
+    )) {
+        try {
+            Invoke-ValidatedInventoryCommand -CommandTokens $caseVariant -Launcher $fakeLauncher
+        }
+        catch {
+            if ($state.LaunchCount -ne $launchCountBeforeCaseChecks) {
+                throw "Case-variant gh command reached the launcher: $($caseVariant -join ' ')"
+            }
+            $state.Checks++
+            continue
+        }
+        throw "Expected case-variant gh command to be denied: $($caseVariant -join ' ')"
     }
 
     # A non-https remote must be refused before any transport process can be spawned.
