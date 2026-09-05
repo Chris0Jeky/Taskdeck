@@ -136,4 +136,77 @@ public class CliKeyFileRemediationTests
         var existingKeyPath = source[readIndex..returnIndex];
         Assert.Contains("RestrictExistingKeyFileAt(localConfigPath);", existingKeyPath);
     }
+
+    [Fact]
+    public void EnsureKeyOnDisk_PreserveFilePath_CallsTheRemediation_StructuralCheck()
+    {
+        // Second call site: when the existing file cannot be READ, the bootstrap preserves it and runs
+        // on a transient key -- so that file survives the run and needs the same lockdown. The
+        // behavioral test below can only reach this branch on Windows, and even there it cannot observe
+        // the resulting DACL while the file is held open, so pin the call site instead: it must sit
+        // inside the PreserveFile branch, before the transient-key return.
+        var source = File.ReadAllText(
+            CliRestrictedFileWriterTests.FindCliSourceFile("CliFirstRunBootstrapper.cs"));
+
+        const string branchMarker = "if (existing.PreserveFile)";
+        const string returnMarker = "return generated;";
+        var branchIndex = source.IndexOf(branchMarker, StringComparison.Ordinal);
+        Assert.True(branchIndex >= 0, $"could not find '{branchMarker}' in CliFirstRunBootstrapper.cs");
+
+        var returnIndex = source.IndexOf(returnMarker, branchIndex, StringComparison.Ordinal);
+        Assert.True(returnIndex > branchIndex, $"could not find '{returnMarker}' after '{branchMarker}'");
+
+        var preserveFilePath = source[branchIndex..returnIndex];
+        Assert.Contains("RestrictExistingKeyFileAt(localConfigPath);", preserveFilePath);
+    }
+
+    [Fact]
+    public void EnsureKeyOnDisk_UnreadableExistingKeyFile_KeepsTheFileAndWarns()
+    {
+        // Behavioral cover for the PreserveFile branch. Windows only, on purpose: FileShare.None is
+        // mandatory there, so the ReadAllText inside ReadExisting is guaranteed to throw and take this
+        // branch. There is no deterministic POSIX equivalent -- an open handle does not block another
+        // read at all, and a 0000 mode is ignored when the suite runs as root -- so the Unix runner is
+        // covered by the structural pin above.
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var dir = Path.Combine(Path.GetTempPath(), $"td-cli-preserve-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dir);
+        var localConfigPath = Path.Combine(dir, "appsettings.local.json");
+        var payload = Encoding.UTF8.GetBytes(
+            "{\n  \"Connectors\": {\n    \"EncryptionKey\": \"" + PersistedKey + "\"\n  }\n}");
+        File.WriteAllBytes(localConfigPath, payload);
+
+        var originalErr = Console.Error;
+        using var stderr = new StringWriter();
+        Console.SetError(stderr);
+        string key;
+        try
+        {
+            using (new FileStream(localConfigPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                key = CliFirstRunBootstrapper.EnsureKeyOnDisk(localConfigPath);
+            }
+        }
+        finally
+        {
+            Console.SetError(originalErr);
+        }
+
+        try
+        {
+            // Transient key for this run, and the unreadable file is neither overwritten nor deleted.
+            Assert.NotEqual(PersistedKey, key);
+            Assert.True(File.Exists(localConfigPath), "the unreadable key file must survive the run");
+            Assert.Equal(payload, File.ReadAllBytes(localConfigPath));
+            Assert.Contains("[CliFirstRun] WARNING: Could not read", stderr.ToString());
+        }
+        finally
+        {
+            try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
 }
