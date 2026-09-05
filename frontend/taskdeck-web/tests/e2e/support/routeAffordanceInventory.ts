@@ -70,14 +70,25 @@ export type AffordanceSelector =
 
 /**
  * What must become observably true after the affordance is activated. `url` and
- * `response` pattern strings are regular-expression SOURCES; `{boardId}` in
- * either is substituted with the seeded board id before use.
+ * `response` pattern strings are regular-expression SOURCES; the `{boardId}`
+ * and `{metricsBoardId}` tokens in either are substituted before use.
+ *
+ * A `response` consequence proves an endpoint answered, which on its own cannot
+ * tell the click's own request apart from one the view already had in flight.
+ * Rows that can carry an independent DOM post-condition declare it in
+ * `postCondition`, and the walk asserts it after the response.
  */
 export type AffordanceConsequence =
   | { kind: 'url'; pathPattern: string }
   | { kind: 'response'; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; urlPattern: string }
   | { kind: 'node'; testId: string }
   | { kind: 'attribute'; selector: string; attribute: string; value: string }
+  /** The named element holds focus, which is the whole job of a "jump me there" control. */
+  | { kind: 'focus'; testId: string }
+  /** The named control is present and enabled without being activated. */
+  | { kind: 'enabled'; selector: string }
+  /** A form control's own value, which no network wait can vouch for. */
+  | { kind: 'value'; selector: string; value: string }
 
 /** Why a row is or is not activated by the walk. */
 export type AffordanceStatus =
@@ -106,6 +117,13 @@ export interface RouteAffordance {
   source: string
   precondition: AffordancePrecondition
   consequence: AffordanceConsequence
+  /**
+   * An independent second assertion, checked after `consequence`. It exists for
+   * `response` rows: a network wait alone can be satisfied by a request the view
+   * issued on mount, so a control that does nothing would still pass. Omitted
+   * where the surface renders nothing that changes (see the notifications rows).
+   */
+  postCondition?: AffordanceConsequence
   status: AffordanceStatus
 }
 
@@ -154,7 +172,7 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         source: 'src/views/paper/PaperHomeView.vue:505',
         precondition: 'seeded-capture',
         consequence: { kind: 'url', pathPattern: '/workspace/inbox$' },
-        status: { activate: false, reason: 'covered-elsewhere', coveredBy: 'tests/e2e/capture-loop.spec.ts:52' },
+        status: { activate: false, reason: 'covered-elsewhere', coveredBy: 'tests/e2e/capture-loop.spec.ts:55' },
       },
       {
         id: 'home.first-board-setup-cta',
@@ -163,7 +181,7 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         source: 'src/views/paper/PaperHomeView.vue:471',
         precondition: 'empty-state',
         consequence: { kind: 'node', testId: 'paper-home-first-board' },
-        status: { activate: false, reason: 'covered-elsewhere', coveredBy: 'tests/e2e/first-run.spec.ts:48' },
+        status: { activate: false, reason: 'covered-elsewhere', coveredBy: 'tests/e2e/first-run.spec.ts:49' },
       },
     ],
   },
@@ -186,7 +204,10 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '[data-action="seal-confirm"]' },
         source: 'src/views/paper/today/TodayCover.vue:168',
         precondition: 'session',
-        consequence: { kind: 'node', testId: 'seal-confirm' },
+        // Not the surrounding seal-confirm group: what has to be true is that
+        // THIS control is a live choice the walk declines, not that its panel
+        // rendered.
+        consequence: { kind: 'enabled', selector: '[data-action="seal-confirm"]' },
         status: { activate: false, reason: 'guarded-not-activated', assertEnabled: true },
       },
       {
@@ -195,7 +216,10 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '[data-action="note"]' },
         source: 'src/views/paper/today/TodayCover.vue:128',
         precondition: 'session',
-        consequence: { kind: 'node', testId: 'line-for-tomorrow-input' },
+        // The input renders unconditionally, so its presence proves nothing.
+        // What the control actually does is move the caret: PaperTodayView.vue
+        // :113-118 calls focus() on the line-for-tomorrow field.
+        consequence: { kind: 'focus', testId: 'line-for-tomorrow-input' },
         status: { activate: true },
       },
     ],
@@ -396,6 +420,9 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'role', role: 'button', name: 'Refresh' },
         source: 'src/views/NotificationInboxView.vue:233',
         precondition: 'session',
+        // NO postCondition: a refresh that returns the same list changes nothing
+        // on screen. The walk compensates by consuming the mount read before it
+        // arms this wait, so only a second request can satisfy it.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/notifications(\\?|$)' },
         status: { activate: true },
       },
@@ -405,6 +432,9 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'role', role: 'checkbox', name: 'unread', namePattern: true, nameFlags: 'i' },
         source: 'src/views/NotificationInboxView.vue:241',
         precondition: 'session',
+        // NO postCondition either: NotificationInboxView.vue:267 renders the same
+        // "No notifications found." empty state filtered or not, and no helper
+        // can seed a notification to tell the two lists apart.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/notifications(\\?|$)' },
         status: { activate: true },
       },
@@ -470,7 +500,11 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '#board-select' },
         source: 'src/views/MetricsView.vue:167',
         precondition: 'seeded-board',
-        consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/[a-f0-9-]+' },
+        // Pinned to the board the walk SELECTS, which is deliberately not the
+        // one MetricsView auto-selects on mount (MetricsView.vue:86), so the
+        // mount read cannot satisfy this wait.
+        consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/{metricsBoardId}\\?from=' },
+        postCondition: { kind: 'value', selector: '#board-select', value: '{metricsBoardId}' },
         status: { activate: true },
       },
       {
@@ -479,7 +513,9 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '#range-select' },
         source: 'src/views/MetricsView.vue:181',
         precondition: 'seeded-board',
-        consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/[a-f0-9-]+' },
+        // from= pins this to a metrics read rather than any /metrics/boards/ URL.
+        consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/{metricsBoardId}\\?from=' },
+        postCondition: { kind: 'value', selector: '#range-select', value: '90' },
         status: { activate: true },
       },
       {
@@ -488,7 +524,9 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'role', role: 'button', name: 'Export CSV', namePattern: true },
         source: 'src/views/MetricsView.vue:191',
         precondition: 'seeded-board',
-        consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/[a-f0-9-]+/export' },
+        // No mount read touches /export, and a download leaves no DOM trace,
+        // so the anchored response is the whole assertion.
+        consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/{metricsBoardId}/export\\?' },
         status: { activate: true },
       },
     ],
@@ -585,7 +623,7 @@ export const EXCLUDED_WORKSPACE_ROUTES: ExcludedRoute[] = [
   },
   {
     routeName: 'workspace-settings-access',
-    reason: 'Board access control needs a second user account that no E2E support helper can create.',
+    reason: 'Every affordance needs a board already shared with a second collaborator. registerUserSession can mint the account, so the barrier is the sharing step, which no support helper performs; the surface renders empty without it.',
   },
   {
     routeName: 'workspace-settings-export-import',
@@ -641,7 +679,7 @@ export const EXCLUDED_WORKSPACE_ROUTES: ExcludedRoute[] = [
   },
   {
     routeName: 'workspace-automations-queue',
-    reason: 'The queue duplicates the review rail over the same seeded proposal that workspace-review already walks.',
+    reason: 'AutomationQueueView is the raw queue-REQUEST surface (queueStore rows, not proposals, and it renders no review rail): no E2E spec enters it and no support helper seeds a queue request, so every control sits behind an empty list.',
   },
   {
     routeName: 'workspace-automations-chat',
@@ -665,7 +703,7 @@ export const EXCLUDED_WORKSPACE_ROUTES: ExcludedRoute[] = [
   },
   {
     routeName: 'not-found',
-    reason: 'The catch-all /:pathMatch(.*)* route rather than a workspace surface; it renders no affordance of its own.',
+    reason: 'The catch-all /:pathMatch(.*)* route rather than a workspace surface. It DOES render two recovery links (NotFoundView.vue:18 and :21); they stay out of slice 1 because the route holds no state to walk and both links duplicate shell navigation already covered elsewhere.',
   },
 ]
 

@@ -120,17 +120,32 @@ describe('route affordance inventory coverage (GH-1949 AC4)', () => {
     expect(bothWaysAtOnce).toEqual([])
   })
 
-  // ── 4 ── the unnamed redirect records are counted, not ignored ────────────
-  it('pins the number of unnamed /workspace redirect records', () => {
-    const unnamedWorkspaceRecords = router
+  // ── 4 ── the unnamed redirect records are identified, not just counted ────
+  /**
+   * A count alone is satisfied by any four redirects, so swapping one for a
+   * different path would pass. Pin the paths themselves; the count constant
+   * then guards the arity of that list rather than standing in for it.
+   */
+  it('pins the identity of every unnamed /workspace redirect record', () => {
+    const unnamedWorkspacePaths = router
       .getRoutes()
       .filter((route) => route.name === undefined && route.path.startsWith('/workspace'))
+      .map((route) => route.path)
+      .sort()
 
     expect(
-      unnamedWorkspaceRecords.map((route) => route.path).sort(),
-      'an unnamed /workspace record was added or removed; a redirect owns no affordance, '
-        + 'so confirm that and update UNNAMED_WORKSPACE_REDIRECT_COUNT',
-    ).toHaveLength(UNNAMED_WORKSPACE_REDIRECT_COUNT)
+      unnamedWorkspacePaths,
+      'an unnamed /workspace record was added, removed or repointed. A redirect owns no '
+        + 'affordance, so confirm that is still true and update this list and '
+        + 'UNNAMED_WORKSPACE_REDIRECT_COUNT together',
+    ).toEqual([
+      '/workspace',
+      '/workspace/activity/user/:userId',
+      '/workspace/automations',
+      '/workspace/automations/proposals',
+    ])
+
+    expect(unnamedWorkspacePaths).toHaveLength(UNNAMED_WORKSPACE_REDIRECT_COUNT)
   })
 
   // ── 5 ── an exclusion has to say why ──────────────────────────────────────

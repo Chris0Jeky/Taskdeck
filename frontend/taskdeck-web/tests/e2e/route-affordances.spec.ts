@@ -30,12 +30,28 @@
  * tight, shed the metrics and integrations rows to slice 2 (mark them
  * `out-of-slice-1` in the inventory) rather than touching the workflow.
  *
+ * RESPONSE WAITS. A `page.waitForResponse` armed just before a click can be
+ * satisfied by a request the view issued on MOUNT, which would let a dead
+ * control pass. Every route whose rows assert a response therefore consumes its
+ * mount read first — armed before `page.goto` and awaited, so the row's own wait
+ * is registered only once the mount traffic is gone — and the rows carry a
+ * `postCondition` wherever the surface renders something independent that
+ * changes. The metrics rows additionally pin the board id to the one the walk
+ * SELECTS, which is never the one the view auto-selects.
+ *
  * COMPLETENESS. Every block ends with `assertBlockCompleted`, which proves the
  * declared `WALK_PLAN` still names exactly the inventory's `activate: true` and
  * `guarded-not-activated` rows and that this block walked exactly its share. So
  * adding a row to the inventory without walking it is a red build rather than a
  * silent gap. See the comment on `WALK_PLAN` for why this is not an `afterAll`
  * tally.
+ *
+ * WHAT COMPLETENESS DOES NOT CATCH. Each block checks only its own share, so a
+ * block that never runs — `test.skip`, a `grep` filter, `maxFailures` cutting
+ * the run short — takes its rows out of the proof silently. The plan-versus-
+ * inventory half still runs in every surviving block, so an unwalked NEW row is
+ * always caught; it is a whole missing block that goes unnoticed. Reading the
+ * run summary for four passing blocks is what closes that.
  */
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
@@ -173,6 +189,11 @@ function assertBlockCompleted(block: keyof typeof WALK_PLAN): void {
 interface WalkContext {
   boardId?: string
   boardName?: string
+  /**
+   * The board the metrics rows select. Deliberately NOT the board MetricsView
+   * auto-selects on mount, so the mount read cannot satisfy those rows' waits.
+   */
+  metricsBoardId?: string
 }
 
 function affordanceById(id: string): RouteAffordance {
@@ -186,9 +207,10 @@ function affordanceById(id: string): RouteAffordance {
   return found
 }
 
-/** Substitutes the `{boardId}` / `{boardName}` tokens the inventory uses. */
+/** Substitutes the tokens the inventory uses in selectors and patterns. */
 function fillTokens(value: string, context: WalkContext): string {
   return value
+    .replace(/\{metricsBoardId\}/g, context.metricsBoardId ?? '')
     .replace(/\{boardId\}/g, context.boardId ?? '')
     .replace(/\{boardName\}/g, context.boardName ?? '')
 }
@@ -210,27 +232,57 @@ function locate(
   })
 }
 
+/**
+ * Assert one consequence.
+ *
+ * `scope` is the SAME scope the affordance was found in, not the page. A row
+ * driven inside one triage row or one board column must have its consequence
+ * checked there too: with two columns or two captures on screen, a page-wide
+ * `.first()` can be satisfied by a node the walk never opened.
+ */
 async function expectConsequence(
   page: Page,
+  scope: Page | Locator,
   id: string,
   consequence: AffordanceConsequence,
   context: WalkContext,
 ): Promise<void> {
   if (consequence.kind === 'url') {
+    // Navigation is a property of the page, never of a scoped locator.
     await expect(page, `${id} must navigate to ${consequence.pathPattern}`)
       .toHaveURL(new RegExp(fillTokens(consequence.pathPattern, context)))
     return
   }
   if (consequence.kind === 'node') {
     await expect(
-      page.getByTestId(consequence.testId).first(),
-      `${id} must render [data-testid="${consequence.testId}"]`,
+      scope.getByTestId(consequence.testId).first(),
+      `${id} must render [data-testid="${consequence.testId}"] within its own scope`,
     ).toBeVisible()
+    return
+  }
+  if (consequence.kind === 'focus') {
+    await expect(
+      scope.getByTestId(consequence.testId).first(),
+      `${id} must leave [data-testid="${consequence.testId}"] holding focus`,
+    ).toBeFocused()
+    return
+  }
+  if (consequence.kind === 'enabled') {
+    const control = scope.locator(consequence.selector).first()
+    await expect(control, `${id} must render ${consequence.selector}`).toBeVisible()
+    await expect(control, `${id} must leave ${consequence.selector} enabled`).toBeEnabled()
+    return
+  }
+  if (consequence.kind === 'value') {
+    await expect(
+      scope.locator(consequence.selector).first(),
+      `${id} must leave ${consequence.selector} holding the value ${consequence.value}`,
+    ).toHaveValue(fillTokens(consequence.value, context))
     return
   }
   if (consequence.kind === 'attribute') {
     await expect(
-      page.locator(consequence.selector).first(),
+      scope.locator(consequence.selector).first(),
       `${id} must leave ${consequence.selector} carrying ${consequence.attribute}="${consequence.value}"`,
     ).toHaveAttribute(consequence.attribute, consequence.value)
   }
@@ -258,31 +310,43 @@ async function activate(
     )
   }
 
-  const target = locate(options.scope ?? page, affordance.selector, context)
+  const scope = options.scope ?? page
+  const target = locate(scope, affordance.selector, context)
   await expect(target, `${id} (${affordance.source}) must be visible before activation`)
     .toBeVisible()
 
   const consequence = affordance.consequence
   if (consequence.kind === 'response') {
     const pattern = new RegExp(fillTokens(consequence.urlPattern, context))
+    // Bounded deliberately. Left to the 90 s test timeout, a dead control burns
+    // a minute and a half of the shared E2E Smoke budget before it reports; the
+    // request this waits on is raised by the click that follows.
     const responsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === consequence.method && pattern.test(response.url()),
+      { timeout: 15_000 },
     )
     await (options.act ? options.act(target) : target.click())
     await assertOk(await responsePromise, `${id} (${affordance.source})`)
   } else {
     await (options.act ? options.act(target) : target.click())
-    await expectConsequence(page, id, consequence, context)
+    await expectConsequence(page, scope, id, consequence, context)
+  }
+
+  // The independent half, where the row has one. A network wait cannot tell a
+  // live control from a dead one on a view that already fetched; this can.
+  if (affordance.postCondition) {
+    await expectConsequence(page, scope, id, affordance.postCondition, context)
   }
 
   walkedIds.add(id)
 }
 
 /**
- * Assert a `guarded-not-activated` row is present and enabled WITHOUT clicking
- * it. "Enabled" is the point: the control must be a live, reachable choice —
- * the walk simply refuses to make it.
+ * Assert a `guarded-not-activated` row WITHOUT clicking it. The row's declared
+ * consequence carries what must hold — for the seal confirm, that the control
+ * itself is enabled: it must be a live, reachable choice the walk declines, not
+ * merely a panel that rendered.
  */
 async function assertReachableButNotActivated(
   page: Page,
@@ -296,8 +360,7 @@ async function assertReachableButNotActivated(
 
   const target = locate(page, affordance.selector, context)
   await expect(target, `${id} (${affordance.source}) must be present`).toBeVisible()
-  await expect(target, `${id} must be enabled — it is a real choice the walk declines`)
-    .toBeEnabled()
+  await expectConsequence(page, page, id, affordance.consequence, context)
   guardedIds.add(id)
 }
 
@@ -378,18 +441,31 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   // CalendarView.vue:260 wins over both view modes while totalCards is 0.
 
   // ── /workspace/metrics ───────────────────────────────────────────────────
-  // MetricsView auto-selects boards[0] on mount, so selecting that same board
-  // would change nothing and fire no request. Pick the other one.
+  // MetricsView auto-selects boards[0] in onMounted and its watcher fetches in
+  // the same tick, so a wait armed after navigation could be satisfied by that
+  // mount read and a dead select would still pass. Two defences: consume the
+  // mount read here, and pin the rows to the OTHER of the two boards this block
+  // seeded, so the mount's URL can never match them.
+  const mountMetricsRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET'
+      && /\/api\/metrics\/boards\/[a-f0-9-]+\?from=/.test(response.url()),
+  )
   await page.goto('/workspace/metrics')
+  await assertOk(await mountMetricsRead, 'metrics read issued on mount')
+
   const boardSelect = page.locator('#board-select')
-  await expect(boardSelect).toBeVisible()
   await expect(boardSelect, 'the board select must settle on its auto-selection first')
     .not.toHaveValue('')
   const preselected = await boardSelect.inputValue()
-  const otherBoardId = preselected === boardId ? createdBoardId : boardId
+  context.metricsBoardId = preselected === boardId ? createdBoardId : boardId
+  expect(
+    context.metricsBoardId,
+    'the metrics rows must target a board the mount did not already read',
+  ).not.toBe(preselected)
 
   await activate(page, 'metrics.board-select', context, {
-    act: (target) => target.selectOption(otherBoardId),
+    act: (target) => target.selectOption(context.metricsBoardId as string),
   })
   await activate(page, 'metrics.range-select', context, {
     act: (target) => target.selectOption({ label: 'Last 90 days' }),
@@ -408,7 +484,18 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   await activate(page, 'views-detail.clear-filter', context)
 
   // ── /workspace/notifications ─────────────────────────────────────────────
+  // The view fetches on mount and the Refresh button renders on first paint, so
+  // a wait armed after navigation could be satisfied by the mount read. Consume
+  // it first: only a genuinely new request can settle the rows below. Neither
+  // row can carry a post-condition, because the filtered and unfiltered empty
+  // states render identical copy for a user with no notifications.
+  const mountNotificationsRead = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'GET' && /\/api\/notifications(\?|$)/.test(response.url()),
+  )
   await page.goto('/workspace/notifications')
+  await assertOk(await mountNotificationsRead, 'notifications read issued on mount')
+
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
   await activate(page, 'notifications.refresh', context)
   await activate(page, 'notifications.unread-only', context, {
