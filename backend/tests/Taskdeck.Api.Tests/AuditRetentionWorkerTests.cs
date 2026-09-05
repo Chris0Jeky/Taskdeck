@@ -108,6 +108,50 @@ public class AuditRetentionWorkerTests
             () => worker.CleanupOldEntriesAsync(cts.Token));
     }
 
+    [Fact]
+    public async Task StartAsync_RunsImmediateCleanup_ReportsHeartbeat_AndStopsDuringIdleDelay()
+    {
+        var firstCleanup = new TaskCompletionSource<(DateTimeOffset Cutoff, int BatchSize)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var fakeRepo = new FakeAuditLogRepository(
+            deletedCount: 1,
+            onDelete: (cutoff, batchSize) => firstCleanup.TrySetResult((cutoff, batchSize)));
+        using var serviceProvider = BuildServiceProvider(fakeRepo);
+        var logger = new InMemoryLogger<AuditRetentionWorker>();
+        var heartbeat = new WorkerHeartbeatRegistry();
+        var settings = new AuditRetentionSettings
+        {
+            MaxRetentionDays = 30,
+            CleanupBatchSize = 321,
+            CleanupIntervalHours = 1
+        };
+
+        var worker = new AuditRetentionWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            settings,
+            heartbeat,
+            logger);
+
+        var before = DateTimeOffset.UtcNow.AddDays(-settings.MaxRetentionDays);
+        await worker.StartAsync(CancellationToken.None);
+        try
+        {
+            var request = await firstCleanup.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var after = DateTimeOffset.UtcNow.AddDays(-settings.MaxRetentionDays);
+
+            fakeRepo.DeleteOldEntriesCallCount.Should().Be(1);
+            request.BatchSize.Should().Be(settings.CleanupBatchSize);
+            request.Cutoff.Should().BeOnOrAfter(before);
+            request.Cutoff.Should().BeOnOrBefore(after);
+            heartbeat.GetLastHeartbeat(nameof(AuditRetentionWorker)).Should().NotBeNull();
+        }
+        finally
+        {
+            using var stopDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await worker.StopAsync(stopDeadline.Token);
+        }
+    }
+
     private static ServiceProvider BuildServiceProvider(IAuditLogRepository auditLogRepo)
     {
         var services = new ServiceCollection();
@@ -119,15 +163,20 @@ public class AuditRetentionWorkerTests
     {
         private readonly int _deletedCount;
         private readonly bool _throwOnCancel;
+        private readonly Action<DateTimeOffset, int>? _onDelete;
 
         public int DeleteOldEntriesCallCount { get; private set; }
         public DateTimeOffset? LastCutoffDate { get; private set; }
         public int? LastBatchSize { get; private set; }
 
-        public FakeAuditLogRepository(int deletedCount, bool throwOnCancel = false)
+        public FakeAuditLogRepository(
+            int deletedCount,
+            bool throwOnCancel = false,
+            Action<DateTimeOffset, int>? onDelete = null)
         {
             _deletedCount = deletedCount;
             _throwOnCancel = throwOnCancel;
+            _onDelete = onDelete;
         }
 
         public Task<int> DeleteOldEntriesAsync(DateTimeOffset olderThan, int batchSize, CancellationToken cancellationToken = default)
@@ -140,6 +189,7 @@ public class AuditRetentionWorkerTests
             DeleteOldEntriesCallCount++;
             LastCutoffDate = olderThan;
             LastBatchSize = batchSize;
+            _onDelete?.Invoke(olderThan, batchSize);
             return Task.FromResult(_deletedCount);
         }
 
