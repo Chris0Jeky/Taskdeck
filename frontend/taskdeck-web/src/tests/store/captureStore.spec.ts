@@ -2843,7 +2843,18 @@ describe('captureStore', () => {
     })
 
     describe('resetForLogout', () => {
-      it('clears the per-item summary generation guard', async () => {
+      /**
+       * Both halves of the #2301 guard now carry ONE post-logout contract: a
+       * response issued before the reset is dropped, a response issued after it
+       * caches normally (#2640).
+       *
+       * This case used to assert the opposite for the summary half. Clearing
+       * `latestSummaryGenerationById` puts `applyBackgroundListSnapshot`'s read
+       * back at 0, so an older in-flight snapshot outranked a row a newer read
+       * had moved and pushed it back to Triaging — the same inversion the epoch
+       * was added to stop on the detail half.
+       */
+      it('drops a background list snapshot issued before the logout', async () => {
         vi.useFakeTimers()
         try {
           const store = useCaptureStore()
@@ -2870,7 +2881,32 @@ describe('captureStore', () => {
           await Promise.resolve()
           await Promise.resolve()
 
-          // The entry is gone, so nothing stale-high is left to pin the row.
+          // The snapshot was issued in the epoch the reset ended, so it is not
+          // applied at all and the row it would have regressed stands.
+          expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Failed')
+          stop()
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('applies a background list snapshot issued after the logout', async () => {
+        vi.useFakeTimers()
+        try {
+          const store = useCaptureStore()
+          store.items = [summaryRow('c-1', 'Failed')]
+          store.resetForLogout()
+
+          vi.mocked(captureApi.listItems).mockResolvedValue([
+            summaryRow('c-1', 'Triaging'),
+          ] as never)
+          const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+          await vi.advanceTimersByTimeAsync(3_000)
+
+          // The epoch drops what a reset CROSSED, not everything after it. A
+          // request issued in the current epoch is current, and the snapshot is
+          // still the authority for membership, order and status.
+          expect(captureApi.listItems).toHaveBeenCalledTimes(1)
           expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Triaging')
           stop()
         } finally {

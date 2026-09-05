@@ -145,9 +145,12 @@ export const useCaptureStore = defineStore('capture', () => {
   let latestListWriteGeneration = 0
   const latestDetailWriteGenerationById = new Map<string, number>()
   const latestSummaryGenerationById = new Map<string, number>()
-  // Bumped by `resetForLogout`. Every detail read captures it when the request
-  // is issued, so a read that crosses a logout is dropped outright instead of
-  // being compared against generations the reset has already discarded.
+  // Bumped by `resetForLogout`. Every read that is compared against the
+  // generations above captures it when its request is issued — the detail reads
+  // through `fetchDetail`, the single-item triage poll, and the background list
+  // snapshot in `pollBatchTriageCompletion` (#2640) — so a response that
+  // crosses a logout is dropped outright instead of being compared against
+  // generations the reset has already discarded.
   let sessionEpoch = 0
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
@@ -206,6 +209,11 @@ export const useCaptureStore = defineStore('capture', () => {
    * authority for membership and order — the list still owns scope and the
    * newest-first cap — and only a row whose own summary is newer than this
    * read keeps its local value.
+   *
+   * This compare is only meaningful WITHIN one session. `resetForLogout` clears
+   * `latestSummaryGenerationById`, which puts the read below back at 0 for
+   * every row, so the caller drops a snapshot the reset crossed before calling
+   * here at all (#2640) rather than letting the cleared map invert the guard.
    */
   function applyBackgroundListSnapshot(
     loadedItems: CaptureItemSummary[],
@@ -825,13 +833,22 @@ export const useCaptureStore = defineStore('capture', () => {
       const observedListLoadRequestId = latestListLoadRequestId
       const observedListWriteGeneration = latestListWriteGeneration
       const observedSummaryGeneration = nextCaptureGeneration
+      const observedSessionEpoch = sessionEpoch
       const controller = new AbortController()
       activeRequest = controller
       const requestOptions = { signal: controller.signal, skipRetry: true }
+      // The epoch is checked first, for the same reason the detail path checks
+      // it first (#2640). `applyBackgroundListSnapshot` keeps a locally newer
+      // row only while `latestSummaryGenerationById` outranks this read's
+      // observed generation, and the reset CLEARS that map: the read comes back
+      // 0, so an older in-flight snapshot would outrank a row a newer read had
+      // moved and regress it. Dropping a snapshot the reset crossed leaves both
+      // halves of the guard with one post-logout contract.
       const isCurrent = () =>
         !stopped &&
         !controller.signal.aborted &&
         activeRequest === controller &&
+        observedSessionEpoch === sessionEpoch &&
         observedListLoadRequestId === latestListLoadRequestId &&
         observedListWriteGeneration === latestListWriteGeneration
 
