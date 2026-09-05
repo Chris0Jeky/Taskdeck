@@ -70,6 +70,7 @@ vi.mock('../../utils/navigation', () => ({
 }))
 
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
+import type { DetailCacheOutcome } from '../../store/captureStore'
 
 function createOrchestrator() {
   mountedCallback = null
@@ -169,6 +170,11 @@ describe('useInboxOrchestrator', () => {
       ],
     })
     mockCaptureStore.pollBatchTriageCompletion.mockReset().mockReturnValue(vi.fn())
+    // `vi.clearAllMocks()` clears recorded calls but keeps implementations,
+    // including UNCONSUMED `mockImplementationOnce` entries. A case that queues
+    // a re-read the code under test does not take would hand that queued
+    // implementation to the next test.
+    mockCaptureStore.fetchDetail.mockReset()
     // The store reports whether it APPLIED the response (#2501). The default is
     // the ordinary case: the response was the latest and was written.
     mockCaptureStore.fetchItems.mockReset().mockResolvedValue(true)
@@ -1050,15 +1056,15 @@ describe('useInboxOrchestrator', () => {
   describe('dropped detail reads', () => {
     const keptDetail = { id: 'kept', rawText: 'kept body', boardId: null, status: 'New' }
 
-    it('holds the previous selection when the store reports a dropped read', async () => {
+    it('holds the previous selection and active row when a logout dropped the read', async () => {
       mockCaptureStore.items = [{ id: 'kept' }, { id: 'dropped' }]
       mockCaptureStore.detailById = { kept: keptDetail }
       const orch = createOrchestrator()
 
       mockCaptureStore.fetchDetail.mockImplementationOnce(async (
         _itemId: string,
-        options?: { onCacheOutcome?: (cached: boolean) => void },
-      ) => { options?.onCacheOutcome?.(true) })
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('cached') })
       await orch.openItemFromList(summaryRow('kept', null), 0)
       expect(orch.selectedItemId.value).toBe('kept')
 
@@ -1066,12 +1072,17 @@ describe('useInboxOrchestrator', () => {
       // put a detail for this id in `detailById` either.
       mockCaptureStore.fetchDetail.mockImplementationOnce(async (
         _itemId: string,
-        options?: { onCacheOutcome?: (cached: boolean) => void },
-      ) => { options?.onCacheOutcome?.(false) })
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('epoch') })
       await orch.openItemFromList(summaryRow('dropped', null), 1)
 
       expect(orch.selectedItemId.value).toBe('kept')
       expect(orch.selectedItem.value).toEqual(keptDetail)
+      // `activeItemIndex` drives the active row and `aria-activedescendant`
+      // while `selectedItemId` drives `aria-selected` and the panel. Restoring
+      // one without the other leaves the list pointing at a row the panel is
+      // not showing, so both come back.
+      expect(orch.activeItemIndex.value).toBe(0)
     })
 
     it('keeps the selection when a dropped read left a newer detail cached', async () => {
@@ -1084,12 +1095,12 @@ describe('useInboxOrchestrator', () => {
       // has a detail to render and the selection is honest.
       mockCaptureStore.fetchDetail.mockImplementationOnce(async (
         itemId: string,
-        options?: { onCacheOutcome?: (cached: boolean) => void },
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
       ) => {
         mockCaptureStore.detailById[itemId] = {
           id: itemId, rawText: 'newer body', boardId: null, status: 'ProposalCreated',
         }
-        options?.onCacheOutcome?.(false)
+        options?.onCacheOutcome?.('generation')
       })
       await orch.openItemFromList(summaryRow('superseded', null), 0)
 
@@ -1099,6 +1110,82 @@ describe('useInboxOrchestrator', () => {
       })
     })
 
+    /**
+     * The write-generation drop is NOT post-logout-only. A first open observes
+     * generation 0 for an uncached item; a batch triage that includes it moves
+     * that generation through `recordCaptureWrite`, and
+     * `refreshTerminalDetails` skips the item because it has a list row and no
+     * cached detail. So the read is dropped with `detailById` still empty and
+     * NOTHING has cached a body for the id — restoring the selection there
+     * turns a live click into a silent no-op and strips a live deep link.
+     */
+    const reReadDetail = {
+      id: 'crossed', rawText: 'reconciled body', boardId: null, status: 'ProposalCreated',
+    }
+
+    function mockBatchCrossedThenCachingReRead() {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('generation') })
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => {
+        mockCaptureStore.detailById[itemId] = { ...reReadDetail, id: itemId }
+        options?.onCacheOutcome?.('cached')
+      })
+    }
+
+    it('re-reads once and keeps the deep-link hash when a batch write crossed the read', async () => {
+      mockRoute.hash = '#capture-crossed'
+      mockCaptureStore.items = [{ id: 'crossed' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+      mockBatchCrossedThenCachingReRead()
+
+      await orch.loadInbox()
+
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(2)
+      expect(orch.selectedItemId.value).toBe('crossed')
+      expect(orch.selectedItem.value).toEqual(reReadDetail)
+      // The hash still names a capture the user can see, so nothing clears it.
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+    })
+
+    it('re-reads once so a click still opens an item a batch write crossed', async () => {
+      mockCaptureStore.items = [{ id: 'crossed' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+      mockBatchCrossedThenCachingReRead()
+
+      await orch.openItemFromList(summaryRow('crossed', null), 0)
+
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(2)
+      expect(orch.selectedItemId.value).toBe('crossed')
+      expect(orch.activeItemIndex.value).toBe(0)
+      expect(orch.selectedItem.value).toEqual(reReadDetail)
+    })
+
+    it('does not re-read when the crossing write already cached a body', async () => {
+      mockCaptureStore.items = [{ id: 'crossed' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => {
+        mockCaptureStore.detailById[itemId] = { ...reReadDetail, id: itemId }
+        options?.onCacheOutcome?.('generation')
+      })
+
+      await orch.openItemFromList(summaryRow('crossed', null), 0)
+
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(1)
+      expect(orch.selectedItemId.value).toBe('crossed')
+    })
+
     it('still treats a rejected detail read as a failure', async () => {
       mockCaptureStore.items = [{ id: 'kept' }, { id: 'broken' }]
       mockCaptureStore.detailById = { kept: keptDetail }
@@ -1106,8 +1193,8 @@ describe('useInboxOrchestrator', () => {
 
       mockCaptureStore.fetchDetail.mockImplementationOnce(async (
         _itemId: string,
-        options?: { onCacheOutcome?: (cached: boolean) => void },
-      ) => { options?.onCacheOutcome?.(true) })
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('cached') })
       await orch.openItemFromList(summaryRow('kept', null), 0)
 
       mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('detail unavailable'))

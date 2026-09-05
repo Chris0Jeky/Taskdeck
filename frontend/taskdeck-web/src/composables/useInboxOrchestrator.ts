@@ -1,6 +1,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
+import type { DetailCacheOutcome } from '../store/captureStore'
 import { boardsApi } from '../api/boardsApi'
 import { isTriageTerminalStatus } from '../types/capture'
 import type { CaptureItem, CaptureItemSummary, CaptureListQuery } from '../types/capture'
@@ -298,7 +299,12 @@ export function useInboxOrchestrator(options: {
     // only the list write is suppressed. Paper loads through `peekDetail` and is
     // unaffected either way.
     const syncSummary = cacheSummary && !isArchivedHistory.value
+    // Both halves of the selection. `selectedItemId` drives `aria-selected` and
+    // the detail panel; `activeItemIndex` drives the active row and
+    // `aria-activedescendant`. Restoring one without the other would leave the
+    // list pointing at a row the panel is not showing.
     const previousSelectedItemId = selectedItemId.value
+    const previousActiveItemIndex = activeItemIndex.value
     primeSelection(itemId, preferredIndex)
     hashLoadFailedItemId.value = null
     try {
@@ -306,29 +312,44 @@ export function useInboxOrchestrator(options: {
         captureStore.cacheDetail(preloadedDetail, syncSummary)
         return true
       }
-      // `onCacheOutcome` is the store reporting that THIS read reached its
-      // caches (#2640). `fetchDetail` resolves with the body it fetched on
-      // three paths that write nothing — a `shouldCache` opt-out, a session
-      // epoch the logout moved, a write generation a newer mutation moved — so
-      // resolution alone is not evidence the panel has a detail to render.
-      // Returning `true` there left `selectedItemId` on an id `detailById`
-      // holds nothing for, which `InboxDetailPanel` renders as "Unable to load
-      // capture detail." for a read that succeeded. A store that reports
-      // nothing is read as having cached, which is the behaviour before #2640.
-      let cached = true
-      await captureStore.fetchDetail(itemId, {
-        syncSummary,
-        onCacheOutcome: (didCache) => { cached = didCache },
-      })
-      // A drop can still leave a detail here: a mutation that superseded this
-      // read cached its own newer body under the same id. The panel is honest
-      // then and the selection stands. Only a drop that left the store with
-      // nothing for this id is a selection this surface cannot show, and that
-      // is not a failure either — so restore the selection the user had rather
-      // than clearing it, and report the read as not opened.
-      if (!cached && !captureStore.detailById[itemId]) {
+      // `onCacheOutcome` is the store reporting what it did with THIS read
+      // (#2640). `fetchDetail` resolves with the body it fetched on three paths
+      // that write nothing, so resolution alone is not evidence the panel has a
+      // detail to render: returning `true` regardless left `selectedItemId` on
+      // an id `detailById` holds nothing for, which `InboxDetailPanel` renders
+      // as "Unable to load capture detail." for a read that succeeded. A store
+      // that reports nothing is read as `cached`, the behaviour before #2640.
+      // A holder, not a bare `let`: TypeScript's control-flow analysis does not
+      // track an assignment made inside the callback and would narrow a plain
+      // variable to its initializer for every compare below.
+      const detailRead: { outcome: DetailCacheOutcome } = { outcome: 'cached' }
+      const report = (reported: DetailCacheOutcome) => { detailRead.outcome = reported }
+      await captureStore.fetchDetail(itemId, { syncSummary, onCacheOutcome: report })
+
+      // A `generation` drop is a LIVE-session case, not a post-logout one: a
+      // first open observes generation 0 for an uncached item, and a batch
+      // triage that includes it moves that generation while the read is in
+      // flight. `refreshTerminalDetails` skips such an item — it has a list row
+      // and no cached detail — so unlike a detail-path write, the batch write
+      // has cached no body of its own and there is nothing here to render. Not
+      // re-reading turned the click into a silent no-op and stripped a live
+      // deep link. Re-read ONCE, against the generation that caused the drop;
+      // a second collision in that window is left to the user's next click
+      // rather than looped over.
+      if (detailRead.outcome === 'generation' && !captureStore.detailById[itemId]) {
+        detailRead.outcome = 'cached'
+        await captureStore.fetchDetail(itemId, { syncSummary, onCacheOutcome: report })
+      }
+
+      // `superseded` means a newer read for the same id is already the
+      // authority, so the selection stands. Only the logout case is terminal:
+      // there is no newer read coming and no body to show. It is not a failure
+      // either, so restore the selection the user had — both halves of it —
+      // rather than clearing it, and report the read as not opened.
+      if (detailRead.outcome === 'epoch' && !captureStore.detailById[itemId]) {
         if (selectedItemId.value === itemId) {
           selectedItemId.value = previousSelectedItemId
+          activeItemIndex.value = previousActiveItemIndex
         }
         return false
       }
