@@ -820,16 +820,23 @@ export const useCaptureStore = defineStore('capture', () => {
   /**
    * Enqueue a batch action, then reconcile the list.
    *
-   * `query` is the CALLER'S current list scope (#2570). The reconciliation read
+   * `query` is the CALLER'S list scope (#2570). The reconciliation read
    * replaces `items`, so an unscoped read under a board-scoped Inbox replaced
    * the visible rows with the unscoped list — for `ignore` and `cancel` no poll
    * follows, so those wrong rows persisted until the next scoped load. Callers
    * that pass nothing keep the unscoped read they always had.
+   *
+   * Pass a THUNK when the scope can move while the POST is in flight. It is
+   * called once, immediately before the read is issued, so the read uses the
+   * scope that is current THEN rather than the one that was current when the
+   * batch started. That matters because `fetchItems` supersedes by request id:
+   * a stale-scope read issued last wins the list and drops the caller's own
+   * newer-scope load, writing the old board's rows under the new board's label.
    */
   async function batchTriage(
     itemIds: string[],
     action: BatchTriageAction,
-    query?: CaptureListQuery,
+    query?: CaptureListQuery | (() => CaptureListQuery),
   ): Promise<BatchTriageResult> {
     guardDemoMutation()
     batchBusy.value = true
@@ -871,9 +878,12 @@ export const useCaptureStore = defineStore('capture', () => {
       // reclassify a successfully queued batch as a failed write or prevent
       // the caller from starting its bounded completion poll.
       try {
+        // Resolve the scope HERE, at the moment the read is issued, so a scope
+        // change during the POST is honoured rather than overwritten.
+        //
         // The applied boolean is deliberately ignored: a post-batch read that a
         // newer list load superseded is not a failed write.
-        await fetchItems(query)
+        await fetchItems(typeof query === 'function' ? query() : query)
         await refreshTerminalDetails(itemIds)
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } } | null)?.response?.status

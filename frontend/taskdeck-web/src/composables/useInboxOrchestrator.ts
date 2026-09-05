@@ -55,8 +55,16 @@ export function useInboxOrchestrator(options: {
 
   /**
    * The list query for the Inbox's CURRENT scope — the one every list read has
-   * to use, not just the explicit load (#2570). Archived history is not part of
-   * it: the archived surface is read-only and `batchAction` returns early there.
+   * to use, not just the explicit load (#2570). Read it late (see the thunk in
+   * `batchAction`); the scope can change between a read being planned and
+   * issued.
+   *
+   * Archived history carries no key of its own because `CaptureListQuery` has
+   * none (`types/capture.ts`): it is board id and limit only. That is sound
+   * today because archived history is always board-scoped, so `boardId` already
+   * selects the archived board's captures. Adding a `history` key to the query
+   * type has to revisit this helper — `loadInboxInternal` calls it in archived
+   * mode too, so the omission is not covered by `batchAction`'s early return.
    */
   function currentListQuery(): CaptureListQuery {
     return {
@@ -138,7 +146,12 @@ export function useInboxOrchestrator(options: {
       // The store re-reads the list after the batch. Hand it this Inbox's
       // scope so a board-scoped list is not replaced by the unscoped one
       // (#2570) — for ignore and cancel no poll follows to repair it.
-      const result = await captureStore.batchTriage(ids, action, currentListQuery())
+      //
+      // A THUNK, not a value: the scope can move while the POST is in flight,
+      // and the store resolves this immediately before it issues the read, so
+      // the read follows the user to the new board instead of racing the new
+      // board's own load and winning it with the old board's rows.
+      const result = await captureStore.batchTriage(ids, action, currentListQuery)
       // A board/history scope change invalidates both the selection and the
       // question this response answers. Never start an old scope's poll late.
       if (actionGeneration !== batchActionGeneration) return
