@@ -64,6 +64,7 @@ const disclosureId = 'paper-review-similar-past-disclosure'
       data-testid="paper-review-similar-past-details"
       role="region"
       :aria-labelledby="disclosureId"
+      :hidden="!detailsExpanded"
     >
       <p
         v-if="isEmpty"

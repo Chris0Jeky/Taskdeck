@@ -162,4 +162,23 @@ describe('ReviewAuthorCard', () => {
 
     wrapper.unmount()
   })
+
+  // Matches ReviewProvenance.vue: `v-show` alone leaves the collapsed region in
+  // the accessibility tree for anything that reads the DOM rather than the
+  // computed style.
+  it('binds `hidden` to the collapsed state, like the provenance card', async () => {
+    const wrapper = mountCard(breakdownOf('model-reported', [{ key: 'Operation 1', value: 0.9 }]))
+    const button = wrapper.get('[data-testid="paper-review-confidence-disclosure"]')
+    const details = wrapper.get('[data-testid="paper-review-confidence-details"]')
+
+    expect(details.attributes('hidden')).toBeDefined()
+
+    await button.trigger('click')
+    expect(details.attributes('hidden')).toBeUndefined()
+
+    await button.trigger('click')
+    expect(details.attributes('hidden')).toBeDefined()
+
+    wrapper.unmount()
+  })
 })

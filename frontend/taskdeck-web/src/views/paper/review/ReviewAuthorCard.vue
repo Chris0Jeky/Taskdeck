@@ -105,6 +105,7 @@ function barColor(value: number): string {
       data-testid="paper-review-confidence-details"
       role="region"
       :aria-labelledby="confidenceDisclosureId"
+      :hidden="!confidenceDetailsExpanded"
     >
       <hr class="hr-soft paper-review-author__rule" />
       <div class="tk-eyebrow paper-review-author__bd-heading">
