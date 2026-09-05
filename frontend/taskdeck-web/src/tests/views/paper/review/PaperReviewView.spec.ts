@@ -3339,6 +3339,51 @@ describe('PaperReviewView', () => {
   })
 
 
+  it('renders the degraded warning beside a filtered-empty queue (#2214)', async () => {
+    // The two degraded cases above cover an active proposal and an unfiltered
+    // empty queue. Neither reaches the branch a reviewer is most likely to be
+    // on when a poll starts failing: a filter that currently matches nothing,
+    // where the surface is ALREADY saying "no matches" and could easily be read
+    // as an authoritative answer about a queue it can no longer refresh.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([
+        makeProposal({ id: 'theirs-001', requestedByUserId: 'u-2', summary: 'Theirs proposal' }),
+      ])
+
+      const mineButton = wrapper.findAll('button').find((button) => button.text() === 'Mine')
+      await mineButton?.trigger('click')
+      await flushPromises()
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const empty = wrapper.get('[data-testid="paper-review-empty"]')
+      const stale = wrapper.get('[data-testid="paper-review-queue-stale"]')
+      expect(stale.attributes('role')).toBe('status')
+      expect(stale.attributes('aria-live')).toBe('polite')
+      expect(stale.attributes('aria-atomic')).toBe('true')
+      expect(stale.text()).toBe(enReview.queue.degraded.body)
+      // Above the whole empty-state chain, not instead of it: the filter answer
+      // and the honesty about the queue behind it are both true at once.
+      expect(stale.element.parentElement).toBe(empty.element)
+      expect(empty.text()).toContain('No matches in Mine.')
+
+      // The retained row is still a real awaiting count, so the rail's own
+      // region keeps speaking it. This slice does not touch that region.
+      expect(wrapper.find('[data-testid="paper-review-queue-live"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('pins the degraded warning to the top of the scrolling main column (#2214)', async () => {
     // HONEST LIMIT: happy-dom does not lay anything out, and vitest does not
     // process an SFC's `<style scoped>` at all, so `getComputedStyle` here would
