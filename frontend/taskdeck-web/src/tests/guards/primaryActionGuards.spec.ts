@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { nextTick, reactive } from 'vue'
 import PaperTriageTable from '../../views/paper/inbox/PaperTriageTable.vue'
 import PaperCaptureComposer from '../../views/paper/inbox/PaperCaptureComposer.vue'
-import type { CaptureItemSummary } from '../../types/capture'
+import PaperCaptureNib from '../../views/paper/inbox/PaperCaptureNib.vue'
+import PaperTriageRowEdit from '../../views/paper/inbox/PaperTriageRowEdit.vue'
+import type { CaptureItem, CaptureItemSummary } from '../../types/capture'
 import { expectGuardedPrimaryAction } from '../utils/guardedPrimaryAction'
 
 /**
@@ -28,9 +30,44 @@ import { expectGuardedPrimaryAction } from '../utils/guardedPrimaryAction'
  * The helper passes on EITHER branch — disabled, or enabled-with-feedback — so
  * registering a control does not dictate which of the two designs it uses.
  *
+ * THE INVENTORY THIS FILE CLAIMS.
+ *
+ * A primary action, for AC3, is a control whose activation WRITES or ENQUEUES:
+ * it mutates server state, or it queues work that will. A navigation, a
+ * disclosure toggle, a filter, a cancel and a re-read are not primary actions
+ * and are deliberately absent — they have nothing to be silent about.
+ *
+ * COVERED, with every precondition each control can be blocked by:
+ *  - `PaperTriageTable` accept-on-board (`data-action="accept-on-board"`),
+ *    which enqueues triage for a capture. Its `boardPickBlock` states are
+ *    `loading` / `loadFailed` / `noBoards` / `noBoard` / `viewOnly`; `noBoard`,
+ *    `loadFailed` and `viewOnly` are registered below. `loading` and `noBoards`
+ *    are the same disabled binding reached through the same computed and are
+ *    not separately registered.
+ *  - `PaperTriageRowEdit` save (`data-action="edit-save"`), which writes the
+ *    capture suggestion. All three `saveBlock` states — `busyElsewhere`,
+ *    `empty`, `unchanged` — are registered below.
+ *  - `PaperCaptureNib` submit, which enqueues a capture. Its one precondition
+ *    is `canSubmit`.
+ *  - `PaperCaptureComposer` submit, which enqueues a capture. Its one
+ *    precondition is a non-blank body.
+ *
+ * DELIBERATELY OUT, and why:
+ *  - `PaperReviewView` approve / reject / execute — the review surface's
+ *    primary actions. GH-2629 holds those files; registering them from here
+ *    would conflict with that PR's markup. They are the first thing to add
+ *    once it lands, and this file makes NO claim about them today.
+ *  - Board and card mutations (`PaperBoardView`, `PaperCardComposer`) and the
+ *    settings forms. Their submits are native `type="submit"` inside a real
+ *    `<form>`, a shape the sibling source guard already scans; whether their
+ *    preconditions are honestly reported is unproven and unclaimed.
+ *  - Every other writing control in the app. Absence from this list is not
+ *    evidence of a guarded action; it is the absence of evidence.
+ *
  * NOT COVERED: whether the validation text is correct, whether a disabled
  * reason is announced to assistive tech, and every primary action absent from
- * this list. Route-walking runtime coverage (AC4) remains open on GH-1949.
+ * the inventory above. Route-walking runtime coverage (AC4) remains open on
+ * GH-1949.
  */
 
 type MockBoard = { id: string; name: string; canWrite?: boolean }
@@ -57,6 +94,39 @@ const mockCaptureStore = {
 vi.mock('../../store/captureStore', () => ({
   useCaptureStore: () => mockCaptureStore,
 }))
+
+/**
+ * A capture detail the row editor will actually offer for editing:
+ * `canEditSuggestion` must be exactly `true` or the editor renders its
+ * "not editable" explanation instead of a textarea and a Save button.
+ */
+function editableDetail(overrides: Partial<CaptureItem> = {}): CaptureItem {
+  return {
+    id: 'capture-1',
+    userId: 'user-1',
+    boardId: 'board-alpha',
+    status: 'New',
+    source: 'Typed',
+    textExcerpt: 'Ship the release notes…',
+    rawText: 'Ship the release notes before Friday',
+    createdAt: new Date('2026-04-25T09:42:00Z').toISOString(),
+    processedAt: null,
+    retryCount: 0,
+    provenance: null,
+    canEditSuggestion: true,
+    ...overrides,
+  } as CaptureItem
+}
+
+/** Mount the row editor with its detail fetch already settled. */
+async function mountRowEditor(mutationInFlight = false) {
+  mockCaptureStore.fetchDetail.mockResolvedValue(editableDetail())
+  const wrapper = mount(PaperTriageRowEdit, {
+    props: { itemId: 'capture-1', mutationInFlight },
+  })
+  await flushPromises()
+  return wrapper
+}
 
 function boardlessItems(): CaptureItemSummary[] {
   return [
@@ -179,6 +249,126 @@ describe('primary action guards (GH-1949 AC3)', () => {
 
     await expectGuardedPrimaryAction(wrapper, submit!, {
       unmetPreconditions: 'composer body is whitespace only',
+    })
+  })
+
+  /**
+   * `PaperTriageRowEdit` save writes the capture suggestion, and one computed
+   * (`saveBlock`) drives the disabled binding, the guard inside `save()` and
+   * the visible reason. All three of its states are registered so a future
+   * change that keeps the button enabled for one of them cannot pass by
+   * satisfying the other two.
+   */
+  it('Inbox capture-edit Save is guarded with an empty draft', async () => {
+    const wrapper = await mountRowEditor()
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('   ')
+
+    const save = wrapper.get('button[data-action="edit-save"]')
+    // Pin the branch AND the reason: the helper accepts either design, and
+    // `saveBlock` reports `busyElsewhere` before `empty`, so without the
+    // reason assertion this test could be silently exercising a different state.
+    expect(save.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="capture-edit-save-reason"]').attributes('data-reason')).toBe('empty')
+
+    await expectGuardedPrimaryAction(wrapper, save, {
+      unmetPreconditions: 'capture edit draft is whitespace only',
+    })
+  })
+
+  it('Inbox capture-edit Save is guarded with an unchanged draft', async () => {
+    // Straight off the load: the draft IS the fetched text and no metadata
+    // changed, so the write would be a no-op.
+    const wrapper = await mountRowEditor()
+
+    const save = wrapper.get('button[data-action="edit-save"]')
+    expect(save.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="capture-edit-save-reason"]').attributes('data-reason')).toBe('unchanged')
+
+    await expectGuardedPrimaryAction(wrapper, save, {
+      unmetPreconditions: 'capture edit draft is identical to the loaded text',
+    })
+  })
+
+  it('Inbox capture-edit Save is guarded while another mutation owns the busy slot', async () => {
+    // The one block the user cannot clear from the textarea: another row's
+    // Accept or Reject holds the capture store's single busy slot, and saving
+    // through it would steal that write's in-flight state.
+    const wrapper = await mountRowEditor(true)
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue('Ship the release notes on Thursday')
+
+    const save = wrapper.get('button[data-action="edit-save"]')
+    expect(save.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="capture-edit-save-reason"]').attributes('data-reason')).toBe('busyElsewhere')
+
+    await expectGuardedPrimaryAction(wrapper, save, {
+      unmetPreconditions: 'another capture mutation holds the shared busy slot',
+    })
+  })
+
+  it('Inbox capture nib submit is guarded with an empty draft', async () => {
+    const wrapper = mount(PaperCaptureNib)
+
+    // The nib footer has exactly one button. Asserting that before selecting it
+    // means a markup change that adds another fails loudly here rather than
+    // silently registering the wrong control.
+    const buttons = wrapper.findAll('button')
+    expect(buttons, 'nib should render exactly one button').toHaveLength(1)
+    const submit = buttons[0]
+    expect(submit.attributes('disabled')).toBeDefined()
+
+    await expectGuardedPrimaryAction(wrapper, submit, {
+      unmetPreconditions: 'nib draft is empty',
+    })
+  })
+
+  // ---- PaperTriageTable registrations (see the boundaries note in the PR) ----
+
+  it('Inbox "Accept on board" is guarded when the board list failed to load', async () => {
+    mockBoardStore.boards = []
+    mockBoardStore.fetchBoards.mockRejectedValue(new Error('boards unavailable'))
+    const wrapper = mount(PaperTriageTable, { props: { items: boardlessItems() } })
+
+    // Opening the picker with no boards cached triggers the load that fails.
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="board-pick-reason"]').attributes('data-reason')).toBe('loadFailed')
+    // The failure is recoverable and says so: the retry control is the reason
+    // this state is not simply a dead end.
+    expect(wrapper.find('button[data-action="retry-board-load"]').exists()).toBe(true)
+
+    const confirm = wrapper.get('button[data-action="accept-on-board"]')
+    expect(confirm.attributes('disabled')).toBeDefined()
+
+    await expectGuardedPrimaryAction(wrapper, confirm, {
+      unmetPreconditions: 'board picker open, board list load failed',
+    })
+  })
+
+  it('Inbox "Accept on board" is guarded when the picked board turns read-only', async () => {
+    // `viewOnly` is defence in depth: the picker disables a read-only option,
+    // so this state is reached when write access to an ALREADY picked board is
+    // revoked and a board-list refresh brings that back (`BoardDto.CanWrite`,
+    // #1836). Accepting onto it would 403 at the server.
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha', canWrite: true }]
+    const wrapper = mount(PaperTriageTable, { props: { items: boardlessItems() } })
+
+    await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
+    await wrapper.get('select').setValue('board-alpha')
+    // Nothing is blocking yet — the pick is live. That is what makes the flip
+    // below the thing under test rather than a state that was always off.
+    expect(wrapper.find('[data-testid="board-pick-reason"]').exists()).toBe(false)
+
+    mockBoardStore.boards = [{ id: 'board-alpha', name: 'Alpha', canWrite: false }]
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="board-pick-reason"]').attributes('data-reason')).toBe('viewOnly')
+
+    const confirm = wrapper.get('button[data-action="accept-on-board"]')
+    expect(confirm.attributes('disabled')).toBeDefined()
+
+    await expectGuardedPrimaryAction(wrapper, confirm, {
+      unmetPreconditions: 'board picker open, picked board is read-only',
     })
   })
 })
