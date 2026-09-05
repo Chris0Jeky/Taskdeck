@@ -7020,4 +7020,248 @@ describe('PaperReviewView', () => {
       }
     })
   })
+
+  /**
+   * Right-rail evidence truth (#1940 — the two residuals recorded with PR
+   * #2662).
+   *
+   * The rail's cards are pure props components. They were handed the selector
+   * values with nothing about the read behind them, so while proposal B's batch
+   * was in flight they rendered proposal A's confidence number and A's
+   * similar-past rows under B's header, and they read an empty array as a
+   * proven absence whether the read was pending, had failed, or had genuinely
+   * found nothing. The view now passes ONE keyed snapshot: the values only
+   * under the key they were read for, and the state alongside them.
+   */
+  describe('right-rail evidence identity and state (#1940)', () => {
+    const A_ROW = {
+      serial: '#PAST-A',
+      title: 'A prior comparable decision',
+      verdict: 'Applied',
+      date: '2026-08-20',
+    }
+    const A_CONFIDENCE = {
+      overall: 0.84,
+      components: [],
+      note: null,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
+    }
+    const A_META = '0.84 model-reported average'
+
+    function rail(wrapper: ReturnType<typeof mount>) {
+      return wrapper.get('[data-testid="paper-review-right-rail"]')
+    }
+
+    async function selectSecondProposal(wrapper: ReturnType<typeof mount>) {
+      const row = wrapper
+        .findAll('.paper-review-q')
+        .find((candidate) => candidate.text().includes('Second proposal'))
+      expect(row, 'expected the second queue row to be present').toBeDefined()
+      await row!.trigger('click')
+      await flushPromises()
+    }
+
+    it('shows none of the previous proposal evidence under the new one while its batch loads', async () => {
+      let releaseSimilar!: (value: unknown) => void
+      let releaseConfidence!: (value: unknown) => void
+      mocks.getSimilarPast.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve({ decisions: [A_ROW], applyRate: 1 })
+          : new Promise((resolve) => {
+              releaseSimilar = resolve
+            }),
+      )
+      mocks.getConfidence.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve(A_CONFIDENCE)
+          : new Promise((resolve) => {
+              releaseConfidence = resolve
+            }),
+      )
+
+      const wrapper = await mountView(
+        [
+          makeProposal({ id: 'proposal-a', summary: 'First proposal' }),
+          makeProposal({ id: 'proposal-b', summary: 'Second proposal' }),
+        ],
+        '/workspace/review#proposal-proposal-a',
+      )
+
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(rail(wrapper).text()).toContain(A_META)
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+
+      await selectSecondProposal(wrapper)
+
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+      // The residual: every one of these was proposal A's evidence, rendered
+      // under proposal B's header while B's batch was still in flight.
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-author-confidence-source"]').exists(),
+      ).toBe(false)
+      expect(rail(wrapper).text()).not.toContain(A_META)
+      expect(rail(wrapper).text()).not.toContain(A_ROW.title)
+      expect(rail(wrapper).text()).not.toContain('No comparable past decisions.')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-state"]').text(),
+      ).toBe('Reading the confidence evidence for this proposal…')
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-state"]').text()).toBe(
+        'Reading comparable past decisions…',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-disclosure"]').text(),
+      ).not.toContain('none found')
+
+      releaseSimilar({ decisions: [], applyRate: 0 })
+      releaseConfidence({
+        overall: null,
+        components: [],
+        note: null,
+        threshold: null,
+        source: 'not-reported',
+        meetsThreshold: null,
+      })
+      await flushPromises()
+
+      // B's own read has landed, so B's emptiness is now a fact about B.
+      expect(rail(wrapper).find('[data-testid="paper-review-similar-past-state"]').exists()).toBe(
+        false,
+      )
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-empty"]').text()).toBe(
+        'No comparable past decisions.',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(rail(wrapper).text()).not.toContain(A_ROW.title)
+    })
+
+    it('says the evidence read failed instead of claiming there is nothing to show', async () => {
+      mocks.getSimilarPast.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve({ decisions: [A_ROW], applyRate: 1 })
+          : Promise.reject(new Error('similar past unavailable')),
+      )
+      mocks.getConfidence.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve(A_CONFIDENCE)
+          : Promise.resolve({
+              overall: null,
+              components: [],
+              note: null,
+              threshold: null,
+              source: 'not-reported',
+              meetsThreshold: null,
+            }),
+      )
+
+      const wrapper = await mountView(
+        [
+          makeProposal({ id: 'proposal-a', summary: 'First proposal' }),
+          makeProposal({ id: 'proposal-b', summary: 'Second proposal' }),
+        ],
+        '/workspace/review#proposal-proposal-a',
+      )
+
+      await selectSecondProposal(wrapper)
+
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-state"]').text()).toBe(
+        'Comparable past decisions could not be read.',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-state"]').text(),
+      ).toBe('Confidence evidence could not be read, so its source is unknown.')
+      expect(rail(wrapper).text()).not.toContain('No comparable past decisions.')
+      expect(rail(wrapper).text()).not.toContain('No model confidence reported')
+      expect(rail(wrapper).text()).not.toContain(A_ROW.title)
+      expect(rail(wrapper).text()).not.toContain(A_META)
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-disclosure"]').text(),
+      ).not.toContain('none found')
+    })
+
+    /**
+     * A decision takes `latestRevisionId` to null and pins no replacement, and
+     * the receipt keeps the proposal on screen, so the rail must still show the
+     * evidence rather than an endless "reading" line (#1940 round 2).
+     *
+     * A GUARD, not a red-first case: it passed before the round-2 fix too. The
+     * composable-level defect it guards against is real and is proven red in
+     * usePaperReviewSelectors.spec.ts, but this flow does not depend on it —
+     * measured here, the decision issues a SECOND evidence batch (one read
+     * before it, two after), so the rail is repopulated by a fresh read rather
+     * than by the record it already held. Nothing in this flow asks for that
+     * restart, which is exactly why the snapshot must not depend on it; this
+     * case fails the day the restart stops happening.
+     */
+    it('keeps the settled evidence on screen after a decision drops the revision identity', async () => {
+      mocks.getSimilarPast.mockResolvedValue({ decisions: [A_ROW], applyRate: 1 })
+      const rejected = makeProposal({
+        id: 'proposal-a',
+        summary: 'First proposal',
+        status: 'Rejected',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+      })
+      mocks.rejectProposal.mockResolvedValueOnce(rejected)
+      const wrapper = await mountView([
+        makeProposal({ id: 'proposal-a', summary: 'First proposal', latestRevisionId: 'rev-1' }),
+      ])
+      // `latestRevisionId` is PendingReview-only on the wire, so every read
+      // after the decision answers with it null. Without this the standing list
+      // fixture would hand `rev-1` back on the next refresh and restore the
+      // identity the decision just retired.
+      mocks.getProposals.mockResolvedValue([rejected])
+
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+
+      await wrapper.get('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+      await acceptRejectDialog('not needed')
+
+      expect(
+        wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'),
+      ).toBe('rejected')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-similar-past-state"]').exists(),
+      ).toBe(false)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-author-confidence-state"]').exists(),
+      ).toBe(false)
+    })
+
+    it('keeps the settled empty sentences from #2662 exactly as they were', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-empty"]').text()).toBe(
+        'No comparable past decisions.',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-disclosure"]').text(),
+      ).toContain('none found')
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-similar-past-state"]').exists(),
+      ).toBe(false)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-author-confidence-state"]').exists(),
+      ).toBe(false)
+    })
+  })
 })

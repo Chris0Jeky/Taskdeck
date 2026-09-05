@@ -1079,7 +1079,10 @@ const proposedNum = computed(() => {
 })
 
 const authorMeta = computed(() => {
-  const c = selectors.confidenceBreakdown.value
+  // The KEYED snapshot, not the bare read: this sentence carries a confidence
+  // number into the rail, and the bare read still holds the previous proposal's
+  // number while the new one's batch is in flight (#1940).
+  const c = selectors.railEvidence.value.confidenceBreakdown
   if (c.overall === null || !Number.isFinite(c.overall)) return ''
   if (c.source === 'model-reported') {
     return t('review.author.modelConfidence', { value: c.overall.toFixed(2) })
@@ -3046,6 +3049,14 @@ async function onClearBoardScope() {
       </template>
     </div>
 
+    <!-- The rail's evidence props all come from ONE keyed snapshot
+         (`selectors.railEvidence`), never from the bare selector reads: the
+         bare reads still hold the previous proposal's confidence and
+         similar-past rows until the new proposal's batch lands, and its cards
+         cannot tell a pending read from a proven absence (#1940). The snapshot
+         carries the state and withholds the values unless the batch settled for
+         the ACTIVE key. `evidenceUnavailable` below is a different fact — the
+         Apply-time refresh — and keeps its own prop. -->
     <ReviewRightRail
       v-if="activeProposal"
       :key="activeProposal.id"
@@ -3055,9 +3066,10 @@ async function onClearBoardScope() {
       :proposed-time="proposedTime"
       :proposed-num="proposedNum"
       :why-now-body="whyNowBody"
-      :breakdown="selectors.confidenceBreakdown.value"
-      :similar-past="selectors.similarPast.value"
-      :similar-past-apply-rate="selectors.similarPastApplyRate.value"
+      :breakdown="selectors.railEvidence.value.confidenceBreakdown"
+      :similar-past="selectors.railEvidence.value.similarPast"
+      :similar-past-apply-rate="selectors.railEvidence.value.similarPastApplyRate"
+      :evidence-state="selectors.railEvidence.value.status"
       :evidence-unavailable="activeRevisionReviewUnavailable"
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"

@@ -391,6 +391,9 @@ export default {
     derivedConfidence: 'promedio derivado {value}',
     deterministic: 'Extracción determinista · sin confianza del modelo',
     notReported: 'No se declaró confianza del modelo',
+    confidenceLoading: 'Leyendo la evidencia de confianza de esta propuesta…',
+    confidenceFailed:
+      'No se pudo leer la evidencia de confianza, así que se desconoce su origen.',
     actor: {
       assistant: 'Asistente',
       capture: 'Captura',
@@ -407,6 +410,11 @@ export default {
     heading: 'Decisiones parecidas anteriores',
     empty: 'No hay decisiones anteriores comparables.',
     emptyDetail: 'Aquí se mostrarán las decisiones sobre propuestas comparables.',
+    loading: 'Leyendo decisiones anteriores comparables…',
+    loadingDetail: 'Las decisiones comparables se mostrarán aquí cuando termine esta lectura.',
+    failed: 'No se pudieron leer las decisiones anteriores comparables.',
+    failedDetail:
+      'La lectura falló, así que se desconoce si hay decisiones anteriores comparables.',
     details: {
       show: 'Mostrar decisiones parecidas',
       showEmpty: 'Mostrar decisiones parecidas (ninguna encontrada)',

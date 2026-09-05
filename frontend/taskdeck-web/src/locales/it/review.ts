@@ -392,6 +392,9 @@ export default {
     derivedConfidence: 'media derivata {value}',
     deterministic: 'Estrazione deterministica · nessuna confidenza del modello',
     notReported: 'Nessuna confidenza del modello dichiarata',
+    confidenceLoading: 'Lettura delle prove di confidenza per questa proposta…',
+    confidenceFailed:
+      'Non è stato possibile leggere le prove di confidenza, quindi la loro origine è sconosciuta.',
     actor: {
       assistant: 'Assistente',
       capture: 'Cattura',
@@ -408,6 +411,11 @@ export default {
     heading: 'Decisioni simili passate',
     empty: 'Nessuna decisione passata comparabile.',
     emptyDetail: 'Qui compariranno le decisioni su proposte comparabili.',
+    loading: 'Lettura delle decisioni passate comparabili…',
+    loadingDetail: 'Le decisioni comparabili compariranno qui al termine di questa lettura.',
+    failed: 'Non è stato possibile leggere le decisioni passate comparabili.',
+    failedDetail:
+      'La lettura non è riuscita, quindi non si sa se esistano decisioni passate comparabili.',
     details: {
       show: 'Mostra decisioni simili',
       showEmpty: 'Mostra decisioni simili (nessuna trovata)',

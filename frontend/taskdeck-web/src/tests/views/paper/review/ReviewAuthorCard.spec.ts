@@ -4,6 +4,7 @@ import ReviewAuthorCard from '../../../../views/paper/review/ReviewAuthorCard.vu
 import type {
   ConfidenceBreakdown,
   ConfidenceValueSource,
+  PaperReviewEvidenceStatus,
 } from '../../../../composables/usePaperReviewSelectors'
 
 /**
@@ -31,7 +32,15 @@ function breakdownOf(
   return { overall: components.length > 0 ? 0.9 : null, components, threshold: null, source, note }
 }
 
-function mountCard(breakdown: ConfidenceBreakdown, authorMeta = '') {
+/**
+ * `settled` is the default because every case below is about what a landed
+ * confidence read says. The state cases pass their own.
+ */
+function mountCard(
+  breakdown: ConfidenceBreakdown,
+  authorMeta = '',
+  evidenceState: PaperReviewEvidenceStatus = 'settled',
+) {
   return mount(ReviewAuthorCard, {
     attachTo: document.body,
     props: {
@@ -41,6 +50,7 @@ function mountCard(breakdown: ConfidenceBreakdown, authorMeta = '') {
       proposedTime: '18:00',
       proposedNum: '001',
       breakdown,
+      evidenceState,
     },
   })
 }
@@ -143,6 +153,74 @@ describe('ReviewAuthorCard', () => {
       await wrapper.get('[data-testid="paper-review-confidence-disclosure"]').trigger('click')
 
       expect(details.text()).toContain('Reported by the model for the proposed operation.')
+
+      wrapper.unmount()
+    })
+  })
+
+  /**
+   * #1940, the second residual recorded with PR #2662. `EMPTY_CONFIDENCE` —
+   * zero components, source `not-reported` — is what the composable holds while
+   * a read is in flight and after one failed, so the sentence above was also
+   * being rendered as a statement about a response that never arrived.
+   */
+  describe('an absent breakdown it cannot yet explain', () => {
+    const stateLine = '[data-testid="paper-review-author-confidence-state"]'
+
+    it('says the read is still running rather than that no confidence was reported', () => {
+      const wrapper = mountCard(breakdownOf('not-reported'), '', 'loading')
+
+      expect(wrapper.find(sourceLine).exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('No model confidence reported')
+      expect(wrapper.get(stateLine).text()).toBe(
+        'Reading the confidence evidence for this proposal…',
+      )
+      expect(wrapper.get(stateLine).isVisible()).toBe(true)
+
+      wrapper.unmount()
+    })
+
+    it('says the read failed rather than that no confidence was reported', () => {
+      const wrapper = mountCard(breakdownOf('not-reported'), '', 'failed')
+
+      expect(wrapper.find(sourceLine).exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('No model confidence reported')
+      expect(wrapper.get(stateLine).text()).toBe(
+        'Confidence evidence could not be read, so its source is unknown.',
+      )
+
+      wrapper.unmount()
+    })
+
+    // The deterministic wording is a claim about the producer, not about the
+    // number, so it is withheld by the same rule.
+    it('withholds the deterministic sentence too until the read has landed', () => {
+      const wrapper = mountCard(breakdownOf('deterministic'), '', 'loading')
+
+      expect(wrapper.find(sourceLine).exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('Deterministic extraction')
+
+      wrapper.unmount()
+    })
+
+    it('states nothing at all when no proposal is active', () => {
+      const wrapper = mountCard(breakdownOf('not-reported'), '', 'idle')
+
+      expect(wrapper.find(sourceLine).exists()).toBe(false)
+      expect(wrapper.find(stateLine).exists()).toBe(false)
+
+      wrapper.unmount()
+    })
+
+    it('adds no state line to bars that already show where the number came from', () => {
+      const wrapper = mountCard(
+        breakdownOf('model-reported', [{ key: 'Operation 1: create card', value: 0.92 }]),
+        '0.90 model-reported average',
+        'loading',
+      )
+
+      expect(wrapper.find(stateLine).exists()).toBe(false)
+      expect(wrapper.find(sourceLine).exists()).toBe(false)
 
       wrapper.unmount()
     })
