@@ -298,6 +298,7 @@ export function useInboxOrchestrator(options: {
     // only the list write is suppressed. Paper loads through `peekDetail` and is
     // unaffected either way.
     const syncSummary = cacheSummary && !isArchivedHistory.value
+    const previousSelectedItemId = selectedItemId.value
     primeSelection(itemId, preferredIndex)
     hashLoadFailedItemId.value = null
     try {
@@ -305,7 +306,32 @@ export function useInboxOrchestrator(options: {
         captureStore.cacheDetail(preloadedDetail, syncSummary)
         return true
       }
-      await captureStore.fetchDetail(itemId, { syncSummary })
+      // `onCacheOutcome` is the store reporting that THIS read reached its
+      // caches (#2640). `fetchDetail` resolves with the body it fetched on
+      // three paths that write nothing — a `shouldCache` opt-out, a session
+      // epoch the logout moved, a write generation a newer mutation moved — so
+      // resolution alone is not evidence the panel has a detail to render.
+      // Returning `true` there left `selectedItemId` on an id `detailById`
+      // holds nothing for, which `InboxDetailPanel` renders as "Unable to load
+      // capture detail." for a read that succeeded. A store that reports
+      // nothing is read as having cached, which is the behaviour before #2640.
+      let cached = true
+      await captureStore.fetchDetail(itemId, {
+        syncSummary,
+        onCacheOutcome: (didCache) => { cached = didCache },
+      })
+      // A drop can still leave a detail here: a mutation that superseded this
+      // read cached its own newer body under the same id. The panel is honest
+      // then and the selection stands. Only a drop that left the store with
+      // nothing for this id is a selection this surface cannot show, and that
+      // is not a failure either — so restore the selection the user had rather
+      // than clearing it, and report the read as not opened.
+      if (!cached && !captureStore.detailById[itemId]) {
+        if (selectedItemId.value === itemId) {
+          selectedItemId.value = previousSelectedItemId
+        }
+        return false
+      }
       return true
     } catch {
       if (selectedItemId.value === itemId) {

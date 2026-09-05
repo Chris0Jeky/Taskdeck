@@ -41,6 +41,32 @@ type DetailLoadOptions = {
    * quiet reads pass `false` and leave the flag to foreground loads.
    */
   trackLoading?: boolean
+  /**
+   * REPORT whether this call left `detailById` holding this item's detail
+   * (#2640) — the detail-read counterpart of `fetchItems`'s applied boolean.
+   *
+   * `fetchDetail` has three paths that resolve with the body they fetched and
+   * write nothing: the caller's own `shouldCache` opt-out, a session epoch the
+   * logout moved, and a write generation a newer mutation moved. Resolution
+   * alone therefore never meant "the store now holds this detail", and callers
+   * that assumed it did acted on a response the store had dropped:
+   * `useInboxOrchestrator.selectItemById` left `selectedItemId` pointing at an
+   * id with no detail, which the Legacy panel renders as "Unable to load
+   * capture detail." for a read that succeeded, and `refreshTerminalDetails`
+   * announced a reconciliation that never reached `detailById`.
+   *
+   * `true` also covers the two paths that resolve from state already present —
+   * the non-forced cached early return and the demo branch — because the
+   * question a caller asks is whether the store holds this detail now, not
+   * whether this particular call did the writing. A read that THROWS reports
+   * nothing: failure and a drop stay distinguishable.
+   *
+   * A callback rather than a return value because `fetchDetail` resolves with
+   * the `CaptureItem` itself and a view annotates that type
+   * (`views/paper/inbox/PaperTriageRowEdit.vue`), so widening the return would
+   * change a surface outside this seam.
+   */
+  onCacheOutcome?: (cached: boolean) => void
 }
 
 export const BATCH_TRIAGE_POLL_INTERVAL_MS = 3_000
@@ -260,9 +286,11 @@ export const useCaptureStore = defineStore('capture', () => {
       requestOptions,
       shouldCache = () => true,
       trackLoading = true,
+      onCacheOutcome,
     } = options
 
     if (!forceRefresh && detailById.value[itemId]) {
+      onCacheOutcome?.(true)
       return detailById.value[itemId]
     }
 
@@ -271,6 +299,7 @@ export const useCaptureStore = defineStore('capture', () => {
       if (summary) {
         const detail = { ...summary, rawText: summary.textExcerpt, retryCount: 0, provenance: null }
         cacheDetail(detail, syncSummary)
+        onCacheOutcome?.(true)
         return detail
       }
     }
@@ -287,12 +316,18 @@ export const useCaptureStore = defineStore('capture', () => {
       const detail = requestOptions
         ? await captureApi.getItem(itemId, requestOptions)
         : await captureApi.getItem(itemId)
-      if (!shouldCache()) return detail
-      // Before any generation compare: the reset discards the generations this
-      // read observed, so after a logout the compare is no longer meaningful.
-      if (observedSessionEpoch !== sessionEpoch) return detail
-      if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) return detail
-      cacheDetail(detail, syncSummary)
+      // The three drop paths, in the order they have always been checked and
+      // reported as one boolean (#2640). The epoch comes before any generation
+      // compare: the reset discards the generations this read observed, so
+      // after a logout the compare is no longer meaningful.
+      const cached =
+        shouldCache() &&
+        observedSessionEpoch === sessionEpoch &&
+        observedDetailWriteGeneration === detailWriteGeneration(itemId)
+      if (cached) {
+        cacheDetail(detail, syncSummary)
+      }
+      onCacheOutcome?.(cached)
       return detail
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox item').message

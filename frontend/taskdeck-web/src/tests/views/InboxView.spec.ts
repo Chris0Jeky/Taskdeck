@@ -409,7 +409,10 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -684,7 +687,10 @@ describe('InboxView', () => {
     const wrapper = mount(InboxView)
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('missing-capture', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('missing-capture', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Select an item to inspect the captured text')
     expect(routerMocks.replace).toHaveBeenCalledWith({
       name: 'workspace-inbox',
@@ -712,7 +718,10 @@ describe('InboxView', () => {
     await firstRow.trigger('click')
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-1')
   })
 
@@ -725,7 +734,10 @@ describe('InboxView', () => {
     await listbox.trigger('keydown', { key: 'Enter' })
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -767,7 +779,10 @@ describe('InboxView', () => {
     await listbox.trigger('keydown', { key: 'Enter' })
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 

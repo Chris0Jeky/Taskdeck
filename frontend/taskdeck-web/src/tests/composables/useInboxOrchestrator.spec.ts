@@ -442,6 +442,7 @@ describe('useInboxOrchestrator', () => {
       await orch.openItemFromList(summaryRow('archived-capture', 'archived-board'), 0)
       expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('archived-capture', {
         syncSummary: false,
+        onCacheOutcome: expect.any(Function),
       })
 
       // Refresh Detail is a READ affordance and stays available in history mode,
@@ -465,6 +466,7 @@ describe('useInboxOrchestrator', () => {
       await orch.openItemFromList(summaryRow('live-capture', 'live-board'), 0)
       expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('live-capture', {
         syncSummary: true,
+        onCacheOutcome: expect.any(Function),
       })
 
       mockCaptureStore.fetchDetail.mockClear()
@@ -686,7 +688,10 @@ describe('useInboxOrchestrator', () => {
       const event = { key: 'Enter', preventDefault: vi.fn() } as unknown as KeyboardEvent
       await orch.handleKeydown(event)
       expect(event.preventDefault).toHaveBeenCalled()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc', { syncSummary: true })
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc', {
+        syncSummary: true,
+        onCacheOutcome: expect.any(Function),
+      })
     })
   })
 
@@ -695,7 +700,10 @@ describe('useInboxOrchestrator', () => {
       mockRoute.hash = '#capture-deep-id'
       const orch = createOrchestrator()
       await orch.loadInbox()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id', { syncSummary: true })
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id', {
+        syncSummary: true,
+        onCacheOutcome: expect.any(Function),
+      })
     })
 
     it('loadInbox does not fetch detail when hash is absent', async () => {
@@ -1024,6 +1032,91 @@ describe('useInboxOrchestrator', () => {
       orch.selectedItemId.value = null
       await orch.refreshSelectedDetail()
       expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
+    })
+  })
+
+  /**
+   * A DROPPED read is the store resolving with the body it fetched while
+   * writing nothing into its caches (#2640). It is neither a failure nor a
+   * cached detail, and `fetchDetail` used to report it to nobody, so
+   * `selectItemById` returned `true` for it and left `selectedItemId` pointing
+   * at an id `detailById` holds nothing for — the state the Legacy detail panel
+   * renders as "Unable to load capture detail." for a read that succeeded.
+   *
+   * `onCacheOutcome` is the store's report. `mockImplementationOnce` on
+   * purpose: the suite's reset is `vi.clearAllMocks()`, which keeps
+   * implementations, so a persistent one here would follow the tests below.
+   */
+  describe('dropped detail reads', () => {
+    const keptDetail = { id: 'kept', rawText: 'kept body', boardId: null, status: 'New' }
+
+    it('holds the previous selection when the store reports a dropped read', async () => {
+      mockCaptureStore.items = [{ id: 'kept' }, { id: 'dropped' }]
+      mockCaptureStore.detailById = { kept: keptDetail }
+      const orch = createOrchestrator()
+
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (cached: boolean) => void },
+      ) => { options?.onCacheOutcome?.(true) })
+      await orch.openItemFromList(summaryRow('kept', null), 0)
+      expect(orch.selectedItemId.value).toBe('kept')
+
+      // The store fetched a body and cached none of it, and nothing else has
+      // put a detail for this id in `detailById` either.
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (cached: boolean) => void },
+      ) => { options?.onCacheOutcome?.(false) })
+      await orch.openItemFromList(summaryRow('dropped', null), 1)
+
+      expect(orch.selectedItemId.value).toBe('kept')
+      expect(orch.selectedItem.value).toEqual(keptDetail)
+    })
+
+    it('keeps the selection when a dropped read left a newer detail cached', async () => {
+      mockCaptureStore.items = [{ id: 'superseded' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+
+      // The other pre-existing drop path: a successful write superseded this
+      // read's generation. That write cached its OWN newer body, so the panel
+      // has a detail to render and the selection is honest.
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        itemId: string,
+        options?: { onCacheOutcome?: (cached: boolean) => void },
+      ) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId, rawText: 'newer body', boardId: null, status: 'ProposalCreated',
+        }
+        options?.onCacheOutcome?.(false)
+      })
+      await orch.openItemFromList(summaryRow('superseded', null), 0)
+
+      expect(orch.selectedItemId.value).toBe('superseded')
+      expect(orch.selectedItem.value).toEqual({
+        id: 'superseded', rawText: 'newer body', boardId: null, status: 'ProposalCreated',
+      })
+    })
+
+    it('still treats a rejected detail read as a failure', async () => {
+      mockCaptureStore.items = [{ id: 'kept' }, { id: 'broken' }]
+      mockCaptureStore.detailById = { kept: keptDetail }
+      const orch = createOrchestrator()
+
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (cached: boolean) => void },
+      ) => { options?.onCacheOutcome?.(true) })
+      await orch.openItemFromList(summaryRow('kept', null), 0)
+
+      mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('detail unavailable'))
+      await orch.openItemFromList(summaryRow('broken', null), 1)
+
+      // A failure clears the selection outright, as before. It does not restore
+      // the previous one: the user asked for this row and the store reported it
+      // unreadable, so the panel's error surface is the honest one.
+      expect(orch.selectedItemId.value).toBeNull()
     })
   })
 })
