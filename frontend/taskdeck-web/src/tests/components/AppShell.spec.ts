@@ -6,6 +6,7 @@ import {
   useShellKeyboardHelp,
   type ShellKeyboardHelpControl,
 } from '../../composables/useShellKeyboardHelp'
+import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
 import type { FeatureFlags } from '../../types/feature-flags'
 
 /**
@@ -19,6 +20,59 @@ const ShellHelpProbe = defineComponent({
   setup() {
     injectedShellHelp = useShellKeyboardHelp()
     return () => h('div', { 'data-testid': 'shell-help-probe' })
+  },
+})
+
+const boardProbe = reactive({ filterToggles: 0, addCardClicks: 0 })
+
+/**
+ * The routed board's keyboard seam, at composable level (#2621).
+ *
+ * It installs the REAL `useKeyboardShortcuts` with BoardView's own `f` and `n`
+ * bindings and the same `[data-action="toggle-add-card"]` /
+ * `[data-action="add-card-input"]` DOM contract `createCardInSelectedColumn`
+ * drives, so the routing under test — AppShell's capture-phase window listener
+ * versus the board's bubble-phase one — is the shipped mechanism, not a mock.
+ *
+ * Fidelity limit: BoardView passes `enabled` predicates these bindings omit.
+ * Both predicates are true in the state this file exercises (a routed Legacy
+ * board with no Paper dialog open), which is exactly why the shell guard is
+ * the only thing standing between the modal and the board.
+ */
+const BoardKeyProbe = defineComponent({
+  setup() {
+    useKeyboardShortcuts([
+      {
+        key: 'f',
+        description: 'Toggle filter panel',
+        action: () => {
+          boardProbe.filterToggles += 1
+        },
+      },
+      {
+        key: 'n',
+        description: 'New card in current column',
+        action: () => {
+          const column = document.querySelector('[data-column-id="column-1"]')
+          column?.querySelector<HTMLButtonElement>('[data-action="toggle-add-card"]')?.click()
+          column?.querySelector<HTMLTextAreaElement>('[data-action="add-card-input"]')?.focus()
+        },
+      },
+    ])
+
+    return () => h('div', { 'data-column-id': 'column-1' }, [
+      h(
+        'button',
+        {
+          'data-action': 'toggle-add-card',
+          onClick: () => {
+            boardProbe.addCardClicks += 1
+          },
+        },
+        'Add card',
+      ),
+      h('textarea', { 'data-action': 'add-card-input' }),
+    ])
   },
 })
 
@@ -150,6 +204,8 @@ describe('AppShell workspace navigation and command palette', () => {
     mockFeatureFlags.isEnabled = vi.fn((_flag: keyof FeatureFlags) => true)
     mockPaperTheme.isOn = false
     injectedShellHelp = null
+    boardProbe.filterToggles = 0
+    boardProbe.addCardClicks = 0
   })
 
   afterEach(() => {
@@ -440,6 +496,156 @@ describe('AppShell workspace navigation and command palette', () => {
     }))
     await waitForUi()
 
+    expect(mockRouter.push).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The real routing path. A key pressed with focus outside a modal targets
+   * `document.body`, so the event runs AppShell's capture-phase window listener
+   * first and only then bubbles back to the board's window listener. Dispatching
+   * on `window` instead would put the event AT_TARGET, where capture and bubble
+   * listeners both run whatever propagation says, and prove nothing about the
+   * order the browser actually uses.
+   */
+  function pressFromBody(key: string, init: KeyboardEventInit = {}) {
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }))
+  }
+
+  function helpDialog(): HTMLElement | null {
+    return document.querySelector<HTMLElement>('[aria-label="Keyboard shortcuts"]')
+  }
+
+  it('keeps board bare-letter keys away from the board while the help dialog is open', async () => {
+    mountedWrapper = mountShell(document.body, { RouterView: BoardKeyProbe })
+    await waitForUi()
+
+    pressFromBody('?')
+    await waitForUi()
+    const dialog = helpDialog()
+    expect(dialog).not.toBeNull()
+
+    const dialogClose = dialog!.querySelector('button') as HTMLButtonElement
+    dialogClose.focus()
+    expect(dialog!.contains(document.activeElement)).toBe(true)
+
+    pressFromBody('f')
+    pressFromBody('n')
+    await waitForUi()
+
+    // `f` toggled the filter panel behind the modal and `n` clicked the column's
+    // add-card button and pulled focus into the composer, both from behind an
+    // open `aria-modal` dialog (#2621).
+    expect(boardProbe.filterToggles).toBe(0)
+    expect(boardProbe.addCardClicks).toBe(0)
+    expect(dialog!.contains(document.activeElement)).toBe(true)
+  })
+
+  it('keeps ? and Escape working on the help dialog with the board listener mounted', async () => {
+    mountedWrapper = mountShell(document.body, { RouterView: BoardKeyProbe })
+    await waitForUi()
+
+    pressFromBody('?')
+    await waitForUi()
+    expect(helpDialog()).not.toBeNull()
+
+    // The surface that owns `?` still gets it, so the key stays a toggle.
+    pressFromBody('?')
+    await waitForUi()
+    expect(helpDialog()).toBeNull()
+
+    pressFromBody('?')
+    await waitForUi()
+    expect(helpDialog()).not.toBeNull()
+
+    pressFromBody('Escape')
+    await waitForUi()
+    expect(helpDialog()).toBeNull()
+  })
+
+  it('does not open the command palette over a modal it does not own', async () => {
+    mountedWrapper = mountShell(document.body)
+    const wrapper = mountedWrapper
+
+    pressFromBody('C', { ctrlKey: true, shiftKey: true })
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
+
+    pressFromBody('k', { ctrlKey: true })
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+  })
+
+  it('still toggles the command palette closed with the key that opened it', async () => {
+    mountedWrapper = mountShell(document.body)
+    const wrapper = mountedWrapper
+
+    pressFromBody('k', { ctrlKey: true })
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(true)
+
+    pressFromBody('k', { ctrlKey: true })
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+  })
+
+  it('does not open quick capture over an active modal', async () => {
+    mountedWrapper = mountShell(document.body)
+    const wrapper = mountedWrapper
+
+    pressFromBody('?')
+    await waitForUi()
+    expect(helpDialog()).not.toBeNull()
+
+    pressFromBody('C', { ctrlKey: true, shiftKey: true })
+    await waitForUi()
+
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(false)
+  })
+
+  it('does not toggle the help dialog over a modal that owns the keyboard', async () => {
+    mountedWrapper = mountShell(document.body)
+    const wrapper = mountedWrapper
+
+    pressFromBody('C', { ctrlKey: true, shiftKey: true })
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
+
+    pressFromBody('?')
+    await waitForUi()
+
+    expect(helpDialog()).toBeNull()
+  })
+
+  it('does not navigate when Shift is held with a bare-letter binding', async () => {
+    mountedWrapper = mountShell()
+
+    // `strokeMatches` compares keys case-insensitively, so `Shift+H` arrives as
+    // `H` and used to navigate Home (#1968).
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'H', shiftKey: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'T', shiftKey: true }))
+    await waitForUi()
+
+    expect(mockRouter.push).not.toHaveBeenCalled()
+  })
+
+  it('toggles the keyboard map when ? needs AltGr and leaves Alt letter combos alone', async () => {
+    mountedWrapper = mountShell()
+    const wrapper = mountedWrapper
+
+    // AltGr reports `altKey: true`, and on Windows `ctrlKey: true` as well, so
+    // the strict modifier comparison made `?` unreachable on those layouts.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', altKey: true }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(true)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', altKey: true, ctrlKey: true }))
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Keyboard shortcuts"]').exists()).toBe(false)
+
+    // Alt over a letter binding is still a different stroke, not Home.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'h', altKey: true }))
+    await waitForUi()
     expect(mockRouter.push).not.toHaveBeenCalled()
   })
 
