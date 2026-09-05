@@ -1091,6 +1091,122 @@ describe('useReviewProposals', () => {
       expect(rp.queueAccessRevoked.value).toBe(false)
       expect(rp.unavailableProposalId.value).toBe('p-forbidden')
     })
+
+    it('reports the revocation once, without the generic load-failure toast', async () => {
+      // Two reports for one fact -- the shape #2694 removed on the pin leg and
+      // left standing here. `recordQueueAccessRevoked` raises a DURABLE panel
+      // that is the first branch of both skins' empty chains and names both the
+      // fact and the remedy; the generic "Failed to load proposals" toast beside
+      // it names neither and is gone seconds later, contradicted by a panel that
+      // stays.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+
+      // The OUTCOME contract is untouched: every action composable that calls
+      // `loadProposals` still gets its failure signal.
+      await expect(rp.loadProposalsWithOutcome()).resolves.toBe('failed')
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
+    })
+
+    it('does not let a later hash change mark a pin unavailable under the revoked panel', async () => {
+      // The route-hash watcher had no `queueAccessRevoked` guard, while the
+      // explicit load's own `openProposalFromHash` call site has had one since
+      // #2694. So a `#proposal-` link followed while the revoked panel is up --
+      // a stale rail row, a bookmark, the back button -- still asked the by-id
+      // route about a target inside a board the server had refused wholesale,
+      // and wrote its refusal into `unavailableProposalId` as a second,
+      // narrower and wrong account of the same fact.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(true)
+
+      mockRoute.hash = '#proposal-p-inside-revoked'
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+      await watcherForCurrentSourceValue('#proposal-p-inside-revoked')[1]()
+
+      expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+    })
+  })
+
+  // #2214 item 4. Both skins derived the queue live region's sentence from the
+  // pending COUNT alone, so a poll that removed one pending proposal and added
+  // another rendered a byte-identical "3 proposals awaiting review.": no DOM
+  // mutation, nothing announced, the queue moved under the reviewer in silence.
+  // The ordered awaiting ids are the identity the announcement is keyed on.
+  describe('queue announcement identity (#2214 item 4)', () => {
+    it('changes on a count-neutral replacement and not on a byte-identical queue', () => {
+      const rp = useReviewProposals()
+      rp.proposals.value = [
+        makeProposal({ id: 'p-a', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-b', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.awaitingProposalIds.value).toEqual(['p-a', 'p-b'])
+      const identity = rp.queueAnnouncementKey.value
+
+      // A poll answering with the same queue in a new array is not news.
+      rp.proposals.value = [
+        makeProposal({ id: 'p-a', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-b', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.queueAnnouncementKey.value).toBe(identity)
+
+      // One pending proposal decided elsewhere, one created in its place: the
+      // count is unchanged, so the SENTENCE is byte-identical and only the
+      // identity can carry the change.
+      rp.proposals.value = [
+        makeProposal({ id: 'p-a', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-c', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.awaitingProposalIds.value.length).toBe(2)
+      expect(rp.queueAnnouncementKey.value).not.toBe(identity)
+
+      // Order is part of the identity: the rail renders the queue in order, so
+      // a reordered queue is a queue that moved.
+      const swapped = rp.queueAnnouncementKey.value
+      rp.proposals.value = [
+        makeProposal({ id: 'p-c', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-a', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.queueAnnouncementKey.value).not.toBe(swapped)
+    })
+
+    it('tracks exactly the proposals the awaiting count is made of', () => {
+      // The count and its identity must come from ONE predicate or they drift
+      // (#1124 / ADR-0038): announcing on a change the number cannot show would
+      // speak the same sentence for no visible reason.
+      const rp = useReviewProposals()
+      rp.showCompleted.value = true
+      rp.proposals.value = [
+        makeProposal({ id: 'p-pending', createdAt: '2026-01-03T00:00:00Z' }),
+        makeProposal({ id: 'p-applied', status: 'Applied', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({
+          id: 'p-expired',
+          createdAt: '2026-01-01T00:00:00Z',
+          expiresAt: '2026-01-01T00:00:01Z',
+        }),
+      ] as any
+      rp.nowMs.value = new Date('2026-02-01T00:00:00Z').getTime()
+
+      expect(rp.awaitingProposalIds.value).toEqual(['p-pending'])
+      const identity = rp.queueAnnouncementKey.value
+
+      // A settled row changing does not move the awaiting queue.
+      rp.proposals.value = [
+        makeProposal({ id: 'p-pending', createdAt: '2026-01-03T00:00:00Z' }),
+        makeProposal({ id: 'p-rejected', status: 'Rejected', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({
+          id: 'p-expired',
+          createdAt: '2026-01-01T00:00:00Z',
+          expiresAt: '2026-01-01T00:00:01Z',
+        }),
+      ] as any
+      expect(rp.queueAnnouncementKey.value).toBe(identity)
+    })
   })
 
   describe('navigation helpers', () => {

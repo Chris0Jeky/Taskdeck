@@ -82,6 +82,8 @@ const {
   queueRefreshRecoveredKind,
   nowMs,
   visibleProposals,
+  awaitingProposalIds,
+  queueAnnouncementKey,
   dismissableProposalIds,
   activeBoardFilter,
   activeBoardName,
@@ -758,12 +760,14 @@ function clearRevisionEditorPayload() {
 
 // --- Queue rail data ---------------------------------------------------
 
-const awaitingCount = computed(() => {
-  return visibleProposals.value.filter(
-    (p) =>
-      normalizeProposalStatus(p.status) === 'PendingReview' && !isProposalExpired(p),
-  ).length
-})
+// The count and the identity the rail's announcement is keyed on come from ONE
+// composable predicate (#2214 item 4). This view recomputed the same filter
+// inline and Legacy read it off `summaryCards`, so neither skin had any notion
+// of WHICH proposals the number stood for — which is how a poll that removed
+// one pending proposal and added another announced nothing at all. The rendered
+// value is unchanged: `awaitingProposalIds` is this exact predicate over
+// `visibleProposals`.
+const awaitingCount = computed(() => awaitingProposalIds.value.length)
 
 const staleCount = computed(() =>
   // Route through the SHARED isStaleProposal (PendingReview + inclusive >=24h)
@@ -2729,6 +2733,7 @@ async function onClearBoardScope() {
       :author-partition-available="authorPartitionAvailable"
       :loading="proposalsLoading"
       :queue-unavailable="queueAccessRevoked"
+      :announcement-key="queueAnnouncementKey"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @toggle-batch="toggleBatchSelection"

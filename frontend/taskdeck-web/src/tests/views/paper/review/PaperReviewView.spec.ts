@@ -3809,6 +3809,44 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('re-announces the rail count when a poll swaps the queue without changing its size (#2214 item 4)', async () => {
+    // The Paper half of the item-4 repair, wired end to end: the composable's
+    // ordered awaiting ids reach the rail as its announcement key, so the same
+    // count-neutral replacement that Legacy now announces is announced here too
+    // (#1124 / ADR-0038 -- a one-skin fix is the drift class).
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    let wrapper: ReturnType<typeof mount> | null = null
+    try {
+      wrapper = await mountView([makeProposal({ id: 'swap-first', status: 'PendingReview' })])
+
+      const region = wrapper.get('[data-testid="paper-review-queue-live"]').element
+      const announced = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+      expect(announced.text()).toContain('1 proposal awaiting review')
+      const beforeSwap = announced.element
+
+      // The same queue again: nothing to say.
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(beforeSwap)
+
+      mocks.getProposals.mockResolvedValue([
+        makeProposal({ id: 'swap-second', status: 'PendingReview' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const afterSwap = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+      expect(afterSwap.text()).toContain('1 proposal awaiting review')
+      expect(afterSwap.element).not.toBe(beforeSwap)
+      expect(wrapper.get('[data-testid="paper-review-queue-live"]').element).toBe(region)
+    } finally {
+      wrapper?.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('says the queue is no longer available when a poll is refused with 403 (#2194)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {

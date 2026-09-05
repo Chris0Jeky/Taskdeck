@@ -82,6 +82,25 @@ const props = withDefaults(
      * `PaperReviewView` passes its own `queueAccessRevoked`.
      */
     queueUnavailable?: boolean
+    /**
+     * The identity of the queue `awaitingCount` counts, as one primitive
+     * (#2214 item 4). It is the `key` of the node carrying the announcement,
+     * never spoken text.
+     *
+     * A live region only speaks when it changes, so a poll that removed one
+     * pending proposal and added another rendered a byte-identical
+     * "3 proposals awaiting review." and announced nothing. Re-keying replaces
+     * that node inside a region that stays mounted, which is the node addition
+     * `aria-live`'s default `aria-relevant="additions text"` announces.
+     *
+     * The rail cannot derive this itself: `items` is the whole visible queue,
+     * not the awaiting set the count is about, and a rail-local derivation is
+     * exactly how the two skins drift (#1124 / ADR-0038). `PaperReviewView`
+     * passes the shared composable's `queueAnnouncementKey`, the same value
+     * `LegacyReviewView` keys its own region on. Optional and defaulting to a
+     * constant, so a parent that does not pass it keeps today's behaviour.
+     */
+    announcementKey?: string
   }>(),
   {
     dismissableCount: 0,
@@ -91,6 +110,7 @@ const props = withDefaults(
     authorPartitionAvailable: true,
     loading: false,
     queueUnavailable: false,
+    announcementKey: '',
   },
 )
 
@@ -191,13 +211,21 @@ function onFilterPillClick(key: QueueFilter) {
         withholds its content (#2214): a live region inserted at the same moment
         its text appears is unreliably announced, so gating with `v-if` would
         trade one defect for another.
+
+        Only the node INSIDE it is keyed and replaced, on `announcementKey`, so
+        a queue whose contents changed without changing size is announced once
+        with the sentence it always had (#2214 item 4).
       -->
       <p
         class="sr-only"
         role="status"
         aria-live="polite"
         data-testid="paper-review-queue-live"
-      >{{ countIsAnnounceable ? $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) : '' }}</p>
+      ><span
+        v-if="countIsAnnounceable"
+        :key="announcementKey"
+        data-testid="paper-review-queue-announcement"
+      >{{ $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) }}</span></p>
       <PaperScopeDisclosure
         v-if="scopeLabel && scopeClearLabel"
         :label="scopeLabel"
