@@ -213,15 +213,23 @@ paths above. `CliFirstRunBootstrapper` writes the connector encryption key it
 auto-generates next to the resolved SQLite data directory, which is the directory
 named by `ConnectionStrings:DefaultConnection` or by the
 `TASKDECK_CONNECTION_STRING` fallback. That directory must sit on a filesystem
-that can store owner-only permissions, such as NTFS, ext4, or APFS. The CLI
-creates the key file locked to the current user and re-applies that lockdown to a
-key file an older build left unprotected. Where the filesystem cannot store those
-permissions, which is the case on FAT32, exFAT, and some SMB shares, the CLI
-refuses to persist the key, warns on stderr, and falls back to a transient key
-generated for that run alone, so connector secrets encrypted in one run cannot be
-read in the next. The fix is to move the data directory onto a filesystem that
-stores permissions, or to set `Connectors__EncryptionKey` explicitly so the CLI
-never needs to persist a key of its own.
+that can store owner-only permissions, such as NTFS, ext4, or APFS. On the runs
+where the CLI resolves that key file itself, meaning no `Connectors__EncryptionKey`
+is configured, it creates the file locked to the current user and re-applies that
+lockdown to a key file an older build left unprotected. A configured
+`Connectors__EncryptionKey` returns from the bootstrap before any path is
+resolved, so no lockdown is re-applied on those runs: an operator who sets the
+variable on an install that predates the owner-only key file must delete or
+restrict the legacy `appsettings.local.json` themselves. Where the filesystem
+cannot store those permissions, which is the case on FAT32, exFAT, and some SMB
+shares, the CLI refuses to persist a new key, warns on stderr, and falls back to a
+transient key generated for that run alone, so connector secrets encrypted in one
+run cannot be read in the next. A key file that already exists on such a volume is
+still used: the CLI keeps the persisted key and warns on every run that it could
+not restrict the file to the current user. The fix is the same in both cases: move
+the data directory onto a filesystem that stores permissions, or set
+`Connectors__EncryptionKey` explicitly and remove the key file so the CLI never
+needs to persist or protect a key of its own.
 
 ### `Auth:Registration`
 
