@@ -1248,7 +1248,11 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
-    it.each([403, 404])(
+    // 400 shares this outcome exactly (#2214 item 8): the id in the hash is not
+    // one the by-id route can bind, which is as permanent a fact about that
+    // target as a refusal or a deletion. Running it through the same case keeps
+    // the three statuses provably identical, recovery half included.
+    it.each([400, 403, 404])(
       'drops and marks only an omitted deep-link unavailable when its by-id read returns %s',
       async (status) => {
         vi.useFakeTimers()
@@ -1291,6 +1295,68 @@ describe('useReviewProposals', () => {
         rp.stopQueueRefresh()
       },
     )
+
+    // #2214 item 8: a malformed `#proposal-<id>` (anything that is not a GUID)
+    // makes the by-id route answer with a model-binding 400. That 400 used to
+    // fall through to the transient-failure branch, which RETURNS before
+    // `proposals.value = next` -- so the list answer that had already arrived
+    // was discarded, and because a 400 is not transient the failure counter
+    // reset instead of climbing to the degraded threshold. The queue froze with
+    // no indication, on every tick, for as long as the bad link stayed in the
+    // URL. The list read succeeded, so its answer is the queue; only the pin is
+    // unusable, which is exactly the 403/404 outcome.
+    it('lands the readable queue and marks only the pin unavailable when a malformed deep-link target answers 400', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-existing', createdAt: '2026-01-02T00:00:00Z' }),
+      ])
+      mockAutomationApi.getProposal.mockRejectedValue({ response: { status: 400 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      // The explicit deep-link path is deliberately unchanged by this: only a
+      // 404 marks the target there, so a 400 still surfaces as a failure the
+      // reviewer asked for.
+      expect(rp.unavailableProposalId.value).toBeNull()
+      mockToast.error.mockClear()
+
+      const queueBeforePoll = rp.proposals.value
+      mockAutomationApi.getProposals.mockResolvedValue([
+        makeProposal({ id: 'p-server-new', createdAt: '2026-01-03T00:00:00Z' }),
+      ])
+      const onQueueReplaced = vi.fn()
+      rp.startQueueRefresh(undefined, { onQueueReplaced })
+      await rp.refreshProposals()
+
+      expect(rp.proposals.value).not.toBe(queueBeforePoll)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-server-new'])
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      // A proposal-level refusal is not whole-queue revocation, and the queue on
+      // screen is the freshly read one, so nothing is degraded.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      // The explicit unavailable state owns this transition; the settled-row
+      // notice would otherwise win the render branch and hide it.
+      expect(onQueueReplaced).not.toHaveBeenCalled()
+      expect(mockToast.error).not.toHaveBeenCalled()
+
+      // The consecutive-failure counter is private. The only thing it drives is
+      // the degraded warning at THRESHOLD consecutive transient failures, so
+      // polling that many more times with the same 400 pin proves it is not
+      // being incremented.
+      const pinReadsAfterFirstPoll = mockAutomationApi.getProposal.mock.calls.length
+      for (let i = 0; i < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; i += 1) {
+        await rp.refreshProposals()
+      }
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-server-new'])
+      // Matching the shipped 403/404 behaviour: nothing suppresses the pin read
+      // while the target stays outside the list, so every later tick retries it.
+      expect(mockAutomationApi.getProposal.mock.calls.length).toBe(
+        pinReadsAfterFirstPoll + REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+      )
+      rp.stopQueueRefresh()
+    })
 
     it('rechecks an unavailable deep-link and restores it when it becomes readable outside the list page', async () => {
       vi.useFakeTimers()

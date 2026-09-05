@@ -158,6 +158,27 @@ function isForbiddenError(err: unknown): boolean {
   return (err as { response?: { status?: number } }).response?.status === 403
 }
 
+/**
+ * A 400 on a PROPOSAL-LEVEL read means the id the URL names is not one this
+ * route can bind: `GetProposal(Guid id)` under `[ApiController]` answers a
+ * non-GUID `#proposal-<id>` with a model-binding 400 before the handler runs,
+ * and nothing client-side validates the hash. That is a permanent fact about
+ * the requested target, exactly like a 403 or a 404 — no later tick makes a
+ * malformed id readable. Routing it to the queue-level failure branch instead
+ * threw away a list answer that had already arrived, and did so silently: a 400
+ * is not transient, so the failure counter reset rather than climbing to the
+ * degraded threshold, and the refresh froze with no indication (#2214 item 8).
+ *
+ * Deliberately 400 alone. Only a malformed id is provably unusable; a 405 would
+ * be a routing defect affecting the whole surface rather than one target, and
+ * "gone" is already what a 404 says here. Neither is emitted by this route, so
+ * giving them pin-level meaning would be guessing.
+ */
+function isMalformedTargetError(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false
+  return (err as { response?: { status?: number } }).response?.status === 400
+}
+
 function isTransientQueueRefreshFailure(err: unknown): boolean {
   const status = (err as { response?: { status?: number } } | null)?.response?.status
   // Network failures and deadline errors have no HTTP response. For HTTP,
@@ -864,9 +885,11 @@ export function useReviewProposals() {
           // transient accounting below.
           if (controller.signal.aborted && !refreshTimedOut) return
           if (!isCurrentRead() && !refreshTimedOut) return
-          if (isForbiddenError(e) || isHttpNotFound(e)) {
+          if (isForbiddenError(e) || isHttpNotFound(e) || isMalformedTargetError(e)) {
             // The list itself succeeded, so only the pin is unavailable. Do not
-            // turn a proposal-level refusal into whole-queue revocation.
+            // turn a proposal-level refusal — or a target this route cannot even
+            // bind — into whole-queue revocation, and do not discard a queue
+            // answer that already arrived.
             pinUnavailable = true
           } else {
             // The composite read is incomplete. Preserve the exact queue and
