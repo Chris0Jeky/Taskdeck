@@ -1570,6 +1570,47 @@ describe('ReviewView', () => {
     }
   })
 
+  it('names a malformed pin the background read cannot bind, instead of freezing the queue (#2214)', async () => {
+    // A `#proposal-<id>` that is not a GUID is answered 400 by the by-id route
+    // (model binding, before the handler). The background pin leg used to send
+    // that to the queue-level failure branch, which returns before the list
+    // answer is assigned: the row on screen stayed frozen forever and nothing
+    // said why. The pin is unusable; the queue read is not.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      // Mount with the target IN the queue, so the explicit deep-link read
+      // never fires and this exercises the background leg alone.
+      const pinned = buildProposal({ id: 'proposal-not-a-guid' })
+      mocks.getProposals.mockResolvedValue([pinned])
+
+      const { wrapper } = await mountAt('/workspace/review#proposal-proposal-not-a-guid')
+      expect(wrapper.find('#proposal-proposal-not-a-guid').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+
+      // The next queue read no longer carries it, so the poll re-reads it by id
+      // and gets a 400 back.
+      mocks.getProposals.mockResolvedValue([])
+      mocks.getProposal.mockRejectedValue({ response: { status: 400 } })
+
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const unavailable = wrapper.find('[data-testid="review-unavailable-target"]')
+      expect(unavailable.exists()).toBe(true)
+      expect(unavailable.text()).toContain('proposal-not-a-guid')
+      // The list answer landed: the row it dropped is gone rather than retained
+      // by a discarded read.
+      expect(wrapper.find('#proposal-proposal-not-a-guid').exists()).toBe(false)
+      // A poll the reviewer never asked for stays silent, and a pin-level
+      // outcome is not a queue-level permission failure.
+      expect(mocks.errorToast).not.toHaveBeenCalled()
+      expect(wrapper.find('.td-review-empty').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('announces nothing from the queue live region while the queue is loading (#2214)', async () => {
     // The live region sits above the skeleton, so an ungated one reads "0
     // proposals awaiting review." under the loading state and then the real
