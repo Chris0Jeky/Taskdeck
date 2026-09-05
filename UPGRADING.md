@@ -138,9 +138,18 @@ tables are empty, but a reason to export before downgrading if you ever turned t
   `20260904030926_AddProposalProvenanceProducerTriple` adds two nullable columns, `Provider` and
   `PromptVersion`, to `ProposalProvenances`. Both are `ALTER TABLE ADD COLUMN` statements with no
   table rebuild and no backfill: proposals created before the upgrade keep null in both, which the
-  Review surface renders as no producer claim rather than a guessed one. The pre-migration snapshot
-  runs as usual. Downgrading drops the two columns, losing only the newly recorded producer
-  metadata.
+  Review surface renders as no producer claim rather than a guessed one. That fail-closed rule has a
+  visible consequence for pre-upgrade rows: `GET /automation/proposals/{id}/provenance/metadata`
+  reports model and prompt version only alongside a recorded `Provider`, so a proposal triaged
+  through the live OpenAI leg before the upgrade, whose required `ModelId` column holds a real model
+  id such as `gpt-5.6-luna`, now has that model withheld by the endpoint (all three fields null),
+  because `ModelId` is also where the origin labels `chat-tools`, `manual`, `queue` and `unknown` are
+  stored and an origin label rendered as a model name would be a false producer claim. The Paper
+  Review capture-detail fallback can still surface the capture's own recorded provenance for
+  capture-linked proposals only. A deterministic backfill from the `CaptureProvenanceV1` block that
+  the triage workers stamp into `LlmRequest.Payload` is possible but not shipped; `#2499` tracks that
+  decision. The pre-migration snapshot runs as usual. Downgrading drops the two columns, losing only
+  the newly recorded producer metadata.
 
 - **MCP stdio identity remediation is reported by known tool calls, not at startup.** The stdio host
   completes `initialize` without resolving caller identity, but tool and resource discovery or reads

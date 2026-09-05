@@ -488,10 +488,19 @@ backfilling existing proposals. Consumers must handle absence --
 | Id | `Guid` | Yes | PK | |
 | ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade), unique | Owning proposal |
 | CorrelationId | `string` | Yes | 1-100 chars | Ties provenance to the originating pipeline run |
-| ModelId | `string` | Yes | 1-100 chars | Generating model (e.g. `gpt-4o`, `mock`) |
+| ModelId | `string` | Yes | 1-100 chars | Generating model (e.g. `gpt-4o`, `mock`) when a producer ran; otherwise an origin label (`chat-tools`, `manual`, `queue`, `unknown`) chosen from the proposal's source type, so this column alone never proves a model produced the proposal |
+| Provider | `string?` | No | Max 64 chars | Producer that ran (e.g. `openai`, `mock`); stamped today only by capture triage; null for pre-`20260904030926` rows and for Chat, Manual and Queue producers |
+| PromptVersion | `string?` | No | Max 64 chars | Prompt version the producer used; same coverage as `Provider` |
 | TotalTokens | `int` | Yes | >= 0 | Prompt + completion tokens |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+`GET /automation/proposals/{id}/provenance/metadata` projects the producer triple fail-closed
+(`ProvenanceQueryService.MapMetadata`): model and prompt version are reported only alongside a
+recorded `Provider`, so a row whose `Provider` is null answers with all three fields null even when
+`ModelId` holds a real model id (pre-migration live-triage rows), because an origin label rendered as a
+model name would be a false producer claim. `#2499` tracks whether those rows are backfilled from
+the `CaptureProvenanceV1` block the triage workers stamp into `LlmRequest.Payload`.
 
 **Navigation:** Fields (children)
 
