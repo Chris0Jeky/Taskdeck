@@ -15,6 +15,22 @@ import type { ConfidenceBreakdown } from '../../../composables/usePaperReviewSel
  * view passes an empty `authorMeta` for the deterministic and not-reported
  * sources, which left this sentence as the only statement on screen about where
  * the number came from — hidden behind a control with no reason to be opened.
+ *
+ * KNOWN GAP, unfixable at this layer (#1940), mirroring ReviewSimilarPast. The
+ * card receives a breakdown and nothing about the fetch that produced it, and
+ * `usePaperReviewSelectors` initialises `confidenceData` to `EMPTY_CONFIDENCE`
+ * — zero components, source `not-reported`, no note — resets it there on every
+ * proposal switch, and LEAVES it there when the batch fails, with no flag
+ * (`evidenceUnavailable` is set only from the Apply-time refresh, never from
+ * the page-load batch). So "No model confidence reported" also renders while
+ * the read is in flight and after it failed, where it is a claim about a
+ * response that never arrived. The composable exposes `loading`, but nothing
+ * threads it into `ReviewRightRail`, and the only place that could is
+ * `PaperReviewView.vue`.
+ *
+ * The wrong-state copy predates #1940: the same sentence rendered inside the
+ * disclosure. Hoisting it makes an existing false claim easier to see rather
+ * than creating one, and the gap stays tracked on #1940.
  */
 const props = defineProps<{
   authorName: string

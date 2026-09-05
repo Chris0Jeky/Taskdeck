@@ -14,10 +14,22 @@ import type {
  * nothing behind it. The disclosure stays present in every state because the
  * review view specs and the required E2E smoke drive it on an empty fixture.
  *
- * This layer cannot tell "still loading" from "loaded and empty" — it receives
- * rows and an apply rate, nothing about the fetch — so the empty copy is the
- * honest reading of an empty array here. Distinguishing the two needs a prop
- * from the rail (tracked on #1940).
+ * KNOWN GAP, unfixable at this layer (#1940). This card receives rows and an
+ * apply rate, nothing about the fetch, so three different situations arrive as
+ * the same empty array:
+ *   - the selector batch is still in flight,
+ *   - the batch FAILED (`usePaperReviewSelectors` leaves `similarPastData` at
+ *     its empty default with no flag, and `evidenceUnavailable` is set only
+ *     from the Apply-time refresh, never from the page-load batch),
+ *   - the read succeeded and there genuinely is no comparable history.
+ * Only the third makes "No comparable past decisions." a true statement, and
+ * this card cannot tell which one it is holding. The composable does expose
+ * `loading`, but nothing threads it into `ReviewRightRail`, and the only place
+ * that could is `PaperReviewView.vue`.
+ *
+ * The wrong-state copy predates #1940: the same sentence rendered inside the
+ * disclosure. Hoisting it makes an existing false claim easier to see rather
+ * than creating one, and the gap stays tracked on #1940.
  */
 const props = defineProps<{
   rows: SimilarPastRow[]
@@ -89,7 +101,7 @@ const disclosureId = 'paper-review-similar-past-disclosure'
           <div class="tk-meta paper-review-past__date">{{ row.date }}</div>
         </div>
       </div>
-      <div v-if="rows.length > 0" class="tk-meta paper-review-past__rate">
+      <div v-if="!isEmpty" class="tk-meta paper-review-past__rate">
         {{ $t('review.similarPast.rateLabel') }}
         <b>
           {{
