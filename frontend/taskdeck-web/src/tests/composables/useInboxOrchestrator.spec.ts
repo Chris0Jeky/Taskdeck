@@ -191,7 +191,7 @@ describe('useInboxOrchestrator', () => {
       orch.toggleItemSelection('a')
       orch.toggleItemSelection('b')
       await orch.batchAction('triage')
-      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage')
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage', { limit: 200 })
       expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
         ['a', 'b'],
         { limit: 200 },
@@ -220,6 +220,70 @@ describe('useInboxOrchestrator', () => {
         ['accepted'],
         { limit: 200, boardId: 'board-7' },
       )
+    })
+
+    it('refreshes in the active board scope after a Legacy batch ignore', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('ignore')
+
+      // No poll follows an ignore, so an unscoped refresh would leave the
+      // unscoped rows under the board's label until the next scoped load.
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(
+        ['a'],
+        'ignore',
+        { limit: 200, boardId: 'board-7' },
+      )
+    })
+
+    it('refreshes in the active board scope after a Legacy batch cancel', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('cancel')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(
+        ['a'],
+        'cancel',
+        { limit: 200, boardId: 'board-7' },
+      )
+    })
+
+    it('refreshes in the active board scope before a triage poll starts', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      orch.toggleItemSelection('b')
+
+      await orch.batchAction('triage')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(
+        ['a', 'b'],
+        'triage',
+        { limit: 200, boardId: 'board-7' },
+      )
+      expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
+        ['a', 'b'],
+        { limit: 200, boardId: 'board-7' },
+      )
+      // The refresh happens inside the store's `batchTriage`; the poll may only
+      // start once that call has resolved, so the scoped refresh is what the
+      // first poll tick builds on rather than what it repairs.
+      expect(mockCaptureStore.batchTriage.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCaptureStore.pollBatchTriageCompletion.mock.invocationCallOrder[0],
+      )
+    })
+
+    it('refreshes without a boardId when no board scopes the Inbox', async () => {
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('ignore')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a'], 'ignore', { limit: 200 })
     })
 
     it('does not poll ignore or cancel batch actions', async () => {
