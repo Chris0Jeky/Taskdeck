@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import BoardsListView from '../../views/BoardsListView.vue'
 import type { Board } from '../../types/board'
@@ -105,6 +105,105 @@ describe('BoardsListView', () => {
     await waitForUi()
 
     expect(wrapper.text()).toContain('Failed to load boards')
+  })
+
+  // #2689 item 1. Since #2685 the list read is bounded with `skipRetry`, so a
+  // one-off 503 or an API restart during mount no longer heals itself in the
+  // retry layer: without a control the alert stood until the user navigated
+  // away and back, and because the read is shared every unfiltered caller on
+  // the page failed with it.
+  describe('retry control in the error state', () => {
+    it('renders a focusable Retry button beside the alert', async () => {
+      mockBoardStore.error = 'Failed to load boards'
+
+      const wrapper = mount(BoardsListView)
+      await waitForUi()
+
+      const retry = wrapper.find('[data-action="retry-board-load"]')
+      expect(retry.exists()).toBe(true)
+      // A real button: in the tab order, and activated by Enter/Space without
+      // any key handling of this view's own.
+      expect(retry.element.tagName).toBe('BUTTON')
+      expect(retry.attributes('type')).toBe('button')
+      expect(retry.text()).toBe('Retry board load')
+
+      // The live region announces the sentence alone; the control is a sibling
+      // that points back at it, so the announcement does not carry the button
+      // label and the button is still reachable.
+      const alert = wrapper.find('[role="alert"]')
+      expect(alert.exists()).toBe(true)
+      expect(alert.text()).toBe('Failed to load boards')
+      expect(alert.attributes('id')).toBeTruthy()
+      expect(retry.attributes('aria-describedby')).toBe(alert.attributes('id'))
+    })
+
+    it('re-issues the read, shows the skeleton in flight, and leaves the error state on success', async () => {
+      mockBoardStore.error = 'Failed to load boards'
+
+      const wrapper = mount(BoardsListView)
+      await waitForUi()
+      expect(mockBoardStore.fetchBoards).toHaveBeenCalledTimes(1)
+
+      // What the store actually does on a successful read: the loading flag is
+      // raised synchronously on entry, then the list is committed and `error`
+      // cleared on the success path (boardCrudStore, #2689 item 4). Held open
+      // deliberately so the in-flight frame is observable rather than a race
+      // with the mock's own resolution.
+      let settleRead!: () => void
+      mockBoardStore.fetchBoards.mockImplementation(() => {
+        mockBoardStore.loading = true
+        return new Promise<void>((resolve) => {
+          settleRead = () => {
+            mockBoardStore.boards = [makeBoard({ id: 'b1', name: 'Recovered Board' })]
+            mockBoardStore.error = null
+            mockBoardStore.loading = false
+            resolve()
+          }
+        })
+      })
+
+      await wrapper.find('[data-action="retry-board-load"]').trigger('click')
+
+      expect(mockBoardStore.fetchBoards).toHaveBeenCalledTimes(2)
+      expect(wrapper.find('.paper-boards__skeleton').exists()).toBe(true)
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+      settleRead()
+      await flushPromises()
+
+      expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      expect(wrapper.find('[data-action="retry-board-load"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('Recovered Board')
+    })
+
+    it('shows the alert again, still retryable, when the retry also fails', async () => {
+      mockBoardStore.error = 'Failed to load boards'
+
+      const wrapper = mount(BoardsListView)
+      await waitForUi()
+
+      const timeoutCopy =
+        'The request took too long, so it was stopped. Check your connection, then try again.'
+      mockBoardStore.fetchBoards.mockImplementation(async () => {
+        mockBoardStore.loading = true
+        await Promise.resolve()
+        mockBoardStore.error = timeoutCopy
+        mockBoardStore.loading = false
+        // The store rethrows after handleApiError; the view's catch is what
+        // keeps that from becoming a lifecycle-hook error on the retry path
+        // too, not only on mount.
+        throw new Error('timeout of 10000ms exceeded')
+      })
+
+      await wrapper.find('[data-action="retry-board-load"]').trigger('click')
+      await flushPromises()
+
+      expect(mockBoardStore.fetchBoards).toHaveBeenCalledTimes(2)
+      const alert = wrapper.find('[role="alert"]')
+      expect(alert.exists()).toBe(true)
+      expect(alert.text()).toBe(timeoutCopy)
+      expect(wrapper.find('[data-action="retry-board-load"]').exists()).toBe(true)
+    })
   })
 
   it('shows empty state when no boards exist', async () => {
