@@ -50,26 +50,41 @@ function formatCreatedAt(createdAt: string): string {
 
 /**
  * The one load path this view has: the mount read AND the Retry control beside
- * the error alert both come through here, so a retry produces exactly the same
- * sequence a mount does — skeleton while the read is in flight, then the grid
- * or the alert again.
- *
- * A retry is never swallowed by the store's 5 s throttle: `fetchBoards` writes
- * its throttle stamp only after a success and releases the shared in-flight
- * promise on rejection, so a click after a failure always issues a fresh
- * request. That matters more since #2685 bounded this read with `skipRetry`:
- * a one-off 503 or an API restart during mount no longer heals itself in the
- * retry layer, and without this control the alert stayed until the user
- * navigated away and back (#2689 item 1).
+ * the error alert both come through here, so a retry produces the same sequence
+ * a mount does — skeleton while the read is in flight, then the grid or the
+ * alert again. It matters since #2685 bounded this read with `skipRetry`: a
+ * one-off 503 or an API restart during mount no longer heals itself in the
+ * retry layer, and without a control the alert stayed until the user navigated
+ * away and back (#2689 item 1).
  */
-async function loadBoards() {
+async function loadBoards(options: { force?: boolean } = {}) {
   // Catch the rethrown error — boardStore.error is already set by handleApiError
   // so the template can display it. Without this catch, Vue treats the unhandled
   // rejection as a lifecycle-hook error and may tear down the component.
-  await boardStore.fetchBoards().catch(() => {})
+  await boardStore.fetchBoards(undefined, false, options).catch(() => {})
 }
 
-onMounted(loadBoards)
+onMounted(() => {
+  void loadBoards()
+})
+
+/**
+ * The Retry click. `force` skips the store's throttle window and nothing else.
+ *
+ * The stamp is written only after a success, so a retry that follows a FAILED
+ * list read was never blocked by it — the earlier docblock here stated that as
+ * if it settled the question, and it does not. `state.error` is shared by every
+ * board action, so a create/rename/archive failure two seconds after a good
+ * list read puts this view on its error branch with a live Retry button while
+ * the throttle window from THAT success is still open. Unforced, the click
+ * returned inside the store before `loading` was touched or any request was
+ * made: no skeleton, no request, a dead button until the window passed (#2689
+ * round-2 finding 1). The in-flight share is still respected — `force` does not
+ * bypass it, so a click during a read already on the wire joins that read.
+ */
+async function retryLoad() {
+  await loadBoards({ force: true })
+}
 
 async function createBoard() {
   if (!newBoardName.value.trim()) return
@@ -164,7 +179,7 @@ function goToBoard(id: string) {
           class="paper-boards__retry"
           data-action="retry-board-load"
           aria-describedby="boards-error-message"
-          @click="loadBoards"
+          @click="retryLoad"
         >
           {{ $t('boards.error.retry') }}
         </button>

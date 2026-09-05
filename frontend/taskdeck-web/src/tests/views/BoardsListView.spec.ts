@@ -176,6 +176,46 @@ describe('BoardsListView', () => {
       expect(wrapper.text()).toContain('Recovered Board')
     })
 
+    // #2689 round-2 finding 1. The alert on this surface is not raised only by
+    // the list read: `error` is shared, so a create/rename/archive failure puts
+    // the view on its error branch while the throttle window from an earlier
+    // SUCCESSFUL read is still open. Unforced, the click returned inside the
+    // store before `loading` was touched — no skeleton, no request, a dead
+    // button until the window passed.
+    it('forces past the throttle window when the alert came from another action after a good read', async () => {
+      const wrapper = mount(BoardsListView)
+      await waitForUi()
+
+      // The mount read does NOT force: an ordinary mount inside another view's
+      // window must still be throttled.
+      expect(mockBoardStore.fetchBoards).toHaveBeenCalledWith(undefined, false, {})
+
+      // Inside that window, another action fails and sets the shared ref.
+      mockBoardStore.error = 'Board name already exists'
+      await waitForUi()
+
+      let settleRead!: () => void
+      mockBoardStore.fetchBoards.mockImplementation(() => {
+        mockBoardStore.loading = true
+        return new Promise<void>((resolve) => {
+          settleRead = () => {
+            mockBoardStore.loading = false
+            resolve()
+          }
+        })
+      })
+
+      await wrapper.find('[data-action="retry-board-load"]').trigger('click')
+
+      expect(mockBoardStore.fetchBoards).toHaveBeenLastCalledWith(undefined, false, {
+        force: true,
+      })
+      expect(wrapper.find('.paper-boards__skeleton').exists()).toBe(true)
+
+      settleRead()
+      await flushPromises()
+    })
+
     it('shows the alert again, still retryable, when the retry also fails', async () => {
       mockBoardStore.error = 'Failed to load boards'
 

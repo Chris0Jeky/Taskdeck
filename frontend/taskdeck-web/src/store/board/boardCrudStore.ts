@@ -23,6 +23,27 @@ export interface BoardFetchOptions {
   intent?: BoardFetchIntent
 }
 
+export interface BoardListFetchOptions {
+  /**
+   * Skip the throttle window, and NOTHING else — an explicit user request for
+   * fresh data, which the 5 s gap between mounts was never meant to answer.
+   *
+   * The stamp is written only after a success, so a retry that follows a FAILED
+   * list read was never blocked by it. What this exists for is the stamp an
+   * EARLIER success left behind: `state.error` is shared by every board action,
+   * so a create/rename/archive failure two seconds after a good list read puts
+   * BoardsListView on its error branch with a Retry control, and without this
+   * the click returned here before touching `loading` or issuing a request —
+   * no skeleton, no request, a dead button until the window passed (#2689
+   * round-2 finding 1).
+   *
+   * Deliberately NOT a bypass of the in-flight share: joining a read that is
+   * already on the wire is the correct answer to a second caller, and forcing
+   * a parallel one would reintroduce the #1961 fan-out the share removed.
+   */
+  force?: boolean
+}
+
 interface ActiveBoardFetch {
   boardId: string
   intent: BoardFetchIntent
@@ -51,7 +72,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
   let activeBoardFetch: ActiveBoardFetch | null = null
   let queuedBackgroundBoardFetch: QueuedBackgroundBoardFetch | null = null
 
-  async function fetchBoards(search?: string, includeArchived = false) {
+  async function fetchBoards(
+    search?: string,
+    includeArchived = false,
+    options: BoardListFetchOptions = {},
+  ) {
     const now = Date.now()
     // Allow forced refreshes (search/archive filter changes) to bypass throttle.
     const isFilteredRequest = !!search || includeArchived
@@ -65,7 +90,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     if (!isFilteredRequest && unfilteredFetchBoardsInFlight) {
       return unfilteredFetchBoardsInFlight
     }
-    if (!isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
+    // The share check above is deliberately ahead of this and is NOT skipped by
+    // `force`; only the throttle window is. See BoardListFetchOptions.force.
+    if (!options.force && !isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
       return
     }
     if (helpers.isDemoMode) {

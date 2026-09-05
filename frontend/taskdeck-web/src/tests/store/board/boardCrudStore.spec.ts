@@ -183,6 +183,52 @@ describe('boardCrudStore', () => {
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
     })
 
+    // #2689 round-2 finding 1. The throttle stamp is written only after a
+    // SUCCESS, so a retry following a failed read was never blocked by it — but
+    // the stamp an EARLIER success left behind is a different matter. `error`
+    // is shared by every board action, so the boards list can be sitting on its
+    // error branch with a live Retry control (a create/rename/archive failure)
+    // while this window is still open. An explicit retry has to get through;
+    // an ordinary mount still must not.
+    it('lets a forced read through the throttle window while an unforced one is still skipped', async () => {
+      vi.useFakeTimers()
+      mockBoardsApi.getBoards.mockResolvedValue([{ id: 'board-1', name: 'My Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      // Unchanged for every existing caller.
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      // Same window, forced: a real request, and the skeleton the view needs.
+      await fetchBoards(undefined, false, { force: true })
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(state.loading.value).toBe(false)
+    })
+
+    // `force` skips the throttle and nothing else. Bypassing the share as well
+    // would reintroduce the parallel fan-out #1961 removed.
+    it('joins the in-flight share rather than starting a parallel read when forced', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const mountRead = fetchBoards()
+      const forcedRetry = fetchBoards(undefined, false, { force: true })
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      inFlight.resolve([{ id: 'board-1', name: 'My Board' }])
+      await mountRead
+      await forcedRetry
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'My Board' }])
+    })
+
     // The composer and the triage table both call fetchBoards() on an empty
     // store when the inbox mounts.  The throttle stamp is only written after a
     // success, so before the share these two mounts issued parallel unfiltered
