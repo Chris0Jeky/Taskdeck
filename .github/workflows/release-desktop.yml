@@ -33,7 +33,9 @@
 #     no-publish dispatch previews the real STABLE page instead of the
 #     `v0.0.0-dryrun+<sha7>` RC fallback. It is a RENDER-ONLY output of
 #     resolve-source (`render_tag` / `render_prerelease`), read by compose-notes
-#     and by nothing that builds, names an asset or writes a Release.
+#     and by nothing that builds, names an asset or writes a Release. Supplying
+#     it on a dispatch that PUBLISHES is refused in resolve-source, before any
+#     build starts: the two inputs then state two different intents.
 #
 #   * The composer runs from a SECOND checkout of the WORKFLOW revision
 #     (`.workflow-tooling`, pinned to `github.workflow_sha`), because the release
@@ -64,7 +66,7 @@ on:
         required: false
         type: string
       preview_tag:
-        description: "REHEARSAL ONLY (e.g. v0.3.0). Renders the release page as if this tag existed, so a no-publish dispatch previews the real stable page instead of the v0.0.0-dryrun placeholder. It NEVER names, creates, touches or publishes a Release, and it never reaches the built archive name or the version stamped into the binaries. Ignored with a notice when this dispatch actually publishes."
+        description: "REHEARSAL ONLY (e.g. v0.3.0). Renders the release page as if this tag existed, so a no-publish dispatch previews the real stable page instead of the v0.0.0-dryrun placeholder. It NEVER names, creates, touches or publishes a Release, and it never reaches the built archive name or the version stamped into the binaries. A dispatch that also PUBLISHES (a tag input, or a tag ref) is REFUSED before any build runs — use exactly one of the two."
         required: false
         type: string
   push:
@@ -229,11 +231,16 @@ jobs:
           render_tag="${tag}"
           if [ -n "${raw_preview_tag}" ]; then
             if [ "${publish}" = "true" ]; then
-              # A notice rather than an error: this dispatch publishes a real
-              # tag, and failing it over an input that changes nothing about
-              # what gets published would cost a build for no safety gain.
-              printf '::notice::preview_tag %q is ignored — this dispatch publishes %s.\n' \
+              # Fail closed, and fail here. A dispatch carrying both inputs is
+              # stating two different intents — preview THIS tag, publish THAT
+              # one — and the refusal is the only mechanical signal that the
+              # dispatcher's intent and the dispatcher's action disagree;
+              # ignoring the input publishes under a silent assumption about
+              # which of the two was meant. Refusing costs nothing: this is the
+              # first job, it builds nothing, and every build job waits on it.
+              printf '::error::preview_tag %q was supplied on a dispatch that PUBLISHES %s. preview_tag is rehearsal-only; re-dispatch with exactly one of tag and preview_tag.\n' \
                 "${raw_preview_tag}" "${tag}"
+              exit 1
             else
               render_tag="$(bash scripts/ci/validate-release-tag.sh "${raw_preview_tag}")"
               printf 'Rehearsal renders the release page as %s; nothing is published.\n' "${render_tag}"
@@ -702,7 +709,18 @@ jobs:
             printf '::error::The workflow tooling checkout has no scripts/ci/select-changelog-base.mjs; refusing to guess a changelog base.\n'
             exit 1
           fi
-          printf 'Workflow tooling checked out from %s.\n' "${TOOLING_SHA}"
+          # `github.workflow_sha` is the tag OBJECT id on an annotated-tag push.
+          # actions/checkout is expected to peel it to the commit, and every
+          # claim above ("the tooling comes from the workflow revision") rests on
+          # that, but nothing here proved it. Prove it, and log what HEAD really
+          # resolved to beside what was asked for.
+          tooling_commit="$(git -C .workflow-tooling rev-parse --verify 'HEAD^{commit}' 2>/dev/null || true)"
+          if [ -z "${tooling_commit}" ]; then
+            printf '::error::The workflow tooling checkout for %s has no resolvable HEAD commit; refusing to render a page.\n' \
+              "${TOOLING_SHA}"
+            exit 1
+          fi
+          printf 'Workflow tooling checked out from %s (HEAD commit %s).\n' "${TOOLING_SHA}" "${tooling_commit}"
 
       - name: Setup Node
         uses: actions/setup-node@v7
@@ -760,10 +778,16 @@ jobs:
             # retry as generate-notes below; it used to be a single unretried
             # call under `set -e`.
             stable_tags="stable-tags.txt"
+            # The window is wide, and named once so the truncation check below
+            # cannot drift from the limit it checks. A page that comes back
+            # exactly full is indistinguishable from a truncated one, and the
+            # base is chosen only from what was listed, so it is refused rather
+            # than trusted.
+            stable_tag_limit=200
             listed_ok=0
             for attempt in 1 2 3; do
               if gh release list --repo "${GITHUB_REPOSITORY}" \
-                --exclude-pre-releases --exclude-drafts --limit 100 \
+                --exclude-pre-releases --exclude-drafts --limit "${stable_tag_limit}" \
                 --json tagName --jq '.[].tagName' > "${stable_tags}"; then
                 listed_ok=1
                 break
@@ -775,6 +799,13 @@ jobs:
             done
             if [ "${listed_ok}" -ne 1 ]; then
               printf '::error::Could not list published releases after 3 attempts; refusing to guess the changelog base.\n'
+              exit 1
+            fi
+            listed_count="$(wc -l < "${stable_tags}" | tr -d '[:space:]')"
+            printf 'Listed %s stable releases (window %s).\n' "${listed_count}" "${stable_tag_limit}"
+            if [ "${listed_count}" -eq "${stable_tag_limit}" ]; then
+              printf '::error::The stable release listing came back exactly full (%s rows), so older stable releases may have been truncated out of the candidate set and the changelog base cannot be trusted; widen the listing window.\n' \
+                "${stable_tag_limit}"
               exit 1
             fi
             previous_tag="$(node .workflow-tooling/scripts/ci/select-changelog-base.mjs \

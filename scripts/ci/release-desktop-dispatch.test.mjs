@@ -208,6 +208,14 @@ function jobBlock(name) {
   return next === -1 ? rest : rest.slice(0, next)
 }
 
+function stepBlock(job, stepName) {
+  const start = job.indexOf(`- name: ${stepName}\n`)
+  assert.notEqual(start, -1, `step ${stepName} must exist`)
+  const rest = job.slice(start)
+  const next = rest.indexOf('\n      - name: ')
+  return next === -1 ? rest : rest.slice(0, next)
+}
+
 function matrixBlock(jobName) {
   const job = jobBlock(jobName)
   const start = job.indexOf('\n      matrix:\n')
@@ -704,8 +712,23 @@ test('the changelog base is the newest stable release before the target tag, wit
   const job = jobBlock('compose-notes')
   assert.match(
     job,
-    /gh release list --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--exclude-pre-releases --exclude-drafts --limit 100/,
+    /gh release list --repo "\$\{GITHUB_REPOSITORY\}" \\\n\s+--exclude-pre-releases --exclude-drafts --limit "\$\{stable_tag_limit\}"/,
     'a prerelease must never become the base, and the candidate list is bounded but not truncated to one',
+  )
+  assert.match(
+    job,
+    /stable_tag_limit=200\b/,
+    'the candidate window is 200 stable releases, named once so the truncation check cannot drift from the limit it checks',
+  )
+  assert.match(
+    job,
+    /if \[ "\$\{listed_count\}" -eq "\$\{stable_tag_limit\}" \]; then[\s\S]{0,500}?exit 1/,
+    'a listing that comes back exactly full may have truncated older stable releases out of the candidate set, so it fails closed',
+  )
+  assert.match(
+    job,
+    /::error::[^\n]*widen the listing window/,
+    'the truncation refusal says what has to change',
   )
   assert.doesNotMatch(
     job,
@@ -918,7 +941,7 @@ test('the preview tag clears the same grammar gate as a real release tag', () =>
   )
 })
 
-test('render_tag falls back to the resolved tag and is ignored on a publishing dispatch', () => {
+test('render_tag falls back to the resolved tag, and a publishing dispatch that also previews is refused', () => {
   const job = jobBlock('resolve-source')
   const fallbackAt = job.indexOf('render_tag="${tag}"')
   const guardAt = job.indexOf('if [ -n "${raw_preview_tag}" ]; then')
@@ -927,9 +950,33 @@ test('render_tag falls back to the resolved tag and is ignored on a publishing d
   assert.ok(fallbackAt < guardAt, 'the fallback is assigned before any preview tag can override it')
   assert.match(
     job,
-    /if \[ "\$\{publish\}" = "true" \]; then\n\s+#[\s\S]{0,400}?printf '::notice::preview_tag/,
-    'a publishing dispatch ignores the input with a notice instead of rendering an unpublished tag',
+    /if \[ "\$\{publish\}" = "true" \]; then\n\s+#[\s\S]{0,900}?printf '::error::preview_tag[\s\S]{0,400}?exit 1/,
+    'a dispatch that both publishes and previews states two conflicting intents and is refused, not silently narrowed',
   )
+  assert.doesNotMatch(
+    job,
+    /::notice::preview_tag/,
+    'ignoring the input with a notice leaves the disagreement between intent and action with no mechanical signal',
+  )
+  assert.match(
+    job,
+    /printf '::error::preview_tag[^\n]*%s[\s\S]{0,300}?"\$\{raw_preview_tag\}" "\$\{tag\}"/,
+    'the refusal names both inputs, so the dispatcher sees which two disagreed',
+  )
+  // The refusal is free: resolve-source is the first job, builds nothing, and
+  // every job that does build waits on it.
+  assert.doesNotMatch(
+    job,
+    /\n {4}needs:/,
+    'resolve-source depends on nothing, so refusing there costs zero build minutes',
+  )
+  for (const dependent of ['build-frontend', 'build-backend', 'compose-notes', 'create-release']) {
+    assert.match(
+      jobBlock(dependent),
+      /\n {4}needs: (resolve-source\b|\[resolve-source[,\]])/,
+      `${dependent} waits on resolve-source, so nothing is built before the refusal lands`,
+    )
+  }
   assert.match(
     job,
     /case "\$\{render_tag\}" in\n\s+\*-\*\) render_prerelease="true" ;;\n\s+\*\)\s+render_prerelease="false" ;;\n\s+esac/,
@@ -1023,14 +1070,49 @@ test('workflow tooling is checked out from the workflow revision into its own pa
   )
 })
 
-test('the tooling checkout is proved to carry the composer before the build is spent', () => {
+// NOT "before the build is spent": compose-notes needs build-backend, so this
+// guard runs after the whole Windows build. What it does prove is that a missing
+// composer is NAMED before node is invoked, instead of surfacing as an opaque
+// MODULE_NOT_FOUND — and that the tooling ref really peeled to a commit, which
+// `github.workflow_sha` does not guarantee on an annotated-tag push.
+test('the tooling guard names a missing composer explicitly before the composer is invoked', () => {
   const job = jobBlock('compose-notes')
+  const guard = stepBlock(job, 'Verify the workflow tooling checkout carries the composer')
   assert.match(
-    job,
+    guard,
     /if \[ ! -f \.workflow-tooling\/scripts\/ci\/compose-release-notes\.mjs \]/,
     'a missing composer is named explicitly rather than surfacing as MODULE_NOT_FOUND',
   )
-  assert.match(job, /exit 1/, 'the guard fails closed')
+  assert.match(
+    guard,
+    /if \[ ! -f \.workflow-tooling\/scripts\/ci\/select-changelog-base\.mjs \]/,
+    'the changelog selector is named the same way',
+  )
+  // Anchored to the guard's OWN run block: compose-notes carries several
+  // unrelated `exit 1` lines, so matching the whole job would pass with the
+  // guard deleted.
+  assert.match(guard, /exit 1/, 'the guard itself fails closed, not some other step in the job')
+
+  assert.match(
+    guard,
+    /git -C \.workflow-tooling rev-parse --verify 'HEAD\^\{commit\}'/,
+    'the tooling checkout is proved to sit on a real commit, not an unpeeled annotated-tag object',
+  )
+  assert.match(
+    guard,
+    /if \[ -z "\$\{tooling_commit\}" \]; then[\s\S]{0,400}?exit 1/,
+    'an unresolvable tooling HEAD fails closed instead of rendering from an unknown tree',
+  )
+  assert.match(
+    guard,
+    /printf 'Workflow tooling checked out from %s \(HEAD commit %s\)[\s\S]{0,200}?"\$\{TOOLING_SHA\}" "\$\{tooling_commit\}"/,
+    'the resolved commit is printed next to the requested workflow_sha',
+  )
+
+  const guardAt = job.indexOf('Verify the workflow tooling checkout carries the composer')
+  const composerAt = job.indexOf('node .workflow-tooling/scripts/ci/compose-release-notes.mjs')
+  assert.ok(guardAt !== -1 && composerAt !== -1)
+  assert.ok(guardAt < composerAt, 'the guard runs before the composer it guards is invoked')
 })
 
 test('release content is still read from the tagged checkout, not the tooling one', () => {
