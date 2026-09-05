@@ -422,10 +422,20 @@ function guardDirtyNavigation(): boolean | Promise<boolean> {
 onBeforeRouteLeave(guardDirtyNavigation)
 onBeforeRouteUpdate(guardDirtyNavigation)
 
+/**
+ * The column's "+ capture" control (#1984 finding 2).
+ *
+ * It used to push `columnId` alongside `boardId`. Nothing downstream consumes
+ * it — `CaptureListQuery` has no column key, the create DTO has no `ColumnId`,
+ * and triage targets the board's default column — so its only effect was to
+ * make the Inbox scope chip claim a column filter the list request never
+ * applied. The board scope is the whole truth this control can carry today;
+ * honouring a column end-to-end is the open half of `#1984`.
+ */
 function openCapture(_column: Column) {
   void router.push({
     name: 'workspace-inbox',
-    query: { boardId: boardId.value, columnId: _column.id },
+    query: { boardId: boardId.value },
   })
 }
 

@@ -580,6 +580,100 @@ describe('usePaperReviewSelectors', () => {
     expect(selectors.conflicts.value).toEqual([])
   })
 
+  // #2460 -- a caller that holds the decision lock owns the deadline. A read
+  // that never answers must release that caller, and must not be reported as a
+  // server failure it never was.
+  it('reports a caller-cancelled wait as aborted and stops the reads it held open', async () => {
+    mockAllEndpointsEmpty()
+    let historySignal: AbortSignal | undefined
+    vi.mocked(proposalDeepReviewApi.getHistory).mockImplementationOnce(
+      (_id: string, options?: { signal?: AbortSignal }) => {
+        historySignal = options?.signal
+        // Never settles: the exact stall a signal alone cannot recover from.
+        return new Promise(() => {})
+      },
+    )
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    const controller = new AbortController()
+
+    const wait = selectors.waitForCoreBatch('p-1', 'rev-1', { signal: controller.signal })
+    await nextTick()
+    expect(historySignal?.aborted).toBe(false)
+
+    controller.abort()
+    await expect(wait).resolves.toBe('aborted')
+    // The abandoned batch is cancelled rather than left occupying the transport.
+    expect(historySignal?.aborted).toBe(true)
+  })
+
+  it('reports a wait whose caller has already given up as aborted without reading', async () => {
+    mockAllEndpointsEmpty()
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    await vi.waitFor(() => {
+      expect(proposalDeepReviewApi.getHistory).toHaveBeenCalled()
+    })
+    const callsBefore = vi.mocked(proposalDeepReviewApi.getHistory).mock.calls.length
+
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      selectors.waitForCoreBatch('p-1', 'rev-1', { signal: controller.signal }),
+    ).resolves.toBe('aborted')
+    expect(vi.mocked(proposalDeepReviewApi.getHistory).mock.calls.length).toBe(callsBefore)
+  })
+
+  it('does not cancel the batch the reviewer moved to when an abandoned wait is cancelled', async () => {
+    mockAllEndpointsEmpty()
+    const historySignals: Array<AbortSignal | undefined> = []
+    vi.mocked(proposalDeepReviewApi.getHistory).mockImplementationOnce(
+      (_id: string, options?: { signal?: AbortSignal }) => {
+        historySignals.push(options?.signal)
+        return new Promise(() => {})
+      },
+    )
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    const controller = new AbortController()
+    const wait = selectors.waitForCoreBatch('p-1', 'rev-1', { signal: controller.signal })
+    await nextTick()
+
+    vi.mocked(proposalDeepReviewApi.getHistory).mockImplementationOnce(
+      (_id: string, options?: { signal?: AbortSignal }) => {
+        historySignals.push(options?.signal)
+        return Promise.resolve([])
+      },
+    )
+    proposal.value = makeProposal({ latestRevisionId: 'rev-2' })
+    await nextTick()
+
+    controller.abort()
+    await expect(wait).resolves.toBe('aborted')
+
+    // The cancellation belongs to the rev-1 wait. The rev-2 batch the reviewer
+    // is now looking at must survive it intact.
+    expect(historySignals).toHaveLength(2)
+    expect(historySignals[1]?.aborted).toBe(false)
+    await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
+  })
+
+  it('still reports a genuine read failure as failed when a signal is supplied', async () => {
+    mockAllEndpointsEmpty()
+    vi.mocked(proposalDeepReviewApi.getHistory)
+      .mockRejectedValueOnce(new Error('fail'))
+      .mockRejectedValueOnce(new Error('retry fail'))
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    const controller = new AbortController()
+
+    await expect(
+      selectors.waitForCoreBatch('p-1', 'rev-1', { signal: controller.signal }),
+    ).resolves.toBe('failed')
+    expect(controller.signal.aborted).toBe(false)
+  })
+
   it('drops the previous key evidence when the next batch fails', async () => {
     mockAllEndpointsEmpty()
     vi.mocked(proposalDeepReviewApi.getConflicts).mockResolvedValueOnce([

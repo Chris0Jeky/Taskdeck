@@ -18,6 +18,11 @@
 export default {
   eyebrow:
     'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
+  // Se muestra EN LUGAR de `eyebrow` mientras se sustituye el ámbito (#2501):
+  // los recuentos serían del ámbito que el usuario acaba de dejar. Sin plural:
+  // no hay ningún número con el que concordar. Y sin ninguna palabra sobre la
+  // carga: la tabla es la dueña del estado de carga, del error y del reintento.
+  eyebrowUncounted: 'Inbox · superficie de captura',
   title: {
     lead: '¿Qué tienes en mente,',
     emphasis: 'en dos palabras?',
@@ -89,14 +94,20 @@ export default {
     selectedBoard: 'el tablero seleccionado',
     submit: 'Capturar',
   },
+  // `boardAndColumn` se eliminó con #1984 (hallazgo 2): la lista del Inbox se
+  // solicita por tablero y sin columna, así que nombrar una columna aquí
+  // declaraba un filtro que nunca se aplicó.
   scope: {
     board: 'Tablero: {board}',
-    boardAndColumn: 'Tablero: {board} · Columna: {column}',
     clear: 'Mostrar todas las capturas',
   },
   empty: {
     scoped: 'No hay capturas en {scope}. Muestra todas las capturas para restaurar el Inbox completo.',
   },
+  // Se añade a la línea del recuento durante una recarga en el MISMO ámbito,
+  // con las filas todavía visibles y utilizables (#2501). En minúscula: va
+  // detrás de un separador "·".
+  refreshing: 'actualizando…',
   variantToggle: {
     label: 'Variante de captura',
   },

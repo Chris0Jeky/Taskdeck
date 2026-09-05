@@ -8,7 +8,8 @@ namespace Taskdeck.Application.Services;
 /// <inheritdoc cref="IBatchProposalExecutionService"/>
 public sealed class BatchProposalExecutionService : IBatchProposalExecutionService
 {
-    private const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+    private const string GenericUnexpectedErrorMessage =
+        SensitiveDataRedactor.GenericUnexpectedErrorMessage;
 
     private readonly IProposalExecutionAuthorizationSnapshotReader _snapshotReader;
     private readonly IAutomationExecutorService _executorService;

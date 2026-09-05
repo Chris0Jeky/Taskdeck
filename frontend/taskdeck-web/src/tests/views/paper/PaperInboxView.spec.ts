@@ -327,7 +327,12 @@ describe('PaperInboxView', () => {
     wrapper.unmount()
   })
 
-  it('discloses the board and column scope, then clears it without reloading', async () => {
+  // #1984 finding 2: this pin used to require "Column: Ready" in the chip while
+  // the list request was board-only, so a green suite defended the untruth. The
+  // chip names the applied filter and nothing else. The chip and the request are
+  // asserted together in `inbox/PaperInboxScopeTruth.spec.ts`, which mounts this
+  // view over the real orchestrator; here the orchestrator is a stub.
+  it('discloses only the board scope the list request applies, then clears it without reloading', async () => {
     orchestratorState.activeBoardId.value = 'board-active'
     orchestratorState.activeColumnId.value = 'column-ready'
     orchestratorState.activeBoardName.value = 'Payments API Migration'
@@ -340,7 +345,8 @@ describe('PaperInboxView', () => {
 
     const wrapper = mount(PaperInboxView)
     expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Board: Payments API Migration')
-    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Column: Ready')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).not.toContain('Column')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).not.toContain('Ready')
 
     await wrapper.find('[data-testid="paper-scope-clear"]').trigger('click')
     await wrapper.vm.$nextTick()
@@ -359,6 +365,21 @@ describe('PaperInboxView', () => {
     expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
     await empty.trigger('click')
     expect(orchestratorState.clearScope).toHaveBeenCalledTimes(1)
+  })
+
+  // #1984 finding 2: the scoped empty state interpolates the same label as the
+  // chip, so a column left in the route used to make it read "No captures in
+  // Board: X · Column: Y" over a list that was never column-filtered.
+  it('names only the applied scope in an empty Inbox when the route still carries a column', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+    orchestratorState.activeColumnId.value = 'column-ready'
+    orchestratorState.activeBoardName.value = 'Payments API Migration'
+    orchestratorState.activeColumnName.value = 'Ready'
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
+    expect(wrapper.text()).not.toContain('Column: Ready')
+    expect(wrapper.find('[data-testid="paper-triage-clear-scope"]').exists()).toBe(true)
   })
 
   it('toggles between composer and nib when Cmd+; is pressed globally', async () => {
@@ -822,6 +843,77 @@ describe('PaperInboxView', () => {
     expect(table.get('.paper-triage__list').attributes('style')).toContain('display: none')
     expect(table.findAll('.paper-triage__row')).toHaveLength(1)
     expect(table.text()).not.toContain('1 item')
+  })
+
+  /**
+   * #2501: during a scope replacement the rows still in `items` belong to the
+   * OLD scope — the table hides them for exactly that reason — while the scope
+   * chip already names the NEW one. `useInboxCounts` counts whatever is in
+   * `items`, so the eyebrow published old-scope numbers beside a new-scope
+   * label. It drops the counts instead of relabelling them.
+   */
+  it('drops the eyebrow counts while a scope replacement is in flight', () => {
+    orchestratorState.items.value = [
+      captureRow('old-scope-1', 'New'),
+      captureRow('old-scope-2', 'Converted'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    expect(eyebrow).not.toContain('awaiting triage')
+    expect(eyebrow).not.toContain('captured')
+    expect(eyebrow).not.toMatch(/\d/)
+    expect(eyebrow).toBe('Inbox · capture surface')
+  })
+
+  /**
+   * `isScopeReplacement` is deliberately STICKY across failure — the
+   * orchestrator swallows the throw so the retained rows stay hidden rather
+   * than being presented as the new scope. So a failed replacement leaves the
+   * flag true indefinitely, and an eyebrow that said "loading captures…" on
+   * that flag alone would claim a load that had already stopped, permanently,
+   * directly above the table's own error and Retry. The replacement eyebrow
+   * therefore makes NO claim about the load at all; the table owns that state.
+   */
+  it('makes no loading claim in the eyebrow when the replacement has failed', () => {
+    orchestratorState.items.value = [
+      captureRow('old-scope-1', 'New'),
+      captureRow('old-scope-2', 'Converted'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+    mockCaptureStore.loadingList = false
+    mockCaptureStore.listError = 'Failed to load inbox items'
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    expect(eyebrow).not.toMatch(/\d/)
+    expect(eyebrow).not.toContain('loading captures')
+    expect(eyebrow.toLowerCase()).not.toContain('loading')
+    expect(eyebrow).toBe('Inbox · capture surface')
+    // The table still says what actually happened.
+    const table = wrapper.findComponent({ name: 'PaperTriageTable' })
+    expect(table.find('[role="alert"]').text()).toContain('Failed to load inbox items')
+  })
+
+  it('publishes the eyebrow counts again once the replacement resolves', async () => {
+    orchestratorState.items.value = [
+      captureRow('new-scope-1', 'New'),
+      captureRow('new-scope-2', 'New'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()).toBe('Inbox · capture surface')
+
+    orchestratorState.isScopeReplacement.value = false
+    await wrapper.vm.$nextTick()
+
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+    expect(eyebrow).toContain('2 awaiting triage')
+    expect(eyebrow).toContain('2 captured')
   })
 
   it('guards nib submissions while capture creation is in flight', async () => {

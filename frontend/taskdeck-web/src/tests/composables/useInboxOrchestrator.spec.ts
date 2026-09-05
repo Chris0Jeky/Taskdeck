@@ -156,6 +156,9 @@ describe('useInboxOrchestrator', () => {
       ],
     })
     mockCaptureStore.pollBatchTriageCompletion.mockReset().mockReturnValue(vi.fn())
+    // The store reports whether it APPLIED the response (#2501). The default is
+    // the ordinary case: the response was the latest and was written.
+    mockCaptureStore.fetchItems.mockReset().mockResolvedValue(true)
   })
 
   describe('batch selection', () => {
@@ -437,7 +440,10 @@ describe('useInboxOrchestrator', () => {
     })
 
     it('marks a route-scope list load as a replacement until it succeeds', async () => {
-      const pendingLoad = deferred<unknown>()
+      // `true` is the store reporting an APPLIED response (#2501). This test
+      // used to resolve `undefined`, which passed under both the old contract
+      // and the new one and so proved nothing about which was in force.
+      const pendingLoad = deferred<boolean>()
       mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
       const orch = createOrchestrator()
 
@@ -446,7 +452,7 @@ describe('useInboxOrchestrator', () => {
 
       expect(orch.isScopeReplacement.value).toBe(true)
 
-      pendingLoad.resolve(undefined)
+      pendingLoad.resolve(true)
       await flushAsyncWork()
 
       expect(orch.isScopeReplacement.value).toBe(false)
@@ -796,6 +802,17 @@ describe('useInboxOrchestrator', () => {
       )
     })
 
+    // #1984 finding 2: a hand-written or bookmarked URL can still carry a
+    // column. The list request stays board-only, which is why nothing on the
+    // Inbox may present the column as an applied filter. The chip side of this
+    // contract is pinned in `views/paper/inbox/PaperInboxScopeTruth.spec.ts`.
+    it('ignores a columnId in the route and still requests the board only', async () => {
+      mockRoute.query = { boardId: 'board-1', columnId: 'col-ready' }
+      const orch = createOrchestrator()
+      await orch.loadInbox()
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-1' })
+    })
+
     it('calls fetchItems without boardId when none active', async () => {
       mockRoute.query = {}
       const orch = createOrchestrator()
@@ -804,15 +821,49 @@ describe('useInboxOrchestrator', () => {
     })
 
     it('clears the scope-replacement state only after the latest scoped load succeeds', async () => {
-      const pendingLoad = deferred<void>()
+      const pendingLoad = deferred<boolean>()
       mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
       const orch = createOrchestrator()
 
       const load = orch.loadInboxForScopeReplacement()
       expect(orch.isScopeReplacement.value).toBe(true)
 
-      pendingLoad.resolve()
+      // `true` is the store saying it WROTE this response into `items`.
+      pendingLoad.resolve(true)
       await load
+
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    /**
+     * #2501 MEDIUM-1: `fetchItems` returns without writing anything when its
+     * request id has been superseded, and it does so by resolving, not by
+     * throwing. Resolution alone therefore does not mean the new scope's rows
+     * arrived, and treating it that way un-hid the retained OLD-scope rows
+     * under the NEW scope's chip. Only an applied response clears the flag.
+     */
+    it('keeps the scope-replacement state when the store drops a superseded response', async () => {
+      const pendingLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
+      const orch = createOrchestrator()
+
+      const load = orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      pendingLoad.resolve(false)
+      await load
+
+      expect(orch.isScopeReplacement.value).toBe(true)
+    })
+
+    it('clears the scope-replacement state on the next applied response', async () => {
+      mockCaptureStore.fetchItems.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+      const orch = createOrchestrator()
+
+      await orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      await orch.loadInbox()
 
       expect(orch.isScopeReplacement.value).toBe(false)
     })
@@ -829,7 +880,7 @@ describe('useInboxOrchestrator', () => {
     it('lets a successful retry clear a failed scope replacement', async () => {
       mockCaptureStore.fetchItems
         .mockRejectedValueOnce(new Error('scope load failed'))
-        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(true)
       const orch = createOrchestrator()
 
       await orch.loadInboxForScopeReplacement()

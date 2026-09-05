@@ -223,6 +223,17 @@ function boardPickReasonId(item: CaptureItemSummary): string {
 }
 
 const hasItems = computed(() => props.items.length > 0)
+
+/**
+ * A list load running over rows that stay on screen (#2501).
+ *
+ * A scope replacement is excluded: those rows belong to the scope being left,
+ * so they are hidden and the "Loading…" empty state speaks for them instead.
+ * A failed load is excluded too — the error takes the header's place.
+ */
+const isBackgroundRefresh = computed(
+  () => props.loadingList && !props.scopeReplacement && !props.listError && hasItems.value,
+)
 const hasMutationInFlight = computed(
   () => props.actionBusyItemId !== null && props.actionBusyItemId !== undefined,
 )
@@ -542,6 +553,17 @@ function recordedOr(value: string | null | undefined): string {
       <h2 class="tk-h3 paper-triage__title">{{ readOnly ? t('inbox.history.tableTitle') : "Today's captures" }}</h2>
       <span v-if="!scopeReplacement && (hasItems || (!loadingList && !listError))" class="tk-meta">
         {{ hasItems ? `${items.length} item${items.length === 1 ? '' : 's'} · most recent first` : 'No captures yet' }}
+        <!--
+          A same-scope refresh keeps these rows mounted, visible and usable
+          (#2501). `aria-busy` on the section already says a load is running,
+          but nothing said so to a sighted user. Row actions stay enabled on
+          purpose: the rows are still the right rows for this scope.
+        -->
+        <span
+          v-if="isBackgroundRefresh"
+          class="paper-triage__refreshing"
+          data-testid="paper-triage-refreshing"
+        >&nbsp;· {{ t('inbox.refreshing') }}</span>
       </span>
     </header>
 
@@ -883,6 +905,11 @@ function recordedOr(value: string | null | undefined): string {
   align-items: baseline;
   justify-content: space-between;
   margin-bottom: 12px;
+}
+/* The same-scope refresh note, set apart from the count it follows (#2501). */
+.paper-triage__refreshing {
+  font-style: italic;
+  opacity: 0.75;
 }
 .paper-triage__title {
   margin: 0;

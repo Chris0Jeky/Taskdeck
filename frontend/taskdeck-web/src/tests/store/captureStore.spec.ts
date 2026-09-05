@@ -69,7 +69,9 @@ describe('captureStore', () => {
       },
     ])
 
-    await store.fetchItems({ limit: 100 })
+    // The return value is the store reporting that it WROTE this response
+    // (#2501). Callers cannot infer it from resolution alone.
+    await expect(store.fetchItems({ limit: 100 })).resolves.toBe(true)
 
     expect(store.items).toHaveLength(1)
     expect(captureApi.listItems).toHaveBeenCalledWith({ limit: 100 })
@@ -92,13 +94,17 @@ describe('captureStore', () => {
       id: 'all-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
       textExcerpt: 'visible after clearing scope', createdAt: new Date().toISOString(), processedAt: null,
     }])
-    await unfilteredLoad
+    // The latest load applied its response.
+    await expect(unfilteredLoad).resolves.toBe(true)
 
     resolveScoped([{
       id: 'scoped-capture', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
       textExcerpt: 'late scoped result', createdAt: new Date().toISOString(), processedAt: null,
     }])
-    await scopedLoad
+    // The superseded one RESOLVES, but it wrote nothing, and it says so
+    // (#2501). Resolution alone used to be indistinguishable from success, so a
+    // caller could not tell a dropped response from an applied one.
+    await expect(scopedLoad).resolves.toBe(false)
 
     expect(store.items.map((item) => item.id)).toEqual(['all-capture'])
   })
@@ -133,10 +139,39 @@ describe('captureStore', () => {
       id: 'late-scoped', userId: 'u1', boardId: 'board-7', status: 'New', source: 'Typed',
       textExcerpt: 'obsolete scoped response', createdAt: new Date().toISOString(), processedAt: null,
     }])
-    await scopedLoad
+    // Superseded by the (failed) unfiltered load, so it applied nothing (#2501).
+    await expect(scopedLoad).resolves.toBe(false)
     expect(store.loadingList).toBe(false)
     expect(store.listError).toBe('Failed to load inbox items')
     expect(store.items.map((item) => item.id)).toEqual(['retained-scoped'])
+  })
+
+  it('reports a superseded FAILURE as unapplied rather than surfacing it', async () => {
+    const store = useCaptureStore()
+    let rejectScoped!: (reason?: unknown) => void
+    let resolveUnfiltered!: (value: any[]) => void
+    const scopedResponse = new Promise<any[]>((_resolve, reject) => { rejectScoped = reject })
+    const unfilteredResponse = new Promise<any[]>((resolve) => { resolveUnfiltered = resolve })
+    vi.mocked(captureApi.listItems)
+      .mockReturnValueOnce(scopedResponse as never)
+      .mockReturnValueOnce(unfilteredResponse as never)
+
+    const scopedLoad = store.fetchItems({ boardId: 'board-7', limit: 200 })
+    const unfilteredLoad = store.fetchItems({ limit: 200 })
+
+    resolveUnfiltered([{
+      id: 'all-capture', userId: 'u1', boardId: null, status: 'New', source: 'Typed',
+      textExcerpt: 'the scope the user is actually on', createdAt: new Date().toISOString(), processedAt: null,
+    }])
+    await expect(unfilteredLoad).resolves.toBe(true)
+
+    rejectScoped(new Error('obsolete scoped failure'))
+    // A failure belonging to a scope the user has already left is deliberately
+    // neither thrown nor recorded — but it is not silent either: the call
+    // reports that it applied nothing (#2501).
+    await expect(scopedLoad).resolves.toBe(false)
+    expect(store.listError).toBeNull()
+    expect(store.items.map((item) => item.id)).toEqual(['all-capture'])
   })
 
   it('loads and caches capture details', async () => {

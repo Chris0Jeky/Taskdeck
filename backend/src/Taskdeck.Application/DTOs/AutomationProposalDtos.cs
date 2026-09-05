@@ -187,10 +187,20 @@ public record CreateProposalDto(
     string? SourceReferenceId = null,
     int ExpiryMinutes = 1440,
     List<CreateProposalOperationDto>? Operations = null,
-    string? ProvenanceModelId = null,
     int ProvenanceTotalTokens = 0
 )
 {
+    /// <summary>
+    /// Trusted application-side model identifier recorded with the proposal's provenance (#2583).
+    /// Excluded from the HTTP contract for the same reason as <see cref="ProvenanceProvider"/>: a
+    /// model id is a producer-identity claim, and no API, MCP or agent client is ever meant to
+    /// self-report the model that produced a proposal. Only application pipelines set it, from the
+    /// model they actually dispatched to; anything created through the HTTP contract falls back to
+    /// the server's origin label for its source type.
+    /// </summary>
+    [JsonIgnore]
+    public string? ProvenanceModelId { get; init; }
+
     /// <summary>
     /// Trusted application-side confidence metadata. This property is deliberately excluded from
     /// the HTTP contract: callers cannot label their own proposal confidence as model-reported.
