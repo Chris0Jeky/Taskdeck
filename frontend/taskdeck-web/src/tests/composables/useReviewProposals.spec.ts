@@ -778,6 +778,12 @@ describe('useReviewProposals', () => {
         'p-remote',
         expect.objectContaining({ signal: controller.signal, skipRetry: true }),
       )
+      // It must NOT carry the background poll's `expectedStatuses` (#2214 item
+      // 7). This read was asked for, so its failures stay loggable; only the
+      // poll's pin leg turns those statuses into a handled outcome.
+      expect(mockAutomationApi.getProposal.mock.calls.at(-1)?.[1]).not.toHaveProperty(
+        'expectedStatuses',
+      )
     })
 
     it('does not report landed until its deep-link lookup completes', async () => {
@@ -1239,9 +1245,14 @@ describe('useReviewProposals', () => {
         summary: 'current summary',
         latestRevisionId: 'revision-2',
       }))
+      // Exact options, so a silently dropped one is caught here. The
+      // `expectedStatuses` entry is what keeps a refused or unbindable pin --
+      // an outcome this leg handles explicitly -- from being logged as an API
+      // error on every tick (#2214 item 7).
       expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-open', {
         skipRetry: true,
         signal: expect.any(AbortSignal),
+        expectedStatuses: [400, 403, 404],
       })
       expect(onQueueReplaced).toHaveBeenCalledTimes(1)
       expect(rp.unavailableProposalId.value).toBeNull()

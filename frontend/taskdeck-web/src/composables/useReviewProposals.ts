@@ -853,7 +853,20 @@ export function useReviewProposals() {
               // This is part of the background poll, not an explicit navigation.
               // Keep it in the same cancellation and fail-fast envelope as the
               // list request so teardown cannot leave a retry chain behind.
-              { skipRetry: true, signal: controller.signal },
+              //
+              // The three statuses below are this call's own contract, not
+              // failures: each one is turned into the explicit "pin
+              // unavailable" outcome a few lines down. Without naming them the
+              // shared interceptor logs every refused or unbindable pin as
+              // 'API Error:' on every tick, which reports a handled result as a
+              // defect and buries the real ones (#2214 item 7). Scoped to this
+              // background read alone -- `openProposalFromHash` is a read the
+              // reviewer asked for and keeps its logging.
+              {
+                skipRetry: true,
+                signal: controller.signal,
+                expectedStatuses: [400, 403, 404],
+              },
             ),
             controller,
             () => { refreshTimedOut = true },
