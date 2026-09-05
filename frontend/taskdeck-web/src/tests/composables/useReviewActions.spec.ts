@@ -723,4 +723,116 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiffProposalId.value).toBe('p-1')
     expect(actions.selectedDiff.value).toBe('diff content')
   })
+
+  it('converts rather than wipes an open diff when a revised proposal expires (#2215 round 2)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    vi.mocked(automationApi.getProposal).mockResolvedValue(makeProposal())
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffMode.value).toBe('live')
+
+    // Expiry pins nothing either, so the effective identity legitimately goes to
+    // null exactly as it does on reject. The pane must reach the read-only
+    // stored presentation (#1397 LOW-5), not vanish.
+    proposals.value = [
+      makeProposal({
+        status: 'Expired',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+        diffPreview: 'stored diff text',
+      } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiffMode.value).toBe('stored')
+    expect(actions.selectedDiff.value).toBe('stored diff text')
+  })
+
+  it('closes an open diff when its proposal leaves the queue and returns with a newer revision (#2215 residual)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiff.value).toBe('diff content')
+
+    // A refresh drops the row while the pane stays open. No card renders during
+    // the absence window, so nothing on screen contradicts the cached diff yet.
+    proposals.value = []
+    await nextTick()
+
+    // It comes back with a revision another reviewer saved meanwhile. The card
+    // re-mounts, so a pane state that survived the absence would re-adopt a
+    // pre-revision diff while Approve pins, and Apply executes, the latest.
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-2' } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+    expect(actions.selectedDiff.value).toBeNull()
+    expect(actions.selectedDiffMode.value).toBeNull()
+  })
+
+  it('keeps an open diff when its proposal leaves the queue and returns at the same revision (#2215 residual)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+
+    // A partial read drops the row and the next one restores it unchanged. The
+    // cached diff is still exactly what Apply would execute, so the absence
+    // alone must not blink the pane away.
+    proposals.value = []
+    await nextTick()
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('diff content')
+  })
+
+  it('does not wipe a reopened diff for a revision that moved while the pane was closed (#2215 residual)', async () => {
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('diff content')
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+
+    // The revision moves while no pane is open, so there is no stale pane to
+    // close; the next open fetches the diff for the revision now on the wire.
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-2' } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('rev-2 diff content')
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('rev-2 diff content')
+    expect(actions.selectedDiffMode.value).toBe('live')
+  })
 })

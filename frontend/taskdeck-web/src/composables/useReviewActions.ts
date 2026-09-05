@@ -203,8 +203,21 @@ export function useReviewActions(
     },
     (proposal) => {
       if (!proposal) {
-        openDiffProposalId = null
-        openDiffRevisionId = null
+        // An absent ROW is not a closed PANE (#2215 residual). A queue read can
+        // omit a proposal the pane is still open on (a scope change, a partial
+        // read, a decision taken elsewhere); no card renders during that window,
+        // so `selectedDiff*` survives it untouched. Dropping the tracked pair
+        // here left the pane unkeyed: when the row returned carrying a revision
+        // saved meanwhile, `openDiffProposalId` was null, the move could not be
+        // detected, and the re-mounted card re-adopted a pre-revision diff.
+        // Keep the pair for exactly as long as the pane is open on that
+        // proposal, and clear it only once the pane is closed or moved
+        // elsewhere — `proposalIdsEqual` is false for a null selection, so both
+        // of those clear it.
+        if (!proposalIdsEqual(selectedDiffProposalId.value, openDiffProposalId)) {
+          openDiffProposalId = null
+          openDiffRevisionId = null
+        }
         return
       }
       // The EFFECTIVE revision, and only a genuine move (round 2): a decision
