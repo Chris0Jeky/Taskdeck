@@ -678,6 +678,53 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task ApproveProposals_RejectsNullSelectionElementWithValidationError()
+    {
+        var client = _factory.CreateClient();
+        _ = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-null-selection");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new { proposals = new object?[] { null } });
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+        (await response.Content.ReadFromJsonAsync<ApiErrorResponse>())!.Message
+            .Should().Be(
+                "Proposal selections cannot be null",
+                "batch approve mirrors batch execute's null-selection guard instead of dereferencing the element");
+    }
+
+    [Fact]
+    public async Task ApproveProposals_RejectsNullSelectionMixedWithValidSelectionAndApprovesNothing()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-null-mixed");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-null-mixed");
+        var valid = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new { proposals = new object?[] { null, Select(valid) } });
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.AutomationProposals
+                .Where(proposal => proposal.Id == valid.Id)
+                .Select(proposal => proposal.Status)
+                .SingleAsync())
+            .Should().Be(
+                ProposalStatus.PendingReview,
+                "a malformed batch approves nothing");
+    }
+
+    [Fact]
     public async Task ApproveProposals_ShouldReturnUnauthorized_WhenNotAuthenticated()
     {
         var anonymous = _factory.CreateClient();

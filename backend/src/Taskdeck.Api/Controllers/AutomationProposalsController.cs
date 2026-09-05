@@ -226,6 +226,16 @@ public class AutomationProposalsController : AuthenticatedControllerBase
                 $"Cannot approve more than {MaxProposalListLimit} proposals at once"));
         }
 
+        // A JSON null inside the array binds as a null element - MVC validates the collection, not
+        // its members - so it must be rejected before the first member is dereferenced below. Same
+        // guard, code and message as batch execute's.
+        if (request.Proposals.Any(proposal => proposal is null))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Proposal selections cannot be null"));
+        }
+
         if (request.Proposals.Any(proposal =>
                 proposal.Id == Guid.Empty || proposal.ExpectedProposalUpdatedAt == default))
         {
