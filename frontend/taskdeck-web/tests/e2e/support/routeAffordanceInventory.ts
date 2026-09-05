@@ -345,7 +345,7 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         id: 'inbox.capture-submit',
         label: 'Composer Capture submits a capture item',
         selector: { kind: 'role', role: 'button', name: '^Capture', namePattern: true },
-        source: 'src/views/paper/inbox/PaperCaptureComposer.vue:369',
+        source: 'src/views/paper/inbox/PaperCaptureComposer.vue:373',
         precondition: 'session',
         consequence: { kind: 'response', method: 'POST', urlPattern: '/api/capture/items$' },
         status: { activate: false, reason: 'covered-elsewhere', coveredBy: 'tests/e2e/review-proposals.spec.ts:88' },

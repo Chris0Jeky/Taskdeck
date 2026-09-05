@@ -31,7 +31,7 @@ test.describe('Paper capture-review-apply loop', () => {
     await page.getByRole('button', { name: 'Capture here' }).click()
     await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
 
-    const captureBody = page.getByRole('textbox', { name: 'Capture body' })
+    const captureBody = page.getByTestId('paper-composer-body')
     await expect(captureBody).toBeVisible()
     const createCaptureResponsePromise = page.waitForResponse((response) =>
       response.request().method() === 'POST'
