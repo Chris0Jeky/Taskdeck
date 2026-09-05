@@ -909,7 +909,9 @@ describe('boardCrudStore', () => {
       mockCardsApi.getCards.mockResolvedValueOnce([])
       mockLabelsApi.getLabels.mockResolvedValueOnce([])
       helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
-        state.error.value = getErrorMessage(error, fallback)
+        const message = getErrorMessage(error, fallback)
+        state.error.value = message
+        return message
       })
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
@@ -1241,7 +1243,9 @@ describe('boardCrudStore', () => {
       mockCardsApi.getCards.mockResolvedValueOnce([])
       mockLabelsApi.getLabels.mockResolvedValueOnce([])
       helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
-        state.error.value = getErrorMessage(error, fallback)
+        const message = getErrorMessage(error, fallback)
+        state.error.value = message
+        return message
       })
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
@@ -1276,7 +1280,9 @@ describe('boardCrudStore', () => {
       mockCardsApi.getCards.mockResolvedValueOnce([])
       mockLabelsApi.getLabels.mockResolvedValueOnce([])
       helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
-        state.error.value = getErrorMessage(error, fallback)
+        const message = getErrorMessage(error, fallback)
+        state.error.value = message
+        return message
       })
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
