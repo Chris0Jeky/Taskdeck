@@ -93,17 +93,62 @@ export function parseChecksum(checksumText, assetName) {
 }
 
 /**
+ * A CommonMark fenced-code-block delimiter: up to three leading spaces, then a
+ * run of at least three backticks or tildes, then the info string (opening) or
+ * trailing whitespace only (closing).
+ */
+const FENCE_DELIMITER = /^ {0,3}(`{3,}|~{3,})(.*)$/
+
+/**
+ * Advance the fenced-code-block state by one line. `state` is `null` outside a
+ * fence and `{char, length}` inside one. UPGRADING.md carries `sql` and
+ * `powershell` samples whose contents start with `#`, so every scan over the
+ * document has to know whether the line it is looking at is prose or sample
+ * text — a `# comment` inside a fence is neither a heading nor a link context.
+ */
+function advanceFenceState(state, line) {
+  const match = FENCE_DELIMITER.exec(line)
+  if (!match) return state
+  const [, marker, info] = match
+  const char = marker[0]
+  if (state === null) {
+    // An opening backtick fence may not carry a backtick in its info string.
+    if (char === '`' && info.includes('`')) return null
+    return { char, length: marker.length }
+  }
+  // A fence closes only on its own character, at least as long as the opener,
+  // with nothing but whitespace after the run.
+  if (char === state.char && marker.length >= state.length && info.trim() === '') {
+    return null
+  }
+  return state
+}
+
+/**
  * Lift the `## <tag> …` section out of UPGRADING.md. Headings carry a date or a
  * label after the tag (`## v0.2.0 — 2026-08-29`), so the match is on the tag
  * followed by a boundary — never a bare prefix, which would let `v0.1.0` match
  * a `v0.1.0-rc.1` heading.
+ *
+ * The scan is fence-aware in both directions (#2250): a `#`/`##` line inside a
+ * fenced block neither starts a section nor ends one, so a shell comment or a
+ * Markdown sample can no longer truncate the section or be mistaken for its
+ * heading. An UNTERMINATED fence runs to the end of the document, which is what
+ * a Markdown renderer does with the same input — the section is then over-long
+ * rather than silently cut at a sample line.
  */
 export function extractUpgradingSection(markdown, tag) {
   if (typeof markdown !== 'string') return null
   const lines = markdown.replace(/\r\n/g, '\n').split('\n')
+  let fence = null
   let start = -1
   for (let index = 0; index < lines.length; index += 1) {
-    const heading = /^## +(.*)$/.exec(lines[index])
+    const line = lines[index]
+    const wasInFence = fence !== null
+    fence = advanceFenceState(fence, line)
+    // Skip the delimiter lines themselves and everything between them.
+    if (wasInFence || fence !== null) continue
+    const heading = /^## +(.*)$/.exec(line)
     if (!heading) continue
     const text = heading[1].trim()
     if (text === tag || text.startsWith(`${tag} `)) {
@@ -113,12 +158,126 @@ export function extractUpgradingSection(markdown, tag) {
   }
   if (start === -1) return null
   const body = []
+  fence = null
   for (let index = start; index < lines.length; index += 1) {
-    if (/^#{1,2} +/.test(lines[index])) break
-    body.push(lines[index])
+    const line = lines[index]
+    const wasInFence = fence !== null
+    fence = advanceFenceState(fence, line)
+    if (!wasInFence && fence === null && /^#{1,2} +/.test(line)) break
+    body.push(line)
   }
   const section = body.join('\n').trim()
   return section === '' ? null : section
+}
+
+/**
+ * Rewrite one Markdown link destination for the release page. A release body is
+ * rendered outside any file, so a destination that resolves against UPGRADING.md
+ * in the repository resolves against nothing here.
+ *
+ * Left exactly as written: any destination carrying a scheme (`https:`,
+ * `mailto:`, and every other), and any root-relative `/path` — GitHub already
+ * resolves those against the repository host.
+ */
+function rewriteDestination(destination, base) {
+  if (destination === '') return destination
+  if (destination.startsWith('#')) return `${base}UPGRADING.md${destination}`
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(destination)) return destination
+  if (destination.startsWith('/')) return destination
+  const hashAt = destination.indexOf('#')
+  const path = hashAt === -1 ? destination : destination.slice(0, hashAt)
+  const fragment = hashAt === -1 ? '' : destination.slice(hashAt)
+  const cleaned = path.replace(/^\.\//, '')
+  if (cleaned === '') return destination
+  // Path segments are kept verbatim: they are already repository paths, and
+  // re-encoding them would break the `/` separators the blob URL needs.
+  return `${base}${cleaned}${fragment}`
+}
+
+/** `](dest)` or `](dest "title")`, the shape UPGRADING.md actually writes. */
+const INLINE_LINK = /(\]\()([^()\s]+)((?:[ \t]+(?:"[^"]*"|'[^']*'|\([^()]*\)))?[ \t]*\))/g
+
+/** `[id]: dest` at the start of a line, optionally followed by a title. */
+const REFERENCE_DEFINITION = /^( {0,3}\[[^\]]+\]:[ \t]*)(\S+)([ \t]*.*)$/
+
+function rewriteLinksInText(text, base) {
+  return text.replace(INLINE_LINK, (whole, open, destination, close) => {
+    return `${open}${rewriteDestination(destination, base)}${close}`
+  })
+}
+
+/**
+ * Apply `rewriteText` to everything on the line EXCEPT inline code spans. A
+ * span opens on a run of N backticks and closes on the next run of exactly N;
+ * an unclosed run is literal text and is rewritten with the rest of the line.
+ */
+function rewriteOutsideInlineCode(line, rewriteText) {
+  let out = ''
+  let plainStart = 0
+  let index = 0
+  while (index < line.length) {
+    if (line[index] !== '`') {
+      index += 1
+      continue
+    }
+    const runStart = index
+    while (index < line.length && line[index] === '`') index += 1
+    const runLength = index - runStart
+    let search = index
+    let closeEnd = -1
+    while (search < line.length) {
+      if (line[search] !== '`') {
+        search += 1
+        continue
+      }
+      const closeStart = search
+      while (search < line.length && line[search] === '`') search += 1
+      if (search - closeStart === runLength) {
+        closeEnd = search
+        break
+      }
+    }
+    if (closeEnd === -1) continue
+    out += rewriteText(line.slice(plainStart, runStart))
+    out += line.slice(runStart, closeEnd)
+    index = closeEnd
+    plainStart = closeEnd
+  }
+  return out + rewriteText(line.slice(plainStart))
+}
+
+/**
+ * Make every relative link in a lifted Markdown section absolute against the
+ * tag being published (#2250). Bare anchors resolve against UPGRADING.md, the
+ * only document whose headings they can name; relative paths resolve against
+ * the repository root at the tag, matching `upgradingUrl` above (including its
+ * `encodeURIComponent(tag)` convention).
+ *
+ * Untouched: fenced code blocks, inline code spans, absolute and scheme-bearing
+ * destinations, and root-relative paths. Image destinations (`![alt](path)`)
+ * share the `](` shape and get the same rewrite; a relative image is broken on
+ * a release page either way (a working one would need a `raw.githubusercontent`
+ * URL), and UPGRADING.md has no images today.
+ */
+export function rewriteRelativeLinks(markdown, { repo, tag } = {}) {
+  if (typeof markdown !== 'string') return markdown
+  if (typeof repo !== 'string' || repo === '' || typeof tag !== 'string' || tag === '') return markdown
+  const base = `https://github.com/${repo}/blob/${encodeURIComponent(tag)}/`
+  let fence = null
+  return markdown
+    .split('\n')
+    .map((line) => {
+      const wasInFence = fence !== null
+      fence = advanceFenceState(fence, line)
+      if (wasInFence || fence !== null) return line
+      const definition = REFERENCE_DEFINITION.exec(line)
+      if (definition) {
+        const [, label, destination, rest] = definition
+        return `${label}${rewriteDestination(destination, base)}${rest}`
+      }
+      return rewriteOutsideInlineCode(line, (text) => rewriteLinksInText(text, base))
+    })
+    .join('\n')
 }
 
 /** Drop a leading `# Title` line: the release page supplies its own heading. */
@@ -228,9 +387,13 @@ export function composeReleaseNotes({
   )
 
   // --- 2. Breaking changes, from the tag's UPGRADING section ---------------
+  // A release body is not a file in the tree, so relative links and bare
+  // anchors lifted out of UPGRADING.md are dead here (#2250). Only this
+  // section is rewritten: the curated notes file carries no relative-link
+  // shapes today, and the generated changelog is already absolute.
   const upgradingSection = extractUpgradingSection(upgradingText, tag)
   if (upgradingSection) {
-    sections.push(`## Breaking changes\n\n${upgradingSection}`)
+    sections.push(`## Breaking changes\n\n${rewriteRelativeLinks(upgradingSection, { repo, tag })}`)
   } else {
     record(`UPGRADING.md has no "## ${tag}" section`)
     sections.push(
