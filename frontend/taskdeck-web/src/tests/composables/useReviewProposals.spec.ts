@@ -941,6 +941,81 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
       expect(mockToast.error).toHaveBeenCalled()
     })
+
+    /**
+     * The explicit path used to answer one fact two ways depending on which
+     * leg observed it. A 400 or a 403 on the reviewer's own deep-link read
+     * raised a generic "Failed to load proposal" toast and left no state, so
+     * the surface showed the ordinary empty queue; the very next background
+     * tick turned the same 400 or 403 into the pin-unavailable panel. The
+     * toast said nothing true about which of the two happened, and it was gone
+     * a few seconds later while the panel it contradicted stayed.
+     *
+     * The explicit path now uses exactly the three predicates the background
+     * pin leg uses, and reports one outcome per status CLASS. 404 already
+     * behaved this way; 400 and 403 join it. Everything else — 405, 410, 5xx,
+     * no response — stays a toast, because those are not facts about the
+     * target and a later tick can still resolve the pin.
+     */
+    describe('explicit-path outcome per status class (#2214)', () => {
+      async function openHash(hash: string, failure: unknown) {
+        mockRoute.hash = hash
+        mockAutomationApi.getProposals.mockResolvedValueOnce([])
+        mockAutomationApi.getProposal.mockRejectedValueOnce(failure)
+        const rp = useReviewProposals()
+        await rp.loadProposals()
+        return rp
+      }
+
+      it('turns a 400 into the malformed-link state without a toast', async () => {
+        const rp = await openHash('#proposal-not-a-guid', { response: { status: 400 } })
+        expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+        expect(rp.unavailableProposalMalformed.value).toBe(true)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it('turns a 403 into the unavailable-pin state without a toast', async () => {
+        const rp = await openHash('#proposal-p-forbidden', { response: { status: 403 } })
+        // The by-id 403 is authority over ONE target. The queue-level 403 and
+        // its `queueAccessRevoked` teardown are a different leg and untouched.
+        expect(rp.unavailableProposalId.value).toBe('p-forbidden')
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(rp.queueAccessRevoked.value).toBe(false)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it('keeps the 404 outcome it already had', async () => {
+        const rp = await openHash('#proposal-p-gone', { response: { status: 404 } })
+        expect(rp.unavailableProposalId.value).toBe('p-gone')
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it.each([
+        ['405', { response: { status: 405 } }],
+        ['410', { response: { status: 410 } }],
+        ['500', { response: { status: 500 } }],
+        ['no response', new Error('network down')],
+      ])('keeps the toast and pins nothing for %s', async (_label, failure) => {
+        const rp = await openHash('#proposal-p-transient', failure)
+        // Nothing here is a settled fact about the target: 405 and 410 are the
+        // route misbehaving rather than the id being refused (#2658 draws the
+        // same line on the pin leg), and 5xx or no response may resolve next
+        // tick. Claiming the pin is unavailable would be a false negative.
+        expect(rp.unavailableProposalId.value).toBeNull()
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(mockToast.error).toHaveBeenCalled()
+      })
+
+      it('leaves the transient counter alone on every explicit outcome', async () => {
+        const rp = await openHash('#proposal-p-forbidden', { response: { status: 403 } })
+        // The explicit path has never fed the background counters and must not
+        // start: a deep link the reviewer followed says nothing about whether
+        // the QUEUE poll is healthy.
+        expect(rp.queueRefreshStale.value).toBe(false)
+        expect(rp.queueRefreshRefused.value).toBe(false)
+      })
+    })
   })
 
   describe('navigation helpers', () => {
@@ -1325,10 +1400,13 @@ describe('useReviewProposals', () => {
       mockAutomationApi.getProposal.mockRejectedValue({ response: { status: 400 } })
       const rp = useReviewProposals()
       await rp.loadProposals()
-      // The explicit deep-link path is deliberately unchanged by this: only a
-      // 404 marks the target there, so a 400 still surfaces as a failure the
-      // reviewer asked for.
-      expect(rp.unavailableProposalId.value).toBeNull()
+      // The explicit deep-link path reaches the SAME conclusion from the same
+      // 400, and does so first. It used to raise a generic toast and set no
+      // state, which was the asymmetry #2658 recorded and this slice removed:
+      // one fact, one outcome, whichever leg observed it.
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
       mockToast.error.mockClear()
 
       const queueBeforePoll = rp.proposals.value

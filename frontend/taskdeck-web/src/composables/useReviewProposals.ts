@@ -629,10 +629,34 @@ export function useReviewProposals() {
       // was cut short deliberately and its caller reports the real outcome.
       if (options?.signal?.aborted) return
       if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
-      if (isHttpNotFound(e)) {
+      // One outcome per status CLASS, using exactly the three predicates the
+      // background pin leg uses, so the two paths cannot answer the same fact
+      // two different ways (#2214). Before this, a 400 or a 403 on the
+      // reviewer's own deep-link read raised a generic "Failed to load
+      // proposal" toast and set no state at all: the surface fell back to the
+      // ordinary empty queue, and the very next background tick converted the
+      // identical refusal into the pin-unavailable panel. The toast named
+      // neither fact and was gone seconds later, contradicted by a panel that
+      // stayed.
+      //
+      // A settled fact about the target gets the panel and no toast, because
+      // the panel is the durable report and two reports for one fact is the
+      // asymmetry being removed. 404 already behaved this way.
+      if (isMalformedTargetError(e)) {
+        markProposalUnavailable(proposalId, 'malformed')
+        return
+      }
+      if (isForbiddenError(e) || isHttpNotFound(e)) {
+        // By-id authority over ONE target. The queue-level 403 and its
+        // `queueAccessRevoked` teardown live on the list leg and are untouched.
         markProposalUnavailable(proposalId, 'refused')
         return
       }
+      // 405, 410, 5xx and no response are not facts about this target — 405
+      // and 410 are the route misbehaving rather than the id being refused
+      // (#2658 draws the same line on the pin leg), and the rest may resolve on
+      // a later tick. Pinning the target unavailable would be a false negative,
+      // so the reviewer who asked keeps getting told the read failed.
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalFailed')).message)
     }
   }

@@ -1303,6 +1303,49 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-PROPOSAL-FORBIDDEN',
+    )
+
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).toContain(enReview.empty.unavailable.title)
+    expect(empty.text()).toContain('PROPOSAL-FORBIDDEN')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('says a malformed link is malformed on the explicit path too (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-not-a-guid',
+    )
+
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).toContain(enReview.empty.unavailable.malformedTitle)
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.title)
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the explicit deep-link toast for a transient class (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-PROPOSAL-FLAKY',
+    )
+
+    expect(mocks.errorToast).toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="paper-review-empty"]').text()).not.toContain(
+      enReview.empty.unavailable.title,
+    )
+    wrapper.unmount()
+  })
+
   it('keeps the ordinary unavailable copy for a pin that is gone (#2214)', async () => {
     mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
     const wrapper = await mountView(

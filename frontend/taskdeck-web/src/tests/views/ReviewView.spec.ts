@@ -1781,6 +1781,37 @@ describe('ReviewView', () => {
     }
   })
 
+  it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {
+    // The reviewer followed a link and the by-id read was refused. A 403 is a
+    // settled fact about that target and now reads as the panel the background
+    // tick would have produced a moment later, instead of a generic toast that
+    // said neither what happened nor that the panel was about to contradict it.
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 403 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-forbidden')
+
+    const unavailable = wrapper.get('[data-testid="review-unavailable-target"]')
+    expect(unavailable.text()).toContain(enReview.empty.unavailable.title)
+    expect(unavailable.text()).toContain('proposal-forbidden')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    // The queue-level 403 owns the access-revoked panel; a by-id refusal is not
+    // whole-queue revocation.
+    expect(wrapper.find('[data-testid="review-access-revoked"]').exists()).toBe(false)
+  })
+
+  it('keeps the explicit deep-link toast for a transient class (#2214)', async () => {
+    mocks.getProposals.mockResolvedValue([])
+    mocks.getProposal.mockRejectedValue({ response: { status: 500 } })
+
+    const { wrapper } = await mountAt('/workspace/review#proposal-proposal-flaky')
+
+    // A 5xx is not a fact about the target, so pinning it unavailable would be
+    // a false negative; a later tick can still resolve it.
+    expect(mocks.errorToast).toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="review-unavailable-target"]').exists()).toBe(false)
+  })
+
   it('keeps the ordinary unavailable copy for a pin that is gone or forbidden (#2214)', async () => {
     mocks.getProposals.mockResolvedValue([])
     mocks.getProposal.mockRejectedValue({ response: { status: 404 } })
