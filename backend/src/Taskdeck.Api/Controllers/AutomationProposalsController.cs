@@ -159,6 +159,11 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     /// <summary>
     /// Creates a new automation proposal with operations.
     /// </summary>
+    /// <remarks>
+    /// The producer triple (model id, provider, prompt version) is server-stamped and is not part
+    /// of this request contract: no API, MCP or agent client may self-report the model that
+    /// produced a proposal (#1987, #2583).
+    /// </remarks>
     [HttpPost]
     public async Task<IActionResult> CreateProposal([FromBody] CreateProposalDto dto, CancellationToken cancellationToken = default)
     {

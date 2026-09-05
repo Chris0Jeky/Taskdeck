@@ -128,6 +128,61 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task CreateProposal_ExternalProducerTriple_IsNotBoundFromTheCreateBody()
+    {
+        // #2583: the producer triple (model, provider, prompt version) is server-stamped only.
+        // None of the three may be bound from the create body, or any authenticated caller could
+        // plant a model name that the review surface reads as a real producer claim (#1987).
+        var userId = await AuthenticateAsync("automation-planted-producer");
+        var boardId = await CreateOwnedBoardAsync(userId);
+
+        // A plausible model name plus a bidi override, so a leak is unmistakable in any output.
+        var plantedModel = "gpt-99-planted" + (char)0x202E + "detnalp";
+        var request = new
+        {
+            sourceType = ProposalSourceType.Chat,
+            requestedByUserId = userId,
+            summary = "Planted producer claim must not be recorded",
+            riskLevel = RiskLevel.Low,
+            correlationId = Guid.NewGuid().ToString(),
+            boardId,
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "update",
+                    targetType = "board",
+                    parameters = $"{{\"boardId\":\"{boardId}\",\"name\":\"Planted producer ignored\"}}",
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    targetId = boardId.ToString(),
+                },
+            },
+            provenanceModelId = plantedModel,
+            provenanceProvider = "openai",
+            provenancePromptVersion = "llm-triage.v2",
+        };
+
+        var createResponse = await _client.PostAsJsonAsync("/api/automation/proposals", request);
+        var createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
+        createBody.Should().NotContain("gpt-99-planted");
+
+        var proposal = await createResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        proposal.Should().NotBeNull();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var provenance = await db.ProposalProvenances.SingleAsync(item => item.ProposalId == proposal!.Id);
+
+        // "chat-tools" is the server's origin label for a Chat-sourced proposal. All three parts
+        // of the triple must read as server-stamped, never as the caller's claim.
+        provenance.ModelId.Should().Be("chat-tools");
+        provenance.Provider.Should().BeNull();
+        provenance.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetProposalConfidence_SerializesExactStoredModelReportedValue()
     {
         var userId = await AuthenticateAsync("automation-confidence-model");
