@@ -218,6 +218,13 @@ describe('labelStore', () => {
       )
       expect(state.loading.value).toBe(false)
     })
+
+    it('does not advance the board detail mutation epoch when the write fails', async () => {
+      mockLabelsApi.updateLabel.mockRejectedValueOnce(new Error('update fail'))
+      const { updateLabel } = createLabelActions(state as any, helpers as any)
+      await expect(updateLabel('board-1', 'lbl-1', {} as any)).rejects.toThrow('update fail')
+      expect(helpers.markBoardDetailMutation).not.toHaveBeenCalled()
+    })
   })
 
   describe('deleteLabel', () => {
@@ -268,6 +275,13 @@ describe('labelStore', () => {
         'Failed to delete label',
       )
       expect(state.loading.value).toBe(false)
+    })
+
+    it('does not advance the board detail mutation epoch when the write fails', async () => {
+      mockLabelsApi.deleteLabel.mockRejectedValueOnce(new Error('delete fail'))
+      const { deleteLabel } = createLabelActions(state as any, helpers as any)
+      await expect(deleteLabel('board-1', 'lbl-1')).rejects.toThrow('delete fail')
+      expect(helpers.markBoardDetailMutation).not.toHaveBeenCalled()
     })
   })
 })

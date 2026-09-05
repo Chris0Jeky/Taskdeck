@@ -185,10 +185,13 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     // describe — sibling reordering after a move — unrepaired.  The initiating
     // client receives its own realtime event before the mutation response, so
     // waiting for another event can strand that stale ordering.  Queue exactly
-    // one successor read instead.  The queue is single-slot, so repeated
-    // invalidations during the window coalesce into that one read and never
-    // open a parallel fan-out.  Explicit reads are excluded: their outcome is
-    // owned by the view that started them.
+    // one successor read instead.  The bound holds through two mechanisms: a
+    // background request that arrives while this read is open joins its promise
+    // rather than starting a fan-out (see `fetchBoard`), and this check runs at
+    // most once per read, so however many mutation events land during the
+    // window they produce a single successor and never a parallel read.  The
+    // queue is single-slot in any case.  Explicit reads are excluded: their
+    // outcome is owned by the view that started them.
     const queueSuccessorForInvalidatedRead = () => {
       if (intent !== 'background' || !isCurrentGeneration()) {
         return
@@ -279,9 +282,11 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
           return false
         }
 
-        // Non-authorization explicit failures stay epoch-gated: a load that a
-        // local write already superseded must not raise a failure over state
-        // the user just changed successfully.
+        // Explicit failures stay epoch-gated at every status, 403 included: the
+        // view that started the read owns its outcome and its error surface
+        // (#2434), so a load a local write already superseded must not raise a
+        // failure over state the user just changed successfully.  #2435 scopes
+        // the authorization carve-out above to the background 403 only.
         if (!isCommitEligible()) {
           return false
         }

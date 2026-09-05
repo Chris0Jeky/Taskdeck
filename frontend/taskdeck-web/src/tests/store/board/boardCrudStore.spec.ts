@@ -792,7 +792,7 @@ describe('boardCrudStore', () => {
       ])
     })
 
-    it('coalesces repeated mutation events during the window into one successor read', async () => {
+    it('produces exactly one successor read and no parallel fan-out for repeated mutation events during one background read', async () => {
       const staleBoard = createDeferred<{ id: string; name: string; columns: [] }>()
       const staleCards = createDeferred<Array<{ id: string; columnId: string }>>()
       const staleLabels = createDeferred<Array<{ id: string; name: string }>>()
@@ -818,7 +818,8 @@ describe('boardCrudStore', () => {
       const duringWindowSecond = fetchBoard('board-1', { intent: 'background' })
       helpers.markBoardDetailMutation('board-1')
 
-      // Bound: repeated events never open a parallel fan-out.
+      // Bound, part one: a background request that arrives while this read is
+      // open joins its promise instead of starting a fan-out.
       expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
 
       staleBoard.resolve({ id: 'board-1', name: 'Stale board', columns: [] })
@@ -829,7 +830,8 @@ describe('boardCrudStore', () => {
       await expect(duringWindowFirst).resolves.toBe(false)
       await expect(duringWindowSecond).resolves.toBe(false)
 
-      // Bound: three invalidating events produced exactly one successor read.
+      // Bound, part two: the successor check runs once per read, so all three
+      // invalidating events produced a single successor.
       expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
       const successor = fetchBoard('board-1', { intent: 'background' })
       expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
