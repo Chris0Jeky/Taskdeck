@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import type {
   SimilarPastRow,
@@ -8,12 +8,23 @@ import type {
 /**
  * ReviewSimilarPast — list of 3 prior similar decisions with verdict
  * tagstamps and an aggregate apply-rate footer.
+ *
+ * Emptiness is stated on the card itself, never only inside the disclosure
+ * (#1940): a reviewer must not have to open a control to learn that it has
+ * nothing behind it. The disclosure stays present in every state because the
+ * review view specs and the required E2E smoke drive it on an empty fixture.
+ *
+ * This layer cannot tell "still loading" from "loaded and empty" — it receives
+ * rows and an apply rate, nothing about the fetch — so the empty copy is the
+ * honest reading of an empty array here. Distinguishing the two needs a prop
+ * from the rail (tracked on #1940).
  */
-defineProps<{
+const props = defineProps<{
   rows: SimilarPastRow[]
   applyRate: { applied: number; total: number; ratio: number }
 }>()
 
+const isEmpty = computed(() => props.rows.length === 0)
 const detailsExpanded = ref(false)
 const detailsId = 'paper-review-similar-past-details'
 const disclosureId = 'paper-review-similar-past-disclosure'
@@ -22,6 +33,13 @@ const disclosureId = 'paper-review-similar-past-disclosure'
 <template>
   <section class="card paper-review-past">
     <div class="tk-eyebrow paper-review-past__eyebrow">{{ $t('review.similarPast.heading') }}</div>
+    <div
+      v-if="isEmpty"
+      class="tk-meta paper-review-past__empty"
+      data-testid="paper-review-similar-past-empty"
+    >
+      {{ $t('review.similarPast.empty') }}
+    </div>
     <button
       :id="disclosureId"
       type="button"
@@ -34,7 +52,9 @@ const disclosureId = 'paper-review-similar-past-disclosure'
       <span>{{
         detailsExpanded
           ? $t('review.similarPast.details.hide')
-          : $t('review.similarPast.details.show')
+          : isEmpty
+            ? $t('review.similarPast.details.showEmpty')
+            : $t('review.similarPast.details.show')
       }}</span>
       <span aria-hidden="true">{{ detailsExpanded ? '−' : '+' }}</span>
     </button>
@@ -45,9 +65,13 @@ const disclosureId = 'paper-review-similar-past-disclosure'
       role="region"
       :aria-labelledby="disclosureId"
     >
-      <div v-if="rows.length === 0" class="tk-meta paper-review-past__empty">
-        {{ $t('review.similarPast.empty') }}
-      </div>
+      <p
+        v-if="isEmpty"
+        class="tk-meta paper-review-past__empty-detail"
+        data-testid="paper-review-similar-past-empty-detail"
+      >
+        {{ $t('review.similarPast.emptyDetail') }}
+      </p>
       <div
         v-for="row in rows"
         :key="row.serial"
@@ -112,6 +136,12 @@ const disclosureId = 'paper-review-similar-past-disclosure'
 }
 .paper-review-past__empty {
   font-size: 11px;
+  margin-bottom: 8px;
+}
+.paper-review-past__empty-detail {
+  font-size: 11px;
+  margin: 8px 0 0;
+  line-height: 1.45;
 }
 .paper-review-past__row {
   display: grid;

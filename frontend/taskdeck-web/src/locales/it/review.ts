@@ -403,8 +403,10 @@ export default {
   similarPast: {
     heading: 'Decisioni simili passate',
     empty: 'Nessuna decisione passata comparabile.',
+    emptyDetail: 'Qui compariranno le decisioni su proposte comparabili.',
     details: {
       show: 'Mostra decisioni simili',
+      showEmpty: 'Mostra decisioni simili (nessuna trovata)',
       hide: 'Nascondi decisioni simili',
     },
     verdict: {

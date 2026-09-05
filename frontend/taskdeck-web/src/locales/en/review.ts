@@ -475,8 +475,14 @@ export default {
   similarPast: {
     heading: 'Similar past decisions',
     empty: 'No comparable past decisions.',
+    // Shown inside the disclosure when there is nothing to list, so opening the
+    // control explains itself instead of revealing an empty region (#1940).
+    emptyDetail: 'Decisions on comparable proposals will be listed here.',
     details: {
       show: 'Show similar decisions',
+      // The empty-state label. It keeps the `show` wording and adds the count,
+      // so the closed control does not promise a list it does not have.
+      showEmpty: 'Show similar decisions (none found)',
       hide: 'Hide similar decisions',
     },
     verdict: {

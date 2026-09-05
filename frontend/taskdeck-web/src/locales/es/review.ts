@@ -402,8 +402,10 @@ export default {
   similarPast: {
     heading: 'Decisiones parecidas anteriores',
     empty: 'No hay decisiones anteriores comparables.',
+    emptyDetail: 'Aquí se mostrarán las decisiones sobre propuestas comparables.',
     details: {
       show: 'Mostrar decisiones parecidas',
+      showEmpty: 'Mostrar decisiones parecidas (ninguna encontrada)',
       hide: 'Ocultar decisiones parecidas',
     },
     verdict: {
