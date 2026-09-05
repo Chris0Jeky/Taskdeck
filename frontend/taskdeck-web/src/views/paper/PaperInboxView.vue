@@ -122,12 +122,13 @@ const historyDetailLoading = ref(false)
 const historyDetailError = ref<string | null>(null)
 
 /**
- * Monotonic id for the current history-detail read (the counter
- * `useInboxOrchestrator` uses for its scoped-board load). The item id alone
- * cannot separate two reads of the SAME row, which is exactly what closing a
- * stalled panel and reopening it produces (#1999): the superseded read would
- * write an error the newer read never clears, and end the newer read's spinner.
- * Every load captures this value and writes only while it still holds it.
+ * Monotonic id for the current history-detail read — an independent
+ * per-instance counter, following the same pattern as the scoped-board load
+ * generation in `useInboxOrchestrator`. The item id alone cannot separate two
+ * reads of the SAME row, which is exactly what closing a stalled panel and
+ * reopening it produces (#1999): the superseded read would write an error the
+ * newer read never clears, and end the newer read's spinner. Every load
+ * captures this value and writes only while it still holds it.
  */
 let historyDetailGeneration = 0
 
@@ -351,6 +352,10 @@ async function onTriageOpen(itemId: string) {
   }
 
   const requestGeneration = ++historyDetailGeneration
+  // The generation alone is decisive today: every mutator of `historyDetailItemId`
+  // advances it, so the id conjunct cannot be the one that fails. It stays as
+  // belt-and-braces against a future writer that forgets the counter — no reader
+  // need hunt for the case where it fires on its own.
   const isCurrentRead = () =>
     requestGeneration === historyDetailGeneration && historyDetailItemId.value === itemId
 

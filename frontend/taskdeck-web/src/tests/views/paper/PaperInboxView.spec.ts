@@ -397,6 +397,76 @@ describe('PaperInboxView', () => {
     expect(wrapper.find('[data-testid="capture-history-detail"] [role="status"]').exists()).toBe(
       false,
     )
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  // The cross-item half of the same guard. The item id already covered this
+  // before #1999, so it is a regression net for the generation gate: switching
+  // rows must supersede the first read exactly the way close-and-reopen does.
+  it('does not let a superseded read of another row settle into the open one', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [
+      captureRow('history-capture-x', 'ProposalCreated'),
+      captureRow('history-capture-y', 'ProposalCreated'),
+    ]
+
+    let resolveX: (detail: CaptureItem) => void = () => undefined
+    let resolveY: (detail: CaptureItem) => void = () => undefined
+    mockCaptureStore.peekDetail
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveX = resolve
+      }))
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveY = resolve
+      }))
+
+    const wrapper = mount(PaperInboxView, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const openers = wrapper.findAll<HTMLButtonElement>('[data-testid="capture-history-open"]')
+    expect(openers).toHaveLength(2)
+
+    await openers[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    await openers[1].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="capture-history-detail"]').attributes('id')).toBe(
+      'paper-capture-detail-history-capture-y',
+    )
+
+    resolveX({
+      ...captureRow('history-capture-x', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'Row X must not settle under row Y.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Row X must not settle under row Y.')
+    expect(wrapper.find('[data-testid="capture-history-detail-error"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="capture-history-detail"] [role="status"]').text(),
+    ).toContain('Loading')
+
+    resolveY({
+      ...captureRow('history-capture-y', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'Row Y is the open row and the one that renders.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="capture-history-text"]').text()).toBe(
+      'Row Y is the open row and the one that renders.',
+    )
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
