@@ -261,7 +261,7 @@ internal static class DesktopRuntime
     {
         if (exception is InvalidOperationException validationFailure
             && validationFailure.Message.StartsWith(
-                "SECURITY: The Connectors:EncryptionKey is not configured.",
+                FirstRunBootstrapper.MissingConnectorEncryptionKeyMessagePrefix,
                 StringComparison.Ordinal))
         {
             return

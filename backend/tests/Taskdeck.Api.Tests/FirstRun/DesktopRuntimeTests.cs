@@ -167,7 +167,7 @@ public class DesktopRuntimeTests
     {
         const string secretLikeContent = "synthetic-secret-never-print";
         var exception = new InvalidOperationException(
-            "SECURITY: The Connectors:EncryptionKey is not configured. " + secretLikeContent);
+            FirstRunBootstrapper.MissingConnectorEncryptionKeyMessagePrefix + " " + secretLikeContent);
 
         var output = DesktopRuntime.FormatFatalStartup(exception);
 
