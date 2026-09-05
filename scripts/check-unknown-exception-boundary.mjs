@@ -5,9 +5,10 @@
 //
 // Two rules, both deliberately narrow:
 //   1. `mcp-error-message` — in MCP files, each raw `.ErrorMessage` member expression reached in a
-//      return/throw/serialize position must itself be wrapped in a sanitizing call. A local that
-//      takes a raw `.ErrorMessage` inside the same block counts as an occurrence when it is later
-//      returned (one hop, never across methods).
+//      return/throw/serialize position must itself be wrapped in a sanitizing call. A local whose
+//      initializer carries the raw `.ErrorMessage` TEXT inside the same block counts as an
+//      occurrence when it is later returned (one hop, never across methods); a local assigned a
+//      predicate over the message rather than the message does not.
 //   2. `unknown-exception-text` — in MCP files and in the listed persisted-state files, a
 //      `catch (Exception ex)` block may not carry `ex.Message` / `ex.StackTrace` / `ex.ToString()`
 //      outward. Sanitization is judged per occurrence, exactly as in rule 1.
@@ -60,9 +61,24 @@ export const EXCEPTION_TEXT_SANITIZERS = new Set([
   'SanitizeLlmFailureMessage',
 ])
 
-// Log sanitizers count for rule 2 only when they wrap the occurrence itself. A statement that
-// merely mentions `LogSanitizer.` elsewhere does not excuse a raw `ex.Message` beside it.
-export const LOG_SANITIZER_TYPES = ['LogSanitizer', 'LogValueSanitizer']
+// Log sanitizer members that rule 2 accepts around exception text, named one by one rather than by
+// type prefix, and only when they wrap the occurrence itself: a statement that merely mentions
+// `LogSanitizer.` elsewhere does not excuse a raw `ex.Message` beside it. Measured from the
+// implementations:
+//   - `LogSanitizer.SanitizeForLog` (backend/src/Taskdeck.Api/Telemetry/LogSanitizer.cs) strips
+//     control characters and truncates to 200 characters.
+//   - `LogValueSanitizer.Sanitize` (backend/src/Taskdeck.Application/Services/LogValueSanitizer.cs)
+//     does the same for an arbitrary value.
+//   - `LogSanitizer.SafeExceptionDescription` reduces an exception to its type name.
+// `LogSanitizer.StripControlChars` is deliberately NOT here: it removes control characters and
+// applies neither truncation nor redaction, so it leaves unknown-exception text intact. Membership
+// is a claim about bounding and control-character stripping, not about redacting secrets; rule 2
+// judges wrapping, not effectiveness (see the inventory's Known limits).
+export const LOG_SANITIZER_MEMBERS = new Set([
+  'LogSanitizer.SanitizeForLog',
+  'LogSanitizer.SafeExceptionDescription',
+  'LogValueSanitizer.Sanitize',
+])
 
 // Logging is explicitly out of scope: structured logs are a trusted operator sink.
 const LOGGING_PATTERN = /(?:_logger|\bLogger)\s*[?.]|\bLog(?:Error|Warning|Information|Debug|Critical|Trace)\s*\(/
@@ -299,7 +315,11 @@ function wrappedBySanitizer(callees) {
 function wrappedByExceptionTextSanitizer(callees) {
   return callees.some((callee) => {
     if (EXCEPTION_TEXT_SANITIZERS.has(lastSegment(callee))) return true
-    return LOG_SANITIZER_TYPES.some((type) => callee.startsWith(`${type}.`))
+    // Match the whole `Type.Member` pair, allowing a namespace-qualified receiver, so an unlisted
+    // member of an accepted type is not excused by the type name alone.
+    return [...LOG_SANITIZER_MEMBERS].some(
+      (member) => callee === member || callee.endsWith(`.${member}`),
+    )
   })
 }
 
@@ -449,10 +469,10 @@ function receiverOf(scanText, dotIndex) {
 
 /**
  * The one reviewed exemption for rule 1: a conditional expression whose condition tests THIS
- * result's `ErrorCode` against `ErrorCodes.UnexpectedError`, whose TRUE arm supplies
- * `GenericUnexpectedFailureMessage`, and whose FALSE arm holds the read. Anything else — a
- * different receiver, an inverted pair of arms, a named argument, a null-conditional read, a
- * sibling argument next to such a ternary — is checked normally.
+ * result's `ErrorCode` against `ErrorCodes.UnexpectedError` without negating the test, whose TRUE
+ * arm supplies `GenericUnexpectedFailureMessage`, and whose FALSE arm holds the read. Anything
+ * else — a different receiver, a negated condition, an inverted pair of arms, a named argument, a
+ * null-conditional read, a sibling argument next to such a ternary — is checked normally.
  */
 function isReviewedGuardedTernaryArm(scanText, occurrenceIndex) {
   const receiver = receiverOf(scanText, occurrenceIndex)
@@ -466,6 +486,13 @@ function isReviewedGuardedTernaryArm(scanText, occurrenceIndex) {
 
   const errorCodeRead = new RegExp(`\\b${escapeRegExp(receiver)}\\s*\\??\\s*\\.\\s*ErrorCode\\b`)
   if (!errorCodeRead.test(condition)) return false
+
+  // Condition polarity: the reviewed shape asserts the code IS UnexpectedError, so the curated
+  // message runs on it. A negated condition (`!string.Equals(...)`, `!=`, `is not`) inverts that
+  // and hands the raw message to exactly the code that must not expose it. Any negation anywhere
+  // in the condition drops the exemption; this errs toward flagging rather than reasoning about
+  // which operand the negation applies to.
+  if (/!|\bis\s+not\b/.test(condition)) return false
 
   // Arm polarity decides everything: the reviewed shape puts the curated message in the TRUE arm
   // (taken when the code IS UnexpectedError) and the raw message in the FALSE arm. The inverted
@@ -488,9 +515,40 @@ function rawErrorMessageOccurrences(scanText) {
   while ((match = pattern.exec(scanText)) !== null) {
     if (wrappedBySanitizer(enclosingCallees(scanText, match.index))) continue
     if (isReviewedGuardedTernaryArm(scanText, match.index)) continue
-    occurrences.push(match.index)
+    occurrences.push({ index: match.index, end: match.index + match[0].length })
   }
   return occurrences
+}
+
+/**
+ * True when the initializer that opens a local carries the message TEXT: its right-hand side is the
+ * raw read itself, or a concatenation / interpolation that contains it. A right-hand side that only
+ * INSPECTS the message yields something else — `x is null ? 0 : 1` and `x == null` yield a bool,
+ * `x.Length` an int, and a call consumes the text and returns whatever it decides to return — so it
+ * does not taint the local. Narrowing here is what keeps a later outbound use of such a local from
+ * failing CI with a message about a leak that cannot happen.
+ */
+function initializerCarriesRawText(scanText, equalsIndex, occurrences) {
+  const semicolon = scanText.indexOf(';', equalsIndex)
+  const rightHandEnd = semicolon === -1 ? scanText.length : semicolon
+
+  return occurrences.some((occurrence) => {
+    if (occurrence.index < equalsIndex || occurrence.index >= rightHandEnd) return false
+
+    // An argument handed to a call is consumed by that call, not returned as the initializer value.
+    if (enclosingCallees(scanText, occurrence.index).length > 0) return false
+
+    const after = scanText.slice(occurrence.end, rightHandEnd)
+    // A further member access, indexer or invocation derives something else from the text.
+    if (/^\s*[.?[(]/.test(after)) return false
+    // A comparison or a pattern test yields a bool.
+    if (/^\s*(?:[=!<>]=|[<>]|\bis\b)/.test(after)) return false
+
+    const before = scanText.slice(equalsIndex + 1, occurrence.index)
+    if (/(?:[=!<>]=|[<>])\s*$/.test(before)) return false
+
+    return true
+  })
 }
 
 /**
@@ -551,11 +609,11 @@ export function findMcpFindings(source, path) {
     const occurrences = logging ? [] : rawErrorMessageOccurrences(scanText)
 
     if (outbound) {
-      for (const index of occurrences) {
+      for (const occurrence of occurrences) {
         report(
           statement,
           text,
-          index,
+          occurrence.index,
           'MCP payload returns or throws a raw ErrorMessage; wrap this occurrence in ' +
             'SensitiveDataRedactor.SanitizeLlmFailureMessage or a helper that applies it',
         )
@@ -578,7 +636,10 @@ export function findMcpFindings(source, path) {
     const assignment = LOCAL_ASSIGNMENT.exec(scanText)
     if (assignment) {
       const name = assignment[1]
-      if (!outbound && !logging && occurrences.length > 0) laundered.set(name, blockDepth)
+      const equalsIndex = assignment.index + assignment[0].length - 1
+      const taints =
+        !outbound && !logging && initializerCarriesRawText(scanText, equalsIndex, occurrences)
+      if (taints) laundered.set(name, blockDepth)
       else laundered.delete(name)
     }
 
@@ -633,8 +694,10 @@ export function findCatchBlockFindings(source, path, rule = 'unknown-exception-t
 
     const blockSource = lines.slice(index, end + 1).join('\n')
     const escaped = escapeRegExp(variable)
+    // `ex.Message` and the null-conditional `ex?.Message` both read the same text, so the `?` is
+    // optional ahead of the dot rather than an alternative to it.
     const leakPattern = new RegExp(
-      `\\b${escaped}\\s*[?.]\\s*(?:Message|StackTrace|ToString\\s*\\()`,
+      `\\b${escaped}\\s*\\??\\s*\\.\\s*(?:Message|StackTrace|ToString\\s*\\()`,
       'g',
     )
 
