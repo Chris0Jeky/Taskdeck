@@ -75,9 +75,12 @@ public class WorkerResilienceTests
     public async Task ProposalHousekeepingWorker_WhenDbThrows_LogsErrorAndContinuesPolling()
     {
         var callCount = 0;
+        var firstIteration = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         var scopeFactory = CreateScopeFactoryThatThrowsOnUnitOfWork(() =>
         {
-            callCount++;
+            Interlocked.Increment(ref callCount);
+            firstIteration.TrySetResult();
             throw new InvalidOperationException("Simulated housekeeping DB failure");
         });
 
@@ -89,17 +92,43 @@ public class WorkerResilienceTests
 
         using var cts = new CancellationTokenSource();
         var runTask = worker.StartAsync(cts.Token);
-        await Task.Delay(300);
-        cts.Cancel();
 
-        try { await runTask; } catch (OperationCanceledException) { }
-        await worker.StopAsync(CancellationToken.None);
+        try
+        {
+            try
+            {
+                await firstIteration.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            }
+            catch (TimeoutException ex)
+            {
+                throw new TimeoutException(
+                    "ProposalHousekeepingWorker did not enter its first iteration within 5 seconds.",
+                    ex);
+            }
+        }
+        finally
+        {
+            cts.Cancel();
+            try { await runTask; } catch (OperationCanceledException) { }
+            await worker.StopAsync(CancellationToken.None);
+        }
 
-        callCount.Should().BeGreaterThan(0);
+        Volatile.Read(ref callCount).Should().BeGreaterThan(0);
         logger.Entries.Should().Contain(e =>
             e.Level == LogLevel.Error &&
             e.Message.Contains("Error in ProposalHousekeepingWorker iteration"));
         heartbeat.GetLastHeartbeat(nameof(ProposalHousekeepingWorker)).Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task WorkerIterationSignal_WhenNoIterationOccurs_TimesOut()
+    {
+        var firstIteration = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var act = () => firstIteration.Task.WaitAsync(TimeSpan.FromMilliseconds(100));
+
+        await act.Should().ThrowAsync<TimeoutException>();
     }
 
     // ── Worker Cancellation → Clean Shutdown ───────────────────────────
