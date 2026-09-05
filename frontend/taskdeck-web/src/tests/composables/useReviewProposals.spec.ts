@@ -721,6 +721,22 @@ describe('useReviewProposals', () => {
       )
     })
 
+    // A deadline-bounded caller must not spend its budget in the shared retry
+    // interceptor's doubling backoff and then be reported as a timeout.
+    it('forwards a caller opt-out of the shared retry interceptor', async () => {
+      const controller = new AbortController()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+
+      await expect(
+        rp.loadProposalsWithOutcome({ signal: controller.signal, skipRetry: true }),
+      ).resolves.toBe('landed')
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 200 }),
+        expect.objectContaining({ signal: controller.signal, skipRetry: true }),
+      )
+    })
+
     it('does not issue an explicit load whose caller has already given up', async () => {
       const controller = new AbortController()
       controller.abort()
@@ -745,7 +761,10 @@ describe('useReviewProposals', () => {
       )
       const rp = useReviewProposals()
 
-      const load = rp.loadProposalsWithOutcome({ signal: controller.signal })
+      const load = rp.loadProposalsWithOutcome({
+        signal: controller.signal,
+        skipRetry: true,
+      })
       await Promise.resolve()
       await Promise.resolve()
       controller.abort()
@@ -753,6 +772,12 @@ describe('useReviewProposals', () => {
 
       await expect(load).resolves.toBe('aborted')
       expect(mockToast.error).not.toHaveBeenCalled()
+      // The deep-link leg is part of the same explicit read, so it carries the
+      // same cancellation and retry contract rather than running unbounded.
+      expect(mockAutomationApi.getProposal).toHaveBeenCalledWith(
+        'p-remote',
+        expect.objectContaining({ signal: controller.signal, skipRetry: true }),
+      )
     })
 
     it('does not report landed until its deep-link lookup completes', async () => {

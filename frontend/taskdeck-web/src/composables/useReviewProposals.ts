@@ -68,15 +68,22 @@ export const REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD = 3
 export type ProposalLoadOutcome = 'landed' | 'failed' | 'superseded' | 'aborted'
 
 /**
- * Cancellation for an explicit queue read whose caller owns a deadline.
+ * Cancellation and retry controls for an explicit queue read whose caller owns
+ * a deadline.
  *
  * `aborted` is reported instead of `failed` so a caller that cancelled its own
  * read never mistakes it for a server or transport failure: only the caller
  * knows why it aborted, and only the caller can tell a deadline apart from any
  * other cancellation. The composable deliberately makes no such judgement.
+ *
+ * `skipRetry` matters for a deadline-bounded caller: the shared interceptor
+ * retries an idempotent read up to `MAX_RETRIES` times with doubling backoff,
+ * which can consume most of a caller's budget and turn a recoverable failure
+ * into a reported timeout. A bounded caller wants the first honest answer.
  */
 export interface ProposalLoadOptions {
   signal?: AbortSignal
+  skipRetry?: boolean
 }
 
 /**
@@ -485,8 +492,11 @@ export function useReviewProposals() {
     }
 
     try {
-      const fetchedProposal = options?.signal
-        ? await automationApi.getProposal(proposalId, { signal: options.signal })
+      const fetchedProposal = options
+        ? await automationApi.getProposal(proposalId, {
+            signal: options.signal,
+            skipRetry: options.skipRetry,
+          })
         : await automationApi.getProposal(proposalId)
       if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
       // A route lookup may canonicalize GUID hex casing, but it may not return a
@@ -543,10 +553,13 @@ export function useReviewProposals() {
         limit: 200,
         boardId: activeBoardFilter.value || undefined,
       }
-      // The second argument is forwarded ONLY when a caller supplied a signal,
+      // The second argument is forwarded ONLY when a caller supplied options,
       // so every existing call site keeps its exact single-argument shape.
-      const loadedProposals = signal
-        ? await automationApi.getProposals(filters, { signal })
+      const loadedProposals = options
+        ? await automationApi.getProposals(filters, {
+            signal,
+            skipRetry: options.skipRetry,
+          })
         : await automationApi.getProposals(filters)
       if (requestId !== latestProposalLoadRequestId) return 'superseded'
       // An answer the caller stopped waiting for must not become the rendered

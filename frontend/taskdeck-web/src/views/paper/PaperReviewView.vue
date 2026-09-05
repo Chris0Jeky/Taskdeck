@@ -1211,9 +1211,19 @@ const revisionReviewRefreshEpochs = new Map<string, number>()
  * for a realistic composite round trip on a slow link, short enough that a
  * locked rail still reads as work in progress rather than as broken.
  *
- * Timing out costs one more explicit action and nothing else: the per-proposal
- * barrier is RETAINED, so the retry refreshes again before any decision can be
- * made on pre-revision evidence.
+ * What this budget assumes about retries, because they are what make a cap of
+ * this size tight: the queue read (and its deep-link leg) is issued with
+ * `skipRetry`, so it costs one round trip and reports the first honest answer.
+ * The six core evidence reads are NOT, because they are served by the batch
+ * `usePaperReviewSelectors` shares with its own automatic refresh — a per-call
+ * opt-out there would apply only when the barrier happened to be the batch's
+ * creator, which is worse than retrying uniformly. So this budget must still
+ * cover one shared-interceptor retry pass on the evidence leg, and a genuinely
+ * flaky evidence read can exhaust it.
+ *
+ * That is an acceptable trade because timing out costs one more explicit action
+ * and nothing else: the per-proposal barrier is RETAINED, so the retry refreshes
+ * again before any decision can be made on pre-revision evidence.
  */
 const POST_REVISION_REVIEW_DEADLINE_MS = 12_000
 
@@ -1278,9 +1288,20 @@ function startRevisionReviewAttempt(): RevisionReviewAttempt {
     },
     dispose() {
       clearTimeout(timer)
+      // Cancel what this attempt still holds open. Clearing the timer alone
+      // would leave an early failed or superseded ending -- and an unmount --
+      // with reads still running for a decision nobody is waiting on.
+      controller.abort()
     },
   }
 }
+
+/**
+ * The attempt currently holding the decision lock, so teardown can cancel it.
+ * A barrier attempt outlives its route otherwise: its deadline timer would fire
+ * after the reviewer has navigated away and report on whatever page they are on.
+ */
+let activeRevisionReviewAttempt: RevisionReviewAttempt | null = null
 
 /**
  * Generation of the barrier attempt that currently owns the decision lock. A
@@ -1585,14 +1606,20 @@ function restoreApplyFocus(captured: HTMLElement | null) {
  * evidence reads landed for one identity, status, expiry, defer state and
  * effective revision. Every other ending leaves the epoch in place, so the next
  * Approve or Apply refreshes again instead of deciding on pre-revision truth.
+ *
+ * This decides the outcome and writes nothing. `clearRevisionReviewBarrier` is
+ * what actually clears the epoch, once the caller has checked that this attempt
+ * still owns the barrier.
  */
 async function runRevisionReviewRefresh(
   proposal: ApiProposal,
-  requiredEpoch: number,
   attempt: RevisionReviewAttempt,
 ): Promise<RevisionReviewRefreshOutcome> {
   const queueOutcome = await Promise.race([
-    loadProposalsWithOutcome({ signal: attempt.signal }),
+    // `skipRetry`: the interceptor's doubling backoff can spend most of this
+    // attempt's budget re-asking a question the barrier would rather answer
+    // honestly and let the reviewer retry deliberately.
+    loadProposalsWithOutcome({ signal: attempt.signal, skipRetry: true }),
     attempt.deadline,
   ])
   if (queueOutcome === REVISION_REVIEW_DEADLINE) return 'timed-out'
@@ -1635,6 +1662,22 @@ async function runRevisionReviewRefresh(
     isProposalDeferred(verified)
   ) return 'superseded'
 
+  return 'refreshed'
+}
+
+/**
+ * Clear the barrier for one attempt. This is the ONE piece of state whose loss
+ * matters -- everything else the attempt writes is a note or a toast -- so it is
+ * written last, behind the attempt-generation guard in the caller.
+ *
+ * The epoch is re-read here rather than trusted from the verification block: a
+ * save that landed while this attempt was resolving arms a NEWER epoch, and
+ * deleting that would drop a barrier this attempt never satisfied.
+ */
+function clearRevisionReviewBarrier(
+  proposal: ApiProposal,
+  requiredEpoch: number,
+): RevisionReviewRefreshOutcome {
   const key = revisionReviewKey(proposal.id)
   if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return 'superseded'
   revisionReviewRefreshEpochs.delete(key)
@@ -1642,39 +1685,43 @@ async function runRevisionReviewRefresh(
 }
 
 /**
- * Key the barrier note to the proposal and revision now on screen. A reviewer
- * who has already moved on must not inherit another screen's failure.
+ * Report one attempt's ending to the reviewer.
+ *
+ * The note and the toast are ONE report about ONE proposal, so they share ONE
+ * guard. The queue rail stays clickable while the barrier reads (only the
+ * decision rail and the keymap are locked), so a reviewer can be looking at B
+ * when A's attempt ends. Every message here says "choose the current action
+ * again" -- addressed to B, that is an instruction to press Apply on a proposal
+ * with no barrier, which falls straight through to a real decision. So a report
+ * that cannot be attributed to what is on screen is not shown at all.
+ *
+ * Withholding it costs nothing: the barrier state itself is written separately
+ * and independently of what is displayed, so returning to A still refreshes.
  */
-function noteRevisionReviewOutcome(
-  proposal: ApiProposal,
-  reason: RevisionReviewUnavailableReason | null,
-) {
-  const current = activeProposal.value
-  if (!current || !proposalIdsEqual(current.id, proposal.id)) return
-  setRevisionReviewUnavailable(current.id, proposalRevisionIdentity(current), reason)
-}
-
 function applyRevisionReviewOutcome(
   proposal: ApiProposal,
   outcome: RevisionReviewRefreshOutcome,
 ) {
+  // Nothing to tell the reviewer: the screen they were deciding on is gone or
+  // was replaced, and the barrier stays armed for whatever replaced it.
+  if (outcome === 'aborted' || outcome === 'superseded') return
+
+  const current = activeProposal.value
+  if (!current || !proposalIdsEqual(current.id, proposal.id)) return
+  const revisionIdentity = proposalRevisionIdentity(current)
+
   switch (outcome) {
     case 'refreshed':
-      noteRevisionReviewOutcome(proposal, null)
+      setRevisionReviewUnavailable(current.id, revisionIdentity, null)
       toast.info(t('review.toast.revisionReviewRefreshed'))
       return
     case 'failed':
-      noteRevisionReviewOutcome(proposal, 'failed')
+      setRevisionReviewUnavailable(current.id, revisionIdentity, 'failed')
       toast.error(t('review.toast.revisionReviewUnavailable'))
       return
     case 'timed-out':
-      noteRevisionReviewOutcome(proposal, 'timed-out')
+      setRevisionReviewUnavailable(current.id, revisionIdentity, 'timed-out')
       toast.error(t('review.toast.revisionReviewTimedOut'))
-      return
-    case 'aborted':
-    case 'superseded':
-      // Nothing to tell the reviewer: the screen they were deciding on is gone
-      // or was replaced, and the barrier stays armed for whatever replaced it.
       return
   }
 }
@@ -1686,16 +1733,24 @@ async function refreshRevisionReviewBeforeApply(
   const captured = applyReturnFocusEl
   const generation = ++revisionReviewAttemptGeneration
   const attempt = startRevisionReviewAttempt()
+  activeRevisionReviewAttempt = attempt
   applyGuardBusy.value = true
   revisionReviewRefreshBusy.value = true
   try {
-    const outcome = await runRevisionReviewRefresh(proposal, requiredEpoch, attempt)
-    // A late attempt reports nothing: a newer attempt owns the barrier, the
-    // rail and the note, and this one's answer is by definition older.
+    const outcome = await runRevisionReviewRefresh(proposal, attempt)
+    // A late attempt writes nothing: a newer attempt (or an unmount) owns the
+    // barrier, the rail and the note, and this one's answer is by definition
+    // older. The barrier clear sits behind this guard for that reason.
     if (generation !== revisionReviewAttemptGeneration) return
-    applyRevisionReviewOutcome(proposal, outcome)
+    applyRevisionReviewOutcome(
+      proposal,
+      outcome === 'refreshed'
+        ? clearRevisionReviewBarrier(proposal, requiredEpoch)
+        : outcome,
+    )
   } finally {
     attempt.dispose()
+    if (activeRevisionReviewAttempt === attempt) activeRevisionReviewAttempt = null
     if (generation === revisionReviewAttemptGeneration) {
       revisionReviewRefreshBusy.value = false
       applyGuardBusy.value = false
@@ -2401,6 +2456,14 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // #2460: a barrier attempt outlives its route unless it is cancelled here.
+  // Bumping the generation first stops any outcome being applied to a surface
+  // that no longer exists; disposing then clears the deadline timer -- whose
+  // ending would otherwise toast over whatever page the reviewer moved to --
+  // and aborts the reads it was holding open.
+  revisionReviewAttemptGeneration += 1
+  activeRevisionReviewAttempt?.dispose()
+  activeRevisionReviewAttempt = null
   // Prevent an in-flight metadata open or save continuation from restoring
   // focus into a component that no longer owns the document.
   invalidateRevisionOpening()

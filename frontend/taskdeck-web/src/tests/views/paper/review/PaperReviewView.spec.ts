@@ -5723,6 +5723,92 @@ describe('PaperReviewView', () => {
       wrapper.unmount()
     })
 
+    it('reports nothing when the reviewer moved to another proposal before the deadline', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        const proposalA = makeProposal({ id: 'aaa-moved', summary: 'First proposal' })
+        const proposalB = makeProposal({ id: 'bbb-moved', summary: 'Second proposal' })
+        const wrapper = await mountView([proposalA, proposalB])
+        await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+        await flushPromises()
+        await armBarrier(wrapper, 'aaa-moved', 'rev-moved-1')
+
+        mocks.getProposals.mockImplementationOnce(() => new Promise<Proposal[]>(() => {}))
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(true)
+
+        // The queue rail is not disabled by the decision lock, so the reviewer
+        // can be looking at B when A's attempt ends.
+        await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+        await flushPromises()
+
+        await vi.advanceTimersByTimeAsync(DEADLINE_MS)
+        await flushPromises()
+
+        // Neither half of the report may land on B. "Choose the current action
+        // again" read on B would be an instruction to approve a proposal that
+        // has no barrier at all.
+        expect(mocks.errorToast).not.toHaveBeenCalledWith(TIMED_OUT_COPY)
+        expect(mocks.errorToast).not.toHaveBeenCalledWith(FAILED_COPY)
+        expect(mocks.infoToast).not.toHaveBeenCalledWith(REFRESHED_COPY)
+        expect(wrapper.find('[data-testid="paper-review-evidence-unavailable"]').exists()).toBe(false)
+        expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeUndefined()
+
+        // A's barrier survived, so returning to it still refreshes before deciding.
+        mocks.getProposals.mockResolvedValue([
+          makeProposal({ id: 'aaa-moved', summary: 'First proposal', latestRevisionId: 'rev-moved-1' }),
+          proposalB,
+        ])
+        await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+        await flushPromises()
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(mocks.approveProposal).not.toHaveBeenCalled()
+        expect(mocks.infoToast).toHaveBeenCalledWith(REFRESHED_COPY)
+        wrapper.unmount()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('cancels an in-flight attempt on unmount so its deadline never reports', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+      try {
+        const original = makeProposal({ id: 'unmounted-attempt' })
+        const wrapper = await mountView([original])
+        await armBarrier(wrapper, 'unmounted-attempt', 'rev-unmounted-1')
+
+        let barrierSignal: AbortSignal | undefined
+        mocks.getProposals.mockImplementationOnce(
+          (_filters?: unknown, options?: { signal?: AbortSignal }) => {
+            barrierSignal = options?.signal
+            return new Promise<Proposal[]>(() => {})
+          },
+        )
+        await wrapper.get('[data-testid="decision-apply"]').trigger('click')
+        await flushPromises()
+        expect(wrapper.find('[data-testid="decision-lock-note"]').exists()).toBe(true)
+        expect(barrierSignal?.aborted).toBe(false)
+
+        wrapper.unmount()
+        // The reads the attempt was holding open are cancelled with the route.
+        expect(barrierSignal?.aborted).toBe(true)
+
+        mocks.errorToast.mockClear()
+        mocks.infoToast.mockClear()
+        await vi.advanceTimersByTimeAsync(DEADLINE_MS * 2)
+        await flushPromises()
+
+        // The deadline timer went with the component: nothing reports onto
+        // whatever page the reviewer navigated to.
+        expect(mocks.errorToast).not.toHaveBeenCalled()
+        expect(mocks.infoToast).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('disarms its deadline once the refresh lands, so no late timeout note appears', async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
       try {
