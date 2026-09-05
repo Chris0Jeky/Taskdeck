@@ -122,6 +122,19 @@ async function flushAsyncWork() {
   await Promise.resolve()
 }
 
+/**
+ * `batchAction` passes the store a THUNK so the store can resolve the scope at
+ * the moment it issues the reconciliation read. Assert on what the thunk
+ * returns, not on the function itself.
+ */
+function resolvedBatchQuery(callIndex = 0) {
+  const call = mockCaptureStore.batchTriage.mock.calls[callIndex]
+  expect(call).toBeDefined()
+  const query = call![2]
+  expect(typeof query).toBe('function')
+  return (query as () => unknown)()
+}
+
 function summaryRow(id: string, boardId: string | null) {
   return {
     id,
@@ -191,7 +204,8 @@ describe('useInboxOrchestrator', () => {
       orch.toggleItemSelection('a')
       orch.toggleItemSelection('b')
       await orch.batchAction('triage')
-      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage')
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200 })
       expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
         ['a', 'b'],
         { limit: 200 },
@@ -220,6 +234,96 @@ describe('useInboxOrchestrator', () => {
         ['accepted'],
         { limit: 200, boardId: 'board-7' },
       )
+    })
+
+    it('refreshes in the active board scope after a Legacy batch ignore', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('ignore')
+
+      // No poll follows an ignore, so an unscoped refresh would leave the
+      // unscoped rows under the board's label until the next scoped load.
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a'], 'ignore', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200, boardId: 'board-7' })
+    })
+
+    it('refreshes in the active board scope after a Legacy batch cancel', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('cancel')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a'], 'cancel', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200, boardId: 'board-7' })
+    })
+
+    it('refreshes in the active board scope before a triage poll starts', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      orch.toggleItemSelection('b')
+
+      await orch.batchAction('triage')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200, boardId: 'board-7' })
+      expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
+        ['a', 'b'],
+        { limit: 200, boardId: 'board-7' },
+      )
+      // `batchTriage` is a bare mock here, so this proves only that the STORE
+      // CALL is issued before the poll call — not that the refresh inside it
+      // completed first. The refresh-before-poll property belongs to the real
+      // store, where the read is awaited before `batchTriage` resolves, and is
+      // covered by the captureStore specs.
+      expect(mockCaptureStore.batchTriage.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCaptureStore.pollBatchTriageCompletion.mock.invocationCallOrder[0],
+      )
+    })
+
+    it('resolves the refresh scope when the store issues the read, not when the batch starts', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      let resolvedQuery: unknown = null
+      mockCaptureStore.batchTriage.mockImplementationOnce(async (
+        _ids: string[],
+        _action: string,
+        query?: unknown,
+      ) => {
+        // The user moves to another board while the POST is in flight. The
+        // store's reconciliation read is issued AFTER this point, so a scope
+        // captured when the action started would write board-7's rows under
+        // board-9's label — and `fetchItems` supersedes by request id, so the
+        // orchestrator's own board-9 load (issued first) would be the one
+        // dropped, with no poll after ignore/cancel to repair it.
+        mockRoute.query = { boardId: 'board-9' }
+        watcherForSource(orch.activeBoardId)[1]('board-9', 'board-7', () => {})
+        resolvedQuery = typeof query === 'function' ? (query as () => unknown)() : query
+        return {
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          results: [{ itemId: 'a', success: true }],
+        }
+      })
+
+      await orch.batchAction('ignore')
+
+      expect(resolvedQuery).toEqual({ limit: 200, boardId: 'board-9' })
+    })
+
+    it('refreshes without a boardId when no board scopes the Inbox', async () => {
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('ignore')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a'], 'ignore', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200 })
     })
 
     it('does not poll ignore or cancel batch actions', async () => {

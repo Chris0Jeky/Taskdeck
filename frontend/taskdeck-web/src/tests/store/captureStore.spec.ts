@@ -1250,6 +1250,72 @@ describe('captureStore', () => {
     expect(workspaceMocks.refreshWorkloadCounts).toHaveBeenCalledTimes(1)
   })
 
+  it('refreshes the list in the caller-supplied scope after a batch', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c1', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([
+      {
+        id: 'board-7-row',
+        userId: 'u1',
+        boardId: 'board-7',
+        status: 'New',
+        source: 'Typed',
+        textExcerpt: 'excerpt',
+        createdAt: new Date().toISOString(),
+        processedAt: null,
+      },
+    ])
+
+    await store.batchTriage(['c1'], 'ignore', { limit: 200, boardId: 'board-7' })
+
+    expect(captureApi.listItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-7' })
+    // Reading in scope is only half of it: the scoped response has to reach
+    // `items`, or a future change could read scoped and discard the rows.
+    expect(store.items).toHaveLength(1)
+    expect(store.items[0]?.id).toBe('board-7-row')
+  })
+
+  it('resolves a thunk scope at the moment it issues the post-batch read', async () => {
+    const store = useCaptureStore()
+    let scope = { limit: 200, boardId: 'board-7' }
+    vi.mocked(captureApi.batchTriage).mockImplementation(async () => {
+      // The user moves to another board while the POST is in flight. The read
+      // is issued after this, so it must follow them.
+      scope = { limit: 200, boardId: 'board-9' }
+      return {
+        total: 1,
+        succeeded: 1,
+        failed: 0,
+        results: [{ itemId: 'c1', success: true }],
+      }
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+
+    await store.batchTriage(['c1'], 'ignore', () => scope)
+
+    expect(captureApi.listItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-9' })
+  })
+
+  it('refreshes the list unscoped when the caller supplies no scope', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.batchTriage).mockResolvedValue({
+      total: 1,
+      succeeded: 1,
+      failed: 0,
+      results: [{ itemId: 'c1', success: true }],
+    })
+    vi.mocked(captureApi.listItems).mockResolvedValue([])
+
+    await store.batchTriage(['c1'], 'ignore')
+
+    expect(captureApi.listItems).toHaveBeenCalledWith(undefined)
+  })
+
   it('reports partial batch failures with error toast', async () => {
     const store = useCaptureStore()
     vi.mocked(captureApi.batchTriage).mockResolvedValue({

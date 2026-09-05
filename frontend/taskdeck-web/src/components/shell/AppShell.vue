@@ -7,6 +7,7 @@ import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useViewportMode } from '../../composables/useViewportMode'
+import { provideShellKeyboardHelp } from '../../composables/useShellKeyboardHelp'
 import {
   APP_SHELL_SHORTCUT_BINDINGS,
   type AppShellShortcutBinding,
@@ -53,6 +54,14 @@ const isPaperPhone = computed(() => paperTheme.isOn && viewportMode.value === 'p
 const showCommandPalette = ref(false)
 const showKeyboardHelp = ref(false)
 const showCaptureModal = ref(false)
+
+// Routed views cannot emit across `<router-view>`, so the one help surface this
+// shell renders is reachable from inside them through this seam (#2007).
+provideShellKeyboardHelp({
+  open: () => {
+    showKeyboardHelp.value = true
+  },
+})
 
 // ── Capture modal ──
 
