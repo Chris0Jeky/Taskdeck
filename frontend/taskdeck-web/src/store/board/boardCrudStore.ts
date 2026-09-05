@@ -107,7 +107,14 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         helpers.handleApiError(e, 'Failed to fetch boards')
         throw e
       } finally {
-        state.loading.value = false
+        // Gated for the same reason the detail path gates its own loading
+        // write: by the time a superseded read settles, the flag belongs to
+        // the read that replaced it.  Clearing it here would drop the next
+        // session's skeleton and show that user an empty account until their
+        // own read resolves.
+        if (isCurrentListGeneration()) {
+          state.loading.value = false
+        }
       }
     })()
 
@@ -460,10 +467,13 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
    * Two generations are bumped rather than one because the list and the detail
    * read are separate lifecycles.  A bumped generation is what makes an
    * already-issued request safe: the response still arrives, finds its
-   * generation stale, and returns without writing state, a throttle stamp, or
-   * an error surface.  Clearing the state alone would not do it — a read that
-   * was in flight during the reset would land afterwards and repopulate the
-   * store with the previous account's boards.
+   * generation stale, and returns without writing board state, the loading
+   * flag, a throttle stamp, or an error surface.  The loading flag is in that
+   * list because it outlives the read that set it: once a newer read owns it,
+   * a superseded response clearing it would strand the newer read's view in an
+   * empty state.  Clearing the state alone would not do it — a read that was
+   * in flight during the reset would land afterwards and repopulate the store
+   * with the previous account's boards.
    */
   function resetForLogout() {
     boardListGeneration++

@@ -1168,6 +1168,63 @@ describe('boardCrudStore', () => {
       expect(state.boards.value).toEqual([])
     })
 
+    // A superseded read must not clear the loading flag a newer read owns.
+    // Otherwise BoardsListView drops its skeleton and shows the empty state to
+    // the next signed-in user until their own read resolves.
+    it('leaves a newer read loading when a superseded response resolves', async () => {
+      const supersededRead = createDeferred<Array<{ id: string; name: string }>>()
+      const nextSessionRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(supersededRead.promise)
+        .mockReturnValueOnce(nextSessionRead.promise)
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const previousSessionFetch = fetchBoards()
+      resetForLogout()
+      const nextSessionFetch = fetchBoards()
+      expect(state.loading.value).toBe(true)
+
+      supersededRead.resolve([{ id: 'previous-account-board', name: 'Private' }])
+      await expect(previousSessionFetch).resolves.toBeUndefined()
+
+      expect(state.loading.value).toBe(true)
+      expect(state.boards.value).toEqual([])
+
+      nextSessionRead.resolve([{ id: 'next-session-board', name: 'Next' }])
+      await expect(nextSessionFetch).resolves.toBeUndefined()
+
+      expect(state.boards.value).toEqual([{ id: 'next-session-board', name: 'Next' }])
+      expect(state.loading.value).toBe(false)
+    })
+
+    it('leaves a newer read loading when a superseded response rejects', async () => {
+      const supersededRead = createDeferred<Array<{ id: string; name: string }>>()
+      const nextSessionRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(supersededRead.promise)
+        .mockReturnValueOnce(nextSessionRead.promise)
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const previousSessionFetch = fetchBoards()
+      resetForLogout()
+      const nextSessionFetch = fetchBoards()
+      expect(state.loading.value).toBe(true)
+
+      supersededRead.reject(new Error('network error'))
+      await expect(previousSessionFetch).resolves.toBeUndefined()
+
+      expect(state.loading.value).toBe(true)
+      expect(state.boards.value).toEqual([])
+      expect(state.error.value).toBeNull()
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+
+      nextSessionRead.resolve([{ id: 'next-session-board', name: 'Next' }])
+      await expect(nextSessionFetch).resolves.toBeUndefined()
+
+      expect(state.boards.value).toEqual([{ id: 'next-session-board', name: 'Next' }])
+      expect(state.loading.value).toBe(false)
+    })
+
     it('aborts an active detail fetch and discards its late response', async () => {
       const board = createDeferred<{ id: string; name: string; columns: [] }>()
       mockBoardsApi.getBoard.mockReturnValueOnce(board.promise)
