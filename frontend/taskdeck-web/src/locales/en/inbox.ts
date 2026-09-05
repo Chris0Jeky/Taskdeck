@@ -126,6 +126,35 @@ export default {
       tooLong: 'This transcript is too long. Maximum length is {max} characters.',
     },
   },
+  // The Composer's own field chrome (#1871, the residual half of the #1870
+  // extraction). Its own namespace and not `capture.*`: that one is the shared
+  // capture vocabulary — receipts, draft restoration, the source radios the Nib
+  // shares — while these four labels exist only on the Composer's form.
+  //
+  // The four `*Aria` names keep their pre-extraction English BYTE FOR BYTE.
+  // `views/paper/PaperInboxView.spec.ts` and three Playwright specs select
+  // these controls by their accessible name, so editing the English here is a
+  // test change and not a copy change. That is also why `labelsAria` and
+  // `dueAria` do not yet repeat their visible eyebrow first the way
+  // `boardPicker.triageAria` does (WCAG 2.5.3, the PR #2675 pattern): closing
+  // that gap needs those selectors migrated to testids first.
+  //
+  // The placeholders stay placeholders — a hint about the shape of the value,
+  // never the name of the field, which is what the eyebrow and the accessible
+  // name are for.
+  composer: {
+    bodyLabel: 'Body',
+    bodyAria: 'Capture body',
+    bodyPlaceholder: 'The thought, in plain language…',
+    labelsLabel: 'Labels',
+    labelsAria: 'Add label',
+    labelsPlaceholder: 'add and press Enter',
+    dueLabel: 'Due (optional)',
+    dueAria: 'Due date',
+    // A statement about the product, not about this draft: attachments are not
+    // stored with a capture at all yet, so it never varies by row or state.
+    attachmentsUnavailable: 'Attachments are not saved with captures yet.',
+  },
   nib: {
     eyebrow: 'Quick capture · {shortcut}',
     destinationWithBoard: 'This capture lands in Inbox, linked to {board}, for triage.',
@@ -160,6 +189,22 @@ export default {
   // Read-only boards stay VISIBLE but disabled and annotated (#1836): silently
   // filtering them would leave a Viewer wondering where a board went.
   boardPicker: {
+    // The eyebrow above BOTH board selects — the Composer's and the triage
+    // row's — so the two pickers cannot drift apart in one locale (#1871).
+    label: 'Board',
+    // One visible label, two accessible names, because the two selects do
+    // different things: the Composer's chooses where a NEW capture will land,
+    // the triage one chooses a board for the capture already in the row.
+    //
+    // `composerAria` keeps its pre-extraction English exactly — see the note on
+    // `composer` above; it happens to already lead with the visible label.
+    // `triageAria` is free of external selectors, so it takes the full PR #2675
+    // shape: the visible label first, then what the control does (WCAG 2.5.3).
+    // The it/es forms mirror the English rather than expanding on it; Romance
+    // word order puts the head noun first in `composerAria`, which still leaves
+    // the visible label inside the accessible name.
+    composerAria: 'Board picker',
+    triageAria: 'Board: choose where this capture goes',
     noBoardOption: 'No board · land in inbox',
     selectPlaceholder: 'Select a board…',
     viewOnlyOption: '{name} · view-only',
@@ -170,6 +215,11 @@ export default {
   // the next step after a decision, so a decided row never reads like an
   // untouched one. `tag.*` separates a capture's SOURCE from its STATE.
   triage: {
+    // The capture list's region name (#1871). The heading beside it says WHICH
+    // captures are listed ("Today's captures", or the archive title in
+    // read-only mode); this names the region itself, so a landmark list reads
+    // one stable thing in both modes.
+    tableAria: 'Captured items',
     boardPick: {
       loading: 'Loading boards…',
       loadFailed: 'Boards could not be loaded. Check your connection, then try again.',

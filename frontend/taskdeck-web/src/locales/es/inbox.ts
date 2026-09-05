@@ -87,6 +87,22 @@ export default {
       tooLong: 'Esta transcripción es demasiado larga. La longitud máxima es de {max} caracteres.',
     },
   },
+  // Etiquetas de los campos del Composer (#1871). "Texto" para `body`: es el
+  // texto de la captura, igual que en `triage.edit.label`. "Fecha límite" es el
+  // término del glosario para una fecha de vencimiento, como en
+  // `triage.edit.metadata.dueDate`. El marcador de posición sigue en minúscula
+  // y no repite el nombre del campo.
+  composer: {
+    bodyLabel: 'Texto',
+    bodyAria: 'Texto de la captura',
+    bodyPlaceholder: 'La idea, en lenguaje sencillo…',
+    labelsLabel: 'Etiquetas',
+    labelsAria: 'Añadir etiqueta',
+    labelsPlaceholder: 'añade y pulsa Enter',
+    dueLabel: 'Fecha límite (opcional)',
+    dueAria: 'Fecha límite',
+    attachmentsUnavailable: 'Los archivos adjuntos aún no se guardan con las capturas.',
+  },
   nib: {
     eyebrow: 'Captura rapida · {shortcut}',
     destinationWithBoard: 'Esta captura llega al Inbox vinculada a {board} para el triage.',
@@ -116,12 +132,22 @@ export default {
     composer: 'Composer',
   },
   boardPicker: {
+    // `label` encabeza los dos selectores de tablero. `composerAria` sigue al
+    // inglés ("Board picker"): en español el sustantivo principal va primero y
+    // "tablero" queda igualmente dentro del nombre accesible. `triageAria`
+    // lleva la forma completa con la etiqueta visible delante (WCAG 2.5.3).
+    label: 'Tablero',
+    composerAria: 'Selector de tablero',
+    triageAria: 'Tablero: elige a dónde va esta captura',
     noBoardOption: 'Sin tablero · llega al Inbox',
     selectPlaceholder: 'Selecciona un tablero…',
     viewOnlyOption: '{name} · solo lectura',
     viewOnlyHint: 'Los tableros de solo lectura necesitan acceso de escritura antes de poder clasificar nada en ellos.',
   },
   triage: {
+    // Nombre de la región de la lista de capturas: dice qué contiene la
+    // región, no cuáles capturas, así que no cambia en modo de solo lectura.
+    tableAria: 'Elementos capturados',
     boardPick: {
       loading: 'Cargando tableros…',
       loadFailed: 'No se pudieron cargar los tableros. Comprueba la conexión y vuelve a intentarlo.',
