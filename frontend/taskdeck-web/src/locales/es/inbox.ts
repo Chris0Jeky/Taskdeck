@@ -90,17 +90,28 @@ export default {
   // Etiquetas de los campos del Composer (#1871). "Texto" para `body`: es el
   // texto de la captura, igual que en `triage.edit.label`. "Fecha límite" es el
   // término del glosario para una fecha de vencimiento, como en
-  // `triage.edit.metadata.dueDate`. El marcador de posición sigue en minúscula
-  // y no repite el nombre del campo.
+  // `triage.edit.metadata.dueDate`.
+  //
+  // Cada nombre accesible (`*Aria`) empieza por la etiqueta visible del campo y
+  // después dice qué hace el control (WCAG 2.5.3, el patrón de la PR #2675). Si
+  // se reescribe una etiqueta visible, hay que reescribir su nombre accesible:
+  // `PaperCaptureComposer.spec.ts` comprueba la relación, no solo las cadenas, y
+  // la comprueba también en español, así que romperla aquí pone el test en rojo.
+  //
+  // Los marcadores de posición siguen siendo marcadores: una pista sobre la
+  // FORMA del valor, nunca el nombre del campo, que es lo que aportan la
+  // etiqueta visible y el nombre accesible. `bodyPlaceholder` es una frase y va
+  // en mayúscula inicial a propósito; `labelsPlaceholder` es un fragmento que
+  // continúa el campo y va en minúscula.
   composer: {
     bodyLabel: 'Texto',
-    bodyAria: 'Texto de la captura',
+    bodyAria: 'Texto: escribe el contenido de esta captura',
     bodyPlaceholder: 'La idea, en lenguaje sencillo…',
     labelsLabel: 'Etiquetas',
-    labelsAria: 'Añadir etiqueta',
+    labelsAria: 'Etiquetas: escribe una etiqueta y pulsa Enter para añadirla',
     labelsPlaceholder: 'añade y pulsa Enter',
     dueLabel: 'Fecha límite (opcional)',
-    dueAria: 'Fecha límite',
+    dueAria: 'Fecha límite (opcional): elige cuándo vence esta captura',
     attachmentsUnavailable: 'Los archivos adjuntos aún no se guardan con las capturas.',
   },
   nib: {
@@ -132,12 +143,18 @@ export default {
     composer: 'Composer',
   },
   boardPicker: {
-    // `label` encabeza los dos selectores de tablero. `composerAria` sigue al
-    // inglés ("Board picker"): en español el sustantivo principal va primero y
-    // "tablero" queda igualmente dentro del nombre accesible. `triageAria`
-    // lleva la forma completa con la etiqueta visible delante (WCAG 2.5.3).
+    // `label` encabeza los dos selectores de tablero. Los dos nombres
+    // accesibles llevan la etiqueta visible delante (WCAG 2.5.3) y solo se
+    // distinguen por lo que dicen después.
+    //
+    // `composerAria` no puede decir que la captura LLEGUE al tablero elegido:
+    // toda captura llega al Inbox, y el tablero solo la VINCULA para que el
+    // triage proponga sobre él; nada llega al tablero sin aprobar y ejecutar
+    // (ADR-0003). Es lo mismo que dicen el pie del Composer y `nib.destination*`,
+    // así que este nombre dice "se vincula ... para el triage" y el de la fila
+    // conserva "a dónde va esta captura", que es lo que hace ese selector.
     label: 'Tablero',
-    composerAria: 'Selector de tablero',
+    composerAria: 'Tablero: elige a qué tablero se vincula esta captura para el triage',
     triageAria: 'Tablero: elige a dónde va esta captura',
     noBoardOption: 'Sin tablero · llega al Inbox',
     selectPlaceholder: 'Selecciona un tablero…',

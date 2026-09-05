@@ -87,17 +87,29 @@ export default {
   },
   // Etichette dei campi del Composer (#1871). "Testo" per `body`: è il testo
   // della cattura, come in `triage.edit.label`, e "Corpo" in italiano richiama
-  // il corpo di un messaggio, non un appunto. Il segnaposto resta un
-  // suggerimento in minuscolo e non ripete il nome del campo.
+  // il corpo di un messaggio, non un appunto.
+  //
+  // Ogni nome accessibile (`*Aria`) inizia con l'etichetta visibile del campo e
+  // poi dice cosa fa il controllo (WCAG 2.5.3, il modello della PR #2675). Se
+  // si riscrive un'etichetta visibile va riscritto anche il suo nome
+  // accessibile: `PaperCaptureComposer.spec.ts` verifica la relazione, non solo
+  // le stringhe, e la verifica anche in italiano, quindi romperla qui fa
+  // fallire il test.
+  //
+  // I segnaposto restano segnaposto: un suggerimento sulla FORMA del valore,
+  // mai il nome del campo, che è quello che danno l'etichetta visibile e il
+  // nome accessibile. `bodyPlaceholder` è una frase e ha l'iniziale maiuscola
+  // per scelta; `labelsPlaceholder` è un frammento che prosegue il campo e resta
+  // in minuscolo.
   composer: {
     bodyLabel: 'Testo',
-    bodyAria: 'Testo della cattura',
+    bodyAria: 'Testo: scrivi il contenuto di questa cattura',
     bodyPlaceholder: 'Il pensiero, in parole semplici…',
     labelsLabel: 'Etichette',
-    labelsAria: 'Aggiungi etichetta',
+    labelsAria: 'Etichette: scrivi un’etichetta e premi Enter per aggiungerla',
     labelsPlaceholder: 'aggiungi e premi Enter',
     dueLabel: 'Scadenza (facoltativa)',
-    dueAria: 'Data di scadenza',
+    dueAria: 'Scadenza (facoltativa): scegli quando scade questa cattura',
     attachmentsUnavailable: 'Gli allegati non vengono ancora salvati con le catture.',
   },
   nib: {
@@ -129,12 +141,19 @@ export default {
     composer: 'Composer',
   },
   boardPicker: {
-    // `label` sta sopra entrambi i selettori di bacheca. `composerAria` segue
-    // l'inglese ("Board picker"): in italiano il nome della testa va prima, e
-    // "bacheca" resta comunque dentro il nome accessibile. `triageAria` porta
-    // per intero la forma etichetta-visibile-per-prima (WCAG 2.5.3).
+    // `label` sta sopra entrambi i selettori di bacheca. Entrambi i nomi
+    // accessibili portano l'etichetta visibile per prima (WCAG 2.5.3) e si
+    // distinguono solo per quello che dicono dopo.
+    //
+    // `composerAria` non può dire che la cattura ARRIVI sulla bacheca scelta:
+    // ogni cattura arriva nell'Inbox, e la bacheca la COLLEGA soltanto perché il
+    // triage possa proporre su di essa; niente arriva alla bacheca senza
+    // approvare ed eseguire (ADR-0003). È quello che dicono il piè di pagina del
+    // Composer e `nib.destination*`, quindi questo nome dice "collegare ... per
+    // il triage" e quello della riga conserva "dove va questa cattura", che è il
+    // compito di quel selettore.
     label: 'Bacheca',
-    composerAria: 'Selettore bacheca',
+    composerAria: 'Bacheca: scegli a quale bacheca collegare questa cattura per il triage',
     triageAria: 'Bacheca: scegli dove va questa cattura',
     noBoardOption: 'Nessuna bacheca · arriva nell’Inbox',
     selectPlaceholder: 'Seleziona una bacheca…',
