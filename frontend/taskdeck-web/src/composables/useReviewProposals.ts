@@ -65,7 +65,26 @@ export const REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD = 3
  * intentionally keeps its historical `Promise<void>` contract for action
  * composables that only need a best-effort refresh.
  */
-export type ProposalLoadOutcome = 'landed' | 'failed' | 'superseded'
+export type ProposalLoadOutcome = 'landed' | 'failed' | 'superseded' | 'aborted'
+
+/**
+ * Cancellation and retry controls for an explicit queue read whose caller owns
+ * a deadline.
+ *
+ * `aborted` is reported instead of `failed` so a caller that cancelled its own
+ * read never mistakes it for a server or transport failure: only the caller
+ * knows why it aborted, and only the caller can tell a deadline apart from any
+ * other cancellation. The composable deliberately makes no such judgement.
+ *
+ * `skipRetry` matters for a deadline-bounded caller: the shared interceptor
+ * retries an idempotent read up to `MAX_RETRIES` times with doubling backoff,
+ * which can consume most of a caller's budget and turn a recoverable failure
+ * into a reported timeout. A bounded caller wants the first honest answer.
+ */
+export interface ProposalLoadOptions {
+  signal?: AbortSignal
+  skipRetry?: boolean
+}
 
 /**
  * Decision rules shared by every review surface (Paper deep-review and the
@@ -448,7 +467,7 @@ export function useReviewProposals() {
     }
   }
 
-  async function openProposalFromHash() {
+  async function openProposalFromHash(options?: ProposalLoadOptions) {
     if (proposalsLoading.value) return
     const proposalId = getProposalIdFromHash(route.hash)
     if (!proposalId) {
@@ -473,7 +492,12 @@ export function useReviewProposals() {
     }
 
     try {
-      const fetchedProposal = await automationApi.getProposal(proposalId)
+      const fetchedProposal = options
+        ? await automationApi.getProposal(proposalId, {
+            signal: options.signal,
+            skipRetry: options.skipRetry,
+          })
+        : await automationApi.getProposal(proposalId)
       if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
       // A route lookup may canonicalize GUID hex casing, but it may not return a
       // different record. Retain the hash as unavailable instead of upserting a
@@ -490,6 +514,9 @@ export function useReviewProposals() {
       await nextTick()
       await scrollToProposalFromHash()
     } catch (e: unknown) {
+      // A caller-owned cancellation is not a lookup failure: the deep-link read
+      // was cut short deliberately and its caller reports the real outcome.
+      if (options?.signal?.aborted) return
       if (!proposalIdsEqual(getProposalIdFromHash(route.hash), proposalId)) return
       if (isHttpNotFound(e)) {
         unavailableProposalId.value = proposalId
@@ -511,18 +538,33 @@ export function useReviewProposals() {
     await safeReplace({ name: 'workspace-review', query: route.query })
   }
 
-  async function loadProposalsWithOutcome(): Promise<ProposalLoadOutcome> {
+  async function loadProposalsWithOutcome(
+    options?: ProposalLoadOptions,
+  ): Promise<ProposalLoadOutcome> {
+    const signal = options?.signal
+    if (signal?.aborted) return 'aborted'
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
     let outcome: ProposalLoadOutcome = 'landed'
 
     try {
       proposalsLoading.value = true
-      const loadedProposals = await automationApi.getProposals({
+      const filters = {
         limit: 200,
         boardId: activeBoardFilter.value || undefined,
-      })
+      }
+      // The second argument is forwarded ONLY when a caller supplied options,
+      // so every existing call site keeps its exact single-argument shape.
+      const loadedProposals = options
+        ? await automationApi.getProposals(filters, {
+            signal,
+            skipRetry: options.skipRetry,
+          })
+        : await automationApi.getProposals(filters)
       if (requestId !== latestProposalLoadRequestId) return 'superseded'
+      // An answer the caller stopped waiting for must not become the rendered
+      // authority behind its back, and proves nothing about queue freshness.
+      if (signal?.aborted) return 'aborted'
       proposals.value = loadedProposals
       // An explicit successful load is as trustworthy as a successful poll and
       // clears any older degraded indication without changing load semantics.
@@ -534,6 +576,10 @@ export function useReviewProposals() {
       if (accessWasRevoked) resumeQueueRefreshAfterPermissionRecovery()
     } catch (e: unknown) {
       if (requestId !== latestProposalLoadRequestId) return 'superseded'
+      // Cancellation by the caller's own deadline is not a queue failure. It
+      // must not raise the failure toast, and it must not be reported as
+      // `failed`, or the caller would blame the server for its own timeout.
+      if (signal?.aborted) return 'aborted'
       toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
       outcome = 'failed'
     } finally {
@@ -541,10 +587,12 @@ export function useReviewProposals() {
       reviewLoadPerf.end()
     }
 
+    if (signal?.aborted) return 'aborted'
     if (requestId === latestProposalLoadRequestId) {
-      await openProposalFromHash()
+      await openProposalFromHash(options)
     }
     if (requestId !== latestProposalLoadRequestId) return 'superseded'
+    if (signal?.aborted) return 'aborted'
     return outcome
   }
 

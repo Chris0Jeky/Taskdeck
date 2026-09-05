@@ -705,6 +705,8 @@ export default {
       'Review refreshed after your save attempt. Check the current evidence, then choose the action again.',
     revisionReviewUnavailable:
       'Review evidence could not be refreshed. No decision was made. Choose the current action again to retry.',
+    revisionReviewTimedOut:
+      'Refreshing the review took too long, so it was stopped. No decision was made. Choose the current action again to retry.',
     notRejectable: 'This proposal can no longer be rejected. Refresh review to see current status.',
     notEditable: 'This proposal can no longer be edited.',
     notDeferrable: 'This proposal can no longer be deferred.',
