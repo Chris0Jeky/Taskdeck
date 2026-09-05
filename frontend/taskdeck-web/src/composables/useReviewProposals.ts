@@ -173,6 +173,11 @@ function isForbiddenError(err: unknown): boolean {
  * be a routing defect affecting the whole surface rather than one target, and
  * "gone" is already what a 404 says here. Neither is emitted by this route, so
  * giving them pin-level meaning would be guessing.
+ *
+ * Sound for the BY-ID leg only, and it must not be moved to the outer catch: a
+ * 400 from the LIST read means the query was rejected (a malformed `boardId`,
+ * say), which says nothing about any pinned target and would silently downgrade
+ * a whole-queue failure into a pin-level outcome.
  */
 function isMalformedTargetError(err: unknown): boolean {
   if (typeof err !== 'object' || err === null) return false
@@ -210,9 +215,15 @@ export function useReviewProposals() {
 
   const proposals = ref<ApiProposal[]>([])
   const proposalsLoading = ref(false)
-  // A deep link is an explicit request, not a selection preference. Preserve a
-  // confirmed 404 separately so Paper can say what happened instead of
-  // presenting the ordinary empty queue or a different actionable proposal.
+  // A deep link is an explicit request, not a selection preference. Hold the
+  // requested id separately whenever the server has settled its fate, so the
+  // surfaces can say what happened instead of presenting the ordinary empty
+  // queue or a different actionable proposal. Three outcomes reach it, all
+  // permanent facts about that one target rather than about the queue: a 404
+  // (no such proposal, or it is gone), a 403 on the by-id read (this reviewer
+  // may not see it), and a 400 (the id in the hash is not one the by-id route
+  // can bind). A wrong-identity or cross-board answer fails closed into it too.
+  // Explicit navigation is narrower on purpose and still marks only the 404.
   const unavailableProposalId = ref<string | null>(null)
   // Set when a background read is refused with 403 (board access revoked
   // mid-session). The surfaces swap the ordinary "Nothing waiting" empty state
