@@ -31,6 +31,16 @@ type DetailLoadOptions = {
   syncSummary?: boolean
   requestOptions?: CaptureReadOptions
   shouldCache?: () => boolean
+  /**
+   * Whether this read owns the store-wide `loadingDetail` flag (default true).
+   *
+   * That flag is what the open detail panel renders from: while it is set the
+   * panel body is replaced by a "Refreshing detail..." spinner and its Refresh
+   * Detail button is disabled. A background reconciliation of some OTHER
+   * capture must not do that to the detail the user is reading (#2304), so the
+   * quiet reads pass `false` and leave the flag to foreground loads.
+   */
+  trackLoading?: boolean
 }
 
 export const BATCH_TRIAGE_POLL_INTERVAL_MS = 3_000
@@ -102,9 +112,13 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   let latestListLoadRequestId = 0
-  let nextCaptureWriteGeneration = 0
+  // One monotonic clock for both guards below. A write records it to reject
+  // older reads; a summary records it so an older BACKGROUND list snapshot
+  // cannot regress a row that moved after that read began (#2301).
+  let nextCaptureGeneration = 0
   let latestListWriteGeneration = 0
   const latestDetailWriteGenerationById = new Map<string, number>()
+  const latestSummaryGenerationById = new Map<string, number>()
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -113,6 +127,10 @@ export const useCaptureStore = defineStore('capture', () => {
   const hasItems = computed(() => items.value.length > 0)
 
   function upsertSummary(summary: CaptureItemSummary) {
+    // Every per-item summary write — an explicit detail load, the single-item
+    // triage poll, an optimistic mutation — stamps the shared clock so a list
+    // read that started earlier cannot overwrite it with older status.
+    latestSummaryGenerationById.set(summary.id, ++nextCaptureGeneration)
     const existingIndex = items.value.findIndex((item) => item.id === summary.id)
     if (existingIndex >= 0) {
       items.value[existingIndex] = summary
@@ -135,7 +153,7 @@ export const useCaptureStore = defineStore('capture', () => {
    * callers, but they must not replace the newer mutation response.
    */
   function recordCaptureWrite(itemId: string, syncSummary: boolean) {
-    const generation = ++nextCaptureWriteGeneration
+    const generation = ++nextCaptureGeneration
     latestDetailWriteGenerationById.set(itemId, generation)
     if (syncSummary) {
       latestListWriteGeneration = generation
@@ -144,6 +162,30 @@ export const useCaptureStore = defineStore('capture', () => {
 
   function detailWriteGeneration(itemId: string): number {
     return latestDetailWriteGenerationById.get(itemId) ?? 0
+  }
+
+  /**
+   * Apply a BACKGROUND list snapshot without regressing rows that moved after
+   * the read began (#2301).
+   *
+   * `latestListWriteGeneration` rejects a whole snapshot that a mutation has
+   * outdated, but the single-item triage poll and an explicit detail load are
+   * READS: they write a fresher summary through `upsertSummary` without
+   * recording a capture write, so a slower batch-list response landing after
+   * them used to put the row back to `Triaging`. The snapshot stays the
+   * authority for membership and order — the list still owns scope and the
+   * newest-first cap — and only a row whose own summary is newer than this
+   * read keeps its local value.
+   */
+  function applyBackgroundListSnapshot(
+    loadedItems: CaptureItemSummary[],
+    observedGeneration: number,
+  ) {
+    const currentById = new Map(items.value.map((item) => [item.id, item]))
+    items.value = loadedItems.map((loaded) => {
+      if ((latestSummaryGenerationById.get(loaded.id) ?? 0) <= observedGeneration) return loaded
+      return currentById.get(loaded.id) ?? loaded
+    })
   }
 
   async function fetchItems(query?: CaptureListQuery) {
@@ -190,6 +232,7 @@ export const useCaptureStore = defineStore('capture', () => {
       syncSummary = true,
       requestOptions,
       shouldCache = () => true,
+      trackLoading = true,
     } = options
 
     if (!forceRefresh && detailById.value[itemId]) {
@@ -207,7 +250,9 @@ export const useCaptureStore = defineStore('capture', () => {
 
     const observedDetailWriteGeneration = detailWriteGeneration(itemId)
     try {
-      loadingDetail.value = true
+      if (trackLoading) {
+        loadingDetail.value = true
+      }
       if (recordError) {
         detailError.value = null
       }
@@ -228,7 +273,9 @@ export const useCaptureStore = defineStore('capture', () => {
       }
       throw e
     } finally {
-      loadingDetail.value = false
+      if (trackLoading) {
+        loadingDetail.value = false
+      }
     }
   }
 
@@ -541,6 +588,10 @@ export const useCaptureStore = defineStore('capture', () => {
             // endpoint lags it briefly, do not regress the row back to Triaging
             // or reinsert an item that fell beyond the visible list cap.
             syncSummary: false,
+            // Quiet in every respect: this reconciliation runs for items the
+            // user may not have open, so it must not take the panel-wide
+            // loading flag away from whatever detail IS open (#2304).
+            trackLoading: false,
             requestOptions: options.requestOptions,
             shouldCache: isCurrent,
           })
@@ -562,7 +613,49 @@ export const useCaptureStore = defineStore('capture', () => {
     let deadlineTimerId: ReturnType<typeof setTimeout> | null = null
     let activeRequest: AbortController | null = null
     const refreshedDetailIds = new Set<string>()
+    const countedTerminalIds = new Set<string>()
     let observedPostEnqueueList = false
+
+    /**
+     * A tracked item whose terminal outcome this poll has actually observed
+     * since the batch was enqueued — the same truth `isComplete` reads, one id
+     * at a time. Cached pre-batch state never qualifies.
+     */
+    function isObservedTerminal(itemId: string): boolean {
+      const summary = items.value.find((item) => item.id === itemId)
+      if (summary) {
+        return observedPostEnqueueList && isTriageTerminalStatus(summary.status)
+      }
+      const detail = detailById.value[itemId]
+      return Boolean(
+        detail &&
+        refreshedDetailIds.has(itemId) &&
+        isTriageTerminalStatus(detail.status),
+      )
+    }
+
+    /**
+     * Move the badges for outcomes this poll observed but has not counted yet
+     * (#2303).
+     *
+     * The count is `New + Failed`, so a single item finishing changes it —
+     * waiting for the whole batch left the sidebar and Home stale for up to a
+     * minute whenever one item lagged, and stale forever when the deadline
+     * stopped the poll first. The counted set makes this idempotent: an
+     * unchanged snapshot notifies nobody.
+     */
+    function refreshCountsForNewTerminalOutcomes() {
+      let observedNewOutcome = false
+      for (const id of trackedIds) {
+        if (countedTerminalIds.has(id)) continue
+        if (!isObservedTerminal(id)) continue
+        countedTerminalIds.add(id)
+        observedNewOutcome = true
+      }
+      if (observedNewOutcome) {
+        notifyTriageCountChanged()
+      }
+    }
 
     function stop() {
       if (stopped) return
@@ -583,6 +676,9 @@ export const useCaptureStore = defineStore('capture', () => {
 
     function stopAtDeadline() {
       if (stopped) return
+      // An outcome this poll already observed still moved the workload count,
+      // even when the tick that saw it was aborted here before reconciling.
+      refreshCountsForNewTerminalOutcomes()
       // The batch write already succeeded. A deadline only means automatic
       // checking stopped; the server-side triage may still be running.
       if (!isComplete()) {
@@ -632,6 +728,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
       const observedListLoadRequestId = latestListLoadRequestId
       const observedListWriteGeneration = latestListWriteGeneration
+      const observedSummaryGeneration = nextCaptureGeneration
       const controller = new AbortController()
       activeRequest = controller
       const requestOptions = { signal: controller.signal, skipRetry: true }
@@ -645,7 +742,16 @@ export const useCaptureStore = defineStore('capture', () => {
       try {
         const loadedItems = await captureApi.listItems(query, requestOptions)
         if (!isCurrent()) return
-        items.value = loadedItems
+        applyBackgroundListSnapshot(loadedItems, observedSummaryGeneration)
+        // A foreground read failure hides every row behind its message, so a
+        // batch whose immediate post-POST refresh exhausted its retries left
+        // the inbox looking empty-and-broken until the user pressed Retry
+        // (#2305). This accepted snapshot is proof the same list is readable
+        // again, and it is the rows now on screen. Only this success path
+        // clears the error: an aborted, superseded (newer explicit load or
+        // newer capture write), 401 or 403 response fails `isCurrent()` or
+        // lands in the catch below and leaves the foreground error standing.
+        listError.value = null
         observedPostEnqueueList = true
         await refreshTerminalDetails(trackedIds, {
           requestOptions,
@@ -653,8 +759,8 @@ export const useCaptureStore = defineStore('capture', () => {
           onRefreshed: (id) => refreshedDetailIds.add(id),
         })
         if (!isCurrent()) return
+        refreshCountsForNewTerminalOutcomes()
         if (isComplete()) {
-          notifyTriageCountChanged()
           stop()
           return
         }

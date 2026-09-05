@@ -93,7 +93,12 @@ internal static class CliFirstRunBootstrapper
         return Path.Combine(directory, LocalConfigFileName);
     }
 
-    private static string ResolveDataDirectory(string connectionString)
+    /// <summary>
+    /// Resolves the directory that holds the CLI's SQLite database. Shared with
+    /// <see cref="CliFailureSink"/> so the diagnostic records land next to the data they describe.
+    /// Falls back to the current working directory when the data source is not a file path.
+    /// </summary>
+    internal static string ResolveDataDirectory(string connectionString)
     {
         var dataSource = ExtractDataSource(connectionString);
         if (string.IsNullOrWhiteSpace(dataSource))
