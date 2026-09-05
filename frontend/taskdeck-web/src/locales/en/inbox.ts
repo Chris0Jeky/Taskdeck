@@ -246,6 +246,26 @@ export default {
       state: 'State: {label}. Where this capture stands right now.',
       source: 'Source: {label}. How this capture arrived — not a state.',
     },
+    // The fate of an unsaved correction whose capture left the list (#1999
+    // item 3) — a board-filter change, a refresh that no longer returns the
+    // row, or the switch into archived history.
+    //
+    // These are RECEIPTS, not warnings: by the time one renders the decision
+    // has already been taken, so each says what happened to the correction and
+    // where it now is. `{capture}` is the row's own excerpt, so the sentence
+    // names the same thing the list did.
+    //
+    // `discarded` is the only sentence about a loss, and it is the only case
+    // where one is possible: the capture came back in a state this surface
+    // cannot edit, so there is nowhere for the correction to go. It states the
+    // status that closed the door rather than leaving the drop unexplained.
+    draft: {
+      kept: 'The unsaved correction to “{capture}” was not lost. It is held here and comes back with that capture when it returns to this list. Nothing was saved.',
+      restored: 'The unsaved correction to “{capture}” is back in the editor, over the capture text as it stands now. Save it or cancel as usual.',
+      blocked: 'The unsaved correction to “{capture}” is still held. Another capture is open for editing — finish that one, then choose Edit capture on this row to get the correction back.',
+      discarded: 'The unsaved correction to “{capture}” was dropped: the capture is now {status}, and its text can no longer be edited here. Nothing was saved.',
+      dismiss: 'Dismiss these notes',
+    },
     // Pre-triage text correction (GH-1951) — the Legacy detail panel's
     // "Edit Text" affordance, ported to the Paper row.
     //

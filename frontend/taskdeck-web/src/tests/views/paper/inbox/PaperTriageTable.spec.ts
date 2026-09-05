@@ -1104,13 +1104,212 @@ describe('PaperTriageTable', () => {
     expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeDefined()
   })
 
-  it('closes a stale editor when its row leaves the list', async () => {
+  // --- draft fate when the edited row leaves the list (#1999 item 3) --------
+
+  /**
+   * Until now this closed the editor and destroyed the unsaved correction
+   * WITHOUT a word: switching the Inbox board filter replaced the list, the
+   * edited row was not in the replacement, and the `items` watcher cleared
+   * `editItemId`. The draft went with the unmounted child. That was pinned as
+   * intended; the pin is replaced here by preserve-and-announce.
+   *
+   * The list replacement below IS the board-filter change as this component
+   * sees it: `useInboxOrchestrator`'s `activeBoardId` watcher reloads the
+   * inbox for the new scope and a new `items` array arrives. A same-scope
+   * refresh that drops the row reaches the table through exactly the same
+   * prop, which is why one case covers both.
+   */
+  async function openEditorAndType(
+    wrapper: ReturnType<typeof mount>,
+    rowIndex: number,
+    text: string,
+  ) {
+    await wrapper.findAll('button[data-action="edit"]')[rowIndex].trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue(text)
+    return text
+  }
+
+  it('keeps an unsaved correction and names the capture when its row leaves the list', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction the filter change must not eat')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    // The editor still closes — the row it belongs to is gone.
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+
+    const notices = wrapper.get('[data-testid="capture-draft-notices"]')
+    expect(notices.attributes('role')).toBe('status')
+    const kept = notices.get('[data-notice="kept"]')
+    // Named by the same excerpt the row shows, so the user knows WHICH capture.
+    expect(kept.text()).toContain('First excerpt')
+    expect(kept.text()).toContain('comes back')
+
+    // Nothing was written anywhere: this is component state, not a save.
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+    expect(wrapper.emitted('accept')).toBeUndefined()
+    expect(wrapper.emitted('keep')).toBeUndefined()
+    expect(wrapper.emitted('reject')).toBeUndefined()
+    expect(typed.length).toBeGreaterThan(0)
+  })
+
+  it('says nothing and keeps nothing when the row leaves with an untouched editor', async () => {
+    // The receipt must describe a real loss. An editor that was opened and not
+    // typed into has no correction to keep, and announcing one would be noise.
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(true)
 
     await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-draft-notices"]').exists()).toBe(false)
+  })
+
+  it('restores the kept correction when the capture returns to the list', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'the correction that has to survive the round trip')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    const rows = wrapper.findAll('.paper-triage__row')
+    expect(rows[0].find('[data-testid="capture-edit"]').exists()).toBe(true)
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+    expect(wrapper.get('[data-testid="capture-draft-notices"]').get('[data-notice="restored"]').text())
+      .toContain('First excerpt')
+    // The server's current text is re-read on the way back in, so the draft is
+    // measured against what the capture says NOW, not what it said before.
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(2)
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('refuses a second editor when the capture returns, and keeps the correction', async () => {
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'New' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction waiting for its row')
+
+    // capture-1 leaves; its correction is kept.
+    await wrapper.setProps({ items: items.slice(1) })
+    await flushPromises()
+
+    // The user starts editing the row that stayed, then capture-1 comes back.
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    await wrapper.setProps({ items })
+    await flushPromises()
+
+    // One editor, on capture-2 — the open-editor gate is not broken by a return.
+    const rows = wrapper.findAll('.paper-triage__row')
+    expect(wrapper.findAll('[data-testid="capture-edit"]')).toHaveLength(1)
+    expect(rows[1].find('[data-testid="capture-edit"]').exists()).toBe(true)
+    expect(rows[0].find('[data-testid="capture-edit"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="capture-draft-notices"]').get('[data-notice="blocked"]').text())
+      .toContain('First excerpt')
+
+    // Still kept: closing the open editor and asking for capture-1 brings it back.
+    await wrapper.get('button[data-action="edit-cancel"]').trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('drops a kept correction with a stated reason once the capture is no longer editable', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction for a capture that moved on')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    // capture-1 comes back Triaged: the surface can no longer edit it, so the
+    // correction has nowhere to go and is dropped — with a receipt.
+    const triaged = makeItems()
+    triaged[0] = { ...triaged[0], status: 'Triaged' }
+    await wrapper.setProps({ items: triaged })
+    await flushPromises()
+
+    const discarded = wrapper.get('[data-testid="capture-draft-notices"]').get('[data-notice="discarded"]')
+    expect(discarded.text()).toContain('First excerpt')
+    expect(discarded.text()).toContain('Triaged')
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+
+    // And it is really gone: an editable capture-1 later opens on server text.
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe('First excerpt in full')
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('does not drop a kept correction merely because the list changed again', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction that outlives two filter changes')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: [] })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('keeps the correction when the list switches to archived history', async () => {
+    // Entering read-only history clears the editor through its own watcher, so
+    // it is a second door onto the same silent loss.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction interrupted by the archive')
+
+    await wrapper.setProps({ readOnly: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="capture-draft-notices"]').get('[data-notice="kept"]').text())
+      .toContain('First excerpt')
+  })
+
+  it('lets the reader dismiss the draft receipt', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction whose receipt has been read')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    await wrapper.get('button[data-action="dismiss-draft-notice"]').trigger('click')
+    expect(wrapper.find('[data-testid="capture-draft-notices"]').exists()).toBe(false)
+  })
+
+  it('forgets the correction when the user cancels the restored edit', async () => {
+    // Cancel still means cancel: the kept copy is not a second life for text
+    // the user has explicitly abandoned.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction the user changed their mind about')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    await wrapper.get('button[data-action="edit-cancel"]').trigger('click')
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
     await flushPromises()
 
     expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)

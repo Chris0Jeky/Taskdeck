@@ -171,6 +171,21 @@ export default {
       state: 'Stato: {label}. Il punto in cui si trova ora questa cattura.',
       source: 'Origine: {label}. Come è arrivata questa cattura — non è uno stato.',
     },
+    // Destino di una correzione non salvata la cui cattura esce dall'elenco
+    // (#1999, punto 3): un cambio del filtro bacheca, un aggiornamento che non
+    // restituisce più la riga, oppure il passaggio allo storico in sola
+    // lettura.
+    //
+    // Sono RICEVUTE, non avvisi: quando compaiono la decisione è già presa, e
+    // ognuna dice che fine ha fatto la correzione e dov'è adesso.
+    // `{capture}` è l'estratto della riga stessa.
+    draft: {
+      kept: 'La correzione non salvata di “{capture}” non è andata persa. Resta conservata qui e torna con quella cattura quando ricompare in questo elenco. Non è stato salvato nulla.',
+      restored: 'La correzione non salvata di “{capture}” è di nuovo nell\'editor, sopra il testo che la cattura ha ora. Salvala o annulla come sempre.',
+      blocked: 'La correzione non salvata di “{capture}” resta conservata. Un\'altra cattura è aperta in modifica: concludi quella, poi premi Modifica cattura su questa riga per riprenderla.',
+      discarded: 'La correzione non salvata di “{capture}” è stata scartata: la cattura ora è {status} e il suo testo non è più modificabile qui. Non è stato salvato nulla.',
+      dismiss: 'Chiudi queste note',
+    },
     // Correzione del testo prima dello smistamento (GH-1951).
     //
     // `blocked.notEditable` dichiara il FATTO, non la causa: il server rifiuta

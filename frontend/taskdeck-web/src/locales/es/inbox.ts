@@ -174,6 +174,20 @@ export default {
       state: 'Estado: {label}. Dónde está ahora mismo esta captura.',
       source: 'Origen: {label}. Cómo llegó esta captura — no es un estado.',
     },
+    // Destino de una corrección sin guardar cuya captura sale de la lista
+    // (#1999, punto 3): un cambio del filtro de tablero, una recarga que ya no
+    // devuelve la fila, o el paso al historial de solo lectura.
+    //
+    // Son RECIBOS, no avisos: cuando se muestran la decisión ya está tomada,
+    // así que cada uno dice qué pasó con la corrección y dónde está ahora.
+    // `{capture}` es el extracto de la propia fila.
+    draft: {
+      kept: 'La corrección sin guardar de “{capture}” no se ha perdido. Se conserva aquí y vuelve con esa captura cuando reaparezca en esta lista. No se guardó nada.',
+      restored: 'La corrección sin guardar de “{capture}” vuelve a estar en el editor, sobre el texto que la captura tiene ahora. Guárdala o cancela como siempre.',
+      blocked: 'La corrección sin guardar de “{capture}” sigue conservada. Otra captura está abierta para editar: termina esa y luego pulsa Editar captura en esta fila para recuperarla.',
+      discarded: 'La corrección sin guardar de “{capture}” se descartó: la captura ahora está {status} y su texto ya no se puede editar aquí. No se guardó nada.',
+      dismiss: 'Descartar estos avisos',
+    },
     // Corrección del texto antes de clasificar (GH-1951).
     //
     // `blocked.notEditable` enuncia el HECHO, no la causa: el servidor rechaza
