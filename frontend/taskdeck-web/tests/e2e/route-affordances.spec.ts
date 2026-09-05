@@ -53,6 +53,10 @@
  * A `response` row's wait is armed BEFORE the act and its rejection is parked
  * immediately (see `activate`), so a control that never becomes actionable
  * reports its own actionability failure rather than an unhandled rejection.
+ * The mount reads those routes consume first are armed before `page.goto` for
+ * the same reason and parked the same way (see `readOnMount`), so a `goto` that
+ * throws reports its own failure instead of trailing a stray 30 s
+ * `waitForResponse` rejection that lands on the worker with no test to own it.
  *
  * COMPLETENESS. Every block ends with `assertBlockCompleted`, which proves the
  * declared `WALK_PLAN` still names exactly the inventory's `activate: true` and
@@ -69,7 +73,7 @@
  * run summary for four passing blocks is what closes that.
  */
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
@@ -345,6 +349,18 @@ async function expectConsequence(
       return
 
     case 'textChangedFrom':
+      // THE ONLY NEGATED MATCHER IN THIS SWITCH, AND IT IS NOT VACUOUS ON A
+      // MISSING NODE. `expect(locator).not.toHaveText(x)` FAILS when the
+      // locator resolves to zero elements — it does not quietly pass the way
+      // `not.toBeVisible()` does. Playwright special-cases only
+      // visible/hidden/attached/detached/in-viewport and the array expressions
+      // for a missing node; `to.have.text` falls through to "not satisfied
+      // yet", polls to the timeout and reports `element(s) not found`.
+      // Confirmed against Playwright 1.62.1; the code references and the
+      // chromium probe are recorded on the `textChangedFrom` kind in
+      // `support/routeAffordanceInventory.ts`. So this needs no `toHaveCount`
+      // companion, and `calendar.previous-month` proves its own move rather
+      // than leaning on `calendar.next-month` one row later.
       await expect(
         scope.locator(consequence.selector).first(),
         `${id} must move ${consequence.selector} off '${consequence.from}'`,
@@ -460,6 +476,16 @@ async function assertReachableButNotActivated(
   const target = locate(page, affordance.selector, context)
   await expect(target, `${id} (${affordance.source}) must be present`).toBeVisible()
   await expectConsequence(page, page, id, affordance.consequence, context)
+  // THE TYPE IS THE ENFORCEMENT; THIS READ CANNOT TAKE ITS FALSE BRANCH.
+  // `AffordanceStatus`'s guarded variant declares `assertEnabled: true` as a
+  // REQUIRED LITERAL, so no row reaching here can have it false or absent and
+  // the `else` is unreachable at runtime. It is kept as belt-and-braces: it
+  // documents at the point of use that the enabled check is conditional on the
+  // flag, and it is what starts working if the field is ever widened to
+  // `boolean`. Read it as "the type already guaranteed this", not as a choice
+  // rows make. The guard's matching read (assertion 8 in
+  // `src/tests/guards/routeAffordanceCoverage.spec.ts`) is dead for the same
+  // reason and says so there.
   if (affordance.status.assertEnabled) {
     await expect(
       target,
@@ -467,6 +493,43 @@ async function assertReachableButNotActivated(
     ).toBeEnabled()
   }
   guardedIds.add(id)
+}
+
+/**
+ * Navigate to a route and consume the read it issues on MOUNT.
+ *
+ * WHY THE MOUNT READ IS CONSUMED AT ALL. Four routes here (calendar, metrics,
+ * notifications, home) fetch on mount, and three of them own `response` rows
+ * waiting on the SAME endpoint. A wait armed after navigation could be settled
+ * by the mount's own request, so a dead control would still pass. Awaiting the
+ * mount read here takes it off the wire before any row arms its own wait.
+ *
+ * WHY THE OUTCOME IS PARKED. The wait must be armed BEFORE `page.goto` — that
+ * is the whole point, the response can arrive during the navigation — but a
+ * `goto` that throws would then leave the `waitForResponse` promise with
+ * nothing awaiting it, and its 30 s default rejection would surface later as an
+ * unhandled rejection attributed to the worker rather than as the navigation
+ * failure that actually happened. Parking the outcome the moment it is armed,
+ * exactly as `activate` does for row waits, keeps the navigation's own error
+ * first while still failing on a mount read that never arrives. The success
+ * path is unchanged: armed before, awaited after, asserted 2xx.
+ */
+async function readOnMount(
+  page: Page,
+  label: string,
+  matches: (response: Response) => boolean,
+  navigate: () => Promise<unknown>,
+): Promise<void> {
+  const settledRead = page.waitForResponse(matches).then(
+    (response) => ({ settled: 'fulfilled' as const, response }),
+    (reason: unknown) => ({ settled: 'rejected' as const, reason }),
+  )
+  await navigate()
+  const outcome = await settledRead
+  if (outcome.settled === 'rejected') {
+    throw outcome.reason instanceof Error ? outcome.reason : new Error(String(outcome.reason))
+  }
+  await assertOk(outcome.response, label)
 }
 
 function uniqueSeed(): string {
@@ -539,12 +602,13 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   // treatment as metrics and notifications: consume the mount read first. The
   // month label is then the independent half, declared as a postCondition on
   // both rows rather than asserted ad hoc here.
-  const mountCalendarRead = page.waitForResponse(
+  await readOnMount(
+    page,
+    'calendar read issued on mount',
     (response) =>
       response.request().method() === 'GET' && /\/api\/workspace\/calendar/.test(response.url()),
+    () => page.goto('/workspace/calendar'),
   )
-  await page.goto('/workspace/calendar')
-  await assertOk(await mountCalendarRead, 'calendar read issued on mount')
 
   const monthLabel = page.locator('.paper-calendar__month-label')
   await expect(monthLabel).toBeVisible()
@@ -563,13 +627,14 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   // mount read and a dead select would still pass. Two defences: consume the
   // mount read here, and pin the rows to the OTHER of the two boards this block
   // seeded, so the mount's URL can never match them.
-  const mountMetricsRead = page.waitForResponse(
+  await readOnMount(
+    page,
+    'metrics read issued on mount',
     (response) =>
       response.request().method() === 'GET'
       && /\/api\/metrics\/boards\/[a-f0-9-]+\?from=/.test(response.url()),
+    () => page.goto('/workspace/metrics'),
   )
-  await page.goto('/workspace/metrics')
-  await assertOk(await mountMetricsRead, 'metrics read issued on mount')
 
   const boardSelect = page.locator('#board-select')
   await expect(boardSelect, 'the board select must settle on its auto-selection first')
@@ -606,12 +671,13 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   // it first: only a genuinely new request can settle the rows below. Neither
   // row can carry a post-condition, because the filtered and unfiltered empty
   // states render identical copy for a user with no notifications.
-  const mountNotificationsRead = page.waitForResponse(
+  await readOnMount(
+    page,
+    'notifications read issued on mount',
     (response) =>
       response.request().method() === 'GET' && /\/api\/notifications(\?|$)/.test(response.url()),
+    () => page.goto('/workspace/notifications'),
   )
-  await page.goto('/workspace/notifications')
-  await assertOk(await mountNotificationsRead, 'notifications read issued on mount')
 
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
   await activate(page, 'notifications.refresh', context)
@@ -636,12 +702,13 @@ test('walks the Home quick capture and the Inbox triage affordances', async ({ p
   const captureText = `Route walk boardless capture ${seed}`
 
   // ── /workspace/home — await the summary read rather than sleeping ────────
-  const homeSummary = page.waitForResponse(
+  await readOnMount(
+    page,
+    'Home summary read on first paint',
     (response) =>
       response.request().method() === 'GET' && /\/api\/workspace\/home$/.test(response.url()),
+    () => page.goto('/workspace/home'),
   )
-  await page.goto('/workspace/home')
-  await assertOk(await homeSummary, 'Home summary read on first paint')
   await expect(page.getByTestId('paper-home')).toBeVisible()
 
   // The Home quick capture posts `boardId: null`, so it seeds the boardless
