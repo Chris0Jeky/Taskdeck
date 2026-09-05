@@ -8,8 +8,10 @@ import boardViewSource from '../../../views/BoardView.vue?raw'
 import {
   APP_SHELL_SHORTCUT_BINDINGS,
   formatShortcut,
+  KEYBOARD_HELP_SHORTCUT,
   PAPER_SHORTCUT_GROUPS,
   SHORTCUT_HANDLER_CONTRACTS,
+  strokeMatches,
   type ShortcutHandlerOwner,
 } from '../../../utils/keyboardShortcuts'
 
@@ -100,7 +102,49 @@ describe('PaperShortcutsOverlay', () => {
     expect(expectedRows.filter((row) => row.handlerOwner === 'app-shell').every(
       (row) => appShellIds.has(row.id),
     )).toBe(true)
-    expect(appShellSource).toContain('APP_SHELL_SHORTCUT_BINDINGS.find')
+  })
+
+  /**
+   * Replaces a `toContain('APP_SHELL_SHORTCUT_BINDINGS.find')` scan of the
+   * AppShell source (#1968). What that line was reaching for is that an
+   * app-shell row on this surface is a key the shell really dispatches, and a
+   * grep cannot see that. Running the shipped matcher over the stroke the row
+   * advertises can: a row whose declared stroke its own matcher rejects is
+   * exactly the dead affordance the ledger exists to prevent.
+   */
+  it('prints each app-shell row as the key the shell dispatches it from', () => {
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+
+    const printed = new Map(Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => [
+      row.dataset.shortcutId,
+      row.querySelector('.paper-shortcuts-overlay__row-kbd')?.textContent?.trim(),
+    ]))
+
+    const displayedAppShellBindings = APP_SHELL_SHORTCUT_BINDINGS
+      .filter((binding) => printed.has(binding.id))
+    expect(displayedAppShellBindings.length).toBeGreaterThan(0)
+
+    // Couples the chip the user reads to the ledger row the shell dispatches:
+    // change one side and this reddens. Asserting the stroke against an event
+    // built from that same stroke could not.
+    for (const binding of displayedAppShellBindings) {
+      expect({ id: binding.id, chip: printed.get(binding.id) })
+        .toEqual({ id: binding.id, chip: formatShortcut(binding.descriptor) })
+    }
+
+    // The overlay prints the help key in its footer rather than as a grouped
+    // row, and that key is the one the shell toggles this surface on. It has to
+    // survive the layouts that need Shift or AltGr to type it (#1968).
+    const root = teleportContent().querySelector('[data-paper-shortcuts]') as HTMLElement
+    expect(root.textContent).toContain(formatShortcut(KEYBOARD_HELP_SHORTCUT.descriptor))
+
+    const helpStroke = KEYBOARD_HELP_SHORTCUT.sequence[0]!
+    expect(strokeMatches(new KeyboardEvent('keydown', { key: '?', shiftKey: true }), helpStroke))
+      .toBe(true)
+    expect(strokeMatches(new KeyboardEvent('keydown', { key: '?', altKey: true }), helpStroke))
+      .toBe(true)
   })
 
   it('documents the implemented Paper Board navigation and movement commands', () => {

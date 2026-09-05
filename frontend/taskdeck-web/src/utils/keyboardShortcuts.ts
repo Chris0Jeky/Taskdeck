@@ -181,6 +181,56 @@ export function formatShortcut(
 }
 
 /**
+ * A stroke key the keyboard produces the same way whichever modifiers reach it.
+ * Letters are the case that needs the guard below: `Shift+H` arrives as `H`,
+ * which a case-insensitive comparison cannot tell apart from `h`.
+ */
+const LETTER_KEY = /^[a-z]$/i
+
+/**
+ * A printable character the LAYOUT produces, `?` being the one in the ledger.
+ * Which modifiers were held to reach it is a property of the layout, not of the
+ * shortcut: on a layout where `?` needs AltGr the browser reports `altKey`, and
+ * on Windows `ctrlKey` too, because AltGr is Ctrl+Alt there.
+ */
+function isLayoutProducedCharacter(key: string): boolean {
+  return key.length === 1 && !/[a-z0-9]/i.test(key)
+}
+
+/**
+ * Match one keydown against one canonical stroke.
+ *
+ * Shift: a stroke that declares `shift` is exact. A stroke that does not
+ * declare it requires Shift to be UP over a letter, so `Shift+H` no longer
+ * navigates Home (#1968); over a layout-produced character it stays permissive,
+ * because Shift is usually how you type the character at all.
+ *
+ * Alt and mod: exact, except over a layout-produced character that declares
+ * neither. There Alt is ignored, and Ctrl is ignored while Alt is also down --
+ * the AltGr signature -- so the `?` help key stays reachable on those layouts
+ * without loosening any ordinary Ctrl or Alt combination.
+ */
+export function strokeMatches(event: KeyboardEvent, stroke: ShortcutStroke): boolean {
+  if (event.key.toLowerCase() !== stroke.key.toLowerCase()) return false
+
+  const layoutCharacter = !stroke.mod && !stroke.alt && isLayoutProducedCharacter(stroke.key)
+
+  if (stroke.shift !== undefined) {
+    if (event.shiftKey !== stroke.shift) return false
+  } else if (LETTER_KEY.test(stroke.key) && event.shiftKey) {
+    return false
+  }
+
+  if (!layoutCharacter) {
+    return (event.ctrlKey || event.metaKey) === Boolean(stroke.mod) &&
+      event.altKey === Boolean(stroke.alt)
+  }
+
+  const altGrPressed = event.ctrlKey && event.altKey
+  return altGrPressed || !(event.ctrlKey || event.metaKey)
+}
+
+/**
  * The handler owner is part of every displayed row. Adding an overlay entry
  * therefore requires naming the concrete runtime that owns it rather than
  * documenting an aspirational key.

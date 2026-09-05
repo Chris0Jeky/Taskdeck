@@ -11,8 +11,9 @@ import { useViewportMode } from '../../composables/useViewportMode'
 import { provideShellKeyboardHelp } from '../../composables/useShellKeyboardHelp'
 import {
   APP_SHELL_SHORTCUT_BINDINGS,
+  strokeMatches,
+  type AppShellShortcutAction,
   type AppShellShortcutBinding,
-  type ShortcutStroke,
 } from '../../utils/keyboardShortcuts'
 import CaptureModal from '../common/CaptureModal.vue'
 import OfflineBanner from './OfflineBanner.vue'
@@ -148,24 +149,62 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return target.matches(selector) || target.closest(selector) !== null
 }
 
+/**
+ * Only a surface that declares itself MODAL owns the keyboard (#1968).
+ *
+ * A bare `[role="dialog"]` is not enough, and matching it was a live defect:
+ * `CardModal` keeps `role="dialog"` in both presentations but sets
+ * `aria-modal` only outside the inspector, so the Paper desktop card inspector
+ * -- a sticky side panel that traps nothing and leaves the board usable --
+ * counted as a keyboard-owning surface. That made `?`, `mod+k` and
+ * `mod+shift+c` dead for as long as a card was open for reading, and stopped
+ * every non-Escape key pressed outside the panel.
+ *
+ * `dialog[open]` and `[role="alertdialog"]` stay: a native open `<dialog>` is
+ * modal when shown as one and an alertdialog is modal by definition.
+ */
 const KEYBOARD_OWNING_SURFACE_SELECTOR = [
   'dialog[open]',
-  '[role="dialog"]',
   '[role="alertdialog"]',
   '[aria-modal="true"]',
 ].join(', ')
 
-function hasActiveKeyboardOwningSurface(): boolean {
-  if (typeof document === 'undefined') return false
+function activeKeyboardOwningSurfaces(): HTMLElement[] {
+  if (typeof document === 'undefined') return []
 
   return Array.from(document.querySelectorAll<HTMLElement>(KEYBOARD_OWNING_SURFACE_SELECTOR))
-    .some((surface) => {
+    .filter((surface) => {
       if (!surface.isConnected) return false
       if (surface.closest('[hidden], [aria-hidden="true"], [inert]')) return false
 
       const style = window.getComputedStyle(surface)
       return style.display !== 'none' && style.visibility !== 'hidden'
     })
+}
+
+/**
+ * True when this action's own surface is among the active ones and every active
+ * surface belongs to the shell. That is what makes `?` and `mod+k` toggles
+ * rather than one-way openers: the help dialog owns `?`, the command palette
+ * owns `mod+k`, and neither opens over the other or over anything else (#1968).
+ *
+ * Deliberately not "the topmost surface owns it". Stack order is not readable
+ * here: both help twins and both palettes teleport to `body`, and a `<Teleport>`
+ * places its anchor when the SHELL mounts, not when the surface opens, so
+ * document order is AppShell's template order whatever the user opened first.
+ * Asking every surface instead would deadlock a stack -- open the help dialog,
+ * then the topbar Search control, and neither key could close its own surface
+ * again.
+ *
+ * `navigate` and `quick-capture` name no surface, so an active surface always
+ * wins over them: nothing behind a modal should move the route, and quick
+ * capture would stack a second modal on the first (the #1959 class).
+ */
+function shellSurfaceOwnsAction(surfaces: readonly HTMLElement[], action: AppShellShortcutAction): boolean {
+  if (surfaces.length === 0) return true
+
+  return surfaces.some((surface) => surface.dataset.shellSurface === action.type) &&
+    surfaces.every((surface) => surface.dataset.shellSurface !== undefined)
 }
 
 const CHORD_TIMEOUT_MS = 1_000
@@ -178,15 +217,6 @@ function clearPendingChord() {
     window.clearTimeout(chordTimer)
     chordTimer = null
   }
-}
-
-function strokeMatches(event: KeyboardEvent, stroke: ShortcutStroke): boolean {
-  const modPressed = event.ctrlKey || event.metaKey
-  const shiftMatches = stroke.shift === undefined || stroke.shift === event.shiftKey
-  return event.key.toLowerCase() === stroke.key.toLowerCase() &&
-    modPressed === Boolean(stroke.mod) &&
-    event.altKey === Boolean(stroke.alt) &&
-    shiftMatches
 }
 
 function consumeShortcut(event: KeyboardEvent) {
@@ -217,6 +247,35 @@ function runAppShellShortcut(binding: AppShellShortcutBinding) {
   }
 }
 
+/**
+ * Keep a key an active surface does not own from reaching the page behind it
+ * (#2621).
+ *
+ * With the help dialog open over a Legacy board, a plain `f` or `n` used to
+ * bubble past this listener to `BoardView`'s `useKeyboardShortcuts` window
+ * listener: `f` toggled the filter panel behind the modal and `n` clicked the
+ * column's add-card button and pulled focus out of the dialog.
+ *
+ * Two carve-outs keep this from taking more than it should:
+ *   - Escape is never stopped. Board dialogs the escape stack does not carry
+ *     (label manager, board settings, filter panel, column form) are closed by
+ *     `BoardView.closeOpenUi` on the bubble, and stopping Escape here would
+ *     strand them open.
+ *   - A target inside the surface is left alone, because this listener runs in
+ *     the capture phase, ahead of every handler the surface owns. Stopping
+ *     there would break typing and arrow navigation inside modals.
+ * Text-entry targets never reach this, and never triggered board shortcuts in
+ * the first place -- `useKeyboardShortcuts` ignores them.
+ */
+function guardSurfaceFromPageShortcuts(event: KeyboardEvent, surfaces: readonly HTMLElement[]) {
+  if (event.key === 'Escape') return
+
+  const target = event.target instanceof Node ? event.target : null
+  if (target && surfaces.some((surface) => surface.contains(target))) return
+
+  event.stopPropagation()
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.isComposing) {
     clearPendingChord()
@@ -224,15 +283,23 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   const textEntryTarget = isTextEntryTarget(event.target)
-  const keyboardOwningSurfaceActive = hasActiveKeyboardOwningSurface()
 
-  if (keyboardOwningSurfaceActive) clearPendingChord()
+  // Scanned at most once per event, and only once something actually needs the
+  // answer, so an ordinary keystroke typed into a field never pays for the
+  // `querySelectorAll` plus `getComputedStyle` sweep (#1968).
+  let surfaces: HTMLElement[] | null = null
+  const keyboardOwningSurfaces = () => (surfaces ??= activeKeyboardOwningSurfaces())
 
   if (pendingChord) {
     const chord = pendingChord
     clearPendingChord()
     const nextStroke = chord.sequence[1]
-    if (!textEntryTarget && nextStroke && strokeMatches(event, nextStroke)) {
+    if (
+      !textEntryTarget &&
+      nextStroke &&
+      strokeMatches(event, nextStroke) &&
+      keyboardOwningSurfaces().length === 0
+    ) {
       consumeShortcut(event)
       runAppShellShortcut(chord)
       return
@@ -242,8 +309,8 @@ function handleKeydown(event: KeyboardEvent) {
   const direct = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
     binding.sequence.length === 1 &&
     strokeMatches(event, binding.sequence[0]!) &&
-    (binding.action.type !== 'navigate' || !keyboardOwningSurfaceActive) &&
-    (!textEntryTarget || binding.allowInTextEntry === true),
+    (!textEntryTarget || binding.allowInTextEntry === true) &&
+    shellSurfaceOwnsAction(keyboardOwningSurfaces(), binding.action),
   )
   if (direct) {
     consumeShortcut(event)
@@ -251,7 +318,12 @@ function handleKeydown(event: KeyboardEvent) {
     return
   }
 
-  if (textEntryTarget || keyboardOwningSurfaceActive) return
+  if (textEntryTarget) return
+
+  if (keyboardOwningSurfaces().length > 0) {
+    guardSurfaceFromPageShortcuts(event, keyboardOwningSurfaces())
+    return
+  }
 
   const chord = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
     binding.sequence.length > 1 && strokeMatches(event, binding.sequence[0]!),
