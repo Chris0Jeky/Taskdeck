@@ -20,7 +20,11 @@ export default {
     cancel: 'Annulla',
     error: 'Non è stato possibile aggiungere la scheda. Riprova.',
     capture: '+ appunto',
-    captureAria: 'Prendi un appunto in Inbox per {column}',
+    // Nessuna colonna nel nome accessibile (#1984, constatazione 2): il
+    // controllo di ogni colonna apre l'Inbox della bacheca e nient'altro, quindi
+    // nomi diversi per colonna annuncerebbero una distinzione inesistente.
+    // `addAria` mantiene `{column}` perché quel controllo cambia davvero.
+    captureAria: 'Prendi un appunto nell’Inbox di questa bacheca',
   },
   column: {
     settings: 'Impostazioni colonna',

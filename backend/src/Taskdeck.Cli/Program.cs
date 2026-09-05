@@ -13,6 +13,12 @@ using Taskdeck.Infrastructure.Persistence;
 var startupTrace = CliStartupTrace.CreateFromTestHarnessEnvironment();
 startupTrace.Record(CliStartupTrace.ManagedEntryPhase);
 
+// Always-on local diagnostic sink (#2468). Resolved from the environment BEFORE the host is
+// built, so a failure thrown during configuration, key bootstrap or host construction still has
+// somewhere bounded and redacted to land. Refreshed below once configuration has resolved the
+// connection string for real.
+var failureSink = CliFailureSink.FromEnvironment();
+
 // Unknown-exception boundary for the standalone CLI (#2351). Without it an unexpected
 // exception escapes to the runtime, which prints the raw message and stack trace --
 // paths, SQL/constraint text, provider URLs and tokens included -- to stderr. Deliberate
@@ -65,6 +71,11 @@ try
             ["ConnectionStrings:DefaultConnection"] = fallbackConnectionString
         });
     }
+
+    // Configuration now knows the real connection string (an appsettings entry can override the
+    // environment), so re-point the sink at the data directory the CLI will actually use.
+    failureSink = CliFailureSink.ForConnectionString(
+        builder.Configuration.GetConnectionString("DefaultConnection"));
 
     // Fresh-machine bootstrap: provision the connector encryption key before
     // AddInfrastructure (which fail-fasts on a missing key). Must run after the
@@ -124,5 +135,5 @@ try
 }
 catch (Exception exception)
 {
-    return CliUnexpectedFailure.Handle(exception, startupTrace, Console.Error);
+    return CliUnexpectedFailure.Handle(exception, startupTrace, Console.Error, failureSink, args);
 }

@@ -92,9 +92,11 @@ export default {
     selectedBoard: 'la bacheca selezionata',
     submit: 'Cattura',
   },
+  // `boardAndColumn` rimosso con #1984 (constatazione 2): l'elenco Inbox viene
+  // richiesto per bacheca e senza colonna, quindi nominare una colonna qui
+  // dichiarava un filtro mai applicato.
   scope: {
     board: 'Bacheca: {board}',
-    boardAndColumn: 'Bacheca: {board} · Colonna: {column}',
     clear: 'Mostra tutte le catture',
   },
   empty: {
