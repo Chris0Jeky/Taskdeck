@@ -137,6 +137,27 @@ describe('TranscriptEvidenceViewer', () => {
     expect(wrapper.find('[data-testid="transcript-evidence-body"]').exists()).toBe(false)
   })
 
+  it.each([401, 403])(
+    'translates an HTTP %i transcript authorization error in every supported locale',
+    async (status) => {
+      const previousLocale = i18n.global.locale.value
+      i18n.global.locale.value = 'en'
+      try {
+        vi.mocked(transcriptsApi.getById).mockRejectedValue({ response: { status } })
+
+        const wrapper = await mountViewer({ spanStart: 0, spanEnd: 4 })
+        const errorText = () => wrapper.get('[data-testid="transcript-evidence-error"]').text()
+        expect(errorText()).toBe('You are not signed in to view this transcript.')
+
+        i18n.global.locale.value = 'es'
+        await flushPromises()
+        expect(errorText()).toBe('No has iniciado sesión para ver esta transcripción.')
+      } finally {
+        i18n.global.locale.value = previousLocale
+      }
+    },
+  )
+
   it('surfaces an unexpected transport failure', async () => {
     vi.mocked(transcriptsApi.getById).mockRejectedValue(new Error('boom'))
 
