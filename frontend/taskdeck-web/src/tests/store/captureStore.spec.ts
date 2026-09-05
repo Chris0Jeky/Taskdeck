@@ -2557,8 +2557,19 @@ describe('captureStore', () => {
         summaryRow('c-2', 'ProposalCreated'),
       ] as never)
       const pendingDetails = new Map<string, (value: unknown) => void>()
-      vi.mocked(captureApi.getItem).mockImplementation(((itemId: string) =>
-        new Promise((resolve) => { pendingDetails.set(itemId, resolve) })) as never)
+      // Bounded to this test's three reads (#2640). A PERSISTENT
+      // `mockImplementation` returning never-resolving promises outlives the
+      // test: the suite's only reset is `vi.clearAllMocks()`, which clears
+      // recorded calls but keeps implementations, so any later test that
+      // triggers an unconfigured detail read would hang on a promise this test
+      // installed instead of receiving `undefined`. A fourth read here fails on
+      // an absent `pendingDetails` entry, which is a visible failure.
+      const pendingDetail = ((itemId: string) =>
+        new Promise((resolve) => { pendingDetails.set(itemId, resolve) })) as never
+      vi.mocked(captureApi.getItem)
+        .mockImplementationOnce(pendingDetail)
+        .mockImplementationOnce(pendingDetail)
+        .mockImplementationOnce(pendingDetail)
 
       // Two stale ids, so the reconciliation runs two reads in parallel.
       const batch = store.batchTriage(['c-1', 'c-2'], 'triage')
@@ -2590,6 +2601,22 @@ describe('captureStore', () => {
       pendingDetails.get('c-3')!(detailFor('c-3', 'ProposalCreated'))
       await foreground
       expect(store.loadingDetail).toBe(false)
+    })
+
+    // Ordering-coupled on purpose (#2640). It sits directly after the test that
+    // installs never-resolving detail promises. `vi.clearAllMocks()` clears
+    // recorded calls but keeps implementations, so whatever that test installed
+    // is what the tests below inherit. A leaked `mockResolvedValue` from some
+    // earlier test is harmless — it settles — so the property that matters is
+    // not "unconfigured" but "settles": a leaked never-resolving implementation
+    // hangs whichever later test triggers an unconfigured detail read. A
+    // microtask always wins against a macrotask, so this race is deterministic.
+    it('leaves no never-resolving detail mock behind for the tests below', async () => {
+      const outcome = await Promise.race([
+        Promise.resolve(vi.mocked(captureApi.getItem)('c-unconfigured')).then(() => 'settles'),
+        new Promise((resolve) => { setTimeout(() => resolve('hangs'), 0) }),
+      ])
+      expect(outcome).toBe('settles')
     })
 
     it('still raises the detail loading flag for a foreground detail load', async () => {
