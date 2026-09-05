@@ -70,9 +70,32 @@ export type AffordanceSelector =
 
 /**
  * What must become observably true after the affordance is activated. `url` and
- * `response` pattern strings are regular-expression SOURCES; the `{boardId}`,
- * `{metricsBoardId}` and `{openingMonthLabel}` tokens in any of these strings
- * are substituted from the walk's runtime context before use.
+ * `response` pattern strings are regular-expression SOURCES.
+ *
+ * WHERE TOKENS ARE SUBSTITUTED, EXACTLY. `fillTokens` in
+ * `tests/e2e/route-affordances.spec.ts` recognises `{boardId}`, `{boardName}`,
+ * `{metricsBoardId}` and `{openingMonthLabel}`, and the walk calls it at five
+ * places only: `url.pathPattern`, `response.urlPattern`, `value.value`,
+ * `text.text` and `textChangedFrom.from` — plus the `name` of a `role` selector
+ * (see `AffordanceSelector` above). Everywhere else the string is used
+ * VERBATIM — the complete list: `attribute`'s `selector`, `attribute` and
+ * `value`; the `enabled` selector; the `selector` of `value`, `text` and
+ * `textChangedFrom` (only their `value`/`text`/`from` payloads are filled, not
+ * the node they are read from); the `node` and `focus` test ids; and every
+ * `css` and `testId` selector value. A token written into one of those is
+ * matched literally, so the row quietly fails to find its node rather than
+ * reporting a bad token.
+ *
+ * Which token appears where today: `{boardId}` in three `url.pathPattern`s, and
+ * once more in the `workspace-board` entry's `entryPath`, where nothing
+ * substitutes it (see `RouteEntry.entryPath` below); `{metricsBoardId}` in
+ * three `response.urlPattern`s and in the `value.value` of the metrics
+ * board-select post-condition; `{boardName}` in one `role` selector name; and
+ * `{openingMonthLabel}` in exactly two places —
+ * the `textChangedFrom.from` of `calendar.previous-month` and the `text.text`
+ * of `calendar.next-month`. `{openingMonthLabel}` appears in no `url` or
+ * `response` pattern at all, which is what the sentence this replaced got
+ * wrong.
  *
  * A `response` consequence proves an endpoint answered, which on its own cannot
  * tell the click's own request apart from one the view already had in flight.
@@ -109,6 +132,21 @@ export type AffordanceConsequence =
    * whose new text depends on the runtime clock (the calendar month label),
    * this is the strongest claim the inventory can make without re-implementing
    * the view's own date formatting inside the test.
+   *
+   * THE NEGATION IS NOT VACUOUS ON A MISSING NODE. The obvious worry about a
+   * negated matcher is that it passes when the selector matches nothing, which
+   * would make this kind assert nothing at all. Playwright does not behave that
+   * way: `expect(locator).not.toHaveText(x)` FAILS on a zero-element locator.
+   * Only `to.be.visible`, `to.be.hidden`, `to.be.attached`, `to.be.detached`,
+   * `to.be.in.viewport` and the `.array`/`to.have.count` expressions are
+   * special-cased for a missing node; every other expression falls through to
+   * `matches = options.isNot`, which the retry loop reads as "not satisfied
+   * yet", so the assertion polls to its timeout and reports `element(s) not
+   * found`. Measured on Playwright 1.62.1 — `playwright-core/lib/coreBundle.js`
+   * (`Frame._expectInternal` and `Frame.expect`) for the code, and a chromium
+   * probe for the behaviour. So no `toHaveCount` companion is needed, and
+   * `calendar.previous-month` stands on its own rather than leaning on
+   * `calendar.next-month`'s positive check one row later.
    */
   | { kind: 'textChangedFrom'; selector: string; from: string }
 
@@ -159,7 +197,13 @@ export interface RouteAffordance {
 export interface RouteEntry {
   /** Must equal a `name` in the real `router.getRoutes()` table. */
   routeName: string
-  /** Concrete path the walk navigates to; `{boardId}` is substituted. */
+  /**
+   * The route's entry path, written the way the patterns write theirs so the
+   * two read alike. DOCUMENTATION ONLY: nothing reads this field — the walk
+   * navigates with its own literal `page.goto` calls and the coverage guard
+   * compares route NAMES — so `{boardId}` here is never substituted by
+   * anything. Changing it changes no assertion.
+   */
   entryPath: string
   /** Two to five affordances. Fewer says nothing; more is a second slice. */
   affordances: RouteAffordance[]
@@ -182,6 +226,12 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'testId', value: 'paper-home-capture-input' },
         source: 'src/views/paper/PaperHomeView.vue:609',
         precondition: 'session',
+        // NO MOUNT READ CAN SETTLE THIS. The defence here is the method, not a
+        // post-condition: PaperHomeView's `onMounted` fetches the home summary
+        // and nothing else (PaperHomeView.vue:381-384), so a POST to
+        // /api/capture/items can only have been raised by this submit. The walk
+        // consumes that summary GET before it starts, but for first paint, not
+        // to isolate this row.
         consequence: { kind: 'response', method: 'POST', urlPattern: '/api/capture/items$' },
         status: { activate: true },
       },
@@ -374,6 +424,11 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '[data-action="reject"]' },
         source: 'src/views/paper/inbox/PaperTriageTable.vue:838',
         precondition: 'seeded-capture',
+        // NO MOUNT READ CAN SETTLE THIS. Same defence as the Home quick
+        // capture, doubly so: PaperInboxView's `onMounted`
+        // (PaperInboxView.vue:504-508) issues no request at all, and the
+        // pattern is anchored to a POST on /archive, which nothing fetches.
+        // Only this click can raise it.
         consequence: { kind: 'response', method: 'POST', urlPattern: '/api/capture/items/[^/]+/archive$' },
         status: { activate: true },
       },
@@ -398,6 +453,11 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '[data-testid="decision-apply"][data-apply-phase="approve"]' },
         source: 'src/views/paper/review/ReviewDecisionRail.vue:252',
         precondition: 'seeded-proposal',
+        // NO MOUNT READ CAN SETTLE THIS. PaperReviewView's `onMounted`
+        // (PaperReviewView.vue:2546-2558) loads the board options and the
+        // proposals and starts a queue poll, all GETs; nothing POSTs on mount
+        // or on the poll. The pattern is anchored to /approve, phase 1 of the
+        // ADR-0003 gate, which this control alone reaches.
         consequence: { kind: 'response', method: 'POST', urlPattern: '/automation/proposals/[^/]+/approve$' },
         status: { activate: true },
       },
@@ -511,10 +571,18 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'role', role: 'button', name: 'Next month' },
         source: 'src/views/CalendarView.vue:227',
         precondition: 'session',
+        // THE MOUNT READ IS ALREADY SPENT. Like the row above, this waits on a
+        // GET CalendarView also issues in `onMounted` (CalendarView.vue:178-179)
+        // — but the walk consumed that read before `calendar.previous-month`,
+        // and that row's own wait consumed the next one, so by the time this
+        // row arms only a third request can settle it.
+        //
         // Walked immediately after `calendar.previous-month`, which is why the
         // post-condition can name an exact string: stepping forward from the
         // previous month lands back on the label the route opened with, with no
-        // date formatting re-implemented in the test.
+        // date formatting re-implemented in the test. The label is rendered from
+        // `viewDate` (CalendarView.vue:36-39), so that string is the independent
+        // half here just as the negated one is on the previous row.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/workspace/calendar' },
         postCondition: {
           kind: 'text',
