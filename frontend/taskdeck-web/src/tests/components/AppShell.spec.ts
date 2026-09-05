@@ -203,6 +203,16 @@ vi.mock('../../composables/useCaptureQueueSync', () => ({
   useCaptureQueueSync: () => ({ pendingCount: { value: 0 }, syncing: { value: false }, replayQueue: vi.fn(), registerBackgroundSync: vi.fn(), refreshCount: vi.fn() }),
 }))
 
+// The Paper sidebar reads the product version on mount, so the one Paper-skin
+// spec below would otherwise make a real request and log an ECONNREFUSED per
+// run. Stubbed the same way `AppShell.paperVariant.spec.ts` stubs it; this
+// suite is about keyboard routing, not the version transport.
+vi.mock('../../api/versionApi', () => ({
+  versionApi: {
+    getProductVersion: vi.fn(async () => null),
+  },
+}))
+
 /**
  * `attachTo` is load-bearing for anything that touches the modal-ownership
  * guard. Vue Test Utils only puts the component into the real document when it
@@ -821,9 +831,16 @@ describe('AppShell workspace navigation and command palette', () => {
     await waitForUi()
     expect(document.querySelector('[aria-selected="true"]')?.getAttribute('data-palette-index')).toBe('1')
 
-    // Re-query: the selection re-render replaces the input element, and a key
-    // dispatched on the detached node would never reach the window listener at
-    // all, which would pass this assertion for the wrong reason.
+    // Re-query rather than reuse `input`. Measured under this mount (jsdom,
+    // Teleport stubbed): after the ArrowDown the node captured above reports
+    // `isConnected === false` and no longer matches the selector, so the element
+    // the test is holding is detached. Why Vue drops it here is not pinned down;
+    // what matters is the consequence. A key dispatched on a detached node never
+    // enters the tree, so no window listener runs and no surface state changes:
+    // the palette would simply stay open and the `exists()` assertion below
+    // would go red. So the re-query cannot mask a defect -- it removes the one
+    // way this assertion could pass without the guard being exercised at all --
+    // and the `isConnected` check makes that precondition explicit.
     const reboundInput = document.querySelector('[aria-label="Command palette search"]') as HTMLInputElement
     expect(reboundInput.isConnected).toBe(true)
 
@@ -831,6 +848,51 @@ describe('AppShell workspace navigation and command palette', () => {
     pressFrom(reboundInput, 'k', { ctrlKey: true })
     await waitForUi()
     expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+  })
+
+  /**
+   * The Paper help twin, which is the one surface in the tree that does NOT
+   * satisfy the guard's stated invariant on its own.
+   *
+   * `PaperShortcutsOverlay` binds its Escape handler on `window` in the bubble
+   * phase -- one hop OUTSIDE the document-level guard -- so it survives only
+   * because Escape is carved out, not because its handler runs first. This pins
+   * both halves of that on the skin where it actually renders: a bare board key
+   * is still stopped, and Escape still gets through to close the overlay. A
+   * `window`-level NON-Escape handler on a modal is the shape this forbids, and
+   * this test is what would go red if one were added.
+   */
+  it('stops board keys but not Escape from inside the Paper help overlay', async () => {
+    mockPaperTheme.isOn = true
+    mountedWrapper = mountShell(document.body, { RouterView: BoardKeyProbe })
+    await waitForUi()
+
+    pressFromBody('?')
+    await waitForUi()
+    const overlay = document.querySelector<HTMLElement>('[data-shell-surface="keyboard-help"]')
+    expect(overlay).not.toBeNull()
+    expect(overlay!.getAttribute('aria-modal')).toBe('true')
+
+    const overlayClose = overlay!.querySelector('[aria-label="Close keyboard shortcuts"]') as HTMLButtonElement
+    expect(overlayClose).not.toBeNull()
+    overlayClose.focus()
+
+    const page = trackPageLevelKeys()
+    pressFrom(overlayClose, 'f')
+    pressFrom(overlayClose, 'n')
+    await waitForUi()
+
+    expect(page.keys).toEqual([])
+    expect(boardProbe.filterToggles).toBe(0)
+    expect(boardProbe.addCardClicks).toBe(0)
+
+    // Escape is the carve-out, so it must still leave the surface -- and it
+    // still closes the overlay.
+    pressFrom(overlayClose, 'Escape')
+    await waitForUi()
+    page.stop()
+
+    expect(document.querySelector('[data-shell-surface="keyboard-help"]')).toBeNull()
   })
 
   it('does not open the command palette over a modal it does not own', async () => {

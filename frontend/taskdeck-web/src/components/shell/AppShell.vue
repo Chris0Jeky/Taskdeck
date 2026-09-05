@@ -197,6 +197,9 @@ function activeKeyboardOwningSurfaces(): HTMLElement[] {
  * bubble: a surface handler may have closed its own surface on the way up (a
  * palette option activating, say), and the key still belonged to the surface
  * that was open when it was pressed.
+ *
+ * Per shell instance, not per module: these live in this `setup()` closure, so
+ * two shells (as tests mount them) never share a memo.
  */
 let scannedEvent: KeyboardEvent | null = null
 let scannedSurfaces: HTMLElement[] = []
@@ -315,13 +318,31 @@ function guardSurfaceFromPageShortcuts(event: KeyboardEvent, surfaces: readonly 
  * `BoardView`'s `useKeyboardShortcuts` window listener -- the filter panel
  * toggled and the add-card composer pulled focus out of the dialog.
  *
- * This listener sits on `document` in the bubble phase, which is the one seam
- * between the two: every handler from the target up to `document` has already
- * run (all four surfaces bind their own keys on their own elements -- the
- * palettes' `@keydown.down/up/enter`, `CaptureModal`'s `@keydown`), while the
- * page-level listeners this has to silence all bind on `window`, one hop
- * further out. So stopping here cannot take a key away from the surface that
- * owns it, and that is why no surface component needed changing.
+ * This listener sits on `document` in the bubble phase. The invariant that
+ * makes that safe is narrower than "the surfaces handle their own keys first",
+ * so state it exactly:
+ *
+ *   A surface keeps a key only if it handles that key AT OR BELOW `document`
+ *   -- an element-level handler, anywhere from the event target up to and
+ *   including `document` -- or if the key is Escape, which is carved out below.
+ *   Anything a surface binds on `window` is one hop OUTSIDE this guard and,
+ *   unless it is Escape, will be silenced while a surface is active.
+ *
+ * Every surface in the tree satisfies that today by binding element-level
+ * handlers: the palettes' `@keydown.down/up/enter`, `CaptureModal`'s
+ * `@keydown`, the review dialogs' listeners on their own dialog elements. The
+ * one surface that does NOT is `PaperShortcutsOverlay`, whose Escape handler is
+ * a `window` bubble listener; it survives purely on the Escape carve-out, not
+ * on the premise above. So a new `window`-level NON-Escape handler belonging to
+ * a modal is a forbidden shape here -- it would be silenced -- and there is a
+ * spec pinning that from the Paper help overlay.
+ *
+ * Note the reach: this is not scoped to the four shell surfaces. It fires for
+ * every `dialog[open]`, `[role="alertdialog"]` or `[aria-modal="true"]` in the
+ * app -- `CardModal`, `TdDialog` and the review dialogs built on it,
+ * `ProvenanceDrawer`, `PaperBoardDialogShell`, the board modals,
+ * `WorkspaceSetupModal`, `MfaChallengeModal` -- which is the point, since the
+ * page-level listeners it has to silence all bind on `window`.
  *
  * Two carve-outs, for the same reasons the capture half has them:
  *   - Escape is never stopped. `useEscapeStack` listens in the capture phase so
@@ -471,7 +492,9 @@ onUnmounted(() => {
   clearPendingChord()
   window.removeEventListener('keydown', handleKeydown, true)
   document.removeEventListener('keydown', guardPageListenersFromSurfaceKeys)
-  // Nothing should outlive the shell holding a reference to a detached surface.
+  // Belt-and-braces. The memo lives in this instance's `setup()` closure, not at
+  // module scope, so it is already unreachable once the instance is gone; this
+  // just drops the last event and surface references at a known point.
   scannedEvent = null
   scannedSurfaces = []
 })
