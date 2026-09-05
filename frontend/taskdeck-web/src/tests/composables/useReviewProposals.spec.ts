@@ -2281,4 +2281,171 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
   })
+
+  describe('refused list-read disclosure (#2214 item 2)', () => {
+    /**
+     * The transient counter (`queueRefreshStale`) deliberately IGNORES a
+     * non-transient answer: a 400/404/405/410 on the LIST read resets its run
+     * and returns. That leaves the worst case of all completely silent — a
+     * `?boardId=not-a-guid` query 400s every single tick, the poll keeps
+     * running, the counter keeps resetting, no degraded state ever rises, and
+     * the surface shows an ordinary queue (or an ordinary empty state)
+     * indefinitely while the server has not confirmed a single one of those
+     * rows since the reviewer arrived.
+     *
+     * `queueRefreshRefused` is that second, separate threshold. Same threshold
+     * and same #2445 ruling as the transient one, but its own uninterrupted
+     * run, because the two facts are different: "the network keeps blipping"
+     * versus "the server is answering and refusing".
+     */
+    async function pollListFailures(count: number, failure: unknown) {
+      for (let attempt = 0; attempt < count; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce(failure)
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+    }
+
+    async function startedWithCurrentQueue() {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      return rp
+    }
+
+    it('rises only at the threshold, keeps the last trustworthy queue, and keeps polling', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      for (let failure = 1; failure <= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        await pollListFailures(1, { response: { status: 400 } })
+        expect(rp.queueRefreshRefused.value).toBe(
+          failure === REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+        )
+      }
+      // The retained queue is exactly what the server last confirmed.
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['current'])
+      // And this is a disclosure, not a stop: the next tick still asks.
+      const callsBefore = mockAutomationApi.getProposals.mock.calls.length
+      await pollListFailures(1, { response: { status: 400 } })
+      expect(mockAutomationApi.getProposals.mock.calls.length).toBe(callsBefore + 1)
+      // The transient counter is a different fact and stays where it was.
+      expect(rp.queueRefreshStale.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('counts 404, 405 and 410 as refusals too', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(1, { response: { status: 404 } })
+      await pollListFailures(1, { response: { status: 405 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      await pollListFailures(1, { response: { status: 410 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not rise on two refusals plus a success', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(2, { response: { status: 400 } })
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'fresh' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+
+      await pollListFailures(2, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('lets an intervening transient failure reset the run without raising it', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(2, { response: { status: 400 } })
+      // A 500 is not a refusal. It breaks the uninterrupted run the disclosure
+      // claims, so the next two 400s cannot complete a three-long streak.
+      await pollListFailures(1, { response: { status: 500 } })
+      await pollListFailures(2, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+
+      await pollListFailures(1, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not let an intervening transient failure clear a risen disclosure', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      // Symmetric to the #2445 ruling on the transient side: an interruption
+      // resets the RUN, it does not prove the retained queue is current, so it
+      // cannot take a standing disclosure off the screen.
+      await pollListFailures(1, { response: { status: 500 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('clears on the next successful list read and announces the recovery', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['recovered'])
+      // Clearing the warning is silent on its own, exactly as it is for the
+      // transient state (#2630): the recovery sentence is the announcement.
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('leaves the 403 authority path to its own owner', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 403 } })
+      // 403 is revoked access, not a refused refresh: it clears the queue, says
+      // so through `queueAccessRevoked`, and suspends the poll. Two owners for
+      // one fact would render two contradictory panels.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('excludes 401, which belongs to the HTTP interceptor', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 401 } })
+      // A 401 is the session ending; `api/http.ts` clears it and redirects to
+      // login. Telling the reviewer to check the board filter on the way out
+      // would be false.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not count a pin-leg failure, whose tick read the list successfully', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      // The list answer arrives every tick; only the by-id re-authorization
+      // read fails. The disclosure claims the LIST read is being refused, and
+      // it demonstrably is not.
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+        mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'other' })])
+        mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 405 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+  })
 })

@@ -47,6 +47,9 @@ export default {
       body: 'Questa coda di revisione potrebbe non essere aggiornata. Vengono mostrate le ultime proposte disponibili mentre Taskdeck riprova.',
       recovered: 'Questa coda di revisione è di nuovo aggiornata. Vengono mostrate le proposte correnti.',
     },
+    refused: {
+      body: 'Questa coda di revisione ha smesso di aggiornarsi. Il server sta rifiutando la richiesta di aggiornamento invece di fallire temporaneamente, quindi queste sono le ultime proposte che ha confermato. Ricarica la pagina oppure controlla il filtro bacheca nella barra degli indirizzi.',
+    },
   },
 
   // GH-1307 -- traduzione automatica (machine-translated), in attesa di revisione madrelingua.

@@ -192,6 +192,39 @@ function isTransientQueueRefreshFailure(err: unknown): boolean {
   return status === undefined || status === 408 || status === 429 || status >= 500
 }
 
+/**
+ * A LIST read the server ANSWERED and refused (#2214 item 2).
+ *
+ * The transient predicate above deliberately excludes this family, and
+ * `recordQueueRefreshFailure` then resets its run and returns — which leaves
+ * the worst failure mode of all completely silent. `?boardId=not-a-guid`
+ * reaches `GetProposals([FromQuery] Guid? boardId)` under `[ApiController]`
+ * (`normalizeBoardIdQueryParam` only trims), so it is a model-binding 400 on
+ * EVERY tick: the poll keeps running, the counter keeps resetting, no degraded
+ * state ever rises, and the surface goes on showing rows the server has not
+ * confirmed since the reviewer arrived. A 404, 405 or 410 on the same read is
+ * the same class of fact — the query is being refused, and no later tick makes
+ * it acceptable.
+ *
+ * Excluded, both with an owner elsewhere:
+ *  - 403 is the authority path. `refreshProposals` intercepts it before this
+ *    accounting is reached: it clears the queue, raises `queueAccessRevoked`
+ *    and suspends the poll. Counting it here as well would put two disclosures
+ *    on screen for one fact, one of which ("reload, or check the board
+ *    filter") is wrong for revoked access.
+ *  - 401 is `api/http.ts`'s: it clears the session and redirects to login.
+ *    Telling a reviewer on their way out to check the board filter is false.
+ *
+ * 408 and 429 need no exclusion — they are transient above, and this predicate
+ * is only consulted for failures that are not.
+ */
+function isRefusedQueueRefreshFailure(err: unknown): boolean {
+  if (isTransientQueueRefreshFailure(err)) return false
+  const status = (err as { response?: { status?: number } } | null)?.response?.status
+  if (status === undefined || status === 401 || status === 403) return false
+  return status >= 400 && status < 500
+}
+
 export function isProposalStale(proposal: ApiProposal, nowMs: number): boolean {
   if (!proposal || normalizeProposalStatus(proposal.status) !== 'PendingReview') return false
   // Guard against missing/invalid createdAt: a falsy value (new Date(null) is
@@ -234,6 +267,14 @@ export function useReviewProposals() {
   // Unlike `queueAccessRevoked`, this is not an authority result. It means the
   // last queue we could render is still shown while background reads retry.
   const queueRefreshStale = ref(false)
+  // The second, SEPARATE threshold (#2214 item 2). `queueRefreshStale` belongs
+  // to the transient counter and must keep belonging to it: "the network keeps
+  // blipping, we are retrying" and "the server is answering and refusing the
+  // query" are different facts with different remedies, and a reviewer who is
+  // told the first while the second is true will wait for a recovery that
+  // cannot arrive. Both can stand at once; the surfaces show the refusal,
+  // which is the stronger and more actionable statement.
+  const queueRefreshRefused = ref(false)
   // The EVENT that pairs with the state above (#2214). Clearing
   // `queueRefreshStale` unmounts the warning, which is silent: a reviewer who
   // was not looking at that corner is never told the queue is trustworthy
@@ -653,6 +694,7 @@ export function useReviewProposals() {
   let refreshInterval: ReturnType<typeof setInterval> | null = null
   let refreshInFlight = false
   let consecutiveQueueRefreshFailures = 0
+  let consecutiveQueueRefreshRefusals = 0
   // A 403 pauses the configured poll without making it forget how the owning
   // surface asked it to behave. Permanent stop/disposal clears this state so a
   // late successful explicit load cannot resurrect a surface that has left.
@@ -661,7 +703,33 @@ export function useReviewProposals() {
   let shouldRefreshNow: (() => boolean) | null = null
   let refreshAbort: AbortController | null = null
 
-  function recordQueueRefreshFailure(err: unknown) {
+  /**
+   * `leg` names which request of the composite background read failed, because
+   * the two thresholds ask different questions of it (#2214 item 2).
+   *
+   * The transient run counts both legs, exactly as it has since #2445. The
+   * REFUSAL run is a claim about the LIST read alone, so a pin-leg failure not
+   * only fails to count toward it, it breaks it: reaching the by-id request at
+   * all means that tick's list read had already succeeded.
+   */
+  function recordQueueRefreshFailure(err: unknown, leg: 'list' | 'pin') {
+    if (leg === 'list' && isRefusedQueueRefreshFailure(err)) {
+      consecutiveQueueRefreshRefusals += 1
+      if (consecutiveQueueRefreshRefusals >= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD) {
+        queueRefreshRefused.value = true
+        // Same reason as the degraded onset below: a standing "up to date
+        // again" contradicts the warning beside it, and its unchanged text
+        // would silence the next real recovery.
+        queueRefreshRecovered.value = false
+      }
+    } else {
+      // Anything that is not another qualifying list refusal interrupts the
+      // uninterrupted run the disclosure claims. It resets the RUN only: a
+      // risen disclosure stays up, because an interruption is not evidence
+      // that the retained queue is current (the #2445 ruling, applied
+      // symmetrically to this second threshold).
+      consecutiveQueueRefreshRefusals = 0
+    }
     if (!isTransientQueueRefreshFailure(err)) {
       // A non-transient failure breaks the uninterrupted transient run, but it
       // does not prove that the retained queue is fresh enough to clear a
@@ -682,9 +750,12 @@ export function useReviewProposals() {
 
   function recordQueueRefreshSuccess() {
     consecutiveQueueRefreshFailures = 0
+    consecutiveQueueRefreshRefusals = 0
     // Only a success that ends a VISIBLE degraded state is a recovery. Setting
-    // this on every success would make both skins announce every 15 s.
-    if (queueRefreshStale.value) {
+    // this on every success would make both skins announce every 15 s. A
+    // refused queue clearing is the same kind of transition and gets the same
+    // sentence: the warning simply vanishing is silent either way (#2630).
+    if (queueRefreshStale.value || queueRefreshRefused.value) {
       queueRefreshRecovered.value = true
     } else if (queueRefreshRecovered.value) {
       // The FOLLOWING success retires the sentence, so it lives for about one
@@ -696,6 +767,7 @@ export function useReviewProposals() {
       queueRefreshRecovered.value = false
     }
     queueRefreshStale.value = false
+    queueRefreshRefused.value = false
   }
 
   /**
@@ -919,7 +991,7 @@ export function useReviewProposals() {
             // The composite read is incomplete. Preserve the exact queue and
             // availability state currently rendered; a later tick can retry.
             if (isSupersededQueueRead()) return
-            recordQueueRefreshFailure(e)
+            recordQueueRefreshFailure(e, 'pin')
             logError('Review deep-link background refresh failed:', e)
             return
           }
@@ -963,7 +1035,7 @@ export function useReviewProposals() {
       // A read for a board the reviewer has already left, or one superseded by
       // an explicit load, cannot make the current queue degraded.
       if (isSupersededQueueRead()) return
-      recordQueueRefreshFailure(e)
+      recordQueueRefreshFailure(e, 'list')
       logError('Review queue background refresh failed:', e)
     } finally {
       refreshInFlight = false
@@ -1179,6 +1251,7 @@ export function useReviewProposals() {
     unavailableProposalId,
     queueAccessRevoked,
     queueRefreshStale,
+    queueRefreshRefused,
     queueRefreshRecovered,
     availableBoards,
     loadingBoards,

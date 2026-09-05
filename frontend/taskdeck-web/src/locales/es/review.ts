@@ -46,6 +46,9 @@ export default {
       body: 'Es posible que esta cola de revisión no esté actualizada. Se muestran las últimas propuestas disponibles mientras Taskdeck lo vuelve a intentar.',
       recovered: 'Esta cola de revisión vuelve a estar actualizada. Se muestran las propuestas actuales.',
     },
+    refused: {
+      body: 'Esta cola de revisión ha dejado de actualizarse. El servidor está rechazando la actualización en lugar de fallar temporalmente, así que estas son las últimas propuestas que confirmó. Recarga la página o revisa el filtro de tablero en la barra de direcciones.',
+    },
   },
 
   // GH-1307 -- traducción automática (machine-translated), pendiente de revisión nativa.
