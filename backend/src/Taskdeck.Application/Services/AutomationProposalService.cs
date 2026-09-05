@@ -739,6 +739,34 @@ public class AutomationProposalService : IAutomationProposalService
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             transactionStarted = true;
 
+            // The preflight write-bar check above is a snapshot taken OUTSIDE the commit boundary,
+            // so a grant revoked between it and the commit was invisible to the batch: the decision
+            // guard below advances each board row, which catches a concurrent board-row mutation
+            // but not a revoked grant. Re-validate the caller's write bar for each distinct board
+            // inside the transaction so the whole batch fails with the same 403 the preflight
+            // raises. It runs BEFORE the decision guard and before Approve(), so a failure rolls
+            // back a transaction in which nothing has been mutated. Boardless proposals carry no
+            // board bar to recheck.
+            foreach (var recheckBoardId in proposals
+                .Where(proposal => proposal.BoardId.HasValue)
+                .Select(proposal => proposal.BoardId!.Value)
+                .Distinct())
+            {
+                var writeBarRecheck = await _policyEngine.ValidateBoardAccessAsync(
+                    decidedByUserId,
+                    recheckBoardId,
+                    BoardAccessBar.Write,
+                    cancellationToken);
+                if (!writeBarRecheck.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    transactionStarted = false;
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        writeBarRecheck.ErrorCode,
+                        writeBarRecheck.ErrorMessage);
+                }
+            }
+
             // One marker per distinct board makes an archive/update that wins after the preflight
             // collide with this same atomic save. Boardless proposals need no marker.
             var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
