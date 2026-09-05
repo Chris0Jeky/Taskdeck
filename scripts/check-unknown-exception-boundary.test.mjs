@@ -1,10 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import {
   ALLOWLIST,
+  LOG_SANITIZER_MEMBERS,
   PERSISTED_STATE_FILES,
   findCatchBlockFindings,
   findMcpFindings,
@@ -577,4 +579,346 @@ test('keeps a verbatim literal with doubled quotes fully masked', () => {
         return Error(@"pattern "".ErrorMessage"" only");
 `
   assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+// ---------------------------------------------------------------------------
+// #2606 item 1 — the guarded-ternary exemption reads condition polarity.
+// A negated condition swaps which arm runs on ErrorCodes.UnexpectedError, so
+// the arm-position check alone no longer proves the shape is the reviewed one.
+// ---------------------------------------------------------------------------
+
+test('rejects a guarded ternary whose condition is negated with a bang', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(!string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1, 'a negated condition returns the raw message on the unexpected code')
+  assert.match(lineOf(source, findings[0].line), /: result\.ErrorMessage/)
+})
+
+test('rejects a guarded ternary whose condition uses the != form', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(result.ErrorCode != ErrorCodes.UnexpectedError
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1, 'the != form is the same inversion written differently')
+})
+
+test('rejects a guarded ternary whose condition uses an is-not pattern', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(result.ErrorCode is not ErrorCodes.UnexpectedError
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('still accepts the reviewed ternary with an unnegated equality condition', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(result.ErrorCode == ErrorCodes.UnexpectedError
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+// ---------------------------------------------------------------------------
+// #2606 item 2 — laundering taints a local only when the initializer carries
+// the message TEXT. A predicate or derived read produces a bool, an int or a
+// length, so a later outbound use of it is not a leak.
+// ---------------------------------------------------------------------------
+
+test('does not taint a local assigned a null-test over ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var failureCode = result.ErrorMessage is null ? 0 : 1;
+        return Error(failureCode);
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('does not taint a local assigned the length of ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detailLength = result.ErrorMessage.Length;
+        return Error(detailLength);
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('does not taint a local assigned an equality comparison over ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var hasDetail = result.ErrorMessage == null;
+        return Error(hasDetail);
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('still taints a local assigned a concatenation that carries ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = "failed: " + result.ErrorMessage;
+        return Error(detail);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.match(lineOf(source, findings[0].line), /return Error\(detail\);/)
+})
+
+test('still taints a local assigned an interpolation that carries ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = $"failed: {result.ErrorMessage}";
+        return Error(detail);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+// ---------------------------------------------------------------------------
+// #2606 item 3 — rule 2's leak pattern matches the null-conditional read.
+// ---------------------------------------------------------------------------
+
+test('rejects a null-conditional ex?.Message returned from a catch', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            return Error(ex?.Message);
+        }
+`
+  const findings = findCatchBlockFindings(source, mcpPath, 'mcp-unknown-exception-text')
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].rule, 'mcp-unknown-exception-text')
+})
+
+test('rejects a null-conditional ex?.ToString() persisted from a catch', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            commandRun.ErrorMessage = ex?.ToString();
+        }
+`
+  assert.equal(findPersistedStateFindings(source, persistedPath).length, 1)
+})
+
+test('accepts a null-conditional ex?.Message that a redactor wraps', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            commandRun.Fail(SensitiveDataRedactor.Redact(ex?.Message));
+        }
+`
+  assert.deepEqual(findPersistedStateFindings(source, persistedPath), [])
+})
+
+// ---------------------------------------------------------------------------
+// #2606 item 4 — only the log sanitizer members that bound or drop the text
+// excuse exception text. StripControlChars removes control characters and
+// nothing else, so it does not.
+// ---------------------------------------------------------------------------
+
+test('rejects ex.Message passed through LogSanitizer.StripControlChars', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            return Error(LogSanitizer.StripControlChars(ex.Message));
+        }
+`
+  const findings = findCatchBlockFindings(source, mcpPath, 'mcp-unknown-exception-text')
+  assert.equal(findings.length, 1, 'stripping control characters redacts nothing')
+  assert.equal(findings[0].rule, 'mcp-unknown-exception-text')
+})
+
+test('rejects ex.Message passed to an unlisted LogSanitizer member', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            commandRun.Fail(LogSanitizer.Passthrough(ex.Message));
+        }
+`
+  assert.equal(findPersistedStateFindings(source, persistedPath).length, 1)
+})
+
+test('accepts ex.Message passed through LogValueSanitizer.Sanitize', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            commandRun.Fail(LogValueSanitizer.Sanitize(ex.Message));
+        }
+`
+  assert.deepEqual(findPersistedStateFindings(source, persistedPath), [])
+})
+
+test('every accepted log sanitizer member names a real type and method', () => {
+  assert.ok(LOG_SANITIZER_MEMBERS.size > 0)
+
+  // Read the implementations rather than only the shape of the string: an accepted member that was
+  // renamed or deleted would otherwise keep excusing exception text under a name nothing declares.
+  const sources = {
+    LogSanitizer: readFileSync(
+      resolve(repoRoot, 'backend/src/Taskdeck.Api/Telemetry/LogSanitizer.cs'),
+      'utf8',
+    ),
+    LogValueSanitizer: readFileSync(
+      resolve(repoRoot, 'backend/src/Taskdeck.Application/Services/LogValueSanitizer.cs'),
+      'utf8',
+    ),
+  }
+
+  for (const member of LOG_SANITIZER_MEMBERS) {
+    assert.match(member, /^(?:LogSanitizer|LogValueSanitizer)\.[A-Z]\w+$/)
+    const [type, method] = member.split('.')
+    const source = sources[type]
+    assert.match(
+      source,
+      new RegExp(`\\bstatic\\s+class\\s+${type}\\b`),
+      `${member} must name a type declared in its own file`,
+    )
+    assert.match(
+      source,
+      new RegExp(`public\\s+static\\s+[\\w?<>,.\\[\\]]+\\s+${method}\\s*\\(`),
+      `${member} must be declared there as a public static method`,
+    )
+  }
+
+  assert.ok(
+    !LOG_SANITIZER_MEMBERS.has('LogSanitizer.StripControlChars'),
+    'StripControlChars applies no truncation and no redaction',
+  )
+})
+
+// ---------------------------------------------------------------------------
+// PR #2617 review round — the taint narrowing must not drop value-preserving
+// derivations, condition polarity must read the inverted-literal spellings,
+// a braceless if header must not leak into the ternary's condition, and rule
+// 2's exception-text wrappers are SensitiveDataRedactor members by name.
+// ---------------------------------------------------------------------------
+
+test('still taints a local assigned a null-coalescing fallback over ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = result.ErrorMessage ?? "unknown";
+        return Error(detail);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1, '?? keeps the message text when it is not null')
+  assert.match(lineOf(source, findings[0].line), /return Error\(detail\);/)
+})
+
+test('still taints a local assigned a trimmed ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = result.ErrorMessage.Trim();
+        return Error(detail);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('still taints a local assigned string.Concat over ErrorMessage', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = string.Concat("failed: ", result.ErrorMessage);
+        return Error(detail);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('still taints a local assigned an interpolated string handed to a call', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = string.Format(CultureInfo.InvariantCulture, $"failed: {result.ErrorMessage}");
+        return Error(detail);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('rejects a guarded ternary whose condition is compared to false', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal) == false
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1, '== false is the same inversion written without a bang')
+  assert.match(lineOf(source, findings[0].line), /: result\.ErrorMessage/)
+})
+
+test('rejects a guarded ternary whose condition uses an is-false pattern', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal) is false
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('keeps the exemption when a braceless if header precedes the guarded ternary', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        if (!result.IsSuccess)
+            return string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+                ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+                : result.ErrorMessage;
+
+        return Ok();
+    }
+`
+  assert.deepEqual(
+    findMcpFindings(source, mcpPath),
+    [],
+    "the if guard's own bang is not the conditional expression's polarity",
+  )
+})
+
+test('rejects ex.Message wrapped by an unrelated receiver named Redact', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            commandRun.Fail(_scrubber.Redact(ex.Message));
+        }
+`
+  const findings = findPersistedStateFindings(source, persistedPath)
+  assert.equal(findings.length, 1, 'only SensitiveDataRedactor.Redact is the reviewed wrapper')
+  assert.equal(findings[0].rule, 'persisted-unknown-failure')
 })
