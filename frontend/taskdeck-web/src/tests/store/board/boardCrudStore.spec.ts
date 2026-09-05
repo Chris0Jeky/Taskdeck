@@ -187,12 +187,16 @@ describe('boardCrudStore', () => {
     })
 
     // #2689 round-2 finding 1. The throttle stamp is written only after a
-    // SUCCESS, so a retry following a failed read was never blocked by it — but
-    // the stamp an EARLIER success left behind is a different matter. `error`
-    // is shared by every board action, so the boards list can be sitting on its
-    // error branch with a live Retry control (a create/rename/archive failure)
-    // while this window is still open. An explicit retry has to get through;
-    // an ordinary mount still must not.
+    // SUCCESS, but a later failure does not reopen the window: the stamp an
+    // EARLIER success left behind survives it, including a filtered read's
+    // failure, which writes the shared `error` while leaving the stamp
+    // untouched (a filtered SUCCESS writes it like any other success). Only
+    // `force` gets past the throttle — the in-flight share and demo mode still
+    // apply. `error` is shared by every board action, so the boards list can be
+    // sitting on its error branch with a live Retry control (a
+    // create/rename/archive failure) while this window is still open. An
+    // explicit retry has to get through; an ordinary mount still must not.
+    // (Comment corrected in #2689 item 7.)
     it('lets a forced read through the throttle window while an unforced one is still skipped', async () => {
       vi.useFakeTimers()
       mockBoardsApi.getBoards.mockResolvedValue([{ id: 'board-1', name: 'My Board' }])
@@ -206,7 +210,12 @@ describe('boardCrudStore', () => {
       await fetchBoards()
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
 
-      // Same window, forced: a real request, and the skeleton the view needs.
+      // Same window, forced: a real request goes out. The request count is the
+      // load-bearing assertion here; `loading` back at false only says the read
+      // settled, which every settled read satisfies (#2689 item 10). That the
+      // view actually SHOWS a skeleton while a forced retry is in flight is
+      // proven in BoardsListView.spec.ts, "forces past the throttle window when
+      // the alert came from another action after a good read".
       await fetchBoards(undefined, false, { force: true })
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
       expect(state.loading.value).toBe(false)
