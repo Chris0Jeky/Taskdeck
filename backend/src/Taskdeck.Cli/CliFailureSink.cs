@@ -18,9 +18,9 @@ namespace Taskdeck.Cli;
 /// The record deliberately never holds a raw stack trace or a raw <c>Exception.Message</c>: it
 /// carries <see cref="SensitiveDataRedactor.SummarizeException"/> output (redacted, bounded depth
 /// and length) and the shape of the command line, never its values: only the leading command words
-/// and the flag names survive, every other argument becomes
-/// <see cref="ArgumentValuePlaceholder"/>, and the result still goes through
-/// <see cref="SensitiveDataRedactor.Redact"/> for the attached <c>key=value</c> forms (#2577).
+/// and the flag names survive, every other argument — an attached <c>--flag=value</c> value
+/// included — becomes <see cref="ArgumentValuePlaceholder"/>, and the result still goes through
+/// <see cref="SensitiveDataRedactor.Redact"/> (#2577).
 ///
 /// Every failure mode is fail-open: an unwritable directory, a full disk, a pre-existing file at
 /// the target path or a permission error returns false so the caller prints the existing
@@ -45,14 +45,15 @@ internal sealed class CliFailureSink
     /// <summary>Appended when a record hits <see cref="MaximumRecordBytes"/>.</summary>
     internal const string TruncationMarker = "\n[truncated: record exceeded the 8192-byte bound]\n";
 
-    /// <summary>Length, in lowercase hex characters, of a generated correlation reference.</summary>
+    /// <summary>Length, in hex characters, of a generated correlation reference.</summary>
     internal const int ReferenceLength = 12;
 
     /// <summary>
-    /// Length, in lowercase hex characters, of the harness startup-trace correlation
-    /// (<see cref="CliStartupTrace"/>), the other reference shape a caller may file a record under.
+    /// Length, in hex characters, of the harness startup-trace correlation, the other reference
+    /// shape a caller may file a record under. Taken from <see cref="CliStartupTrace"/> rather
+    /// than repeated, so the sink cannot drift from the trace that produced the correlation.
     /// </summary>
-    internal const int TraceCorrelationLength = 32;
+    internal const int TraceCorrelationLength = CliStartupTrace.CorrelationLength;
 
     /// <summary>
     /// Stand-in written in place of every argv token that is not a command word or a flag name
@@ -71,8 +72,13 @@ internal sealed class CliFailureSink
         new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly string? _diagnosticsDirectory;
+    private readonly Func<string, string, string[]> _listRecords;
 
-    private CliFailureSink(string? diagnosticsDirectory) => _diagnosticsDirectory = diagnosticsDirectory;
+    private CliFailureSink(string? diagnosticsDirectory, Func<string, string, string[]>? listRecords = null)
+    {
+        _diagnosticsDirectory = diagnosticsDirectory;
+        _listRecords = listRecords ?? Directory.GetFiles;
+    }
 
     /// <summary>The resolved records directory, or null when it could not be resolved at all.</summary>
     internal string? DiagnosticsDirectory => _diagnosticsDirectory;
@@ -81,21 +87,31 @@ internal sealed class CliFailureSink
     /// Builds a sink rooted at an explicit data directory. Used by tests and by callers that
     /// already know the directory.
     /// </summary>
-    internal static CliFailureSink ForDataDirectory(string? dataDirectory)
+    internal static CliFailureSink ForDataDirectory(string? dataDirectory) =>
+        ForDataDirectory(dataDirectory, listRecords: null);
+
+    /// <summary>
+    /// Same sink, with the retention enumeration supplied. Test seam only: it exists so a test can
+    /// make eviction fail after the record is already written and closed, which is the one path
+    /// where an exception must not turn a kept record into a reported capture failure.
+    /// </summary>
+    internal static CliFailureSink ForDataDirectory(
+        string? dataDirectory,
+        Func<string, string, string[]>? listRecords)
     {
         if (string.IsNullOrWhiteSpace(dataDirectory))
         {
-            return new CliFailureSink(diagnosticsDirectory: null);
+            return new CliFailureSink(diagnosticsDirectory: null, listRecords);
         }
 
         try
         {
-            return new CliFailureSink(Path.GetFullPath(Path.Combine(dataDirectory, DirectoryName)));
+            return new CliFailureSink(Path.GetFullPath(Path.Combine(dataDirectory, DirectoryName)), listRecords);
         }
         catch (Exception)
         {
             // An unresolvable path must never crash the failure boundary itself.
-            return new CliFailureSink(diagnosticsDirectory: null);
+            return new CliFailureSink(diagnosticsDirectory: null, listRecords);
         }
     }
 
@@ -239,7 +255,20 @@ internal sealed class CliFailureSink
             // Evicting first meant a create that then failed (a stale file at the target name, a
             // full disk, a directory that permits delete but not create) destroyed older records
             // and replaced none of them: net diagnostic loss instead of fail-open-with-no-change.
-            EvictOldestRecords(_diagnosticsDirectory, path);
+            //
+            // Past this point the write has succeeded, so eviction gets its own catch: retention
+            // is best effort and must never downgrade a durable record to a reported failure, or
+            // the caller prints the "diagnostics were not captured" notice for a record that
+            // exists. The directory then keeps more than the cap until a later run trims it.
+            try
+            {
+                EvictOldestRecords(_diagnosticsDirectory, path);
+            }
+            catch (Exception)
+            {
+                // Enumeration or sorting failed; the record itself is already on disk.
+            }
+
             return true;
         }
         catch (Exception)
@@ -309,9 +338,9 @@ internal sealed class CliFailureSink
     /// chronological order. Runs after the write, so the record just written is already counted
     /// and is skipped explicitly: a record must never evict itself.
     /// </summary>
-    private static void EvictOldestRecords(string diagnosticsDirectory, string writtenPath)
+    private void EvictOldestRecords(string diagnosticsDirectory, string writtenPath)
     {
-        var existing = Directory.GetFiles(diagnosticsDirectory, FileNameSearchPattern);
+        var existing = _listRecords(diagnosticsDirectory, FileNameSearchPattern);
         var surplus = existing.Length - MaximumRecordCount;
         if (surplus <= 0)
         {
@@ -340,14 +369,16 @@ internal sealed class CliFailureSink
 
     /// <summary>
     /// The two reference shapes the CLI produces: the 12-character generated reference and the
-    /// 32-character harness trace correlation, both lowercase hex. Lowercase hex cannot contain a
-    /// directory separator, a drive letter or a dot, so an accepted reference can only ever name a
-    /// file inside the diagnostics directory.
+    /// 32-character harness trace correlation, both hex. Case is accepted either way, because
+    /// <see cref="CliStartupTrace.IsCorrelationId"/> does: the sink must never refuse a reference
+    /// the CLI itself printed to the operator. Hex cannot contain a directory separator, a drive
+    /// letter or a dot, so an accepted reference can only ever name a file inside the diagnostics
+    /// directory.
     /// </summary>
     private static bool IsAcceptedReference(string? reference) =>
         reference is not null &&
         reference.Length is ReferenceLength or TraceCorrelationLength &&
-        reference.All(character => character is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
+        reference.All(Uri.IsHexDigit);
 
     private static string DescribeVersion()
     {
@@ -364,10 +395,11 @@ internal sealed class CliFailureSink
 
     /// <summary>
     /// Renders argv under the retention policy decided in #2577: keep the command grammar, drop
-    /// every value. A token is retained verbatim only when it starts with '-' (a flag name, whose
-    /// attached <c>key=value</c> form is still put through
-    /// <see cref="SensitiveDataRedactor.Redact"/> below) or when it is one of the leading command
-    /// words. Everything else becomes <see cref="ArgumentValuePlaceholder"/>.
+    /// every value. A token is retained verbatim only when it starts with '-' (a flag name) or
+    /// when it is one of the leading command words. Everything else becomes
+    /// <see cref="ArgumentValuePlaceholder"/>, including the value attached to a flag: a
+    /// <c>--flag=value</c> token keeps only <c>--flag=</c>. The whole line still goes through
+    /// <see cref="SensitiveDataRedactor.Redact"/> below.
     ///
     /// The redactor only masks the <c>key=value</c> and <c>key: value</c> forms, so a
     /// space-separated secret (<c>--token abc123</c>) would otherwise have been retained verbatim,
@@ -394,7 +426,18 @@ internal sealed class CliFailureSink
             var argument = arguments[index];
             if (argument.StartsWith('-'))
             {
-                builder.Append(argument);
+                // A flag name is retained, but its attached value is a value like any other: the
+                // redactor only masks the key=value forms whose key it knows, so --title=... or
+                // --description=... would otherwise reach disk verbatim.
+                var separator = argument.IndexOf('=');
+                if (separator < 0)
+                {
+                    builder.Append(argument);
+                }
+                else
+                {
+                    builder.Append(argument, 0, separator + 1).Append(ArgumentValuePlaceholder);
+                }
 
                 // Nothing after the first flag is a command word, so no later bare token may be
                 // retained on the strength of its shape alone.
