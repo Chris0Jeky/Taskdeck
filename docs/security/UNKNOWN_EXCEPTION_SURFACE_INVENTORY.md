@@ -12,16 +12,25 @@ classified `deliberate-domain` below.
 Every row was originally derived from the code at `a1ed795a7` by direct reading, not from release
 notes. The inventory is now **pinned at `5b2a3c742`** (current `main`). The rows touched by the R1 / R2 /
 R7 fixes and the HTTP rows were re-read at that commit and carry its line numbers; the remaining
-rows were not re-read in this pass and keep their `a1ed795a7` numbers.
+rows were not re-read in this pass and keep their `a1ed795a7` numbers. The rows touched by the
+R4 / R5 / R6 fixes were re-read at `#2575` and carry that branch's line numbers.
 
 ## Sanitizers
 
 | Helper | Definition | Behaviour |
 | --- | --- | --- |
-| `SensitiveDataRedactor.GenericUnexpectedFailureMessage` | `backend/src/Taskdeck.Application/Services/SensitiveDataRedactor.cs:9` | Constant `Unexpected processing error. Check server logs with the correlation ID.` |
-| `SensitiveDataRedactor.SanitizeLlmFailureMessage(code, message)` | `SensitiveDataRedactor.cs:76` | Generic when `code == ErrorCodes.UnexpectedError`, else `Redact(message)`, else `Processing failed.` |
-| `SensitiveDataRedactor.Redact(value)` | `SensitiveDataRedactor.cs:60` | Pattern-based redaction only — does **not** generalize unmatched text |
-| `SensitiveDataRedactor.SummarizeException(ex)` | `SensitiveDataRedactor.cs:89` | Operator-facing summary, 5 inner levels, 1024-char cap. Logging sink only |
+| `SensitiveDataRedactor.GenericUnexpectedFailureMessage` | `backend/src/Taskdeck.Application/Services/SensitiveDataRedactor.cs:29` | Constant `Unexpected processing error. Check server logs with the correlation ID.` |
+| `SensitiveDataRedactor.GenericUnexpectedErrorMessage` | `SensitiveDataRedactor.cs:23` | Constant `An unexpected error occurred.` — the shared definition added by `#2575` for R6 |
+| `SensitiveDataRedactor.SanitizeLlmFailureMessage(code, message)` | `SensitiveDataRedactor.cs:96` | Generic when `code == ErrorCodes.UnexpectedError`, else `Redact(message)`, else `Processing failed.` |
+| `SensitiveDataRedactor.Redact(value)` | `SensitiveDataRedactor.cs:80` | Pattern-based redaction only — does **not** generalize unmatched text |
+| `SensitiveDataRedactor.SummarizeException(ex)` | `SensitiveDataRedactor.cs:109` | Operator-facing summary, 5 inner levels, 1024-char cap. Logging sink only |
+| `CircuitBreakerFailureClassifier.Classify(exception, status)` | `backend/src/Taskdeck.Api/Extensions/CircuitBreakerFailureClassifier.cs:23` | Exception **type** name, or `HTTP <status>`, or `Unknown failure`. Never reads the message. Added by `#2575` for R5 |
+
+The two generic constants are deliberately different texts for two different readers, and `#2575`
+gave each of them one definition (the three private copies and the `ResultExtensions` 500 arm now
+reference the shared constant): `GenericUnexpectedErrorMessage` is the wire-facing string (HTTP 500
+body, batch receipt item) and `GenericUnexpectedFailureMessage` is the operator-facing string
+(persisted state, MCP, CLI) that tells its reader to look the correlation ID up in the server logs.
 
 ## Surface inventory
 
@@ -50,16 +59,16 @@ rows were not re-read in this pass and keep their `a1ed795a7` numbers.
 | MCP telemetry / operation logging | `Mcp/McpTelemetryMiddleware.cs:112`; `Mcp/McpOperationLogger.cs:155,202,241,249` | Nothing reaches the client; broad catches exist for logging only | logging sink | safe | covered by the MCP telemetry suites |
 | CLI (standalone `Taskdeck.Cli`) | `backend/src/Taskdeck.Cli/Program.cs:26,136-138` (top-level `try` / `catch (Exception exception)` delegating to `CliUnexpectedFailure.Handle`); boundary `backend/src/Taskdeck.Cli/Commands/CliUnexpectedFailure.cs:27,54`; sink `backend/src/Taskdeck.Cli/CliFailureSink.cs` | stderr gets one stable generic line (`CliUnexpectedFailure.Message`, aliased to `GenericUnexpectedFailureMessage`) plus a bounded correlation reference — the startup-trace correlation when a trace is enabled, otherwise a generated 12-hex reference for the always-on sink record; no raw message, stack trace or path is printed. Deliberate `DomainException` / usage / pre-migration-backup failures keep their authored messages | `GenericUnexpectedFailureMessage` via `CliUnexpectedFailure.Handle` | safe — closed by `#2466`, retention added by `#2468` | `backend/tests/Taskdeck.Cli.Tests/CliUnexpectedErrorSafetyTests.cs` (13 cases, incl. `Handle_WithoutTrace_PrintsOnlyTheStableGenericLine` `:36`, `Handle_WithTrace_WritesTheFullExceptionExactlyOnceToTheProtectedSink` `:85`, `UnexpectedFailureMessage_IsTheCanonicalRedactorConstant` `:113`, `RealCli_WhenStartupThrows_ExitsWithFailureAndSafeStdErr` `:233`, `RealCli_WithoutTheHarnessTrace_KeepsOneRedactedRecordUnderTheDataDirectory` `:262`) and `backend/tests/Taskdeck.Cli.Tests/CliFailureSinkTests.cs` (11 methods, 13 cases) |
 | CLI first-run bootstrapper | `backend/src/Taskdeck.Cli/CliFirstRunBootstrapper.cs:180,235,325`; type-filtered catches `:109,169,228,307,319,397`; bare cleanup catch `:380-382` | Prints `ex.Message` in operator-facing console text | none | deliberate-domain — local operator console, every catch is type-filtered | none |
-| SignalR hubs | `backend/src/Taskdeck.Api/Extensions/SignalRRegistration.cs:20` (`AddSignalR()` with no options delegate) | Hub exceptions reach clients as the framework default `An unexpected error occurred invoking '<method>'.` | `EnableDetailedErrors` stays at its framework default `false`; no source sets it anywhere in `backend/src` | **open residual** — safe today but default-by-omission, unpinned; see R4 | none asserts the flag |
+| SignalR hubs | `backend/src/Taskdeck.Api/Extensions/SignalRRegistration.cs:24` (`AddSignalR(options => options.EnableDetailedErrors = false)`) | Hub exceptions reach clients as the framework default `An unexpected error occurred invoking '<method>'.` | `EnableDetailedErrors` is pinned to `false` by the options delegate; no configuration key can turn it on | safe — closed by `#2575` | `backend/tests/Taskdeck.Api.Tests/SignalRScaleOutTests.AddTaskdeckSignalR_PinsDetailedErrorsOff` |
 | SignalR logging floor | policy bullet in `SECURITY_LOGGING_REDACTION.md`, `Microsoft.AspNetCore.Hosting.Diagnostics` minimum `Warning` | Prevents Information-level request-target logging from exposing SignalR bearer tokens | post-configuration guard | safe | `Taskdeck.Api.Tests/LoggingProviderConfigurationTests` |
 | Provider health | `backend/src/Taskdeck.Api/Controllers/ConnectorProvidersController.cs:98-103`; `backend/src/Taskdeck.Application/Connectors/ConnectorExecutionService.cs:67-73,116-120,131` | `ConnectorProviderHealthDto.Message` comes from the provider's own `CheckHealthAsync`, not from an exception. Unknown exceptions become the constants `Provider operation failed.`, `Provider operation failed after retries.`, `Failed to retrieve provider capabilities.` | constant strings | owned-elsewhere — `#2213` owns provider-health detail; no exception text is exposed today | none dedicated to these constants |
-| Circuit-breaker state snapshot | `backend/src/Taskdeck.Application/Services/CircuitBreakerStateTracker.cs:29-31,235-236,296`; callers `Extensions/LlmProviderRegistration.cs:425,459`, `Extensions/AuthenticationRegistration.cs:289` | `LastFailureReason` holds Polly outcome text built from `outcome.Exception?.Message`, unsanitized | none | **open residual** — see R5 | none |
+| Circuit-breaker state snapshot | `backend/src/Taskdeck.Application/Services/CircuitBreakerStateTracker.cs:29-31,232-246`; callers `Extensions/LlmProviderRegistration.cs:426,463`, `Extensions/AuthenticationRegistration.cs:290` | `LastFailureReason` holds only a bounded value: the exception type name or `HTTP <status>` from the three Polly `onBreak` sites, or an authored constant from the companion provider lane; every stored reason is sanitized and bounded to 203 characters, and no exception message reaches the snapshot. `HealthController.cs:294-313` still exposes state and `lastTransitionUtc` only | `CircuitBreakerFailureClassifier.Classify` at all three `onBreak` sites, plus `LogValueSanitizer.Sanitize` on every reason the tracker stores | safe — closed by `#2575` | `Taskdeck.Api.Tests/CircuitBreakerTests.BuildCircuitBreakerPolicy_RecordsExceptionTypeName_NotTheExceptionMessage` and `...RecordsHttpStatus_WhenThereIsNoException`; `Taskdeck.Application.Tests/Services/CircuitBreakerStateTrackerTests.RecordState_SanitizesAndBoundsTheStoredFailureReason` and `...KeepsANullFailureReasonNull` |
 
 ## Open residuals
 
-R1, R2 and R7 have since been **closed**; R3-R6 remain open. Numbering is stable — closed entries
-are kept in place rather than renumbered. The guard does not silence any open residual; each sits
-outside the regions the guard inspects, so none is suppressed by an allowlist entry.
+R1, R2, R4, R5, R6 and R7 have since been **closed**; only R3 remains open. Numbering is stable —
+closed entries are kept in place rather than renumbered. The guard does not silence any open residual;
+R3 sits outside the regions the guard inspects, so it is not suppressed by an allowlist entry.
 
 - **R1 — CLOSED by `#2474` (merge `8dbeb81cf`): webhook delivery failure text is now generalized.**
   `OutboundWebhookDeliveryWorker.cs:253-255` persists `GenericUnexpectedFailureMessage` into
@@ -83,19 +92,52 @@ outside the regions the guard inspects, so none is suppressed by an allowlist en
   `ProposalTools.cs:71`, `Services/AutomationProposalService.cs:1591`, `AgentRuntime.cs:278,322` and
   `Services/AgentRunService.cs:107,129`, still surface stored `FailureReason` text verbatim. Historic
   rows are not backfilled.
-- **R4 — SignalR detailed errors are off by omission, not by assertion.** `SignalRRegistration.cs:20`
-  calls `AddSignalR()` with no options delegate and nothing in `backend/src` sets
-  `EnableDetailedErrors`. The behaviour is correct today only because the framework default is
-  `false`; no configuration key or test pins it, so a future options delegate could flip it silently.
-- **R5 — circuit-breaker snapshots hold raw exception text.**
-  `CircuitBreakerStateTracker.LastFailureReason` is populated from `outcome.Exception?.Message`
-  (`LlmProviderRegistration.cs:425,459`, `AuthenticationRegistration.cs:289`). In-memory only, but it
-  is read back into operator-visible state snapshots.
-- **R6 — two divergent generic strings.** `SensitiveDataRedactor.GenericUnexpectedFailureMessage`
-  ("Unexpected processing error. Check server logs with the correlation ID.") and the three private
-  `GenericUnexpectedErrorMessage` constants ("An unexpected error occurred.") in
+- **R4 — CLOSED by `#2575`: SignalR detailed errors are pinned off, not merely defaulted off.**
+  `SignalRRegistration.cs:24` now calls
+  `AddSignalR(options => options.EnableDetailedErrors = false)` with a comment citing this residual.
+  The value was already `false` by framework default, so no behaviour changed; what changed is that the
+  value is now set at the registration site and asserted on the `HubOptions` that registration produces.
+  A later global `Configure<HubOptions>` or per-hub `AddHubOptions<THub>` elsewhere would not be caught
+  by that test. No configuration key was added, so there is no supported way to turn detailed hub
+  errors on. Pinned by
+  `backend/tests/Taskdeck.Api.Tests/SignalRScaleOutTests.AddTaskdeckSignalR_PinsDetailedErrorsOff`,
+  which builds the provider after `AddTaskdeckSignalR` and asserts
+  `IOptions<HubOptions>.Value.EnableDetailedErrors` is `false`.
+- **R5 — CLOSED by `#2575`: circuit-breaker snapshots hold a bounded classification, not exception
+  text.** All three `onBreak` sites (`LlmProviderRegistration.cs:426,463`,
+  `AuthenticationRegistration.cs:290`) now call the single helper
+  `CircuitBreakerFailureClassifier.Classify(Exception?, int?)`
+  (`backend/src/Taskdeck.Api/Extensions/CircuitBreakerFailureClassifier.cs:23`), which returns the
+  exception **type** name, or `HTTP <status>` when there is no exception, and never reads the message.
+  One helper is what keeps the three sites from drifting. As defence in depth,
+  `CircuitBreakerStateTracker.CreateSnapshot` (`:232-246`) — the single point every snapshot is built
+  through, so `RecordState` and the companion provider-failure lane alike — sanitizes any reason it
+  stores with `LogValueSanitizer.Sanitize` (control characters stripped, bounded to 200 characters
+  plus a truncation marker); a null reason stays null. `HealthController.cs:294-313` still exposes
+  only `state` and `lastTransitionUtc`, so no HTTP contract moved. Pinned by
+  `Taskdeck.Api.Tests/CircuitBreakerTests.BuildCircuitBreakerPolicy_RecordsExceptionTypeName_NotTheExceptionMessage`
+  (a secret-like token and a Windows path in the exception message reach neither the snapshot nor the
+  assertion), `...BuildCircuitBreakerPolicy_RecordsHttpStatus_WhenThereIsNoException`, and
+  `Taskdeck.Application.Tests/Services/CircuitBreakerStateTrackerTests.RecordState_SanitizesAndBoundsTheStoredFailureReason`
+  plus `...RecordState_KeepsANullFailureReasonNull`.
+- **R6 — CLOSED by `#2575`: the two generic strings are unchanged but each now has one definition.**
+  Neither user-visible text moved — the HTTP 500 body and the batch receipt item stay
+  "An unexpected error occurred." (a public contract pinned by `UnhandledExceptionApiTests`,
+  `ResultExtensionsTests`, `BatchExecuteProposalsApiTests`, the Application service tests and the
+  frontend `useErrorMapper` spec), and the persisted-state / MCP / CLI string stays "Unexpected
+  processing error. Check server logs with the correlation ID." The divergence was the point, not the
+  defect: the second tells a log reader to look the correlation ID up, which is noise for an end user.
+  What `#2575` fixed is the *duplication*. `SensitiveDataRedactor.GenericUnexpectedErrorMessage`
+  (`SensitiveDataRedactor.cs:23`) is now the shared definition, its doc comment records which reader
+  each string serves and why the two differ deliberately, and the three private constants in
   `UnhandledExceptionMiddleware.cs:11`, `AutomationExecutorService.cs:13` and
-  `BatchProposalExecutionService.cs:11` present two different strings for the same condition.
+  `BatchProposalExecutionService.cs:11` are compile-time aliases of it. Pinned by
+  `Taskdeck.Application.Tests/Services/GenericUnexpectedMessageContractTests`
+  (`TheTwoGenericMessages_AreDistinctAndNonEmpty`,
+  `TheWireFacingMessage_DoesNotCarryTheOperatorInstruction`,
+  `ApplicationServices_UseTheSharedGenericErrorDefinition` for both Application services) and
+  `Taskdeck.Api.Tests/UnhandledExceptionMiddlewareTests.GenericUnexpectedErrorMessage_UsesTheSharedRedactorDefinition`,
+  so a re-literalled copy is a test failure rather than a silent fork.
 - **R7 — CLOSED by `#2466` (merge `57df469e2`): the standalone CLI has a top-level boundary.**
   `Program.cs:26,136-138` wraps the whole dispatch in `try` / `catch (Exception exception)` and
   delegates to `Commands/CliUnexpectedFailure.cs`, which prints one stable generic line

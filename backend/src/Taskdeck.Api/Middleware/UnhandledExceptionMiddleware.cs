@@ -8,7 +8,8 @@ namespace Taskdeck.Api.Middleware;
 
 public sealed class UnhandledExceptionMiddleware
 {
-    private const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+    private const string GenericUnexpectedErrorMessage =
+        SensitiveDataRedactor.GenericUnexpectedErrorMessage;
     private const int MaxExceptionClassificationDepth = 8;
     private const int MaxExceptionTypeLength = 128;
 

@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Reflection;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Application.Services;
 using Taskdeck.Tests.Support;
 using Xunit;
 
@@ -10,6 +12,22 @@ namespace Taskdeck.Api.Tests;
 
 public class UnhandledExceptionMiddlewareTests
 {
+    /// <summary>
+    /// #2351 / R6: the HTTP 500 body string has one definition. The middleware keeps a
+    /// private alias for readability, but its value must come from the shared constant
+    /// so the surfaces that emit it cannot drift into different texts.
+    /// </summary>
+    [Fact]
+    public void GenericUnexpectedErrorMessage_UsesTheSharedRedactorDefinition()
+    {
+        var field = typeof(UnhandledExceptionMiddleware).GetField(
+            "GenericUnexpectedErrorMessage",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        field.Should().NotBeNull("the middleware still declares the generic 500 body constant");
+        field!.GetRawConstantValue().Should().Be(SensitiveDataRedactor.GenericUnexpectedErrorMessage);
+    }
+
     [Fact]
     public async Task InvokeAsync_ShouldNotEmit500_WhenRequestAbortedCancellationIsThrown()
     {
