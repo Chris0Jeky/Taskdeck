@@ -84,6 +84,11 @@ export function useReviewActions(
   // that (#1397 MEDIUM-2).
   const selectedDiffRevised = ref<boolean | null>(null)
   let latestDiffRequestId = 0
+  // The (proposal, revision) pair the open pane was rendered for. Declared with
+  // the rest of the pane's state because `resetDiffState` owns clearing it; the
+  // watcher that reads it, and why it is closure state, are documented below.
+  let openDiffProposalId: string | null = null
+  let openDiffRevisionId: string | null = null
 
   function resetDiffState() {
     selectedDiffProposalId.value = null
@@ -91,6 +96,14 @@ export function useReviewActions(
     selectedDiffMode.value = null
     selectedDiffInvalidReason.value = null
     selectedDiffRevised.value = null
+    // The pair belongs to the pane, so it dies with it (#2215 round 2). Not
+    // every close reaches the watcher: a pane torn down by the diff-error path
+    // or the stored-preview retraction WHILE its row is absent leaves the
+    // watcher's getter null before and after, so no callback runs. A pair left
+    // behind then makes the next open of that row read as a revision landing
+    // under an already-open pane, and the reviewer's click is swallowed.
+    openDiffProposalId = null
+    openDiffRevisionId = null
   }
 
   // Best-effort disclosure signal for the stored preview (#1397 MEDIUM-2): fetch
@@ -190,11 +203,18 @@ export function useReviewActions(
   // executes, the server's latest. Track the (proposal, revision) pair the pane
   // was rendered for and close it when the revision moves under it.
   //
-  // The pair is remembered in closure state rather than read from the watcher's
-  // `oldValue`, because opening a pane also changes this getter (null → row) and
-  // must NOT be mistaken for a revision landing under an already-open pane.
-  let openDiffProposalId: string | null = null
-  let openDiffRevisionId: string | null = null
+  // The pair (declared with the pane state above) is remembered in closure state
+  // rather than read from the watcher's `oldValue`, because opening a pane also
+  // changes this getter (null → row) and must NOT be mistaken for a revision
+  // landing under an already-open pane.
+  //
+  // Paper resolves the same disappearance the other way, and the divergence is
+  // deliberate under #1124 / ADR-0038: Paper has exactly ONE active proposal, so
+  // its watcher on `activeProposal.value?.id` sees the target drop to null and
+  // replaces the whole surface with its settled-elsewhere notice. Legacy renders
+  // a pane PER ROW with no single active proposal, so nothing there observes the
+  // drop — hence keying the pane on the pair instead. The skins must not drift in
+  // what a reviewer is shown; they are not obliged to detect it the same way.
   watch(
     () => {
       const id = selectedDiffProposalId.value
@@ -231,10 +251,9 @@ export function useReviewActions(
         proposalRevisionMoved(openDiffRevisionId, revisionId)
       ) {
         // Cancel any in-flight fetch so a late response cannot re-open the pane.
+        // `resetDiffState` clears the pair along with the pane it belongs to.
         latestDiffRequestId += 1
         resetDiffState()
-        openDiffProposalId = null
-        openDiffRevisionId = null
         return
       }
       openDiffProposalId = proposal.id

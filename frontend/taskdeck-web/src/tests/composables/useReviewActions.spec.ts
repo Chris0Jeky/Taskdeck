@@ -835,4 +835,51 @@ describe('useReviewActions', () => {
     expect(actions.selectedDiff.value).toBe('rev-2 diff content')
     expect(actions.selectedDiffMode.value).toBe('live')
   })
+
+  it('reopens on the first click after a pane torn down while its row was absent (#2215 round 2)', async () => {
+    let rejectDiff!: (reason?: unknown) => void
+    const inFlight = new Promise<string>((_, reject) => {
+      rejectDiff = reject
+    })
+    void inFlight.catch(() => {})
+    vi.mocked(automationApi.getProposalDiff).mockReturnValueOnce(inFlight)
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-1' } as Partial<ApiProposal>),
+    ]
+    const actions = useReviewActions(proposals, dismissableIds, loadProposals)
+
+    const opening = actions.handleToggleDiff('p-1')
+    await nextTick()
+
+    // The queue poll is vetoed only by an in-flight ACTION or an open dialog,
+    // never by an in-flight /diff, so the row can drop while the fetch is out.
+    proposals.value = []
+    await nextTick()
+
+    // The fetch then fails and tears the pane down. Both the watcher's before
+    // and after values are null here (the pane is open on a row that is not in
+    // the queue), so no callback runs to notice the pane closed.
+    rejectDiff({ response: { status: 500 } })
+    await opening
+    await nextTick()
+    expect(actions.selectedDiffProposalId.value).toBeNull()
+
+    // The row returns with a newer revision. There is no open pane to close,
+    // so a pair left behind by the teardown is now stale.
+    proposals.value = [
+      makeProposal({ status: 'PendingReview', latestRevisionId: 'rev-2' } as Partial<ApiProposal>),
+    ]
+    await nextTick()
+
+    // The reviewer asks for the diff again. A stale pair would make the watcher
+    // read this fresh open as a revision landing under an already-open pane and
+    // close it, swallowing the click.
+    vi.mocked(automationApi.getProposalDiff).mockResolvedValue('rev-2 diff content')
+    await actions.handleToggleDiff('p-1')
+    await nextTick()
+
+    expect(actions.selectedDiffProposalId.value).toBe('p-1')
+    expect(actions.selectedDiff.value).toBe('rev-2 diff content')
+    expect(actions.selectedDiffMode.value).toBe('live')
+  })
 })
