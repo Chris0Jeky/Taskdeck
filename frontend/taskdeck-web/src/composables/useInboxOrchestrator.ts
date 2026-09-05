@@ -27,6 +27,22 @@ export function useInboxOrchestrator(options: {
   let scopedBoardLoadGeneration = 0
   let latestInboxLoadRequestId = 0
   const isScopeReplacement = ref(false)
+  /**
+   * Which scope a raised `isScopeReplacement` belongs to, and whether that
+   * replacement has already spent its one repair load (#2591).
+   *
+   * Orchestrator bookkeeping rather than a store observable on purpose. The
+   * store keeps its list request id private and publishes only `items`,
+   * `loadingList` and `listError` — and `items` also moves on writes that
+   * prove nothing about the current scope (optimistic summary writes, the
+   * batch poll's reconciliation reader), so watching it would clear the flag
+   * without the new scope's rows ever having landed: the #2501 harm. The
+   * `applied` boolean from `fetchItems` stays the only evidence that a list
+   * response was written, and this record is what tells a LATER load that the
+   * response it is about to report on is the one an outstanding replacement
+   * was waiting for.
+   */
+  let scopeReplacementLatch: { scopeKey: string; repairIssued: boolean } | null = null
 
   // Batch selection state
   const selectedIds = ref<Set<string>>(new Set())
@@ -72,6 +88,18 @@ export function useInboxOrchestrator(options: {
       limit: 200,
       ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
     }
+  }
+
+  /**
+   * The Inbox's current scope as a comparable key. Two list loads answer the
+   * same question only when their keys match; a load whose key no longer
+   * matches the current one must not touch scope-replacement state.
+   */
+  function currentScopeKey(): string {
+    return JSON.stringify({
+      boardId: activeBoardId.value,
+      archived: isArchivedHistory.value,
+    })
   }
 
   const activeBoardName = computed(() => {
@@ -424,14 +452,15 @@ export function useInboxOrchestrator(options: {
 
   async function loadInboxInternal(scopeReplacement = false) {
     const requestId = ++latestInboxLoadRequestId
-    const requestScopeKey = JSON.stringify({
-      boardId: activeBoardId.value,
-      archived: isArchivedHistory.value,
-    })
+    const requestScopeKey = currentScopeKey()
     if (scopeReplacement) {
       isScopeReplacement.value = true
+      // A fresh replacement, and a fresh repair budget with it. The repair
+      // below is a PLAIN load, so it can never refill its own budget.
+      scopeReplacementLatch = { scopeKey: requestScopeKey, repairIssued: false }
     }
     inboxLoadPerf.start()
+    let repairDroppedReplacement = false
     try {
       // `applied` is the store reporting that THIS call's response was written
       // into `items` (#2501). `fetchItems` resolves without writing anything
@@ -442,18 +471,61 @@ export function useInboxOrchestrator(options: {
       // scope-key checks below stay: they guard against a stale caller, while
       // `applied` guards against a dropped response.
       const applied = await captureStore.fetchItems(currentListQuery())
-      const currentScopeKey = JSON.stringify({
-        boardId: activeBoardId.value,
-        archived: isArchivedHistory.value,
-      })
-      if (applied && requestId === latestInboxLoadRequestId && requestScopeKey === currentScopeKey) {
+      // Still the latest load, still answering the scope the user is looking
+      // at. A stale load reports on nothing.
+      const isLatestForThisScope =
+        requestId === latestInboxLoadRequestId && requestScopeKey === currentScopeKey()
+      if (applied && isLatestForThisScope) {
         isScopeReplacement.value = false
+        scopeReplacementLatch = null
+      } else if (
+        !applied &&
+        isLatestForThisScope &&
+        scopeReplacementLatch?.scopeKey === requestScopeKey
+      ) {
+        // A dropped response under an outstanding replacement for THIS scope
+        // (#2591). Nothing else will clear the flag: the read that superseded
+        // this one is the store's own post-batch refresh, whose `applied`
+        // result the store discards, and no later orchestrator load is coming
+        // (the id check above proved that). Left alone the flag latched
+        // forever, and `PaperTriageTable` then hid the rows AND their count
+        // with no Retry — an empty body under a count-free eyebrow.
+        //
+        // So: repair the scope ONCE with the current scope's query. The flag
+        // stays raised while that read is in flight, so the table shows its
+        // loading state rather than the wrong scope's rows.
+        if (scopeReplacementLatch.repairIssued) {
+          // The repair was dropped too. Do not loop. Clear the flag instead and
+          // let the table state the truth it has: the store's rows with their
+          // count, its empty state, or its error surface with Retry. Clearing
+          // here is safe only while this orchestrator is the sole Paper-side
+          // `fetchItems` caller: a superseding read resolves the same
+          // `currentListQuery` thunk when it is issued, but issued is not
+          // applied, and until it applies `items` still holds the last APPLIED
+          // list, which can be the previous scope's rows. Today the only other
+          // caller is Legacy's `batchTriage` reconciliation read, and Legacy
+          // never renders this flag. A Paper batch surface must clear only once
+          // a read has applied since the latch was raised.
+          isScopeReplacement.value = false
+          scopeReplacementLatch = null
+        } else {
+          scopeReplacementLatch.repairIssued = true
+          repairDroppedReplacement = true
+        }
       }
     } catch {
-      // Store handles toast + error state.
+      // Store handles toast + error state. The flag stays raised deliberately:
+      // a failed load leaves the previous scope's rows in the store, and the
+      // table's error surface carries a Retry while `listError` is set. (A
+      // later background poll success clears `listError` without touching
+      // this flag; that failure-path shape is tracked on #2591.)
     }
     await openItemFromHash()
     inboxLoadPerf.end()
+    if (repairDroppedReplacement) {
+      // A plain load: it must not restart the replacement, only finish it.
+      await loadInboxInternal()
+    }
   }
 
   function loadInbox() {
