@@ -652,6 +652,13 @@ export const useCaptureStore = defineStore('capture', () => {
     await Promise.all(
       stale.map(async (id) => {
         try {
+          // `onRefreshed` is the caller's record that this id was RECONCILED,
+          // and for a tracked item with no summary row it is the whole of the
+          // batch poll's completion evidence. `fetchDetail` resolves on its
+          // drop paths too, so firing on resolution alone claimed a
+          // reconciliation that never reached `detailById` and let the poll
+          // complete on pre-batch state (#2640).
+          let cached = false
           await fetchDetail(id, {
             forceRefresh: true,
             showToast: false,
@@ -682,8 +689,9 @@ export const useCaptureStore = defineStore('capture', () => {
             trackLoading: false,
             requestOptions: options.requestOptions,
             shouldCache: isCurrent,
+            onCacheOutcome: (didCache) => { cached = didCache },
           })
-          if (isCurrent()) options.onRefreshed?.(id)
+          if (cached && isCurrent()) options.onRefreshed?.(id)
         } catch {
           // A later poll tick retries transient detail failures.
         }

@@ -2786,6 +2786,62 @@ describe('captureStore', () => {
       },
     )
 
+    /**
+     * `refreshedDetailIds` is the poll's record of ids it RECONCILED, and for a
+     * tracked item with no summary row it is the whole of `isComplete`'s and
+     * `isObservedTerminal`'s evidence. `onRefreshed` used to fire on
+     * `fetchDetail` RESOLVING, which a dropped read also does, so the poll
+     * could complete and move the badge on pre-batch detail state (#2640).
+     *
+     * Isolated on the write-generation drop path on purpose: with no summary
+     * row, `keepItem` records its write without moving the list write
+     * generation, so the tick's own `isCurrent()` stays true and the only
+     * thing rejecting the read is `fetchDetail`'s own compare.
+     */
+    it('does not claim a reconciliation for a detail read the store dropped', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        // Beyond the newest-first list cap, so the detail is the only surface
+        // this poll can complete on. It holds pre-batch state: the Failed
+        // outcome the capture was re-triaged for.
+        store.items = []
+        store.detailById['c-1'] = detailFor('c-1', 'Failed')
+        vi.mocked(captureApi.listItems).mockResolvedValue([] as never)
+
+        let resolveReconcile!: (value: unknown) => void
+        vi.mocked(captureApi.getItem).mockReturnValueOnce(
+          new Promise((resolve) => { resolveReconcile = resolve }) as never,
+        )
+
+        const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+
+        // The user keeps the capture while that reconciliation read is in
+        // flight. Keep leaves the triage status alone.
+        vi.mocked(captureApi.keepItem).mockResolvedValue(detailFor('c-1', 'Failed'))
+        await store.keepItem('c-1')
+        const countRefreshesAfterWrite = workspaceMocks.refreshWorkloadCounts.mock.calls.length
+
+        resolveReconcile(detailFor('c-1', 'ProposalCreated'))
+        await vi.advanceTimersByTimeAsync(0)
+
+        // The response never entered the caches, so the reconciled body is not
+        // what the store holds.
+        expect(store.detailById['c-1']?.status).toBe('Failed')
+        // Nothing was reconciled, so the poll must neither complete nor move
+        // the badge on the strength of a reconciliation that did not happen.
+        expect(workspaceMocks.refreshWorkloadCounts)
+          .toHaveBeenCalledTimes(countRefreshesAfterWrite)
+        await vi.advanceTimersByTimeAsync(3_000)
+        expect(vi.mocked(captureApi.listItems).mock.calls.length).toBeGreaterThan(1)
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     describe('resetForLogout', () => {
       it('clears the per-item summary generation guard', async () => {
         vi.useFakeTimers()
