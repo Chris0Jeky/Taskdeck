@@ -125,7 +125,7 @@ function mountView(props: Record<string, unknown> = {}) {
         CardModal: {
           name: 'CardModal',
           props: ['card', 'isOpen', 'labels', 'presentation'],
-          emits: ['dirty-change'],
+          emits: ['dirty-change', 'updated', 'close'],
           template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
         },
         TdDialog: {
@@ -346,6 +346,97 @@ describe('PaperBoardView', () => {
 
     await expect(navigation).resolves.toBe(true)
     expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  /*
+   * The save/delete signal (#2090 residual).
+   *
+   * `useCardModal` awaits `boardStore.updateCard` / `deleteCard` and only then
+   * calls `onUpdated()` immediately followed by `onClose()` — which `CardModal`
+   * emits as `updated` then `close`. A plain close emits `close` alone. So
+   * `updated` is the one event that means "the unsaved changes are gone", and
+   * these helpers reproduce the two real sequences rather than a single event.
+   */
+  async function openDirtyCard(wrapper: ReturnType<typeof mountView>, card: Card) {
+    wrapper.findAllComponents(PaperBoardColumn)[0]!.vm.$emit('card-click', card)
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+  }
+
+  async function emitSuccessfulSave(wrapper: ReturnType<typeof mountView>) {
+    const modal = wrapper.findComponent({ name: 'CardModal' })
+    modal.vm.$emit('updated')
+    modal.vm.$emit('close')
+    await nextTick()
+  }
+
+  it('continues a pending route navigation after a successful save', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+
+    await emitSuccessfulSave(wrapper)
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
+  /*
+   * The delete path emits the same `updated` + `close` pair
+   * (`useCardModal.handleDeleteConfirm`), so the stub cannot tell it from a
+   * save — what makes this a distinct case is the board state it lands in: the
+   * card is gone from the store, and the navigation must still continue.
+   */
+  it('continues a pending route navigation after a successful delete', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeUpdateGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+
+    const survivingCards = cardsByColumn.get('col-backlog')!.slice(1)
+    mockBoardStore.cardsByColumn = new Map<string, Card[]>([
+      ['col-backlog', survivingCards],
+      ['col-today', []],
+      ['col-progress', []],
+      ['col-done', []],
+    ])
+    mockBoardStore.currentBoardCards = survivingCards
+    await emitSuccessfulSave(wrapper)
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(false)
+  })
+
+  it('still cancels a pending navigation when the inspector is only closed', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('close')
+    await nextTick()
+
+    await expect(navigation).resolves.toBe(false)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('leaves a successful save with no pending navigation unchanged', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    await emitSuccessfulSave(wrapper)
+
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+    // The editor is clean again, so the next navigation is not guarded at all.
+    expect(routeLeaveGuard!()).toBe(true)
   })
 
   it('requests the browser unload confirmation only for a dirty inspector', async () => {

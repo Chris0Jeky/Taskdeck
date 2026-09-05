@@ -421,6 +421,26 @@ function closeCard() {
   cardEditorDirty.value = false
 }
 
+/**
+ * CardModal's `updated` — a card that was successfully saved or deleted.
+ *
+ * `useCardModal` awaits `boardStore.updateCard` / `deleteCard` and only then
+ * calls `onUpdated()` immediately followed by `onClose()`; a plain close emits
+ * `close` alone. So `updated` is the one signal that the unsaved changes the
+ * route guard is holding a navigation for are gone, and the navigation
+ * continues instead of being cancelled.
+ *
+ * This runs before the `close` that follows it, and clearing
+ * `pendingNavigation` here is what stops `closeCard` from resolving the same
+ * navigation `false` a moment later; `closeCard` still clears the editor.
+ */
+function handleCardUpdated() {
+  const navigation = pendingNavigation.value
+  pendingNavigation.value = null
+  cardEditorDirty.value = false
+  navigation?.resolve(true)
+}
+
 function handleCardEditorDirtyChange(dirty: boolean) {
   cardEditorDirty.value = dirty
 }
@@ -1059,7 +1079,7 @@ async function addStarterColumns() {
           :labels="boardStore.currentBoardLabels"
           :presentation="cardPresentation"
           @close="closeCard"
-          @updated="closeCard"
+          @updated="handleCardUpdated"
           @dirty-change="handleCardEditorDirtyChange"
         />
 
