@@ -129,7 +129,13 @@ function impactSummary(proposal: Proposal): string {
 
 function getOperationHeadlines(proposal: Proposal): string[] {
   void displayVersion.value
-  const operations = proposal.operations ?? []
+  // `operationHeadlines` is built server-side in SEQUENCE order, so headline n describes the n-th
+  // operation by sequence — not the n-th element of the wire array, whose order this client does
+  // not control (#2563). Sort before pairing so the enrichment below always reads the operation
+  // its headline is actually about. The backend now emits sequence order too; this stays as the
+  // local defence that keeps the card correct against an older backend, and matches the sort
+  // `storedOperationsFallback` above already applies to the same array.
+  const operations = [...(proposal.operations ?? [])].sort((a, b) => a.sequence - b.sequence)
   const suppliedHeadlines = proposal.presentation?.operationHeadlines ?? []
   const headlineCount = Math.max(operations.length, suppliedHeadlines.length)
   return Array.from({ length: headlineCount }, (_, index) => {

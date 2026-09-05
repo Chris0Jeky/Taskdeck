@@ -79,6 +79,88 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             entity.ChangeCount == 1);
     }
 
+    /// <summary>
+    /// #2563: the wire contract for a multi-operation proposal. <c>operationHeadlines</c> is always
+    /// built in Sequence order, so <c>operations</c> must arrive in that same order or a client
+    /// pairing the two arrays by index describes a different operation than the one it shows. This
+    /// creates a proposal whose request array order is the REVERSE of its sequences and asserts the
+    /// order on BOTH wire reads.
+    /// <para>
+    /// The create response is the deterministic half: it maps the in-memory collection in
+    /// <c>AddOperation</c> order, which is the request's array order, with no database read
+    /// involved. The GET half is a contract lock rather than a second reproduction - the persisted
+    /// read goes through an EF <c>Include</c> that carries no ORDER BY, but SQLite's planner
+    /// currently serves it from the <c>(ProposalId, Sequence)</c> index and so happens to return
+    /// sequence order already. That is a query-plan artifact, not a guarantee; this asserts the
+    /// order the endpoint owes regardless of which index the planner picks.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task GetProposal_ShouldReturnOperationsInSequenceOrder_WhenStoredOutOfSequenceOrder()
+    {
+        var userId = await AuthenticateAsync("automation-operation-order");
+        var boardId = await CreateOwnedBoardAsync(userId);
+
+        var createRequest = new CreateProposalDto(
+            SourceType: ProposalSourceType.Chat,
+            RequestedByUserId: userId,
+            Summary: "Three cards created out of order",
+            RiskLevel: RiskLevel.Low,
+            CorrelationId: Guid.NewGuid().ToString(),
+            BoardId: boardId,
+            Operations: new List<CreateProposalOperationDto>
+            {
+                new(
+                    Sequence: 2,
+                    ActionType: "card.create",
+                    TargetType: "Card",
+                    Parameters: "{\"title\":\"Third card\"}",
+                    IdempotencyKey: Guid.NewGuid().ToString()),
+                new(
+                    Sequence: 1,
+                    ActionType: "card.create",
+                    TargetType: "Card",
+                    Parameters: "{\"title\":\"Second card\"}",
+                    IdempotencyKey: Guid.NewGuid().ToString()),
+                new(
+                    Sequence: 0,
+                    ActionType: "card.create",
+                    TargetType: "Card",
+                    Parameters: "{\"title\":\"First card\"}",
+                    IdempotencyKey: Guid.NewGuid().ToString()),
+            });
+
+        var createResponse = await _client.PostAsJsonAsync("/api/automation/proposals", createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdProposal = await createResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Select(operation => operation.Sequence).Should().Equal(0, 1, 2);
+        createdProposal.Operations.Select(operation => operation.Parameters).Should().Equal(
+            "{\"title\":\"First card\"}",
+            "{\"title\":\"Second card\"}",
+            "{\"title\":\"Third card\"}");
+        createdProposal.Presentation.OperationHeadlines.Should().Equal(
+            "Create card \"First card\".",
+            "Create card \"Second card\".",
+            "Create card \"Third card\".");
+
+        var getResponse = await _client.GetAsync($"/api/automation/proposals/{createdProposal.Id}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var retrieved = await getResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        retrieved.Should().NotBeNull();
+        retrieved!.Operations.Should().HaveCount(3);
+        retrieved.Operations.Select(operation => operation.Sequence).Should().Equal(0, 1, 2);
+        retrieved.Operations.Select(operation => operation.Parameters).Should().Equal(
+            "{\"title\":\"First card\"}",
+            "{\"title\":\"Second card\"}",
+            "{\"title\":\"Third card\"}");
+        retrieved.Presentation.OperationHeadlines.Should().Equal(
+            "Create card \"First card\".",
+            "Create card \"Second card\".",
+            "Create card \"Third card\".");
+    }
+
     [Fact]
     public async Task CreateProposal_ExternalTrustedConfidence_IsIgnoredAndSerializesWithoutANumber()
     {
