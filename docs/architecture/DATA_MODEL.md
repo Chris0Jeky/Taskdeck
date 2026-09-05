@@ -1,6 +1,6 @@
 # Data Model Reference
 
-Last Verified: 2026-08-30 (Context Fabric block re-verified against `TaskdeckDbContext` after CF-01 `#2255`: `Capture`, `SourceAsset`, `SourceAssetTextPayload`, `CaptureBackfillState`; other regions unchanged since the 2026-08-26 pass -- full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
+Last Verified: 2026-08-30 (ProposalProvenance section re-verified 2026-09-05 for the producer-triple columns; Context Fabric block re-verified against `TaskdeckDbContext` after CF-01 `#2255`: `Capture`, `SourceAsset`, `SourceAssetTextPayload`, `CaptureBackfillState`; other regions unchanged since the 2026-08-26 pass -- full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
 
 This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
 
@@ -488,14 +488,14 @@ backfilling existing proposals. Consumers must handle absence --
 | Id | `Guid` | Yes | PK | |
 | ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade), unique | Owning proposal |
 | CorrelationId | `string` | Yes | 1-100 chars | Ties provenance to the originating pipeline run |
-| ModelId | `string` | Yes | 1-100 chars | Generating model (e.g. `gpt-4o`, `mock`) when a producer ran; otherwise an origin label (`chat-tools`, `manual`, `queue`, `unknown`) chosen from the proposal's source type, so this column alone never proves a model produced the proposal |
-| Provider | `string?` | No | Max 64 chars | Producer that ran (e.g. `openai`, `mock`); stamped today only by capture triage; null for pre-`20260904030926` rows and for Chat, Manual and Queue producers |
+| ModelId | `string` | Yes | 1-100 chars | The model id the creating caller supplied (server-stamped by capture triage, e.g. `gpt-5.6-luna`; body-supplied on `POST /api/automation/proposals`, see `#2499`); when none is supplied, an origin label from the source type (`chat-tools`, `manual`, `queue`; `unknown` only for an out-of-range value), so this column alone never proves a model produced the proposal |
+| Provider | `string?` | No | Max 64 chars | Producer that ran, as capture triage records it: `OpenAI` for the live leg, `deterministic-extractor` for the fallback (the mock provider declines before extraction, so `mock` is never stored); stamped today only by capture triage; null for pre-`20260904030926` rows and for every row whose `ModelId` is an origin label |
 | PromptVersion | `string?` | No | Max 64 chars | Prompt version the producer used; same coverage as `Provider` |
 | TotalTokens | `int` | Yes | >= 0 | Prompt + completion tokens |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
 
-`GET /automation/proposals/{id}/provenance/metadata` projects the producer triple fail-closed
+`GET /api/automation/proposals/{id}/provenance/metadata` projects the producer triple fail-closed
 (`ProvenanceQueryService.MapMetadata`): model and prompt version are reported only alongside a
 recorded `Provider`, so a row whose `Provider` is null answers with all three fields null even when
 `ModelId` holds a real model id (pre-migration live-triage rows), because an origin label rendered as a
