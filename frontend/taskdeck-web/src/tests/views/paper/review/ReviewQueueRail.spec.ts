@@ -34,6 +34,7 @@ function mountRail(props?: Partial<{
   loading: boolean
   queueUnavailable: boolean
   awaitingCount: number
+  announcementKey: string
 }>) {
   return mount(ReviewQueueRail, {
     props: {
@@ -41,6 +42,7 @@ function mountRail(props?: Partial<{
       activeId: props?.activeId ?? null,
       awaitingCount: props?.awaitingCount ?? 3,
       staleCount: 2,
+      ...(props?.announcementKey !== undefined ? { announcementKey: props.announcementKey } : {}),
       ...(props?.loading !== undefined ? { loading: props.loading } : {}),
       ...(props?.queueUnavailable !== undefined ? { queueUnavailable: props.queueUnavailable } : {}),
       dismissableCount: props?.dismissableCount ?? 0,
@@ -337,5 +339,40 @@ describe('ReviewQueueRail queue announcement (#2214)', () => {
     expect(wrapper.get('[data-testid="paper-review-queue-live"]').text()).toContain(
       '2 proposals awaiting review',
     )
+  })
+
+  it('replaces the announcement node when the queue identity changes under an unchanged count (#2214 item 4)', async () => {
+    // The rail cannot derive this itself: `items` is the whole visible queue,
+    // not the awaiting set the count is about, and a rail-local derivation is
+    // exactly how the two skins drift (#1124 / ADR-0038). The key comes from the
+    // shared composable so Legacy and Paper re-announce on the same evidence.
+    const wrapper = mountRail({ awaitingCount: 2, announcementKey: 'p-a\np-b' })
+    const region = wrapper.get('[data-testid="paper-review-queue-live"]').element
+    const announced = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+    expect(announced.text()).toContain('2 proposals awaiting review')
+    const before = announced.element
+
+    // A byte-identical queue is not news.
+    await wrapper.setProps({ announcementKey: 'p-a\np-b' })
+    expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(before)
+
+    // One awaiting proposal swapped for another: same count, same sentence.
+    await wrapper.setProps({ announcementKey: 'p-a\np-c' })
+    const after = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+    expect(after.text()).toContain('2 proposals awaiting review')
+    expect(after.element).not.toBe(before)
+    // The region is never remounted; only the node inside it is replaced.
+    expect(wrapper.get('[data-testid="paper-review-queue-live"]').element).toBe(region)
+  })
+
+  it('keeps the whole announcement withheld while the count is unspeakable, key or no key', async () => {
+    // The identity moves for a reason that is not "the awaiting queue changed"
+    // when the queue is withdrawn: `recordQueueAccessRevoked` empties it. The
+    // #2593 gate still wins over the re-announcement.
+    const wrapper = mountRail({ awaitingCount: 2, announcementKey: 'p-a\np-b' })
+    await wrapper.setProps({ queueUnavailable: true, awaitingCount: 0, announcementKey: '' })
+    const live = wrapper.get('[data-testid="paper-review-queue-live"]')
+    expect(live.text()).toBe('')
+    expect(wrapper.find('[data-testid="paper-review-queue-announcement"]').exists()).toBe(false)
   })
 })

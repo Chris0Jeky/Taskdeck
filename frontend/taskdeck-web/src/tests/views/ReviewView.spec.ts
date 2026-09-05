@@ -1900,6 +1900,53 @@ describe('ReviewView', () => {
     }
   })
 
+  it('re-announces the awaiting count when a poll swaps the queue without changing its size (#2214 item 4)', async () => {
+    // The defect: the sentence was a pure function of the pending count, so a
+    // poll that removed one pending proposal and added another rendered a
+    // byte-identical "1 proposal awaiting review." -- no DOM mutation inside the
+    // live region, nothing announced, the queue moved in silence.
+    //
+    // The fix keeps the sentence and its count exactly as they shipped and
+    // re-keys the node that carries them on the queue's ordered awaiting ids.
+    // Replacing that node inside a region that itself stays mounted is a node
+    // ADDITION, which is what `aria-live`'s default
+    // `aria-relevant="additions text"` announces.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-first' })])
+      const { wrapper } = await mountAt('/workspace/review')
+
+      const region = wrapper.get('[data-testid="review-queue-live"]').element
+      const announced = wrapper.get('[data-testid="review-queue-announcement"]')
+      expect(announced.text()).toContain('1 proposal awaiting review')
+      const beforeSwap = announced.element
+
+      // A poll answering with the same queue is not news, and must not put a
+      // repeat of the same figure in a reviewer's ear every 15 seconds.
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-testid="review-queue-announcement"]').element).toBe(beforeSwap)
+
+      // One pending proposal decided elsewhere, one created in its place.
+      mocks.getProposals.mockResolvedValue([buildProposal({ id: 'proposal-second' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const afterSwap = wrapper.get('[data-testid="review-queue-announcement"]')
+      expect(afterSwap.text()).toContain('1 proposal awaiting review')
+      expect(afterSwap.element).not.toBe(beforeSwap)
+      // The region itself is never remounted -- a live region inserted at the
+      // same moment its text appears is the unreliably-announced case #2593 and
+      // #2630 exist to avoid.
+      expect(wrapper.get('[data-testid="review-queue-live"]').element).toBe(region)
+      expect(wrapper.get('[data-testid="review-queue-live"]').attributes('aria-live')).toBe('polite')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('renders the pinned proposal, not the unavailable panel, after moving from a dead pin to a live one (#2214)', async () => {
     // What this pins: navigating from a refused pin X to a resolvable pin Y
     // shows Y's card and no panel.

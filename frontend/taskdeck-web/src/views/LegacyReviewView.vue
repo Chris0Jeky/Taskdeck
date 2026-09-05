@@ -27,6 +27,8 @@ const {
   boardOptions,
   visibleProposals,
   summaryCards,
+  awaitingProposalIds,
+  queueAnnouncementKey,
   queueAccessRevoked,
   queueRefreshStale,
   queueRefreshRefused,
@@ -217,9 +219,13 @@ const workspace = useWorkspaceStore()
 // catalog rather than being forked per skin: the refused-deep-link panel reuses
 // `review.empty.unavailable.*`, and the background-refresh disclosures reuse
 // `review.queue.degraded.*` and `review.queue.refused.*` (#2214).
-const awaitingCount = computed(
-  () => summaryCards.value.find((card) => card.id === 'pending-review')?.value ?? 0,
-)
+// The count and the identity the announcement is keyed on come from ONE
+// composable predicate (#2214 item 4). Reading the number off `summaryCards`'
+// `pending-review` card computed the same thing a second way and left the skin
+// with no notion of WHICH proposals it stood for, which is how a count-neutral
+// replacement stayed silent. The rendered value is unchanged: that card counts
+// exactly `visibleProposals` in `PendingReview` and not expired.
+const awaitingCount = computed(() => awaitingProposalIds.value.length)
 const awaitingAnnouncement = computed(() =>
   awaitingCount.value === 1
     ? '1 proposal awaiting review.'
@@ -321,9 +327,22 @@ onUnmounted(() => {
          a CHANGE, so an ungated region speaks "0 proposals awaiting review."
          beside a panel saying the queue is gone. The region withholds its
          CONTENT rather than being unmounted, because a live region inserted at
-         the same moment its text appears is unreliably announced. -->
+         the same moment its text appears is unreliably announced.
+
+         The sentence sits in a node KEYED on the queue's ordered awaiting ids
+         (#2214 item 4). A live region only speaks when it changes, so a poll
+         that removed one pending proposal and added another rendered the same
+         string and said nothing. Re-keying replaces this node inside the region
+         that stays mounted, and a node addition is what `aria-live`'s default
+         `aria-relevant="additions text"` announces — same sentence, same count,
+         spoken once. A byte-identical queue keeps its key and stays silent.
+         Paper keys the identical region on the same value (#1124 / ADR-0038). -->
     <p class="sr-only" role="status" aria-live="polite" data-testid="review-queue-live">
-      {{ countIsAnnounceable ? awaitingAnnouncement : '' }}
+      <span
+        v-if="countIsAnnounceable"
+        :key="queueAnnouncementKey"
+        data-testid="review-queue-announcement"
+      >{{ awaitingAnnouncement }}</span>
     </p>
 
     <!-- Recovery is the half of the degraded disclosure that was missing
