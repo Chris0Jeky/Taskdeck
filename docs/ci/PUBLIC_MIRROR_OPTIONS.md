@@ -87,9 +87,9 @@ runs nothing; it is a destination. A later PR implements it as `.github/workflow
    redacted output, non-zero exit on any finding. A snapshot-wide grep for `self-hosted` or
    `runs-on:` cannot be the second check because it is not satisfiable: measured on this branch, 244
    such occurrences sit in 85 tracked files outside `.github` (`docs/analysis/`, `scripts/ci/`,
-   `ci/schemas/`, ADR-0066 and more), and 9 in 7 files survive even the export list above
-   (`README.md`, `docs/platform/CONFIGURATION_REFERENCE.md`, product source), every one the word
-   `self-hosted` in deployment prose. So the check is split.
+   `ci/schemas/`, ADR-0066 and more), and 7 in 6 files survive even the export list above
+   (`README.md`, `docs/platform/CONFIGURATION_REFERENCE.md`, backend and frontend source), every one
+   the word `self-hosted` in self-hosting prose. So the check is split.
    - **Fails the run:** any surviving file under a `.github/` directory at any depth other than the
      generated pointer (the tree carries a nested one under
      `docs/archive/2026-02-25_inreview-repo-pack/REPO_PACK/`); any `.yml`/`.yaml` file parsing to a
