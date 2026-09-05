@@ -36,6 +36,13 @@ function mountRail(props?: Partial<{
   awaitingCount: number
   announcementKey: string
   attachTo: boolean
+  /**
+   * The RETIRED pre-fix input (#2599 item 1). It is no longer a prop, so the
+   * rail receives it as an inert fallthrough attribute; only the regression pin
+   * below passes it, and only so that test fails on the pre-fix rail, where
+   * this was the announcement gate's first term.
+   */
+  loading: boolean
 }>) {
   return mount(ReviewQueueRail, {
     ...(props?.attachTo ? { attachTo: document.body } : {}),
@@ -46,6 +53,7 @@ function mountRail(props?: Partial<{
       staleCount: 2,
       ...(props?.announcementKey !== undefined ? { announcementKey: props.announcementKey } : {}),
       ...(props?.queueScopeLoaded !== undefined ? { queueScopeLoaded: props.queueScopeLoaded } : {}),
+      ...(props?.loading !== undefined ? { loading: props.loading } : {}),
       ...(props?.queueUnavailable !== undefined ? { queueUnavailable: props.queueUnavailable } : {}),
       dismissableCount: props?.dismissableCount ?? 0,
       busy: props?.busy ?? false,
@@ -354,15 +362,30 @@ describe('ReviewQueueRail queue announcement (#2214)', () => {
     // reload -- which raises it without clearing the queue -- unmounted this
     // node and remounted it with the same sentence. A live region speaks a node
     // addition, so the reviewer heard the same count read back for a queue that
-    // had not moved. Nothing about a same-scope reload reaches the rail now.
+    // had not moved.
+    //
+    // A reload is invisible to the rail now, which is the fix and also why this
+    // case has nothing of its own to drive: re-setting identical props does not
+    // even re-render. So the pin is the retired input itself -- `loading: true`
+    // is what the parent sent mid-reload before, and it withheld the
+    // announcement. Here it is an inert fallthrough attribute and only the
+    // scope signal decides, which is why this test is RED on the pre-fix rail
+    // and green here. The end-to-end evidence that a real reload stays silent
+    // is at view level: ReviewView.spec's and PaperReviewView.spec's
+    // "keeps the same announcement node across an explicit reload" cases.
     const wrapper = mountRail({
       awaitingCount: 2,
       queueScopeLoaded: true,
       announcementKey: 'p-a\np-b',
+      loading: true,
     })
-    const before = wrapper.get('[data-testid="paper-review-queue-announcement"]').element
+    const announced = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+    expect(announced.text()).toContain('2 proposals awaiting review')
+    const before = announced.element
 
-    await wrapper.setProps({ queueScopeLoaded: true, announcementKey: 'p-a\np-b' })
+    // A genuine re-render for an unrelated reason must not rebuild the keyed
+    // node either: the identity key is what re-announces, never the render.
+    await wrapper.setProps({ staleCount: 3, busy: true })
 
     expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(before)
   })

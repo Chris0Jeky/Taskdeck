@@ -70,9 +70,14 @@ const props = withDefaults(
      * back after a Refresh, or after filing a settled proposal away, for a
      * queue that had not moved.
      *
-     * False covers exactly the cases where the count is not a count of the
-     * queue on screen: before the first read lands, after a board-filter change
-     * until the new scope's read lands, and after a failed read.
+     * False covers the cases where the count is not a count of the queue on
+     * screen: before the first read lands, after a board-filter change until
+     * the new scope's read lands, and for a scope no read has landed for,
+     * including one whose only read failed. It stays TRUE after a later read
+     * failed — the rows on screen are still the last landed answer, and
+     * withholding there would put back the count -> '' -> count flicker for a
+     * read that changed nothing. A failing refresh is reported by the
+     * degraded/refused disclosures instead (#2214).
      *
      * Optional and defaulting to `false`, which WITHHOLDS: a parent that cannot
      * say a read has landed cannot have its count spoken, because 0 from a
@@ -86,8 +91,8 @@ const props = withDefaults(
      * current-scope 403 sets `queueAccessRevoked` AND clears the queue, so
      * `awaitingCount` drops to 0 for a reason that is not "nothing is awaiting
      * review" — and because that is a CHANGE, an ungated live region speaks it.
-     * Kept separate from `loading` so the parent passes its two real states
-     * rather than a derived boolean whose reason is lost at the call site;
+     * Kept separate from `queueScopeLoaded` so the parent passes its two real
+     * states rather than a derived boolean whose reason is lost at the call site;
      * `PaperReviewView` passes its own `queueAccessRevoked`.
      */
     queueUnavailable?: boolean
@@ -176,6 +181,14 @@ const railRef = ref<HTMLElement | null>(null)
  * subtree for a row element is the seam the two skins drift at. Document order
  * is the queue's rendered order, which is why this reads the DOM rather than a
  * `v-for` ref array (Vue does not promise those match the source order).
+ *
+ * Legacy does NOT land on the same kind of element, and that divergence is
+ * deliberate rather than drift (#2599 item 2). A row here is a `<button>`, so
+ * focus announces that row and Enter selects it; Legacy's rows are not
+ * focusable at all, so it focuses its queue `<section>`, which announces the
+ * region label and takes Enter as nothing. The shared rule is the rule about
+ * WHERE focus goes — the queue that replaced the panel, else the empty state
+ * that did — not the element type, which each skin's queue widget decides.
  */
 function focusFirstQueueRow(): boolean {
   const first = railRef.value?.querySelector<HTMLElement>('.paper-review-rail__queue-row button')

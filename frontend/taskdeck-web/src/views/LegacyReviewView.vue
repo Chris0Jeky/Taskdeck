@@ -151,9 +151,24 @@ async function returnToReview() {
 
 /**
  * The queue the panel was standing in front of, or the empty state that stands
- * in for it. The queue list is this skin's focusable queue: it carries the
- * "Proposals awaiting review" label and the Arrow cursor, which starts on the
- * first row — the same target Paper reaches as its first queue row.
+ * in for it (#2599 item 2).
+ *
+ * The target is the queue list `<section>` itself, because this skin's rows are
+ * not focusable — `ReviewProposalCard` renders no control that takes focus.
+ * The section is `tabindex="0"`, carries the "Proposals awaiting review" label
+ * a screen reader announces on arrival, and owns the ArrowUp/ArrowDown handler.
+ *
+ * It is NOT the same kind of element Paper focuses, and that is a real
+ * divergence rather than drift: Paper lands on a row `<button>`, which
+ * announces that row and takes Enter as a selection, while this announces the
+ * region and takes Enter as nothing. What the two skins share is the rule about
+ * where focus goes, not the element each queue widget can offer.
+ *
+ * `activeReviewIndex` is deliberately untouched. It is a persistent cursor that
+ * only drives `scrollToIndex`, and it keeps whichever row the reviewer last
+ * arrowed to: `scrollVirtualizerToHashProposal` rewrites it only when the hash
+ * target is found, which is exactly what a dead pin fails to do. Focus arriving
+ * on the section does not move that cursor to row one.
  */
 function focusQueueAfterUnavailableReturn() {
   if (renderedProposals.value.length > 0) {
@@ -276,7 +291,12 @@ const awaitingAnnouncement = computed(() =>
  * restore is spoken. `queueScopeLoaded` asks whether a read has landed for the
  * board on screen instead, so a same-scope reload (the header Refresh, the
  * dismiss path) is silent, while the first read, a board-filter change and a
- * failed read still withhold.
+ * scope whose only read failed still withhold.
+ *
+ * A LATER failed reload does not withhold, deliberately: the rows on screen are
+ * still the last landed answer, so the count is still true of them, and
+ * withholding would restore the flicker for a read that changed nothing. The
+ * degraded and refused disclosures report the failing refresh (#2214).
  */
 const countIsAnnounceable = computed(
   () => queueScopeLoaded.value && !queueAccessRevoked.value,

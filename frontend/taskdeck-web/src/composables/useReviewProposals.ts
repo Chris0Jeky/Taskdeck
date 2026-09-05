@@ -647,13 +647,24 @@ export function useReviewProposals() {
    * header Refresh and after filing away a settled proposal — reads they asked
    * for, about a queue that had not moved.
    *
-   * The three states this DOES withhold, all of them cases where the rendered
-   * count is not a count of the queue on screen:
+   * The states this DOES withhold, all of them cases where the rendered count
+   * is not a count of the queue on screen:
    *  - before the first read lands (the #2593 skeleton gate — the count is 0
    *    because nothing has been read, not because nothing awaits review);
    *  - after a board-filter change, until the new scope's read lands: the rows
    *    still rendered belong to the previous board;
-   *  - after a failed read that never landed, including the entry load.
+   *  - for a scope no read has landed for, including one whose only read
+   *    failed: the entry load, or the first read after a filter change.
+   *
+   * What it deliberately does NOT withhold is the count after a LATER read
+   * failed. `landedQueueScope` is written only where a read replaced the queue
+   * and cleared only by `recordQueueAccessRevoked`; the catch arm leaves it
+   * alone. So an entry load that landed for board A followed by a header
+   * Refresh that 500s keeps the count announceable — correctly, because the
+   * rows on screen are still that landed answer. Re-withholding there would put
+   * back the count -> '' -> count flicker this signal exists to remove, on a
+   * read that changed nothing. A failing refresh has its own reports: the
+   * degraded and refused disclosures (#2214).
    *
    * A same-scope reload keeps it settled, because the queue it is about is
    * still the one being counted. `queueAccessRevoked` keeps its own separate
