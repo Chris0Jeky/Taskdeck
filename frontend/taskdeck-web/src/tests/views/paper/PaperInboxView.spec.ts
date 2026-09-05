@@ -274,6 +274,132 @@ describe('PaperInboxView', () => {
     wrapper.unmount()
   })
 
+  // The same-item close-and-reopen race recorded as #2426's residual on #1999.
+  // Rejecting by item id alone cannot separate two loads for the SAME row, so a
+  // superseded failure wrote an error the newer read never clears, and the
+  // table's error branch outranks the loaded detail.
+  it('does not let a superseded failed load mask the reopened detail', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [captureRow('history-capture', 'ProposalCreated')]
+
+    let rejectFirst: (reason: unknown) => void = () => undefined
+    let resolveSecond: (detail: CaptureItem) => void = () => undefined
+    mockCaptureStore.peekDetail
+      .mockReturnValueOnce(new Promise<CaptureItem>((_resolve, reject) => {
+        rejectFirst = reject
+      }))
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveSecond = resolve
+      }))
+
+    const wrapper = mount(PaperInboxView, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const opener = wrapper.get<HTMLButtonElement>('[data-testid="capture-history-open"]')
+
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="capture-history-loading-close"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="capture-history-detail"]').exists()).toBe(false)
+
+    // Reopening the same row starts a second, current load.
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+
+    rejectFirst(new Error('the superseded read failed'))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-history-detail-error"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="capture-history-detail"] [role="status"]').text(),
+    ).toContain('Loading')
+
+    resolveSecond({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'The reopened retained capture must be visible.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-history-detail-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="capture-history-text"]').text()).toBe(
+      'The reopened retained capture must be visible.',
+    )
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  // The other half of the same race: a superseded load's `finally` ended the
+  // spinner of the load that replaced it, so the row read "loaded" while its
+  // current read was still in flight.
+  it('does not let a superseded resolve clear the current load spinner', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [captureRow('history-capture', 'ProposalCreated')]
+
+    let resolveFirst: (detail: CaptureItem) => void = () => undefined
+    let resolveSecond: (detail: CaptureItem) => void = () => undefined
+    mockCaptureStore.peekDetail
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveFirst = resolve
+      }))
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveSecond = resolve
+      }))
+
+    const wrapper = mount(PaperInboxView, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const opener = wrapper.get<HTMLButtonElement>('[data-testid="capture-history-open"]')
+
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="capture-history-loading-close"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+
+    resolveFirst({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'The superseded payload must stay hidden.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('The superseded payload must stay hidden.')
+    expect(
+      wrapper.get('[data-testid="capture-history-detail"] [role="status"]').text(),
+    ).toContain('Loading')
+
+    resolveSecond({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'The current payload is the one that renders.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="capture-history-text"]').text()).toBe(
+      'The current payload is the one that renders.',
+    )
+    expect(wrapper.find('[data-testid="capture-history-detail"] [role="status"]').exists()).toBe(
+      false,
+    )
+    wrapper.unmount()
+  })
+
   it('states that no decision record exists when triage recorded no proposal', async () => {
     orchestratorState.isArchivedHistory.value = true
     orchestratorState.activeBoardId.value = 'board-archived'
