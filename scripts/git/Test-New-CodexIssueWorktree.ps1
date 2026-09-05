@@ -278,6 +278,33 @@ function Assert-NormalizedContains {
     Assert-Contains ($Text -replace '\s+', ' ') ($ExpectedSubstring -replace '\s+', ' ') $Message
 }
 
+function Wait-ForScheduledWorktreeRemoval {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LiteralPath,
+
+        [int]$TimeoutSeconds = 90
+    )
+
+    # The initializer hands orphan removal to a detached PowerShell host that re-verifies the
+    # worktree's top level, common directory and HEAD, re-inventories its content, and only then
+    # runs 'git worktree remove'. That is one host start, a poll until the initializer process exits, and
+    # seven Git invocations against a fresh checkout; a fixed 5 s poll expired before it finished on the
+    # hosted Windows runner (#2664).
+    # Wait on a deadline instead and report the elapsed time so a genuine orphan stays diagnosable.
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ((Test-Path -LiteralPath $LiteralPath) -and [DateTimeOffset]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 100
+    }
+    $stopwatch.Stop()
+
+    return [pscustomobject]@{
+        Removed        = -not (Test-Path -LiteralPath $LiteralPath)
+        ElapsedSeconds = [Math]::Round($stopwatch.Elapsed.TotalSeconds, 1)
+    }
+}
+
 function Complete-Test {
     param([string]$Name)
 
@@ -1385,11 +1412,9 @@ finally {
         Assert-True ($collision.ExitCode -ne 0) "A post-helper branch collision should fail the initializer."
         Assert-NormalizedContains $collision.Output "git switch -c failed" "Branch collision should retain its switch failure diagnostic."
         Assert-NormalizedContains $collision.Output "removal of the unused helper-created worktree was scheduled" "Late branch collision should report cleanup scheduling."
-        for ($attempt = 0; $attempt -lt 50 -and (Test-Path -LiteralPath $initializerWorktree); $attempt++) {
-            Start-Sleep -Milliseconds 100
-        }
-        Assert-True (-not (Test-Path -LiteralPath $initializerWorktree)) "Late branch collision must not leave an orphan helper-created worktree."
+        $collisionRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $initializerWorktree
         $registrationsAfterCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
+        Assert-True $collisionRemoval.Removed "Late branch collision must not leave an orphan helper-created worktree (waited $($collisionRemoval.ElapsedSeconds) s for the scheduled removal).`n$registrationsAfterCollision"
         Assert-True (-not $registrationsAfterCollision.Contains($initializerWorktree)) "Late branch collision must remove the worktree registration."
 
         $ignoredCollisionResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "498", "-Slug", "ignored-collision")
@@ -1468,11 +1493,9 @@ finally {
         $separateCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $separateCollisionScript) -WorkingDirectory $separateWorktree
         Assert-True ($separateCollision.ExitCode -ne 0) "A separate-Git-dir post-helper branch collision should fail the initializer."
         Assert-NormalizedContains $separateCollision.Output "removal of the unused helper-created worktree was scheduled" "Separate-Git-dir collision should report cleanup scheduling."
-        for ($attempt = 0; $attempt -lt 100 -and (Test-Path -LiteralPath $separateWorktree); $attempt++) {
-            Start-Sleep -Milliseconds 100
-        }
-        Assert-True (-not (Test-Path -LiteralPath $separateWorktree)) "Separate-Git-dir late collision must remove the helper-created worktree path."
+        $separateRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $separateWorktree
         $separateRegistrationsAfter = Invoke-Git -WorkingDirectory $separateGitCaller -Arguments @("worktree", "list", "--porcelain")
+        Assert-True $separateRemoval.Removed "Separate-Git-dir late collision must remove the helper-created worktree path (waited $($separateRemoval.ElapsedSeconds) s for the scheduled removal).`n$separateRegistrationsAfter"
         Assert-True (-not $separateRegistrationsAfter.Replace('\', '/').Contains($normalizedSeparateWorktree)) "Separate-Git-dir late collision must remove the worktree registration."
         Assert-True (Test-Path -LiteralPath $separateGitDirectory -PathType Container) "Separate-Git-dir cleanup removed the repository's common Git directory."
 

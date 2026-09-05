@@ -6,9 +6,11 @@
  * (`views/BoardsListView.vue`). This one covers the direct-manipulation
  * controls on a single open board — add a card, edit a column, board settings.
  *
- * Only the controls added by #1945 are extracted here. The rest of
- * `PaperBoardView` is still hard-coded English; the ADR-0054 rollout is
- * surface-by-surface and finishing this surface is a separate slice.
+ * Extracted here: the controls added by #1945, plus the titles-only toggle
+ * added by #2090. The rest of `PaperBoardView` is still hard-coded English —
+ * the width control and the compact-density toggle beside that new one
+ * included; the ADR-0054 rollout is surface-by-surface and finishing this
+ * surface is a separate slice.
  *
  * Wording contract (ADR-0056): every label here names a *direct* human edit
  * that takes effect immediately. Nothing in this catalog may describe a
@@ -18,6 +20,12 @@
 export default {
   actions: {
     settings: 'Board settings',
+    // Board-level card presentation. The mode hides the excerpt and the meta
+    // row on every card; nothing is removed and nothing is edited, so the copy
+    // names what the reader stops seeing, not an action on the cards. The
+    // accessible name repeats the visible label first (WCAG 2.5.3).
+    titlesOnly: 'Titles only',
+    titlesOnlyAria: 'Titles only: hide card excerpts and details',
   },
   card: {
     add: '+ card',
