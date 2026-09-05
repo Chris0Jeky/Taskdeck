@@ -10,6 +10,12 @@
 export default {
   actions: {
     settings: 'Impostazioni bacheca',
+    // Presentazione delle schede della bacheca. La modalità nasconde l'estratto
+    // e la riga dei dettagli; non elimina né modifica nulla, quindi il testo
+    // nomina ciò che si smette di vedere. Il nome accessibile inizia con
+    // l'etichetta visibile (WCAG 2.5.3).
+    titlesOnly: 'Solo titoli',
+    titlesOnlyAria: 'Solo titoli: nasconde gli estratti e i dettagli delle schede',
   },
   card: {
     add: '+ scheda',
