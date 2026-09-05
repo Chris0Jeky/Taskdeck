@@ -72,12 +72,31 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
 
     const requestGeneration = boardListGeneration
     const isCurrentListGeneration = () => requestGeneration === boardListGeneration
+    const controller = new AbortController()
 
     const request = (async () => {
       try {
         state.loading.value = true
         state.error.value = null
-        const freshBoards = await boardsApi.getBoards(search, includeArchived)
+        // Bounded exactly like the detail read below (`startBoardFetch`), and
+        // for a reason the share made sharper: once every unfiltered caller in
+        // the page joins one promise, a read that never settles pins all of
+        // them until logout instead of failing one mount.  The axios instance
+        // sets no default timeout, so without this an unanswered socket is
+        // unbounded, and a 503 with `Retry-After` costs three waits of up to
+        // MAX_DELAY_MS each (`httpRetry.ts`) before the caller hears anything.
+        //
+        // Filtered reads take the same bound rather than a weaker one.  They
+        // hit the same endpoint, so a retry policy that changed with a query
+        // parameter would be a trap for the next caller, and the only filtered
+        // caller today (`useActivityQuery.loadSelectorData`) already delegates
+        // its failure to this store's error surface rather than to the retry
+        // layer.  Retries do not help the wedged-socket case at all.
+        const freshBoards = await boardsApi.getBoards(search, includeArchived, {
+          signal: controller.signal,
+          timeout: BOARD_REQUEST_TIMEOUT_MS,
+          skipRetry: true,
+        })
         // A logout reset ran while this read was on the wire.  The payload
         // belongs to the account that is now signed out, so neither it nor the
         // throttle stamp it would write may reach the next session's store —

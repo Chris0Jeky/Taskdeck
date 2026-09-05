@@ -129,7 +129,7 @@ describe('boardCrudStore', () => {
       const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
       await fetchBoards()
 
-      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith(undefined, false)
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith(undefined, false, expect.anything())
       expect(state.boards.value).toEqual(freshBoards)
       expect(state.loading.value).toBe(false)
       expect(state.error.value).toBeNull()
@@ -236,6 +236,77 @@ describe('boardCrudStore', () => {
       expect(state.boards.value).toEqual([{ id: 'board-2', name: 'Recovered Board' }])
     })
 
+    // Every unfiltered caller joins one promise, so an unbounded read pins the
+    // whole page rather than one mount.  The bound is the detail read's.
+    it('bounds the shared unfiltered list read with a signal, a timeout and no retries', async () => {
+      mockBoardsApi.getBoards.mockResolvedValueOnce([])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      await fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+      const readOptions = mockBoardsApi.getBoards.mock.calls[0][2]
+      expect(readOptions).toMatchObject({
+        timeout: BOARD_REQUEST_TIMEOUT_MS,
+        skipRetry: true,
+      })
+      expect(readOptions.signal).toBeInstanceOf(AbortSignal)
+      expect(readOptions.signal.aborted).toBe(false)
+    })
+
+    // Same endpoint, same bound: a retry policy that changed with a query
+    // parameter would be a trap for the next caller of this action.
+    it('bounds a filtered list read the same way as the shared one', async () => {
+      mockBoardsApi.getBoards.mockResolvedValueOnce([])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      await fetchBoards('urgent')
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith('urgent', false, expect.anything())
+      const readOptions = mockBoardsApi.getBoards.mock.calls[0][2]
+      expect(readOptions).toMatchObject({
+        timeout: BOARD_REQUEST_TIMEOUT_MS,
+        skipRetry: true,
+      })
+      expect(readOptions.signal).toBeInstanceOf(AbortSignal)
+    })
+
+    it('surfaces a timed-out shared read once, releases the share, and lets the next caller refetch', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'board-2', name: 'Recovered Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const composerFetch = fetchBoards()
+      const tableFetch = fetchBoards()
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+      // The timeout is only reachable because the read carries one.
+      expect(mockBoardsApi.getBoards.mock.calls[0][2]).toMatchObject({
+        timeout: BOARD_REQUEST_TIMEOUT_MS,
+        skipRetry: true,
+      })
+
+      // What axios raises when `timeout` elapses: a terminal error, not a cancel.
+      const timedOut = Object.assign(new Error('timeout of 10000ms exceeded'), {
+        code: 'ECONNABORTED',
+      })
+      inFlight.reject(timedOut)
+      await expect(composerFetch).rejects.toThrow('timeout of 10000ms exceeded')
+      await expect(tableFetch).rejects.toThrow('timeout of 10000ms exceeded')
+
+      // One bounded attempt, one error surface, and the skeleton comes down so
+      // BoardsListView can render the error instead of spinning.
+      expect(helpers.handleApiError).toHaveBeenCalledTimes(1)
+      expect(state.loading.value).toBe(false)
+
+      // No throttle stamp is written on failure, so the retry is immediate.
+      await expect(fetchBoards()).resolves.toBeUndefined()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(state.boards.value).toEqual([{ id: 'board-2', name: 'Recovered Board' }])
+    })
+
     it('issues a separate request for a filtered caller during an unfiltered flight', async () => {
       const inFlight = createDeferred<Array<{ id: string; name: string }>>()
       mockBoardsApi.getBoards
@@ -247,7 +318,7 @@ describe('boardCrudStore', () => {
       await fetchBoards('search term')
 
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
-      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, 'search term', false)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, 'search term', false, expect.anything())
 
       inFlight.resolve([{ id: 'board-1', name: 'First Board' }])
       await expect(unfilteredFetch).resolves.toBeUndefined()
@@ -264,8 +335,8 @@ describe('boardCrudStore', () => {
       await fetchBoards()
 
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
-      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(1, undefined, true)
-      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, undefined, false)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(1, undefined, true, expect.anything())
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, undefined, false, expect.anything())
 
       inFlight.resolve([{ id: 'board-archived', name: 'Archived' }])
       await expect(filteredFetch).resolves.toBeUndefined()
@@ -284,7 +355,7 @@ describe('boardCrudStore', () => {
       // Filtered request should bypass throttle
       await fetchBoards('search term')
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
-      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith('search term', false)
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith('search term', false, expect.anything())
     })
 
     it('bypasses throttle for includeArchived requests', async () => {
@@ -300,7 +371,7 @@ describe('boardCrudStore', () => {
       // includeArchived should bypass throttle
       await fetchBoards(undefined, true)
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
-      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith(undefined, true)
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledWith(undefined, true, expect.anything())
     })
 
     it('uses filtered fetches to reset the throttle window', async () => {
@@ -317,7 +388,7 @@ describe('boardCrudStore', () => {
       await fetchBoards()
 
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
-      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, 'search term', false)
+      expect(mockBoardsApi.getBoards).toHaveBeenNthCalledWith(2, 'search term', false, expect.anything())
     })
 
     it('uses demo data in demo mode', async () => {
