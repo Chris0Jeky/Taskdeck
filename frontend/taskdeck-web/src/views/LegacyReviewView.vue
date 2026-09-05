@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { useRoute } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import ReviewHeader from '../components/review/ReviewHeader.vue'
@@ -29,6 +30,7 @@ const {
   summaryCards,
   awaitingProposalIds,
   queueAnnouncementKey,
+  queueScopeLoaded,
   queueAccessRevoked,
   queueRefreshStale,
   queueRefreshRefused,
@@ -121,15 +123,45 @@ const renderedProposals = computed(() => {
 })
 
 /**
+ * The empty state that replaces the unavailable panel when the queue behind it
+ * is empty. `tabindex="-1"` in the template makes it a programmatic focus
+ * target only — it never enters the tab order.
+ */
+const reviewEmptyStateRef = ref<ComponentPublicInstance | null>(null)
+
+/**
  * Leave the refused deep link (#2214). Mirror of `PaperReviewView.returnToReview`
  * so the two skins cannot drift (#1124 / ADR-0038): clearing the hash is the only
  * action offered, and it is taken against the id the unavailable state names —
  * never against whatever the hash happens to hold by then.
+ *
+ * The click removes the panel the control lives in, so focus is moved on
+ * deliberately (#2599 item 2). Without it focus falls to `<body>`: nothing is
+ * announced and the reviewer's next keystroke acts on nothing. Paper's
+ * settled-elsewhere notice has handed focus on this way since #2215.
  */
-function returnToReview() {
+async function returnToReview() {
   const proposalId = unavailableProposalId.value
   if (!proposalId) return
-  void clearProposalDeepLink(proposalId)
+  await clearProposalDeepLink(proposalId)
+  // After the DOM has settled on whichever of the two replaces the panel.
+  await nextTick()
+  focusQueueAfterUnavailableReturn()
+}
+
+/**
+ * The queue the panel was standing in front of, or the empty state that stands
+ * in for it. The queue list is this skin's focusable queue: it carries the
+ * "Proposals awaiting review" label and the Arrow cursor, which starts on the
+ * first row — the same target Paper reaches as its first queue row.
+ */
+function focusQueueAfterUnavailableReturn() {
+  if (renderedProposals.value.length > 0) {
+    reviewParentRef.value?.focus?.()
+    return
+  }
+  const emptyState = reviewEmptyStateRef.value?.$el as HTMLElement | undefined
+  emptyState?.focus?.()
 }
 
 async function dismissProposalAndReconcileHash(proposalId: string) {
@@ -158,7 +190,7 @@ const _vl = useVirtualList({
 
 // vue-tsc >=3.2.6 does not count ref="name" in templates as a script read;
 // these refs are intentionally bound via template ref attributes.
-// @ts-expect-error TS6133
+// `reviewParentRef` needs no such directive: the focus handoff above reads it.
 const reviewParentRef = _vl.parentRef
 // @ts-expect-error TS6133
 const reviewVirtualItemEls = _vl.virtualItemEls
@@ -233,12 +265,21 @@ const awaitingAnnouncement = computed(() =>
 )
 
 /**
- * Whether `awaitingCount` is a real count right now (#2214). Kept in step with
- * `ReviewQueueRail.countIsAnnounceable`, which gates the Paper skin's identical
- * region on the same two states (#1124 / ADR-0038).
+ * Whether `awaitingCount` is a real count right now (#2214, #2599 item 1). Kept
+ * in step with `ReviewQueueRail.countIsAnnounceable`, which gates the Paper
+ * skin's identical region on the same two states (#1124 / ADR-0038).
+ *
+ * The first term was `!proposalsLoading`, which asked the wrong question. An
+ * explicit `loadProposals` raises that flag WITHOUT clearing `proposals`, so
+ * the announcement node unmounted for the length of every reload and remounted
+ * with the identical sentence: the region wrote count -> '' -> count and the
+ * restore is spoken. `queueScopeLoaded` asks whether a read has landed for the
+ * board on screen instead, so a same-scope reload (the header Refresh, the
+ * dismiss path) is silent, while the first read, a board-filter change and a
+ * failed read still withhold.
  */
 const countIsAnnounceable = computed(
-  () => !proposalsLoading.value && !queueAccessRevoked.value,
+  () => queueScopeLoaded.value && !queueAccessRevoked.value,
 )
 
 /**
@@ -467,8 +508,13 @@ onUnmounted(() => {
       </button>
     </div>
 
+    <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
+         else: leaving the unavailable pin with an empty queue hands focus here
+         (#2599 item 2), and it never enters the tab order. -->
     <ReviewEmptyState
       v-else-if="renderedProposals.length === 0"
+      ref="reviewEmptyStateRef"
+      tabindex="-1"
       @open-inbox="openInbox"
       @navigate="openRoute"
     />

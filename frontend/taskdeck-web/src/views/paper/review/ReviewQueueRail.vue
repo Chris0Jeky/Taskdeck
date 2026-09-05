@@ -61,17 +61,26 @@ const props = withDefaults(
      */
     authorPartitionAvailable?: boolean
     /**
-     * Whether the queue read behind `awaitingCount` is still in flight (#2214).
-     * While it is, the count is 0 because nothing has been read yet — not
-     * because nothing is awaiting review — so the polite announcement is
-     * withheld rather than telling a screen-reader user "0 proposals awaiting
-     * review." under the loading state and then the real count.
+     * Whether a queue read has landed for the board scope `awaitingCount`
+     * belongs to (#2599 item 1). It replaced a `loading` flag, which was the
+     * wrong question: an explicit reload raises that without clearing the
+     * queue, so the rail unmounted this announcement for the length of every
+     * reload and remounted it with the identical sentence — and a node addition
+     * inside a live region is spoken. The reviewer heard the same count read
+     * back after a Refresh, or after filing a settled proposal away, for a
+     * queue that had not moved.
      *
-     * Optional and defaulting to `false`: an omitted flag keeps the existing
-     * announcement exactly as it is, so a parent that does not pass it is
-     * unaffected. `PaperReviewView` passes its own `proposalsLoading`.
+     * False covers exactly the cases where the count is not a count of the
+     * queue on screen: before the first read lands, after a board-filter change
+     * until the new scope's read lands, and after a failed read.
+     *
+     * Optional and defaulting to `false`, which WITHHOLDS: a parent that cannot
+     * say a read has landed cannot have its count spoken, because 0 from a
+     * never-read queue is the #2593 defect. `PaperReviewView` passes the shared
+     * composable's `queueScopeLoaded`, the same signal `LegacyReviewView` gates
+     * its own region on (#1124 / ADR-0038).
      */
-    loading?: boolean
+    queueScopeLoaded?: boolean
     /**
      * Whether the queue was withdrawn rather than read (#2214 round 2). A
      * current-scope 403 sets `queueAccessRevoked` AND clears the queue, so
@@ -108,7 +117,7 @@ const props = withDefaults(
     batchExecutableCount: 0,
     busy: false,
     authorPartitionAvailable: true,
-    loading: false,
+    queueScopeLoaded: false,
     queueUnavailable: false,
     announcementKey: '',
   },
@@ -139,11 +148,43 @@ const visible = computed<QueueRailItem[]>(() => {
 })
 
 /**
- * Whether `awaitingCount` is a real count right now (#2214). A queue that is
- * still loading and one whose access was revoked both carry 0 because nothing
- * has been read, not because nothing awaits review; neither is speakable.
+ * Whether `awaitingCount` is a real count right now (#2214, #2599 item 1). A
+ * queue no read has landed for in this scope and one whose access was revoked
+ * both carry 0 because nothing has been read, not because nothing awaits
+ * review; neither is speakable. Kept in step with
+ * `LegacyReviewView.countIsAnnounceable`, which gates the identical region on
+ * the same two states (#1124 / ADR-0038).
  */
-const countIsAnnounceable = computed<boolean>(() => !props.loading && !props.queueUnavailable)
+const countIsAnnounceable = computed<boolean>(
+  () => props.queueScopeLoaded && !props.queueUnavailable,
+)
+
+/** The rail's own root, so the focus handoff below stays inside this subtree. */
+const railRef = ref<HTMLElement | null>(null)
+
+/**
+ * Move focus to the first row of the queue, reporting whether there was one
+ * (#2599 item 2).
+ *
+ * The target-unavailable panel's return control removes the element focus is
+ * in, so focus would fall to `<body>`: nothing announced, and the next
+ * keystroke acting on nothing. `PaperReviewView` calls this to hand focus to
+ * the queue the panel was standing in front of, and falls back to its own empty
+ * state when this reports `false`.
+ *
+ * The rail owns the rows, so it owns the handoff: a parent reaching into this
+ * subtree for a row element is the seam the two skins drift at. Document order
+ * is the queue's rendered order, which is why this reads the DOM rather than a
+ * `v-for` ref array (Vue does not promise those match the source order).
+ */
+function focusFirstQueueRow(): boolean {
+  const first = railRef.value?.querySelector<HTMLElement>('.paper-review-rail__queue-row button')
+  if (!first) return false
+  first.focus()
+  return true
+}
+
+defineExpose({ focusFirstQueueRow })
 
 /** Real 7-day cadence to render; null hides the mini-cadence bars entirely. */
 const hasCadence = computed<boolean>(
@@ -190,7 +231,7 @@ function onFilterPillClick(key: QueueFilter) {
 </script>
 
 <template>
-  <aside class="paper-review-rail" data-testid="paper-review-queue-rail">
+  <aside ref="railRef" class="paper-review-rail" data-testid="paper-review-queue-rail">
     <div class="paper-review-rail__head">
       <div class="tk-eyebrow">
         {{
