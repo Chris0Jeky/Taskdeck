@@ -3,6 +3,11 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
+// Type-only, so the barrel adds no runtime import here: the view's load
+// signature is the store's own list-option type rather than a hand-copied
+// `{ force?: boolean }` that a second option would silently leave behind
+// (#2689 item 9).
+import type { BoardListFetchOptions } from '../store/board'
 import { logError } from '../utils/errorReporting'
 import { TdSkeleton } from '../components/ui'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
@@ -58,7 +63,7 @@ function formatCreatedAt(createdAt: string): string {
  * retry layer, and without a control the alert stayed until the user navigated
  * away and back (#2689 item 1).
  */
-async function loadBoards(options: { force?: boolean } = {}) {
+async function loadBoards(options: BoardListFetchOptions = {}) {
   // Catch the rethrown error — boardStore.error is already set by handleApiError
   // so the template can display it. Without this catch, Vue treats the unhandled
   // rejection as a lifecycle-hook error and may tear down the component.
