@@ -130,6 +130,9 @@ jobs:
       - name: Validate release cache trust contract
         run: node --test scripts/ci/release-cache-contract.test.mjs
 
+      - name: Validate release notes composer
+        run: node --test scripts/ci/compose-release-notes.test.mjs
+
   backend-architecture:
     name: Backend Architecture
     uses: ./.github/workflows/reusable-backend-architecture.yml
