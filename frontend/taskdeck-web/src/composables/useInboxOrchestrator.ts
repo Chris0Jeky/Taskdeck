@@ -64,6 +64,7 @@ export function useInboxOrchestrator(options: {
       ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
     }
   }
+
   const activeBoardName = computed(() => {
     const boardId = activeBoardId.value
     return boardId && scopedBoard.value?.id === boardId ? scopedBoard.value.name : boardId ?? ''
