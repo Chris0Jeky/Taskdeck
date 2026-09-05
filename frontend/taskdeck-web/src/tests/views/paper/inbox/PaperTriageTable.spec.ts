@@ -110,6 +110,44 @@ describe('PaperTriageTable', () => {
     expect(wrapper.text()).not.toContain('2 items')
   })
 
+  /**
+   * #2501 (LOW): a SAME-scope refresh keeps the retained rows mounted, visible
+   * and interactive — deliberately, because they are still the right rows for
+   * the scope on screen. Until now `aria-busy` was the only sign that a load
+   * was running at all, which is nothing for a sighted user. Row actions stay
+   * enabled: disabling them during a background refresh was declined as a
+   * product-posture change.
+   */
+  it('shows a visible refreshing note while a same-scope load runs over retained rows', () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems(), loadingList: true, scopeReplacement: false },
+    })
+
+    // The rendered English, not `toContain('refreshing')`: a missing catalog key
+    // renders the key itself, `inbox.refreshing`, which contains that substring
+    // and would have passed.
+    expect(wrapper.get('[data-testid="paper-triage-refreshing"]').text()).toBe('· refreshing…')
+    expect(wrapper.get('.paper-triage').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('.paper-triage__list').attributes('style')).toBeUndefined()
+    expect(wrapper.findAll('.paper-triage__row')).toHaveLength(2)
+    expect(wrapper.text()).toContain('2 items')
+    expect(wrapper.findAll('button[data-action="edit"]')[0]!.attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows no refreshing note when no list load is running', () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+
+    expect(wrapper.find('[data-testid="paper-triage-refreshing"]').exists()).toBe(false)
+  })
+
+  it('shows no refreshing note during a scope replacement, which hides the rows instead', () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems(), loadingList: true, scopeReplacement: true },
+    })
+
+    expect(wrapper.find('[data-testid="paper-triage-refreshing"]').exists()).toBe(false)
+  })
+
   it('prioritizes an error and hides retained rows and their count after replacement fails', () => {
     const wrapper = mount(PaperTriageTable, {
       props: {

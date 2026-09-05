@@ -513,15 +513,33 @@ defineExpose({ variant, toggleVariant, setVariant })
         <!-- The third argument is the plural CHOICE: it/es agree the participle
              with the total ("1 catturato" vs "2 catturati"), so the count has to
              reach the catalog as a choice and not only as an interpolation. -->
+        <!--
+          While a scope replacement is outstanding the rows still in `items`
+          belong to the OLD scope — the table hides them for that reason — but
+          `useInboxCounts` counts them all the same, so the eyebrow published
+          old-scope numbers next to the NEW scope's chip (#2501). The count-free
+          variant is shown instead: no number is better than a number about
+          somewhere else. The counts return when the response is applied.
+
+          That variant says nothing about the LOAD, deliberately.
+          `isScopeReplacement` is sticky across failure — the orchestrator
+          swallows the throw so the retained rows stay hidden — so a "loading…"
+          word driven off this flag would outlive the load itself and sit above
+          the table's own error and Retry forever. Loading, error and retry are
+          the table's to state; this line's only job is to refuse a count it
+          cannot stand behind.
+        -->
         <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
           {{
             isArchivedHistory
               ? $t('inbox.history.eyebrow')
-              : $t(
-                  'inbox.eyebrow',
-                  { pending: pendingTriageCount, total: capturedCount },
-                  capturedCount,
-                )
+              : isScopeReplacement
+                ? $t('inbox.eyebrowUncounted')
+                : $t(
+                    'inbox.eyebrow',
+                    { pending: pendingTriageCount, total: capturedCount },
+                    capturedCount,
+                  )
           }}
         </div>
         <h1 v-if="isArchivedHistory" class="tk-h1 paper-inbox__title">

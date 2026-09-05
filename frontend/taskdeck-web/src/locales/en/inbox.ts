@@ -25,6 +25,19 @@
 export default {
   eyebrow:
     'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
+  // Shown INSTEAD of `eyebrow` during a scope replacement (#2501). The rows
+  // those counts would be computed from belong to the scope the user just left,
+  // so the eyebrow carries no count at all rather than a count about somewhere
+  // else. Deliberately not a plural message: it has nothing to agree with,
+  // which is the whole point.
+  //
+  // It also makes NO claim about the load. `isScopeReplacement` is sticky
+  // across failure by design — the orchestrator swallows the throw so the
+  // retained rows stay hidden — so a "loading…" word here would sit above the
+  // table's own error and Retry, permanently, describing a load that had
+  // already stopped. The table owns loading, error and retry; this line owns
+  // only the refusal to publish a count it cannot stand behind.
+  eyebrowUncounted: 'Inbox · capture surface',
   // Rendered as `{lead} <em>{emphasis}</em>` — the space before the emphasis
   // comes from the template, so `lead` must not carry a trailing space.
   title: {
@@ -132,6 +145,10 @@ export default {
   empty: {
     scoped: 'No captures in {scope}. Show all captures to restore the full Inbox.',
   },
+  // Appended to the capture-count line while a SAME-scope list load runs over
+  // rows that stay visible and usable (#2501). Lowercase because it follows a
+  // "·" separator inside that line.
+  refreshing: 'refreshing…',
   variantToggle: {
     label: 'Capture variant',
   },

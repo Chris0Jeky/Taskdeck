@@ -188,31 +188,54 @@ export const useCaptureStore = defineStore('capture', () => {
     })
   }
 
-  async function fetchItems(query?: CaptureListQuery) {
+  /**
+   * Load the Inbox list, and REPORT whether this call's response was applied
+   * (#2501).
+   *
+   * A superseded call resolves without writing anything — twice over, once in
+   * the success path and once in the catch — so resolution alone never meant
+   * "the rows on screen are now this call's rows". A caller that inferred
+   * success from resolution therefore acted on a response the store had
+   * dropped; `useInboxOrchestrator` cleared its scope-replacement flag that
+   * way, un-hiding the retained OLD-scope rows under the NEW scope's label.
+   *
+   * `true` means this response was written into `items`. `false` means it was
+   * dropped as superseded and the caller's assumptions about `items` are
+   * unchanged. A failure that is still the latest request throws, as before, so
+   * failure and supersession stay distinguishable. The value is additive:
+   * existing `await fetchItems(...)` call sites that ignore it are unaffected.
+   */
+  async function fetchItems(query?: CaptureListQuery): Promise<boolean> {
     const requestId = ++latestListLoadRequestId
     if (isDemoMode) {
       loadingList.value = true
       listError.value = null
+      // The guard is pre-existing and cannot currently fail: nothing awaits
+      // between the id bump above and this check, so no other call can have
+      // superseded this one. It is kept, with its `false` arm, so the branch
+      // stays correct and total if the demo path ever becomes genuinely async.
       if (requestId === latestListLoadRequestId) {
         items.value = buildDemoCaptureItems()
         loadingList.value = false
+        return true
       }
-      return
+      return false
     }
 
     try {
       loadingList.value = true
       listError.value = null
       const loadedItems = await captureApi.listItems(query)
-      if (requestId !== latestListLoadRequestId) return
+      if (requestId !== latestListLoadRequestId) return false
       // This is the explicit/user-facing list load. A successful mutation may
       // finish while a scope replacement is in flight, but that must not make
       // the newer scope response disappear. The request id still gives the
       // usual latest-load-wins ordering; background batch polls keep the write
       // generation guard in their own reader below.
       items.value = loadedItems
+      return true
     } catch (e: unknown) {
-      if (requestId !== latestListLoadRequestId) return
+      if (requestId !== latestListLoadRequestId) return false
       const message = getErrorDisplay(e, 'Failed to load inbox items').message
       listError.value = message
       toast.error(message)
