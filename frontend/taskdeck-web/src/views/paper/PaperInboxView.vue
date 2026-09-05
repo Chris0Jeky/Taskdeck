@@ -122,6 +122,16 @@ const historyDetailLoading = ref(false)
 const historyDetailError = ref<string | null>(null)
 
 /**
+ * Monotonic id for the current history-detail read (the counter
+ * `useInboxOrchestrator` uses for its scoped-board load). The item id alone
+ * cannot separate two reads of the SAME row, which is exactly what closing a
+ * stalled panel and reopening it produces (#1999): the superseded read would
+ * write an error the newer read never clears, and end the newer read's spinner.
+ * Every load captures this value and writes only while it still holds it.
+ */
+let historyDetailGeneration = 0
+
+/**
  * Deep link from a retained capture to the decision record it produced, kept in
  * archived history mode so the destination is the read-only Review queue rather
  * than the live one. Null when triage never recorded a proposal for it.
@@ -340,27 +350,36 @@ async function onTriageOpen(itemId: string) {
     return
   }
 
+  const requestGeneration = ++historyDetailGeneration
+  const isCurrentRead = () =>
+    requestGeneration === historyDetailGeneration && historyDetailItemId.value === itemId
+
   historyDetailItemId.value = itemId
   historyDetail.value = null
   historyDetailError.value = null
   historyDetailLoading.value = true
   try {
     const detail = await captureStore.peekDetail(itemId, { recordError: false, showToast: false })
-    // The user may have collapsed this row or opened another while the request
-    // was in flight; a late payload must not reopen or mislabel the panel.
-    if (historyDetailItemId.value !== itemId) return
+    // The user may have collapsed this row, reopened it, or opened another while
+    // the request was in flight; a superseded payload must not reopen, mislabel,
+    // or overwrite the panel that replaced it.
+    if (!isCurrentRead()) return
     historyDetail.value = detail
   } catch (e: unknown) {
-    if (historyDetailItemId.value !== itemId) return
+    if (!isCurrentRead()) return
     historyDetailError.value = getErrorDisplay(e, t('inbox.history.detail.error')).message
   } finally {
-    if (historyDetailItemId.value === itemId) {
+    // A superseded read must not end the spinner of the read that replaced it.
+    if (isCurrentRead()) {
       historyDetailLoading.value = false
     }
   }
 }
 
 function closeHistoryDetail() {
+  // Closing supersedes any in-flight read, so reopening the same row is a new
+  // generation rather than a second write target for the abandoned one.
+  historyDetailGeneration += 1
   historyDetailItemId.value = null
   historyDetail.value = null
   historyDetailError.value = null
