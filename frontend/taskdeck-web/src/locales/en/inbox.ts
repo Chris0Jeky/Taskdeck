@@ -138,7 +138,8 @@ export default {
   // controls by accessible name: they now use the composer's `data-testid`
   // attributes, so this copy is copy again and not test API. Keep the eyebrow
   // and the name in step — `PaperCaptureComposer.spec.ts` asserts the relation,
-  // not just the strings, in every locale it covers.
+  // not just the strings, and it runs that check in en, it and es, so the rule
+  // binds a translator in every supported locale and not only in English.
   //
   // The placeholders stay placeholders — a hint about the shape of the value,
   // never the name of the field, which is what the eyebrow and the accessible
@@ -201,10 +202,15 @@ export default {
     // Both take the PR #2675 shape: the visible label first, then what the
     // control does (WCAG 2.5.3). They must stay distinguishable by that second
     // half alone — a screen-reader user meeting one of them has no other cue
-    // about which of the two selects is focused. "this new capture" is the
-    // Composer's, the draft that has not been filed yet; "this capture" is the
-    // triage row's, an item already in the Inbox.
-    composerAria: 'Board: choose where this new capture will land',
+    // about which of the two selects is focused.
+    //
+    // `composerAria` may not say the capture LANDS on the chosen board. Every
+    // capture lands in Inbox; the board choice LINKS it so triage can propose
+    // against that board, and nothing reaches the board without approve and
+    // execute (ADR-0003). The composer's own footer and `nib.destination*` say
+    // exactly that, so this name says "linked to for triage" and the triage
+    // row's keeps "where this capture goes", which is that select's own job.
+    composerAria: 'Board: choose which board this capture is linked to for triage',
     triageAria: 'Board: choose where this capture goes',
     noBoardOption: 'No board · land in inbox',
     selectPlaceholder: 'Select a board…',

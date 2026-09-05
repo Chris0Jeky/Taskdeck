@@ -93,7 +93,8 @@ export default {
   // poi dice cosa fa il controllo (WCAG 2.5.3, il modello della PR #2675). Se
   // si riscrive un'etichetta visibile va riscritto anche il suo nome
   // accessibile: `PaperCaptureComposer.spec.ts` verifica la relazione, non solo
-  // le stringhe.
+  // le stringhe, e la verifica anche in italiano, quindi romperla qui fa
+  // fallire il test.
   //
   // I segnaposto restano segnaposto: un suggerimento sulla FORMA del valore,
   // mai il nome del campo, che è quello che danno l'etichetta visibile e il
@@ -142,11 +143,17 @@ export default {
   boardPicker: {
     // `label` sta sopra entrambi i selettori di bacheca. Entrambi i nomi
     // accessibili portano l'etichetta visibile per prima (WCAG 2.5.3) e si
-    // distinguono solo per quello che dicono dopo: "questa nuova cattura" è
-    // quella del Composer, la bozza non ancora inviata; "questa cattura" è
-    // quella della riga di triage, un elemento già presente nell'Inbox.
+    // distinguono solo per quello che dicono dopo.
+    //
+    // `composerAria` non può dire che la cattura ARRIVI sulla bacheca scelta:
+    // ogni cattura arriva nell'Inbox, e la bacheca la COLLEGA soltanto perché il
+    // triage possa proporre su di essa; niente arriva alla bacheca senza
+    // approvare ed eseguire (ADR-0003). È quello che dicono il piè di pagina del
+    // Composer e `nib.destination*`, quindi questo nome dice "collegare ... per
+    // il triage" e quello della riga conserva "dove va questa cattura", che è il
+    // compito di quel selettore.
     label: 'Bacheca',
-    composerAria: 'Bacheca: scegli dove arriverà questa nuova cattura',
+    composerAria: 'Bacheca: scegli a quale bacheca collegare questa cattura per il triage',
     triageAria: 'Bacheca: scegli dove va questa cattura',
     noBoardOption: 'Nessuna bacheca · arriva nell’Inbox',
     selectPlaceholder: 'Seleziona una bacheca…',

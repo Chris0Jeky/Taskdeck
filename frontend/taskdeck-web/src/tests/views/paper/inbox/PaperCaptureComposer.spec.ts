@@ -171,7 +171,7 @@ describe('PaperCaptureComposer', () => {
     expect(chrome.body.attributes('aria-label')).toBe('Body: write the text of this capture')
     expect(chrome.body.attributes('placeholder')).toBe('The thought, in plain language…')
     expect(chrome.board.attributes('aria-label')).toBe(
-      'Board: choose where this new capture will land',
+      'Board: choose which board this capture is linked to for triage',
     )
     expect(chrome.label.attributes('aria-label')).toBe(
       'Labels: type a label and press Enter to add it',
@@ -189,23 +189,38 @@ describe('PaperCaptureComposer', () => {
    * its control. Written this way it keeps holding when the copy is reworded
    * and it fails on the pre-rewrite names, where `Add label` did not contain
    * the visible `Labels` and `Due date` did not contain `Due (optional)`.
+   *
+   * It runs in EVERY supported locale, both halves of each pair read off the
+   * DOM. The rule is a property of the catalog, not of English, and the
+   * es/it docblocks tell a translator this test holds them to it — Spanish
+   * composer chrome has no other assertion anywhere, so on the default locale
+   * alone that promise would have been empty.
    */
-  it('starts every field accessible name with the visible eyebrow above it', () => {
-    const wrapper = mount(PaperCaptureComposer)
-    const chrome = fieldChrome(wrapper)
-    const [bodyEyebrow, boardEyebrow, labelsEyebrow, dueEyebrow] = chrome.eyebrows
+  it.each(['en', 'it', 'es'] as const)(
+    'starts every field accessible name with the visible eyebrow above it in %s',
+    (locale) => {
+      const previousLocale = i18n.global.locale.value
+      try {
+        i18n.global.locale.value = locale as SupportedLocale
+        const wrapper = mount(PaperCaptureComposer)
+        const chrome = fieldChrome(wrapper)
+        const [bodyEyebrow, boardEyebrow, labelsEyebrow, dueEyebrow] = chrome.eyebrows
 
-    const named = [
-      [bodyEyebrow, chrome.body.attributes('aria-label')],
-      [boardEyebrow, chrome.board.attributes('aria-label')],
-      [labelsEyebrow, chrome.label.attributes('aria-label')],
-      [dueEyebrow, chrome.due.attributes('aria-label')],
-    ] as const
+        const named = [
+          [bodyEyebrow, chrome.body.attributes('aria-label')],
+          [boardEyebrow, chrome.board.attributes('aria-label')],
+          [labelsEyebrow, chrome.label.attributes('aria-label')],
+          [dueEyebrow, chrome.due.attributes('aria-label')],
+        ] as const
 
-    // Reported as pairs so a failure names the eyebrow AND the name that broke
-    // the rule, instead of four indistinguishable `false`s.
-    expect(named.filter(([eyebrow, name]) => !name?.startsWith(`${eyebrow}: `))).toEqual([])
-  })
+        // Reported as pairs so a failure names the eyebrow AND the name that
+        // broke the rule, instead of four indistinguishable `false`s.
+        expect(named.filter(([eyebrow, name]) => !name?.startsWith(`${eyebrow}: `))).toEqual([])
+      } finally {
+        i18n.global.locale.value = previousLocale
+      }
+    },
+  )
 
   it('re-renders the field chrome in Italian when the locale switches', () => {
     const previousLocale = i18n.global.locale.value
@@ -220,7 +235,7 @@ describe('PaperCaptureComposer', () => {
       )
       expect(chrome.body.attributes('placeholder')).toBe('Il pensiero, in parole semplici…')
       expect(chrome.board.attributes('aria-label')).toBe(
-        'Bacheca: scegli dove arriverà questa nuova cattura',
+        'Bacheca: scegli a quale bacheca collegare questa cattura per il triage',
       )
       expect(chrome.label.attributes('aria-label')).toBe(
         'Etichette: scrivi un’etichetta e premi Enter per aggiungerla',

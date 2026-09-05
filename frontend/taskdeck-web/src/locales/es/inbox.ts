@@ -95,7 +95,8 @@ export default {
   // Cada nombre accesible (`*Aria`) empieza por la etiqueta visible del campo y
   // después dice qué hace el control (WCAG 2.5.3, el patrón de la PR #2675). Si
   // se reescribe una etiqueta visible, hay que reescribir su nombre accesible:
-  // `PaperCaptureComposer.spec.ts` comprueba la relación, no solo las cadenas.
+  // `PaperCaptureComposer.spec.ts` comprueba la relación, no solo las cadenas, y
+  // la comprueba también en español, así que romperla aquí pone el test en rojo.
   //
   // Los marcadores de posición siguen siendo marcadores: una pista sobre la
   // FORMA del valor, nunca el nombre del campo, que es lo que aportan la
@@ -144,11 +145,16 @@ export default {
   boardPicker: {
     // `label` encabeza los dos selectores de tablero. Los dos nombres
     // accesibles llevan la etiqueta visible delante (WCAG 2.5.3) y solo se
-    // distinguen por lo que dicen después: "esta nueva captura" es la del
-    // Composer, el borrador todavía sin enviar; "esta captura" es la de la fila
-    // de triage, un elemento que ya está en el Inbox.
+    // distinguen por lo que dicen después.
+    //
+    // `composerAria` no puede decir que la captura LLEGUE al tablero elegido:
+    // toda captura llega al Inbox, y el tablero solo la VINCULA para que el
+    // triage proponga sobre él; nada llega al tablero sin aprobar y ejecutar
+    // (ADR-0003). Es lo mismo que dicen el pie del Composer y `nib.destination*`,
+    // así que este nombre dice "se vincula ... para el triage" y el de la fila
+    // conserva "a dónde va esta captura", que es lo que hace ese selector.
     label: 'Tablero',
-    composerAria: 'Tablero: elige a dónde llegará esta nueva captura',
+    composerAria: 'Tablero: elige a qué tablero se vincula esta captura para el triage',
     triageAria: 'Tablero: elige a dónde va esta captura',
     noBoardOption: 'Sin tablero · llega al Inbox',
     selectPlaceholder: 'Selecciona un tablero…',

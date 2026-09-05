@@ -125,7 +125,7 @@ describe('PaperInboxView', () => {
     // The Composer's body field is identified by its own `data-testid`, not by
     // its accessible name (#1871): the name is translated copy that WCAG 2.5.3
     // may reword, and a selector reading it turns a copy edit into a test edit.
-    expect(wrapper.find('[data-testid="paper-composer-body"]').exists()).toBe(true)
+    expect(wrapper.find('textarea[data-testid="paper-composer-body"]').exists()).toBe(true)
     expect(wrapper.attributes('data-variant')).toBe('composer')
   })
 
@@ -140,7 +140,7 @@ describe('PaperInboxView', () => {
     expect(wrapper.attributes('data-history-mode')).toBe('archived')
     expect(wrapper.text()).toContain('Archived capture history')
     expect(wrapper.find('[data-testid="paper-inbox-capture"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="paper-composer-body"]').exists()).toBe(false)
+    expect(wrapper.find('textarea[data-testid="paper-composer-body"]').exists()).toBe(false)
     expect(wrapper.find('textarea[aria-label="Quick capture input"]').exists()).toBe(false)
     expect(wrapper.find('[data-action="accept"]').exists()).toBe(false)
     expect(wrapper.find('[data-action="reject"]').exists()).toBe(false)
@@ -777,7 +777,7 @@ describe('PaperInboxView', () => {
 
     const wrapper = mount(PaperInboxView)
     await flushPromises()
-    await wrapper.find('[data-testid="paper-composer-board"]').setValue('')
+    await wrapper.find('select[data-testid="paper-composer-board"]').setValue('')
     const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Capture without board context')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
@@ -1440,7 +1440,7 @@ describe('PaperInboxView', () => {
       await flushPromises()
 
       await wrapper.find('[data-testid="paper-composer-body"]').setValue('Do not lose this')
-      await wrapper.find('[data-testid="paper-composer-board"]').setValue('board-9')
+      await wrapper.find('select[data-testid="paper-composer-board"]').setValue('board-9')
       await wrapper.find('[data-testid="paper-composer-label-input"]').setValue('ops')
       await wrapper.find('[data-testid="paper-composer-label-input"]').trigger('keydown', { key: 'Enter' })
       await wrapper.find('[data-testid="paper-composer-due"]').setValue('2026-09-02')
@@ -1537,7 +1537,7 @@ describe('PaperInboxView', () => {
       const textarea = wrapper.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]')
       expect(textarea.element.value).toBe('Survived the redirect')
       expect(
-        wrapper.find<HTMLSelectElement>('[data-testid="paper-composer-board"]').element.value,
+        wrapper.find<HTMLSelectElement>('select[data-testid="paper-composer-board"]').element.value,
       ).toBe('board-9')
       expect(wrapper.find<HTMLInputElement>('[data-testid="paper-composer-due"]').element.value).toBe(
         '2026-09-02',
@@ -1642,7 +1642,7 @@ describe('PaperInboxView', () => {
       await flushPromises()
       const textarea = before.find('[data-testid="paper-composer-body"]')
       await textarea.setValue('Survives a real 401')
-      await before.find('[data-testid="paper-composer-board"]').setValue('board-9')
+      await before.find('select[data-testid="paper-composer-board"]').setValue('board-9')
       await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
       await flushPromises()
 
@@ -1667,7 +1667,7 @@ describe('PaperInboxView', () => {
         after.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]').element.value,
       ).toBe('Survives a real 401')
       expect(
-        after.find<HTMLSelectElement>('[data-testid="paper-composer-board"]').element.value,
+        after.find<HTMLSelectElement>('select[data-testid="paper-composer-board"]').element.value,
       ).toBe('board-9')
       expect(after.get('[data-testid="paper-inbox-capture-restored"]').text()).toContain(
         'Draft restored.',
