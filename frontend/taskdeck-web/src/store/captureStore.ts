@@ -934,6 +934,24 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  /**
+   * Drop the per-item generation guards when the session ends (#2571).
+   *
+   * Both maps are keyed by capture id and take an entry for every summary
+   * write and every successful mutation, so they otherwise grow for the
+   * lifetime of the store with no eviction on scope change, list replacement
+   * or logout. They are guards, not data: an empty map reads as generation 0,
+   * which is the same "nothing recorded yet" a fresh store starts from.
+   *
+   * The shared clock itself stays monotonic on purpose. A detail read still in
+   * flight from the previous session then compares against a generation it can
+   * no longer match, so its response is dropped instead of cached.
+   */
+  function resetForLogout() {
+    latestDetailWriteGenerationById.clear()
+    latestSummaryGenerationById.clear()
+  }
+
   return {
     items,
     detailById,
@@ -961,5 +979,6 @@ export const useCaptureStore = defineStore('capture', () => {
     pollBatchTriageCompletion,
     batchTriage,
     updateSuggestion,
+    resetForLogout,
   }
 })

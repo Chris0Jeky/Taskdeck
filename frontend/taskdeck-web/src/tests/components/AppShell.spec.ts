@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { defineComponent, h, reactive } from 'vue'
+import { defineComponent, h, nextTick, reactive } from 'vue'
 import AppShell from '../../components/shell/AppShell.vue'
 import {
   useShellKeyboardHelp,
@@ -30,11 +30,11 @@ const mockRoute = reactive({
   path: '/workspace/home',
 })
 
-const mockSession = {
+const mockSession = reactive({
   isAuthenticated: true,
   username: 'test-user',
   logout: vi.fn(),
-}
+})
 
 const mockFeatureFlags = {
   flags: {
@@ -78,6 +78,14 @@ vi.mock('../../store/featureFlagStore', () => ({
 
 vi.mock('../../store/workspaceStore', () => ({
   useWorkspaceStore: () => mockWorkspace,
+}))
+
+const mockCapture = {
+  resetForLogout: vi.fn(),
+}
+
+vi.mock('../../store/captureStore', () => ({
+  useCaptureStore: () => mockCapture,
 }))
 
 const mockPaperTheme = reactive({
@@ -149,6 +157,7 @@ describe('AppShell workspace navigation and command palette', () => {
     mockWorkspace.preferencesHydrated = false
     mockFeatureFlags.isEnabled = vi.fn((_flag: keyof FeatureFlags) => true)
     mockPaperTheme.isOn = false
+    mockSession.isAuthenticated = true
     injectedShellHelp = null
   })
 
@@ -665,5 +674,18 @@ describe('AppShell workspace navigation and command palette', () => {
     mountedWrapper = mountShell()
 
     expect(mockWorkspace.fetchHomeSummary).not.toHaveBeenCalled()
+  })
+
+  it('resets the workspace and capture stores when the session ends', async () => {
+    mountedWrapper = mountShell()
+    expect(mockCapture.resetForLogout).not.toHaveBeenCalled()
+
+    mockSession.isAuthenticated = false
+    await nextTick()
+
+    // The capture store carries per-item generation guards keyed by capture
+    // id, so they belong to the session that recorded them (#2571).
+    expect(mockWorkspace.resetForLogout).toHaveBeenCalledOnce()
+    expect(mockCapture.resetForLogout).toHaveBeenCalledOnce()
   })
 })

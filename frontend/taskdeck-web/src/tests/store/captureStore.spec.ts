@@ -2740,6 +2740,76 @@ describe('captureStore', () => {
         }
       },
     )
+
+    describe('resetForLogout', () => {
+      it('clears the per-item summary generation guard', async () => {
+        vi.useFakeTimers()
+        try {
+          const store = useCaptureStore()
+          store.items = [summaryRow('c-1', 'Triaging')]
+
+          let resolveList!: (value: unknown[]) => void
+          vi.mocked(captureApi.listItems).mockReturnValueOnce(
+            new Promise((resolve) => { resolveList = resolve }) as never,
+          )
+
+          const stop = store.pollBatchTriageCompletion(['c-1'], { limit: 200 })
+          await vi.advanceTimersByTimeAsync(3_000)
+          expect(captureApi.listItems).toHaveBeenCalledTimes(1)
+
+          // A newer explicit read stamps c-1's summary generation above the
+          // in-flight snapshot's, which is what pins the row (#2301).
+          vi.mocked(captureApi.getItem).mockResolvedValue(detailFor('c-1', 'Failed'))
+          await store.fetchDetail('c-1', { forceRefresh: true })
+          expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Failed')
+
+          store.resetForLogout()
+
+          resolveList([summaryRow('c-1', 'Triaging')])
+          await Promise.resolve()
+          await Promise.resolve()
+
+          // The entry is gone, so nothing stale-high is left to pin the row.
+          expect(store.items.find((item) => item.id === 'c-1')?.status).toBe('Triaging')
+          stop()
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('clears the per-item detail write guard', async () => {
+        const store = useCaptureStore()
+        vi.mocked(captureApi.batchTriage).mockResolvedValue({
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          results: [{ itemId: 'c-1', success: true }],
+        })
+        vi.mocked(captureApi.listItems).mockResolvedValue([
+          summaryRow('c-1', 'ProposalCreated'),
+        ] as never)
+
+        // The batch write records a detail write generation for c-1.
+        await store.batchTriage(['c-1'], 'triage')
+        expect(store.detailById['c-1']).toBeUndefined()
+
+        let resolveDetail!: (value: unknown) => void
+        vi.mocked(captureApi.getItem).mockReturnValueOnce(
+          new Promise((resolve) => { resolveDetail = resolve }) as never,
+        )
+        const load = store.fetchDetail('c-1', { forceRefresh: true })
+
+        store.resetForLogout()
+
+        resolveDetail(detailFor('c-1', 'ProposalCreated'))
+        await load
+
+        // That entry is gone too, so a read from the previous session no
+        // longer matches the generation it observed and is dropped rather
+        // than cached.
+        expect(store.detailById['c-1']).toBeUndefined()
+      })
+    })
   })
 
 })
