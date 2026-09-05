@@ -227,8 +227,10 @@ public class AutomationProposalServiceTests
             RiskLevel.Low,
             Guid.NewGuid().ToString(),
             Operations: operations,
-            ProvenanceModelId: "gpt-4.1-mini",
-            ProvenanceTotalTokens: 123);
+            ProvenanceTotalTokens: 123)
+        {
+            ProvenanceModelId = "gpt-4.1-mini"
+        };
 
         _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
             .ReturnsAsync((AutomationProposal p, CancellationToken ct) => p);
@@ -4858,9 +4860,9 @@ public class AutomationProposalServiceTests
             "Create captured task",
             RiskLevel.Low,
             Guid.NewGuid().ToString(),
-            Operations: [new(0, "create", "card", "{\"title\":\"Test\"}", "key1")],
-            ProvenanceModelId: "gpt-5.6-luna")
+            Operations: [new(0, "create", "card", "{\"title\":\"Test\"}", "key1")])
         {
+            ProvenanceModelId = "gpt-5.6-luna",
             ProvenanceProvider = provider,
             ProvenancePromptVersion = promptVersion
         };
