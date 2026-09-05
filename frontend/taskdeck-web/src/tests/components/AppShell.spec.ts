@@ -657,6 +657,182 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(helpDialog()).toBeNull()
   })
 
+  /**
+   * The residual PR #2635 recorded rather than fixed (#2636).
+   *
+   * The capture-phase guard stands aside when the keydown target is inside the
+   * surface: it runs ahead of every handler the surface owns, so stopping there
+   * would break typing and arrow navigation inside modals. That carve-out is
+   * the leak. Once the surface's own handlers have run, the same event keeps
+   * bubbling out of the surface and reaches page-level `window` listeners.
+   *
+   * `bubbles: true` from a node INSIDE the surface is load-bearing. Dispatching
+   * on `window` would put the event AT_TARGET, where capture and bubble
+   * listeners both run whatever propagation says, and every assertion below
+   * would pass against the unguarded source.
+   */
+  function pressFrom(node: Element, key: string, init: KeyboardEventInit = {}) {
+    node.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }))
+  }
+
+  /**
+   * Stands in for any page-level `window` keydown listener behind the surface --
+   * the board keymap, `PaperHomeView`, `PaperInboxView`. All three bind on the
+   * bubble, which is the phase this probe watches.
+   */
+  function trackPageLevelKeys() {
+    const keys: string[] = []
+    const listener = (event: KeyboardEvent) => {
+      keys.push(event.key)
+    }
+    window.addEventListener('keydown', listener)
+    return {
+      keys,
+      stop: () => window.removeEventListener('keydown', listener),
+    }
+  }
+
+  it('keeps board keys off the board when focus is inside the help dialog', async () => {
+    mountedWrapper = mountShell(document.body, { RouterView: BoardKeyProbe })
+    await waitForUi()
+
+    pressFromBody('?')
+    await waitForUi()
+    const dialog = helpDialog()
+    expect(dialog).not.toBeNull()
+
+    // Both real paths into the dialog leave focus outside it and neither twin
+    // traps focus, so reaching this state takes a deliberate Tab or click.
+    const dialogClose = dialog!.querySelector('button') as HTMLButtonElement
+    dialogClose.focus()
+    expect(dialog!.contains(document.activeElement)).toBe(true)
+
+    pressFrom(dialogClose, 'f')
+    pressFrom(dialogClose, 'n')
+    await waitForUi()
+
+    expect(boardProbe.filterToggles).toBe(0)
+    expect(boardProbe.addCardClicks).toBe(0)
+    expect(dialog!.contains(document.activeElement)).toBe(true)
+  })
+
+  it('keeps the bare-letter navigation set and the g-chord off page listeners from inside a surface', async () => {
+    mountedWrapper = mountShell(document.body)
+    await waitForUi()
+
+    pressFromBody('?')
+    await waitForUi()
+    const dialogClose = helpDialog()!.querySelector('button') as HTMLButtonElement
+    dialogClose.focus()
+
+    const page = trackPageLevelKeys()
+    for (const key of ['h', 't', 'b', 'i', 'r', 'g']) {
+      pressFrom(dialogClose, key)
+    }
+    await waitForUi()
+    page.stop()
+
+    expect(page.keys).toEqual([])
+    expect(mockRouter.push).not.toHaveBeenCalled()
+  })
+
+  it('keeps board keys off the board with focus inside a capture modal over the board', async () => {
+    mountedWrapper = mountShell(document.body, { RouterView: BoardKeyProbe })
+    const wrapper = mountedWrapper
+    await waitForUi()
+
+    pressFromBody('C', { ctrlKey: true, shiftKey: true })
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Capture modal"]').exists()).toBe(true)
+
+    // Tab off the textarea onto a button and the target stops being text entry,
+    // which is what puts the board keymap back in range.
+    const captureButton = document.querySelector('.capture-close') as HTMLButtonElement
+    captureButton.focus()
+
+    pressFrom(captureButton, 'n')
+    pressFrom(captureButton, 'f')
+    await waitForUi()
+
+    expect(boardProbe.filterToggles).toBe(0)
+    expect(boardProbe.addCardClicks).toBe(0)
+  })
+
+  it('keeps board keys off the board from a focused option inside the command palette', async () => {
+    mountedWrapper = mountShell(document.body, { RouterView: BoardKeyProbe })
+    await waitForUi()
+
+    pressFromBody('k', { ctrlKey: true })
+    await waitForUi()
+    const option = document.querySelector('[data-palette-index="0"]') as HTMLElement
+    expect(option).not.toBeNull()
+    option.focus()
+
+    pressFrom(option, 'f')
+    pressFrom(option, 'n')
+    await waitForUi()
+
+    expect(boardProbe.filterToggles).toBe(0)
+    expect(boardProbe.addCardClicks).toBe(0)
+  })
+
+  it('still lets Escape out of a surface to the page close paths', async () => {
+    // The capture modal is not on the escape stack, so its Escape is exactly the
+    // `BoardView.closeOpenUi` class of path: a dialog the stack does not carry
+    // still has to close, which means Escape must keep bubbling to the page.
+    mountedWrapper = mountShell(document.body, { RouterView: BoardKeyProbe })
+    await waitForUi()
+
+    pressFromBody('C', { ctrlKey: true, shiftKey: true })
+    await waitForUi()
+    const captureButton = document.querySelector('.capture-close') as HTMLButtonElement
+    captureButton.focus()
+
+    const page = trackPageLevelKeys()
+    pressFrom(captureButton, 'Escape')
+    await waitForUi()
+    page.stop()
+
+    expect(page.keys).toEqual(['Escape'])
+  })
+
+  it('leaves each surface its own keys with focus inside it', async () => {
+    mountedWrapper = mountShell(document.body)
+    const wrapper = mountedWrapper
+    await waitForUi()
+
+    // `?` still toggles the help dialog shut from a control inside it.
+    pressFromBody('?')
+    await waitForUi()
+    const dialogClose = helpDialog()!.querySelector('button') as HTMLButtonElement
+    dialogClose.focus()
+    pressFrom(dialogClose, '?')
+    await waitForUi()
+    expect(helpDialog()).toBeNull()
+
+    pressFromBody('k', { ctrlKey: true })
+    await waitForUi()
+    const input = document.querySelector('[aria-label="Command palette search"]') as HTMLInputElement
+    expect(input).not.toBeNull()
+    expect(document.querySelectorAll('[data-palette-index]').length).toBeGreaterThan(1)
+
+    // Arrow navigation inside the palette input still moves the selection.
+    pressFrom(input, 'ArrowDown')
+    await waitForUi()
+    expect(document.querySelector('[aria-selected="true"]')?.getAttribute('data-palette-index')).toBe('1')
+
+    // Re-query: the selection re-render replaces the input element, and a key
+    // dispatched on the detached node would never reach the window listener at
+    // all, which would pass this assertion for the wrong reason.
+    const reboundInput = document.querySelector('[aria-label="Command palette search"]') as HTMLInputElement
+    expect(reboundInput.isConnected).toBe(true)
+
+    // And mod+k still closes the palette from its own input.
+    pressFrom(reboundInput, 'k', { ctrlKey: true })
+    await waitForUi()
+    expect(wrapper.find('[aria-label="Command palette"]').exists()).toBe(false)
+  })
+
   it('does not open the command palette over a modal it does not own', async () => {
     mountedWrapper = mountShell(document.body)
     const wrapper = mountedWrapper
