@@ -162,6 +162,8 @@ public class WorkerResilienceTests
                 e.Level == LogLevel.Information &&
                 e.Message.Contains("LlmQueueToProposalWorker starting")),
             WaitCeiling);
+        Volatile.Read(ref workReadCount).Should().BeGreaterThan(0,
+            "the worker should have completed at least one work read before it is stopped");
 
         // StopAsync triggers cancellation and waits for ExecuteAsync to complete.
         // This should NOT throw -- the BackgroundService infrastructure handles OperationCanceledException.
