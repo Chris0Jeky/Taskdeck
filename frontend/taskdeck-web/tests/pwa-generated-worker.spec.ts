@@ -265,7 +265,7 @@ describe('generated PWA worker runtime-cache contract', () => {
 
     // The failure must reach the `waitUntil` promise rather than be swallowed. It does NOT abort
     // activation - the Service Worker spec only aborts on a rejected INSTALL - so this pins that
-    // the sweep failure is surfaced (console warning plus an unhandled rejection), not that the
+    // the sweep failure is reported by the browser (a console error in Chromium), not that the
     // worker is prevented from controlling the page.
     await expect(dispatchActivate()).rejects.toThrow('storage unavailable')
   })

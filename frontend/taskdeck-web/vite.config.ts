@@ -71,8 +71,10 @@ export default defineConfig(({ mode }) => {
       },
       workbox: {
         // Emitted inside the AMD factory by vite-plugin-pwa; hoisted to the top of the worker by
-        // hoistServiceWorkerImportScripts below, which is what makes the `activate` listener in
-        // api-cache-cleanup.js fire at all (#2639).
+        // hoistServiceWorkerImportScripts below so the imported scripts' lifecycle listeners are
+        // attached synchronously instead of depending on the factory's microtask ordering (#2639).
+        // The listeners fired in every Chromium measurement; the hoist removes the dependency, it
+        // does not repair an observed failure.
         importScripts: serviceWorkerImportScripts,
         // Precache app shell assets (JS, CSS, HTML, icons)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
