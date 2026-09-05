@@ -795,16 +795,51 @@ export function useReviewProposals() {
     }
   }
 
-  function recordQueueRefreshSuccess() {
-    consecutiveQueueRefreshFailures = 0
+  /**
+   * The LIST leg answered, whatever the rest of the composite read goes on to
+   * do. Returns whether it raised the recovery sentence.
+   *
+   * The refusal disclosure's clear is LIST-SCOPED while the transient state's
+   * stays COMPOSITE-SCOPED, and the asymmetry is in what each one claims. The
+   * refusal says "the server is refusing the refresh rather than failing
+   * temporarily", which is a statement about the list REQUEST; one successful
+   * list read falsifies it outright, and leaving it up afterwards is simply a
+   * lie. The transient state says "the queue you are looking at may be out of
+   * date", which is a statement about the RENDERED QUEUE; a composite read that
+   * bailed at the pin leg never reached `proposals.value = next`, so the queue
+   * on screen really is still the old one and clearing that warning would
+   * fabricate a freshness the surface does not have. Same tick, two different
+   * claims, two different pieces of evidence — so #2445's composite semantics
+   * for the transient counter are deliberately untouched here.
+   */
+  function recordQueueListReadSucceeded(): boolean {
     consecutiveQueueRefreshRefusals = 0
+    if (!queueRefreshRefused.value) return false
+    queueRefreshRefused.value = false
+    // Retracting a disclosure silently is exactly the #2630 defect: the warning
+    // is simply gone on the next render and a reviewer who was not watching
+    // that corner is never told the refusal claim no longer holds.
+    queueRefreshRecovered.value = true
+    return true
+  }
+
+  /**
+   * The WHOLE composite read landed. `recoveryAlreadyRaised` is passed by the
+   * poll when `recordQueueListReadSucceeded` already announced a recovery
+   * earlier in this same read, so the retirement branch below cannot retire the
+   * sentence its own read just raised.
+   */
+  function recordQueueRefreshSuccess(options?: { recoveryAlreadyRaised?: boolean }) {
+    consecutiveQueueRefreshFailures = 0
+    // Idempotent: a no-op when the poll already ran it at the list-success
+    // point, and the whole clear when an explicit load lands.
+    const recoveryRaisedThisRead =
+      recordQueueListReadSucceeded() || options?.recoveryAlreadyRaised === true
     // Only a success that ends a VISIBLE degraded state is a recovery. Setting
-    // this on every success would make both skins announce every 15 s. A
-    // refused queue clearing is the same kind of transition and gets the same
-    // sentence: the warning simply vanishing is silent either way (#2630).
-    if (queueRefreshStale.value || queueRefreshRefused.value) {
+    // this on every success would make both skins announce every 15 s.
+    if (queueRefreshStale.value) {
       queueRefreshRecovered.value = true
-    } else if (queueRefreshRecovered.value) {
+    } else if (queueRefreshRecovered.value && !recoveryRaisedThisRead) {
       // The FOLLOWING success retires the sentence, so it lives for about one
       // poll interval instead of the whole session. An announcement is an
       // event; leaving its text standing indefinitely turns it into a claim
@@ -814,7 +849,6 @@ export function useReviewProposals() {
       queueRefreshRecovered.value = false
     }
     queueRefreshStale.value = false
-    queueRefreshRefused.value = false
   }
 
   /**
@@ -970,6 +1004,11 @@ export function useReviewProposals() {
         () => { refreshTimedOut = true },
       )
       if (!isCurrentRead()) return
+      // The list leg answered and this read is still the current question, so
+      // the refusal claim is falsified NOW -- before the pin leg gets a chance
+      // to return early and strand it (round-2 review finding). The transient
+      // accounting deliberately stays below, on the composite outcome.
+      const listRecoveryRaised = recordQueueListReadSucceeded()
       const next = [...loadedProposals]
       let pinUnavailable = false
       let pinMalformed = false
@@ -1059,7 +1098,7 @@ export function useReviewProposals() {
         }
       }
       proposals.value = next
-      recordQueueRefreshSuccess()
+      recordQueueRefreshSuccess({ recoveryAlreadyRaised: listRecoveryRaised })
       // The queue moved under a reviewer who did not ask for it. Surfaces use
       // this to notice that the row they were rendering has just been dropped
       // or reordered away, instead of silently sliding onto another one
