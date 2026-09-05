@@ -90,7 +90,7 @@ there, because `generate-notes` needs a tag that already exists). Left blank, a 
 `preview_tag` dispatch input renders the page as the prospective **stable** tag instead. It is render-only — it never
 names, creates, touches or publishes a Release — and supplying it on a dispatch that actually publishes is REFUSED in
 `resolve-source`, before any build runs, because the two inputs then state two different intents.
-That artifact name must not match the `release-*` pattern
+The `composed-page-body` artifact name must not match the `release-*` pattern
 `create-release` uses to collect the built assets — `download-artifact` matches it with minimatch, and a matching name would
 have the rendered Markdown published as a stray asset beside the ZIP; the dispatch suite asserts it with a real glob match.
 On the publish path the changelog base is stated explicitly as the newest published **stable** release that sorts
