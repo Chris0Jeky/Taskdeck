@@ -23,6 +23,27 @@ export interface BoardFetchOptions {
   intent?: BoardFetchIntent
 }
 
+export interface BoardListFetchOptions {
+  /**
+   * Skip the throttle window, and NOTHING else — an explicit user request for
+   * fresh data, which the 5 s gap between mounts was never meant to answer.
+   *
+   * The stamp is written only after a success, so a retry that follows a FAILED
+   * list read was never blocked by it. What this exists for is the stamp an
+   * EARLIER success left behind: `state.error` is shared by every board action,
+   * so a create/rename/archive failure two seconds after a good list read puts
+   * BoardsListView on its error branch with a Retry control, and without this
+   * the click returned here before touching `loading` or issuing a request —
+   * no skeleton, no request, a dead button until the window passed (#2689
+   * round-2 finding 1).
+   *
+   * Deliberately NOT a bypass of the in-flight share: joining a read that is
+   * already on the wire is the correct answer to a second caller, and forcing
+   * a parallel one would reintroduce the #1961 fan-out the share removed.
+   */
+  force?: boolean
+}
+
 interface ActiveBoardFetch {
   boardId: string
   intent: BoardFetchIntent
@@ -47,11 +68,19 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
   // both must be reachable by the logout abort.  Each request removes its own
   // controller when it settles.
   const inFlightBoardListReads = new Set<AbortController>()
+  // The message the most recent list-read failure wrote into the shared
+  // `state.error`, so a later list success can tell whether the alert on screen
+  // is still ITS alert. See the success-path clear below.
+  let lastListReadError: string | null = null
   let boardFetchGeneration = 0
   let activeBoardFetch: ActiveBoardFetch | null = null
   let queuedBackgroundBoardFetch: QueuedBackgroundBoardFetch | null = null
 
-  async function fetchBoards(search?: string, includeArchived = false) {
+  async function fetchBoards(
+    search?: string,
+    includeArchived = false,
+    options: BoardListFetchOptions = {},
+  ) {
     const now = Date.now()
     // Allow forced refreshes (search/archive filter changes) to bypass throttle.
     const isFilteredRequest = !!search || includeArchived
@@ -65,7 +94,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     if (!isFilteredRequest && unfilteredFetchBoardsInFlight) {
       return unfilteredFetchBoardsInFlight
     }
-    if (!isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
+    // The share check above is deliberately ahead of this and is NOT skipped by
+    // `force`; only the throttle window is. See BoardListFetchOptions.force.
+    if (!options.force && !isFilteredRequest && now - lastFetchBoardsAt < FETCH_BOARDS_THROTTLE_MS) {
       return
     }
     if (helpers.isDemoMode) {
@@ -121,6 +152,33 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         }
         lastFetchBoardsAt = Date.now()
         state.boards.value = freshBoards
+        // A current-generation success owns the error surface as well as the
+        // list — but only the part of it a LIST READ wrote. Clearing at the
+        // START of a read is not enough, because two list reads overlap: the
+        // activity selector's `includeArchived` read never joins the share, so
+        // it can still be on the wire when the boards list mounts an unfiltered
+        // one. If the earlier of the pair fails after the later has cleared and
+        // committed, `error` is left set beside a populated `boards`, and
+        // BoardsListView's `v-if loading / v-else-if error / … / v-else grid`
+        // chain shows the alert INSTEAD of the boards it already has (#2689
+        // item 4). The bound made the failing half deterministic at 10 s, so it
+        // stopped being a race nobody hits.
+        //
+        // The equality guard is what keeps that from overreaching. `error` is
+        // one ref shared by every board action, so an UNCONDITIONAL clear here
+        // erased alerts this read never raised: mount read slow, the user
+        // submits the create form at T+2 s, createBoard fails and sets its
+        // message, the mount read commits at T+5 s and wipes it — a failure the
+        // user was told about and then silently was not (#2689 round-2 finding
+        // 2). Same shape as the guarded clear in BoardView.vue: clear only the
+        // error still identical to the one this path observed. The marker is
+        // dropped on any current-generation success, matched or not, so a stale
+        // message can never authorise a later clear.
+        const listReadErrorToClear = lastListReadError
+        lastListReadError = null
+        if (listReadErrorToClear !== null && state.error.value === listReadErrorToClear) {
+          state.error.value = null
+        }
 
         // Preserve selection guard: only update activeBoardId if there is no
         // current selection or the previously-selected board is no longer in the
@@ -142,7 +200,10 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         if (!isCurrentListGeneration() || axios.isCancel(e)) {
           return
         }
-        helpers.handleApiError(e, 'Failed to fetch boards')
+        // Remember exactly what was written, post-translation, so the guard on
+        // the success path above compares against the message actually on
+        // screen rather than against the fallback.
+        lastListReadError = helpers.handleApiError(e, 'Failed to fetch boards')
         throw e
       } finally {
         inFlightBoardListReads.delete(controller)
@@ -547,6 +608,9 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     inFlightBoardListReads.clear()
     unfilteredFetchBoardsInFlight = null
     lastFetchBoardsAt = 0
+    // The previous session's alert is cleared below, so the marker that would
+    // authorise clearing it must not outlive it either.
+    lastListReadError = null
 
     // The queued background successor is settled through the existing helper;
     // the active read is aborted at any intent, which the intent-scoped

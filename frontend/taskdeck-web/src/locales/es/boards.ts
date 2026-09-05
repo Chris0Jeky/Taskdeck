@@ -3,6 +3,9 @@
  *
  * `card.created` receives an already-formatted date; "Creado" agrees with
  * "tablero" (masculine).
+ *
+ * `error.timeout` and `error.cancelled` are the board store's boundary copy and
+ * can appear on any board screen, not only this list — see `../en/boards.ts`.
  */
 export default {
   eyebrow: 'Espacio de trabajo',
@@ -16,6 +19,12 @@ export default {
     cancel: 'Cancelar',
   },
   loading: 'Cargando tableros...',
+  error: {
+    retry: 'Volver a cargar los tableros',
+    timeout:
+      'La solicitud tardó demasiado y se detuvo. Comprueba la conexión y vuelve a intentarlo.',
+    cancelled: 'La solicitud se detuvo antes de terminar. Vuelve a intentarlo.',
+  },
   empty: {
     title: 'Sin tableros',
     hint: 'Empieza creando un tablero nuevo.',

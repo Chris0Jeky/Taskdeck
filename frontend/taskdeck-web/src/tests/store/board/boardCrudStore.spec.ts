@@ -82,7 +82,10 @@ function createMockHelpers(overrides: { isDemoMode?: boolean } = {}) {
 
   return {
     guardDemoMutation: vi.fn(),
-    handleApiError: vi.fn(),
+    // Mirrors the real helper's contract: it returns the message it wrote, so
+    // the list read can tell later whether the alert on screen is still its own
+    // (#2689 round-2 finding 2).
+    handleApiError: vi.fn((_err: unknown, fallback: string) => fallback),
     isDemoMode: overrides.isDemoMode ?? false,
     toast: { success: vi.fn(), error: vi.fn() },
     getBoardDetailMutationEpoch: vi.fn(
@@ -181,6 +184,52 @@ describe('boardCrudStore', () => {
       vi.advanceTimersByTime(5001)
       await fetchBoards()
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+    })
+
+    // #2689 round-2 finding 1. The throttle stamp is written only after a
+    // SUCCESS, so a retry following a failed read was never blocked by it — but
+    // the stamp an EARLIER success left behind is a different matter. `error`
+    // is shared by every board action, so the boards list can be sitting on its
+    // error branch with a live Retry control (a create/rename/archive failure)
+    // while this window is still open. An explicit retry has to get through;
+    // an ordinary mount still must not.
+    it('lets a forced read through the throttle window while an unforced one is still skipped', async () => {
+      vi.useFakeTimers()
+      mockBoardsApi.getBoards.mockResolvedValue([{ id: 'board-1', name: 'My Board' }])
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      // Unchanged for every existing caller.
+      await fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      // Same window, forced: a real request, and the skeleton the view needs.
+      await fetchBoards(undefined, false, { force: true })
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(state.loading.value).toBe(false)
+    })
+
+    // `force` skips the throttle and nothing else. Bypassing the share as well
+    // would reintroduce the parallel fan-out #1961 removed.
+    it('joins the in-flight share rather than starting a parallel read when forced', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const mountRead = fetchBoards()
+      const forcedRetry = fetchBoards(undefined, false, { force: true })
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+
+      inFlight.resolve([{ id: 'board-1', name: 'My Board' }])
+      await mountRead
+      await forcedRetry
+
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(1)
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'My Board' }])
     })
 
     // The composer and the triage table both call fetchBoards() on an empty
@@ -305,6 +354,103 @@ describe('boardCrudStore', () => {
       await expect(fetchBoards()).resolves.toBeUndefined()
       expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
       expect(state.boards.value).toEqual([{ id: 'board-2', name: 'Recovered Board' }])
+    })
+
+    // #2689 item 4. Two list reads genuinely overlap: a filtered
+    // (`includeArchived`) read never joins the share and never populates it, so
+    // the activity selector's can still be on the wire when the boards list
+    // mounts its unfiltered one. Clearing `error` only on ENTRY to a read is
+    // not enough for that pair — the failing half writes its alert after the
+    // surviving half has already cleared — and BoardsListView's
+    // `v-if loading / v-else-if error / … / v-else grid` chain then shows the
+    // alert instead of the boards it already holds. The #2685 bound made the
+    // failing half deterministic at 10 s, so this stopped being a race nobody
+    // reaches.
+    it('clears an overlapping failure’s alert when a current-generation read succeeds', async () => {
+      const archivedRead = createDeferred<Array<{ id: string; name: string }>>()
+      const unfilteredRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(archivedRead.promise)
+        .mockReturnValueOnce(unfilteredRead.promise)
+      // The real helper writes state.error; the shared mock does not, and this
+      // test is about what the two surfaces leave behind for each other.
+      helpers.handleApiError.mockImplementation((_err: unknown, fallback: string) => {
+        state.error.value = fallback
+        return fallback
+      })
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const archived = fetchBoards(undefined, true)
+      const unfiltered = fetchBoards()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+
+      // The archived read fails while the unfiltered one is still in flight, so
+      // its alert lands AFTER the survivor cleared `error` on entry.
+      archivedRead.reject(new Error('network error'))
+      await expect(archived).rejects.toThrow('network error')
+      expect(state.error.value).toBe('Failed to fetch boards')
+
+      unfilteredRead.resolve([{ id: 'board-1', name: 'My Board' }])
+      await unfiltered
+
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'My Board' }])
+      expect(state.error.value).toBeNull()
+    })
+
+    // #2689 round-2 finding 2. The clear above must not overreach: `error` is
+    // one ref shared by every board action, so an unconditional clear on the
+    // success path erased alerts the list read never raised. Mount read slow,
+    // the user submits the create form at T+2 s, createBoard fails, the mount
+    // read commits at T+5 s — the failure the user was told about must not be
+    // silently wiped. At the merge base that alert survived.
+    it('leaves an alert another action raised while the read was in flight', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      const listRead = fetchBoards()
+
+      // A mutation fails while the list read is on the wire. Nothing about this
+      // message belongs to the list read.
+      state.error.value = 'Board "Roadmap" already exists'
+
+      inFlight.resolve([{ id: 'board-1', name: 'My Board' }])
+      await listRead
+
+      expect(state.boards.value).toEqual([{ id: 'board-1', name: 'My Board' }])
+      expect(state.error.value).toBe('Board "Roadmap" already exists')
+    })
+
+    // The marker is dropped on any current-generation success, so a message
+    // from an older failed read can never authorise a clear later on.
+    it('does not reuse a stale list-read message to clear a newer alert', async () => {
+      const thirdRead = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockRejectedValueOnce(new Error('network error'))
+        .mockResolvedValueOnce([{ id: 'board-1', name: 'My Board' }])
+        .mockReturnValueOnce(thirdRead.promise)
+      helpers.handleApiError.mockImplementation((_err: unknown, fallback: string) => {
+        state.error.value = fallback
+        return fallback
+      })
+
+      const { fetchBoards } = createBoardCrudActions(state as any, helpers as any)
+      await expect(fetchBoards()).rejects.toThrow('network error')
+      expect(state.error.value).toBe('Failed to fetch boards')
+
+      // The first success consumes the marker.
+      await fetchBoards(undefined, false, { force: true })
+      expect(state.error.value).toBeNull()
+
+      // A third read is in flight when another surface raises the SAME wording
+      // the old list failure used. The marker is spent, so this success must
+      // not treat that alert as its own.
+      const listRead = fetchBoards(undefined, false, { force: true })
+      state.error.value = 'Failed to fetch boards'
+      thirdRead.resolve([{ id: 'board-1', name: 'My Board' }])
+      await listRead
+
+      expect(state.error.value).toBe('Failed to fetch boards')
     })
 
     it('issues a separate request for a filtered caller during an unfiltered flight', async () => {
@@ -763,7 +909,9 @@ describe('boardCrudStore', () => {
       mockCardsApi.getCards.mockResolvedValueOnce([])
       mockLabelsApi.getLabels.mockResolvedValueOnce([])
       helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
-        state.error.value = getErrorMessage(error, fallback)
+        const message = getErrorMessage(error, fallback)
+        state.error.value = message
+        return message
       })
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
@@ -1095,7 +1243,9 @@ describe('boardCrudStore', () => {
       mockCardsApi.getCards.mockResolvedValueOnce([])
       mockLabelsApi.getLabels.mockResolvedValueOnce([])
       helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
-        state.error.value = getErrorMessage(error, fallback)
+        const message = getErrorMessage(error, fallback)
+        state.error.value = message
+        return message
       })
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
@@ -1130,7 +1280,9 @@ describe('boardCrudStore', () => {
       mockCardsApi.getCards.mockResolvedValueOnce([])
       mockLabelsApi.getLabels.mockResolvedValueOnce([])
       helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
-        state.error.value = getErrorMessage(error, fallback)
+        const message = getErrorMessage(error, fallback)
+        state.error.value = message
+        return message
       })
 
       const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
