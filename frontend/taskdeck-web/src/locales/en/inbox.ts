@@ -120,9 +120,13 @@ export default {
     selectedBoard: 'the selected board',
     submit: 'Capture',
   },
+  // `scope.board` is the applied-filter chip and the `{scope}` inside
+  // `empty.scoped`, so it may name only what the list request narrowed by. A
+  // `boardAndColumn` form was removed with #1984 finding 2: the Inbox list is
+  // fetched with a boardId and no column key, so naming a column here told the
+  // reader a filter had been applied that never was.
   scope: {
     board: 'Board: {board}',
-    boardAndColumn: 'Board: {board} · Column: {column}',
     clear: 'Show all captures',
   },
   empty: {

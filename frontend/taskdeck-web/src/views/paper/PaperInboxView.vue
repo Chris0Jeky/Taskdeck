@@ -83,11 +83,9 @@ const {
   captureStore,
   items,
   activeBoardId,
-  activeColumnId,
   isArchivedHistory,
   isScopeReplacement,
   activeBoardName,
-  activeColumnName,
   loadInbox,
   clearScope,
 } = useInboxOrchestrator({
@@ -99,11 +97,22 @@ const {
 // The eyebrow labels them separately — the total is not a queue.
 const { pendingTriageCount, capturedCount } = useInboxCounts(items)
 
+/**
+ * The applied filter, and only the applied filter (#1984 finding 2).
+ *
+ * This label is the chip AND the scoped empty state's `{scope}`, so anything it
+ * names is read as something the list was narrowed by. The list request is
+ * `fetchItems({ limit: 200, boardId })` — board and nothing else — so a column
+ * must never appear here, even when one is still sitting in the route from an
+ * older link or a hand-written URL. It is not a capture destination either:
+ * `CaptureListQuery` has no column key, the create DTO has no `ColumnId`, and
+ * triage targets the board's default column, so there is no truthful second
+ * line to promote it to. Honouring a column end-to-end is the open half of
+ * `#1984` and needs a product ruling first.
+ */
 const scopeLabel = computed(() => {
   if (!activeBoardId.value) return ''
-  return activeColumnId.value
-    ? t('inbox.scope.boardAndColumn', { board: activeBoardName.value, column: activeColumnName.value })
-    : t('inbox.scope.board', { board: activeBoardName.value })
+  return t('inbox.scope.board', { board: activeBoardName.value })
 })
 
 // Read-only inspection of one retained capture in archived history (#1973).
