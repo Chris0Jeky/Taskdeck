@@ -1223,6 +1223,67 @@ describe('boardCrudStore', () => {
       expect(state.boards.value).toEqual([{ id: 'next-session-board', name: 'Next' }])
     })
 
+    it('aborts the in-flight board-list read and writes nothing when it settles', async () => {
+      const inFlight = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(inFlight.promise)
+        .mockResolvedValueOnce([{ id: 'next-session-board', name: 'Next' }])
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const pending = fetchBoards()
+      const signal = mockBoardsApi.getBoards.mock.calls[0][2].signal as AbortSignal
+      expect(signal.aborted).toBe(false)
+
+      resetForLogout()
+      // The previous account's request is cancelled on the wire, not merely
+      // ignored when it lands.
+      expect(signal.aborted).toBe(true)
+
+      inFlight.reject(new axios.CanceledError('canceled'))
+      await expect(pending).resolves.toBeUndefined()
+
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.boards.value).toEqual([])
+      expect(state.error.value).toBeNull()
+      expect(state.loading.value).toBe(false)
+
+      // The next session's first caller starts a fresh request.
+      await expect(fetchBoards()).resolves.toBeUndefined()
+      expect(mockBoardsApi.getBoards).toHaveBeenCalledTimes(2)
+      expect(state.boards.value).toEqual([{ id: 'next-session-board', name: 'Next' }])
+    })
+
+    it('aborts an in-flight filtered board-list read as well', async () => {
+      const unfiltered = createDeferred<Array<{ id: string; name: string }>>()
+      const filtered = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoards
+        .mockReturnValueOnce(unfiltered.promise)
+        .mockReturnValueOnce(filtered.promise)
+
+      const { fetchBoards, resetForLogout } = createBoardCrudActions(state as any, helpers as any)
+      const pendingUnfiltered = fetchBoards()
+      const pendingFiltered = fetchBoards(undefined, true)
+
+      const unfilteredSignal = mockBoardsApi.getBoards.mock.calls[0][2].signal as AbortSignal
+      const filteredSignal = mockBoardsApi.getBoards.mock.calls[1][2].signal as AbortSignal
+      expect(filteredSignal).not.toBe(unfilteredSignal)
+
+      resetForLogout()
+
+      // No request outlives the session that started it, share or not.
+      expect(unfilteredSignal.aborted).toBe(true)
+      expect(filteredSignal.aborted).toBe(true)
+
+      unfiltered.reject(new axios.CanceledError('canceled'))
+      filtered.reject(new axios.CanceledError('canceled'))
+      await expect(pendingUnfiltered).resolves.toBeUndefined()
+      await expect(pendingFiltered).resolves.toBeUndefined()
+
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+      expect(state.boards.value).toEqual([])
+      expect(state.loading.value).toBe(false)
+    })
+
     it('raises no error surface for a board-list request that fails after the reset', async () => {
       const inFlight = createDeferred<Array<{ id: string; name: string }>>()
       mockBoardsApi.getBoards.mockReturnValueOnce(inFlight.promise)

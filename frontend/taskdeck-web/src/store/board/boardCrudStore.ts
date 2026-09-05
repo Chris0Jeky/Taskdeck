@@ -41,6 +41,12 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
   let lastFetchBoardsAt = 0
   let unfilteredFetchBoardsInFlight: Promise<void> | null = null
   let boardListGeneration = 0
+  // Every board-list read that has not settled yet, filtered or not.  The
+  // detail path keeps a single `activeBoardFetch` because it supersedes itself;
+  // list reads do not, so a filtered read can be open alongside the share and
+  // both must be reachable by the logout abort.  Each request removes its own
+  // controller when it settles.
+  const inFlightBoardListReads = new Set<AbortController>()
   let boardFetchGeneration = 0
   let activeBoardFetch: ActiveBoardFetch | null = null
   let queuedBackgroundBoardFetch: QueuedBackgroundBoardFetch | null = null
@@ -73,6 +79,7 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
     const requestGeneration = boardListGeneration
     const isCurrentListGeneration = () => requestGeneration === boardListGeneration
     const controller = new AbortController()
+    inFlightBoardListReads.add(controller)
 
     const request = (async () => {
       try {
@@ -119,18 +126,34 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
       } catch (e: unknown) {
         // A superseded read reports nothing, exactly as the detail path treats
         // a stale generation: raising the signed-out account's failure would
-        // write an error surface into the state the reset just cleared.
-        if (!isCurrentListGeneration()) {
+        // write an error surface into the state the reset just cleared.  The
+        // cancellation arm is the same belt-and-braces the detail path carries:
+        // the only abort today is the logout reset, which bumps the generation
+        // first, so this arm is unreachable — it is here so a future aborter
+        // that forgets the bump still cannot toast a cancellation at the user.
+        if (!isCurrentListGeneration() || axios.isCancel(e)) {
           return
         }
         helpers.handleApiError(e, 'Failed to fetch boards')
         throw e
       } finally {
+        inFlightBoardListReads.delete(controller)
         // Gated for the same reason the detail path gates its own loading
         // write: by the time a superseded read settles, the flag belongs to
         // the read that replaced it.  Clearing it here would drop the next
         // session's skeleton and show that user an empty account until their
         // own read resolves.
+        //
+        // That makes the gate correct only while every bumper of
+        // boardListGeneration also clears state.loading in the same synchronous
+        // turn, so no read is left owning a flag nobody will clear.
+        // resetForLogout is the only bumper today and does exactly that.  A
+        // list-side cancel helper modelled on cancelBackgroundBoardFetch —
+        // which bumps boardFetchGeneration and deliberately leaves the flag
+        // alone — would strand loading true and leave BoardsListView on its
+        // skeleton for good.  Clear the flag alongside any new bumper, or
+        // replace this gate with a per-request ownership token that does not
+        // depend on the coupling.
         if (isCurrentListGeneration()) {
           state.loading.value = false
         }
@@ -493,9 +516,27 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
    * empty state.  Clearing the state alone would not do it — a read that was
    * in flight during the reset would land afterwards and repopulate the store
    * with the previous account's boards.
+   *
+   * The generation bump makes a late response harmless; the abort keeps it from
+   * being sent at all, so no request outlives the session that started it.  Both
+   * lifecycles are aborted: every open list read and the active detail read.
    */
   function resetForLogout() {
     boardListGeneration++
+    // The bump comes first so the rejection each abort produces lands on a
+    // stale generation: the catch returns before handleApiError, so no toast
+    // follows the user into the login screen, and the finally gate leaves the
+    // loading flag to whoever owns it next.  Reversing the two would happen to
+    // work — axios rejects on a later microtask — but would rest on that
+    // timing instead of on the guard.
+    //
+    // The flag is cleared below in this same synchronous turn, which is the
+    // coupling the fetchBoards finally gate depends on; see the comment there
+    // before adding another bumper of boardListGeneration.
+    for (const controller of inFlightBoardListReads) {
+      controller.abort()
+    }
+    inFlightBoardListReads.clear()
     unfilteredFetchBoardsInFlight = null
     lastFetchBoardsAt = 0
 
