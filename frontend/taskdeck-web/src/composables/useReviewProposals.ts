@@ -617,6 +617,54 @@ export function useReviewProposals() {
    */
   const queueAnnouncementKey = computed(() => awaitingProposalIds.value.join('\n'))
 
+  /**
+   * The board scope of a queue read, as one comparable value. Lower-cased
+   * because the scope is the BOARD, not the casing the query string happened to
+   * carry — the same rule `matchesActiveBoardFilter` applies — and an empty
+   * filter is the unscoped queue, exactly as `boardId: activeBoardFilter.value
+   * || undefined` sends it.
+   */
+  function queueScopeOf(boardId: string | null | undefined): string | null {
+    return boardId ? boardId.toLowerCase() : null
+  }
+
+  /**
+   * The scope a queue read has actually LANDED for, or `undefined` while no read
+   * has landed at all.
+   */
+  const landedQueueScope = ref<string | null | undefined>(undefined)
+
+  /**
+   * Whether a queue read has landed for the board scope currently on screen
+   * (#2599 item 1). This is what the two skins' announcement gates need, and
+   * `!proposalsLoading` was the wrong approximation of it.
+   *
+   * An explicit `loadProposals` raises `proposalsLoading` WITHOUT clearing
+   * `proposals`, so gating on it unmounted the announcement node for the length
+   * of every reload and remounted it with the identical sentence: the live
+   * region wrote count -> '' -> count, and a node addition is exactly what
+   * `aria-live` speaks. The reviewer heard the same figure read back after the
+   * header Refresh and after filing away a settled proposal — reads they asked
+   * for, about a queue that had not moved.
+   *
+   * The three states this DOES withhold, all of them cases where the rendered
+   * count is not a count of the queue on screen:
+   *  - before the first read lands (the #2593 skeleton gate — the count is 0
+   *    because nothing has been read, not because nothing awaits review);
+   *  - after a board-filter change, until the new scope's read lands: the rows
+   *    still rendered belong to the previous board;
+   *  - after a failed read that never landed, including the entry load.
+   *
+   * A same-scope reload keeps it settled, because the queue it is about is
+   * still the one being counted. `queueAccessRevoked` keeps its own separate
+   * gate: a revocation is a different fact with a different remedy.
+   */
+  const queueScopeLoaded = computed(
+    () =>
+      landedQueueScope.value !== undefined &&
+      landedQueueScope.value === queueScopeOf(activeBoardFilter.value),
+  )
+
   function isProposalDismissable(proposal: ApiProposal): boolean {
     const status = normalizeProposalStatus(proposal.status)
     return (
@@ -808,6 +856,10 @@ export function useReviewProposals() {
         limit: 200,
         boardId: activeBoardFilter.value || undefined,
       }
+      // The scope this read is ASKING about, snapshotted before the await. A
+      // late answer describes the board it queried, never whichever board is on
+      // screen when it lands (#2599 item 1).
+      const requestedScope = queueScopeOf(filters.boardId)
       // The second argument is forwarded ONLY when a caller supplied options,
       // so every existing call site keeps its exact single-argument shape.
       const loadedProposals = options
@@ -821,6 +873,10 @@ export function useReviewProposals() {
       // authority behind its back, and proves nothing about queue freshness.
       if (signal?.aborted) return 'aborted'
       proposals.value = loadedProposals
+      // A read has now landed for that scope, so the count the surfaces render
+      // is a real count of the queue on screen and may be announced (#2599
+      // item 1).
+      landedQueueScope.value = requestedScope
       // An explicit successful load is as trustworthy as a successful poll and
       // clears any older degraded indication without changing load semantics.
       // It goes through the same accounting as a successful poll so both exits
@@ -967,6 +1023,11 @@ export function useReviewProposals() {
   function recordQueueAccessRevoked() {
     queueAccessRevoked.value = true
     proposals.value = []
+    // What is rendered is no longer any read's answer, so no read has landed
+    // for this scope any more (#2599 item 1). The revoked panel has its own
+    // gate on both surfaces; this only stops the count coming back as speakable
+    // the moment the panel clears for some other reason.
+    landedQueueScope.value = undefined
     suspendQueueRefreshForPermission()
   }
 
@@ -1317,6 +1378,11 @@ export function useReviewProposals() {
         }
       }
       proposals.value = next
+      // `isCurrentRead` has already refused any answer whose scope moved, so
+      // this read landed for the board on screen (#2599 item 1). The poll is a
+      // landing site in its own right: after a failed entry load, it is what
+      // makes the count speakable again without the reviewer reloading.
+      landedQueueScope.value = queueScopeOf(requestedBoardId)
       recordQueueRefreshSuccess({ source: 'poll', recoveryAlreadyRaised: listRecoveryRaised })
       // The queue moved under a reviewer who did not ask for it. Surfaces use
       // this to notice that the row they were rendering has just been dropped
@@ -1594,6 +1660,7 @@ export function useReviewProposals() {
     summaryCards,
     awaitingProposalIds,
     queueAnnouncementKey,
+    queueScopeLoaded,
     dismissableProposalIds,
     matchesActiveBoardFilter,
     isProposalExpired,

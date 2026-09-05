@@ -1209,6 +1209,124 @@ describe('useReviewProposals', () => {
     })
   })
 
+  // #2599 item 1. Both skins gated the announcement on "no read is in flight",
+  // so every EXPLICIT reload unmounted the sentence and remounted it: the live
+  // region wrote count -> '' -> count and the restore was spoken even when the
+  // queue had not moved (the header Refresh, and filing away a settled proposal
+  // that leaves the pending-review set identical, both reach it). The gate
+  // actually needs "a read has landed for the board scope on screen", which is
+  // what this signal is: a reload of the SAME scope keeps it settled, a scope
+  // change unsettles it until the new scope's read lands, and a failed read
+  // never settles it at all.
+  describe('queue scope load signal (#2599 item 1)', () => {
+    it('settles on the first landed read and stays settled across a same-scope reload', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      const rp = useReviewProposals()
+      // Nothing has been read yet, so the count is 0 for that reason rather
+      // than because nothing awaits review.
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-a', boardId: 'board-a' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // An explicit reload raises `proposalsLoading` WITHOUT clearing
+      // `proposals`, so the rendered count is still the last landed read's and
+      // still true of the board on screen.
+      let releaseReload!: (value: unknown[]) => void
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseReload = resolve as (value: unknown[]) => void
+        }),
+      )
+      const reload = rp.loadProposals()
+      expect(rp.proposalsLoading.value).toBe(true)
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      releaseReload([makeProposal({ id: 'p-a', boardId: 'board-a' })])
+      await reload
+      expect(rp.proposalsLoading.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('unsettles the moment the board scope changes and settles again when that scope lands', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-a', boardId: 'board-a' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // The rendered queue is still board-a's, so under board-b it counts
+      // nothing that is on screen -- the one case where withholding is right.
+      mockRoute.query = { boardId: 'board-b' }
+      expect(rp.queueScopeLoaded.value).toBe(false)
+      // The composable's own scope watcher is what issues the reload below.
+      expect(watcherForCurrentSourceValue('board-b')).toBeDefined()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-b', boardId: 'board-b' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // Case is the query string's, not the scope's: the same board asked for
+      // twice is one scope, and `matchesActiveBoardFilter` compares it the same
+      // way.
+      mockRoute.query = { boardId: 'BOARD-B' }
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('stays unsettled after a failed entry load and settles on the next successful read', async () => {
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('network down'))
+      await rp.loadProposals()
+
+      // The read is over, so the loading term is false -- and a gate built on
+      // it would announce "0 proposals awaiting review." for a queue nobody has
+      // read.
+      expect(rp.proposalsLoading.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('settles from a background poll, so a failed entry load recovers without an explicit reload', async () => {
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('network down'))
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.refreshProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('unsettles when a refusal clears the queue and settles again when access returns', async () => {
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // `recordQueueAccessRevoked` empties the queue: what is rendered is no
+      // longer any read's answer.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+  })
+
   describe('navigation helpers', () => {
     it('openInbox pushes inbox path with board filter', () => {
       mockRoute.query = { boardId: 'board-x' }
