@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import PaperShortcutsOverlay from '../../../components/paper/PaperShortcutsOverlay.vue'
+import overlaySource from '../../../components/paper/PaperShortcutsOverlay.vue?raw'
 import appShellSource from '../../../components/shell/AppShell.vue?raw'
 import reviewKeymapSource from '../../../composables/useReviewKeymap.ts?raw'
 import boardViewSource from '../../../views/BoardView.vue?raw'
@@ -22,6 +23,25 @@ function teleportContent(): HTMLElement {
   return document.body
 }
 
+const SCOPED_STYLE = /<style scoped>([\s\S]*)<\/style>/
+
+/**
+ * The component's own scoped CSS, injected so `getComputedStyle` resolves the
+ * rules that really apply to a rendered row. Vitest does not process SFC styles
+ * (`css` is off in vitest.config.ts), so without this the cascade is empty.
+ * The raw source is pre-compilation, so its selectors are plain classes with no
+ * `[data-v-*]` scope attribute and match the mounted DOM as written.
+ */
+let injectedStyle: HTMLStyleElement | null = null
+
+function injectOverlayStyles(): void {
+  const css = SCOPED_STYLE.exec(overlaySource)?.[1] ?? ''
+  expect(css.length).toBeGreaterThan(0)
+  injectedStyle = document.createElement('style')
+  injectedStyle.textContent = css
+  document.head.appendChild(injectedStyle)
+}
+
 describe('PaperShortcutsOverlay', () => {
   let wrapper: VueWrapper | null = null
 
@@ -33,6 +53,8 @@ describe('PaperShortcutsOverlay', () => {
     wrapper?.unmount()
     wrapper = null
     document.body.innerHTML = ''
+    injectedStyle?.remove()
+    injectedStyle = null
   })
 
   it('renders nothing while visible=false', () => {
@@ -159,6 +181,38 @@ describe('PaperShortcutsOverlay', () => {
     input.focus()
     input.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
     expect(wrapper.emitted()).toEqual({})
+  })
+
+  it('sizes the kbd track to its content so a wide chip is not clipped', () => {
+    injectOverlayStyles()
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+
+    const row = teleportContent()
+      .querySelector('[data-shortcut-id="quick-capture"]') as HTMLElement
+    expect(row).not.toBeNull()
+
+    const rowStyle = window.getComputedStyle(row)
+    expect(rowStyle.display).toBe('grid')
+    // The regression was a fixed `56px` first track: `Ctrl+Shift+C` is wider
+    // than that and overran onto the label. No fixed track may return.
+    expect(rowStyle.gridTemplateColumns).toBe('max-content minmax(0, 1fr) auto')
+    expect(rowStyle.gridTemplateColumns).not.toMatch(/\d+px/)
+
+    // The label may shrink below its content width and wrap, so a content-sized
+    // kbd column cannot push the row past the group.
+    const label = row.querySelector('.paper-shortcuts-overlay__row-label') as HTMLElement
+    const labelStyle = window.getComputedStyle(label)
+    // happy-dom returns the specified value, so `0` is not normalised to `0px`.
+    expect(['0', '0px']).toContain(labelStyle.minWidth)
+    expect(labelStyle.overflowWrap).toBe('anywhere')
+
+    // The chip itself still carries the whole descriptor.
+    const chip = row.querySelector('[data-paper-kbd]') as HTMLElement
+    expect(chip.textContent?.trim()).toBe('Ctrl+Shift+C')
+
+    // Honest limit: happy-dom resolves the cascade but performs no layout, so
+    // this asserts the declared track, not a measured pixel width. Nothing in
+    // the unit suite can observe the overrun itself.
   })
 
   it('emits close when the close button is clicked', async () => {

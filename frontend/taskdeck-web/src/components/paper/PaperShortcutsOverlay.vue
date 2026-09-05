@@ -178,9 +178,15 @@ function onBackdropClick() {
   padding: 0;
 }
 
+/*
+ * The kbd track is content-sized, not a fixed 56px: `Ctrl+Shift+C` is wider
+ * than that and used to overrun the track onto the label (#2007 AC5). The
+ * label column takes `minmax(0, 1fr)` so it can shrink below its content width
+ * and wrap instead of pushing the row wide.
+ */
 .paper-shortcuts-overlay__row {
   display: grid;
-  grid-template-columns: 56px 1fr auto;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 5px 0;
@@ -195,6 +201,8 @@ function onBackdropClick() {
 
 .paper-shortcuts-overlay__row-label {
   color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .paper-shortcuts-overlay__row-note {
