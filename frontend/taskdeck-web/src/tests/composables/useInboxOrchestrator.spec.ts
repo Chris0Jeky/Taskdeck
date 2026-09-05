@@ -959,30 +959,136 @@ describe('useInboxOrchestrator', () => {
      * throwing. Resolution alone therefore does not mean the new scope's rows
      * arrived, and treating it that way un-hid the retained OLD-scope rows
      * under the NEW scope's chip. Only an applied response clears the flag.
+     *
+     * #2591 keeps that rule and closes what it left open: a dropped response
+     * used to leave the flag latched with nothing coming, so the table hid the
+     * rows AND their count with no Retry. The four cases below pin the whole
+     * contract — a later applied load clears it, a drop with nothing in flight
+     * re-issues ONCE, a second drop stops rather than looping, and a drop under
+     * a changed scope still clears nothing.
      */
-    it('keeps the scope-replacement state when the store drops a superseded response', async () => {
-      const pendingLoad = deferred<boolean>()
-      mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
+    it('clears the scope-replacement state when the superseding load applies after the dropped one resolves', async () => {
+      const droppedLoad = deferred<boolean>()
+      const supersedingLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems
+        .mockReturnValueOnce(droppedLoad.promise)
+        .mockReturnValueOnce(supersedingLoad.promise)
       const orch = createOrchestrator()
 
-      const load = orch.loadInboxForScopeReplacement()
+      const replacement = orch.loadInboxForScopeReplacement()
+      const superseding = orch.loadInbox()
       expect(orch.isScopeReplacement.value).toBe(true)
 
-      pendingLoad.resolve(false)
-      await load
+      // The store dropped the replacement's response because the second
+      // request superseded it, and it resolves AFTER that second request was
+      // issued.
+      droppedLoad.resolve(false)
+      await replacement
 
+      // The superseding load IS the later load for this scope: no repair read
+      // is owed, and the flag stays set until that load reports it applied.
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
       expect(orch.isScopeReplacement.value).toBe(true)
+
+      mockCaptureStore.items = [{ id: 'a' }, { id: 'b' }]
+      supersedingLoad.resolve(true)
+      await superseding
+
+      // Coherent: rows exposed and the flag down, so the table renders the list
+      // and its count instead of a hidden body under a count-free eyebrow.
+      expect(orch.isScopeReplacement.value).toBe(false)
+      expect(orch.items.value).toHaveLength(2)
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
     })
 
-    it('clears the scope-replacement state on the next applied response', async () => {
-      mockCaptureStore.fetchItems.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    it('re-issues the load once when a dropped replacement leaves nothing in flight', async () => {
+      mockRoute.query = { boardId: 'board-1' }
+      const droppedLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems
+        .mockReturnValueOnce(droppedLoad.promise)
+        .mockResolvedValueOnce(true)
+      const orch = createOrchestrator()
+
+      const replacement = orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      // Dropped by a read the orchestrator never issued (the store's own
+      // post-batch refresh), so no later orchestrator load will clear this.
+      mockCaptureStore.items = [{ id: 'a' }]
+      droppedLoad.resolve(false)
+      await replacement
+
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      expect(mockCaptureStore.fetchItems).toHaveBeenLastCalledWith({ limit: 200, boardId: 'board-1' })
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    it('stops after one re-issue when the repair load is dropped too', async () => {
+      mockRoute.query = { boardId: 'board-1' }
+      mockCaptureStore.fetchItems.mockResolvedValue(false)
+      const orch = createOrchestrator()
+      mockCaptureStore.items = [{ id: 'a' }]
+
+      await orch.loadInboxForScopeReplacement()
+
+      // Exactly one repair read, never a loop.
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      // Honest terminal state: the flag comes down with the store's rows
+      // visible, so the table shows the list and its count (or the store's
+      // error surface with Retry when the read recorded one) — not a hidden
+      // body with no affordance.
+      expect(orch.isScopeReplacement.value).toBe(false)
+      expect(orch.items.value).toHaveLength(1)
+    })
+
+    it('keeps the scope-replacement state when a dropped response resolves under a changed scope', async () => {
+      mockRoute.query = { boardId: 'board-1' }
+      const droppedLoad = deferred<boolean>()
+      const newScopeLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems
+        .mockReturnValueOnce(droppedLoad.promise)
+        .mockReturnValueOnce(newScopeLoad.promise)
+      const orch = createOrchestrator()
+
+      const boardOne = orch.loadInboxForScopeReplacement()
+      mockRoute.query = { boardId: 'board-2' }
+      const boardTwo = orch.loadInboxForScopeReplacement()
+
+      droppedLoad.resolve(false)
+      await boardOne
+
+      // No repair read for a scope nobody is looking at, and board-1's rows
+      // stay hidden under board-2's label (#2501).
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      newScopeLoad.resolve(true)
+      await boardTwo
+
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    /**
+     * Replaces the old 'clears the scope-replacement state on the next applied
+     * response' case, whose shape — one dropped response, then a separately
+     * invoked load that applies — is now the repair read itself and is pinned
+     * above. What is left to pin is that the repair budget is per replacement:
+     * an exhausted one must not make the NEXT scope change unrepairable.
+     */
+    it('gives each scope replacement its own single repair read', async () => {
+      mockCaptureStore.fetchItems
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true)
       const orch = createOrchestrator()
 
       await orch.loadInboxForScopeReplacement()
-      expect(orch.isScopeReplacement.value).toBe(true)
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      expect(orch.isScopeReplacement.value).toBe(false)
 
-      await orch.loadInbox()
-
+      await orch.loadInboxForScopeReplacement()
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(4)
       expect(orch.isScopeReplacement.value).toBe(false)
     })
 
