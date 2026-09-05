@@ -2051,7 +2051,15 @@ async function onDefer() {
   // deep-linked proposal whose re-defer failed would otherwise vanish (its prior deferredUntil is
   // still in effect) with no retry path, despite the error toast.
   if (deferred) {
-    recordDecisionReceipt(p.id, 'deferred')
+    // The queue remains interactive while the request is in flight. Only
+    // surface a receipt when the reviewer is still at the decision locus that
+    // started this defer; a late response must not pull them back to proposal A
+    // after they have selected proposal B. Keep deep-link cleanup separate:
+    // it is tied to the successful server result, not to the visible receipt.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (proposalIdsEqual(currentDecisionLocusId, p.id)) {
+      recordDecisionReceipt(p.id, 'deferred')
+    }
     void clearProposalDeepLink(p.id)
   }
 }
