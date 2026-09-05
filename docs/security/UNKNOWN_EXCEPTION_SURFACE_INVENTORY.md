@@ -161,13 +161,18 @@ never inspects log statements and never inspects known-domain catches.
   `Redact`, `PublicFailureMessage`, `SummarizeException`, `SafeExceptionDescription`). Sanitization is
   judged per occurrence, not per statement: in
   `new { error = PublicFailureMessage(result), detail = result.ErrorMessage }` the sanitized `error`
-  member does not excuse the raw `detail` member. A local that is assigned a raw `.ErrorMessage`
-  counts as an occurrence where it is later returned or thrown, so
-  `var m = result.ErrorMessage; return Error(m);` is flagged at the `return` (`#2473`). The one
-  exception is a reviewed guarded ternary, matched structurally since `#2473`: the occurrence must
-  sit in an arm of a conditional expression whose condition reads **the same receiver's**
-  `ErrorCode` and names `ErrorCodes.UnexpectedError`, with `GenericUnexpectedFailureMessage` in the
-  arms. A null-conditional read (`result?.ErrorMessage`), a named argument
+  member does not excuse the raw `detail` member. A local whose initializer carries the message
+  text — the raw read itself, or a concatenation or interpolation containing it — counts as an
+  occurrence where it is later returned or thrown, so
+  `var m = result.ErrorMessage; return Error(m);` is flagged at the `return` (`#2473`).
+  An initializer that only inspects the message
+  (`result.ErrorMessage is null ? 0 : 1`, `== null`, `.Length`, or any call that consumes it)
+  produces a different value and does not taint the local (`#2606`). The one exception is a reviewed
+  guarded ternary, matched structurally since `#2473`: the occurrence must sit in the arm after the
+  `:` of a conditional expression whose condition reads **the same receiver's** `ErrorCode`, names
+  `ErrorCodes.UnexpectedError` and is not negated, with `GenericUnexpectedFailureMessage` in the arm
+  before the `:`. A negated condition (`!string.Equals(...)`, `!=`, `is not`) drops the exemption
+  (`#2606`). A null-conditional read (`result?.ErrorMessage`), a named argument
   (`message: result.ErrorMessage`), a sibling argument beside such a ternary, and a ternary keyed on
   a different result are all checked normally. That allowance is generic and is not exercised by any
   shipped file: `ProposalTools.cs` used to rely on it and now routes through
@@ -176,12 +181,16 @@ never inspects log statements and never inspects known-domain catches.
   listed in `PERSISTED_STATE_FILES` (`AgentRuntime.cs`, `OpsCliService.cs` and, since `#2474` closed
   R1, `backend/src/Taskdeck.Api/Workers/OutboundWebhookDeliveryWorker.cs`), a statement inside a
   `catch (Exception <var>)` block may not reference `<var>.Message`, `<var>.StackTrace` or
-  `<var>.ToString()` unless it is a logging call or **that occurrence itself** is wrapped by a
-  sanitizer. Since `#2473` the wrapping test is rule 1's outward callee walk rather than a
-  statement-level token search: the accepted wrappers are `SensitiveDataRedactor.Redact`,
-  `SummarizeException` and `SanitizeLlmFailureMessage`, plus any `LogSanitizer.` /
-  `LogValueSanitizer.` call that encloses the occurrence. A sanitizer applied to some other value in
-  the same statement no longer excuses a raw sibling, so
+  `<var>.ToString()` — or, since `#2606`, their null-conditional forms `<var>?.Message`,
+  `<var>?.StackTrace` and `<var>?.ToString()` — unless it is a logging call or **that occurrence
+  itself** is wrapped by a sanitizer. Since `#2473` the wrapping test is rule 1's outward callee walk
+  rather than a statement-level token search: the accepted wrappers are `SensitiveDataRedactor.Redact`,
+  `SummarizeException` and `SanitizeLlmFailureMessage`, plus three named log sanitizer members that
+  enclose the occurrence — `LogSanitizer.SanitizeForLog`, `LogSanitizer.SafeExceptionDescription` and
+  `LogValueSanitizer.Sanitize`. The type prefix alone stopped being enough at `#2606`:
+  `LogSanitizer.StripControlChars` strips control characters without truncating or redacting, so it
+  no longer excuses exception text. A sanitizer applied to some other value in the same statement
+  does not excuse a raw sibling either, so
   `return Error(LogSanitizer.SanitizeForLog(a) + ex.Message);` is flagged. This is what stops a
   new MCP tool from writing `catch (Exception ex) { return Error(ex.Message); }`, which rule 1 cannot
   see because it keys on the `ErrorMessage` member name. `catch (DomainException ex)` blocks are
@@ -201,30 +210,36 @@ being added to `PERSISTED_STATE_FILES` in the same PR that introduces it.
 ### Known limits
 
 The guard is a statement matcher with no C# parser and no dependency, so it stays deliberately
-incomplete. `#2473` narrowed the four limits the `#2470` reviews called out; what remains is:
+incomplete. `#2473` narrowed the four limits the `#2470` reviews called out and `#2606` closed the
+four precision gaps that PR's own reviews recorded; what remains is:
 
-- **Laundering is single-hop and single-block.** A local is followed from the assignment that gives
-  it a raw `.ErrorMessage` to the first `return` / `throw` / `Error(...)` / `Serialize(...)` in the
-  same brace block. A copy of a copy (`var b = a;`), a field, a collection element, and any flow that
-  crosses a method boundary are not followed. Only `var x = ...`, a typed `string`/`object`/`dynamic`
-  declaration and a bare `x = ...` are recognised as assignments.
+- **Laundering is single-hop and single-block.** A local is tainted only by an initializer that
+  carries the message text: the raw `.ErrorMessage` read itself, or a concatenation or interpolation
+  containing it. An initializer that merely inspects the message (`is null ? 0 : 1`, `== null`,
+  `.Length`, or any call that takes it as an argument) produces a different value and does not taint
+  the local. A tainted local is then reported at **every** later outbound statement (`return` /
+  `throw` / `Error(...)` / `Serialize(...)`) in the same brace block or a deeper one — once per such
+  statement, at its first unsanitized use there — until the block that declared it closes; it is not
+  reported only at the first one. A copy of a copy (`var b = a;`), a field, a collection element, and
+  any flow that crosses a method boundary are not followed. Only `var x = ...`, a typed
+  `string`/`object`/`dynamic` declaration and a bare `x = ...` are recognised as assignments.
 - **The guarded-ternary exemption is structural, not semantic.** It matches the receiver name
   textually: two different locals holding the same `Result` read as different receivers, and a
-  condition that tests a copy of the code rather than `result.ErrorCode` is not accepted. It also
-  reads arm position, not condition truth: the read must sit in the arm after the `:`, with
-  `GenericUnexpectedFailureMessage` in the arm before it. An inverted pair of arms is therefore
-  flagged, and so is the safe-but-unreviewed shape that inverts the condition instead
-  (`!string.Equals(...) ? result.ErrorMessage : Generic`). The exemption does not read condition
-  polarity, so a negated condition with the arms swapped
-  (`!string.Equals(...) ? Generic : result.ErrorMessage`, which returns the raw message on the
-  unexpected code) is still exempted; that is the one imprecision that does not point toward
-  flagging, and it is tracked in `#2606`. No guarded file contains either negated shape today.
+  condition that tests a copy of the code rather than `result.ErrorCode` is not accepted. It reads
+  arm position and condition polarity, not condition truth: the read must sit in the arm after the
+  `:`, `GenericUnexpectedFailureMessage` must sit in the arm before it, and the condition must
+  contain no `!`, `!=` or `is not`. An inverted pair of arms is therefore flagged, and so are both
+  negated shapes — the safe-but-unreviewed `!string.Equals(...) ? result.ErrorMessage : Generic` and
+  the leaking `!string.Equals(...) ? Generic : result.ErrorMessage`. Any negation anywhere in the
+  condition drops the exemption, including one that applies to a different operand; that imprecision
+  points toward flagging. No guarded file contains a negated shape today.
 - **Rule 2 judges wrapping, not effectiveness.** An occurrence enclosed by an accepted sanitizer is
   taken to be safe; the guard does not check that the sanitizer's own implementation still redacts.
-  The sanitizers themselves are pinned by the backend tests listed above, not by this guard. Rule 2
-  also keys on the catch variable, so exception text reached through another local is not matched,
-  and its member pattern matches `<var>.Message` but not the null-conditional `<var>?.Message` —
-  measured, unchanged by `#2473`, and no guarded file uses that shape today.
+  The accepted log sanitizer members are listed one by one rather than by type prefix, so
+  `LogSanitizer.StripControlChars` no longer excuses exception text, but membership remains a claim
+  about the named member and not a proof about its body. The sanitizers themselves are pinned by the
+  backend tests listed above, not by this guard. Rule 2 also keys on the catch variable, so exception
+  text reached through another local is not matched.
 - **Literal masking is per line.** Escaped backslashes (`"...\\"`), escaped quotes and verbatim
   `@"..."` literals with `""` are handled, so masking can no longer swallow the rest of a line. A
   verbatim literal that *spans* lines is still closed at the newline and masked line by line; no
