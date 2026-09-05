@@ -327,3 +327,254 @@ test('the webhook delivery worker is guarded as a persisted-state surface', () =
     'OutboundWebhookDeliveryWorker persists failure text into OutboundWebhookDelivery.LastErrorMessage (#2474), so it must stay in PERSISTED_STATE_FILES',
   )
 })
+
+// ---------------------------------------------------------------------------
+// #2473 blind spot 1 — intermediate-variable laundering (rule 1).
+// Single method body, single hop: a local that takes a raw ErrorMessage is
+// treated as an ErrorMessage occurrence when it is later returned or thrown.
+// ---------------------------------------------------------------------------
+
+test('rejects a raw ErrorMessage laundered through a local before the return', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = result.ErrorMessage;
+        return Error(detail);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].rule, 'mcp-error-message')
+  assert.match(lineOf(source, findings[0].line), /return Error\(detail\)/)
+})
+
+test('rejects a typed local that launders ErrorMessage into a serialized payload', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        string detail = result.ErrorMessage;
+        return JsonSerializer.Serialize(new
+        {
+            error = detail
+        }, BoardResources.SerializerOptions);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('accepts a local that is already sanitized where it is assigned', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = SensitiveDataRedactor.SanitizeLlmFailureMessage(result.ErrorCode, result.ErrorMessage);
+        return Error(detail);
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('accepts a laundered local that a sanitizer wraps at the return', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = result.ErrorMessage;
+        return Error(SensitiveDataRedactor.Redact(detail));
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('drops a laundered local at the end of its own method body', () => {
+  const source = `
+    private static void Capture(Result result)
+    {
+        var detail = result.ErrorMessage;
+        Store(detail);
+    }
+
+    private static string Error(string detail)
+    {
+        return Error(detail);
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('stops laundering at one hop rather than chasing a second local', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var detail = result.ErrorMessage;
+        var copy = detail;
+        return Error(copy);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 0, 'single-hop tracking stops at the first copy by design')
+})
+
+// ---------------------------------------------------------------------------
+// #2473 blind spot 2 — the guarded-ternary exemption.
+// ---------------------------------------------------------------------------
+
+test('rejects a null-conditional ErrorMessage sitting beside a guarded ternary', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(
+            string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+                ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+                : SensitiveDataRedactor.GenericUnexpectedFailureMessage,
+            result?.ErrorMessage);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.match(lineOf(source, findings[0].line), /result\?\.ErrorMessage/)
+})
+
+test('rejects a raw ErrorMessage passed as a named argument', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(
+            code: result.ErrorCode,
+            message: result.ErrorMessage);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.match(lineOf(source, findings[0].line), /message: result\.ErrorMessage/)
+})
+
+test('accepts an outbound guarded ternary whose condition tests the same result', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('rejects a guarded-looking ternary whose condition tests a different result', () => {
+  const source = `
+    private static string Error(Result result, Result inner)
+    {
+        return Error(string.Equals(inner.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+            ? SensitiveDataRedactor.GenericUnexpectedFailureMessage
+            : result.ErrorMessage);
+    }
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('rejects an inverted guarded ternary that returns the raw message on the unexpected code', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        return Error(string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+            ? result.ErrorMessage
+            : SensitiveDataRedactor.GenericUnexpectedFailureMessage);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.match(lineOf(source, findings[0].line), /\? result\.ErrorMessage/)
+})
+
+test('rejects an inverted guarded ternary laundered through a local', () => {
+  const source = `
+    private static string Error(Result result)
+    {
+        var message = string.Equals(result.ErrorCode, ErrorCodes.UnexpectedError, StringComparison.Ordinal)
+            ? result.ErrorMessage
+            : SensitiveDataRedactor.GenericUnexpectedFailureMessage;
+
+        return Error(message);
+    }
+`
+  const findings = findMcpFindings(source, mcpPath)
+  assert.equal(findings.length, 1)
+  assert.match(lineOf(source, findings[0].line), /return Error\(message\);/)
+})
+
+// ---------------------------------------------------------------------------
+// #2473 blind spot 3 — rule 2 sanitization is judged per occurrence.
+// ---------------------------------------------------------------------------
+
+test('rejects ex.Message concatenated onto a LogSanitizer call inside a catch', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            return Error(LogSanitizer.SanitizeForLog(operationName) + ex.Message);
+        }
+`
+  const findings = findCatchBlockFindings(source, mcpPath, 'mcp-unknown-exception-text')
+  assert.equal(findings.length, 1)
+  assert.equal(findings[0].rule, 'mcp-unknown-exception-text')
+})
+
+test('rejects a raw ex.Message beside a redacted sibling in one persisted statement', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            commandRun.Fail(SensitiveDataRedactor.Redact(context) + ex.Message);
+        }
+`
+  assert.equal(findPersistedStateFindings(source, persistedPath).length, 1)
+})
+
+test('accepts an ex.Message that LogSanitizer itself wraps', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            return Error(LogSanitizer.SanitizeForLog(ex.Message));
+        }
+`
+  assert.deepEqual(findCatchBlockFindings(source, mcpPath, 'mcp-unknown-exception-text'), [])
+})
+
+test('accepts a redacted exception message persisted from a catch', () => {
+  const source = `
+        catch (Exception ex)
+        {
+            commandRun.Fail(SensitiveDataRedactor.Redact(ex.Message));
+        }
+`
+  assert.deepEqual(findPersistedStateFindings(source, persistedPath), [])
+})
+
+// ---------------------------------------------------------------------------
+// #2473 blind spot 4 — literal masking must not swallow the rest of a line.
+// ---------------------------------------------------------------------------
+
+test('flags an ErrorMessage after a literal that ends in an escaped backslash', () => {
+  const source = `
+        return Error("prefix \\\\" + result.ErrorMessage);
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('keeps an escaped quote inside a literal masked', () => {
+  const source = `
+        return Error("quoted \\".ErrorMessage\\" text");
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})
+
+test('flags an ErrorMessage after a verbatim literal that ends with a backslash', () => {
+  const source = `
+        return Error(@"C:\\temp\\" + result.ErrorMessage);
+`
+  assert.equal(findMcpFindings(source, mcpPath).length, 1)
+})
+
+test('keeps a verbatim literal with doubled quotes fully masked', () => {
+  const source = `
+        return Error(@"pattern "".ErrorMessage"" only");
+`
+  assert.deepEqual(findMcpFindings(source, mcpPath), [])
+})

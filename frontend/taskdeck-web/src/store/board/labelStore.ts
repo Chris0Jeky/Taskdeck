@@ -1,5 +1,10 @@
 /**
  * Label operations: fetch, create, update, delete labels.
+ *
+ * Successful label writes advance the board-detail mutation epoch: labels are
+ * part of the board-detail fan-out, so a detail read that captured the
+ * pre-write state must not be allowed to replace the local update when it
+ * resolves after the write (#2435).
  */
 import { labelsApi } from '../../api/labelsApi'
 import type { CreateLabelDto, UpdateLabelDto } from '../../types/board'
@@ -23,6 +28,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       const newLabel = await labelsApi.createLabel(boardId, label)
+      helpers.markBoardDetailMutation(boardId)
       state.currentBoardLabels.value.push(newLabel)
       helpers.toast.success(`Label "${newLabel.name}" created successfully`)
       return newLabel
@@ -40,6 +46,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       const updatedLabel = await labelsApi.updateLabel(boardId, labelId, label)
+      helpers.markBoardDetailMutation(boardId)
 
       // Update label in store
       const index = state.currentBoardLabels.value.findIndex((l) => l.id === labelId)
@@ -63,6 +70,7 @@ export function createLabelActions(state: BoardState, helpers: BoardHelpers) {
       state.loading.value = true
       state.error.value = null
       await labelsApi.deleteLabel(boardId, labelId)
+      helpers.markBoardDetailMutation(boardId)
 
       // Remove label from store
       state.currentBoardLabels.value = state.currentBoardLabels.value.filter(

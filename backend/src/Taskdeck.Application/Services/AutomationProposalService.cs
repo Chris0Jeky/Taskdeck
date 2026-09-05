@@ -1172,14 +1172,25 @@ public class AutomationProposalService : IAutomationProposalService
             return dto;
         }
 
+        // Same ascending-Sequence contract MapToDto applies to the originals (#2563). A revision's
+        // operations are parsed in the payload's ARRAY order, which the reviewer's JSON editor can
+        // leave disagreeing with the operations' own `sequence` fields, so a revised proposal could
+        // otherwise carry an operation order its Sequence-ordered headlines do not match. Ordering
+        // the list once here keeps both the returned operations and the presentation built from
+        // them on the same order; it cannot change what Apply does, which re-parses the pinned
+        // revision itself and sorts by Sequence before dispatch.
+        var orderedRevisedOperations = revisedOperations
+            .OrderBy(operation => operation.Sequence)
+            .ToList();
+
         return dto with
         {
-            Operations = revisedOperations,
+            Operations = orderedRevisedOperations,
             Presentation = BuildPresentation(
                 proposal.Summary,
                 proposal.RiskLevel,
                 proposal.SourceType,
-                revisedOperations)
+                orderedRevisedOperations)
         };
     }
 
@@ -1681,7 +1692,19 @@ public class AutomationProposalService : IAutomationProposalService
 
     private static ProposalDto MapToDto(AutomationProposal proposal, string? decidedByUserName = null)
     {
-        var operationDtos = proposal.Operations.Select(MapOperationToDto).ToList();
+        // Ascending Sequence is the DTO's ORDER CONTRACT, not a convenience (#2563). The persisted
+        // collection arrives through an EF `Include` that carries no ORDER BY, and the create path
+        // maps the in-memory collection in AddOperation order, so without this the array order was
+        // whatever the caller or the query plan produced — while `BuildPresentation` below always
+        // builds `OperationHeadlines` in Sequence order. A consumer pairing the two arrays by index
+        // then rendered headline n against a different operation. Ordering here gives every
+        // consumer one contract, and matches what the diff, the executor and the contract validator
+        // already sort by. `OrderBy` is a stable sort, so operations sharing a Sequence keep their
+        // relative source order rather than being shuffled.
+        var operationDtos = proposal.Operations
+            .OrderBy(operation => operation.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
 
         return new ProposalDto(
             proposal.Id,

@@ -3,7 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
 import { boardsApi } from '../api/boardsApi'
 import { isTriageTerminalStatus } from '../types/capture'
-import type { CaptureItem, CaptureItemSummary } from '../types/capture'
+import type { CaptureItem, CaptureItemSummary, CaptureListQuery } from '../types/capture'
 import type { BoardDetail } from '../types/board'
 import { registerEscapeHandler } from './useEscapeStack'
 import { usePerformanceMark } from './usePerformanceMark'
@@ -52,6 +52,27 @@ export function useInboxOrchestrator(options: {
   const isArchivedHistory = computed(
     () => route.query.history === 'archived' && activeBoardId.value !== null,
   )
+
+  /**
+   * The list query for the Inbox's CURRENT scope — the one every list read has
+   * to use, not just the explicit load (#2570). Read it late (see the thunk in
+   * `batchAction`); the scope can change between a read being planned and
+   * issued.
+   *
+   * Archived history carries no key of its own because `CaptureListQuery` has
+   * none (`types/capture.ts`): it is board id and limit only. That is sound
+   * today because archived history is always board-scoped, so `boardId` already
+   * selects the archived board's captures. Adding a `history` key to the query
+   * type has to revisit this helper — `loadInboxInternal` calls it in archived
+   * mode too, so the omission is not covered by `batchAction`'s early return.
+   */
+  function currentListQuery(): CaptureListQuery {
+    return {
+      limit: 200,
+      ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
+    }
+  }
+
   const activeBoardName = computed(() => {
     const boardId = activeBoardId.value
     return boardId && scopedBoard.value?.id === boardId ? scopedBoard.value.name : boardId ?? ''
@@ -122,7 +143,15 @@ export function useInboxOrchestrator(options: {
     const ids = Array.from(selectedIds.value)
     const actionGeneration = ++batchActionGeneration
     try {
-      const result = await captureStore.batchTriage(ids, action)
+      // The store re-reads the list after the batch. Hand it this Inbox's
+      // scope so a board-scoped list is not replaced by the unscoped one
+      // (#2570) — for ignore and cancel no poll follows to repair it.
+      //
+      // A THUNK, not a value: the scope can move while the POST is in flight,
+      // and the store resolves this immediately before it issues the read, so
+      // the read follows the user to the new board instead of racing the new
+      // board's own load and winning it with the old board's rows.
+      const result = await captureStore.batchTriage(ids, action, currentListQuery)
       // A board/history scope change invalidates both the selection and the
       // question this response answers. Never start an old scope's poll late.
       if (actionGeneration !== batchActionGeneration) return
@@ -133,10 +162,7 @@ export function useInboxOrchestrator(options: {
         .map((item) => item.itemId)
       if (queuedIds.length === 0) return
       activeBatchTriagePollStops.add(
-        captureStore.pollBatchTriageCompletion(queuedIds, {
-          limit: 200,
-          ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
-        }),
+        captureStore.pollBatchTriageCompletion(queuedIds, currentListQuery()),
       )
     } catch {
       // Store handles toast
@@ -368,10 +394,7 @@ export function useInboxOrchestrator(options: {
       // the exact state this flag exists to prevent. The request-id and
       // scope-key checks below stay: they guard against a stale caller, while
       // `applied` guards against a dropped response.
-      const applied = await captureStore.fetchItems({
-        limit: 200,
-        ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
-      })
+      const applied = await captureStore.fetchItems(currentListQuery())
       const currentScopeKey = JSON.stringify({
         boardId: activeBoardId.value,
         archived: isArchivedHistory.value,

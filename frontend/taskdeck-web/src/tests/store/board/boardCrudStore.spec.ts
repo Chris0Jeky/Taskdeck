@@ -697,6 +697,290 @@ describe('boardCrudStore', () => {
       await expect(queued).resolves.toBe(false)
       expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
     })
+
+    it('does not let an explicit retry overwrite a board write that completed mid-flight', async () => {
+      const retryBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const retryCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const retryLabels = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard.mockReturnValueOnce(retryBoard.promise)
+      mockCardsApi.getCards.mockReturnValueOnce(retryCards.promise)
+      mockLabelsApi.getLabels.mockReturnValueOnce(retryLabels.promise)
+      state.currentBoard.value = { id: 'board-1', name: 'Renamed board' }
+      state.currentBoardLabels.value = [{ id: 'label-new' }]
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const retry = fetchBoard('board-1')
+
+      // The board-settings/label save resolves while the retry fan-out is still open.
+      helpers.markBoardDetailMutation('board-1')
+
+      retryBoard.resolve({ id: 'board-1', name: 'Pre-save name', columns: [] })
+      retryCards.resolve([])
+      retryLabels.resolve([{ id: 'label-stale', name: 'Pre-save label' }])
+
+      await expect(retry).resolves.toBe(false)
+      expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Renamed board' })
+      expect(state.currentBoardLabels.value).toEqual([{ id: 'label-new' }])
+      expect(state.loading.value).toBe(false)
+      // An explicit read carries the view's own error surface, so it does not
+      // queue a successor of its own.
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+    })
+
+    it('queues one successor read when a local mutation invalidates a background refresh', async () => {
+      const staleBoard = createDeferred<{
+        id: string
+        name: string
+        columns: Array<{ id: string; cardCount: number }>
+      }>()
+      const staleCards = createDeferred<Array<{ id: string; columnId: string; position: number }>>()
+      const staleLabels = createDeferred<Array<{ id: string; name: string }>>()
+      const successorBoard = createDeferred<{
+        id: string
+        name: string
+        columns: Array<{ id: string; cardCount: number }>
+      }>()
+      const successorCards =
+        createDeferred<Array<{ id: string; columnId: string; position: number }>>()
+      const successorLabels = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(staleBoard.promise)
+        .mockReturnValueOnce(successorBoard.promise)
+      mockCardsApi.getCards
+        .mockReturnValueOnce(staleCards.promise)
+        .mockReturnValueOnce(successorCards.promise)
+      mockLabelsApi.getLabels
+        .mockReturnValueOnce(staleLabels.promise)
+        .mockReturnValueOnce(successorLabels.promise)
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const background = fetchBoard('board-1', { intent: 'background' })
+
+      // A local card move completes while the refresh is open, so the server
+      // reindexed siblings this payload cannot describe.
+      helpers.markBoardDetailMutation('board-1')
+
+      staleBoard.resolve({
+        id: 'board-1',
+        name: 'Stale board',
+        columns: [{ id: 'column-1', cardCount: 0 }],
+      })
+      staleCards.resolve([{ id: 'card-1', columnId: 'column-1', position: 9 }])
+      staleLabels.resolve([])
+
+      await expect(background).resolves.toBe(false)
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+
+      // The successor is the only in-flight read, so a further background
+      // request joins it instead of starting a parallel fan-out.
+      const successor = fetchBoard('board-1', { intent: 'background' })
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+
+      successorBoard.resolve({
+        id: 'board-1',
+        name: 'Reordered board',
+        columns: [{ id: 'column-1', cardCount: 0 }],
+      })
+      successorCards.resolve([{ id: 'card-1', columnId: 'column-1', position: 0 }])
+      successorLabels.resolve([])
+      await expect(successor).resolves.toBe(true)
+
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      expect(state.currentBoard.value).toMatchObject({ name: 'Reordered board' })
+      expect(state.currentBoardCards.value).toEqual([
+        { id: 'card-1', columnId: 'column-1', position: 0 },
+      ])
+    })
+
+    it('produces exactly one successor read and no parallel fan-out for repeated mutation events during one background read', async () => {
+      const staleBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const staleCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const staleLabels = createDeferred<Array<{ id: string; name: string }>>()
+      const successorBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      const successorCards = createDeferred<Array<{ id: string; columnId: string }>>()
+      const successorLabels = createDeferred<Array<{ id: string; name: string }>>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(staleBoard.promise)
+        .mockReturnValueOnce(successorBoard.promise)
+      mockCardsApi.getCards
+        .mockReturnValueOnce(staleCards.promise)
+        .mockReturnValueOnce(successorCards.promise)
+      mockLabelsApi.getLabels
+        .mockReturnValueOnce(staleLabels.promise)
+        .mockReturnValueOnce(successorLabels.promise)
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const background = fetchBoard('board-1', { intent: 'background' })
+
+      helpers.markBoardDetailMutation('board-1')
+      const duringWindowFirst = fetchBoard('board-1', { intent: 'background' })
+      helpers.markBoardDetailMutation('board-1')
+      const duringWindowSecond = fetchBoard('board-1', { intent: 'background' })
+      helpers.markBoardDetailMutation('board-1')
+
+      // Bound, part one: a background request that arrives while this read is
+      // open joins its promise instead of starting a fan-out.
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+
+      staleBoard.resolve({ id: 'board-1', name: 'Stale board', columns: [] })
+      staleCards.resolve([])
+      staleLabels.resolve([])
+
+      await expect(background).resolves.toBe(false)
+      await expect(duringWindowFirst).resolves.toBe(false)
+      await expect(duringWindowSecond).resolves.toBe(false)
+
+      // Bound, part two: the successor check runs once per read, so all three
+      // invalidating events produced a single successor.
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      const successor = fetchBoard('board-1', { intent: 'background' })
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+
+      successorBoard.resolve({ id: 'board-1', name: 'Repaired board', columns: [] })
+      successorCards.resolve([])
+      successorLabels.resolve([])
+      await expect(successor).resolves.toBe(true)
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      expect(state.currentBoard.value).toMatchObject({ name: 'Repaired board' })
+    })
+
+    it('discards an invalidation successor read when an explicit route load changes boards', async () => {
+      const staleBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(staleBoard.promise)
+        .mockImplementationOnce(
+          (_id: string, options: { signal: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              options.signal.addEventListener('abort', () =>
+                reject(new axios.CanceledError('successor discarded')),
+              )
+            }),
+        )
+        .mockResolvedValueOnce({ id: 'board-b', name: 'Board B', columns: [] })
+      mockCardsApi.getCards.mockResolvedValue([])
+      mockLabelsApi.getLabels.mockResolvedValue([])
+      state.currentBoard.value = { id: 'board-1', name: 'Local board' }
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const background = fetchBoard('board-1', { intent: 'background' })
+      helpers.markBoardDetailMutation('board-1')
+      staleBoard.resolve({ id: 'board-1', name: 'Stale board', columns: [] })
+
+      await expect(background).resolves.toBe(false)
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      const successor = fetchBoard('board-1', { intent: 'background' })
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+
+      const routeLoad = fetchBoard('board-b')
+      await expect(routeLoad).resolves.toBe(true)
+      await expect(successor).resolves.toBe(false)
+
+      expect(state.currentBoard.value).toMatchObject({ id: 'board-b' })
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(3)
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+    })
+
+    it('discards an invalidation successor read when the board view unmounts', async () => {
+      const staleBoard = createDeferred<{ id: string; name: string; columns: [] }>()
+      mockBoardsApi.getBoard
+        .mockReturnValueOnce(staleBoard.promise)
+        .mockImplementationOnce(
+          (_id: string, options: { signal: AbortSignal }) =>
+            new Promise((_resolve, reject) => {
+              options.signal.addEventListener('abort', () =>
+                reject(new axios.CanceledError('successor discarded')),
+              )
+            }),
+        )
+      mockCardsApi.getCards.mockResolvedValue([])
+      mockLabelsApi.getLabels.mockResolvedValue([])
+      state.currentBoard.value = { id: 'board-1', name: 'Local board' }
+
+      const { fetchBoard, cancelBackgroundBoardFetch } = createBoardCrudActions(
+        state as any,
+        helpers as any,
+      )
+      const background = fetchBoard('board-1', { intent: 'background' })
+      helpers.markBoardDetailMutation('board-1')
+      staleBoard.resolve({ id: 'board-1', name: 'Stale board', columns: [] })
+
+      await expect(background).resolves.toBe(false)
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      const successor = fetchBoard('board-1', { intent: 'background' })
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+
+      cancelBackgroundBoardFetch('board-1')
+      await expect(successor).resolves.toBe(false)
+
+      expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Local board' })
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(2)
+      expect(helpers.handleApiError).not.toHaveBeenCalled()
+    })
+
+    it('keeps a current background 403 authoritative when a local mutation lands first', async () => {
+      const forbidden = {
+        message: 'Request failed with status code 403',
+        response: { status: 403 },
+      }
+      const revoked = createDeferred<{ id: string; name: string; columns: [] }>()
+      state.currentBoard.value = { id: 'board-1', name: 'Cached board' }
+      state.currentBoardCards.value = [{ id: 'cached-card' }]
+      mockBoardsApi.getBoard.mockReturnValueOnce(revoked.promise)
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
+      helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
+        state.error.value = getErrorMessage(error, fallback)
+      })
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const background = fetchBoard('board-1', { intent: 'background' })
+
+      // Ordering: the local mutation completes, then the still-current read is
+      // rejected because access was revoked.
+      helpers.markBoardDetailMutation('board-1')
+      revoked.reject(forbidden)
+
+      await expect(background).resolves.toBe(false)
+
+      expect(helpers.handleApiError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'You no longer have access to this board' }),
+        'You no longer have access to this board',
+      )
+      expect(state.error.value).toBe('You no longer have access to this board')
+      expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Cached board' })
+      expect(state.currentBoardCards.value).toEqual([{ id: 'cached-card' }])
+      // A failed read carries no payload to repair with, so it queues nothing.
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps a current background 403 authoritative when the mutation lands after the rejection', async () => {
+      const forbidden = {
+        message: 'Request failed with status code 403',
+        response: { status: 403 },
+      }
+      const revoked = createDeferred<{ id: string; name: string; columns: [] }>()
+      state.currentBoard.value = { id: 'board-1', name: 'Cached board' }
+      mockBoardsApi.getBoard.mockReturnValueOnce(revoked.promise)
+      mockCardsApi.getCards.mockResolvedValueOnce([])
+      mockLabelsApi.getLabels.mockResolvedValueOnce([])
+      helpers.handleApiError.mockImplementationOnce((error: unknown, fallback: string) => {
+        state.error.value = getErrorMessage(error, fallback)
+      })
+
+      const { fetchBoard } = createBoardCrudActions(state as any, helpers as any)
+      const background = fetchBoard('board-1', { intent: 'background' })
+
+      // Ordering: the rejection is already queued when the local mutation
+      // advances the epoch, so the catch observes the newer epoch.
+      revoked.reject(forbidden)
+      helpers.markBoardDetailMutation('board-1')
+
+      await expect(background).resolves.toBe(false)
+
+      expect(state.error.value).toBe('You no longer have access to this board')
+      expect(state.currentBoard.value).toEqual({ id: 'board-1', name: 'Cached board' })
+      expect(mockBoardsApi.getBoard).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('createBoard', () => {
@@ -764,6 +1048,26 @@ describe('boardCrudStore', () => {
       expect(state.currentBoard.value).toEqual(
         expect.objectContaining({ id: 'board-1', name: 'Renamed' }),
       )
+    })
+
+    it('advances the board detail mutation epoch so an older fan-out cannot overwrite it', async () => {
+      mockBoardsApi.updateBoard.mockResolvedValueOnce({ id: 'board-1', name: 'Renamed' })
+
+      const { updateBoard } = createBoardCrudActions(state as any, helpers as any)
+      await updateBoard('board-1', { name: 'Renamed' } as any)
+
+      expect(helpers.markBoardDetailMutation).toHaveBeenCalledWith('board-1')
+    })
+
+    it('does not advance the board detail mutation epoch when the write fails', async () => {
+      mockBoardsApi.updateBoard.mockRejectedValueOnce(new Error('update failed'))
+
+      const { updateBoard } = createBoardCrudActions(state as any, helpers as any)
+      await expect(updateBoard('board-1', { name: 'Renamed' } as any)).rejects.toThrow(
+        'update failed',
+      )
+
+      expect(helpers.markBoardDetailMutation).not.toHaveBeenCalled()
     })
 
     it('does not update currentBoard if it does not match', async () => {
