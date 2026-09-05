@@ -189,12 +189,14 @@ describe('boardCrudStore', () => {
     // #2689 round-2 finding 1. The throttle stamp is written only after a
     // SUCCESS, but a later failure does not reopen the window: the stamp an
     // EARLIER success left behind survives it, including a filtered read's
-    // failure, which writes the shared `error` without touching the unfiltered
-    // stamp. Only `force` guarantees a request. `error` is shared by every
-    // board action, so the boards list can be sitting on its error branch with
-    // a live Retry control (a create/rename/archive failure) while this window
-    // is still open. An explicit retry has to get through; an ordinary mount
-    // still must not. (Comment corrected in #2689 item 7.)
+    // failure, which writes the shared `error` while leaving the stamp
+    // untouched (a filtered SUCCESS writes it like any other success). Only
+    // `force` gets past the throttle — the in-flight share and demo mode still
+    // apply. `error` is shared by every board action, so the boards list can be
+    // sitting on its error branch with a live Retry control (a
+    // create/rename/archive failure) while this window is still open. An
+    // explicit retry has to get through; an ordinary mount still must not.
+    // (Comment corrected in #2689 item 7.)
     it('lets a forced read through the throttle window while an unforced one is still skipped', async () => {
       vi.useFakeTimers()
       mockBoardsApi.getBoards.mockResolvedValue([{ id: 'board-1', name: 'My Board' }])

@@ -80,17 +80,19 @@ onMounted(() => {
  * The stamp is written only after a success, but a failure does not reopen the
  * window: a stamp an earlier success left behind survives every later failure,
  * including a filtered read's (the activity selector's `includeArchived` read
- * writes the same shared `state.error` without touching the unfiltered stamp).
- * So only `force` guarantees that a request goes out, and this path always
- * forces. `state.error` is shared by every board action, so a create/rename/
- * archive failure two seconds after a good list read puts this view on its
- * error branch with a live Retry button while the throttle window from THAT
- * success is still open. Unforced, the click returned inside the store before
- * `loading` was touched or any request was made: no skeleton, no request, a
- * dead button until the window passed (#2689 round-2 finding 1; this docblock
- * corrected in #2689 item 7). The in-flight share is still respected — `force`
- * does not bypass it, so a click during a read already on the wire joins that
- * read.
+ * writes the same shared `state.error` when it FAILS without touching the
+ * stamp; a filtered success writes the stamp like any other success).
+ * So only `force` gets past the THROTTLE — the in-flight share and demo mode
+ * still apply, so it is a skipped window rather than a guaranteed request —
+ * and this path always forces. `state.error` is shared by every board action,
+ * so a create/rename/archive failure two seconds after a good list read puts
+ * this view on its error branch with a live Retry button while the throttle
+ * window from THAT success is still open. Unforced, the click returned inside
+ * the store before `loading` was touched or any request was made: no skeleton,
+ * no request, a dead button until the window passed (#2689 round-2 finding 1;
+ * this docblock corrected in #2689 item 7). The in-flight share is still
+ * respected — `force` does not bypass it, so a click during a read already on
+ * the wire joins that read.
  */
 async function retryLoad() {
   await loadBoards({ force: true })

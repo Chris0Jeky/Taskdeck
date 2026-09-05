@@ -35,12 +35,17 @@ export interface BoardListFetchOptions {
    * shared by every board action, so a create/rename/archive failure two
    * seconds after a good list read puts BoardsListView on its error branch
    * with a Retry control; and a FILTERED list read (the activity selector's
-   * `includeArchived` one) writes the same shared `error` when it fails while
-   * leaving the unfiltered stamp intact. Only `force` guarantees that a
-   * request goes out — which is why the retry path always passes it. Without
-   * it the click returned here before touching `loading` or issuing a request:
-   * no skeleton, no request, a dead button until the window passed (#2689
-   * round-2 finding 1, docblock corrected in #2689 item 7).
+   * `includeArchived` one) writes the same shared `error` when it fails, and
+   * a filtered FAILURE leaves the stamp untouched — though a filtered success
+   * writes it like any other success, since `lastFetchBoardsAt` below is not
+   * gated on `isFilteredRequest`.
+   *
+   * So only `force` gets past the THROTTLE; the in-flight share and demo mode
+   * still apply, which is why this is a skipped window rather than a
+   * guaranteed request. That is enough for the retry path, which always passes
+   * it. Without it the click returned here before touching `loading` or
+   * issuing a request: no skeleton, no request, a dead button until the window
+   * passed (#2689 round-2 finding 1, docblock corrected in #2689 item 7).
    *
    * Deliberately NOT a bypass of the in-flight share: joining a read that is
    * already on the wire is the correct answer to a second caller, and forcing
@@ -183,16 +188,28 @@ export function createBoardCrudActions(state: BoardState, helpers: BoardHelpers)
         // The documented limitation, at the same granularity as that
         // precedent: the guard compares MESSAGES, and the copy collapses. Every
         // client-side timeout maps to the one `boards.error.timeout` string and
-        // every offline failure to axios's "Network Error", so two different
-        // surfaces routinely produce byte-identical text and this comparison
-        // cannot tell them apart. Concretely: a list read times out, the user
-        // submits the create form, `createBoard` times out during the forced
-        // retry and writes the same sentence, and the retry's success then
-        // clears an alert the list read did not raise. It is not exotic — it is
-        // the ordinary offline case. Distinguishing them needs an owner tag on
-        // the error surface rather than a string compare, which is a wider
-        // change than this seam (#2689 item 8); the create's toast survives
-        // either way, so the failure is still reported.
+        // every offline failure to axios's "Network Error" (no response, so
+        // `getErrorMessage` falls through to `err.message`), for reads and
+        // mutations alike, so two different surfaces routinely produce
+        // byte-identical text and this comparison cannot tell them apart.
+        //
+        // Concretely, offline: this list read fails with "Network Error", the
+        // user submits the create form, `createBoard` fails with the same two
+        // words during the forced retry, and the retry's success then clears an
+        // alert the list read did not raise. The timeout string collides the
+        // same way between the two BOUNDED reads — this one and the detail read
+        // in `startBoardFetch`, both carrying `BOARD_REQUEST_TIMEOUT_MS` — since
+        // both write `boards.error.timeout` into the one shared `error`. Note
+        // which actor is NOT available for that half: `boardsApi.createBoard`
+        // is a bare `http.post` and the axios instance sets no default timeout
+        // (see the bound's own comment above), so a mutation can never produce
+        // the timeout string — only the offline string.
+        //
+        // It is not exotic; offline is the ordinary case. Distinguishing them
+        // needs an owner tag on the error surface rather than a string compare,
+        // which is a wider change than this seam (#2689 item 8); the losing
+        // surface's toast survives either way, so the failure is still
+        // reported.
         const listReadErrorToClear = lastListReadError
         lastListReadError = null
         if (listReadErrorToClear !== null && state.error.value === listReadErrorToClear) {
