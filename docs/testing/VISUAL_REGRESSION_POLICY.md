@@ -1,6 +1,6 @@
 # Visual Regression Policy
 
-Last Updated: 2026-04-09
+Last Updated: 2026-09-06
 
 ## Purpose
 
@@ -71,8 +71,24 @@ All animations are disabled through multiple layers:
 The `hideDynamicContent()` helper applies the following rules:
 
 - **Timestamp selectors**: `[data-testid="timestamp"]`, `[data-testid="relative-time"]`, `time` tags are hidden via `visibility: hidden`. The CardModal and ColumnEditModal metadata blocks are tagged with `data-testid="timestamp"` as of TST-59 so the runtime `Created: ...`/`Last updated: ...` text does not drift the baseline. When adding new visual coverage for populated views, add `data-testid="timestamp"` to any element that renders relative or absolute times.
+- **Session identity and presence**: `.td-topbar__user` and `[data-presence-user]` are hidden. Who is signed in is a per-run value, not a visual contract.
+- **The session timeout warning**: `[role="alert"][aria-live="assertive"]` is hidden. It appears on a timer, so whether it is on screen depends on how long the run took.
+- **Toasts**: `[data-toast-id]` is hidden, covering both `ToastContainer.vue` and `PaperToastContainer.vue`. The toast store removes each toast after its own duration, so how many are still on screen at capture time is a function of runner speed. Test seeding raises one success toast per created board, column and card, which is how the first Linux capture of `board-populated` came back with an eight-toast stack over the board header. Note that the session-warning rule above does **not** cover these: only *error* toasts are marked `role="alert" aria-live="assertive"`.
 - **Blinking cursors**: transparent caret color on all elements
 - **Platform-specific scrollbars**: hidden via `::-webkit-scrollbar` and `scrollbar-width: none`
+
+### Baselines are captured on Linux, because that is where they are verified
+
+`reusable-visual-regression.yml` runs Chromium on `ubuntu-latest`. Font rasterisation differs enough between platforms that a Windows-captured or macOS-captured PNG fails against it on essentially every image, so **baselines committed to this repository must come from the hosted Linux lane**, never from a developer's local `--update-snapshots` run.
+
+To (re)generate a set:
+
+1. Delete `frontend/taskdeck-web/tests/visual/__screenshots__/` on the branch and push. With no baselines present the job takes its bootstrap path, runs `--update-snapshots`, and uploads the result as the `visual-regression-baselines` artifact.
+2. Download that artifact, **review every image** for layout correctness and per-run value leakage, and commit the set on top.
+
+A local `--update-snapshots` run is still the right way to *see* a change while developing; its output just must not be what lands.
+
+Do not try to repair a failing set from the `visual-regression-diffs` artifact instead. `playwright.visual.config.ts` sets `maxFailures: 5` under CI, so that artifact only ever contains the first five failures — patching them just exposes the next five.
 
 ### Network Stability
 
@@ -96,32 +112,17 @@ These files are **committed to the repository**. This is intentional:
 - Changes to baselines require explicit approval
 - History is preserved in git
 
-### Generating Initial Baselines
+### Generating or updating baselines
 
-When adding a new visual test or running for the first time:
-
-```bash
-cd frontend/taskdeck-web
-npm run test:visual:update
-```
-
-This runs all visual tests and saves the current render as the baseline. Review the generated images before committing.
-
-### Updating Baselines
+**The only supported source of a committed baseline is the hosted Linux lane** — see the section above. `npm run test:visual:update` is for *seeing* your change locally while you work; its output must not be what lands.
 
 When a legitimate UI change causes visual test failures:
 
-1. **Verify the change is intentional** by reviewing the diff artifacts from CI
-2. **Update baselines locally**:
-   ```bash
-   cd frontend/taskdeck-web
-   npm run test:visual:update
-   ```
-3. **Review updated baselines** before committing:
-   - Check that only the expected views changed
-   - Verify no unintended regressions in other screenshots
-4. **Commit baseline changes in a dedicated commit** (separate from code changes) so reviewers can clearly identify what changed visually
-5. **PR reviewers should inspect baseline image diffs** using GitHub's image diff viewer
+1. **Verify the change is intentional.** The `visual-regression-diffs` artifact from the failing run shows `*-actual.png` against `*-expected.png`. Read them; do not commit them (`maxFailures: 5` means the artifact holds only the first five failures, so it is never the whole picture).
+2. **Regenerate on Linux** by the bootstrap procedure above: delete `frontend/taskdeck-web/tests/visual/__screenshots__/`, push, and take the `visual-regression-baselines` artifact from that run. Mark the PR draft while the directory is empty — with no baselines the suite passes vacuously and detects nothing.
+3. **Review every regenerated image** before committing: only the expected views changed, no per-run value leaked in, no transient overlay (toast, tooltip, session warning) was captured.
+4. **Commit baseline changes in a dedicated commit** (separate from code changes) so reviewers can clearly identify what changed visually.
+5. **PR reviewers should inspect baseline image diffs** using GitHub's image diff viewer.
 
 ### CI Baseline Generation
 
@@ -132,15 +133,11 @@ The CI workflow automatically detects when no baselines exist and runs with `--u
 1. Push the branch and trigger the visual regression CI job
 2. Download the `visual-regression-baselines` artifact from the CI run
 3. Place the files in `frontend/taskdeck-web/tests/visual/__screenshots__/`
-4. Commit and push
+4. Review every image, then commit and push
 
-To regenerate CI-compatible baselines after intentional UI changes:
-1. Download the `visual-regression-diffs` artifact from the failing CI run
-2. Review the `*-actual.png` images to verify the changes are intentional
-3. Download the actual images and place them as the new baselines in `__screenshots__/`
-4. Commit and push
+**Regenerating after an intentional UI change uses the same four steps.** Do *not* lift `*-actual.png` out of the `visual-regression-diffs` artifact and commit those: `maxFailures: 5` caps that artifact at the first five failures, so a change touching more than five surfaces leaves the rest stale, and the next run simply fails on the images you did not replace. Read the diffs to confirm the change is intentional; regenerate through the bootstrap path.
 
-Alternatively, if you have access to an identical Ubuntu environment (Docker, WSL2 with matching fonts), generate baselines there.
+An identical Ubuntu environment (Docker, or WSL2 with matching fonts) is the one local alternative that can produce committable images. Unless you have verified the fonts match, treat the hosted lane as the only source.
 
 ## CI Integration
 
@@ -176,13 +173,13 @@ npm run test:visual:update
 npx playwright test --config playwright.visual.config.ts tests/visual/board-view.visual.spec.ts
 ```
 
-Note: Local baselines may differ from CI baselines due to font rendering. The committed baselines should match the CI platform (Ubuntu).
+Note: local baselines **will** differ from CI baselines due to font rendering — this is not an occasional risk, it fails on essentially every image. Committed baselines must come from the CI platform (Ubuntu).
 
 ## Adding New Visual Tests
 
 1. Create a new `*.visual.spec.ts` file in `frontend/taskdeck-web/tests/visual/`
 2. Follow the existing pattern: register session, navigate, prepare, screenshot
 3. Use `prepareForScreenshot()` before every `toHaveScreenshot()` call
-4. Generate baselines: `npm run test:visual:update`
+4. Iterate locally with `npm run test:visual:update` until the shot is what you want, then **discard those images** and generate the committable ones on the hosted Linux lane (see *Baselines are captured on Linux* above)
 5. Add the new surface to the table at the top of this document
 6. Commit baselines in a separate commit for clear PR review
