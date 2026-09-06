@@ -6,7 +6,8 @@
 #
 #   ci-required.yml          PR/push/merge_group gate (this file)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
-#     ├── release-workflow-contract            release-desktop dispatch hardening gate (#1795/#1806)
+#     ├── release-workflow-contract            release contract suites: dispatch hardening (#1795/#1806),
+#     │                                         release cache trust, release notes composer (#2234/#2250)
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
@@ -133,6 +134,9 @@ jobs:
 
       - name: Validate release cache trust contract
         run: node --test scripts/ci/release-cache-contract.test.mjs
+
+      - name: Validate release notes composer
+        run: node --test scripts/ci/compose-release-notes.test.mjs
 
   backend-architecture:
     name: Backend Architecture
