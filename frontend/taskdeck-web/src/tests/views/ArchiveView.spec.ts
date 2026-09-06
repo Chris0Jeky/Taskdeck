@@ -145,6 +145,31 @@ describe('ArchiveView', () => {
     expect(wrapper.text()).toContain('no longer appear in the unfiltered Inbox or Review')
   })
 
+  it('keeps all archived-board actions in the responsive action cluster', async () => {
+    mocks.getBoards.mockResolvedValue([
+      {
+        id: 'board-archived',
+        name: 'Board With History',
+        description: null,
+        isArchived: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ])
+
+    const wrapper = mount(ArchiveView)
+    await waitForAsyncUi()
+
+    const actions = wrapper.find('.paper-archive__actions')
+    expect(actions.exists()).toBe(true)
+    expect(actions.findAll('button').map((button) => button.text())).toEqual([
+      'View captures',
+      'View decisions',
+      'Restore Board',
+      'Hide',
+    ])
+  })
+
   it('keeps archived items visible when archived boards loading fails', async () => {
     mocks.getItems.mockResolvedValue([
       {

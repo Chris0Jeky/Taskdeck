@@ -61,6 +61,15 @@ const isAppliedRecord = computed(
   () => normalizeProposalStatus(props.proposal.status) === 'Applied',
 )
 
+function isSettledProposal(proposal: Proposal): boolean {
+  const status = normalizeProposalStatus(proposal.status)
+  return status === 'Applied'
+    || status === 'Rejected'
+    || status === 'Failed'
+    || status === 'Expired'
+    || status === 'Dismissed'
+}
+
 // Read-only fallback when the proposal never captured a `diffPreview` (normal
 // creation flows leave it null — Codex review on #1414): derive a minimal
 // operation listing from the proposal's own recorded operations so a
@@ -98,32 +107,42 @@ function formatDate(value: string | null): string {
 }
 
 function readableSummary(proposal: Proposal): string {
-  if (normalizeProposalStatus(proposal.status) === 'Applied') {
+  if (isSettledProposal(proposal)) {
     return proposal.summary
   }
   return proposal.presentation?.plainSummary || proposal.summary
 }
 
 function impactSummary(proposal: Proposal): string {
-  if (normalizeProposalStatus(proposal.status) === 'Applied') {
-    const count = proposal.operations?.length ?? 0
-    return `${count} recorded change${count === 1 ? '' : 's'} applied to the board.`
+  const status = normalizeProposalStatus(proposal.status)
+  const count = proposal.operations?.length ?? 0
+  if (status === 'Applied') {
+    const destination = proposal.boardId ? ' to the board' : ''
+    return `${count} recorded change${count === 1 ? '' : 's'} applied${destination}.`
+  }
+  if (isSettledProposal(proposal)) {
+    return `${count} recorded change${count === 1 ? '' : 's'} ${status.toLowerCase()}.`
   }
   return proposal.presentation?.impactSummary
-    || `${proposal.operations.length} planned change${proposal.operations.length === 1 ? '' : 's'}.`
+    || `${count} planned change${count === 1 ? '' : 's'}.`
 }
 
 function getOperationHeadlines(proposal: Proposal): string[] {
   void displayVersion.value
-  const operations = proposal.operations ?? []
+  // `operationHeadlines` is built server-side in SEQUENCE order, so headline n describes the n-th
+  // operation by sequence — not the n-th element of the wire array, whose order this client does
+  // not control (#2563). Sort before pairing so the enrichment below always reads the operation
+  // its headline is actually about. The backend now emits sequence order too; this stays as the
+  // local defence that keeps the card correct against an older backend, and matches the sort
+  // `storedOperationsFallback` above already applies to the same array.
+  const operations = [...(proposal.operations ?? [])].sort((a, b) => a.sequence - b.sequence)
   const suppliedHeadlines = proposal.presentation?.operationHeadlines ?? []
   const headlineCount = Math.max(operations.length, suppliedHeadlines.length)
   return Array.from({ length: headlineCount }, (_, index) => {
     const suppliedHeadline = suppliedHeadlines[index]?.trim()
-    if (suppliedHeadline) return suppliedHeadline
-
     const operation = operations[index]
-    return operation ? proposalDisplayNames.operationHeadline(proposal, operation) : ''
+    if (!operation) return suppliedHeadline ?? ''
+    return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
   }).filter((headline) => headline.length > 0)
 }
 
@@ -179,6 +198,17 @@ function reviewStatusLabel(status: Proposal['status']): string {
   const normalized = normalizeProposalStatus(status)
   return statusLabels[normalized] ?? normalized
 }
+
+const readOnlyDiffBanner = computed(() => {
+  const prefix = `${reviewStatusLabel(props.proposal.status)} · read-only —`
+  if (props.selectedDiff) {
+    return `${prefix} showing the stored preview from the original submission.`
+  }
+  if (storedOperationsFallback.value) {
+    return `${prefix} showing the proposal's recorded operations.`
+  }
+  return `${prefix} no stored preview is available.`
+})
 
 function riskLevelClass(riskLevel: Proposal['riskLevel']): string {
   const normalized = normalizeProposalRiskLevel(riskLevel)
@@ -289,8 +319,7 @@ async function copyTechnicalDetails() {
       <!-- Read-only / terminal: stored preview under an explicit banner (#1397) -->
       <template v-if="selectedDiffMode === 'stored'">
         <span class="td-review-card__diff-banner" role="status" data-testid="review-diff-banner">
-          {{ reviewStatusLabel(proposal.status) }} · read-only — showing the stored preview from
-          the original submission.
+          {{ readOnlyDiffBanner }}
         </span>
         <!-- diffPreview is creation-time content revisions never update, so a
              revised proposal's stored preview — or the recorded-operations

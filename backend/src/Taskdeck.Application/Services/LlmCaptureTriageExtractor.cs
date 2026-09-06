@@ -44,8 +44,13 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         Guid userId,
         Guid? boardId,
         CapturePayloadV1 payload,
+        CaptureTriageAnchor? anchor = null,
         CancellationToken cancellationToken = default)
     {
+        // #2193: every leg of this run - the first attempt, each map chunk, and any retry - renders
+        // and parses against ONE anchor, the capture's own day. Resolving it once here is what makes
+        // a delayed or retried triage produce the same dates the capture-time run would have.
+        var resolvedAnchor = anchor ?? CaptureTriageAnchor.ForImmediateTriage(payload);
         var chunks = TranscriptTriageChunker.Chunk(
             payload.Text,
             _settings.MaxInputTokensPerChunk,
@@ -53,7 +58,12 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
         if (chunks.Count <= 1)
         {
-            var extraction = await ExtractChunkAsync(userId, boardId, payload, cancellationToken: cancellationToken);
+            var extraction = await ExtractChunkAsync(
+                userId,
+                boardId,
+                payload,
+                resolvedAnchor,
+                cancellationToken: cancellationToken);
             if (!extraction.Succeeded || extraction.Output is null)
             {
                 return extraction;
@@ -106,7 +116,13 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         foreach (var chunk in chunks)
         {
             var chunkPayload = payload with { Text = chunk.Text };
-            var extraction = await ExtractChunkAsync(userId, boardId, chunkPayload, chunk.Offset, cancellationToken);
+            var extraction = await ExtractChunkAsync(
+                userId,
+                boardId,
+                chunkPayload,
+                resolvedAnchor,
+                chunk.Offset,
+                cancellationToken);
 
             if (extraction.Succeeded)
             {
@@ -248,6 +264,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         Guid userId,
         Guid? boardId,
         CapturePayloadV1 payload,
+        CaptureTriageAnchor anchor,
         int sourceOffset = 0,
         CancellationToken cancellationToken = default)
     {
@@ -259,13 +276,15 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
             return decline;
         }
 
+        var systemPrompt = LlmCaptureTriagePrompt.BuildSystemPrompt(anchor.ReferenceDate);
+
         // Atomic quota reservation (issue #1313): reserve before the completion, then commit with the
         // actual tokens or release. This serializes concurrent triage/chat calls at the boundary.
         Guid? quotaReservationId = null;
         var quotaEstimatedTokens = 0;
         if (_quotaService is not null)
         {
-            var reservationEstimate = EstimateReservationTokens(payload.Text);
+            var reservationEstimate = EstimateReservationTokens(payload.Text, systemPrompt);
             var reservation = await _quotaService.ReserveAsync(
                 userId,
                 LlmSurface.CaptureTriage,
@@ -292,7 +311,7 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 boardId),
             // A non-null SystemPrompt opts out of the providers' chat instruction-extraction mode;
             // the prompt itself demands raw JSON and TryParseTasks tolerates fenced output.
-            SystemPrompt: LlmCaptureTriagePrompt.SystemPrompt);
+            SystemPrompt: systemPrompt);
 
         LlmCompletionResult result;
         LlmCompletionResult? completed = null;
@@ -400,7 +419,11 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 Detail: result.DegradedReason);
         }
 
-        if (!LlmCaptureTriagePrompt.TryParseTasks(result.Content, out var rawTasks))
+        if (!LlmCaptureTriagePrompt.TryParseTasks(
+                result.Content,
+                anchor.ReferenceDate,
+                out var rawTasks,
+                out var dueDateNotes))
         {
             _logger?.LogWarning(
                 "LLM transcript triage returned unparseable output for user {UserId} (provider {Provider}, {ContentLength} chars)",
@@ -408,6 +431,19 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                 result.Provider,
                 result.Content?.Length ?? 0);
             return new LlmCaptureTriageExtraction(LlmCaptureTriageOutcome.InvalidOutput);
+        }
+
+        if (dueDateNotes.Count > 0)
+        {
+            // A hint outside the plausibility window around the capture day is dropped rather than
+            // rejected (the task survives), so record WHY here instead of losing it silently.
+            _logger?.LogInformation(
+                "LLM transcript triage dropped {NoteCount} implausible due-date hint(s) for user {UserId} " +
+                "against capture reference date {ReferenceDate:yyyy-MM-dd}: {Notes}",
+                dueDateNotes.Count,
+                userId,
+                anchor.ReferenceDate,
+                string.Join("; ", dueDateNotes));
         }
 
         if (rawTasks.Count == 0)
@@ -484,12 +520,12 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
                string.Equals(model, extraction.Model, StringComparison.Ordinal);
     }
 
-    private int EstimateReservationTokens(string text)
+    private int EstimateReservationTokens(string text, string systemPrompt)
     {
         // The provider receives both the extraction system prompt and this map chunk. Reserve the
         // whole bounded request plus its configured output allowance before the call so concurrent
         // long-transcript triage cannot reopen the quota-budget race fixed by #1313.
-        var estimate = (long)TranscriptTokenEstimator.EstimateTokens(LlmCaptureTriagePrompt.SystemPrompt) +
+        var estimate = (long)TranscriptTokenEstimator.EstimateTokens(systemPrompt) +
                        TranscriptTokenEstimator.EstimateTokens(text) +
                        _settings.MaxOutputTokens;
         return (int)Math.Clamp(estimate, 1L, int.MaxValue);

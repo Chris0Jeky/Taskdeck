@@ -226,9 +226,11 @@ public class AutomationProposalServiceTests
             "Create captured task",
             RiskLevel.Low,
             Guid.NewGuid().ToString(),
-            Operations: operations,
-            ProvenanceModelId: "gpt-4.1-mini",
-            ProvenanceTotalTokens: 123);
+            Operations: operations)
+        {
+            ProvenanceModelId = "gpt-4.1-mini",
+            ProvenanceTotalTokens = 123
+        };
 
         _proposalRepoMock.Setup(r => r.AddAsync(It.IsAny<AutomationProposal>(), default))
             .ReturnsAsync((AutomationProposal p, CancellationToken ct) => p);
@@ -525,6 +527,114 @@ public class AutomationProposalServiceTests
             entity.ChangeCount == 1);
     }
 
+    // #2563: operations are loaded through an EF `Include`, which carries no ORDER BY, so the DTO
+    // used to echo whatever order the provider returned while `BuildPresentation` built the
+    // headlines in Sequence order. Any consumer pairing headline n with operation n then described
+    // the wrong operation. The DTO now emits one contract - ascending Sequence - for both arrays.
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldOrderOperationsBySequence_WhenStoredOutOfOrder()
+    {
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Three changes stored out of order",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var proposalId = proposal.Id;
+
+        // Added in reverse Sequence order: the shape an unordered EF Include can hand back.
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 2, "card.create", "Card", "{\"title\":\"Third\"}", Guid.NewGuid().ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 1, "card.create", "Card", "{\"title\":\"Second\"}", Guid.NewGuid().ToString()));
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "card.create", "Card", "{\"title\":\"First\"}", Guid.NewGuid().ToString()));
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Operations.Select(operation => operation.Sequence).Should().Equal(0, 1, 2);
+        result.Value.Operations.Select(operation => operation.Parameters).Should().Equal(
+            "{\"title\":\"First\"}",
+            "{\"title\":\"Second\"}",
+            "{\"title\":\"Third\"}");
+
+        // The pairing every index-based reviewer surface relies on: headline n describes operation n.
+        result.Value.Presentation.OperationHeadlines.Should().Equal(
+            "Create card \"First\".",
+            "Create card \"Second\".",
+            "Create card \"Third\".");
+    }
+
+    // #2563, revision path: `BuildEffectiveProposalDto` replaces Operations with the revision's
+    // parsed set, which keeps the payload's ARRAY order while its presentation is rebuilt in
+    // Sequence order. A revised proposal must carry the same ascending-Sequence contract as an
+    // unrevised one.
+    [Fact]
+    public async Task GetProposalByIdAsync_ShouldOrderRevisedOperationsBySequence_WhenPayloadIsOutOfOrder()
+    {
+        var boardId = Guid.NewGuid();
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Chat,
+            Guid.NewGuid(),
+            "Revised out of order",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId);
+        var proposalId = proposal.Id;
+
+        proposal.AddOperation(new AutomationProposalOperation(
+            proposal.Id, 0, "card.create", "Card", "{\"title\":\"Original\"}", Guid.NewGuid().ToString()));
+
+        // Sequence 1 listed before sequence 0: a payload array order that disagrees with Sequence.
+        var revisedPayload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "card.create",
+                    targetType = "Card",
+                    targetId = (string?)null,
+                    parameters = "{\"title\":\"Revised second\"}",
+                    idempotencyKey = Guid.NewGuid().ToString()
+                },
+                new
+                {
+                    sequence = 0,
+                    actionType = "card.create",
+                    targetType = "Card",
+                    targetId = (string?)null,
+                    parameters = "{\"title\":\"Revised first\"}",
+                    idempotencyKey = Guid.NewGuid().ToString()
+                }
+            }
+        });
+
+        _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
+            .ReturnsAsync(proposal);
+        SeedRevisions(
+            proposal.Id,
+            new ProposalRevision(proposal.Id, 1, Guid.NewGuid(), revisedPayload, "Reorder"));
+
+        var result = await _service.GetProposalByIdAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Operations.Select(operation => operation.Sequence).Should().Equal(0, 1);
+        result.Value.Operations.Select(operation => operation.Parameters).Should().Equal(
+            "{\"title\":\"Revised first\"}",
+            "{\"title\":\"Revised second\"}");
+        result.Value.Presentation.OperationHeadlines.Should().Equal(
+            "Create card \"Revised first\".",
+            "Create card \"Revised second\".");
+    }
+
     [Fact]
     public async Task GetProposalByIdAsync_ShouldFallBackToEntityId_WhenParametersLackName()
     {
@@ -669,6 +779,11 @@ public class AutomationProposalServiceTests
 
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, default))
             .ReturnsAsync(proposal);
+        _userRepoMock
+            .Setup(r => r.GetUsernamesByIdsAsync(
+                It.Is<IEnumerable<Guid>>(ids => ids.Single() == deciderId),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new Dictionary<Guid, string> { [deciderId] = "Ada" });
 
         // Act
         var result = await _service.ApproveProposalAsync(proposalId, deciderId);
@@ -677,6 +792,7 @@ public class AutomationProposalServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.Status.Should().Be(ProposalStatus.Approved);
         result.Value.DecidedByUserId.Should().Be(deciderId);
+        result.Value.DecidedByUserName.Should().Be("Ada");
         result.Value.DecidedAt.Should().NotBeNull();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
         _notificationServiceMock.Verify(
@@ -4852,9 +4968,9 @@ public class AutomationProposalServiceTests
             "Create captured task",
             RiskLevel.Low,
             Guid.NewGuid().ToString(),
-            Operations: [new(0, "create", "card", "{\"title\":\"Test\"}", "key1")],
-            ProvenanceModelId: "gpt-5.6-luna")
+            Operations: [new(0, "create", "card", "{\"title\":\"Test\"}", "key1")])
         {
+            ProvenanceModelId = "gpt-5.6-luna",
             ProvenanceProvider = provider,
             ProvenancePromptVersion = promptVersion
         };

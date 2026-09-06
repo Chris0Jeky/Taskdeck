@@ -221,12 +221,18 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
         </div>
 
         <h3 class="tk-eyebrow sg-section-eyebrow">PaperHLBtn</h3>
+        <!-- Variant specimens, inert on purpose: this row exists to show what
+             each variant LOOKS like. The marker is the same narrow opt-out the
+             native `.pbtn` specimens above already carry, and it is scanned by
+             `src/tests/guards/deadAnchors.spec.ts` (GH-1949). A product control
+             must not copy it. It lands on the rendered <button> as an ordinary
+             fallthrough data attribute; nothing about behaviour changes. -->
         <div class="sg-row">
-          <PaperHLBtn label="Default" kbd="⌫" />
-          <PaperHLBtn variant="primary" label="Primary" kbd="P" />
-          <PaperHLBtn variant="ember" label="Apply" kbd="⏎" />
-          <PaperHLBtn variant="ghost" label="Ghost" />
-          <PaperHLBtn label="Capture" kbd="space">
+          <PaperHLBtn label="Default" kbd="⌫" data-dead-affordance-exempt="visual-specimen" />
+          <PaperHLBtn variant="primary" label="Primary" kbd="P" data-dead-affordance-exempt="visual-specimen" />
+          <PaperHLBtn variant="ember" label="Apply" kbd="⏎" data-dead-affordance-exempt="visual-specimen" />
+          <PaperHLBtn variant="ghost" label="Ghost" data-dead-affordance-exempt="visual-specimen" />
+          <PaperHLBtn label="Capture" kbd="space" data-dead-affordance-exempt="visual-specimen">
             <template #icon><PaperIcon name="plus" /></template>
           </PaperHLBtn>
         </div>
@@ -332,9 +338,11 @@ const stampKind = ref<'applied' | 'proposed' | 'captured' | 'overdue' | 'draft'>
           <PaperStamp kind="proposed" date="Apr 25" time="11:50" num="015" />
           <PaperStamp kind="overdue" date="3d" time="past" num="007" />
         </div>
+        <!-- Opposite-theme specimens: same inert row, rendered in the other
+             substrate. Marked for the same reason as the row above. -->
         <div class="sg-row">
-          <PaperHLBtn label="Default" kbd="⌫" />
-          <PaperHLBtn variant="ember" label="Apply" kbd="⏎" />
+          <PaperHLBtn label="Default" kbd="⌫" data-dead-affordance-exempt="visual-specimen" />
+          <PaperHLBtn variant="ember" label="Apply" kbd="⏎" data-dead-affordance-exempt="visual-specimen" />
           <PaperTagstamp tone="ember">PROPOSED</PaperTagstamp>
           <PaperStatusPill kind="live">LIVE</PaperStatusPill>
         </div>

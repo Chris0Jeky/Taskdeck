@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Reflection;
 using Taskdeck.Api.Middleware;
+using Taskdeck.Application.Services;
 using Taskdeck.Tests.Support;
 using Xunit;
 
@@ -10,6 +12,22 @@ namespace Taskdeck.Api.Tests;
 
 public class UnhandledExceptionMiddlewareTests
 {
+    /// <summary>
+    /// #2351 / R6: the HTTP 500 body string has one definition. The middleware keeps a
+    /// private alias for readability, but its value must come from the shared constant
+    /// so the surfaces that emit it cannot drift into different texts.
+    /// </summary>
+    [Fact]
+    public void GenericUnexpectedErrorMessage_UsesTheSharedRedactorDefinition()
+    {
+        var field = typeof(UnhandledExceptionMiddleware).GetField(
+            "GenericUnexpectedErrorMessage",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        field.Should().NotBeNull("the middleware still declares the generic 500 body constant");
+        field!.GetRawConstantValue().Should().Be(SensitiveDataRedactor.GenericUnexpectedErrorMessage);
+    }
+
     [Fact]
     public async Task InvokeAsync_ShouldNotEmit500_WhenRequestAbortedCancellationIsThrown()
     {
@@ -99,9 +117,9 @@ public class UnhandledExceptionMiddlewareTests
         var logger = new InMemoryLogger<UnhandledExceptionMiddleware>();
         var context = new DefaultHttpContext();
         context.Response.Body = new MemoryStream();
-        context.Request.Method = "POST \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
-        context.Request.Path = "/api/capture/items \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
-        context.TraceIdentifier = "trace \u001Bescape\u000Bvertical\u009Bc1\r\nsafe café ✓";
+        context.Request.Method = "POST \u001Bescape\u000Bvertical\u0085next\u009Bc1\u2028line\u2029paragraph\r\nsafe café ✓";
+        context.Request.Path = "/api/capture/items \u001Bescape\u000Bvertical\u0085next\u009Bc1\u2028line\u2029paragraph\r\nsafe café ✓";
+        context.TraceIdentifier = "trace \u001Bescape\u000Bvertical\u0085next\u009Bc1\u2028line\u2029paragraph\r\nsafe café ✓";
 
         RequestDelegate next = _ => throw new InvalidOperationException("ignored content");
         var middleware = new UnhandledExceptionMiddleware(next, logger);
@@ -110,8 +128,8 @@ public class UnhandledExceptionMiddlewareTests
 
         var message = logger.Entries.Single(entry => entry.Level == LogLevel.Error).Message;
         message.Should().NotContain("\u001B").And.NotContain("\u000B").And.NotContain("\u009B").And.NotContain("\r").And.NotContain("\n");
-        message.Should().Contain("POST escapeverticalc1safe café ✓");
-        message.Should().Contain("/api/capture/items escapeverticalc1safe café ✓");
-        message.Should().Contain("trace escapeverticalc1safe café ✓");
+        message.Should().Contain("POST escapeverticalnextc1lineparagraphsafe café ✓");
+        message.Should().Contain("/api/capture/items escapeverticalnextc1lineparagraphsafe café ✓");
+        message.Should().Contain("trace escapeverticalnextc1lineparagraphsafe café ✓");
     }
 }

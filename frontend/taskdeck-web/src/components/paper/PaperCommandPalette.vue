@@ -231,6 +231,7 @@ watch(orderedItems, (items) => {
       role="dialog"
       aria-modal="true"
       aria-label="Command palette"
+      data-shell-surface="command-palette"
       @click.self="handleClose"
       @keydown.escape.prevent="handleClose"
     >

@@ -691,6 +691,8 @@ and the step title overstated it.**
 
 The same URL also silently filters the Inbox to `0 IN QUEUE` with no filter chip (finding **H-04**).
 
+**Addendum 2026-09-05 (PR #2580).** The Paper board can no longer produce this deep link: `+ CAPTURE` now pushes `boardId` only, and the Inbox scope chip names only the board, so the URL recorded above is board-scoped from here on; honouring a column end to end remains open on #1984.
+
 ---
 
 ### Step 21 — Today view: plan, note, seal
@@ -834,7 +836,7 @@ bindings all work, the single-letter navigation set does not.
 | 3b-i | Inbox composer — label | yes | **BROKEN** | discarded in `PaperInboxView.vue:118-131`; absent from both DTOs | — |
 | 3b-ii | Inbox composer — due date | yes | **BROKEN** | discarded in `PaperInboxView.vue:118-131`; absent from both DTOs | — |
 | 3c | Board-scoped `+ CAPTURE` deep link | yes | PASS | deep-link preselects the board | — |
-| 3d | **Column**-scoped capture | yes | **BROKEN** | `columnId` in URL, read by nothing; no column on either DTO | — |
+| 3d | **Column**-scoped capture | yes | **BROKEN** | `columnId` in URL, read by nothing; no column on either DTO | 2026-09-05 (PR #2580): the link is board-only now — the untruthful copy was removed; the column branch stays open on #1984 |
 | 4 | Transcript capture + extraction | yes | **PASS** | 6/6 items, evidence spans | requires a live provider — §2.3.1; **not replayable on a default checkout** |
 | 5 | Inbox triage accept (with board) | yes | PASS | `POST …/triage → 202` | — |
 | 5b | Accept with no board | yes | **PASS (fixed)** | button correctly `disabled` | **#1944 fixed** |

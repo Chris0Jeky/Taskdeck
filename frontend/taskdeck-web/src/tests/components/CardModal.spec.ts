@@ -626,6 +626,32 @@ describe('CardModal', () => {
     expect(bugLabelCheckbox.element.checked).toBe(true)
   })
 
+  it('uses the card modal surface for the selected label ring offset', () => {
+    const cardWithLabel = {
+      ...card,
+      labels: [labels[0]],
+    }
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card: cardWithLabel,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    const selectedInput = wrapper.get('#label-label-1')
+    const unselectedInput = wrapper.get('#label-label-2')
+    const selectedLabel = selectedInput.element.closest('label')
+    const unselectedLabel = unselectedInput.element.closest('label')
+
+    expect(selectedLabel).toBeDefined()
+    expect(unselectedLabel).toBeDefined()
+    expect(selectedLabel!.classList).toContain('ring-offset-surface-container')
+    expect(selectedLabel!.classList).toContain('ring-offset-2')
+    expect(unselectedLabel!.classList).not.toContain('ring-offset-surface-container')
+  })
+
   it('should create a new comment from modal comment input', async () => {
     const wrapper = mount(CardModal, {
       props: {

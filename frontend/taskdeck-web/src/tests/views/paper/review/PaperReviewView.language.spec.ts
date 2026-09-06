@@ -5,6 +5,10 @@ import type { Proposal } from '../../../../types/automation'
 import PaperReviewView from '../../../../views/paper/PaperReviewView.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 import { i18n, DEFAULT_LOCALE } from '../../../../i18n'
+import {
+  REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+  REVIEW_QUEUE_REFRESH_MS,
+} from '../../../../composables/useReviewProposals'
 
 /**
  * Review surface language switch (#1770 / ADR-0054 §8 rollout step 2).
@@ -89,6 +93,12 @@ vi.mock('../../../../api/proposalDeepReviewApi', () => ({
     getConflicts: vi.fn().mockResolvedValue([]),
     getHistory: vi.fn().mockResolvedValue([]),
     getSimilarPast: vi.fn().mockResolvedValue({ decisions: [], applyRate: 0 }),
+    // Default: the proposal recorded no producer, so capture detail decides (#1987).
+    getProvenanceMetadata: vi.fn().mockResolvedValue({
+      provider: null,
+      model: null,
+      promptVersion: null,
+    }),
   },
 }))
 
@@ -323,6 +333,44 @@ describe('PaperReviewView — language', () => {
     i18n.global.locale.value = 'es'
     await flushPromises()
     expect(barKeys()).toEqual(['Operation 1: create card', 'Operation 2: update card'])
+  })
+
+  it('renders the degraded and recovered queue disclosure in Italian (#2214)', async () => {
+    // The degraded warning was hardcoded English until #2214, so it stayed
+    // English for an it/es reviewer at exactly the moment the surface was
+    // admitting it might be wrong. This is the case that proves the catalog
+    // reaches BOTH halves of the disclosure; the parity guard only proves the
+    // keys exist.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal()])
+      i18n.global.locale.value = 'it'
+      await flushPromises()
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.get('[data-testid="paper-review-queue-stale"]')
+      expect(stale.text()).toContain('Questa coda di revisione potrebbe non essere aggiornata')
+      expect(stale.text()).toContain('mentre Taskdeck riprova')
+      expect(wrapper.find('[data-testid="paper-review-queue-recovered"]').text()).toBe('')
+
+      mocks.getProposals.mockResolvedValue([makeProposal()])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-review-queue-recovered"]').text()).toContain(
+        'Questa coda di revisione è di nuovo aggiornata',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('never leaks a raw key path into the rendered surface', async () => {

@@ -25,6 +25,19 @@
 export default {
   eyebrow:
     'Inbox · capture surface · {pending} awaiting triage · {total} captured | Inbox · capture surface · {pending} awaiting triage · {total} captured',
+  // Shown INSTEAD of `eyebrow` during a scope replacement (#2501). The rows
+  // those counts would be computed from belong to the scope the user just left,
+  // so the eyebrow carries no count at all rather than a count about somewhere
+  // else. Deliberately not a plural message: it has nothing to agree with,
+  // which is the whole point.
+  //
+  // It also makes NO claim about the load. `isScopeReplacement` is sticky
+  // across failure by design — the orchestrator swallows the throw so the
+  // retained rows stay hidden — so a "loading…" word here would sit above the
+  // table's own error and Retry, permanently, describing a load that had
+  // already stopped. The table owns loading, error and retry; this line owns
+  // only the refusal to publish a count it cannot stand behind.
+  eyebrowUncounted: 'Inbox · capture surface',
   // Rendered as `{lead} <em>{emphasis}</em>` — the space before the emphasis
   // comes from the template, so `lead` must not carry a trailing space.
   title: {
@@ -100,6 +113,50 @@ export default {
     errorFallback: 'Please try again when the connection is available.',
     metadataCompatibilityLead: 'Capture saved without its due date or labels.',
     metadataCompatibilityDetail: 'This server version ignored that metadata. Do not retry—the capture is already in Inbox.',
+    // GH-2141 -- the Paper composer can file a transcript without leaving the
+    // skin. `transcriptNote` must stay explicit: a transcript source is what
+    // routes the text to the configured assistant, and that is not something a
+    // capture surface may imply.
+    source: {
+      legend: 'Source',
+      typed: 'Typed note',
+      transcript: 'Transcript',
+      transcriptNote:
+        'Transcript captures are sent to the configured assistant for task extraction. Typed notes are not.',
+      tooLong: 'This transcript is too long. Maximum length is {max} characters.',
+    },
+  },
+  // The Composer's own field chrome (#1871, the residual half of the #1870
+  // extraction). Its own namespace and not `capture.*`: that one is the shared
+  // capture vocabulary — receipts, draft restoration, the source radios the Nib
+  // shares — while these four labels exist only on the Composer's form.
+  //
+  // Every `*Aria` name here leads with the field's visible eyebrow and then
+  // says what the control does (WCAG 2.5.3 label-in-name, the PR #2675 pattern
+  // the board controls and `boardPicker.triageAria` already follow). The four
+  // names could only take that shape once the specs stopped selecting these
+  // controls by accessible name: they now use the composer's `data-testid`
+  // attributes, so this copy is copy again and not test API. Keep the eyebrow
+  // and the name in step — `PaperCaptureComposer.spec.ts` asserts the relation,
+  // not just the strings, and it runs that check in en, it and es, so the rule
+  // binds a translator in every supported locale and not only in English.
+  //
+  // The placeholders stay placeholders — a hint about the shape of the value,
+  // never the name of the field, which is what the eyebrow and the accessible
+  // name are for. `bodyPlaceholder` is a sentence and is capitalized;
+  // `labelsPlaceholder` is a fragment continuing the box and is not.
+  composer: {
+    bodyLabel: 'Body',
+    bodyAria: 'Body: write the text of this capture',
+    bodyPlaceholder: 'The thought, in plain language…',
+    labelsLabel: 'Labels',
+    labelsAria: 'Labels: type a label and press Enter to add it',
+    labelsPlaceholder: 'add and press Enter',
+    dueLabel: 'Due (optional)',
+    dueAria: 'Due (optional): set a due date for this capture',
+    // A statement about the product, not about this draft: attachments are not
+    // stored with a capture at all yet, so it never varies by row or state.
+    attachmentsUnavailable: 'Attachments are not saved with captures yet.',
   },
   nib: {
     eyebrow: 'Quick capture · {shortcut}',
@@ -108,14 +165,22 @@ export default {
     selectedBoard: 'the selected board',
     submit: 'Capture',
   },
+  // `scope.board` is the applied-filter chip and the `{scope}` inside
+  // `empty.scoped`, so it may name only what the list request narrowed by. A
+  // `boardAndColumn` form was removed with #1984 finding 2: the Inbox list is
+  // fetched with a boardId and no column key, so naming a column here told the
+  // reader a filter had been applied that never was.
   scope: {
     board: 'Board: {board}',
-    boardAndColumn: 'Board: {board} · Column: {column}',
     clear: 'Show all captures',
   },
   empty: {
     scoped: 'No captures in {scope}. Show all captures to restore the full Inbox.',
   },
+  // Appended to the capture-count line while a SAME-scope list load runs over
+  // rows that stay visible and usable (#2501). Lowercase because it follows a
+  // "·" separator inside that line.
+  refreshing: 'refreshing…',
   variantToggle: {
     label: 'Capture variant',
   },
@@ -127,6 +192,28 @@ export default {
   // Read-only boards stay VISIBLE but disabled and annotated (#1836): silently
   // filtering them would leave a Viewer wondering where a board went.
   boardPicker: {
+    // The eyebrow above BOTH board selects — the Composer's and the triage
+    // row's — so the two pickers cannot drift apart in one locale (#1871).
+    label: 'Board',
+    // One visible label, two accessible names, because the two selects do
+    // different things: the Composer's chooses where a NEW capture will land,
+    // the triage one chooses a board for the capture already in the row.
+    //
+    // Both take the PR #2675 shape: the visible label first, then what the
+    // control does (WCAG 2.5.3). They must stay distinguishable by that second
+    // half alone — a screen-reader user meeting one of them has no other cue
+    // about which of the two selects is focused.
+    //
+    // `composerAria` may not say the capture LANDS on the chosen board. Every
+    // capture lands in Inbox; the board choice LINKS it so triage can propose
+    // against that board, and nothing reaches the board without approve and
+    // execute (ADR-0003). The composer's own footer and `nib.destination*` say
+    // exactly that, so this name says "linked to for triage" and the triage
+    // row's keeps "where this capture goes", which is that select's own job.
+    composerAria: 'Board: choose which board this capture is linked to for triage',
+    triageAria: 'Board: choose where this capture goes',
+    noBoardOption: 'No board · land in inbox',
+    selectPlaceholder: 'Select a board…',
     viewOnlyOption: '{name} · view-only',
     viewOnlyHint: 'Boards marked view-only need write access before anything can be triaged into them.',
   },
@@ -135,6 +222,11 @@ export default {
   // the next step after a decision, so a decided row never reads like an
   // untouched one. `tag.*` separates a capture's SOURCE from its STATE.
   triage: {
+    // The capture list's region name (#1871). The heading beside it says WHICH
+    // captures are listed ("Today's captures", or the archive title in
+    // read-only mode); this names the region itself, so a landmark list reads
+    // one stable thing in both modes.
+    tableAria: 'Captured items',
     boardPick: {
       loading: 'Loading boards…',
       loadFailed: 'Boards could not be loaded. Check your connection, then try again.',
@@ -160,6 +252,31 @@ export default {
     tag: {
       state: 'State: {label}. Where this capture stands right now.',
       source: 'Source: {label}. How this capture arrived — not a state.',
+    },
+    // Where an unsaved correction stands once its capture left the list (#1999
+    // item 3) — a board-filter change, a refresh that no longer returns the
+    // row, or the switch into archived history. `{capture}` is the row's own
+    // excerpt, so the sentence names the same thing the list did.
+    //
+    // `kept` and `discarded` are receipts about a moment. `held`, `blocked` and
+    // `heldUneditable` are standing statements, true for as long as they are on
+    // screen, so each ends by saying what the reader can do about it.
+    //
+    // `kept` says "this Inbox list" on purpose. The correction lives in the
+    // table for as long as the table does; promising it back after a reload
+    // would be a promise this mechanism cannot keep.
+    //
+    // `discarded` is the only sentence about a loss, and it is reached only
+    // from a status the SERVER itself would refuse the edit in. It states that
+    // status rather than leaving the drop unexplained.
+    draft: {
+      kept: 'The unsaved correction to “{capture}” was not lost. It is held while you stay on this Inbox list, and comes back with that capture when it returns. Nothing was saved.',
+      held: 'The unsaved correction to “{capture}” is still held. Choose Edit capture on that row to bring it back.',
+      blocked: 'The unsaved correction to “{capture}” is still held. Another capture is open for editing — finish that one, then choose Edit capture on this row to bring the correction back.',
+      heldUneditable: 'The unsaved correction to “{capture}” is still held. This list does not edit a capture that is {status}, so the correction waits here until that capture can be edited again.',
+      restored: 'The unsaved correction to “{capture}” is back in the editor, over the capture as it stands now. Save it or cancel as usual.',
+      discarded: 'The unsaved correction to “{capture}” was dropped: the capture is now {status}, and its text can no longer be edited. Nothing was saved.',
+      dismiss: 'Dismiss these notes',
     },
     // Pre-triage text correction (GH-1951) — the Legacy detail panel's
     // "Edit Text" affordance, ported to the Paper row.

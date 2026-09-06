@@ -21,6 +21,15 @@ export interface ProvenanceEvidenceLinkDto {
   viewable?: boolean
 }
 
+export interface ProposalProvenanceMetadataDto {
+  /** Server-recorded producer, or null when nothing was recorded. */
+  provider: string | null
+  /** Server-recorded model identifier; null whenever `provider` is null. */
+  model: string | null
+  /** Server-recorded prompt contract version, or null. */
+  promptVersion: string | null
+}
+
 export interface ProvenanceRowDto {
   icon: string
   key: string
@@ -122,6 +131,13 @@ function encodedId(id: string): string {
   return encodeURIComponent(id)
 }
 
+/** The all-null payload: no producer was recorded, so no claim may be rendered. */
+const UNRECORDED_PROVENANCE_METADATA: ProposalProvenanceMetadataDto = {
+  provider: null,
+  model: null,
+  promptVersion: null,
+}
+
 export const proposalDeepReviewApi = {
   async getProvenance(proposalId: string, options?: RequestOptions): Promise<ProvenanceRowDto[]> {
     const { data } = await http.get<ProvenanceRowDto[]>(
@@ -129,6 +145,34 @@ export const proposalDeepReviewApi = {
       { signal: options?.signal },
     )
     return data
+  },
+
+  /**
+   * Server-recorded producer metadata for a proposal (#1987). Board-authorized and
+   * proposal-scoped, so a collaborator reviewing another owner's proposal reaches it without
+   * capture-detail access.
+   *
+   * A proposal with nothing recorded answers 200 with all-null fields. An authorization or
+   * not-found answer is normalized to that same all-null shape rather than thrown: both render
+   * as no producer claim, which is the honest outcome either way. Telling "lookup failed" apart
+   * from "genuinely not recorded" is deliberately out of scope here and tracked by #2315.
+   * Every other failure (network, 5xx, abort) still rejects.
+   */
+  async getProvenanceMetadata(
+    proposalId: string,
+    options?: RequestOptions,
+  ): Promise<ProposalProvenanceMetadataDto> {
+    try {
+      const { data } = await http.get<ProposalProvenanceMetadataDto>(
+        `/automation/proposals/${encodedId(proposalId)}/provenance/metadata`,
+        { signal: options?.signal, expectedStatuses: [403, 404] },
+      )
+      return data
+    } catch (e: unknown) {
+      const status = (e as { response?: { status?: number } } | null)?.response?.status
+      if (status === 403 || status === 404) return UNRECORDED_PROVENANCE_METADATA
+      throw e
+    }
   },
 
   async getConfidence(proposalId: string, options?: RequestOptions): Promise<ConfidenceBreakdownDto> {

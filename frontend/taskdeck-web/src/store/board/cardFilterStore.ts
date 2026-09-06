@@ -4,7 +4,7 @@
 import { computed } from 'vue'
 import type { Card } from '../../types/board'
 import { addCalendarDays, localCalendarDateKey, toCalendarDateKey } from '../../utils/dueDates'
-import type { BoardState, CardFilters } from './boardState'
+import { initialCardFilters, type BoardState, type CardFilters } from './boardState'
 
 export function createCardFilterActions(state: BoardState) {
   // Helper function to check if a card matches current filters
@@ -90,12 +90,7 @@ export function createCardFilterActions(state: BoardState) {
   }
 
   const clearFilters = () => {
-    state.filters.value = {
-      searchText: '',
-      labelIds: [],
-      dueDateFilter: 'all',
-      showBlockedOnly: false,
-    }
+    state.filters.value = initialCardFilters()
   }
 
   return {

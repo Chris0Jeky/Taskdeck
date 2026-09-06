@@ -20,7 +20,7 @@ const selectedLabelIds = defineModel<string[]>('selectedLabelIds', { required: t
         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer"
         :class="[
           selectedLabelIds.includes(label.id)
-            ? 'text-white ring-2 ring-offset-2 ring-primary td-dynamic-bg'
+            ? 'text-white ring-2 ring-offset-2 ring-offset-surface-container ring-primary td-dynamic-bg'
             : 'text-on-surface bg-surface-container-high hover:bg-surface-container-highest',
         ]"
         :style="selectedLabelIds.includes(label.id) ? { '--td-dynamic-color': label.colorHex } : undefined"

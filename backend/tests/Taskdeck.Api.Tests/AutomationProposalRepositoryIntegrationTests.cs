@@ -170,9 +170,9 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
         expirableIds.Should().Contain(boardless.Id, "a board-less proposal has no archive state to respect");
         expirableIds.Should().Contain(danglingBoard.Id, "a proposal whose board row is gone is not archived history");
 
-        sweep.SkippedArchivedBoardCount.Should().BeGreaterThanOrEqualTo(
+        sweep.SkippedArchivedBoardCount.Should().Be(
             1,
-            "the withheld proposal is reported as a count so the sweep can say what it declined to touch");
+            "the fixture has exactly one archived-board proposal and the sweep must report the exact withheld count");
     }
 
     [Fact]
@@ -941,8 +941,15 @@ public class AutomationProposalRepositoryIntegrationTests : IClassFixture<Hosted
 
         var results = (await repo.GetExpiredAsync()).Expirable.ToList();
 
-        results.Should().NotContain(p => p.Id == unexpired.Id, "ExpiresAt is 30 minutes in the future");
-        results.Should().Contain(p => p.Id == expired.Id, "ExpiresAt is 30 minutes in the past");
+        // GetExpiredAsync intentionally scans the shared per-class database. Keep failure output
+        // attributable to this test without changing the repository query or hiding its result.
+        const string correlationPrefix = "corr-boundary-";
+        var ownedResults = results
+            .Where(proposal => proposal.CorrelationId.StartsWith(correlationPrefix, StringComparison.Ordinal))
+            .ToList();
+
+        ownedResults.Should().NotContain(p => p.Id == unexpired.Id, "ExpiresAt is 30 minutes in the future");
+        ownedResults.Should().Contain(p => p.Id == expired.Id, "ExpiresAt is 30 minutes in the past");
     }
 
     [Fact]

@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import BoardView from '../../views/BoardView.vue'
 import { useKeyboardShortcuts } from '../../composables/useKeyboardShortcuts'
+import { SHELL_KEYBOARD_HELP } from '../../composables/useShellKeyboardHelp'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import type { BoardPresenceSnapshot } from '../../types/realtime'
 import type { Card } from '../../types/board'
@@ -140,10 +141,11 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
-function mountView() {
+function mountView(provide: Record<symbol | string, unknown> = {}) {
   const wrapper = mount(BoardView, {
     attachTo: document.body,
     global: {
+      provide,
       stubs: {
         ColumnLane: {
           props: ['column'],
@@ -162,7 +164,6 @@ function mountView() {
         BoardSettingsModal: { template: '<div />' },
         LabelManagerModal: { template: '<div />' },
         StarterPackCatalogModal: { template: '<div />' },
-        KeyboardShortcutsHelp: { template: '<div />' },
         FilterPanel: { template: '<div />' },
         CaptureModal: {
           props: ['boardId', 'boardName'],
@@ -270,11 +271,29 @@ describe('BoardView', () => {
     // `n` is ungated *by skin* as of #1945: PaperBoardColumn now renders the
     // `[data-action="toggle-add-card"]` button and `[data-action="add-card-input"]`
     // textarea that `createCardInSelectedColumn` drives, so the shortcut is live
-    // in BOTH skins. `?` and `f` stay gated — Paper has its own shortcuts
-    // overlay and no filter panel, so those controls really are hidden.
+    // in BOTH skins. `f` stays gated — Paper has no filter panel, so that
+    // control really is hidden.
     expect(shortcut('n', 'New card in current column')?.enabled?.()).toBe(true)
-    expect(shortcut('?', 'Toggle keyboard shortcuts help')?.enabled?.()).toBe(false)
     expect(shortcut('f', 'Toggle filter panel')?.enabled?.()).toBe(false)
+    // `?` is not registered here at all any more (#2007): AppShell consumes it
+    // in the capture phase, so the board binding could never fire.
+    expect(shortcuts.some((s) => s.key === '?')).toBe(false)
+  })
+
+  it('opens the shell keyboard map from the toolbar help button', async () => {
+    const open = vi.fn()
+
+    const wrapper = mountView({ [SHELL_KEYBOARD_HELP]: { open } })
+    await waitForUi()
+
+    const helpButton = wrapper.get('[aria-label="Keyboard Shortcuts"]')
+    // The title still promises `?`, and after #2007 that is true: both routes
+    // lead to AppShell's single help surface.
+    expect(helpButton.attributes('title')).toBe('Keyboard Shortcuts (Press ?)')
+
+    await helpButton.trigger('click')
+
+    expect(open).toHaveBeenCalledTimes(1)
   })
 
   it('makes the board shortcuts inert while a Paper dialog is open', async () => {
@@ -718,6 +737,116 @@ describe('BoardView', () => {
     expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board refresh failed')
     expect(wrapper.get('[data-testid="board-error"]').text()).toBe('Failed to create card')
     expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+  })
+
+  it('clears a matching load error after a successful current-board background refresh', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = null
+        return true
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board refresh failed')
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-error"]').exists()).toBe(false)
+    expect(wrapper.find('.td-board-canvas').exists()).toBe(true)
+  })
+
+  it('clears the store error when a successful background refresh leaves it unchanged', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => true)
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(mockBoardStore.error).toBe('Board refresh failed')
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(mockBoardStore.error).toBeNull()
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-error"]').exists()).toBe(false)
+  })
+
+  it('preserves a different mutation error raised during a successful background refresh', async () => {
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Failed to create card'
+        return true
+      })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="board-load-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="board-error"]').text()).toBe('Failed to create card')
+  })
+
+  it('does not let an older background refresh clear a newer route error', async () => {
+    const backgroundRefresh = createDeferred<boolean>()
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => true)
+      .mockImplementationOnce(() => backgroundRefresh.promise)
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board B unavailable'
+        throw new Error('board B offline')
+      })
+
+    const wrapper = mountView()
+    await waitForUi()
+
+    const background = capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+    routeMock.params.id = 'board-2'
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board B unavailable')
+
+    backgroundRefresh.resolve(true)
+    await background
+    await nextTick()
+
+    expect(wrapper.get('[data-testid="board-load-error"]').text()).toContain('Board B unavailable')
+  })
+
+  it('does not clear board errors after a background refresh resolves post-unmount', async () => {
+    const backgroundRefresh = createDeferred<boolean>()
+    mockBoardStore.fetchBoard
+      .mockImplementationOnce(async () => {
+        mockBoardStore.error = 'Board refresh failed'
+        throw new Error('offline')
+      })
+      .mockImplementationOnce(() => backgroundRefresh.promise)
+
+    const wrapper = mountView()
+    await flushPromises()
+    const background = capturedRealtimeFetchBoard!('board-1', { intent: 'background' })
+
+    wrapper.unmount()
+    backgroundRefresh.resolve(true)
+    await background
+
+    expect(mockBoardStore.error).toBe('Board refresh failed')
   })
 
   it('does not let an old board Retry replace a newer route load error', async () => {

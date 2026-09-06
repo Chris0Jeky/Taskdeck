@@ -84,6 +84,10 @@ vi.mock('../../store/workspaceStore', () => ({
   useWorkspaceStore: () => mockWorkspace,
 }))
 
+vi.mock('../../store/captureStore', () => ({
+  useCaptureStore: () => ({ resetForLogout: vi.fn() }),
+}))
+
 vi.mock('../../store/paperThemeStore', () => ({
   usePaperThemeStore: () => mockPaperTheme,
 }))

@@ -81,6 +81,8 @@ public class ProposalHousekeepingWorker : BackgroundService
         var sweep = await unitOfWork.AutomationProposals.GetExpiredAsync(ct);
         var expiredProposals = sweep.Expirable;
         var expiredCount = 0;
+        // The candidate tag describes only the expirable partition; archived-board candidates are
+        // withheld and reported separately so the two counts remain operationally distinguishable.
         activity?.SetTag("taskdeck.proposals.expired_candidate_count", expiredProposals.Count);
         activity?.SetTag(
             "taskdeck.proposals.skipped_archived_board_count",

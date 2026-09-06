@@ -5,7 +5,9 @@ import { useBoardStore } from '../../../store/boardStore'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import { TdDateField } from '../../../components/ui'
+import { MAX_TRANSCRIPT_LENGTH } from '../../../constants/capture'
 import type { Board } from '../../../types/board'
+import type { CaptureSource } from '../../../types/capture'
 
 /**
  * PaperCaptureComposer — variant B of the Paper Inbox capture surface.
@@ -13,6 +15,12 @@ import type { Board } from '../../../types/board'
  * A multi-line ledger composer sitting on a paper-card with a metadata
  * sidebar (board picker, label multi-select, optional due date). Cmd/Ctrl+Enter submits.
  * Attachments remain visibly unavailable until a persistence lane exists.
+ *
+ * A source toggle (GH-2141) lets the same composer file a transcript without
+ * leaving the Paper skin. Transcript sources are not cosmetic: the server
+ * routes them to the LLM triage extractor and applies the larger transcript
+ * length limit, so the choice is stated plainly next to the control rather
+ * than implied.
  */
 const props = defineProps<{
   /** Optional board id to default the picker to. */
@@ -24,12 +32,16 @@ const props = defineProps<{
   errorId?: string | null
 }>()
 
+/** The capture sources this composer can file. Transcript FILE upload stays in the Legacy modal. */
+export type ComposerSource = Extract<CaptureSource, 'Typed' | 'TranscriptPaste'>
+
 const emit = defineEmits<{
   (event: 'submit', payload: {
     text: string
     boardId: string | null
     labels: string[]
     dueAt: string | null
+    source: ComposerSource
   }): void
 }>()
 
@@ -41,6 +53,7 @@ const boardId = ref<string | null>(props.defaultBoardId ?? null)
 const labelInput = ref('')
 const labels = ref<string[]>([])
 const dueAt = ref<string>('')
+const source = ref<ComposerSource>('Typed')
 
 const bodyRef = ref<HTMLTextAreaElement | null>(null)
 
@@ -72,8 +85,21 @@ const selectedBoardIsWritable = computed(() => {
   return selected ? isBoardWritable(selected) : true
 })
 
+/**
+ * Transcript bodies carry the server's larger limit; a paste beyond it would
+ * 400 on arrival, so it is refused here beside the draft instead. `Typed`
+ * captures keep the server's general-text limit as the only authority.
+ */
+const transcriptTooLong = computed(
+  () => source.value === 'TranscriptPaste' && body.value.trim().length > MAX_TRANSCRIPT_LENGTH,
+)
+
 const canSubmit = computed(
-  () => body.value.trim().length > 0 && !props.submitting && selectedBoardIsWritable.value,
+  () =>
+    body.value.trim().length > 0 &&
+    !props.submitting &&
+    selectedBoardIsWritable.value &&
+    !transcriptTooLong.value,
 )
 
 watch(
@@ -118,11 +144,19 @@ function removeLabel(label: string) {
 
 function submit() {
   if (!canSubmit.value) return
+  // GH-2490: the label box can still hold text the user never pressed Enter on.
+  // Submitting without flushing it filed an UNLABELLED capture, and since
+  // GH-2057 the success reset also wipes the box, so the only evidence the
+  // label was lost disappeared with it. `addLabel` is reused rather than
+  // reimplemented so the commit path stays identical (same trim, same dedupe)
+  // and any future label validation gates the shortcut automatically.
+  addLabel()
   emit('submit', {
     text: body.value.trim(),
     boardId: boardId.value,
     labels: [...labels.value],
     dueAt: dueAt.value || null,
+    source: source.value,
   })
 }
 
@@ -131,6 +165,7 @@ function resetDraft() {
   labelInput.value = ''
   labels.value = []
   dueAt.value = ''
+  source.value = 'Typed'
 }
 
 /**
@@ -144,6 +179,11 @@ function snapshotDraft() {
     boardId: boardId.value,
     labels: [...labels.value],
     dueAt: dueAt.value || null,
+    source: source.value,
+    // GH-2490: the uncommitted label text travels too. It is kept as pending
+    // input rather than promoted to a chip — the restored composer must look
+    // like the one the redirect interrupted.
+    labelInput: labelInput.value,
   }
 }
 
@@ -153,11 +193,20 @@ function restoreDraft(draft: {
   boardId?: string | null
   labels?: string[]
   dueAt?: string | null
+  source?: ComposerSource | null
+  labelInput?: string | null
 }) {
   body.value = draft.text
   boardId.value = draft.boardId ?? null
   labels.value = [...(draft.labels ?? [])]
   dueAt.value = draft.dueAt ?? ''
+  // A stash written before GH-2141 carries no source. Reading it as `Typed`
+  // keeps an old draft restorable and never silently upgrades it into an LLM
+  // extraction the author did not ask for.
+  source.value = draft.source === 'TranscriptPaste' ? 'TranscriptPaste' : 'Typed'
+  // Tolerant like `source` above: a stash written before GH-2490 carries no
+  // pending label, and reads back as an empty box rather than failing.
+  labelInput.value = typeof draft.labelInput === 'string' ? draft.labelInput : ''
 }
 
 onMounted(async () => {
@@ -187,14 +236,15 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
     <div class="paper-composer__body">
       <div class="paper-composer__main">
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Body</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.bodyLabel') }}</span>
           <textarea
             ref="bodyRef"
             v-model="body"
             class="paper-composer__textarea"
             rows="6"
-            aria-label="Capture body"
-            placeholder="The thought, in plain language…"
+            data-testid="paper-composer-body"
+            :aria-label="t('inbox.composer.bodyAria')"
+            :placeholder="t('inbox.composer.bodyPlaceholder')"
             :disabled="inputsDisabled"
             :aria-invalid="invalid ? 'true' : undefined"
             :aria-describedby="errorId ?? undefined"
@@ -202,21 +252,64 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
           />
         </label>
 
+        <fieldset class="paper-composer__source" data-testid="paper-composer-source">
+          <legend class="tk-eyebrow">{{ t('inbox.capture.source.legend') }}</legend>
+          <label class="paper-composer__source-option">
+            <input
+              v-model="source"
+              type="radio"
+              name="paper-composer-source"
+              value="Typed"
+              data-testid="paper-composer-source-typed"
+              :disabled="inputsDisabled"
+            />
+            <span>{{ t('inbox.capture.source.typed') }}</span>
+          </label>
+          <label class="paper-composer__source-option">
+            <input
+              v-model="source"
+              type="radio"
+              name="paper-composer-source"
+              value="TranscriptPaste"
+              data-testid="paper-composer-source-transcript"
+              :disabled="inputsDisabled"
+            />
+            <span>{{ t('inbox.capture.source.transcript') }}</span>
+          </label>
+          <p
+            v-if="source === 'TranscriptPaste'"
+            class="tk-meta paper-composer__source-note"
+            data-testid="paper-composer-source-note"
+          >
+            {{ t('inbox.capture.source.transcriptNote') }}
+          </p>
+        </fieldset>
+
+        <p
+          v-if="transcriptTooLong"
+          class="tk-meta paper-composer__source-error"
+          role="alert"
+          data-testid="paper-composer-transcript-too-long"
+        >
+          {{ t('inbox.capture.source.tooLong', { max: MAX_TRANSCRIPT_LENGTH.toLocaleString() }) }}
+        </p>
+
         <p class="paper-composer__drop tk-meta" data-testid="paper-composer-attachments-unavailable">
-          Attachments are not saved with captures yet.
+          {{ t('inbox.composer.attachmentsUnavailable') }}
         </p>
       </div>
 
       <aside class="paper-composer__aside">
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Board</span>
+          <span class="tk-eyebrow">{{ t('inbox.boardPicker.label') }}</span>
           <select
             v-model="boardId"
             class="paper-composer__select"
-            aria-label="Board picker"
+            data-testid="paper-composer-board"
+            :aria-label="t('inbox.boardPicker.composerAria')"
             :disabled="inputsDisabled"
           >
-            <option :value="null">No board · land in inbox</option>
+            <option :value="null">{{ t('inbox.boardPicker.noBoardOption') }}</option>
             <option
               v-for="board in boardStore.boards"
               :key="board.id"
@@ -233,13 +326,14 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </label>
 
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Labels</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.labelsLabel') }}</span>
           <input
             v-model="labelInput"
             class="paper-composer__input"
             type="text"
-            aria-label="Add label"
-            placeholder="add and press Enter"
+            data-testid="paper-composer-label-input"
+            :aria-label="t('inbox.composer.labelsAria')"
+            :placeholder="t('inbox.composer.labelsPlaceholder')"
             :disabled="inputsDisabled"
             @keydown="onLabelKeydown"
           />
@@ -259,11 +353,12 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </label>
 
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Due (optional)</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.dueLabel') }}</span>
           <TdDateField
             v-model="dueAt"
             class="paper-composer__input"
-            aria-label="Due date"
+            data-testid="paper-composer-due"
+            :aria-label="t('inbox.composer.dueAria')"
             :disabled="inputsDisabled"
           />
         </label>
@@ -352,6 +447,37 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
 .paper-composer__input:focus,
 .paper-composer__select:focus {
   border-color: var(--ember);
+}
+.paper-composer__source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 2px;
+  background: var(--paper);
+}
+.paper-composer__source legend {
+  padding: 0 4px;
+}
+.paper-composer__source-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink);
+}
+.paper-composer__source-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--mute);
+}
+.paper-composer__source-error {
+  margin: 0;
+  color: var(--ember);
 }
 .paper-composer__drop {
   display: flex;

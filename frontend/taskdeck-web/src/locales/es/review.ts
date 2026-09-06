@@ -41,6 +41,17 @@ export default {
     },
   },
 
+  queue: {
+    degraded: {
+      body: 'Es posible que esta cola de revisión no esté actualizada. Se muestran las últimas propuestas disponibles mientras Taskdeck lo vuelve a intentar.',
+      recovered: 'Esta cola de revisión vuelve a estar actualizada. Se muestran las propuestas actuales.',
+    },
+    refused: {
+      body: 'Esta cola de revisión ha dejado de actualizarse. El servidor está rechazando la actualización en lugar de fallar temporalmente, así que estas son las últimas propuestas que confirmó. Recarga la página o revisa el filtro de tablero en la barra de direcciones.',
+      recovered: 'El servidor vuelve a aceptar las actualizaciones de esta cola de revisión.',
+    },
+  },
+
   // GH-1307 -- traducción automática (machine-translated), pendiente de revisión nativa.
   batchExecute: {
     request: 'Aplicar {count} aprobada | Aplicar {count} aprobadas',
@@ -380,6 +391,9 @@ export default {
     derivedConfidence: 'promedio derivado {value}',
     deterministic: 'Extracción determinista · sin confianza del modelo',
     notReported: 'No se declaró confianza del modelo',
+    confidenceLoading: 'Leyendo la evidencia de confianza de esta propuesta…',
+    confidenceFailed:
+      'No se pudo leer la evidencia de confianza, así que se desconoce su origen.',
     actor: {
       assistant: 'Asistente',
       capture: 'Captura',
@@ -395,8 +409,15 @@ export default {
   similarPast: {
     heading: 'Decisiones parecidas anteriores',
     empty: 'No hay decisiones anteriores comparables.',
+    emptyDetail: 'Aquí se mostrarán las decisiones sobre propuestas comparables.',
+    loading: 'Leyendo decisiones anteriores comparables…',
+    loadingDetail: 'Las decisiones comparables se mostrarán aquí cuando termine esta lectura.',
+    failed: 'No se pudieron leer las decisiones anteriores comparables.',
+    failedDetail:
+      'La lectura falló, así que se desconoce si hay decisiones anteriores comparables.',
     details: {
       show: 'Mostrar decisiones parecidas',
+      showEmpty: 'Mostrar decisiones parecidas (ninguna encontrada)',
       hide: 'Ocultar decisiones parecidas',
     },
     verdict: {
@@ -445,6 +466,8 @@ export default {
     hint: 'Pulsa Espacio para ocultar',
     loading: 'Cargando el diff…',
     storedBanner: '{status} · solo lectura — muestra la vista previa guardada del envío original.',
+    storedBannerRecorded: '{status} · solo lectura — muestra las operaciones registradas de la propuesta.',
+    storedBannerNone: '{status} · solo lectura.',
     revised: {
       lead: 'Esta propuesta se',
       emphasis: 'revisó',
@@ -521,6 +544,8 @@ export default {
       eyebrow: 'Propuesta solicitada',
       title: 'Esta propuesta no esta disponible.',
       body: 'La propuesta {id} ya no esta disponible para revisar. Puede haberse aplicado, archivado o eliminado.',
+      malformedTitle: 'Este enlace no es un enlace de propuesta valido.',
+      malformedBody: 'La direccion pide {id}, que no es un id de propuesta: no hay nada que abrir y reintentarlo no sirve. Vuelve a Revision y elige una propuesta de la cola.',
       return: 'Volver a Revision',
     },
   },
@@ -548,6 +573,7 @@ export default {
     pendingReview: 'En espera de revisión',
     approved: 'Aprobada',
     applied: 'Aplicada',
+    appliedToBoard: 'Aplicada al tablero',
     rejected: 'Rechazada',
     failed: 'Fallida',
     expired: 'Caducada',
@@ -609,6 +635,8 @@ export default {
       'La revisión se actualizó después del intento de guardado. Comprueba las pruebas actuales y vuelve a elegir la acción.',
     revisionReviewUnavailable:
       'No se pudieron actualizar las pruebas de revisión. No se tomó ninguna decisión. Vuelve a elegir la acción actual para reintentarlo.',
+    revisionReviewTimedOut:
+      'Actualizar la revisión tardó demasiado y se detuvo. No se tomó ninguna decisión. Vuelve a elegir la acción actual para reintentarlo.',
     notRejectable:
       'Esta propuesta ya no se puede rechazar. Actualiza la revisión para ver el estado actual.',
     notEditable: 'Esta propuesta ya no se puede editar.',

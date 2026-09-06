@@ -158,7 +158,11 @@ that preference is held by a Pinia store persisting to `localStorage` (`paperThe
 `td.paper.mode.v2`). Language follows the identical pattern: `store/localeStore.ts`, key
 `td.locale.v1`, with the same validate-on-read / default-on-garbage discipline, and the same
 "apply" action that pushes the value into the runtime (here: `i18n.global.locale` plus
-`<html lang>`, mirroring how `paperThemeStore` pushes a class onto `<body>`).
+`<html lang>`, mirroring how `paperThemeStore` pushes a class onto `<body>`). Since `#2003`
+(PR `#2626`'s sibling `#2633`) the push is commit-after-load: the store loads the lazy catalog first
+and only then commits the runtime locale and `<html lang>` together, exposing pending and failed
+state to the picker; a failed load keeps the previous language visible, and startup waits for the
+restore for at most a bounded budget before mounting in English.
 
 Language is a *client display* preference, not account data: it is not sent to or stored by the
 backend, and there is no server-side user-preference table for it to live in. If a future

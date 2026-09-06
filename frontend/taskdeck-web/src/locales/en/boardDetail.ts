@@ -6,8 +6,9 @@
  * (`views/BoardsListView.vue`). This one covers the direct-manipulation
  * controls on a single open board — add a card, edit a column, board settings.
  *
- * Only the controls added by #1945 are extracted here. The rest of
- * `PaperBoardView` is still hard-coded English; the ADR-0054 rollout is
+ * Extracted here: the controls added by #1945, the titles-only toggle added by
+ * #2090, and the width and compact-density controls beside it. Other strings in
+ * `PaperBoardView` remain hard-coded English; the ADR-0054 rollout is
  * surface-by-surface and finishing this surface is a separate slice.
  *
  * Wording contract (ADR-0056): every label here names a *direct* human edit
@@ -18,6 +19,27 @@
 export default {
   actions: {
     settings: 'Board settings',
+    // Board-level card presentation. The mode hides the excerpt and the meta
+    // row on every card; nothing is removed and nothing is edited, so the copy
+    // names what the reader stops seeing, not an action on the cards. The
+    // accessible name repeats the visible label first (WCAG 2.5.3).
+    titlesOnly: 'Titles only',
+    titlesOnlyAria: 'Titles only: hide card excerpts and details',
+    // Lane width. The visible label is the short one the row has space for;
+    // the select's accessible name says what is being sized, because "Width"
+    // alone names no object. The preset names are the option copy only — the
+    // stored preference is the option's English `value`.
+    width: 'Width',
+    widthAria: 'Column width',
+    widthNarrow: 'Narrow',
+    widthStandard: 'Standard',
+    widthWide: 'Wide',
+    // Board spacing. Compact tightens the gaps and padding; it hides nothing
+    // and edits nothing, so the accessible name says what tightens and why.
+    // It repeats the visible label first (WCAG 2.5.3), as the toggles beside
+    // it do.
+    compactDensity: 'Compact density',
+    compactDensityAria: 'Compact density: tighten the board spacing to fit more cards',
   },
   card: {
     add: '+ card',
@@ -28,7 +50,17 @@ export default {
     cancel: 'Cancel',
     error: 'Could not add the card. Please try again.',
     capture: '+ capture',
-    captureAria: 'Capture a note into Inbox for {column}',
+    // The accessible name promises exactly what the control does (#1984
+    // finding 2), and it carries NO column.
+    //
+    // It used to read "for {column}", which a screen-reader user hears as a
+    // destination or a filter. Naming the column at all — even as "from
+    // {column}" — is still wrong here: every column's capture control pushes
+    // `{ boardId }` and nothing else, the same as the board-level "Capture
+    // here", so per-column names would announce a distinction the system does
+    // not make. `addAria` above keeps its `{column}` because that control
+    // really does differ per column.
+    captureAria: "Capture a note into this board's Inbox",
   },
   column: {
     settings: 'Column settings',

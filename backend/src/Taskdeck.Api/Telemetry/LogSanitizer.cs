@@ -21,10 +21,7 @@ public static class LogSanitizer
             return string.Empty;
 
         var sanitized = LogControlCharacterSanitizer.Strip(value);
-        if (sanitized.Length > MaxSanitizedLength)
-            sanitized = string.Concat(sanitized.AsSpan(0, MaxSanitizedLength), "...");
-
-        return sanitized;
+        return LogControlCharacterSanitizer.Truncate(sanitized, MaxSanitizedLength, "...");
     }
 
     /// <summary>
