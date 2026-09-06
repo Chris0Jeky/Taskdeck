@@ -429,7 +429,7 @@ port_listener_inventory() {
       function wild_peer(value) { return value ~ /^(0\.0\.0\.0|\[::\]|::|\*)[:.](0|\*)$/ }
       {
         protocol = tolower($1)
-        if (protocol !~ /^tcp[46]?$/) next
+        if (protocol !~ /^tcp[46]{0,2}$/) next
         if (ends_with_port($2) && wild_peer($3)) { print; next }
         if (ends_with_port($4) && wild_peer($5)) print
       }
