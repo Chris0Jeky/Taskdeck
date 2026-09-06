@@ -1,7 +1,7 @@
 # Navigation Contract: Paper, Legacy, Modes, and Route Access
 
-Status: source-to-test analysis for #1589  
-Last verified: 2026-09-06  
+Status: source-to-test analysis for #1589
+Last verified: 2026-09-06
 Base inspected: `origin/main` at `16963a79b1357e284fd4e403e70f833925b3105e`
 
 ## Purpose and boundary
