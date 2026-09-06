@@ -10,6 +10,10 @@ COPY frontend/taskdeck-web/ ./
 
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# Release builds may override this to keep frontend telemetry aligned with the
+# backend; standalone and local builds retain the development fallback.
+ARG VITE_APP_VERSION=0.0.0-dev
+ENV VITE_APP_VERSION=$VITE_APP_VERSION
 
 RUN npm run build
 

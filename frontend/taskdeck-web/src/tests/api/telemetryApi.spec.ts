@@ -31,8 +31,9 @@ describe('telemetryApi', () => {
   })
 
   describe('sendEvents', () => {
-    it('should post events to correct endpoint', async () => {
+    it('should preserve the build-injected app version when posting events', async () => {
       vi.mocked(http.post).mockResolvedValue({ data: { recorded: 2 } })
+      const injectedAppVersion = '0.2.0'
 
       const events = [
         {
@@ -40,7 +41,7 @@ describe('telemetryApi', () => {
           timestamp: '2026-04-09T12:00:00Z',
           sessionId: 'abc',
           workspaceMode: 'guided',
-          appVersion: '0.1.0',
+          appVersion: injectedAppVersion,
           platform: 'web' as const,
         },
         {
@@ -48,7 +49,7 @@ describe('telemetryApi', () => {
           timestamp: '2026-04-09T12:00:01Z',
           sessionId: 'abc',
           workspaceMode: 'guided',
-          appVersion: '0.1.0',
+          appVersion: injectedAppVersion,
           platform: 'web' as const,
         },
       ]

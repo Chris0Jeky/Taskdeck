@@ -222,6 +222,14 @@ test('resolve-source publishes the tag, commit and publish decision as job outpu
   assert.match(job, /tag: \$\{\{ steps\.resolve\.outputs\.tag \}\}/)
   assert.match(job, /sha: \$\{\{ steps\.resolve\.outputs\.sha \}\}/)
   assert.match(job, /publish: \$\{\{ steps\.resolve\.outputs\.publish \}\}/)
+  assert.match(job, /version: \$\{\{ steps\.resolve\.outputs\.version \}\}/)
+})
+
+test('resolve-source derives the frontend version from the validated tag', () => {
+  const job = jobBlock('resolve-source')
+  assert.match(job, /version="\$\{tag#v\}"/)
+  assert.match(job, /version="\$\{version%%\+\*\}"/)
+  assert.match(job, /printf 'version=%s\\n' "\$\{version\}"/)
 })
 
 test('resolve-source dereferences annotated tags and refuses anything else', () => {
@@ -310,7 +318,9 @@ test('the 0.1.x release matrix and packaging are Windows x64 zip only', () => {
 test('the desktop package marker is publish-only and the false pre-ZIP proof stays removed', () => {
   const job = jobBlock('build-backend')
   assert.match(job, /-p:TaskdeckDesktopPackage=true/)
-  assert.match(jobBlock('build-frontend'), /VITE_API_BASE_URL: \/api/)
+  const frontendJob = jobBlock('build-frontend')
+  assert.match(frontendJob, /VITE_API_BASE_URL: \/api/)
+  assert.match(frontendJob, /VITE_APP_VERSION: \$\{\{ needs\.resolve-source\.outputs\.version \}\}/)
   assert.doesNotMatch(job, /Smoke test published executable/)
   assert.doesNotMatch(job, /ConnectionStrings__DefaultConnection/)
   assert.doesNotMatch(job, /Jwt__SecretKey/)

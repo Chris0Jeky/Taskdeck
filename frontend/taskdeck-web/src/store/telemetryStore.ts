@@ -9,8 +9,16 @@ import type {
 const CONSENT_KEY = 'taskdeck_telemetry_consent'
 const FLUSH_INTERVAL_MS = 30_000 // 30 seconds
 const MAX_BUFFER_SIZE = 200
+const DEFAULT_APP_VERSION = '0.0.0-dev'
 type PrivacyAwareNavigator = Navigator & {
   globalPrivacyControl?: boolean
+}
+
+function buildAppVersion(): string {
+  const configured = import.meta.env.VITE_APP_VERSION
+  return typeof configured === 'string' && configured.trim().length > 0
+    ? configured.trim()
+    : DEFAULT_APP_VERSION
 }
 
 /**
@@ -155,7 +163,7 @@ export const useTelemetryStore = defineStore('telemetry', () => {
       timestamp: new Date().toISOString(),
       sessionId: sessionId.value,
       workspaceMode: 'guided', // Will be overridden by caller when available
-      appVersion: '0.1.0', // Will be set from build config in future
+      appVersion: buildAppVersion(),
       platform: 'web',
       properties,
     }

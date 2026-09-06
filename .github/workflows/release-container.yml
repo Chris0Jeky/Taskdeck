@@ -120,6 +120,7 @@ jobs:
           push: ${{ startsWith(github.ref, 'refs/tags/v') }}
           build-args: |
             TASKDECK_VERSION=${{ steps.product-version.outputs.version }}
+            VITE_APP_VERSION=${{ steps.product-version.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           no-cache: true

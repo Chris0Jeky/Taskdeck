@@ -79,6 +79,7 @@ jobs:
       sha: ${{ steps.resolve.outputs.sha }}
       publish: ${{ steps.resolve.outputs.publish }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       # Only the tag validator is needed here; nothing in this job writes to Git.
       - name: Checkout
@@ -164,6 +165,16 @@ jobs:
           # Re-validate the final tag, which also covers the generated rehearsal name.
           tag="$(bash scripts/ci/validate-release-tag.sh "${tag}")"
 
+          # The frontend and backend must receive the same normalized version. Keep
+          # this derived from the validated final tag so no frontend source needs a
+          # hand-maintained release number.
+          version="${tag#v}"
+          version="${version%%+*}"
+          if ! printf '%s' "${version}" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.-]*$'; then
+            printf '::error::Refusing product version %q — not a plain version token.\n' "${version}"
+            exit 1
+          fi
+
           # --- 4. Decide the publish semantics from that same tag ------------
           # Read off the VALIDATED tag string, so the release's label and the
           # bytes published under it can never disagree about which tag they
@@ -181,6 +192,7 @@ jobs:
             printf 'sha=%s\n' "${sha}"
             printf 'publish=%s\n' "${publish}"
             printf 'prerelease=%s\n' "${prerelease}"
+            printf 'version=%s\n' "${version}"
           } >> "${GITHUB_OUTPUT}"
 
           # The Markdown code-span delimiter is held in a variable and passed as a
@@ -195,6 +207,7 @@ jobs:
             printf '| commit | %s%s%s |\n' "${bt}" "${sha}" "${bt}"
             printf '| publishes a release | %s%s%s |\n' "${bt}" "${publish}" "${bt}"
             printf '| published as a prerelease | %s%s%s |\n' "${bt}" "${prerelease}" "${bt}"
+            printf '| normalized version | %s%s%s |\n' "${bt}" "${version}" "${bt}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   # ---------------------------------------------------------------------------
@@ -241,6 +254,7 @@ jobs:
         working-directory: frontend/taskdeck-web
         env:
           VITE_API_BASE_URL: /api
+          VITE_APP_VERSION: ${{ needs.resolve-source.outputs.version }}
         run: npx vite build
 
       - name: Upload frontend dist
