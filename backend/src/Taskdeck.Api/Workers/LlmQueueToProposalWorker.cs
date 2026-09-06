@@ -12,6 +12,8 @@ public class LlmQueueToProposalWorker : BackgroundService
 {
     private const string QueueNameLlm = "llm";
     private const string QueueNameCaptureTriage = "capture-triage";
+    private const string OutcomeAbandonedShutdown = "abandoned_shutdown";
+    private const string OutcomeCancelledRequeued = "cancelled_requeued";
 
     // Floor on the stuck-recovery lease so an aggressively-low ProcessingLeaseSeconds can never sweep a
     // request that was claimed seconds ago and is still legitimately in flight. Mirrors the floor the
@@ -367,7 +369,11 @@ public class LlmQueueToProposalWorker : BackgroundService
         // marked Failed and requeued purely because the host was stopping.
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            await ReleaseClaimOnShutdownAsync(item);
+            if (await ReleaseClaimOnShutdownAsync(item))
+            {
+                RecordWorkerOutcome(OutcomeAbandonedShutdown);
+            }
+
             throw;
         }
         catch (Exception ex)
@@ -403,14 +409,14 @@ public class LlmQueueToProposalWorker : BackgroundService
     /// Processing already is their queued state and returning one to Pending would drop it back to
     /// "untriaged in the inbox" — the wrong state, and one no worker drains.
     /// </remarks>
-    private async Task ReleaseClaimOnShutdownAsync(LlmRequest item)
+    private async Task<bool> ReleaseClaimOnShutdownAsync(LlmRequest item)
     {
         // The failure path may already have moved the row on (Failed, or Pending/Processing once
         // HandleFailureWithRetryAsync completed its own interrupted transition); only a still-claimed row
         // is ours to release.
         if (item.Status != RequestStatus.Processing)
         {
-            return;
+            return false;
         }
 
         try
@@ -423,7 +429,7 @@ public class LlmQueueToProposalWorker : BackgroundService
             var shutdownItem = await shutdownUnitOfWork.LlmQueue.GetByIdAsync(item.Id, CancellationToken.None);
             if (shutdownItem == null || shutdownItem.Status != RequestStatus.Processing)
             {
-                return;
+                return false;
             }
 
             shutdownItem.ReleaseClaim();
@@ -436,6 +442,7 @@ public class LlmQueueToProposalWorker : BackgroundService
             _logger.LogInformation(
                 "Queue item {ItemId} released back to Pending during shutdown; no retry charged",
                 item.Id);
+            return true;
         }
         catch (Exception ex)
         {
@@ -446,6 +453,7 @@ public class LlmQueueToProposalWorker : BackgroundService
                 "Failed to release queue item {ItemId} during shutdown; it stays Processing for the recovery sweep. {ExceptionSummary}",
                 item.Id,
                 SensitiveDataRedactor.SummarizeException(ex));
+            return false;
         }
     }
 
@@ -741,11 +749,14 @@ public class LlmQueueToProposalWorker : BackgroundService
         {
             try
             {
-                await CompleteRetryTransitionOnShutdownAsync(item.Id, retryAsProcessing);
-                _logger.LogInformation(
-                    "Queue item {ItemId} requeued for retry attempt {RetryCount} during shutdown",
-                    item.Id,
-                    item.RetryCount + 1);
+                if (await CompleteRetryTransitionOnShutdownAsync(item.Id, retryAsProcessing))
+                {
+                    RecordWorkerOutcome(OutcomeCancelledRequeued);
+                    _logger.LogInformation(
+                        "Queue item {ItemId} requeued for retry attempt {RetryCount} during shutdown",
+                        item.Id,
+                        item.RetryCount + 1);
+                }
             }
             catch (Exception ex)
             {
@@ -800,18 +811,19 @@ public class LlmQueueToProposalWorker : BackgroundService
             retryAsProcessing);
     }
 
-    private async Task CompleteRetryTransitionOnShutdownAsync(Guid itemId, bool retryAsProcessing)
+    private async Task<bool> CompleteRetryTransitionOnShutdownAsync(Guid itemId, bool retryAsProcessing)
     {
         using var scope = _scopeFactory.CreateScope();
         var shutdownUnitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
         var shutdownItem = await shutdownUnitOfWork.LlmQueue.GetByIdAsync(itemId, CancellationToken.None);
         if (shutdownItem == null)
         {
-            return;
+            return false;
         }
 
         ApplyRetryTransition(shutdownItem, retryAsProcessing);
         await shutdownUnitOfWork.SaveChangesAsync(CancellationToken.None);
+        return true;
     }
 
     /// <summary>
@@ -862,6 +874,14 @@ public class LlmQueueToProposalWorker : BackgroundService
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
 
+        TaskdeckTelemetry.WorkerItemsProcessed.Add(
+            1,
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
+            new KeyValuePair<string, object?>(TaskdeckTelemetryTags.Outcome, outcome));
+    }
+
+    private static void RecordWorkerOutcome(string outcome)
+    {
         TaskdeckTelemetry.WorkerItemsProcessed.Add(
             1,
             new KeyValuePair<string, object?>(TaskdeckTelemetryTags.WorkerName, nameof(LlmQueueToProposalWorker)),
