@@ -116,7 +116,10 @@ function Assert-NoGatewayOrContainerMutation {
 }
 
 function Reset-FakeDocker {
-    param([string]$Scenario)
+    param(
+        [string]$Scenario,
+        [string]$MissingServer = ''
+    )
 
     foreach ($path in @($fakeStatePath, $fakeLogPath)) {
         if (Test-Path -LiteralPath $path -PathType Leaf) {
@@ -124,6 +127,7 @@ function Reset-FakeDocker {
         }
     }
     $env:TASKDECK_FAKE_DOCKER_SCENARIO = $Scenario
+    $env:TASKDECK_FAKE_DOCKER_MISSING_SERVER = $MissingServer
     $env:TASKDECK_FAKE_DOCKER_STATE = $fakeStatePath
     $env:TASKDECK_FAKE_DOCKER_LOG = $fakeLogPath
 }
@@ -133,10 +137,11 @@ function Invoke-ProfileFixture {
         [string]$Scenario,
         [string]$DefaultServers = 'time,sqlite',
         [string[]]$AdditionalArguments = @(),
-        [switch]$UseProfileDefault
+        [switch]$UseProfileDefault,
+        [string]$MissingServer = ''
     )
 
-    Reset-FakeDocker -Scenario $Scenario
+    Reset-FakeDocker -Scenario $Scenario -MissingServer $MissingServer
     $arguments = @(
         '-NoLogo',
         '-NoProfile',
@@ -330,6 +335,11 @@ if ($args.Count -ge 6 -and
     else {
         @('time', 'SQLite', 'postman', 'dockerhub')
     }
+    if (-not [string]::IsNullOrWhiteSpace($env:TASKDECK_FAKE_DOCKER_MISSING_SERVER)) {
+        $serverNames = @($serverNames | Where-Object {
+            $_ -ne $env:TASKDECK_FAKE_DOCKER_MISSING_SERVER
+        })
+    }
     foreach ($name in $serverNames) {
         $serverEntries += [ordered]@{
             type = 'image'
@@ -449,10 +459,16 @@ try {
     $profileDefault = Invoke-ProfileFixture -Scenario 'default-servers' -UseProfileDefault
     Assert-Equal 0 $profileDefault.ExitCode 'The focused suite default-server invocation should pass against the exact six-server fixture inventory.'
     Assert-Contains $profileDefault.Output 'Configured server names: docker,docker-docs,filesystem,jetbrains,sqlite,time' 'The no-override invocation did not exercise the six-server profile default.'
-    $profileSource = Get-Content -Raw -LiteralPath $profileScript
-    Assert-Contains $profileSource "[string]`$DefaultServers = 'docker,docker-docs,time,jetbrains,filesystem,SQLite'" 'The profile default-server contract drifted from the six-server set.'
     Assert-NoGatewayOrContainerMutation 'Default-server validation'
     Complete-Test 'no-override validation pins the exact six-server profile default'
+
+    foreach ($missingDefaultServer in @('docker', 'docker-docs', 'time', 'jetbrains', 'filesystem', 'SQLite')) {
+        $missingDefault = Invoke-ProfileFixture -Scenario 'default-servers' -UseProfileDefault -MissingServer $missingDefaultServer
+        Assert-True ($missingDefault.ExitCode -ne 0) "The no-override default must require '$missingDefaultServer'."
+        Assert-Contains $missingDefault.Output 'Required Docker MCP server(s) are absent' "The missing '$missingDefaultServer' default was not reported by the live profile validation."
+        Assert-NoGatewayOrContainerMutation "Missing default-server validation for $missingDefaultServer"
+    }
+    Complete-Test 'no-override validation rejects every missing member of the exact six-server default'
 
     $missing = Invoke-ProfileFixture -Scenario 'normal' -DefaultServers 'time,bogus-server'
     Assert-True ($missing.ExitCode -ne 0) 'A missing requested server must fail even when the profile-list command exits zero.'
