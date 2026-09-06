@@ -18,7 +18,7 @@ Toolchain:
 | --- | ---: | --- |
 | `dotnet restore backend/src/Taskdeck.Application/Taskdeck.Application.csproj` | 0 | Restored Domain and Application projects. |
 | `dotnet build backend/src/Taskdeck.Application/Taskdeck.Application.csproj -c Release --no-restore --nologo` | 0 | 0 warnings, 0 errors. |
-| `dotnet format backend/src/Taskdeck.Application/Taskdeck.Application.csproj --verify-no-changes --no-restore --verbosity normal` | 1 | 27 `WHITESPACE` diagnostics across 5 Application source files: `ArchiveRecoveryService.cs`, `AutomationPlannerService.cs`, `AutomationPolicyEngine.cs`, `ChatService.cs`, and `IArchiveRecoveryService.cs`. |
+| `dotnet format backend/src/Taskdeck.Application/Taskdeck.Application.csproj --verify-no-changes --no-restore --verbosity normal` | 2 | 27 `WHITESPACE` diagnostics across 5 Application source files: `ArchiveRecoveryService.cs`, `AutomationPlannerService.cs`, `AutomationPolicyEngine.cs`, `ChatService.cs`, and `IArchiveRecoveryService.cs`. |
 | `node scripts/check-docs-governance.mjs` | 0 | Passed. |
 | `node scripts/check-golden-principles.mjs` | 0 | Passed. |
 | `git status --porcelain` and `git diff --check` | 0 | No tracked source changes and no whitespace errors after measurement. |
