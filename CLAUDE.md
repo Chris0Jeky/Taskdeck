@@ -47,6 +47,7 @@ Run only what your change touches. Everything is seconds unless marked.
 | Changed seam | Command (repo root unless noted) |
 | --- | --- |
 | Root/agent docs, `docs/**` | `node scripts/check-docs-governance.mjs` |
+| Markdown links anywhere | `node scripts/check-doc-links.mjs` (repo-relative targets only, no network) |
 | `docs/GOLDEN_PRINCIPLES.md`, invariants | `node scripts/check-golden-principles.mjs` |
 | `.github/ISSUE_TEMPLATE/**`, `AGENTS.md` project ops | `node scripts/check-github-ops-governance.mjs` |
 | `ci/**`, `scripts/ci/smart-ci/**`, the smart-ci shadow workflow | `node --test scripts/ci/smart-ci/*.test.mjs` |
