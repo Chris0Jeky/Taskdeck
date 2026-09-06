@@ -1572,6 +1572,27 @@ function recordedOr(value: string | null | undefined): string {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .paper-triage__board-pick {
+    align-items: stretch;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .paper-triage__board-label {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .paper-triage__board-select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .paper-triage__board-pick .paper-triage__actions {
+    flex: 1 1 100%;
+  }
+
   .paper-triage__tags,
   .paper-triage__actions,
   .paper-triage__reason {
