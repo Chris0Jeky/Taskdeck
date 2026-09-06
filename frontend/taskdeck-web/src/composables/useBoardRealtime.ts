@@ -8,6 +8,7 @@ import {
 import type { BoardPresenceSnapshot, BoardRealtimeEvent } from '../types/realtime'
 import { getToken } from '../utils/tokenStorage'
 import { logWarn } from '../utils/errorReporting'
+import { apiRootFrom } from '../utils/apiRoot'
 
 const BOARD_MUTATION_EVENT = 'boardMutation'
 const BOARD_PRESENCE_EVENT = 'boardPresence'
@@ -19,9 +20,9 @@ const FALLBACK_POLL_INTERVAL_MS = 30000
 // prevents the ~3 req/s thrash observed with rapid SignalR event bursts.
 const MUTATION_DEBOUNCE_MS = 300
 
-function resolveHubUrl(): string {
+export function resolveHubUrl(): string {
   const apiBase = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api'
-  const apiRoot = apiBase.replace(/\/api\/?$/i, '')
+  const apiRoot = apiRootFrom(apiBase)
   return `${apiRoot}/hubs/boards`
 }
 

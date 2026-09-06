@@ -37,6 +37,8 @@ export default {
     detail: {
       open: 'Mostrar la captura conservada completa',
       close: 'Ocultar la captura conservada completa',
+      openFor: 'Mostrar la captura conservada completa para {capture}',
+      closeFor: 'Ocultar la captura conservada completa para {capture}',
       title: 'Captura conservada',
       loading: 'Cargando la captura conservada…',
       error: 'No se pudo cargar la captura conservada.',

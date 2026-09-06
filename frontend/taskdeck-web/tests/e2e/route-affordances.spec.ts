@@ -22,7 +22,7 @@
  * control is asserted disabled (#1944) and never clicked. Openers are opened
  * and dismissed, never submitted.
  *
- * BUDGET. Four `test()` blocks. E2E Smoke runs every spec in `tests/e2e` on
+ * BUDGET. Four route-walk `test()` blocks plus one focused timeout guard. E2E Smoke runs every spec in `tests/e2e` on
  * chromium with `workers: 1`, a 45 s per-test timeout, a 12 min `globalTimeout`
  * and a 12 min step timeout, so this file's cost is charged to a shared
  * ceiling. Two blocks raise their own timeout to 90 s, the same relief
@@ -57,9 +57,8 @@
  * the same reason and parked the same way (see `readOnMount`), so a `goto` that
  * throws reports its own failure instead of trailing a `waitForResponse`
  * settlement with no test left to own it. Note the asymmetry in what BOUNDS the
- * two: `activate` passes `{ timeout: 15_000 }`, while the mount reads pass no
- * timeout and this config gives them none, so they are bounded only by the test
- * timeout. `readOnMount` explains that; bounding them is tracked on #2682.
+ * two: `activate` and `readOnMount` both pass `{ timeout: 15_000 }`, so a
+ * missing mount response fails as the named mount read before the test timeout.
  *
  * COMPLETENESS. Every block ends with `assertBlockCompleted`, which proves the
  * declared `WALK_PLAN` still names exactly the inventory's `activate: true` and
@@ -515,28 +514,10 @@ async function assertReachableButNotActivated(
  * still failing on a mount read that never arrives. The success path is
  * unchanged: armed before, awaited after, asserted 2xx.
  *
- * WHAT AN UNPARKED WAIT WOULD ACTUALLY DO HERE — NOT TIME OUT. These calls pass
- * no `timeout`, and under this repo's config nothing supplies a default one, so
- * the wait has NO event timeout of its own. The chain, read in the installed
- * tree: `playwright/lib/index.js:259` defaults the `actionTimeout` fixture to
- * `0` and `playwright.config.ts` never sets it (it sets only `timeout: 45_000`
- * and `expect.timeout: 8_000`, and nothing under `tests/` calls
- * `setDefaultTimeout`); `playwright/lib/index.js:349` then assigns
- * `_defaultContextTimeout = actionTimeout || 0`; `coreBundle.js:57160-57169`
- * returns that `0` rather than falling through to Playwright's own default;
- * and `coreBundle.js:58412` arms a timer only `if (timeout)`, which `0` is not.
- * So a mount read whose response never arrives does not reject after 30 s — it
- * HANGS until the test timeout (90 s in the board-seeded walk, 45 s in the
- * Home/Inbox block) and reports "Test timeout exceeded". Parking still earns
- * its place: an unawaited wait is rejected at page close with a
- * `TargetClosedError` (`coreBundle.js:61278-61279` and `:61265-61267`), and by
- * then the test that would have owned it is over.
- *
- * NOT BOUNDED LIKE `activate`. `activate` caps its row waits at
- * `{ timeout: 15_000 }` precisely so a dead control does not burn the shared
- * E2E Smoke budget; these mount reads take no such cap and are left to the test
- * timeout. That asymmetry is deliberate for now, not an oversight — giving them
- * their own bound is a behavioural change and is tracked on #2682.
+ * BOUND AND NAMED. The same `{ timeout: 15_000 }` cap used by `activate` keeps a
+ * dead mount read from consuming the 45/90 s test budget. The rejection is
+ * wrapped with the supplied label after its outcome was parked, so navigation
+ * failures still win while a missing response identifies the read it owns.
  */
 async function readOnMount(
   page: Page,
@@ -544,14 +525,15 @@ async function readOnMount(
   matches: (response: Response) => boolean,
   navigate: () => Promise<unknown>,
 ): Promise<void> {
-  const settledRead = page.waitForResponse(matches).then(
+  const settledRead = page.waitForResponse(matches, { timeout: 15_000 }).then(
     (response) => ({ settled: 'fulfilled' as const, response }),
     (reason: unknown) => ({ settled: 'rejected' as const, reason }),
   )
   await navigate()
   const outcome = await settledRead
   if (outcome.settled === 'rejected') {
-    throw outcome.reason instanceof Error ? outcome.reason : new Error(String(outcome.reason))
+    const reason = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)
+    throw new Error(`${label}: ${reason}`)
   }
   await assertOk(outcome.response, label)
 }
@@ -564,6 +546,26 @@ test.beforeEach(async ({ page, request }) => {
   walkedIds.clear()
   guardedIds.clear()
   auth = await registerAndAttachSession(page, request, 'route-affordances')
+})
+
+test('names a missing mount read before the enclosing test timeout', async ({ page }) => {
+  await page.route('**/api/workspace/home', async () => {
+    await new Promise<void>(() => {})
+  })
+
+  try {
+    await expect(
+      readOnMount(
+        page,
+        'Home summary read on first paint',
+        (response) =>
+          response.request().method() === 'GET' && /\/api\/workspace\/home$/.test(response.url()),
+        () => page.goto('/workspace/home'),
+      ),
+    ).rejects.toThrow('Home summary read on first paint')
+  } finally {
+    await page.unroute('**/api/workspace/home')
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────

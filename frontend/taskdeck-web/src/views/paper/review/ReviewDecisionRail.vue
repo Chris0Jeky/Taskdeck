@@ -66,13 +66,13 @@ const props = withDefaults(
      * refresh lock, which the Review view draws above this column while it
      * re-reads the proposal (#2461).
      *
-     * The rail attaches exactly what it is given to all four decision controls,
-     * unconditionally, so the caller owns two obligations. The ids must resolve
-     * to elements that are actually rendered — a dangling reference reports
-     * nothing while the markup claims otherwise. And they must describe the
-     * CURRENT state of those controls: `ReviewMain` therefore forwards them only
-     * while `busy` holds the controls disabled, because the notes it draws from
-     * are a union and one of them outlives the lock that produced it.
+     * Whitespace is normalized and empty tokens are ignored. The resulting ids are
+     * applied to each rendered decision control (Reject, Request edit, Defer and
+     * Apply); `applyOnly` can hide the first three, while `dismissable` renders only
+     * File away without this decision description. The rail may append its own
+     * edit-lock note when that lock is active. The caller owns ensuring each supplied
+     * id resolves to a rendered explanation for the controls' CURRENT state; a
+     * dangling reference reports nothing while the markup claims otherwise.
      */
     decisionDescriptionIds?: string
   }>(),

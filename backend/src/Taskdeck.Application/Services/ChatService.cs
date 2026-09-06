@@ -347,7 +347,7 @@ public class ChatService : IChatService
                         // messages (e.g. "create card X"). This is the same
                         // classifier all providers use as a fallback.
                         var (classifiedActionable, classifiedIntent) =
-                            LlmIntentClassifier.Classify(dto.Content);
+                            LlmIntentClassifier.Classify(dto.Content, _logger);
                         List<string>? classifiedInstructions = null;
                         if (classifiedActionable)
                         {
@@ -570,7 +570,7 @@ public class ChatService : IChatService
                         else if (!session.BoardId.HasValue
                                  && messageType != "degraded"
                                  && !string.IsNullOrWhiteSpace(llmResult.Content)
-                                 && TurnRequestsAction(dto.Content, dto.RequestProposal, forceBestEffort))
+                                 && TurnRequestsAction(dto.Content, dto.RequestProposal, forceBestEffort, _logger))
                         {
                             // The provider answered in prose without flagging its own response
                             // actionable, but the turn did ask for an action: an explicit proposal
@@ -956,7 +956,11 @@ public class ChatService : IChatService
     /// user the no-board notice — it never creates or attempts a proposal, so a false positive
     /// costs one honest sentence, while a false negative is the silent-prose failure this guards.
     /// </summary>
-    private static bool TurnRequestsAction(string userContent, bool requestProposal, bool forceBestEffort)
+    private static bool TurnRequestsAction(
+        string userContent,
+        bool requestProposal,
+        bool forceBestEffort,
+        ILogger<ChatService>? logger)
     {
         // The user ticked "Request proposal generation", or told a clarification round to proceed.
         if (requestProposal || forceBestEffort)
@@ -964,7 +968,7 @@ public class ChatService : IChatService
 
         // Otherwise fall back to the same local classifier the no-tool reuse path uses, run over
         // the user's own message rather than the model's reply.
-        var (userIntentIsActionable, _) = LlmIntentClassifier.Classify(userContent);
+        var (userIntentIsActionable, _) = LlmIntentClassifier.Classify(userContent, logger);
         return userIntentIsActionable;
     }
 

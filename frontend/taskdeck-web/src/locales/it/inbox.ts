@@ -35,6 +35,8 @@ export default {
     detail: {
       open: 'Mostra la cattura conservata completa',
       close: 'Nascondi la cattura conservata completa',
+      openFor: 'Mostra la cattura conservata completa per {capture}',
+      closeFor: 'Nascondi la cattura conservata completa per {capture}',
       title: 'Cattura conservata',
       loading: 'Caricamento della cattura conservata…',
       error: 'Non è stato possibile caricare la cattura conservata.',
