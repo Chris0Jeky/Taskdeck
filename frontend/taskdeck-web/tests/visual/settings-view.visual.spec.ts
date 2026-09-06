@@ -24,6 +24,6 @@ test('profile settings default view', async ({ page }) => {
   // Mask the dynamic user-identity fields (username, email, user id, role)
   // so we screenshot layout only. These values are newly generated per run.
   await expect(page).toHaveScreenshot('settings-profile.png', {
-    mask: [page.locator('.td-info-value')],
+    mask: [page.locator('.paper-profile__info-value')],
   })
 })

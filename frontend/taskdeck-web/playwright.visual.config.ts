@@ -47,7 +47,9 @@ for (const [index, origin] of backendCorsOrigins.entries()) {
  * - Fixed viewport (1280x720) for deterministic screenshots
  * - Animations disabled via reducedMotion to prevent flaky diffs
  * - Screenshot comparison thresholds tuned for cross-platform tolerance
- * - Snapshot path template includes platform for OS-specific baselines
+ * - Snapshot path template deliberately omits {platform}: there is exactly one
+ *   canonical baseline per surface and it is captured on the hosted Linux lane,
+ *   never per-OS. See docs/testing/VISUAL_REGRESSION_POLICY.md.
  */
 export default defineConfig({
   testDir: './tests/visual',
