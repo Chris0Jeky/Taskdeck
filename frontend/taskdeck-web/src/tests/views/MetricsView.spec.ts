@@ -106,6 +106,33 @@ describe('MetricsView', () => {
     expect((boardSelect.element as HTMLSelectElement).value).toBe('board-1')
   })
 
+  // #2689 item 2. `loadBoards` is awaited inside an async `onMounted`
+  // callback, so before the catch the store's rethrow escaped the hook: Vue
+  // routes a lifecycle-hook rejection to `app.config.errorHandler`, and with no
+  // handler installed it rethrows from its own `.catch`, which reaches the
+  // window as an unhandledrejection and is forwarded to Sentry by
+  // `installWindowErrorListeners`. The app error handler is the first thing
+  // Vue reaches on that route, so "never called" is precisely "the rejection
+  // did not escape the callback". A process-level listener would not do: Vue
+  // intercepts the rejection before it ever reaches the window here.
+  it('mounts through a rejected board-list read without escaping the mounted hook', async () => {
+    const appErrorHandler = vi.fn()
+    mockBoardStore.fetchBoards.mockRejectedValue(new Error('timeout of 10000ms exceeded'))
+
+    const wrapper = mount(MetricsView, {
+      global: { config: { errorHandler: appErrorHandler } },
+    })
+    await waitForUi()
+
+    expect(mockBoardStore.fetchBoards).toHaveBeenCalledTimes(1)
+    expect(appErrorHandler).not.toHaveBeenCalled()
+
+    // The surface survives the failure rather than being torn down, and the
+    // selector stays empty: a failed read learned nothing about the list.
+    expect(wrapper.text()).toContain('Board Metrics')
+    expect((wrapper.get('#board-select').element as HTMLSelectElement).value).toBe('')
+  })
+
   it('shows "Select a board" prompt when no board selected', async () => {
     mockBoardStore.fetchBoards.mockImplementation(async () => {
       // no boards

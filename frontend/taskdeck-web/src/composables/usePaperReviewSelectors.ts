@@ -127,6 +127,12 @@ export interface SimilarPastRow {
   date: string
 }
 
+export interface SimilarPastApplyRate {
+  applied: number
+  total: number
+  ratio: number
+}
+
 /**
  * How one exact-key core evidence batch ended.
  *
@@ -150,6 +156,47 @@ export interface CoreSelectorBatchWaitOptions {
   signal?: AbortSignal
 }
 
+/**
+ * What the review rail is entitled to state about the core batch behind the
+ * values it is holding (#1940).
+ *
+ * - `idle`    no proposal is active, so there is nothing to state at all.
+ * - `loading` no batch has reported for the ACTIVE key yet. The previous
+ *   proposal's values may still sit in the refs, so none of them may be shown.
+ * - `failed`  the batch for the active key ended with at least one rejected
+ *   read. Emptiness is then unknown, not proven.
+ * - `settled` all six reads landed for the active key, so the values in the
+ *   snapshot belong to it and an empty one is a fact about this proposal.
+ */
+export type PaperReviewEvidenceStatus = 'idle' | 'loading' | 'failed' | 'settled'
+
+/**
+ * The rail's values together with the state of the read that produced them, as
+ * ONE snapshot (#1940).
+ *
+ * Values and state cannot be passed apart, which is the point: the rail shipped
+ * as a pure props component holding `similarPast` and `confidenceBreakdown` with
+ * nothing about the fetch, so it rendered proposal A's confidence and A's rows
+ * under proposal B while B's batch was still in flight, and its cards read an
+ * empty array as "nothing exists" while the read was pending or had failed.
+ * A snapshot that withholds the values in every non-`settled` status makes both
+ * mistakes unrepresentable at the boundary rather than merely unlikely.
+ */
+export interface PaperReviewRailEvidence {
+  status: PaperReviewEvidenceStatus
+  /** The batch outcome behind a `failed` status; null in every other status. */
+  failure: CoreSelectorBatchOutcome | null
+  /**
+   * The key these values belong to. Non-null only while `status` is `settled`,
+   * because every other status withholds the values and so has no identity to
+   * name.
+   */
+  key: SelectorKey | null
+  confidenceBreakdown: ConfidenceBreakdown
+  similarPast: SimilarPastRow[]
+  similarPastApplyRate: SimilarPastApplyRate
+}
+
 export interface PaperReviewSelectors {
   provenance: ComputedRef<ProvenanceRow[]>
   provenanceMetadata: ComputedRef<ProvenanceMetadata | null>
@@ -159,7 +206,14 @@ export interface PaperReviewSelectors {
   conflicts: ComputedRef<ConflictRow[]>
   history: ComputedRef<HistoryRow[]>
   similarPast: ComputedRef<SimilarPastRow[]>
-  similarPastApplyRate: ComputedRef<{ applied: number; total: number; ratio: number }>
+  similarPastApplyRate: ComputedRef<SimilarPastApplyRate>
+  /**
+   * The rail-facing keyed snapshot: the two rail values plus the state and
+   * identity of the batch that produced them (#1940). Prefer it over the bare
+   * `similarPast` / `confidenceBreakdown` reads for anything that STATES
+   * something to the reviewer about what the values mean.
+   */
+  railEvidence: ComputedRef<PaperReviewRailEvidence>
   loading: ComputedRef<boolean>
   waitForCoreBatch: (
     proposalId: string,
@@ -192,6 +246,11 @@ function emptySideEffects(): SideEffects {
 const EMPTY_SIDE_EFFECT_ROWS: SideEffectRow[] = Object.freeze(
   [] as SideEffectRow[],
 ) as SideEffectRow[]
+const EMPTY_APPLY_RATE: SimilarPastApplyRate = Object.freeze({
+  applied: 0,
+  total: 0,
+  ratio: 0,
+}) as SimilarPastApplyRate
 const EMPTY_CONFIDENCE: ConfidenceBreakdown = Object.freeze({
   overall: null,
   components: Object.freeze([] as ConfidenceBreakdown['components']) as ConfidenceBreakdown['components'],
@@ -236,7 +295,13 @@ function nullableIdentifiersEqual(
   return identifiersEqual(left, right)
 }
 
-interface SelectorKey {
+/**
+ * Identity of one evidence read: the proposal, the capture it came from and the
+ * revision being reviewed. Exported since #1940 because a surface that states
+ * something about these values has to be able to say WHICH proposal they belong
+ * to; the rail could not, and rendered A's evidence under B's header.
+ */
+export interface SelectorKey {
   proposalId: string
   captureReference: string | null
   revisionIdentity: string | null
@@ -257,6 +322,29 @@ function selectorKeysEqual(left: SelectorKey | null, right: SelectorKey | null):
     proposalIdsEqual(left.proposalId, right.proposalId) &&
     nullableIdentifiersEqual(left.captureReference, right.captureReference) &&
     nullableIdentifiersEqual(left.revisionIdentity, right.revisionIdentity)
+  )
+}
+
+/**
+ * Whether a read taken for `readKey` still covers what `activeKey` renders.
+ *
+ * This is the SAME question the watcher answers when it decides NOT to start a
+ * new batch, and the two must ask it once: `proposalRevisionMoved` is
+ * deliberately asymmetric — a revision identity reaching null means the proposal
+ * left PendingReview, not that a different revision is on screen — so an exact
+ * key comparison calls the settled read stale exactly where the watcher calls it
+ * current. A surface deciding by exact match would then hold a record for a key
+ * no batch is ever started for, and report `loading` with no end (#1940).
+ *
+ * Strictly weaker than `selectorKeysEqual`, which stays the right test wherever
+ * the exact read identity matters (the settled-cache fast path, the publication
+ * guards): this one answers "still current", not "the same read".
+ */
+function selectorKeyStillCovers(readKey: SelectorKey, activeKey: SelectorKey): boolean {
+  return (
+    proposalIdsEqual(readKey.proposalId, activeKey.proposalId) &&
+    nullableIdentifiersEqual(readKey.captureReference, activeKey.captureReference) &&
+    !proposalRevisionMoved(readKey.revisionIdentity, activeKey.revisionIdentity)
   )
 }
 
@@ -481,6 +569,12 @@ function mapHistory(dtos: CardHistoryRowDto[]): HistoryRow[] {
   }))
 }
 
+function applyRateOf(rows: SimilarPastRow[]): SimilarPastApplyRate {
+  const applied = rows.filter((r) => r.verdict === 'applied').length
+  const total = rows.length
+  return { applied, total, ratio: total === 0 ? 0 : applied / total }
+}
+
 function mapSimilarPast(dto: SimilarPastResultDto): SimilarPastRow[] {
   return dto.decisions.map((d) => ({
     serial: d.serial,
@@ -503,7 +597,21 @@ export function usePaperReviewSelectors(
   const conflictsData: Ref<ConflictRow[]> = ref([])
   const historyData: Ref<HistoryRow[]> = ref([])
   const similarPastData: Ref<SimilarPastRow[]> = ref([])
-  const isLoading = ref(false)
+  /**
+   * How the most recent core batch ended AND which key it was for (#1940).
+   *
+   * This replaces the previous bare `isLoading` boolean, which could say that a
+   * read was in flight but never which proposal it was for — so a consumer had
+   * no way to tell "A's values, settled" from "A's values, with B's read still
+   * running". `loading` below is derived from this record, so the two can never
+   * disagree. `null` means no batch has been attempted since the last proposal
+   * change, which is the state a surface must read as `idle`.
+   */
+  const batchRecord: Ref<{
+    key: SelectorKey
+    status: Exclude<PaperReviewEvidenceStatus, 'idle'>
+    failure: CoreSelectorBatchOutcome | null
+  } | null> = ref(null)
 
   let fetchGeneration = 0
   let abortController: AbortController | null = null
@@ -621,7 +729,7 @@ export function usePaperReviewSelectors(
         invalidateCoreBatch()
         discardCaptureLookup()
       }
-      isLoading.value = false
+      batchRecord.value = { key, status: 'settled', failure: null }
       if (settledCaptureMetadata && selectorKeysEqual(settledCaptureMetadata.key, key)) {
         provenanceMetadataData.value = settledCaptureMetadata.value
       } else {
@@ -651,7 +759,7 @@ export function usePaperReviewSelectors(
     const controller = new AbortController()
     abortController = controller
     const signal = controller.signal
-    isLoading.value = true
+    batchRecord.value = { key, status: 'loading', failure: null }
     // Never show the previous proposal's producer while the active capture is loading.
     provenanceMetadataData.value = null
 
@@ -708,7 +816,9 @@ export function usePaperReviewSelectors(
           discardCaptureLookup()
           clearSelectorData()
         }
-        isLoading.value = false
+        // The rail must be able to say the read failed rather than let its
+        // cards read the cleared refs as a proven absence of evidence (#1940).
+        batchRecord.value = { key, status: 'failed', failure: 'failed' }
         return 'failed'
       }
 
@@ -728,7 +838,7 @@ export function usePaperReviewSelectors(
       similarPastData.value = mapSimilarPast(sim.value)
 
       settledCoreKey = key
-      isLoading.value = false
+      batchRecord.value = { key, status: 'settled', failure: null }
 
       void captureSettlement.then(([serverMetadata, capture]) => {
         if (
@@ -844,29 +954,44 @@ export function usePaperReviewSelectors(
       const [previousProposalId, previousCaptureReference, previousRevisionIdentity] =
         previousValues ?? []
       const initialLoad = previousValues === undefined
-      const proposalChanged = initialLoad
-        ? true
-        : previousProposalId == null || proposalId == null
-          ? previousProposalId !== proposalId
-          : !proposalIdsEqual(previousProposalId, proposalId)
-      const captureChanged = initialLoad
-        ? true
-        : !nullableIdentifiersEqual(previousCaptureReference, captureReference)
-      const revisionChanged = initialLoad
-        ? true
-        : proposalRevisionMoved(previousRevisionIdentity ?? null, revisionIdentity ?? null)
 
       // Vue also invokes this watcher when a raw revision field changes but its
-      // effective identity does not (for example approve pins latest -> null).
-      // Keep the current review data in that terminal transition.
-      if (!initialLoad && !proposalChanged && !captureChanged && !revisionChanged) return
+      // effective identity does not (for example approve pins latest -> null,
+      // and reject pins nothing at all). Keep the current review data in that
+      // terminal transition.
+      //
+      // The question goes through `selectorKeyStillCovers`, the one predicate
+      // `railEvidence` also uses, so the watcher can never decide the settled
+      // read is still current while the snapshot decides it is stale — the
+      // disagreement that left the rail loading with no end (#1940 round 2).
+      // Which transitions start a batch is unchanged: for two present proposal
+      // ids this is exactly the previous three-flag condition, and when either
+      // id is absent both forms proceed (all three watch sources derive from
+      // the same proposal, so the watcher cannot fire with none of them set).
+      const stillCovered =
+        !initialLoad &&
+        previousProposalId != null &&
+        proposalId != null &&
+        selectorKeyStillCovers(
+          {
+            proposalId: previousProposalId,
+            captureReference: previousCaptureReference ?? null,
+            revisionIdentity: previousRevisionIdentity ?? null,
+          },
+          {
+            proposalId,
+            captureReference: captureReference ?? null,
+            revisionIdentity: revisionIdentity ?? null,
+          },
+        )
+      if (stillCovered) return
 
       if (!proposalId) {
         invalidateCoreBatch()
         settledCoreKey = null
         settledCaptureMetadata = null
         discardCaptureLookup()
-        isLoading.value = false
+        batchRecord.value = null
         clearSelectorData()
         return
       }
@@ -888,11 +1013,62 @@ export function usePaperReviewSelectors(
   const history = computed<HistoryRow[]>(() => historyData.value)
   const similarPast = computed<SimilarPastRow[]>(() => similarPastData.value)
 
-  const similarPastApplyRate = computed(() => {
-    const rows = similarPast.value
-    const applied = rows.filter((r) => r.verdict === 'applied').length
-    const total = rows.length
-    return { applied, total, ratio: total === 0 ? 0 : applied / total }
+  const similarPastApplyRate = computed<SimilarPastApplyRate>(() =>
+    applyRateOf(similarPast.value),
+  )
+
+  /**
+   * The keyed snapshot (#1940). Two residuals collapse into one rule here: the
+   * values leave this composable ONLY under the key they were read for, and
+   * only once that read has landed.
+   *
+   * A record for a different key means the batch for the active one has not
+   * reported yet — the watcher starts it synchronously on the switch, so this
+   * is the instant between "the reviewer selected B" and "B's reads resolve" —
+   * and `loading` is the honest description of that instant. It is also the
+   * safe default if a future edit ever leaves a gap where no batch was started:
+   * withholding values cannot state a falsehood, publishing them can.
+   */
+  const railEvidence = computed<PaperReviewRailEvidence>(() => {
+    const activeKey = selectorKeyForProposal(activeProposal.value)
+    if (!activeKey) {
+      return {
+        status: 'idle',
+        failure: null,
+        key: null,
+        confidenceBreakdown: EMPTY_CONFIDENCE,
+        similarPast: EMPTY_SIMILAR,
+        similarPastApplyRate: EMPTY_APPLY_RATE,
+      }
+    }
+
+    const record = batchRecord.value
+    // "Still covers", not "is the same read": the watcher starts no new batch
+    // for a revision identity that only went to null, so demanding an exact
+    // match here would wait for a record that never arrives (#1940 round 2).
+    const current = record && selectorKeyStillCovers(record.key, activeKey) ? record : null
+    if (!current || current.status !== 'settled') {
+      return {
+        status: current?.status ?? 'loading',
+        failure: current?.failure ?? null,
+        key: null,
+        confidenceBreakdown: EMPTY_CONFIDENCE,
+        similarPast: EMPTY_SIMILAR,
+        similarPastApplyRate: EMPTY_APPLY_RATE,
+      }
+    }
+
+    return {
+      status: 'settled',
+      failure: null,
+      // The identity the values were READ under, which after a decision retires
+      // the revision is no longer identical to the active one. Naming the read
+      // is the honest answer to "where did these come from".
+      key: current.key,
+      confidenceBreakdown: confidenceData.value,
+      similarPast: similarPastData.value,
+      similarPastApplyRate: applyRateOf(similarPastData.value),
+    }
   })
 
   onScopeDispose(() => {
@@ -904,7 +1080,10 @@ export function usePaperReviewSelectors(
     discardCaptureLookup()
   })
 
-  const loading = computed(() => isLoading.value)
+  // Derived from the one record above rather than tracked beside it, so a
+  // consumer reading `loading` and a consumer reading `railEvidence.status`
+  // cannot be told different stories about the same batch.
+  const loading = computed(() => batchRecord.value?.status === 'loading')
 
   return {
     provenance,
@@ -916,6 +1095,7 @@ export function usePaperReviewSelectors(
     history,
     similarPast,
     similarPastApplyRate,
+    railEvidence,
     loading,
     waitForCoreBatch,
   }

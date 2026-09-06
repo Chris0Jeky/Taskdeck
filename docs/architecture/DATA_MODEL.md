@@ -488,10 +488,10 @@ backfilling existing proposals. Consumers must handle absence --
 | Id | `Guid` | Yes | PK | |
 | ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade), unique | Owning proposal |
 | CorrelationId | `string` | Yes | 1-100 chars | Ties provenance to the originating pipeline run |
-| ModelId | `string` | Yes | 1-100 chars | The model id the creating caller supplied (server-stamped by capture triage, e.g. `gpt-5.6-luna`; body-supplied on `POST /api/automation/proposals`, see `#2499`); when none is supplied, an origin label from the source type (`chat-tools`, `manual`, `queue`; `unknown` only for an out-of-range value), so this column alone never proves a model produced the proposal |
+| ModelId | `string` | Yes | 1-100 chars | The model id the creating caller supplied, server-stamped on every path since `#2583` (PR `#2600`): capture triage records the real model (e.g. `gpt-5.6-luna`), and `POST /api/automation/proposals` no longer binds `provenanceModelId` (`[JsonIgnore]`, see `#2499`); when none is supplied, an origin label from the source type (`chat-tools`, `manual`, `queue`; `unknown` only for an out-of-range value), so this column alone never proves a model produced the proposal |
 | Provider | `string?` | No | Max 64 chars | Producer that ran, as capture triage records it: `OpenAI` for the live leg, `deterministic-extractor` for the fallback (the mock provider declines before extraction, so `mock` is never stored); stamped today only by capture triage; null for pre-`20260904030926` rows and for every row whose `ModelId` is an origin label |
 | PromptVersion | `string?` | No | Max 64 chars | Prompt version the producer used; same coverage as `Provider` |
-| TotalTokens | `int` | Yes | >= 0 | Prompt + completion tokens |
+| TotalTokens | `int` | Yes | >= 0 | Prompt plus completion tokens as an application-layer producer records them; server-stamped and not client-bindable on `POST /api/automation/proposals` (`[JsonIgnore]` since `#2604`, PR `#2611`); no shipped producer records usage yet, so the column is 0 for every new row |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
 
@@ -1050,7 +1050,7 @@ A queued request for LLM processing.
 | RequestType | `string` | Yes | Non-empty | Request category |
 | Payload | `string` | Yes | EF: required `TEXT`; domain rejects null, empty, or whitespace-only values in both construction and `UpdatePayload`; application capture contract parses/serializes the current JSON payload and retains a legacy/plaintext fallback | Request content (current capture contract is JSON) |
 | Status | `RequestStatus` | Yes | Enum: Pending, Processing, Completed, Failed, Cancelled | Lifecycle state |
-| ErrorMessage | `string?` | No | | Failure message |
+| ErrorMessage | `string?` | No | Max 1000 chars | Failure detail for a failed request; for a completed capture-triage request, an optional non-fatal degradation notice when deterministic fallback produced the reviewable result; null when neither applies |
 | ProcessedAt | `DateTimeOffset?` | No | | When processing completed |
 | RetryCount | `int` | Yes | | Number of retry attempts |
 | CreatedAt | `DateTimeOffset` | Yes | | |

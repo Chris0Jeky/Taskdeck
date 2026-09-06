@@ -1,14 +1,23 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Net;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Http;
+using Moq;
 using Taskdeck.Api.Extensions;
+using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
+using Taskdeck.Infrastructure;
+using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -308,6 +317,96 @@ public class LlmProviderRegistrationTests
             .CreateHandler(LlmProviderRegistration.OpenAiCompatibleHttpClientName);
         EnumeratePipeline(handler).Should().Contain(item => item is EgressEnvelopeHandler,
             "the configured disclosure entry must also be enforced on the compatible client");
+    }
+
+    [Fact]
+    public async Task RegisteredCaptureTriagePath_ResolvesExtractorAndInvokesFakeProvider()
+    {
+        var databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"taskdeck-capture-triage-di-{Guid.NewGuid():N}.db");
+        var providerCalls = 0;
+        var fakeProvider = new Mock<ILlmProvider>(MockBehavior.Strict);
+        fakeProvider
+            .Setup(provider => provider.GetHealthAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmHealthStatus(
+                IsAvailable: true,
+                ProviderName: "fake-di-provider",
+                Model: "fake-di-model",
+                IsMock: false,
+                IsProbed: true));
+        fakeProvider
+            .Setup(provider => provider.CompleteAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Callback(() => providerCalls++)
+            .ReturnsAsync(new LlmCompletionResult(
+                """{"tasks":[{"title":"Send the report","type":"action","assigneeHint":null,"dueDateHint":null,"confidence":0.9,"evidenceQuote":"Alice: I'll send the report by Friday."}]}""",
+                TokensUsed: 8,
+                IsActionable: true,
+                Provider: "fake-di-provider",
+                Model: "fake-di-model"));
+
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:DefaultConnection"] = $"Data Source={databasePath};Pooling=False",
+                    ["Connectors:EncryptionKey"] = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
+                    ["Cache:Provider"] = "none",
+                    ["Llm:Provider"] = "Mock",
+                    ["Llm:EnableLiveProviders"] = "true",
+                    ["CaptureTriageLlm:Enabled"] = "true"
+                })
+                .Build();
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddSingleton<IWebHostEnvironment>(new TestWebHostEnvironment("Test"));
+            services.AddInfrastructure(configuration);
+            services.AddApplicationServices();
+            services.AddLlmProviders(configuration);
+            services.RemoveAll<ILlmProvider>();
+            services.AddScoped(_ => fakeProvider.Object);
+
+            using (var serviceProvider = services.BuildServiceProvider())
+            await using (var scope = serviceProvider.CreateAsyncScope())
+            {
+                var database = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+                await database.Database.EnsureCreatedAsync();
+
+                var user = new User("di-triage-user", "di-triage@example.invalid", "test-password-hash", UserRole.Editor);
+                var board = new Board("DI capture board", ownerId: user.Id);
+                database.Users.Add(user);
+                database.Boards.Add(board);
+                database.Columns.Add(new Column(board.Id, "Inbox", 0));
+                await database.SaveChangesAsync();
+
+                var triage = scope.ServiceProvider.GetRequiredService<ICaptureTriageService>();
+                var result = await triage.CreateProposalFromCaptureAsync(
+                    Guid.NewGuid(),
+                    user.Id,
+                    board.Id,
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.TranscriptPaste,
+                        "Alice: I'll send the report by Friday."));
+
+                result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+                providerCalls.Should().Be(1,
+                    "the resolved CaptureTriageService must invoke the registered extractor's provider once");
+                result.Value.Provider.Should().Be("fake-di-provider");
+                result.Value.Model.Should().Be("fake-di-model");
+                result.Value.OperationCount.Should().Be(1);
+            }
+        }
+        finally
+        {
+            if (File.Exists(databasePath))
+            {
+                File.Delete(databasePath);
+            }
+        }
     }
 
     [Fact]

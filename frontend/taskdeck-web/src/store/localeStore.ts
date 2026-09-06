@@ -11,10 +11,11 @@ import {
 /**
  * Language preference (ADR-0054 §7).
  *
- * Deliberately mirrors `paperThemeStore`: a Pinia store whose value is read
- * from and written to `localStorage`, validated on read, defaulted on garbage,
- * with an `apply()` action that pushes the value into the runtime — there, a
- * class on `<body>`; here, the vue-i18n locale plus `<html lang>`.
+ * Deliberately mirrors `paperThemeStore`: a Pinia store whose preferred value
+ * is read from and written to `localStorage`, validated on read, defaulted on
+ * garbage, with an `apply()` action that pushes a loaded preference into the
+ * runtime — there, a class on `<body>`; here, the vue-i18n locale plus
+ * `<html lang>`.
  *
  * This is a CLIENT DISPLAY preference. It is not sent to the backend and there
  * is no server-side user-preference row for it. If it ever needs to follow the
@@ -46,57 +47,118 @@ function applyLocale(locale: SupportedLocale) {
   }
 }
 
+function persistLocale(locale: SupportedLocale) {
+  try {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(STORAGE_KEY, locale)
+    }
+  } catch {
+    // ignore quota / private-mode failures — the in-memory preference still applies
+  }
+}
+
+// A catalog response is allowed to commit only if it belongs to the most
+// recent request. This is deliberately separate from the catalog loader's
+// per-locale in-flight deduplication: two different locale requests can be in
+// flight at once, and the older one must not overwrite the newer choice.
+let latestRequestGeneration = 0
+
 export const useLocaleStore = defineStore('locale', {
   state: () => ({
-    locale: readStoredLocale() as SupportedLocale,
+    // `locale` is the committed/displayed locale. The stored preference is a
+    // desired locale until its catalog has loaded successfully.
+    locale: DEFAULT_LOCALE as SupportedLocale,
+    preferredLocale: readStoredLocale() as SupportedLocale,
+    pendingLocale: null as SupportedLocale | null,
+    failedLocale: null as SupportedLocale | null,
   }),
   getters: {
     available(): ReadonlyArray<SupportedLocale> {
       return SUPPORTED_LOCALES
     },
+    isPending: (state): boolean => state.pendingLocale !== null,
   },
   actions: {
     /**
-     * Push the current locale into the i18n runtime and `<html lang>`.
-     * Idempotent. Flip FIRST: `it`/`es` catalogs are code-split (#1858), and
-     * until the chunk arrives the silent en-fallback shows English — the same
-     * thing the user already sees for any not-yet-extracted surface;
-     * `setLocaleMessage` is reactive, so translations appear when it lands.
+     * Restore the stored preference before the first app mount. A non-English
+     * catalog is loaded before the preference is committed, so the first
+     * mounted render cannot claim a language whose messages are unavailable.
      *
-     * If the chunk FAILS, the runtime, `<html lang>`, and the in-memory store
-     * value are all reverted to English so the UI never claims a language it
-     * is not rendering (the flip-first window is bounded by the request; a
-     * failure is not). The persisted preference is deliberately KEPT: a
-     * transient failure (offline, stale deployment mid-swap) self-heals on the
-     * next boot or the next manual switch instead of silently discarding the
-     * user's choice. The returned promise settles after any revert; callers
-     * that only care about the switch itself may ignore it.
+     * If the chunk fails, the committed runtime locale remains usable and the
+     * persisted preference is deliberately kept so a transient failure
+     * (offline, stale deployment mid-swap) retries on the next boot or manual
+     * switch. `failedLocale` lets the mounted picker report that target
+     * honestly instead of silently falling back.
      */
     apply(): Promise<void> {
-      const target = this.locale
-      applyLocale(target)
-      return ensureLocaleMessages(target).then((ok) => {
-        const stillWanted = this.locale === target && i18n.global.locale.value === target
-        if (!ok && stillWanted && target !== DEFAULT_LOCALE) {
-          this.locale = DEFAULT_LOCALE
-          applyLocale(DEFAULT_LOCALE)
-        }
-      })
+      const target = this.preferredLocale
+      const generation = ++latestRequestGeneration
+
+      this.failedLocale = null
+      applyLocale(this.locale)
+
+      if (target === this.locale) {
+        this.pendingLocale = null
+        return Promise.resolve()
+      }
+
+      this.pendingLocale = target
+      return Promise.resolve()
+        .then(() => ensureLocaleMessages(target))
+        .catch(() => false)
+        .then((ok) => {
+          if (generation !== latestRequestGeneration) return
+
+          this.pendingLocale = null
+          if (ok) {
+            this.locale = target
+            applyLocale(target)
+            return
+          }
+
+          applyLocale(this.locale)
+          this.failedLocale = target
+        })
     },
     setLocale(locale: SupportedLocale): Promise<void> {
       // Guard the public entry point too: a bad value here would otherwise be
       // persisted and only rejected on the NEXT read, leaving the running app
       // on a locale with no catalog.
       if (!isSupportedLocale(locale)) return Promise.resolve()
-      this.locale = locale
-      try {
-        if (typeof window !== 'undefined') {
-          window.localStorage.setItem(STORAGE_KEY, locale)
-        }
-      } catch {
-        // ignore quota / private-mode failures — the in-memory switch still applies
+
+      this.preferredLocale = locale
+      persistLocale(locale)
+
+      const generation = ++latestRequestGeneration
+      this.failedLocale = null
+      applyLocale(this.locale)
+
+      // Selecting the committed language again cancels an older pending
+      // request and restores a truthful, idle picker immediately.
+      if (locale === this.locale) {
+        this.pendingLocale = null
+        return Promise.resolve()
       }
-      return this.apply()
+
+      this.pendingLocale = locale
+      return Promise.resolve()
+        .then(() => ensureLocaleMessages(locale))
+        .catch(() => false)
+        .then((ok) => {
+          if (generation !== latestRequestGeneration) return
+
+          this.pendingLocale = null
+          if (ok) {
+            this.locale = locale
+            applyLocale(locale)
+            return
+          }
+
+          // Do not infer that a failed chunk left a usable catalog. Keep the
+          // last committed language and report the requested target to the UI.
+          applyLocale(this.locale)
+          this.failedLocale = locale
+        })
     },
   },
 })

@@ -70,13 +70,38 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
     `<data directory>/diagnostics/cli-failure-<yyyyMMddTHHmmssZ>-<reference>.txt`, where the data
     directory is the directory of the resolved SQLite data source (the same resolution the CLI
     first-run bootstrap uses, falling back to the working directory for a non-file data source).
-    The record holds the UTC timestamp, the reference, the CLI version, the process arguments
-    passed through `SensitiveDataRedactor.Redact`, and `SensitiveDataRedactor.SummarizeException`
-    output — never a raw stack trace and never a raw `Exception.Message`. Bounds: at most 8 KB per
-    record (truncated with an explicit marker) and at most 20 records, oldest evicted first by the
-    timestamp-sorted name. The file is created with `FileMode.CreateNew`, so a stale file or a
-    planted symlink at the target path makes the write fail rather than being appended to or
-    followed, and on POSIX it is created 0600 at creation time (no world-readable window).
+    The record holds the UTC timestamp, the reference, the CLI version, the command line under the
+    argv retention policy below, and `SensitiveDataRedactor.SummarizeException` output — never a
+    raw stack trace and never a raw `Exception.Message`. Bounds: at most 8 KB per record
+    (truncated with an explicit marker) and at most 20 records, oldest evicted first by the
+    timestamp-sorted name. Eviction runs only after the new record has been written and closed, and
+    never removes the record just written, so a create that fails deletes nothing. An eviction
+    that fails leaves the directory over its cap until a later run trims it, and never changes the
+    outcome the caller reports: the record is already closed on disk by then. The file is
+    created with `FileMode.CreateNew`, so a stale file or a planted symlink at the target path
+    makes the write fail rather than being appended to or followed, and on POSIX it is created 0600
+    at creation time (no world-readable window). `TryRecord` accepts only a reference that is hex
+    of exactly 12 characters (the generated reference) or 32 (the harness trace correlation),
+    in either case — the same shapes `CliStartupTrace` accepts, so the sink never refuses a
+    reference the CLI itself printed; any other reference fails open, writing nothing and printing
+    nothing, so the reference can never steer the record out of the diagnostics directory.
+  - **Argv retention policy** (#2577): the record keeps the shape of the failing command, not its
+    values. Exactly two things are written verbatim: the at most two leading command words, which
+    must be short lowercase words such as `cards add`, and the flag names — a token starting with
+    `-`, up to but not past its first `=`. Every value is replaced with the fixed placeholder
+    `[value]`: every other separate token, and the value attached to a flag, so
+    `--title=Secret plan` is recorded as `--title=[value]` whether or not `title` is a key the
+    redactor knows. The result is then still passed through `SensitiveDataRedactor.Redact`, which
+    masks the `key=value` and `key: value` forms whose key it recognises, so `--token=` ends up
+    `[redacted]` rather than `[value]`. This is the conservative option of the three the #2573 review
+    listed: it covers a space-separated secret flag such as `--token abc123`, which the redactor's
+    `key=value` rules do not match, and it keeps ordinary user content such as a card title or
+    description off disk, since nothing was retained on an operator run before this sink existed.
+    A flag name is a dash-prefixed token with no whitespace; a value that starts with a dash and
+    contains whitespace is replaced like any other value, while a single dash-prefixed word used as
+    a value is indistinguishable from a flag name by shape and is retained.
+    So `cards add --title "Secret plan" --token abc123` is recorded as
+    `cards add --title [value] --token [value]`.
   The reference the CLI prints alongside the generic line is the trace correlation when a trace is
   enabled and a freshly generated 12-hex-character reference otherwise. It is shown only when a
   sink actually kept the record; when every sink fails (unwritable directory, full disk, a file

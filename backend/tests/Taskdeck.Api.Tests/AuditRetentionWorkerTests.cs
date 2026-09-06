@@ -108,6 +108,61 @@ public class AuditRetentionWorkerTests
             () => worker.CleanupOldEntriesAsync(cts.Token));
     }
 
+    [Fact]
+    public async Task StartAsync_RunsImmediateCleanup_ReportsHeartbeat_AndStopsDuringIdleDelay()
+    {
+        var firstCleanup = new TaskCompletionSource<(DateTimeOffset Cutoff, int BatchSize)>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var fakeRepo = new FakeAuditLogRepository(
+            deletedCount: 1,
+            onDelete: (cutoff, batchSize) => firstCleanup.TrySetResult((cutoff, batchSize)));
+        using var serviceProvider = BuildServiceProvider(fakeRepo);
+        var logger = new InMemoryLogger<AuditRetentionWorker>();
+        var heartbeat = new WorkerHeartbeatRegistry();
+        var settings = new AuditRetentionSettings
+        {
+            MaxRetentionDays = 30,
+            CleanupBatchSize = 321,
+            CleanupIntervalHours = 1
+        };
+
+        var worker = new AuditRetentionWorker(
+            serviceProvider.GetRequiredService<IServiceScopeFactory>(),
+            settings,
+            heartbeat,
+            logger);
+
+        var before = DateTimeOffset.UtcNow.AddDays(-settings.MaxRetentionDays);
+        await worker.StartAsync(CancellationToken.None);
+        bool stopReturnedBeforeDeadline;
+        try
+        {
+            var request = await firstCleanup.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var after = DateTimeOffset.UtcNow.AddDays(-settings.MaxRetentionDays);
+
+            fakeRepo.DeleteOldEntriesCallCount.Should().Be(1);
+            request.BatchSize.Should().Be(settings.CleanupBatchSize);
+            request.Cutoff.Should().BeOnOrAfter(before);
+            request.Cutoff.Should().BeOnOrBefore(after);
+            heartbeat.GetLastHeartbeat(nameof(AuditRetentionWorker)).Should().NotBeNull();
+        }
+        finally
+        {
+            // The worker is parked in its one-hour idle delay here. BackgroundService.StopAsync
+            // returns either when ExecuteAsync observes the stopping token or when this deadline
+            // fires, and it swallows both outcomes, so the deadline state is what distinguishes a
+            // cooperative stop from a delay that ignored the token.
+            using var stopDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await worker.StopAsync(stopDeadline.Token);
+            stopReturnedBeforeDeadline = !stopDeadline.IsCancellationRequested;
+        }
+
+        stopReturnedBeforeDeadline.Should().BeTrue(
+            "StopAsync must interrupt the idle delay through the stopping token rather than wait out the stop deadline");
+        worker.ExecuteTask.Should().NotBeNull();
+        worker.ExecuteTask!.IsCompleted.Should().BeTrue("the ExecuteAsync loop must have exited after StopAsync");
+    }
+
     private static ServiceProvider BuildServiceProvider(IAuditLogRepository auditLogRepo)
     {
         var services = new ServiceCollection();
@@ -119,15 +174,20 @@ public class AuditRetentionWorkerTests
     {
         private readonly int _deletedCount;
         private readonly bool _throwOnCancel;
+        private readonly Action<DateTimeOffset, int>? _onDelete;
 
         public int DeleteOldEntriesCallCount { get; private set; }
         public DateTimeOffset? LastCutoffDate { get; private set; }
         public int? LastBatchSize { get; private set; }
 
-        public FakeAuditLogRepository(int deletedCount, bool throwOnCancel = false)
+        public FakeAuditLogRepository(
+            int deletedCount,
+            bool throwOnCancel = false,
+            Action<DateTimeOffset, int>? onDelete = null)
         {
             _deletedCount = deletedCount;
             _throwOnCancel = throwOnCancel;
+            _onDelete = onDelete;
         }
 
         public Task<int> DeleteOldEntriesAsync(DateTimeOffset olderThan, int batchSize, CancellationToken cancellationToken = default)
@@ -140,6 +200,7 @@ public class AuditRetentionWorkerTests
             DeleteOldEntriesCallCount++;
             LastCutoffDate = olderThan;
             LastBatchSize = batchSize;
+            _onDelete?.Invoke(olderThan, batchSize);
             return Task.FromResult(_deletedCount);
         }
 

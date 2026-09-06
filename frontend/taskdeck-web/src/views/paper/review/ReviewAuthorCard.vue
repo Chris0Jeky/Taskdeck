@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import PaperStamp from '../../../components/paper/PaperStamp.vue'
-import type { ConfidenceBreakdown } from '../../../composables/usePaperReviewSelectors'
+import type {
+  ConfidenceBreakdown,
+  PaperReviewEvidenceStatus,
+} from '../../../composables/usePaperReviewSelectors'
 
 /**
  * ReviewAuthorCard — author badge with absolute-positioned PaperStamp
@@ -9,19 +12,68 @@ import type { ConfidenceBreakdown } from '../../../composables/usePaperReviewSel
  *
  * Keep `pointer-events: none` on the stamp so the rotation stays decorative
  * and never intercepts clicks on the card.
+ *
+ * The confidence-SOURCE sentence is card-level, never disclosure-only (#1940).
+ * On an Applied record ReviewMain gates its confidence-source badge off and the
+ * view passes an empty `authorMeta` for the deterministic and not-reported
+ * sources, which left this sentence as the only statement on screen about where
+ * the number came from — hidden behind a control with no reason to be opened.
+ *
+ * The empty breakdown is ambiguous on its own, exactly as in ReviewSimilarPast:
+ * `usePaperReviewSelectors` holds `EMPTY_CONFIDENCE` — zero components, source
+ * `not-reported` — while a read is in flight and after one failed, so "No model
+ * confidence reported" was also a claim about a response that never arrived.
+ * `evidenceState` resolves it (#1940): the source sentence is reserved for a
+ * settled read, and the other two states say what is actually true of them.
+ *
+ * `idle` states nothing at all. It means no proposal is active, and the rail
+ * does not render without one, so there is no sentence to write for it.
  */
-defineProps<{
+const props = defineProps<{
   authorName: string
   authorMeta: string
   proposedDate: string
   proposedTime: string
   proposedNum: string
   breakdown: ConfidenceBreakdown
+  /** State of the core evidence batch this breakdown came from. */
+  evidenceState: PaperReviewEvidenceStatus
 }>()
 
 const confidenceDetailsExpanded = ref(false)
 const confidenceDetailsId = 'paper-review-confidence-details'
 const confidenceDisclosureId = 'paper-review-confidence-disclosure'
+
+/** No per-component bars to show, so the source sentence is all there is. */
+const noComponents = computed(() => props.breakdown.components.length === 0)
+
+/** The only state in which the absent breakdown says something about the model. */
+const settledSource = computed(() => noComponents.value && props.evidenceState === 'settled')
+
+/**
+ * Which honest not-yet-known sentence replaces it otherwise. Bars on screen
+ * already show where the number came from, so no state line is added to them.
+ */
+const pendingStateKey = computed<'confidenceLoading' | 'confidenceFailed' | null>(() => {
+  if (!noComponents.value) return null
+  if (props.evidenceState === 'loading') return 'confidenceLoading'
+  if (props.evidenceState === 'failed') return 'confidenceFailed'
+  return null
+})
+
+/**
+ * The heading is derived from what is actually rendered, not from the claimed
+ * source: `model-reported` with an empty components array would otherwise
+ * announce "Model-reported item confidence" over a body stating that no model
+ * confidence was reported. The backend does not emit that pair today (only a
+ * view-spec fixture builds it), but deriving the heading means it cannot be
+ * constructed at all.
+ */
+const confidenceHeadingKey = computed(() =>
+  props.breakdown.source === 'model-reported' && !noComponents.value
+    ? 'review.author.modelReportedHeading'
+    : 'review.author.confidenceHeading',
+)
 
 function barColor(value: number): string {
   if (value > 0.8) return 'var(--applied)'
@@ -48,6 +100,24 @@ function barColor(value: number): string {
         <div v-if="authorMeta" class="tk-meta paper-review-author__meta">{{ authorMeta }}</div>
       </div>
     </div>
+    <p
+      v-if="settledSource"
+      class="paper-review-author__empty tk-meta"
+      data-testid="paper-review-author-confidence-source"
+    >
+      {{
+        breakdown.source === 'deterministic'
+          ? $t('review.author.deterministic')
+          : $t('review.author.notReported')
+      }}
+    </p>
+    <p
+      v-else-if="pendingStateKey"
+      class="paper-review-author__empty tk-meta"
+      data-testid="paper-review-author-confidence-state"
+    >
+      {{ $t(`review.author.${pendingStateKey}`) }}
+    </p>
     <button
       :id="confidenceDisclosureId"
       type="button"
@@ -71,26 +141,12 @@ function barColor(value: number): string {
       data-testid="paper-review-confidence-details"
       role="region"
       :aria-labelledby="confidenceDisclosureId"
+      :hidden="!confidenceDetailsExpanded"
     >
       <hr class="hr-soft paper-review-author__rule" />
       <div class="tk-eyebrow paper-review-author__bd-heading">
-        {{
-          breakdown.source === 'model-reported'
-            ? $t('review.author.modelReportedHeading')
-            : $t('review.author.confidenceHeading')
-        }}
+        {{ $t(confidenceHeadingKey) }}
       </div>
-      <p
-        v-if="breakdown.components.length === 0"
-        class="paper-review-author__empty tk-meta"
-        data-testid="paper-review-author-confidence-source"
-      >
-        {{
-          breakdown.source === 'deterministic'
-            ? $t('review.author.deterministic')
-            : $t('review.author.notReported')
-        }}
-      </p>
       <div
         v-for="component in breakdown.components"
         :key="component.key"

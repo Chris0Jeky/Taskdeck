@@ -435,9 +435,9 @@ public class CaptureTriageService : ICaptureTriageService
                 CorrelationId: triageRunId.ToString(),
                 BoardId: boardId.Value,
                 SourceReferenceId: captureReferenceId,
-                Operations: operations,
-                ProvenanceModelId: triageModel)
+                Operations: operations)
         {
+            ProvenanceModelId = triageModel,
             TrustedConfidence = trustedConfidence,
             // The producer that actually ran: the dispatched provider, or the deterministic
             // extractor when the LLM leg was skipped or fell back (#1987).
