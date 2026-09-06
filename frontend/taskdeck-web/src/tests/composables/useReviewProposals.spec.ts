@@ -109,7 +109,11 @@ function localIsStaleProposal(status: string, createdAtMs: number, nowMs: number
 }
 
 function watcherForCurrentSourceValue(expected: unknown) {
-  const watcher = watchers.find(([source]) => typeof source === 'function' && (source as () => unknown)() === expected)
+  const watcher = watchers.find(([source]) => {
+    if (typeof source !== 'function') return false
+    const current = (source as () => unknown)()
+    return Array.isArray(current) ? current[0] === expected : current === expected
+  })
   expect(watcher).toBeDefined()
   return watcher!
 }
@@ -1509,6 +1513,86 @@ describe('useReviewProposals', () => {
       mockRoute.query = { boardId: 'board-filter-probe' }
       await watcherForCurrentSourceValue('board-filter-probe')[1]()
       expect(mockAutomationApi.getProposals).toHaveBeenCalled()
+    })
+
+    it('history-mode watcher reloads the same board as a new read identity', async () => {
+      mockRoute.query = { boardId: 'board-history' }
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'live', boardId: 'board-history' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      mockRoute.query = { boardId: 'board-history', history: 'archived' }
+      expect(rp.isArchivedHistory.value).toBe(true)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      const watcher = watchers.find(([source]) => {
+        if (typeof source !== 'function') return false
+        const value = (source as () => unknown)()
+        return Array.isArray(value) && value[0] === 'board-history' && value[1] === true
+      })
+      expect(watcher).toBeDefined()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'archived', boardId: 'board-history', status: 'Applied' }),
+      ])
+      await watcher![1]()
+
+      expect(mockAutomationApi.getProposals).toHaveBeenLastCalledWith({
+        limit: 200,
+        boardId: 'board-history',
+      })
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['archived'])
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      mockRoute.query = { boardId: 'board-history' }
+      expect(rp.isArchivedHistory.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+      const reverseWatcher = watchers.find(([source]) => {
+        if (typeof source !== 'function') return false
+        const value = (source as () => unknown)()
+        return Array.isArray(value) && value[0] === 'board-history' && value[1] === false
+      })
+      expect(reverseWatcher).toBeDefined()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'live-again', boardId: 'board-history' }),
+      ])
+      await reverseWatcher![1]()
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['live-again'])
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('discards a late live response after a same-board history transition', async () => {
+      mockRoute.query = { boardId: 'board-history' }
+      let resolveLive!: (proposals: ReturnType<typeof makeProposal>[]) => void
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveLive = resolve
+        }),
+      )
+      const rp = useReviewProposals()
+      const liveLoad = rp.loadProposalsWithOutcome()
+
+      mockRoute.query = { boardId: 'board-history', history: 'archived' }
+      const historyWatcher = watchers.find(([source]) => {
+        if (typeof source !== 'function') return false
+        const value = (source as () => unknown)()
+        return Array.isArray(value) && value[0] === 'board-history' && value[1] === true
+      })
+      expect(historyWatcher).toBeDefined()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'archived', boardId: 'board-history', status: 'Applied' }),
+      ])
+
+      await historyWatcher![1]()
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['archived'])
+
+      resolveLive([makeProposal({ id: 'late-live', boardId: 'board-history' })])
+      await expect(liveLoad).resolves.toBe('superseded')
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['archived'])
     })
   })
 
