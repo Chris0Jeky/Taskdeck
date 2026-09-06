@@ -109,7 +109,9 @@ def find_db(explicit: str | None) -> str:
 
 def connect(path: str) -> sqlite3.Connection:
     if not os.path.exists(path):
-        sys.exit(f"No such database: {path}")
+        # The path came from --db or $TASKDECK_DOGFOOD_DB and may carry a username or org name;
+        # the exit message is the one line most likely to be pasted into an issue, so redact it too.
+        sys.exit(f"No such database: {redact(path)}")
     # The path goes into a URI, so `?`, `#` and friends would otherwise change which file
     # SQLite opens (or silently drop the mode=ro).
     uri = "file:" + urllib.parse.quote(os.path.abspath(path).replace("\\", "/")) + "?mode=ro"
