@@ -108,7 +108,9 @@ export default {
   composer: {
     eyebrow: 'Captura · Borrador',
     meta: 'solo local · se guarda en Inbox',
-    footer: 'Las capturas llegan al Inbox. Vincularlas a un tablero crea una propuesta, no una tarjeta.',
+    footerBefore: 'Las capturas llegan al ',
+    footerInbox: 'Inbox',
+    footerAfter: '. Vincularlas a un tablero crea una propuesta, no una tarjeta.',
     submit: 'Capturar',
     bodyLabel: 'Texto',
     bodyAria: 'Texto: escribe el contenido de esta captura',

@@ -367,7 +367,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
 
     <footer class="paper-composer__footer">
       <span class="tk-meta">
-        {{ t('inbox.composer.footer') }}
+        {{ t('inbox.composer.footerBefore') }}<span class="tk-ink-italic">{{ t('inbox.composer.footerInbox') }}</span>{{ t('inbox.composer.footerAfter') }}
       </span>
       <span class="paper-composer__spacer" />
       <PaperHLBtn

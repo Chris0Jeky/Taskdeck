@@ -150,7 +150,9 @@ export default {
   composer: {
     eyebrow: 'Capture · Draft',
     meta: 'local-only · saves to Inbox',
-    footer: 'Captures land in Inbox. Linking to a board creates a proposal, not a card.',
+    footerBefore: 'Captures land in ',
+    footerInbox: 'Inbox',
+    footerAfter: '. Linking to a board creates a proposal, not a card.',
     submit: 'Capture',
     bodyLabel: 'Body',
     bodyAria: 'Body: write the text of this capture',
