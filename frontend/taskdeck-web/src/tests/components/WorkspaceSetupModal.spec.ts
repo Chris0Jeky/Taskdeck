@@ -120,6 +120,39 @@ describe('WorkspaceSetupModal', () => {
     expect(mocks.push).toHaveBeenCalledWith('/workspace/boards/board-1')
   })
 
+  it('ignores Enter while IME composition is active, then submits ordinary Enter once', async () => {
+    const wrapper = mount(WorkspaceSetupModal, {
+      props: {
+        isOpen: true,
+      },
+    })
+
+    const input = wrapper.get('input[placeholder="For example: Product Sprint"]')
+    await input.setValue('IME Board')
+
+    const composingEnter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    // Not cancelled: the composing keystroke must reach the IME so the candidate commits.
+    expect(input.element.dispatchEvent(composingEnter)).toBe(true)
+    await waitForUi()
+    expect(mocks.createBoard).not.toHaveBeenCalled()
+
+    const ordinaryEnter = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      bubbles: true,
+      cancelable: true,
+    })
+    expect(input.element.dispatchEvent(ordinaryEnter)).toBe(false)
+    await waitForUi()
+
+    expect(mocks.createBoard).toHaveBeenCalledTimes(1)
+    expect(mocks.createBoard).toHaveBeenCalledWith({ name: 'IME Board' })
+  })
+
   it('cancels on a dispatched Escape while allowing the submitting lock to hold', async () => {
     const wrapper = mount(WorkspaceSetupModal, {
       props: {
