@@ -71,8 +71,24 @@ All animations are disabled through multiple layers:
 The `hideDynamicContent()` helper applies the following rules:
 
 - **Timestamp selectors**: `[data-testid="timestamp"]`, `[data-testid="relative-time"]`, `time` tags are hidden via `visibility: hidden`. The CardModal and ColumnEditModal metadata blocks are tagged with `data-testid="timestamp"` as of TST-59 so the runtime `Created: ...`/`Last updated: ...` text does not drift the baseline. When adding new visual coverage for populated views, add `data-testid="timestamp"` to any element that renders relative or absolute times.
+- **Session identity and presence**: `.td-topbar__user` and `[data-presence-user]` are hidden. Who is signed in is a per-run value, not a visual contract.
+- **The session timeout warning**: `[role="alert"][aria-live="assertive"]` is hidden. It appears on a timer, so whether it is on screen depends on how long the run took.
+- **Toasts**: `[data-toast-id]` is hidden, covering both `ToastContainer.vue` and `PaperToastContainer.vue`. The toast store removes each toast after its own duration, so how many are still on screen at capture time is a function of runner speed. Test seeding raises one success toast per created board, column and card, which is how the first Linux capture of `board-populated` came back with an eight-toast stack over the board header. Note that the session-warning rule above does **not** cover these: only *error* toasts are marked `role="alert" aria-live="assertive"`.
 - **Blinking cursors**: transparent caret color on all elements
 - **Platform-specific scrollbars**: hidden via `::-webkit-scrollbar` and `scrollbar-width: none`
+
+### Baselines are captured on Linux, because that is where they are verified
+
+`reusable-visual-regression.yml` runs Chromium on `ubuntu-latest`. Font rasterisation differs enough between platforms that a Windows-captured or macOS-captured PNG fails against it on essentially every image, so **baselines committed to this repository must come from the hosted Linux lane**, never from a developer's local `--update-snapshots` run.
+
+To (re)generate a set:
+
+1. Delete `frontend/taskdeck-web/tests/visual/__screenshots__/` on the branch and push. With no baselines present the job takes its bootstrap path, runs `--update-snapshots`, and uploads the result as the `visual-regression-baselines` artifact.
+2. Download that artifact, **review every image** for layout correctness and per-run value leakage, and commit the set on top.
+
+A local `--update-snapshots` run is still the right way to *see* a change while developing; its output just must not be what lands.
+
+Do not try to repair a failing set from the `visual-regression-diffs` artifact instead. `playwright.visual.config.ts` sets `maxFailures: 5` under CI, so that artifact only ever contains the first five failures — patching them just exposes the next five.
 
 ### Network Stability
 

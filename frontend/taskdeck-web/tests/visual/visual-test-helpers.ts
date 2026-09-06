@@ -78,7 +78,23 @@ export async function hideDynamicContent(page: Page): Promise<void> {
       [data-presence-user],
 
       /* The session warning is time-dependent and must not enter a baseline. */
-      [role="alert"][aria-live="assertive"] {
+      [role="alert"][aria-live="assertive"],
+
+      /*
+       * Toasts are transient: the store removes each one after its own
+       * duration, so how many are still on screen at capture time depends on
+       * how fast the runner got there. The rule above only ever caught error
+       * toasts, which are the only ones ToastContainer/PaperToastContainer
+       * mark role="alert" aria-live="assertive"; success toasts raised by test
+       * seeding (board/column/card "created successfully") were left visible
+       * and rendered a runner-speed-dependent stack over the top-right of the
+       * page. Both skins tag every toast with data-toast-id, so this hides the
+       * whole stack in either. The stack is position: fixed and
+       * pointer-events: none, so hiding it shifts no page layout, and because
+       * this is a stylesheet rather than a one-shot DOM edit it also covers
+       * toasts raised after this helper runs.
+       */
+      [data-toast-id] {
         visibility: hidden !important;
       }
 
