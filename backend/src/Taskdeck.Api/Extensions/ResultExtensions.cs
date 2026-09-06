@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Taskdeck.Api.Contracts;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
 
@@ -48,7 +49,7 @@ public static class ResultExtensions
             StatusCodes.Status413PayloadTooLarge => new ObjectResult(body) { StatusCode = StatusCodes.Status413PayloadTooLarge },
             _ => new ObjectResult(new ApiErrorResponse(
                 ErrorCodes.UnexpectedError,
-                "An unexpected error occurred."))
+                SensitiveDataRedactor.GenericUnexpectedErrorMessage))
             {
                 StatusCode = StatusCodes.Status500InternalServerError
             }

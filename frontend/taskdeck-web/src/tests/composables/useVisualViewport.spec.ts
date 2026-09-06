@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
 import { useVisualViewport, type UseVisualViewportOptions } from '../../composables/useVisualViewport'
@@ -82,6 +82,39 @@ function hostStyle(wrapper: ReturnType<typeof mountHost>) {
 describe('useVisualViewport', () => {
   afterEach(() => {
     restoreVisualViewport()
+    vi.restoreAllMocks()
+  })
+
+  it('warns once per invalid invocation despite viewport events', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const synthetic = installSyntheticVisualViewport(800, 0)
+
+    const first = mountHost({ prefix: '' })
+    synthetic.set({ height: 420, offsetTop: 120 }, ['resize', 'scroll'])
+    await first.vm.$nextTick()
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    first.unmount()
+
+    const second = mountHost({ prefix: 'td-dialog' })
+    expect(warn).toHaveBeenCalledTimes(2)
+
+    expect(warn.mock.calls[0]?.[0]).toBe(
+      '[useVisualViewport] prefix must start with a CSS custom-property marker (`--`)',
+    )
+    expect(warn.mock.calls[1]?.[0]).toBe(
+      '[useVisualViewport] prefix must start with a CSS custom-property marker (`--`)',
+    )
+    second.unmount()
+  })
+
+  it('does not warn for a valid custom-property prefix', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const wrapper = mountHost({ prefix: '--td-dialog' })
+
+    expect(warn).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('emits the visual viewport height and offset as prefixed custom properties', () => {
@@ -150,6 +183,26 @@ describe('useVisualViewport', () => {
 
     expect(style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('')
     expect(style.getPropertyValue('--td-dialog-visual-viewport-offset-top')).toBe('')
+
+    wrapper.unmount()
+  })
+
+  it('emits both custom properties under the "unset" fallback while VisualViewport is present', () => {
+    // The browser class issue #2180 exposed: VisualViewport API present, CSS
+    // `dvh` absent. `'unset'` withholds the properties only when the API is
+    // MISSING — CSS feature support is invisible here, so this composable
+    // publishes both properties to a `dvh`-less browser exactly as it does to a
+    // modern one. That is why `TdDialog`'s stylesheet must consume them outside
+    // its `@supports (height: 100dvh)` guard rather than inside it; the CSS half
+    // is pinned by `src/tests/config/DialogVisualViewportCss.spec.ts`, since the
+    // DOM environment vitest runs (happy-dom) evaluates no feature queries.
+    installSyntheticVisualViewport(420, 120)
+
+    const wrapper = mountHost({ prefix: '--td-dialog', fallback: 'unset' })
+    const style = hostStyle(wrapper)
+
+    expect(style.getPropertyValue('--td-dialog-visual-viewport-height')).toBe('420px')
+    expect(style.getPropertyValue('--td-dialog-visual-viewport-offset-top')).toBe('120px')
 
     wrapper.unmount()
   })

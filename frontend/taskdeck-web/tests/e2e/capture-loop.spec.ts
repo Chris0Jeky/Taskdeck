@@ -31,7 +31,7 @@ test.describe('Paper capture-review-apply loop', () => {
     await page.getByRole('button', { name: 'Capture here' }).click()
     await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
 
-    const captureBody = page.getByRole('textbox', { name: 'Capture body' })
+    const captureBody = page.getByTestId('paper-composer-body')
     await expect(captureBody).toBeVisible()
     const createCaptureResponsePromise = page.waitForResponse((response) =>
       response.request().method() === 'POST'
@@ -98,6 +98,62 @@ test.describe('Paper capture-review-apply loop', () => {
     await page.goto(`/workspace/boards/${boardId}`)
     await expect(page.getByTestId('paper-board-lanes')).toBeVisible()
     await expect(page.getByRole('button', { name: `Card ${createdCard.title}` })).toBeVisible()
+  })
+
+  test('keeps the boardless picker usable at 375px with long translated board names', async ({ page, request }) => {
+    await page.setViewportSize({ width: 375, height: 812 })
+    const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
+    const primaryBoardId = await createBoardWithColumn(request, paperAuth, seed, {
+      boardNamePrefix: 'Pianificazione internazionale con revisione tradotta',
+      description: 'boardless picker narrow-width primary board',
+      columnNamePrefix: 'Backlog',
+    })
+    const secondaryBoardId = await createBoardWithColumn(request, paperAuth, seed, {
+      boardNamePrefix: 'Übersicht für internationale Projektkoordination',
+      description: 'boardless picker narrow-width secondary board',
+      columnNamePrefix: 'Eingang',
+    })
+    const captureText = `Boardless picker capture ${seed}`
+    const capture = await createCaptureItem(request, paperAuth, null, captureText)
+
+    await page.goto('/workspace/inbox')
+    const row = page.locator('.paper-triage__row').filter({ hasText: captureText }).first()
+    await expect(row).toBeVisible()
+    await row.locator('[data-action="accept"]').click()
+
+    const picker = row.getByTestId('capture-board-pick')
+    await expect(picker).toBeVisible()
+    const select = picker.locator('select')
+    const confirm = picker.locator('[data-action="accept-on-board"]')
+    const cancel = picker.locator('[data-action="cancel-board-pick"]')
+    await expect(select).toHaveCount(1)
+    await expect(select.locator('option')).toHaveCount(3)
+    await expect(confirm).toBeDisabled()
+    await expect(cancel).toBeVisible()
+
+    await select.focus()
+    await expect(select).toBeFocused()
+    await select.selectOption(secondaryBoardId)
+    await expect(select).toHaveValue(secondaryBoardId)
+    await expect(confirm).toBeEnabled()
+
+    for (const control of [select, confirm, cancel]) {
+      const box = await control.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box!.x).toBeGreaterThanOrEqual(0)
+      expect(box!.x + box!.width).toBeLessThanOrEqual(375)
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth))
+      .toBeLessThanOrEqual(0)
+
+    const triageRequestPromise = page.waitForRequest((request) =>
+      request.method() === 'POST'
+      && request.url().endsWith(`/capture/items/${capture.id}/triage`),
+    )
+    await confirm.click()
+    const triageRequest = await triageRequestPromise
+    expect(triageRequest.postDataJSON()).toMatchObject({ boardId: secondaryBoardId })
+    expect(primaryBoardId).not.toBe(secondaryBoardId)
   })
 })
 

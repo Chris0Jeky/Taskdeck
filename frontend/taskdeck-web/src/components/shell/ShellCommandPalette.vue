@@ -208,6 +208,7 @@ watch(allPaletteItems, (items) => {
       role="dialog"
       aria-label="Command palette"
       aria-modal="true"
+      data-shell-surface="command-palette"
       @click.self="handleClose"
       @keydown.escape="handleClose"
     >

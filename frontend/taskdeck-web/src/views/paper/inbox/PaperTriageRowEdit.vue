@@ -1,3 +1,45 @@
+<script lang="ts">
+/**
+ * One editor's unsaved correction, in the shape `PaperTriageTable` holds while
+ * the capture is off the list and hands back when it returns (#1999 item 3).
+ *
+ * Every field is OPTIONAL and present only when the user actually changed it.
+ * That is the whole point: the server's text, due date and labels are re-read
+ * on the way back in, and only the changed fields are laid over them. Carrying
+ * an untouched field would carry the value the OLD load happened to see, and
+ * laying that back over a newer one would revert, on the next Save, a due date
+ * or a label the user never touched.
+ *
+ * `labelInput` travels with the rest because Save flushes it into the payload:
+ * leaving it behind would silently drop a label the user had typed but not yet
+ * committed with Enter.
+ *
+ * Exported from a plain `<script>` block so the table can name the type it is
+ * holding; `<script setup>` cannot export.
+ */
+export type PaperTriageDraft = {
+  text?: string
+  dueDate?: string
+  labels?: string[]
+  labelInput?: string
+}
+
+/**
+ * What the editor can say about its draft right now.
+ *
+ * `unavailable` and `{ ready, draft: null }` are deliberately different
+ * answers, and conflating them is a data-loss bug: only the second is evidence
+ * that there is nothing unsaved. While the capture text is still loading, or
+ * the read failed, or the server refused the edit, this editor has never shown
+ * the user a textarea and knows nothing about any correction the table may be
+ * holding for the row — so it says so, and the table leaves what it holds
+ * alone.
+ */
+export type PaperTriageDraftReport =
+  | { state: 'ready'; draft: PaperTriageDraft | null }
+  | { state: 'unavailable' }
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -51,11 +93,18 @@ import type { CaptureItem } from '../../../types/capture'
 const props = defineProps<{
   itemId: string
   mutationInFlight?: boolean
+  /**
+   * A correction this table kept while the capture was off the list (#1999).
+   * Applied over the freshly loaded server values, once, and only on the
+   * editable path — see `applyRestoredDraft`.
+   */
+  restoredDraft?: PaperTriageDraft | null
 }>()
 
 const emit = defineEmits<{
   (event: 'close'): void
   (event: 'saved', itemId: string): void
+  (event: 'restored', itemId: string): void
 }>()
 
 const captureStore = useCaptureStore()
@@ -80,6 +129,7 @@ const originalDueDate = ref('')
 const labelInput = ref('')
 const labelsDraft = ref<string[]>([])
 const originalLabels = ref<string[]>([])
+const restoreApplied = ref(false)
 
 const textareaId = computed(() => `capture-edit-text-${props.itemId}`)
 const dueDateId = computed(() => `capture-edit-due-date-${props.itemId}`)
@@ -92,12 +142,14 @@ function labelsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((label, index) => label === right[index])
 }
 
+const normalizedLabelInput = computed(() => labelInput.value.trim())
+
 const metadataChanged = computed(() => metadataAvailable.value && (
   dueDateDraft.value !== originalDueDate.value ||
-  !labelsEqual(labelsDraft.value, originalLabels.value)
+  !labelsEqual(labelsDraft.value, originalLabels.value) ||
+  normalizedLabelInput.value.length > 0
 ))
 
-const normalizedLabelInput = computed(() => labelInput.value.trim())
 const canAddLabel = computed(() => (
   normalizedLabelInput.value.length > 0 &&
   !labelsDraft.value.includes(normalizedLabelInput.value)
@@ -134,10 +186,20 @@ function removeLabel(index: number) {
  */
 type SaveBlock = 'busyElsewhere' | 'empty' | 'unchanged'
 
+/**
+ * Whether anything here differs from what the server last returned.
+ *
+ * One definition, read by `saveBlock` (as `unchanged`) and by `readDraft`, so
+ * "there is nothing to save" and "there is nothing worth keeping" can never
+ * disagree — the table would otherwise announce a kept correction over an
+ * editor the user never typed in.
+ */
+const isDirty = computed(() => draft.value !== originalText.value || metadataChanged.value)
+
 const saveBlock = computed<SaveBlock | null>(() => {
   if (props.mutationInFlight === true) return 'busyElsewhere'
   if (draft.value.trim().length === 0) return 'empty'
-  if (draft.value === originalText.value && !metadataChanged.value) return 'unchanged'
+  if (!isDirty.value) return 'unchanged'
   return null
 })
 
@@ -166,6 +228,84 @@ const saveDescribedById = computed<string | undefined>(() => {
 watch([draft, dueDateDraft, labelsDraft], () => {
   saveErrorMessage.value = null
 })
+
+/**
+ * Put a held correction back over the values just read from the server
+ * (#1999 item 3).
+ *
+ * Called from inside `load`, on the editable path ONLY: the `blocked` and
+ * `error` branches return before it, so a capture the server now refuses to
+ * edit never gets a textarea seeded with text it would not accept, and the
+ * table keeps holding the correction instead.
+ *
+ * FIELD BY FIELD, and only the fields the user changed. An untouched field
+ * keeps the value this load just returned, so a correction to the text cannot
+ * quietly revert a due date or a label that moved on the server while it was
+ * held. What Save then sends is the current server value for everything the
+ * user left alone — last-write-wins, exactly as an editor opened fresh would
+ * be, with no extra staleness bought by the hold.
+ *
+ * Once, guarded by `restoreApplied` rather than by the prop going null — the
+ * table holds its copy until the editor is closed from a loaded state, so a
+ * Retry after a failed load still restores, while a second successful load can
+ * never overwrite what the user has typed since the first one.
+ */
+function applyRestoredDraft() {
+  const restored = props.restoredDraft
+  if (!restored || restoreApplied.value) return
+  restoreApplied.value = true
+  let applied = false
+  if (restored.text !== undefined) {
+    draft.value = restored.text
+    applied = true
+  }
+  if (restored.dueDate !== undefined) {
+    dueDateDraft.value = restored.dueDate
+    applied = true
+  }
+  if (restored.labels !== undefined) {
+    labelsDraft.value = [...restored.labels]
+    applied = true
+  }
+  if (restored.labelInput !== undefined) {
+    labelInput.value = restored.labelInput
+    applied = true
+  }
+  if (applied) emit('restored', props.itemId)
+}
+
+/**
+ * What this editor can say about its unsaved correction, for the table that
+ * may be holding one for this row (#1999 item 3).
+ *
+ * A getter rather than an emit on unmount, because the table already knows the
+ * moments that matter — the row leaving the list, the read-only switch, and
+ * the `close` it just received — and reads the editor there. `close` fires
+ * from four places with two different meanings (Cancel and a landed Save from
+ * a loaded editor; Cancel on the load-error panel and Close on the refused
+ * panel, where the user never saw a draft at all), so an unmount emit would
+ * make the table infer intent from a flag rather than ask.
+ *
+ * `unavailable` outside the `ready` state is the load-bearing part: the table
+ * must not read silence as "nothing unsaved" and release what it holds.
+ *
+ * The reported draft carries only the fields that differ from what this load
+ * returned, so it is a set of CHANGES rather than a snapshot.
+ */
+function readDraft(): PaperTriageDraftReport {
+  if (loadState.value !== 'ready') return { state: 'unavailable' }
+  const changed: PaperTriageDraft = {}
+  if (draft.value !== originalText.value) changed.text = draft.value
+  if (dueDateDraft.value !== originalDueDate.value) changed.dueDate = dueDateDraft.value
+  if (!labelsEqual(labelsDraft.value, originalLabels.value)) changed.labels = [...labelsDraft.value]
+  if (normalizedLabelInput.value.length > 0) changed.labelInput = labelInput.value
+  return {
+    state: 'ready',
+    draft: Object.keys(changed).length > 0 ? changed : null,
+  }
+}
+
+defineExpose({ readDraft })
 
 async function load() {
   loadState.value = 'loading'
@@ -202,6 +342,7 @@ async function load() {
     originalLabels.value = [...(detail.metadata?.labels ?? [])]
     labelsDraft.value = [...originalLabels.value]
     labelInput.value = ''
+    applyRestoredDraft()
     loadState.value = 'ready'
   } catch (e: unknown) {
     loadErrorMessage.value = getErrorDisplay(e, t('inbox.triage.edit.unknownReason')).message
@@ -216,6 +357,10 @@ async function save() {
   // of the shared-slot test could go out of step with the one the button and
   // the reason line read, which is the drift this shape exists to prevent.
   if (saveBlock.value !== null || saving.value) return
+  // GH-2540: the label box can still hold a value the user never committed
+  // with Enter. Reuse the existing add path so trimming and deduplication stay
+  // identical to the explicit add affordance before the payload is built.
+  addLabel()
   saving.value = true
   saveErrorMessage.value = null
   try {

@@ -3,14 +3,18 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
+import { useCaptureStore } from '../../store/captureStore'
+import { useBoardStore } from '../../store/boardStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useViewportMode } from '../../composables/useViewportMode'
+import { provideShellKeyboardHelp } from '../../composables/useShellKeyboardHelp'
 import {
   APP_SHELL_SHORTCUT_BINDINGS,
+  strokeMatches,
+  type AppShellShortcutAction,
   type AppShellShortcutBinding,
-  type ShortcutStroke,
 } from '../../utils/keyboardShortcuts'
 import CaptureModal from '../common/CaptureModal.vue'
 import OfflineBanner from './OfflineBanner.vue'
@@ -41,6 +45,8 @@ type SidebarRef = {
 const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
+const capture = useCaptureStore()
+const board = useBoardStore()
 const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 
@@ -53,6 +59,14 @@ const isPaperPhone = computed(() => paperTheme.isOn && viewportMode.value === 'p
 const showCommandPalette = ref(false)
 const showKeyboardHelp = ref(false)
 const showCaptureModal = ref(false)
+
+// Routed views cannot emit across `<router-view>`, so the one help surface this
+// shell renders is reachable from inside them through this seam (#2007).
+provideShellKeyboardHelp({
+  open: () => {
+    showKeyboardHelp.value = true
+  },
+})
 
 // ── Capture modal ──
 
@@ -137,24 +151,90 @@ function isTextEntryTarget(target: EventTarget | null): boolean {
   return target.matches(selector) || target.closest(selector) !== null
 }
 
+/**
+ * Only a surface that declares itself MODAL owns the keyboard (#1968).
+ *
+ * A bare `[role="dialog"]` is not enough, and matching it was a live defect:
+ * `CardModal` keeps `role="dialog"` in both presentations but sets
+ * `aria-modal` only outside the inspector, so the Paper desktop card inspector
+ * -- a sticky side panel that traps nothing and leaves the board usable --
+ * counted as a keyboard-owning surface. That made `?`, `mod+k` and
+ * `mod+shift+c` dead for as long as a card was open for reading, and stopped
+ * every non-Escape key pressed outside the panel.
+ *
+ * `dialog[open]` and `[role="alertdialog"]` stay: a native open `<dialog>` is
+ * modal when shown as one and an alertdialog is modal by definition.
+ */
 const KEYBOARD_OWNING_SURFACE_SELECTOR = [
   'dialog[open]',
-  '[role="dialog"]',
   '[role="alertdialog"]',
   '[aria-modal="true"]',
 ].join(', ')
 
-function hasActiveKeyboardOwningSurface(): boolean {
-  if (typeof document === 'undefined') return false
+function activeKeyboardOwningSurfaces(): HTMLElement[] {
+  if (typeof document === 'undefined') return []
 
   return Array.from(document.querySelectorAll<HTMLElement>(KEYBOARD_OWNING_SURFACE_SELECTOR))
-    .some((surface) => {
+    .filter((surface) => {
       if (!surface.isConnected) return false
       if (surface.closest('[hidden], [aria-hidden="true"], [inert]')) return false
 
       const style = window.getComputedStyle(surface)
       return style.display !== 'none' && style.visibility !== 'hidden'
     })
+}
+
+/**
+ * One surface scan per keydown, shared by the two guards below (#2636).
+ *
+ * The capture-phase listener always runs before the bubble-phase one for the
+ * same event, so whichever asks first pays for the `querySelectorAll` plus
+ * `getComputedStyle` sweep and the other reads the answer. Without the memo the
+ * bubble guard would double the per-keystroke cost #1968 went out of its way to
+ * make lazy.
+ *
+ * The answer is deliberately pinned to the event rather than re-read on the
+ * bubble: a surface handler may have closed its own surface on the way up (a
+ * palette option activating, say), and the key still belonged to the surface
+ * that was open when it was pressed.
+ *
+ * Per shell instance, not per module: these live in this `setup()` closure, so
+ * two shells (as tests mount them) never share a memo.
+ */
+let scannedEvent: KeyboardEvent | null = null
+let scannedSurfaces: HTMLElement[] = []
+
+function keyboardOwningSurfacesFor(event: KeyboardEvent): HTMLElement[] {
+  if (scannedEvent !== event) {
+    scannedEvent = event
+    scannedSurfaces = activeKeyboardOwningSurfaces()
+  }
+  return scannedSurfaces
+}
+
+/**
+ * True when this action's own surface is among the active ones and every active
+ * surface belongs to the shell. That is what makes `?` and `mod+k` toggles
+ * rather than one-way openers: the help dialog owns `?`, the command palette
+ * owns `mod+k`, and neither opens over the other or over anything else (#1968).
+ *
+ * Deliberately not "the topmost surface owns it". Stack order is not readable
+ * here: both help twins and both palettes teleport to `body`, and a `<Teleport>`
+ * places its anchor when the SHELL mounts, not when the surface opens, so
+ * document order is AppShell's template order whatever the user opened first.
+ * Asking every surface instead would deadlock a stack -- open the help dialog,
+ * then the topbar Search control, and neither key could close its own surface
+ * again.
+ *
+ * `navigate` and `quick-capture` name no surface, so an active surface always
+ * wins over them: nothing behind a modal should move the route, and quick
+ * capture would stack a second modal on the first (the #1959 class).
+ */
+function shellSurfaceOwnsAction(surfaces: readonly HTMLElement[], action: AppShellShortcutAction): boolean {
+  if (surfaces.length === 0) return true
+
+  return surfaces.some((surface) => surface.dataset.shellSurface === action.type) &&
+    surfaces.every((surface) => surface.dataset.shellSurface !== undefined)
 }
 
 const CHORD_TIMEOUT_MS = 1_000
@@ -167,15 +247,6 @@ function clearPendingChord() {
     window.clearTimeout(chordTimer)
     chordTimer = null
   }
-}
-
-function strokeMatches(event: KeyboardEvent, stroke: ShortcutStroke): boolean {
-  const modPressed = event.ctrlKey || event.metaKey
-  const shiftMatches = stroke.shift === undefined || stroke.shift === event.shiftKey
-  return event.key.toLowerCase() === stroke.key.toLowerCase() &&
-    modPressed === Boolean(stroke.mod) &&
-    event.altKey === Boolean(stroke.alt) &&
-    shiftMatches
 }
 
 function consumeShortcut(event: KeyboardEvent) {
@@ -206,6 +277,92 @@ function runAppShellShortcut(binding: AppShellShortcutBinding) {
   }
 }
 
+/**
+ * Keep a key an active surface does not own from reaching the page behind it
+ * (#2621).
+ *
+ * With the help dialog open over a Legacy board, a plain `f` or `n` used to
+ * bubble past this listener to `BoardView`'s `useKeyboardShortcuts` window
+ * listener: `f` toggled the filter panel behind the modal and `n` clicked the
+ * column's add-card button and pulled focus out of the dialog.
+ *
+ * Two carve-outs keep this from taking more than it should:
+ *   - Escape is never stopped. Board dialogs the escape stack does not carry
+ *     (label manager, board settings, filter panel, column form) are closed by
+ *     `BoardView.closeOpenUi` on the bubble, and stopping Escape here would
+ *     strand them open.
+ *   - A target inside the surface is left alone, because this listener runs in
+ *     the capture phase, ahead of every handler the surface owns. Stopping
+ *     there would break typing and arrow navigation inside modals.
+ * Text-entry targets never reach this, and never triggered board shortcuts in
+ * the first place -- `useKeyboardShortcuts` ignores them.
+ */
+function guardSurfaceFromPageShortcuts(event: KeyboardEvent, surfaces: readonly HTMLElement[]) {
+  if (event.key === 'Escape') return
+
+  const target = event.target instanceof Node ? event.target : null
+  if (target && surfaces.some((surface) => surface.contains(target))) return
+
+  event.stopPropagation()
+}
+
+/**
+ * The other half of the same guard, for keys pressed from INSIDE the surface
+ * (#2636).
+ *
+ * `guardSurfaceFromPageShortcuts` above runs in the capture phase and has to
+ * stand aside when the target is inside the surface, because at that point the
+ * surface's own handlers have not run yet. That carve-out was the leak PR #2635
+ * recorded: Tab into the open help dialog on a Legacy board and press `f` or
+ * `n`, and the event ran the dialog's handlers and then kept bubbling out to
+ * `BoardView`'s `useKeyboardShortcuts` window listener -- the filter panel
+ * toggled and the add-card composer pulled focus out of the dialog.
+ *
+ * This listener sits on `document` in the bubble phase. The invariant that
+ * makes that safe is narrower than "the surfaces handle their own keys first",
+ * so state it exactly:
+ *
+ *   A surface keeps a key only if it handles that key AT OR BELOW `document`
+ *   -- an element-level handler, anywhere from the event target up to and
+ *   including `document` -- or if the key is Escape, which is carved out below.
+ *   Anything a surface binds on `window` is one hop OUTSIDE this guard and,
+ *   unless it is Escape, will be silenced while a surface is active.
+ *
+ * Every surface in the tree satisfies that today by binding element-level
+ * handlers: the palettes' `@keydown.down/up/enter`, `CaptureModal`'s
+ * `@keydown`, the review dialogs' listeners on their own dialog elements. The
+ * one surface that does NOT is `PaperShortcutsOverlay`, whose Escape handler is
+ * a `window` bubble listener; it survives purely on the Escape carve-out, not
+ * on the premise above. So a new `window`-level NON-Escape handler belonging to
+ * a modal is a forbidden shape here -- it would be silenced -- and there is a
+ * spec pinning that from the Paper help overlay.
+ *
+ * Note the reach: this is not scoped to the four shell surfaces. It fires for
+ * every `dialog[open]`, `[role="alertdialog"]` or `[aria-modal="true"]` in the
+ * app -- `CardModal`, `TdDialog` and the review dialogs built on it,
+ * `ProvenanceDrawer`, `PaperBoardDialogShell`, the board modals,
+ * `WorkspaceSetupModal`, `MfaChallengeModal` -- which is the point, since the
+ * page-level listeners it has to silence all bind on `window`.
+ *
+ * Two carve-outs, for the same reasons the capture half has them:
+ *   - Escape is never stopped. `useEscapeStack` listens in the capture phase so
+ *     it is already past, but `BoardView.closeOpenUi` and
+ *     `PaperShortcutsOverlay` both take Escape on the window bubble, and
+ *     stopping it here would strand their surfaces open.
+ *   - Text-entry targets are left alone. Typing is not a page shortcut:
+ *     `useKeyboardShortcuts` ignores text entry outright, and honouring the
+ *     early-out keeps the #1968 promise that an ordinary keystroke in a field
+ *     never pays for the surface scan.
+ */
+function guardPageListenersFromSurfaceKeys(event: KeyboardEvent) {
+  if (event.key === 'Escape') return
+  if (event.isComposing) return
+  if (isTextEntryTarget(event.target)) return
+  if (keyboardOwningSurfacesFor(event).length === 0) return
+
+  event.stopPropagation()
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.isComposing) {
     clearPendingChord()
@@ -213,15 +370,23 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   const textEntryTarget = isTextEntryTarget(event.target)
-  const keyboardOwningSurfaceActive = hasActiveKeyboardOwningSurface()
 
-  if (keyboardOwningSurfaceActive) clearPendingChord()
+  // Scanned at most once per event, and only once something actually needs the
+  // answer, so an ordinary keystroke typed into a field never pays for the
+  // `querySelectorAll` plus `getComputedStyle` sweep (#1968). The memo is shared
+  // with the bubble-phase guard so the pair still scans only once (#2636).
+  const keyboardOwningSurfaces = () => keyboardOwningSurfacesFor(event)
 
   if (pendingChord) {
     const chord = pendingChord
     clearPendingChord()
     const nextStroke = chord.sequence[1]
-    if (!textEntryTarget && nextStroke && strokeMatches(event, nextStroke)) {
+    if (
+      !textEntryTarget &&
+      nextStroke &&
+      strokeMatches(event, nextStroke) &&
+      keyboardOwningSurfaces().length === 0
+    ) {
       consumeShortcut(event)
       runAppShellShortcut(chord)
       return
@@ -231,8 +396,8 @@ function handleKeydown(event: KeyboardEvent) {
   const direct = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
     binding.sequence.length === 1 &&
     strokeMatches(event, binding.sequence[0]!) &&
-    (binding.action.type !== 'navigate' || !keyboardOwningSurfaceActive) &&
-    (!textEntryTarget || binding.allowInTextEntry === true),
+    (!textEntryTarget || binding.allowInTextEntry === true) &&
+    shellSurfaceOwnsAction(keyboardOwningSurfaces(), binding.action),
   )
   if (direct) {
     consumeShortcut(event)
@@ -240,7 +405,12 @@ function handleKeydown(event: KeyboardEvent) {
     return
   }
 
-  if (textEntryTarget || keyboardOwningSurfaceActive) return
+  if (textEntryTarget) return
+
+  if (keyboardOwningSurfaces().length > 0) {
+    guardSurfaceFromPageShortcuts(event, keyboardOwningSurfaces())
+    return
+  }
 
   const chord = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
     binding.sequence.length > 1 && strokeMatches(event, binding.sequence[0]!),
@@ -281,6 +451,9 @@ function handleLogout() {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown, true)
+  // Bubble phase on `document`: after the surface's own handlers, before the
+  // page-level `window` listeners (#2636).
+  document.addEventListener('keydown', guardPageListenersFromSurfaceKeys)
 })
 
 function hydratePreferencesIfNeeded() {
@@ -294,6 +467,12 @@ watch(
   (isAuthenticated) => {
     if (!isAuthenticated) {
       workspace.resetForLogout()
+      // The capture store's per-item generation guards are keyed by capture id
+      // and belong to the session that recorded them (#2571).
+      capture.resetForLogout()
+      // Board list and detail state, and the reads still in flight for them,
+      // belong to the account that was signed in (#1961).
+      board.resetForLogout()
       return
     }
 
@@ -312,6 +491,12 @@ watch(
 onUnmounted(() => {
   clearPendingChord()
   window.removeEventListener('keydown', handleKeydown, true)
+  document.removeEventListener('keydown', guardPageListenersFromSurfaceKeys)
+  // Belt-and-braces. The memo lives in this instance's `setup()` closure, not at
+  // module scope, so it is already unreachable once the instance is gone; this
+  // just drops the last event and surface references at a known point.
+  scannedEvent = null
+  scannedSurfaces = []
 })
 </script>
 

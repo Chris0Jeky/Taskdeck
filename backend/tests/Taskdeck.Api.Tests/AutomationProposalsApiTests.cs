@@ -79,6 +79,88 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             entity.ChangeCount == 1);
     }
 
+    /// <summary>
+    /// #2563: the wire contract for a multi-operation proposal. <c>operationHeadlines</c> is always
+    /// built in Sequence order, so <c>operations</c> must arrive in that same order or a client
+    /// pairing the two arrays by index describes a different operation than the one it shows. This
+    /// creates a proposal whose request array order is the REVERSE of its sequences and asserts the
+    /// order on BOTH wire reads.
+    /// <para>
+    /// The create response is the deterministic half: it maps the in-memory collection in
+    /// <c>AddOperation</c> order, which is the request's array order, with no database read
+    /// involved. The GET half is a contract lock rather than a second reproduction - the persisted
+    /// read goes through an EF <c>Include</c> that carries no ORDER BY, but SQLite's planner
+    /// currently serves it from the <c>(ProposalId, Sequence)</c> index and so happens to return
+    /// sequence order already. That is a query-plan artifact, not a guarantee; this asserts the
+    /// order the endpoint owes regardless of which index the planner picks.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task GetProposal_ShouldReturnOperationsInSequenceOrder_WhenStoredOutOfSequenceOrder()
+    {
+        var userId = await AuthenticateAsync("automation-operation-order");
+        var boardId = await CreateOwnedBoardAsync(userId);
+
+        var createRequest = new CreateProposalDto(
+            SourceType: ProposalSourceType.Chat,
+            RequestedByUserId: userId,
+            Summary: "Three cards created out of order",
+            RiskLevel: RiskLevel.Low,
+            CorrelationId: Guid.NewGuid().ToString(),
+            BoardId: boardId,
+            Operations: new List<CreateProposalOperationDto>
+            {
+                new(
+                    Sequence: 2,
+                    ActionType: "card.create",
+                    TargetType: "Card",
+                    Parameters: "{\"title\":\"Third card\"}",
+                    IdempotencyKey: Guid.NewGuid().ToString()),
+                new(
+                    Sequence: 1,
+                    ActionType: "card.create",
+                    TargetType: "Card",
+                    Parameters: "{\"title\":\"Second card\"}",
+                    IdempotencyKey: Guid.NewGuid().ToString()),
+                new(
+                    Sequence: 0,
+                    ActionType: "card.create",
+                    TargetType: "Card",
+                    Parameters: "{\"title\":\"First card\"}",
+                    IdempotencyKey: Guid.NewGuid().ToString()),
+            });
+
+        var createResponse = await _client.PostAsJsonAsync("/api/automation/proposals", createRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var createdProposal = await createResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        createdProposal.Should().NotBeNull();
+        createdProposal!.Operations.Select(operation => operation.Sequence).Should().Equal(0, 1, 2);
+        createdProposal.Operations.Select(operation => operation.Parameters).Should().Equal(
+            "{\"title\":\"First card\"}",
+            "{\"title\":\"Second card\"}",
+            "{\"title\":\"Third card\"}");
+        createdProposal.Presentation.OperationHeadlines.Should().Equal(
+            "Create card \"First card\".",
+            "Create card \"Second card\".",
+            "Create card \"Third card\".");
+
+        var getResponse = await _client.GetAsync($"/api/automation/proposals/{createdProposal.Id}");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var retrieved = await getResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        retrieved.Should().NotBeNull();
+        retrieved!.Operations.Should().HaveCount(3);
+        retrieved.Operations.Select(operation => operation.Sequence).Should().Equal(0, 1, 2);
+        retrieved.Operations.Select(operation => operation.Parameters).Should().Equal(
+            "{\"title\":\"First card\"}",
+            "{\"title\":\"Second card\"}",
+            "{\"title\":\"Third card\"}");
+        retrieved.Presentation.OperationHeadlines.Should().Equal(
+            "Create card \"First card\".",
+            "Create card \"Second card\".",
+            "Create card \"Third card\".");
+    }
+
     [Fact]
     public async Task CreateProposal_ExternalTrustedConfidence_IsIgnoredAndSerializesWithoutANumber()
     {
@@ -125,6 +207,66 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         document.RootElement.GetProperty("components").GetArrayLength().Should().Be(0);
         document.RootElement.GetProperty("threshold").ValueKind.Should().Be(JsonValueKind.Null);
         document.RootElement.GetProperty("meetsThreshold").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task CreateProposal_ExternalProducerTriple_IsNotBoundFromTheCreateBody()
+    {
+        // #2583: the producer triple (model, provider, prompt version) is server-stamped only.
+        // None of the three may be bound from the create body, or any authenticated caller could
+        // plant a model name that the review surface reads as a real producer claim (#1987).
+        var userId = await AuthenticateAsync("automation-planted-producer");
+        var boardId = await CreateOwnedBoardAsync(userId);
+
+        // A plausible model name plus a bidi override, so a leak is unmistakable in any output.
+        var plantedModel = "gpt-99-planted" + (char)0x202E + "detnalp";
+        var request = new
+        {
+            sourceType = ProposalSourceType.Chat,
+            requestedByUserId = userId,
+            summary = "Planted producer claim must not be recorded",
+            riskLevel = RiskLevel.Low,
+            correlationId = Guid.NewGuid().ToString(),
+            boardId,
+            operations = new[]
+            {
+                new
+                {
+                    sequence = 1,
+                    actionType = "update",
+                    targetType = "board",
+                    parameters = $"{{\"boardId\":\"{boardId}\",\"name\":\"Planted producer ignored\"}}",
+                    idempotencyKey = Guid.NewGuid().ToString(),
+                    targetId = boardId.ToString(),
+                },
+            },
+            provenanceModelId = plantedModel,
+            provenanceProvider = "openai",
+            provenancePromptVersion = "llm-triage.v2",
+            provenanceTotalTokens = 987654,
+        };
+
+        var createResponse = await _client.PostAsJsonAsync("/api/automation/proposals", request);
+        var createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created, createBody);
+        createBody.Should().NotContain("gpt-99-planted");
+
+        var proposal = await createResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        proposal.Should().NotBeNull();
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var provenance = await db.ProposalProvenances.SingleAsync(item => item.ProposalId == proposal!.Id);
+
+        // "chat-tools" is the server's origin label for a Chat-sourced proposal. All three parts
+        // of the triple must read as server-stamped, never as the caller's claim.
+        provenance.ModelId.Should().Be("chat-tools");
+        provenance.Provider.Should().BeNull();
+        provenance.PromptVersion.Should().BeNull();
+
+        // #2604: the token count is producer-side usage the server measures, not a caller claim.
+        // An API-created proposal records 0 no matter what the body asked for.
+        provenance.TotalTokens.Should().Be(0);
     }
 
     [Fact]
@@ -401,6 +543,8 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         approvedProposal.Should().NotBeNull();
         approvedProposal!.Status.Should().Be(ProposalStatus.Approved);
         approvedProposal.DecidedByUserId.Should().Be(userId);
+        approvedProposal.DecidedByUserName.Should().StartWith("automation-approve_");
+        approvedProposal.DecidedByUserName.Should().NotBe(approvedProposal.DecidedByUserId.ToString());
         approvedProposal.DecidedAt.Should().NotBeNull();
     }
 
@@ -618,6 +762,53 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             .Select(proposal => proposal.Status)
             .ToListAsync();
         statuses.Should().OnlyContain(status => status == ProposalStatus.PendingReview);
+    }
+
+    [Fact]
+    public async Task ApproveProposals_RejectsNullSelectionElementWithValidationError()
+    {
+        var client = _factory.CreateClient();
+        _ = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-null-selection");
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new { proposals = new object?[] { null } });
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+        (await response.Content.ReadFromJsonAsync<ApiErrorResponse>())!.Message
+            .Should().Be(
+                "Proposal selections cannot be null",
+                "batch approve mirrors batch execute's null-selection guard instead of dereferencing the element");
+    }
+
+    [Fact]
+    public async Task ApproveProposals_RejectsNullSelectionMixedWithValidSelectionAndApprovesNothing()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "automation-batch-null-mixed");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "batch-null-mixed");
+        var valid = await CreateBatchApprovalProposalAsync(client, user.UserId, boardId);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/automation/proposals/approve",
+            new { proposals = new object?[] { null, Select(valid) } });
+
+        await ApiTestHarness.AssertErrorContractAsync(
+            response,
+            HttpStatusCode.BadRequest,
+            "ValidationError");
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.AutomationProposals
+                .Where(proposal => proposal.Id == valid.Id)
+                .Select(proposal => proposal.Status)
+                .SingleAsync())
+            .Should().Be(
+                ProposalStatus.PendingReview,
+                "a malformed batch approves nothing");
     }
 
     [Fact]

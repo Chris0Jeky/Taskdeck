@@ -53,6 +53,27 @@ function Assert-True {
     }
 }
 
+function Get-ExecutableLaneErrorThrowOffsets {
+    param([string]$Text)
+
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$tokens, [ref]$parseErrors)
+    Assert-True (@($parseErrors).Count -eq 0) 'synthetic guard source did not parse'
+
+    $offsets = New-Object 'System.Collections.Generic.List[int]'
+    foreach ($node in @($ast.FindAll({
+                param($candidate)
+                $candidate -is [System.Management.Automation.Language.ThrowStatementAst]
+            }, $true))) {
+        if ($node.Extent.Text -match '^\s*throw\s+\$laneError\s*$') {
+            $offsets.Add($node.Extent.StartOffset)
+        }
+    }
+
+    return @($offsets)
+}
+
 function Quote-Argument {
     param([string]$Value)
 
@@ -339,7 +360,8 @@ Run-Test 'bounds git status output before full materialization' {
         }
         $result = Invoke-FingerprintTool -Arguments @('-Mode', 'Capture', '-CheckoutPath', $repo, '-Token', 'test-token', '-MaxGitOutputBytes', '1024')
         Assert-True ($result.exitCode -ne 0) 'oversized Git status output was accepted'
-        Assert-True ($result.stderr -match 'git output exceeds the configured byte limit') 'Git output bound did not fail with the expected classification'
+        Assert-True ($result.stderr -match 'Checkout fingerprint failed: E_GIT_EXECUTION\.') 'Git output bound did not fail with the expected safe classification'
+        Assert-True ($result.stderr -notmatch 'status-output-|1024') 'Git output bound leaked dynamic diagnostic details'
     }
 }
 
@@ -352,13 +374,33 @@ Run-Test 'requires the guarded-lane wrapper to propagate lane failure after clea
         $caught = $text.IndexOf('$laneError = $_', $lane, [StringComparison]::Ordinal)
         $compare = $text.IndexOf('-Mode Compare', $caught, [StringComparison]::Ordinal)
         $cleanup = $text.IndexOf('-Mode Cleanup', [StringComparison]::Ordinal)
-        $rethrown = $text.IndexOf('throw $laneError', $cleanup, [StringComparison]::Ordinal)
+        $rethrown = @(
+            Get-ExecutableLaneErrorThrowOffsets -Text $text |
+                Where-Object { $_ -gt $cleanup } |
+                Select-Object -First 1
+        )
         $propagated = $text.IndexOf('if (-not $laneSucceeded', [StringComparison]::Ordinal)
         Assert-True (
             $errorSlot -ge 0 -and $lane -gt $errorSlot -and $saved -gt $lane -and $caught -gt $saved -and
-            $compare -gt $caught -and $cleanup -gt $compare -and $rethrown -gt $cleanup -and $propagated -gt $rethrown
+            $compare -gt $caught -and $cleanup -gt $compare -and $rethrown.Count -eq 1 -and
+            $rethrown[0] -gt $cleanup -and $propagated -gt $rethrown[0]
         ) ('lane failure gate is missing or misordered in ' + $skill)
     }
+}
+
+Run-Test 'does not treat comment or string text as an executable lane-error throw' {
+    $commentOnly = @'
+# throw $laneError
+Write-Output 'throw $laneError'
+'@
+    $commentThrows = @(Get-ExecutableLaneErrorThrowOffsets -Text $commentOnly)
+    Assert-True ($commentThrows.Count -eq 0) 'comment or string text satisfied the executable throw anchor'
+
+    $executable = @'
+throw $laneError
+'@
+    $executableThrows = @(Get-ExecutableLaneErrorThrowOffsets -Text $executable)
+    Assert-True ($executableThrows.Count -eq 1) 'an executable lane-error throw was not found'
 }
 
 Run-Test 'anchors the guard path before a lane changes location' {
@@ -740,8 +782,8 @@ Run-Test 'names what it found when a status artifact is not a regular file' {
         [IO.File]::WriteAllText((Join-Path $nested 'inner.txt'), 'inner')
         $result = Invoke-FingerprintTool -Arguments @('-Mode', 'Capture', '-CheckoutPath', $repo, '-Token', 'test-token')
         Assert-True ($result.exitCode -ne 0) 'a directory status entry was accepted as a regular file'
-        Assert-True ($result.stderr -match 'is not a regular file: found a directory') ('the diagnostic did not name what was found: ' + $result.stderr)
-        Assert-True ($result.stderr -match 'nested-repository') ('the diagnostic did not name where it was found: ' + $result.stderr)
+        Assert-True ($result.stderr -match 'Checkout fingerprint failed: E_STATUS_INVENTORY\.') ('the diagnostic did not use the safe inventory classification: ' + $result.stderr)
+        Assert-True ($result.stderr -notmatch 'nested-repository|regular file|directory') ('the diagnostic leaked path or exception detail: ' + $result.stderr)
     }
 }
 
@@ -789,6 +831,40 @@ Run-Test 'preserves the lane error text when the guard disposition supersedes it
             if (-not [string]::IsNullOrWhiteSpace($run.state)) {
                 Cleanup-State -Repo $repo -State $run.state -Token $token
             }
+        }
+    }
+}
+
+Run-Test 'converts unexpected exception details into one safe diagnostic line' {
+    New-TestRepository {
+        param($repo)
+        $copy = Join-Path ([IO.Path]::GetTempPath()) ('taskdeck-fingerprint-unsafe-copy-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+        $mutatedCopy = Join-Path ([IO.Path]::GetTempPath()) ('taskdeck-fingerprint-unsafe-mutated-' + [Guid]::NewGuid().ToString('N') + '.ps1')
+        try {
+            $source = [IO.File]::ReadAllText($toolPath)
+            $marker = '        if ([string]::IsNullOrWhiteSpace($Mode) -or [string]::IsNullOrWhiteSpace($Token)) {'
+            $canary = 'canary-token username=alice hostname=machine file-content=secret path=C:\private\odd|path'
+            $replacement = "        throw '" + $canary + "'`r`n" + $marker
+            $safeCatch = '[Console]::Error.WriteLine((Get-FingerprintFailureDiagnostic -ErrorRecord $_))'
+            $rawCatch = "[Console]::Error.WriteLine('Checkout fingerprint failed: ' + `$_.Exception.Message)"
+            Assert-True ($source.Contains($marker)) 'unexpected-failure fixture anchor was not found'
+            [IO.File]::WriteAllText($copy, $source.Replace($marker, $replacement), (New-Object System.Text.UTF8Encoding($false)))
+            $result = Invoke-FingerprintTool -Tool $copy -Arguments @('-Mode', 'Capture', '-CheckoutPath', $repo, '-Token', 'probe-token')
+            Assert-True ($result.exitCode -eq 1) ('unexpected exception changed the fail-closed exit code: ' + $result.exitCode)
+            Assert-True ([string]::IsNullOrWhiteSpace($result.stdout)) 'unexpected exception emitted a public success record'
+            Assert-True (@($result.stderr -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count -eq 1) ('unexpected exception emitted more than one diagnostic line: ' + $result.stderr)
+            Assert-True ($result.stderr -match 'Checkout fingerprint failed: E_GUARD_INTERNAL_FAILURE\.') ('unexpected exception did not use the internal safe classification: ' + $result.stderr)
+            foreach ($needle in @('canary-token', 'username=alice', 'hostname=machine', 'file-content=secret', 'C:\private\odd|path')) {
+                Assert-True (-not $result.stderr.Contains($needle)) ('unexpected exception leaked a sensitive canary: ' + $needle)
+            }
+            Assert-True ($source.Contains($safeCatch)) 'unexpected-failure mutation anchor was not found'
+            [IO.File]::WriteAllText($mutatedCopy, $source.Replace($safeCatch, $rawCatch).Replace($marker, $replacement), (New-Object System.Text.UTF8Encoding($false)))
+            $mutated = Invoke-FingerprintTool -Tool $mutatedCopy -Arguments @('-Mode', 'Capture', '-CheckoutPath', $repo, '-Token', 'probe-token')
+            Assert-True ($mutated.stderr.Contains($canary)) 'mutation control did not demonstrate the pre-fix raw-detail leak'
+        }
+        finally {
+            Remove-Item -LiteralPath $copy -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $mutatedCopy -Force -ErrorAction SilentlyContinue
         }
     }
 }

@@ -1,5 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
-import { registerAndAttachSession } from './support/authSession'
+import { expect, test, type Locator, type Page } from '@playwright/test'
+import { API_BASE_URL, registerAndAttachSession } from './support/authSession'
 import { addCard, addColumn, createBoard } from './support/boardUiHelpers'
 
 /**
@@ -48,15 +48,32 @@ function captureLauncher(page: Page) {
 async function installSyntheticVisualViewport(page: Page) {
   await page.addInitScript(() => {
     const events = new EventTarget()
-    let height = window.innerHeight
+    // Height is LAZY on purpose. An init script runs before the page's own
+    // scripts and before the viewport emulation has settled, so reading
+    // `window.innerHeight` here froze whatever height the browser happened to
+    // have at that instant — not the mobile project's emulated height. Report
+    // the live layout viewport until a test explicitly contracts the synthetic
+    // one, so an uncontracted read is never a stale pre-emulation number.
+    let heightOverride: number | null = null
     let offsetTop = 0
+    let scale = 1
+
+    // Keep the engine's real VisualViewport reachable for diagnostics: the
+    // synthetic object replaces `window.visualViewport`, and triaging a
+    // geometry failure needs the engine's own `offsetTop` to tell a product
+    // bug apart from the coordinate-space artifact
+    // `measureInLayoutViewportSpace` documents below.
+    const realVisualViewport = window.visualViewport
 
     const visualViewport = {
       get height() {
-        return height
+        return heightOverride ?? window.innerHeight
       },
       get offsetTop() {
         return offsetTop
+      },
+      get scale() {
+        return scale
       },
       addEventListener: events.addEventListener.bind(events),
       removeEventListener: events.removeEventListener.bind(events),
@@ -66,11 +83,16 @@ async function installSyntheticVisualViewport(page: Page) {
       configurable: true,
       value: visualViewport,
     })
+    Object.defineProperty(window, '__taskdeckRealVisualViewport', {
+      configurable: true,
+      value: realVisualViewport,
+    })
     Object.defineProperty(window, '__taskdeckSetVisualViewport', {
       configurable: true,
-      value: (next: { height: number; offsetTop: number }) => {
-        height = next.height
+      value: (next: { height: number; offsetTop: number; scale?: number }) => {
+        heightOverride = next.height
         offsetTop = next.offsetTop
+        scale = next.scale ?? 1
         events.dispatchEvent(new Event('resize'))
         events.dispatchEvent(new Event('scroll'))
       },
@@ -78,14 +100,87 @@ async function installSyntheticVisualViewport(page: Page) {
   })
 }
 
-async function contractSyntheticVisualViewport(page: Page, height: number, offsetTop: number) {
-  await page.evaluate(({ height: nextHeight, offsetTop: nextOffsetTop }) => {
+/**
+ * An element's box, converted back into LAYOUT viewport space — the space a
+ * `position: fixed` CSS `top` is written in.
+ *
+ * Two coordinate spaces are in play and they are not the same space:
+ *
+ * - `position: fixed` resolves against the LAYOUT viewport.
+ * - `getBoundingClientRect()`, and therefore Playwright's `boundingBox()`, is
+ *   expressed in VISUAL viewport coordinates.
+ *
+ * They coincide only while `visualViewport.offsetTop` is 0, because
+ * `clientTop = cssTop - visualViewport.offsetTop`.
+ *
+ * On Chromium the two spaces stay aligned and the origin is 0. On WebKit they
+ * do not: `src/style.css` styles `::-webkit-scrollbar` with an explicit width,
+ * so WebKit gives the root scroller classic space-taking scrollbars and the
+ * visual viewport ends up 8px shorter than the layout viewport. Once the
+ * document is scrolled, WebKit parks the visual viewport at the bottom of that
+ * 8px slack, `offsetTop` becomes 8, and every fixed element measures 8px HIGHER
+ * than its CSS `top`. That is the whole of issue #2180's nightly red: the
+ * dialog was positioned correctly and the assertions were written in the wrong
+ * space.
+ *
+ * The origin is MEASURED, never assumed: a `position: fixed; top: 0` sentinel
+ * is read back with `getBoundingClientRect()`, so this reports whatever the
+ * engine actually does, and it is deliberately not a tolerance band — an 8px
+ * slop would hide a real 8px regression just as well as the artifact.
+ *
+ * The origin and the element's rect are read in ONE evaluation on purpose. The
+ * origin is only valid for the scroll position it was taken at, and this test
+ * scrolls: `scrollIntoViewIfNeeded()` before each footer action, and the click
+ * that opens the nested confirmation. Nothing locks body scroll while a dialog
+ * is open, so a conversion factor fetched in a separate round-trip can describe
+ * a scroll position the rect no longer has.
+ */
+async function measureInLayoutViewportSpace(locator: Locator): Promise<{
+  layoutTop: number
+  layoutBottom: number
+  height: number
+  fixedOrigin: number
+}> {
+  return locator.evaluate((element) => {
+    const sentinel = document.createElement('div')
+    sentinel.style.position = 'fixed'
+    sentinel.style.top = '0'
+    sentinel.style.left = '0'
+    sentinel.style.width = '1px'
+    sentinel.style.height = '1px'
+    sentinel.style.visibility = 'hidden'
+    sentinel.style.pointerEvents = 'none'
+    document.body.appendChild(sentinel)
+    const fixedOrigin = sentinel.getBoundingClientRect().top
+    sentinel.remove()
+
+    const rect = element.getBoundingClientRect()
+    return {
+      layoutTop: rect.top - fixedOrigin,
+      layoutBottom: rect.bottom - fixedOrigin,
+      height: rect.height,
+      fixedOrigin,
+    }
+  })
+}
+
+async function contractSyntheticVisualViewport(
+  page: Page,
+  height: number,
+  offsetTop: number,
+  scale = 1,
+) {
+  await page.evaluate(({ height: nextHeight, offsetTop: nextOffsetTop, scale: nextScale }) => {
     const setter = (window as Window & {
-      __taskdeckSetVisualViewport?: (next: { height: number; offsetTop: number }) => void
+      __taskdeckSetVisualViewport?: (next: {
+        height: number
+        offsetTop: number
+        scale?: number
+      }) => void
     }).__taskdeckSetVisualViewport
     if (!setter) throw new Error('Synthetic visualViewport setter was not installed')
-    setter({ height: nextHeight, offsetTop: nextOffsetTop })
-  }, { height, offsetTop })
+    setter({ height: nextHeight, offsetTop: nextOffsetTop, scale: nextScale })
+  }, { height, offsetTop, scale })
 }
 
 // ---------------------------------------------------------------------------
@@ -179,12 +274,22 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   await expect(editModal).toBeVisible()
 
   const layoutViewportHeight = await page.evaluate(() => window.innerHeight)
-  await contractSyntheticVisualViewport(page, 420, 120)
+  await contractSyntheticVisualViewport(page, 420, 120, 1)
+
+  // The contracted band expressed in LAYOUT viewport space, which is the space
+  // the dialog's CSS `top` is written in. Every measurement below is converted
+  // back into it by `measureInLayoutViewportSpace`, which reads its conversion
+  // origin in the same evaluation as the rect it corrects — so on a WebKit run
+  // whose visual viewport is parked 8px down, a raw `boundingBox()` of 112
+  // converts to the 120 asserted here, and no reading is reused across a scroll.
+  const contractedTop = 120
+  const contractedHeight = 420
+  const contractedBottom = contractedTop + contractedHeight
 
   await expect.poll(async () => {
-    const box = await editModal.boundingBox()
-    return box ? { y: Math.round(box.y), height: Math.round(box.height) } : null
-  }).toEqual({ y: 120, height: 420 })
+    const box = await measureInLayoutViewportSpace(editModal)
+    return { y: Math.round(box.layoutTop), height: Math.round(box.height) }
+  }).toEqual({ y: contractedTop, height: contractedHeight })
 
   const viewportState = await page.evaluate(() => ({
     layoutHeight: window.innerHeight,
@@ -194,6 +299,33 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   expect(viewportState.layoutHeight).toBe(layoutViewportHeight)
   expect(viewportState.visualHeight).toBe(420)
   expect(viewportState.visualOffsetTop).toBe(120)
+
+  // Policy boundary for this synthetic regression: a scale-only change is
+  // pinch-zoom evidence, not a keyboard contraction. Preserve the measured
+  // height/offset contract so zoom does not move modal controls, while leaving
+  // native pinch transforms and physical-device reachability to device testing.
+  const modalBeforeScaleOnlyChange = await measureInLayoutViewportSpace(editModal)
+  await contractSyntheticVisualViewport(page, 420, 120, 2)
+  const zoomedViewportState = await page.evaluate(() => ({
+    visualHeight: window.visualViewport?.height,
+    visualOffsetTop: window.visualViewport?.offsetTop,
+    visualScale: window.visualViewport?.scale,
+  }))
+  expect(zoomedViewportState).toEqual({
+    visualHeight: 420,
+    visualOffsetTop: 120,
+    visualScale: 2,
+  })
+  await expect.poll(async () => {
+    const box = await measureInLayoutViewportSpace(editModal)
+    return {
+      y: Math.round(box.layoutTop),
+      height: Math.round(box.height),
+    }
+  }).toEqual({
+    y: Math.round(modalBeforeScaleOnlyChange.layoutTop),
+    height: Math.round(modalBeforeScaleOnlyChange.height),
+  })
 
   await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
   const scrollMetrics = await scrollRegion.evaluate((element) => ({
@@ -206,19 +338,18 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   // `toBeVisible()` alone cannot carry this claim: Playwright treats any
   // element with a non-empty rendered box as visible, including one the
   // software keyboard covers.
-  const visualTop = 120
-  const visualBottom = visualTop + 420
   for (const name of ['Save Changes', 'Cancel', 'Delete Card']) {
     const action = editModal.getByRole('button', { name, exact: true })
     await action.scrollIntoViewIfNeeded()
     await expect(action).toBeVisible()
     await expect(action).toBeEnabled()
 
-    const actionBox = await action.boundingBox()
-    expect(actionBox).not.toBeNull()
+    // Measured after the scroll this loop just performed, with its own origin
+    // read in the same evaluation.
+    const bounds = await measureInLayoutViewportSpace(action)
     // 1px tolerance for sub-pixel layout rounding.
-    expect(actionBox!.y).toBeGreaterThanOrEqual(visualTop - 1)
-    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(visualBottom + 1)
+    expect(bounds.layoutTop).toBeGreaterThanOrEqual(contractedTop - 1)
+    expect(bounds.layoutBottom).toBeLessThanOrEqual(contractedBottom + 1)
   }
 
   // Nested Delete Card confirmation — a `TdDialog`, the shared primitive behind
@@ -231,14 +362,16 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
 
   // The dialog's own box must match the CONTRACTED visual bounds, not the
   // layout viewport it used to span.
+  // Re-measured here rather than reusing anything from above: the click that
+  // opened this dialog can scroll the document.
   await expect.poll(async () => {
-    const box = await deleteDialog.boundingBox()
-    return box ? { y: Math.round(box.y), height: Math.round(box.height) } : null
-  }).toEqual({ y: visualTop, height: 420 })
+    const box = await measureInLayoutViewportSpace(deleteDialog)
+    return { y: Math.round(box.layoutTop), height: Math.round(box.height) }
+  }).toEqual({ y: contractedTop, height: contractedHeight })
 
-  const deleteDialogBox = await deleteDialog.boundingBox()
-  expect(deleteDialogBox).not.toBeNull()
-  expect(deleteDialogBox!.height).toBeLessThan(layoutViewportHeight)
+  const deleteDialogBounds = await measureInLayoutViewportSpace(deleteDialog)
+  // Heights are identical in both spaces, so this one needs no conversion.
+  expect(deleteDialogBounds.height).toBeLessThan(layoutViewportHeight)
 
   // Footer actions measured against the contracted bounds. `toBeVisible()` /
   // `toBeFocused()` cannot carry this claim: Playwright treats any element with
@@ -249,16 +382,18 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
     await action.scrollIntoViewIfNeeded()
     await expect(action).toBeEnabled()
 
-    const actionBox = await action.boundingBox()
-    expect(actionBox).not.toBeNull()
+    // Measured after the scroll this loop just performed, with its own origin
+    // read in the same evaluation.
+    const bounds = await measureInLayoutViewportSpace(action)
     // 1px tolerance for sub-pixel layout rounding.
-    expect(actionBox!.y).toBeGreaterThanOrEqual(visualTop - 1)
-    expect(actionBox!.y + actionBox!.height).toBeLessThanOrEqual(visualBottom + 1)
+    expect(bounds.layoutTop).toBeGreaterThanOrEqual(contractedTop - 1)
+    expect(bounds.layoutBottom).toBeLessThanOrEqual(contractedBottom + 1)
   }
 })
 
 test('@mobile confirmation dialog spans the full sheet without a contracted visual viewport', async ({
   page,
+  browserName,
 }) => {
   // Deliberately NO synthetic viewport: this is the regression guard for the
   // ordinary case, where the browser's real visual viewport still matches the
@@ -297,6 +432,36 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
       const visual = window.visualViewport
       const visualHeight = visual?.height ?? window.innerHeight
       const visualOffsetTop = visual?.offsetTop ?? 0
+
+      // The layout viewport's origin in client-rect coordinates, measured the
+      // same way as the module-level `measureInLayoutViewportSpace` helper and
+      // inlined here on purpose: `page.evaluate` cannot close over module
+      // scope, and reading the origin in a second round-trip would let a scroll
+      // settle in between and compare skewed samples — the same reason the
+      // dialog and the viewport are read together.
+      //
+      // `position: fixed` is layout-viewport space, `getBoundingClientRect()`
+      // is visual-viewport space, and `clientTop = cssTop - offsetTop`. On
+      // WebKit the app's classic 8px scrollbars leave the visual viewport 8px
+      // short of the layout viewport, so a scrolled document parks it at
+      // `offsetTop: 8` and every fixed element measures 8px higher than its
+      // CSS `top`. This
+      // conversion is why issue #2180's nightly red was an assertion bug and
+      // not a product one.
+      const sentinel = document.createElement('div')
+      sentinel.style.position = 'fixed'
+      sentinel.style.top = '0'
+      sentinel.style.left = '0'
+      sentinel.style.width = '1px'
+      sentinel.style.height = '1px'
+      sentinel.style.visibility = 'hidden'
+      sentinel.style.pointerEvents = 'none'
+      document.body.appendChild(sentinel)
+      const fixedOrigin = sentinel.getBoundingClientRect().top
+      sentinel.remove()
+
+      // The contracted-or-not visual band, expressed in client-rect space.
+      const visualTopInClientSpace = fixedOrigin + visualOffsetTop
       const footer = Array.from(dialog.querySelectorAll('button'))
         .filter((button) => ['Cancel', 'Delete'].includes(button.textContent?.trim() ?? ''))
         .map((button) => {
@@ -314,15 +479,32 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
         // `window.innerHeight` even with nothing contracting it, so "still a
         // full sheet" is a ratio, not an equality.
         spansMostOfLayoutViewport: rect.height >= window.innerHeight * 0.9,
-        topMatchesVisualTop: Math.abs(rect.top - visualOffsetTop) <= 1,
+        topMatchesVisualTop: Math.abs(rect.top - visualTopInClientSpace) <= 1,
         heightMatchesVisualHeight: Math.abs(rect.height - visualHeight) <= 1,
+        // The coordinate-space artifact itself, pinned as tested behaviour
+        // rather than absorbed into a tolerance. Only asserted on WebKit — see
+        // `expectsNegatedOrigin` below.
+        fixedOriginNegatesVisualOffsetTop: Math.abs(fixedOrigin + visualOffsetTop) <= 1,
         footerCount: footer.length,
         footerInsideVisualBounds: footer.every(
           (entry) =>
-            entry.top >= visualOffsetTop - 1 && entry.bottom <= visualOffsetTop + visualHeight + 1,
+            entry.top >= visualTopInClientSpace - 1 &&
+            entry.bottom <= visualTopInClientSpace + visualHeight + 1,
         ),
       }
     })
+
+  // `fixedOrigin === -visualOffsetTop` is a WebKit convention, not a portable
+  // rule, so it is asserted only there. WebKit reports client rects relative to
+  // the VISUAL viewport; Chromium reports them relative to the LAYOUT viewport
+  // and holds its fixed origin at 0 no matter what `offsetTop` says. The 8px of
+  // scrollbar slack that `style.css` creates exists on Chromium too, so
+  // asserting the identity everywhere would turn a real Chromium offset into a
+  // red lane over an assertion with no product content behind it. The two
+  // product claims either side of this — `topMatchesVisualTop` and
+  // `footerInsideVisualBounds` — stay engine-agnostic, because both are
+  // measured through the origin and so hold in either convention.
+  const expectsNegatedOrigin = browserName === 'webkit'
 
   await expect
     .poll(async () => {
@@ -334,6 +516,9 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
             heightMatchesVisualHeight: measured.heightMatchesVisualHeight,
             footerCount: measured.footerCount,
             footerInsideVisualBounds: measured.footerInsideVisualBounds,
+            ...(expectsNegatedOrigin
+              ? { fixedOriginNegatesVisualOffsetTop: measured.fixedOriginNegatesVisualOffsetTop }
+              : {}),
           }
         : null
     })
@@ -345,6 +530,7 @@ test('@mobile confirmation dialog spans the full sheet without a contracted visu
       heightMatchesVisualHeight: true,
       footerCount: 2,
       footerInsideVisualBounds: true,
+      ...(expectsNegatedOrigin ? { fixedOriginNegatesVisualOffsetTop: true } : {}),
     })
 })
 
@@ -373,6 +559,130 @@ test('@mobile workspace views should render correctly on small screen', async ({
   // Body should not be wider than the viewport (no horizontal overflow forcing scroll)
   // Allow small tolerance for scrollbar
   expect(bodyBox!.width).toBeLessThanOrEqual(viewportSize!.width + 20)
+})
+
+test('@mobile archive controls stay inside the viewport with long localized labels', async ({ page, request }) => {
+  const auth = await registerAndAttachSession(page, request, 'archive-geometry', { theme: 'legacy' })
+  const boardResponse = await request.post(`${API_BASE_URL}/boards`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    data: { name: `Archivio con nome molto lungo ${Date.now()}`, description: 'Archive geometry fixture' },
+  })
+  expect(boardResponse.ok()).toBeTruthy()
+  const board = (await boardResponse.json()) as { id: string }
+
+  const archiveResponse = await request.put(`${API_BASE_URL}/boards/${board.id}`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    data: { isArchived: true },
+  })
+  expect(archiveResponse.ok()).toBeTruthy()
+
+  await page.goto('/workspace/archive')
+  await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
+  await expect(page.locator('.paper-archive__row').first()).toBeVisible()
+
+  await page.locator('.paper-archive__toggle-hidden').evaluate((element) => {
+    element.textContent = 'Mostra tutte le schede archiviate e nascoste'
+  })
+  await page.locator('.paper-archive__refresh').evaluate((element) => {
+    element.textContent = 'Aggiorna inventario degli elementi archiviati'
+  })
+  await page.locator('.paper-archive__input').evaluate((element) => {
+    const option = document.createElement('option')
+    option.value = 'localized-long-label'
+    option.textContent = 'Tutti i tipi di elementi archiviati'
+    element.append(option)
+    element.value = option.value
+  })
+
+  const viewportSize = page.viewportSize()
+  expect(viewportSize).not.toBeNull()
+
+  await page.setViewportSize({ width: 1280, height: viewportSize!.height })
+  const desktopFlow = await page.evaluate(() => {
+    const rectFor = (selector: string) => {
+      const rect = document.querySelector<HTMLElement>(selector)?.getBoundingClientRect()
+      if (!rect) throw new Error(`Missing geometry target: ${selector}`)
+      return { top: rect.top, bottom: rect.bottom }
+    }
+
+    return {
+      sectionTitle: rectFor('.paper-archive__section-header .paper-archive__section-title'),
+      hiddenBoardsToggle: rectFor('.paper-archive__toggle-hidden'),
+      filter: rectFor('.paper-archive__input'),
+      refresh: rectFor('.paper-archive__refresh'),
+    }
+  })
+  expect(desktopFlow.hiddenBoardsToggle.top).toBeLessThan(desktopFlow.sectionTitle.bottom)
+  expect(desktopFlow.hiddenBoardsToggle.bottom).toBeGreaterThan(desktopFlow.sectionTitle.top)
+  expect(desktopFlow.refresh.top).toBeLessThan(desktopFlow.filter.bottom)
+  expect(desktopFlow.refresh.bottom).toBeGreaterThan(desktopFlow.filter.top)
+
+  for (const width of [375, 390]) {
+    await page.setViewportSize({ width, height: viewportSize!.height })
+    await expect.poll(async () => page.evaluate(() => document.documentElement.clientWidth)).toBe(width)
+
+    const geometry = await page.evaluate(() => {
+      const selectors = [
+        '.paper-archive__toggle-hidden',
+        '.paper-archive__input',
+        '.paper-archive__refresh',
+        '.paper-archive__actions > *',
+      ]
+      const controls = selectors.flatMap((selector) =>
+        Array.from(document.querySelectorAll<HTMLElement>(selector)),
+      )
+      const rects = controls.map((control) => {
+        const rect = control.getBoundingClientRect()
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+      })
+      const rectFor = (selector: string) => {
+        const rect = document.querySelector<HTMLElement>(selector)?.getBoundingClientRect()
+        if (!rect) throw new Error(`Missing geometry target: ${selector}`)
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+      }
+      const actionOrder = Array.from(document.querySelectorAll('.paper-archive__actions > *'))
+        .map((control) => control.textContent?.trim())
+
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        rects,
+        sectionTitle: rectFor('.paper-archive__section-header .paper-archive__section-title'),
+        hiddenBoardsToggle: rectFor('.paper-archive__toggle-hidden'),
+        filter: rectFor('.paper-archive__input'),
+        refresh: rectFor('.paper-archive__refresh'),
+        actionOrder,
+      }
+    })
+
+    expect(geometry.scrollWidth - geometry.clientWidth).toBeLessThanOrEqual(1)
+    expect(geometry.rects).toHaveLength(7)
+    for (const rect of geometry.rects) {
+      expect(rect.left).toBeGreaterThanOrEqual(-1)
+      expect(rect.right).toBeLessThanOrEqual(width + 1)
+    }
+    expect(geometry.hiddenBoardsToggle.top).toBeGreaterThanOrEqual(geometry.sectionTitle.bottom - 1)
+    expect(geometry.refresh.top).toBeGreaterThanOrEqual(geometry.filter.bottom - 1)
+    expect(geometry.actionOrder).toEqual([
+      'View captures',
+      'View decisions',
+      'Restore Board',
+      'Hide',
+    ])
+
+    const refresh = page.locator('.paper-archive__refresh')
+    await refresh.focus()
+    const focusGeometry = await refresh.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return {
+        active: document.activeElement === element,
+        insideViewport: rect.left >= 0 && rect.right <= window.innerWidth,
+        focusRing: style.outlineStyle !== 'none' || style.boxShadow !== 'none',
+      }
+    })
+    expect(focusGeometry).toEqual({ active: true, insideViewport: true, focusRing: true })
+  }
 })
 
 test('@mobile board columns stack vertically without horizontal overflow', async ({ page }) => {

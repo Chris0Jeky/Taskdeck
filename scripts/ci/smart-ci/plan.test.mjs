@@ -235,6 +235,26 @@ test('the gate fails closed on missing, mismatched or errored plans in both mode
   assert.equal(planJobFailed.ok, false);
 });
 
+test("an error plan's pinned trust is a note, not a second trust-mismatch failure", () => {
+  const eventInput = ownerInput(['docs/x.md']);
+  const errored = evaluateGate(errorPlan(eventInput, policy, digest, new Error('boom')), {
+    mode: 'shadow',
+    eventInput,
+    policy,
+    planJobResult: 'success',
+  });
+  assert.equal(errored.ok, false);
+  assert.ok(errored.failures.some((failure) => failure.code === 'planner-error'));
+  assert.equal(errored.failures.some((failure) => failure.code === 'trust-mismatch'), false);
+  assert.ok(errored.notes.some((note) => note.includes('error-plan trust is pinned to T3')));
+
+  // A real plan whose trust does not survive re-derivation is still a hard failure.
+  const tampered = buildPlan(eventInput, policy, digest);
+  tampered.trust = 'T2';
+  const mismatched = evaluateGate(tampered, { mode: 'shadow', eventInput, policy, planJobResult: 'success' });
+  assert.ok(mismatched.failures.some((failure) => failure.code === 'trust-mismatch'));
+});
+
 test('a superseded cancelled plan is non-red only in shadow mode', () => {
   const plan = buildPlan(ownerInput(['docs/x.md']), policy, digest);
 

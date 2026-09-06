@@ -4,7 +4,10 @@
 .codex
 .claude
 .runtime-codex
+.analysis-logs/
 .tmp
+Microsoft/
+artifacts/
 
 **/bin/
 **/obj/

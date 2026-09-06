@@ -12,6 +12,16 @@ import { buildQueryString } from '../utils/queryBuilder'
 interface AutomationReadOptions {
   signal?: AbortSignal
   skipRetry?: boolean
+  /**
+   * Statuses that are an expected part of THIS call's contract, so the shared
+   * response interceptor stops logging them as 'API Error:' (#2214 item 7).
+   * The background review poll re-reads a hash-pinned proposal by id and turns
+   * 400/403/404 into an explicit "pin unavailable" outcome; logging those as
+   * failures reports a handled result as a defect on every tick. Opt-in per
+   * call site, exactly like `proposalDeepReviewApi.getProvenanceMetadata` --
+   * the explicit deep-link read still logs and surfaces its failures.
+   */
+  expectedStatuses?: number[]
 }
 
 export const automationApi = {

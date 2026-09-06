@@ -77,7 +77,7 @@ const mockCaptureStore = reactive({
     } | null
     canEditSuggestion?: boolean
   }, syncSummary?: boolean) => void>(),
-  fetchItems: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  fetchItems: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
   fetchDetail: vi.fn<(itemId: string, options?: {
     forceRefresh?: boolean
     recordError?: boolean
@@ -115,7 +115,7 @@ const mockCaptureStore = reactive({
   pollTriageCompletion: vi.fn<(itemId: string) => () => void>(),
   batchBusy: false,
   batchError: null as string | null,
-  batchTriage: vi.fn<(itemIds: string[], action: string) => Promise<{
+  batchTriage: vi.fn<(itemIds: string[], action: string, query?: () => { limit?: number; boardId?: string }) => Promise<{
     total: number
     succeeded: number
     failed: number
@@ -235,7 +235,7 @@ describe('InboxView', () => {
     mockCaptureStore.listError = null
     mockCaptureStore.detailError = null
     mockCaptureStore.actionError = null
-    mockCaptureStore.fetchItems.mockResolvedValue(undefined)
+    mockCaptureStore.fetchItems.mockResolvedValue(true)
     mockCaptureStore.fetchDetail.mockImplementation(async (itemId: string, options) => {
       const forceRefresh = options?.forceRefresh ?? false
       if (!forceRefresh && mockCaptureStore.detailById[itemId]) {
@@ -409,7 +409,10 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -684,7 +687,10 @@ describe('InboxView', () => {
     const wrapper = mount(InboxView)
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('missing-capture', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('missing-capture', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Select an item to inspect the captured text')
     expect(routerMocks.replace).toHaveBeenCalledWith({
       name: 'workspace-inbox',
@@ -712,7 +718,10 @@ describe('InboxView', () => {
     await firstRow.trigger('click')
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-1', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-1')
   })
 
@@ -725,7 +734,10 @@ describe('InboxView', () => {
     await listbox.trigger('keydown', { key: 'Enter' })
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -767,7 +779,10 @@ describe('InboxView', () => {
     await listbox.trigger('keydown', { key: 'Enter' })
     await waitForUi()
 
-    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', { syncSummary: true })
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('capture-2', {
+      syncSummary: true,
+      onCacheOutcome: expect.any(Function),
+    })
     expect(wrapper.text()).toContain('Full text for capture-2')
   })
 
@@ -1132,7 +1147,10 @@ describe('InboxView', () => {
     expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(
       expect.arrayContaining(['capture-1', 'capture-2']),
       'triage',
+      // A thunk: the store resolves the list scope when it issues the read.
+      expect.any(Function),
     )
+    expect(mockCaptureStore.batchTriage.mock.calls[0]?.[2]?.()).toEqual({ limit: 200 })
   })
 
   it('clears selection after successful batch action', async () => {
@@ -1154,7 +1172,8 @@ describe('InboxView', () => {
     await ignoreBatchBtn?.trigger('click')
     await waitForUi()
 
-    expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['capture-1'], 'ignore')
+    expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['capture-1'], 'ignore', expect.any(Function))
+    expect(mockCaptureStore.batchTriage.mock.calls[0]?.[2]?.()).toEqual({ limit: 200 })
     expect(wrapper.find('[data-testid="batch-action-bar"]').exists()).toBe(false)
   })
 

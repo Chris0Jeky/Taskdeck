@@ -83,8 +83,31 @@ const languageOptions = computed(() =>
 const activeLocale = computed(() => localeStore.locale)
 
 function selectLocale(locale: SupportedLocale) {
-  localeStore.setLocale(locale)
+  void localeStore.setLocale(locale)
 }
+
+const localeStatus = computed(() => {
+  const pendingLocale = localeStore.pendingLocale
+  if (pendingLocale) {
+    return {
+      kind: 'pending' as const,
+      message: t('settings.language.loading', { locale: LOCALE_LABELS[pendingLocale] }),
+    }
+  }
+
+  const failedLocale = localeStore.failedLocale
+  if (failedLocale) {
+    return {
+      kind: 'error' as const,
+      message: t('settings.language.loadFailed', {
+        locale: LOCALE_LABELS[failedLocale],
+        activeLocale: LOCALE_LABELS[activeLocale.value],
+      }),
+    }
+  }
+
+  return null
+})
 </script>
 
 <template>
@@ -127,9 +150,9 @@ function selectLocale(locale: SupportedLocale) {
     <!--
       Language. Same segmented-control idiom and the same aria-pressed
       convention as Theme above (no role="radiogroup" exists anywhere in this
-      app). Switching applies immediately — the store writes localStorage and
-      pushes the locale into the i18n runtime, so this page re-renders in the
-      new language without a reload.
+      app). The store writes localStorage immediately but commits the runtime
+      locale only after its lazy catalog is ready, so this page never claims a
+      language while still rendering the previous one.
     -->
     <section class="paper-appearance__panel" data-testid="appearance-language">
       <div id="td-appearance-language-label" class="tk-h3 paper-appearance__panel-title">
@@ -139,6 +162,7 @@ function selectLocale(locale: SupportedLocale) {
         class="paper-appearance__segments"
         role="group"
         aria-labelledby="td-appearance-language-label"
+        :aria-busy="localeStore.isPending"
       >
         <button
           v-for="option in languageOptions"
@@ -165,6 +189,16 @@ function selectLocale(locale: SupportedLocale) {
           </span>
         </button>
       </div>
+      <p
+        v-if="localeStatus"
+        class="paper-appearance__language-status"
+        :class="{ 'paper-appearance__language-status--error': localeStatus.kind === 'error' }"
+        data-testid="appearance-language-status"
+        :role="localeStatus.kind === 'error' ? 'alert' : 'status'"
+        :aria-live="localeStatus.kind === 'error' ? 'assertive' : 'polite'"
+      >
+        {{ localeStatus.message }}
+      </p>
       <p class="paper-appearance__hint">{{ $t('settings.language.hint') }}</p>
     </section>
   </div>
@@ -347,5 +381,15 @@ function selectLocale(locale: SupportedLocale) {
   min-height: 1.25rem;
   color: var(--mute, #635c4e);
   font-size: var(--t-sm, 12px);
+}
+
+.paper-appearance__language-status {
+  margin: 0;
+  color: var(--mute, #635c4e);
+  font-size: var(--t-sm, 12px);
+}
+
+.paper-appearance__language-status--error {
+  color: var(--ember, #a8421f);
 }
 </style>

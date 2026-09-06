@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { useRoute } from 'vue-router'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
 import ReviewHeader from '../components/review/ReviewHeader.vue'
@@ -27,8 +28,16 @@ const {
   boardOptions,
   visibleProposals,
   summaryCards,
+  awaitingProposalIds,
+  queueAnnouncementKey,
+  queueScopeLoaded,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRefused,
+  queueRefreshRecovered,
+  queueRefreshRecoveredKind,
+  unavailableProposalId,
+  unavailableProposalMalformed,
   dismissableProposalIds,
   isProposalExpired,
   clearProposalDeepLink,
@@ -113,6 +122,63 @@ const renderedProposals = computed(() => {
   return target ? [target] : []
 })
 
+/**
+ * The empty state that replaces the unavailable panel when the queue behind it
+ * is empty. `tabindex="-1"` in the template makes it a programmatic focus
+ * target only — it never enters the tab order.
+ */
+const reviewEmptyStateRef = ref<ComponentPublicInstance | null>(null)
+
+/**
+ * Leave the refused deep link (#2214). Mirror of `PaperReviewView.returnToReview`
+ * so the two skins cannot drift (#1124 / ADR-0038): clearing the hash is the only
+ * action offered, and it is taken against the id the unavailable state names —
+ * never against whatever the hash happens to hold by then.
+ *
+ * The click removes the panel the control lives in, so focus is moved on
+ * deliberately (#2599 item 2). Without it focus falls to `<body>`: nothing is
+ * announced and the reviewer's next keystroke acts on nothing. Paper's
+ * settled-elsewhere notice has handed focus on this way since #2215.
+ */
+async function returnToReview() {
+  const proposalId = unavailableProposalId.value
+  if (!proposalId) return
+  await clearProposalDeepLink(proposalId)
+  // After the DOM has settled on whichever of the two replaces the panel.
+  await nextTick()
+  focusQueueAfterUnavailableReturn()
+}
+
+/**
+ * The queue the panel was standing in front of, or the empty state that stands
+ * in for it (#2599 item 2).
+ *
+ * The target is the queue list `<section>` itself, because this skin's rows are
+ * not focusable — `ReviewProposalCard` renders no control that takes focus.
+ * The section is `tabindex="0"`, carries the "Proposals awaiting review" label
+ * a screen reader announces on arrival, and owns the ArrowUp/ArrowDown handler.
+ *
+ * It is NOT the same kind of element Paper focuses, and that is a real
+ * divergence rather than drift: Paper lands on a row `<button>`, which
+ * announces that row and takes Enter as a selection, while this announces the
+ * region and takes Enter as nothing. What the two skins share is the rule about
+ * where focus goes, not the element each queue widget can offer.
+ *
+ * `activeReviewIndex` is deliberately untouched. It is a persistent cursor that
+ * only drives `scrollToIndex`, and it keeps whichever row the reviewer last
+ * arrowed to: `scrollVirtualizerToHashProposal` rewrites it only when the hash
+ * target is found, which is exactly what a dead pin fails to do. Focus arriving
+ * on the section does not move that cursor to row one.
+ */
+function focusQueueAfterUnavailableReturn() {
+  if (renderedProposals.value.length > 0) {
+    reviewParentRef.value?.focus?.()
+    return
+  }
+  const emptyState = reviewEmptyStateRef.value?.$el as HTMLElement | undefined
+  emptyState?.focus?.()
+}
+
 async function dismissProposalAndReconcileHash(proposalId: string) {
   await handleDismissProposal(proposalId)
   if (!proposals.value.some((proposal) => proposalIdsEqual(proposal.id, proposalId))) {
@@ -139,7 +205,7 @@ const _vl = useVirtualList({
 
 // vue-tsc >=3.2.6 does not count ref="name" in templates as a script read;
 // these refs are intentionally bound via template ref attributes.
-// @ts-expect-error TS6133
+// `reviewParentRef` needs no such directive: the focus handoff above reads it.
 const reviewParentRef = _vl.parentRef
 // @ts-expect-error TS6133
 const reviewVirtualItemEls = _vl.virtualItemEls
@@ -194,16 +260,46 @@ function handleReviewKeydown(event: KeyboardEvent) {
 
 const workspace = useWorkspaceStore()
 
-// This skin renders no translated strings (`$t` appears nowhere in this file and
-// its specs install no i18n plugin), so the announcement is plain text, matching
-// the existing hardcoded copy above.
-const awaitingCount = computed(
-  () => summaryCards.value.find((card) => card.id === 'pending-review')?.value ?? 0,
-)
+// Most of this skin's own copy is still hardcoded English, so the awaiting-count
+// announcement below is plain text, matching the hardcoded copy around it.
+// The states this skin SHARES with Paper are the exception and go through the
+// catalog rather than being forked per skin: the refused-deep-link panel reuses
+// `review.empty.unavailable.*`, and the background-refresh disclosures reuse
+// `review.queue.degraded.*` and `review.queue.refused.*` (#2214).
+// The count and the identity the announcement is keyed on come from ONE
+// composable predicate (#2214 item 4). Reading the number off `summaryCards`'
+// `pending-review` card computed the same thing a second way and left the skin
+// with no notion of WHICH proposals it stood for, which is how a count-neutral
+// replacement stayed silent. The rendered value is unchanged: that card counts
+// exactly `visibleProposals` in `PendingReview` and not expired.
+const awaitingCount = computed(() => awaitingProposalIds.value.length)
 const awaitingAnnouncement = computed(() =>
   awaitingCount.value === 1
     ? '1 proposal awaiting review.'
     : `${awaitingCount.value} proposals awaiting review.`,
+)
+
+/**
+ * Whether `awaitingCount` is a real count right now (#2214, #2599 item 1). Kept
+ * in step with `ReviewQueueRail.countIsAnnounceable`, which gates the Paper
+ * skin's identical region on the same two states (#1124 / ADR-0038).
+ *
+ * The first term was `!proposalsLoading`, which asked the wrong question. An
+ * explicit `loadProposals` raises that flag WITHOUT clearing `proposals`, so
+ * the announcement node unmounted for the length of every reload and remounted
+ * with the identical sentence: the region wrote count -> '' -> count and the
+ * restore is spoken. `queueScopeLoaded` asks whether a read has landed for the
+ * board on screen instead, so a same-scope reload (the header Refresh, the
+ * dismiss path) is silent, while the first read, a board-filter change and a
+ * scope whose only read failed still withhold.
+ *
+ * A LATER failed reload does not withhold, deliberately: the rows on screen are
+ * still the last landed answer, so the count is still true of them, and
+ * withholding would restore the flicker for a read that changed nothing. The
+ * degraded and refused disclosures report the failing refresh (#2214).
+ */
+const countIsAnnounceable = computed(
+  () => queueScopeLoaded.value && !queueAccessRevoked.value,
 )
 
 /**
@@ -285,21 +381,90 @@ onUnmounted(() => {
 
     <ReviewSummaryCards :cards="summaryCards" />
 
-    <!-- The queue now changes without user action (#2194); announce it politely. -->
+    <!-- The queue now changes without user action (#2194); announce it politely.
+         The count is only speakable when it is a real count (#2214). While the
+         read is in flight it is 0 because nothing has been read yet, and once
+         access is revoked it is 0 because the queue was withdrawn and cleared —
+         a CHANGE, so an ungated region speaks "0 proposals awaiting review."
+         beside a panel saying the queue is gone. The region withholds its
+         CONTENT rather than being unmounted, because a live region inserted at
+         the same moment its text appears is unreliably announced.
+
+         The sentence sits in a node KEYED on the queue's ordered awaiting ids
+         (#2214 item 4). A live region only speaks when it changes, so a poll
+         that removed one pending proposal and added another rendered the same
+         string and said nothing. Re-keying replaces this node inside the region
+         that stays mounted, and a node addition is what `aria-live`'s default
+         `aria-relevant="additions text"` announces — same sentence, same count,
+         spoken once. A byte-identical queue keeps its key and stays silent.
+         Paper keys the identical region on the same value (#1124 / ADR-0038). -->
     <p class="sr-only" role="status" aria-live="polite" data-testid="review-queue-live">
-      {{ awaitingAnnouncement }}
+      <span
+        v-if="countIsAnnounceable"
+        :key="queueAnnouncementKey"
+        data-testid="review-queue-announcement"
+      >{{ awaitingAnnouncement }}</span>
     </p>
 
+    <!-- Recovery is the half of the degraded disclosure that was missing
+         (#2214). The warning below simply disappears when the queue is
+         trustworthy again, which tells a reviewer who was not watching that
+         corner nothing at all. Built like the count region above it: MOUNTED
+         throughout, withholding its text, because a live region inserted at the
+         same moment its text appears is unreliably announced (#2593). The
+         signal comes from the shared composable, so both skins announce the
+         same transition with the same sentence (ADR-0038 / #1124).
+
+         TWO sentences through this one region (#2638 item 2), chosen by the
+         kind the composable reports: a 'degraded' recovery follows a completed
+         read and may say the rows are current, while a 'refused' one is raised
+         as soon as the LIST read answers — a tick that may never replace the
+         queue — so it says only that the server is accepting refreshes again.
+         Paper picks the key the same way. -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="review-queue-recovered"
+    >{{
+      queueRefreshRecovered && !queueAccessRevoked
+        ? $t(
+            queueRefreshRecoveredKind === 'refused'
+              ? 'review.queue.refused.recovered'
+              : 'review.queue.degraded.recovered',
+          )
+        : ''
+    }}</p>
+
+    <!-- The refused-refresh disclosure (#2214 item 2). Same construction and
+         the same reason as the two regions above: the visible warning below
+         mounts at the same moment it gains its text, which is the case a live
+         region announces unreliably. This one is always mounted and withholds
+         its text until the disclosure rises. -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="review-queue-refused"
+    >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
+
+    <!-- ONE visible slot for both background-refresh disclosures, because they
+         are alternatives rather than additions: "refreshes are being refused"
+         subsumes "the queue may be out of date", and rendering both would put
+         "while Taskdeck retries" next to a sentence saying the retries are
+         being refused. The refusal wins when both stand — it is the stronger
+         statement and the only one with something for the reviewer to do. -->
     <div
-      v-if="queueRefreshStale && !queueAccessRevoked"
+      v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
       class="td-panel"
       role="status"
       aria-live="polite"
       aria-atomic="true"
       data-testid="review-queue-stale"
     >
-      <p>This review queue may be out of date.</p>
-      <p>Showing the last available proposals while Taskdeck retries.</p>
+      <p>{{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}</p>
     </div>
 
     <div
@@ -333,8 +498,43 @@ onUnmounted(() => {
       </div>
     </div>
 
+    <!-- A hash-pinned proposal the server refused or could not bind (400/403/404)
+         is an identity failure of the link the reviewer followed, not an empty
+         queue (#2214).
+         Saying so — and offering the way back — is the whole difference between
+         "your link is dead" and "there is nothing to review". Ordered before
+         the empty state, and still requiring an empty render, so a pin that has
+         already resolved shows its proposal instead. -->
+    <div
+      v-else-if="unavailableProposalId && renderedProposals.length === 0"
+      class="td-panel"
+      role="status"
+      data-testid="review-unavailable-target"
+    >
+      <p>{{ $t('review.empty.unavailable.eyebrow') }}</p>
+      <!-- A 400 means the by-id route could not bind the id, so the link never
+           named a proposal: it cannot be retried and it will not come back.
+           Saying "it may have been applied, archived, or removed" there sends
+           the reviewer to wait for a recovery that cannot arrive (#2214). -->
+      <p>{{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedTitle') : $t('review.empty.unavailable.title') }}</p>
+      <p>{{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedBody', { id: unavailableProposalId }) : $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}</p>
+      <button
+        type="button"
+        class="td-btn td-btn--secondary td-btn--sm"
+        data-testid="review-unavailable-return"
+        @click="returnToReview"
+      >
+        {{ $t('review.empty.unavailable.return') }}
+      </button>
+    </div>
+
+    <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
+         else: leaving the unavailable pin with an empty queue hands focus here
+         (#2599 item 2), and it never enters the tab order. -->
     <ReviewEmptyState
       v-else-if="renderedProposals.length === 0"
+      ref="reviewEmptyStateRef"
+      tabindex="-1"
       @open-inbox="openInbox"
       @navigate="openRoute"
     />

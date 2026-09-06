@@ -91,6 +91,37 @@ public class CircuitBreakerStateTrackerTests
         tracker.GetAll()["provider"].LastFailureReason.Should().Be("companion open");
     }
 
+    /// <summary>
+    /// #2351 / R5: whatever a caller hands the tracker, the stored reason is stripped
+    /// of control characters and bounded before it can reach an operator-visible
+    /// snapshot.
+    /// </summary>
+    [Fact]
+    public void RecordState_SanitizesAndBoundsTheStoredFailureReason()
+    {
+        var tracker = new CircuitBreakerStateTracker(new ManualTimeProvider());
+        var rawReason = "first line\r\nsecond line " + new string('x', 300);
+
+        tracker.RecordState("provider", CircuitState.Open, rawReason);
+
+        var stored = tracker.Get("provider")!.LastFailureReason;
+        stored.Should().NotBeNullOrEmpty();
+        stored.Should().NotContain("\r");
+        stored.Should().NotContain("\n");
+        stored!.Length.Should().BeLessThanOrEqualTo(203);
+        stored.Should().EndWith("...");
+    }
+
+    [Fact]
+    public void RecordState_KeepsANullFailureReasonNull()
+    {
+        var tracker = new CircuitBreakerStateTracker(new ManualTimeProvider());
+
+        tracker.RecordState("provider", CircuitState.Closed);
+
+        tracker.Get("provider")!.LastFailureReason.Should().BeNull();
+    }
+
     private sealed class ManualTimeProvider : TimeProvider
     {
         private DateTimeOffset _utcNow = new(2026, 7, 27, 12, 0, 0, TimeSpan.Zero);

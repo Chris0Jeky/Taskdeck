@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { toRaw } from 'vue'
 import ReviewProvenance from '../../../../views/paper/review/ReviewProvenance.vue'
+import ProvenanceDrawer, { type EvidenceLink } from '../../../../components/review/ProvenanceDrawer.vue'
 import {
   classifyProvenanceActor,
   formatProvenanceActorLabel,
@@ -105,6 +107,28 @@ describe('ReviewProvenance footnote', () => {
     expect(metadataPanel?.textContent).toContain('OpenAI/gpt-4o-mini')
     expect(metadataPanel?.textContent).toContain('llm-triage.v2')
 
+    wrapper.unmount()
+  })
+
+  it('keeps an absent evidence-links reference stable across rerenders and preserves provided arrays', async () => {
+    const wrapper = mount(ReviewProvenance, {
+      props: { rows, proposalId: 'proposal-001', metadata: null },
+    })
+    const drawer = () => wrapper.findComponent(ProvenanceDrawer).props('evidenceLinks')
+    const emptyReference = drawer()
+
+    await wrapper.setProps({ metadata: LIVE_PROVIDER })
+    expect(drawer()).toBe(emptyReference)
+
+    const providedLinks: EvidenceLink[] = [
+      { sourceKey: 'source note', span: [0, 12], reason: 'supports the decision', weight: 'primary' },
+    ]
+    await wrapper.setProps({ evidenceLinks: providedLinks })
+    const providedReference = drawer()
+    expect(toRaw(providedReference)).toBe(providedLinks)
+
+    await wrapper.setProps({ detailsExpanded: true })
+    expect(drawer()).toBe(providedReference)
     wrapper.unmount()
   })
 
