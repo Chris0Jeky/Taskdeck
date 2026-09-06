@@ -703,7 +703,7 @@ jobs:
       # the commit of the workflow file that is actually running, so the tooling
       # can never come from a ref the dispatcher did not select.
       - name: Checkout workflow tooling
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .workflow-tooling
