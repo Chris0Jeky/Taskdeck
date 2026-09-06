@@ -56,6 +56,7 @@ async function installSyntheticVisualViewport(page: Page) {
     // one, so an uncontracted read is never a stale pre-emulation number.
     let heightOverride: number | null = null
     let offsetTop = 0
+    let scale = 1
 
     // Keep the engine's real VisualViewport reachable for diagnostics: the
     // synthetic object replaces `window.visualViewport`, and triaging a
@@ -71,6 +72,9 @@ async function installSyntheticVisualViewport(page: Page) {
       get offsetTop() {
         return offsetTop
       },
+      get scale() {
+        return scale
+      },
       addEventListener: events.addEventListener.bind(events),
       removeEventListener: events.removeEventListener.bind(events),
     }
@@ -85,9 +89,10 @@ async function installSyntheticVisualViewport(page: Page) {
     })
     Object.defineProperty(window, '__taskdeckSetVisualViewport', {
       configurable: true,
-      value: (next: { height: number; offsetTop: number }) => {
+      value: (next: { height: number; offsetTop: number; scale?: number }) => {
         heightOverride = next.height
         offsetTop = next.offsetTop
+        scale = next.scale ?? 1
         events.dispatchEvent(new Event('resize'))
         events.dispatchEvent(new Event('scroll'))
       },
@@ -159,14 +164,23 @@ async function measureInLayoutViewportSpace(locator: Locator): Promise<{
   })
 }
 
-async function contractSyntheticVisualViewport(page: Page, height: number, offsetTop: number) {
-  await page.evaluate(({ height: nextHeight, offsetTop: nextOffsetTop }) => {
+async function contractSyntheticVisualViewport(
+  page: Page,
+  height: number,
+  offsetTop: number,
+  scale = 1,
+) {
+  await page.evaluate(({ height: nextHeight, offsetTop: nextOffsetTop, scale: nextScale }) => {
     const setter = (window as Window & {
-      __taskdeckSetVisualViewport?: (next: { height: number; offsetTop: number }) => void
+      __taskdeckSetVisualViewport?: (next: {
+        height: number
+        offsetTop: number
+        scale?: number
+      }) => void
     }).__taskdeckSetVisualViewport
     if (!setter) throw new Error('Synthetic visualViewport setter was not installed')
-    setter({ height: nextHeight, offsetTop: nextOffsetTop })
-  }, { height, offsetTop })
+    setter({ height: nextHeight, offsetTop: nextOffsetTop, scale: nextScale })
+  }, { height, offsetTop, scale })
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +274,7 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   await expect(editModal).toBeVisible()
 
   const layoutViewportHeight = await page.evaluate(() => window.innerHeight)
-  await contractSyntheticVisualViewport(page, 420, 120)
+  await contractSyntheticVisualViewport(page, 420, 120, 1)
 
   // The contracted band expressed in LAYOUT viewport space, which is the space
   // the dialog's CSS `top` is written in. Every measurement below is converted
@@ -285,6 +299,33 @@ test('@mobile card editing modal follows a contracted visual viewport', async ({
   expect(viewportState.layoutHeight).toBe(layoutViewportHeight)
   expect(viewportState.visualHeight).toBe(420)
   expect(viewportState.visualOffsetTop).toBe(120)
+
+  // Policy boundary for this synthetic regression: a scale-only change is
+  // pinch-zoom evidence, not a keyboard contraction. Preserve the measured
+  // height/offset contract so zoom does not move modal controls, while leaving
+  // native pinch transforms and physical-device reachability to device testing.
+  const modalBeforeScaleOnlyChange = await measureInLayoutViewportSpace(editModal)
+  await contractSyntheticVisualViewport(page, 420, 120, 2)
+  const zoomedViewportState = await page.evaluate(() => ({
+    visualHeight: window.visualViewport?.height,
+    visualOffsetTop: window.visualViewport?.offsetTop,
+    visualScale: window.visualViewport?.scale,
+  }))
+  expect(zoomedViewportState).toEqual({
+    visualHeight: 420,
+    visualOffsetTop: 120,
+    visualScale: 2,
+  })
+  await expect.poll(async () => {
+    const box = await measureInLayoutViewportSpace(editModal)
+    return {
+      y: Math.round(box.layoutTop),
+      height: Math.round(box.height),
+    }
+  }).toEqual({
+    y: Math.round(modalBeforeScaleOnlyChange.layoutTop),
+    height: Math.round(modalBeforeScaleOnlyChange.height),
+  })
 
   await expect(scrollRegion).toHaveCSS('overflow-y', 'auto')
   const scrollMetrics = await scrollRegion.evaluate((element) => ({
