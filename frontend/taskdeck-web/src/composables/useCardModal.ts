@@ -177,9 +177,11 @@ export function useCardModal(options: UseCardModalOptions) {
   )
 
   function loadCardComments(targetCard: Card) {
-    return boardStore.fetchCardComments(targetCard.boardId, targetCard.id).catch(() => {
-      // The store owns the error state and toast. Keep cached comments intact
-      // and let the rest of the card editor continue loading.
+    return boardStore.fetchCardComments(targetCard.boardId, targetCard.id).catch((error: unknown) => {
+      // The store owns the user-facing error state and toast. Keep cached comments intact
+      // and let the rest of the card editor continue loading, but never swallow the failure
+      // silently: this is the only reporting sink once the rejection is caught here.
+      logError('Failed to load card comments:', error)
     })
   }
 
