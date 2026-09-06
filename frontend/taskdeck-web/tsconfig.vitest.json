@@ -73,7 +73,6 @@
   ],
   "exclude": [
     "src/tests/api/http.spec.ts",
-    "src/tests/components/BoardCanvas.spec.ts",
     "src/tests/components/BoardDialogHost.spec.ts",
     "src/tests/components/CaptureModal.spec.ts",
     "src/tests/components/CardItem.coverage.spec.ts",
