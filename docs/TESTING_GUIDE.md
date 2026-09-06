@@ -1360,7 +1360,7 @@ npx playwright test --config playwright.visual.config.ts              # Run visu
 npx playwright test --config playwright.visual.config.ts --update-snapshots  # Update baselines
 ```
 
-20 visual tests (expanded from 7 in TST-59, `#865`/`#948`): board (empty + populated), command palette (open + search), archive, inbox, home, login, register, today, calendar (clock-pinned), metrics, review, notifications, settings, card modal (timestamp-masked), column edit modal (timestamp-masked), board toolbar, capture/inbox views. Clock pinning via `page.clock.install()` for date-dependent views; `document.fonts.ready` wait for font-load determinism; dynamic content hidden via `data-testid="timestamp"` + `hideDynamicContent` helper. Policy at `docs/testing/VISUAL_REGRESSION_POLICY.md`.
+22 visual tests (expanded from 7 in TST-59, `#865`/`#948`): archive; auth (login/register); board components (toolbar/action rail); board modals (card, column, starter pack); board view (empty + populated); calendar; capture modal; command palette (open + search); home; inbox; metrics; notifications; review; settings; shell sidebar; and today. Clock pinning via `page.clock.install()` for date-dependent views; `document.fonts.ready` wait for font-load determinism; dynamic content hidden via `data-testid="timestamp"`, session identity/presence selectors, and `hideDynamicContent` helper. Policy at `docs/testing/VISUAL_REGRESSION_POLICY.md`.
 
 CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uploads diff artifacts on failure. Baseline bootstrap: CI detects missing `__screenshots__/` directory, runs `--update-snapshots`, and uploads the `visual-regression-baselines` artifact for committing in a follow-up PR.
 
@@ -2052,7 +2052,17 @@ Visual regression tests capture baseline screenshots of key UI surfaces and comp
 
 **Config**: `frontend/taskdeck-web/playwright.visual.config.ts`
 
-**Covered surfaces**: board view (empty + populated), command palette (open + search), archive view, inbox/capture view, home view
+**Checked-in baselines (`#1363`)**: committed PNGs live under
+`frontend/taskdeck-web/tests/visual/__screenshots__/`, with one reviewed image per visual test.
+Bootstrap them only from the exact reviewed head with deterministic Mock/live-provider-disabled
+settings, inspect every generated image for gross layout errors and leaked per-run values, then
+run the suite again without `--update-snapshots`. Do not use a blanket snapshot update to hide a
+failure. The shared visual helper excludes timestamps, session identity/presence, and the
+time-dependent session warning; profile values are masked in the settings visual test. A
+deliberate visible fixture mutation must fail and emit Playwright diff artifacts before the
+candidate is considered usable.
+
+**Covered surfaces**: archive, auth, board components/modals/view, calendar, capture modal, command palette, home, inbox, metrics, notifications, review, settings, shell sidebar, and today.
 
 Run visual tests:
 

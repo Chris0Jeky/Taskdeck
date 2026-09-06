@@ -71,7 +71,14 @@ export async function hideDynamicContent(page: Page): Promise<void> {
       /* Hide elements that contain timestamps or relative time (forward-looking) */
       [data-testid="timestamp"],
       [data-testid="relative-time"],
-      time {
+      time,
+
+      /* Session identity and presence are per-run values, not visual contract. */
+      .td-topbar__user,
+      [data-presence-user],
+
+      /* The session warning is time-dependent and must not enter a baseline. */
+      [role="alert"][aria-live="assertive"] {
         visibility: hidden !important;
       }
 
