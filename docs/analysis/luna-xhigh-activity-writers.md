@@ -1,7 +1,7 @@
 # Human-activity writer inventory
 
-Status: source-backed analysis for #1480  
-Last verified: 2026-09-06  
+Status: source-backed analysis for #1480
+Last verified: 2026-09-06
 Base inspected: `origin/main` at `16963a79b1357e284fd4e403e70f833925b3105e`
 
 ## Purpose and boundary
