@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import ReviewDecisionRail from '../../../../views/paper/review/ReviewDecisionRail.vue'
+import { drainCleanups } from '../../../utils/drainCleanups'
 // Vite's `?raw` rather than `node:fs`: the spec tree is type-checked with
 // `types: ["vite/client", ...]` and deliberately WITHOUT node types
 // (tsconfig.vitest.json), so a `readFileSync` here would fail `npm run typecheck`.
@@ -380,26 +381,8 @@ describe('ReviewDecisionRail', () => {
     // note id cannot resolve for a later test that expects it to be absent.
     const cleanups: Array<() => void> = []
 
-    function drainCleanups(): void {
-      const errors: unknown[] = []
-      while (cleanups.length > 0) {
-        const cleanup = cleanups.pop()
-        if (!cleanup) continue
-        try {
-          cleanup()
-        } catch (error: unknown) {
-          errors.push(error)
-        }
-      }
-
-      if (errors.length === 1) throw errors[0]
-      if (errors.length > 1) {
-        throw new AggregateError(errors, 'One or more cleanup callbacks failed')
-      }
-    }
-
     afterEach(() => {
-      drainCleanups()
+      drainCleanups(cleanups)
     })
 
     function renderExternalNote(): void {
@@ -410,18 +393,17 @@ describe('ReviewDecisionRail', () => {
       cleanups.push(() => note.remove())
     }
 
-    it('drains every cleanup when one callback throws', () => {
-      const events: string[] = []
-      const throwingCleanup = new Error('cleanup failed')
-      cleanups.push(() => events.push('oldest'))
+    it('removes the injected note after a throwing unmount cleanup', () => {
+      renderExternalNote()
+      const wrapper = mountRail({ busy: true }, { attachTo: true })
+      const unmountFailure = new Error('unmount cleanup failed')
       cleanups.push(() => {
-        events.push('throwing')
-        throw throwingCleanup
+        wrapper.unmount()
+        throw unmountFailure
       })
-      cleanups.push(() => events.push('newest'))
 
-      expect(drainCleanups).toThrow(throwingCleanup)
-      expect(events).toEqual(['newest', 'throwing', 'oldest'])
+      expect(() => drainCleanups(cleanups)).toThrow(unmountFailure)
+      expect(document.getElementById(EXTERNAL_ID)).toBeNull()
       expect(cleanups).toHaveLength(0)
     })
 

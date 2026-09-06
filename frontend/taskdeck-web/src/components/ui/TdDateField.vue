@@ -24,7 +24,7 @@ function handleInput(event: Event) {
 
 function openPicker(event: MouseEvent) {
   const input = event.currentTarget as DatePickerInput
-  if (input.disabled || typeof input.showPicker !== 'function') return
+  if (input.disabled || input.readOnly || typeof input.showPicker !== 'function') return
 
   try {
     input.showPicker()

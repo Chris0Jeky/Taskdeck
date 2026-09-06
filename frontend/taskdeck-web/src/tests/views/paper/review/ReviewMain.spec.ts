@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
+import { drainCleanups } from '../../../utils/drainCleanups'
 import type {
   ChangeAfterCard,
   ChangeBeforeCard,
@@ -257,26 +258,8 @@ describe('ReviewMain', () => {
     // note id cannot resolve for a later test that expects it to be absent.
     const cleanups: Array<() => void> = []
 
-    function drainCleanups(): void {
-      const errors: unknown[] = []
-      while (cleanups.length > 0) {
-        const cleanup = cleanups.pop()
-        if (!cleanup) continue
-        try {
-          cleanup()
-        } catch (error: unknown) {
-          errors.push(error)
-        }
-      }
-
-      if (errors.length === 1) throw errors[0]
-      if (errors.length > 1) {
-        throw new AggregateError(errors, 'One or more cleanup callbacks failed')
-      }
-    }
-
     afterEach(() => {
-      drainCleanups()
+      drainCleanups(cleanups)
     })
 
     function renderLockNote(): void {
@@ -287,18 +270,17 @@ describe('ReviewMain', () => {
       cleanups.push(() => note.remove())
     }
 
-    it('drains every cleanup when one callback throws', () => {
-      const events: string[] = []
-      const throwingCleanup = new Error('cleanup failed')
-      cleanups.push(() => events.push('oldest'))
+    it('removes the injected note after a throwing unmount cleanup', () => {
+      renderLockNote()
+      const wrapper = mountMain({}, { attachTo: true, busy: true })
+      const unmountFailure = new Error('unmount cleanup failed')
       cleanups.push(() => {
-        events.push('throwing')
-        throw throwingCleanup
+        wrapper.unmount()
+        throw unmountFailure
       })
-      cleanups.push(() => events.push('newest'))
 
-      expect(drainCleanups).toThrow(throwingCleanup)
-      expect(events).toEqual(['newest', 'throwing', 'oldest'])
+      expect(() => drainCleanups(cleanups)).toThrow(unmountFailure)
+      expect(document.getElementById(LOCK_ID)).toBeNull()
       expect(cleanups).toHaveLength(0)
     })
 

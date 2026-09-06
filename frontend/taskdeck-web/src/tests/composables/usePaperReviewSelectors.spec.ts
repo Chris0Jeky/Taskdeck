@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref, computed, nextTick, effectScope } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import {
   proposalDeepReviewApi,
@@ -659,6 +660,75 @@ describe('usePaperReviewSelectors', () => {
     expect(historySignals).toHaveLength(2)
     expect(historySignals[1]?.aborted).toBe(false)
     await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
+  })
+
+  it('does not retry an evidence batch after its owning scope is disposed', async () => {
+    mockAllEndpointsEmpty()
+    let rejectHistory!: (reason: Error) => void
+    vi.mocked(proposalDeepReviewApi.getHistory).mockImplementationOnce(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectHistory = reject
+        }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const activeProposal = computed(() => proposal.value)
+    const scope = effectScope()
+    const selectors = scope.run(() => usePaperReviewSelectors(activeProposal))!
+
+    await vi.waitFor(() => {
+      expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    })
+    const wait = selectors.waitForCoreBatch('p-1', 'rev-1')
+
+    scope.stop()
+    rejectHistory(new Error('evidence read settled after disposal'))
+
+    await expect(wait).resolves.toBe('superseded')
+    expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a caller-aborted evidence batch after its read later fails', async () => {
+    mockAllEndpointsEmpty()
+    let rejectHistory!: (reason: Error) => void
+    let historySignal: AbortSignal | undefined
+    vi.mocked(proposalDeepReviewApi.getHistory).mockImplementationOnce(
+      (_id: string, options?: { signal?: AbortSignal }) => {
+        historySignal = options?.signal
+        return new Promise<never>((_resolve, reject) => {
+          rejectHistory = reject
+        })
+      },
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    const controller = new AbortController()
+
+    await vi.waitFor(() => {
+      expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    })
+    const wait = selectors.waitForCoreBatch('p-1', 'rev-1', { signal: controller.signal })
+
+    controller.abort()
+    await expect(wait).resolves.toBe('aborted')
+    expect(historySignal?.aborted).toBe(true)
+
+    rejectHistory(new Error('evidence read settled after caller abort'))
+    await flushPromises()
+
+    expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledTimes(1)
   })
 
   it('still reports a genuine read failure as failed when a signal is supplied', async () => {
