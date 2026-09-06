@@ -87,6 +87,9 @@ unless a worker owns a docs-only issue.
 - Short plan before edits (files, approach, risks, tests); small scoped diffs; incremental file-scoped commits.
 - After edits, run the seam's proving checks from `CLAUDE.md` and report exact commands + results. If you
   could not run one, say which and why.
+- Touched any Markdown? Run `node scripts/check-doc-links.mjs`. It resolves repository-relative link and
+  image targets, checks them case-exactly (Windows resolves `./status.md` to `STATUS.md`; GitHub does not),
+  and makes no network request. Nothing runs it automatically yet.
 - Ambiguity → `docs/agentic/QUESTION_PROTOCOL.md` (batch blockers, otherwise proceed on a named assumption).
 - Unresolved tool/test/CI friction → `docs/agentic/FAILURE_LEDGER.md`; promote recurring lessons via
   `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`, not ad hoc warnings in root docs.
