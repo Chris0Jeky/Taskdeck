@@ -5,8 +5,9 @@
 //
 // Lists every `uses:` reference in the workflow files, classifies it (local, docker,
 // external), and reports whether an external reference is pinned to a full 40-hex commit
-// SHA. `--check` exits 1 when any external reference is unpinned (the CI-11 guard, enforced
-// since CI-11 slice 1). A pinned reference without a trailing `# vX.Y.Z` version comment is
+// SHA. `--check` exits 1 when any external reference is unpinned (the CI-11 guard; it runs in
+// the advisory Planner Self-Test lane until SC-4 registers the gate and SC-5 flips
+// `sha_pinning_required`, so until then it reports rather than blocks a merge). A pinned reference without a trailing `# vX.Y.Z` version comment is
 // reported as a warning, not a failure: the SHA is the security property, the comment is
 // readability (and what Dependabot rewrites when it bumps the pin).
 
