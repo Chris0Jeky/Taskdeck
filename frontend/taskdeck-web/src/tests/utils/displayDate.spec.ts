@@ -91,4 +91,3 @@ describe('display date adapter', () => {
     expect(formatDisplayCalendarDate('2024-02-29T00:00:00Z', 'en')).toBeNull()
   })
 })
-
