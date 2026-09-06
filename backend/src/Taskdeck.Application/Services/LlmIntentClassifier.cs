@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 
 namespace Taskdeck.Application.Services;
 
@@ -75,149 +76,218 @@ public static class LlmIntentClassifier
         RegexOptions.Compiled | RegexOptions.IgnoreCase,
         RegexTimeout);
 
-    public static (bool IsActionable, string? ActionIntent) Classify(string message)
+    public static (bool IsActionable, string? ActionIntent) Classify(
+        string message,
+        ILogger? logger = null)
+        => ClassifyCore(
+            message,
+            logger,
+            static (pattern, input) => pattern.IsMatch(input));
+
+    internal static (bool IsActionable, string? ActionIntent) ClassifyForTests(
+        string message,
+        ILogger? logger,
+        Func<Regex, string, bool> matcher)
+        => ClassifyCore(message, logger, matcher);
+
+    private static (bool IsActionable, string? ActionIntent) ClassifyCore(
+        string message,
+        ILogger? logger,
+        Func<Regex, string, bool> matcher)
     {
         if (string.IsNullOrWhiteSpace(message))
             return (false, null);
 
         var lower = message.ToLowerInvariant();
+        var timeoutReported = false;
 
         // Check negative context first — suppress if negated or about another tool
-        if (IsNegativeContext(lower, message))
+        if (IsNegativeContext(lower, message, logger, ref timeoutReported, matcher))
             return (false, null);
 
         // Archive/delete/remove must be checked BEFORE move to fix the
         // "remove card" substring bug (remove contains "move")
-        if (MatchesCardArchive(lower))
+        if (MatchesCardArchive(lower, logger, ref timeoutReported, matcher))
             return (true, "card.archive");
 
-        if (MatchesCardMove(lower))
+        if (MatchesCardMove(lower, logger, ref timeoutReported, matcher))
             return (true, "card.move");
 
-        if (MatchesCardUpdate(lower))
+        if (MatchesCardUpdate(lower, logger, ref timeoutReported, matcher))
             return (true, "card.update");
 
-        if (MatchesCardCreate(lower))
+        if (MatchesCardCreate(lower, logger, ref timeoutReported, matcher))
             return (true, "card.create");
 
-        if (MatchesBoardCreate(lower))
+        if (MatchesBoardCreate(lower, logger, ref timeoutReported, matcher))
             return (true, "board.create");
 
-        if (MatchesBoardRename(lower))
+        if (MatchesBoardRename(lower, logger, ref timeoutReported, matcher))
             return (true, "board.update");
 
-        if (MatchesReorder(lower))
+        if (MatchesReorder(lower, logger, ref timeoutReported, matcher))
             return (true, "column.reorder");
 
         return (false, null);
     }
 
-    private static bool IsNegativeContext(string lower, string original)
+    private static bool IsNegativeContext(
+        string lower,
+        string original,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+    {
+        // Negation: "don't create task yet"
+        if (TryMatch(
+                NegationPattern,
+                lower,
+                "negative-context.negation",
+                logger,
+                ref timeoutReported,
+                matcher))
+            return true;
+
+        // Asking about another tool: "how do I create a card in Jira?"
+        return TryMatch(
+                   OtherToolPattern,
+                   lower,
+                   "negative-context.other-tool",
+                   logger,
+                   ref timeoutReported,
+                   matcher)
+               && TryMatch(
+                   QuestionAboutHowPattern,
+                   original.Trim(),
+                   "negative-context.question",
+                   logger,
+                   ref timeoutReported,
+                   matcher);
+    }
+
+    private static bool MatchesCardCreate(
+        string lower,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+        => TryMatch(
+               CardCreatePattern,
+               lower,
+               "card-create",
+               logger,
+               ref timeoutReported,
+               matcher)
+           || TryMatch(
+               NewCardPattern,
+               lower,
+               "card-create.new",
+               logger,
+               ref timeoutReported,
+               matcher);
+
+    private static bool MatchesCardMove(
+        string lower,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+        => TryMatch(
+            CardMovePattern,
+            lower,
+            "card-move",
+            logger,
+            ref timeoutReported,
+            matcher);
+
+    private static bool MatchesCardArchive(
+        string lower,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+        => TryMatch(
+            CardArchivePattern,
+            lower,
+            "card-archive",
+            logger,
+            ref timeoutReported,
+            matcher);
+
+    private static bool MatchesCardUpdate(
+        string lower,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+        => TryMatch(
+            CardUpdatePattern,
+            lower,
+            "card-update",
+            logger,
+            ref timeoutReported,
+            matcher);
+
+    private static bool MatchesBoardCreate(
+        string lower,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+        => TryMatch(
+            BoardCreatePattern,
+            lower,
+            "board-create",
+            logger,
+            ref timeoutReported,
+            matcher);
+
+    private static bool MatchesBoardRename(
+        string lower,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+        => TryMatch(
+            BoardRenamePattern,
+            lower,
+            "board-rename",
+            logger,
+            ref timeoutReported,
+            matcher);
+
+    private static bool MatchesReorder(
+        string lower,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
+        => TryMatch(
+            ReorderPattern,
+            lower,
+            "column-reorder",
+            logger,
+            ref timeoutReported,
+            matcher);
+
+    private static bool TryMatch(
+        Regex pattern,
+        string input,
+        string ruleId,
+        ILogger? logger,
+        ref bool timeoutReported,
+        Func<Regex, string, bool> matcher)
     {
         try
         {
-            // Negation: "don't create task yet"
-            if (NegationPattern.IsMatch(lower))
-                return true;
-
-            // Asking about another tool: "how do I create a card in Jira?"
-            if (OtherToolPattern.IsMatch(lower) && QuestionAboutHowPattern.IsMatch(original.Trim()))
-                return true;
+            return matcher(pattern, input);
         }
         catch (RegexMatchTimeoutException)
         {
-            // On timeout, fall through to normal classification
+            if (!timeoutReported)
+            {
+                logger?.LogWarning(
+                    "LLM intent classification regex timed out for rule {RuleId}",
+                    ruleId);
+                timeoutReported = true;
+            }
+
+            // Preserve the classifier's existing fallback outcome: a timeout
+            // cannot make a request actionable, but it must not crash the turn.
+            return false;
         }
-
-        return false;
-    }
-
-    private static bool MatchesCardCreate(string lower)
-    {
-        try
-        {
-            if (CardCreatePattern.IsMatch(lower))
-                return true;
-            if (NewCardPattern.IsMatch(lower))
-                return true;
-        }
-        catch (RegexMatchTimeoutException)
-        {
-            // Fall through — don't match on timeout
-        }
-
-        return false;
-    }
-
-    private static bool MatchesCardMove(string lower)
-    {
-        try
-        {
-            if (CardMovePattern.IsMatch(lower))
-                return true;
-        }
-        catch (RegexMatchTimeoutException) { }
-
-        return false;
-    }
-
-    private static bool MatchesCardArchive(string lower)
-    {
-        try
-        {
-            if (CardArchivePattern.IsMatch(lower))
-                return true;
-        }
-        catch (RegexMatchTimeoutException) { }
-
-        return false;
-    }
-
-    private static bool MatchesCardUpdate(string lower)
-    {
-        try
-        {
-            if (CardUpdatePattern.IsMatch(lower))
-                return true;
-        }
-        catch (RegexMatchTimeoutException) { }
-
-        return false;
-    }
-
-    private static bool MatchesBoardCreate(string lower)
-    {
-        try
-        {
-            if (BoardCreatePattern.IsMatch(lower))
-                return true;
-        }
-        catch (RegexMatchTimeoutException) { }
-
-        return false;
-    }
-
-    private static bool MatchesBoardRename(string lower)
-    {
-        try
-        {
-            if (BoardRenamePattern.IsMatch(lower))
-                return true;
-        }
-        catch (RegexMatchTimeoutException) { }
-
-        return false;
-    }
-
-    private static bool MatchesReorder(string lower)
-    {
-        try
-        {
-            if (ReorderPattern.IsMatch(lower))
-                return true;
-        }
-        catch (RegexMatchTimeoutException) { }
-
-        return false;
     }
 }
