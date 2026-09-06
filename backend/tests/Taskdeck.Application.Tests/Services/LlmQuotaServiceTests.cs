@@ -182,6 +182,72 @@ public class LlmQuotaServiceTests
     }
 
     [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-9, 1)]
+    [InlineData(4_096, 4_096)]
+    public async Task ReserveAsync_ShouldFloorEstimateAtOneWithoutChangingPositiveValues(
+        int requestedEstimate,
+        int expectedEstimate)
+    {
+        var settings = new LlmQuotaSettings
+        {
+            RequestsPerHour = 60,
+            TokensPerDay = 100_000,
+            GlobalBudgetCeilingTokens = 200_000
+        };
+        var service = new LlmQuotaService(_unitOfWorkMock.Object, settings);
+        var userId = Guid.NewGuid();
+        var reservationId = Guid.NewGuid();
+        using var cancellation = new CancellationTokenSource();
+        var cancellationToken = cancellation.Token;
+
+        _usageRepoMock
+            .Setup(repository => repository.TryReserveAsync(
+                userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                settings.RequestsPerHour,
+                settings.TokensPerDay,
+                settings.GlobalBudgetCeilingTokens,
+                expectedEstimate,
+                It.IsAny<DateTimeOffset>(),
+                cancellationToken))
+            .ReturnsAsync(new QuotaReservationOutcome(
+                QuotaReservationDecision.Allowed,
+                reservationId,
+                RequestCount: 1,
+                UserTokens: expectedEstimate,
+                GlobalTokens: expectedEstimate));
+
+        var result = await service.ReserveAsync(
+            userId,
+            LlmSurface.CaptureTriage,
+            requestedEstimate,
+            cancellationToken);
+
+        result.Allowed.Should().BeTrue();
+        result.EstimatedTokens.Should().Be(expectedEstimate);
+        _usageRepoMock.Verify(
+            repository => repository.TryReserveAsync(
+                userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                settings.RequestsPerHour,
+                settings.TokensPerDay,
+                settings.GlobalBudgetCeilingTokens,
+                expectedEstimate,
+                It.IsAny<DateTimeOffset>(),
+                cancellationToken),
+            Times.Once);
+    }
+
+    [Theory]
     [InlineData(QuotaCommitResult.Committed, false)]
     [InlineData(QuotaCommitResult.RecoveredExpired, true)]
     [InlineData(QuotaCommitResult.AlreadySettled, false)]
