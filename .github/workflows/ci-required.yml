@@ -132,6 +132,12 @@ jobs:
       - name: Validate release-desktop dispatch hardening contract
         run: node --test scripts/ci/release-desktop-dispatch.test.mjs
 
+      # The changelog base the release page is generated against (#2250). The
+      # selection is semver ordering, which a workflow-text assertion cannot
+      # execute, so the ordering itself is unit-tested here.
+      - name: Validate changelog base selection
+        run: node --test scripts/ci/select-changelog-base.test.mjs
+
       - name: Validate release cache trust contract
         run: node --test scripts/ci/release-cache-contract.test.mjs
 
