@@ -70,11 +70,47 @@ describe('TdDateField', () => {
     const input = wrapper.get('input')
 
     await input.trigger('focus')
+    await input.trigger('keydown', { key: 'Enter' })
     await input.trigger('keydown', { key: 'Escape' })
 
     expect(showPicker).not.toHaveBeenCalled()
-    expect(onKeydown).toHaveBeenCalledOnce()
-    expect((onKeydown.mock.calls[0]?.[0] as KeyboardEvent).defaultPrevented).toBe(false)
+    expect(onKeydown).toHaveBeenCalledTimes(2)
+    expect(onKeydown.mock.calls.every(([event]) => (event as KeyboardEvent).defaultPrevented === false)).toBe(true)
+  })
+
+  it('does not open the picker for disabled or read-only fields', async () => {
+    const showPicker = vi.fn()
+    installShowPicker(showPicker)
+
+    const disabled = mount(TdDateField, { attrs: { disabled: true } })
+    await disabled.get('input').trigger('click')
+
+    const readOnly = mount(TdDateField, { attrs: { readonly: true } })
+    await readOnly.get('input').trigger('click')
+
+    expect(showPicker).not.toHaveBeenCalled()
+  })
+
+  it('preserves a newer typed draft after the native picker interaction', async () => {
+    const showPicker = vi.fn()
+    installShowPicker(showPicker)
+    const Host = defineComponent({
+      components: { TdDateField },
+      setup() {
+        return { dueDate: ref('2026-08-23') }
+      },
+      template: '<TdDateField v-model="dueDate" />',
+    })
+    const wrapper = mount(Host)
+    const input = wrapper.get<HTMLInputElement>('input')
+
+    await input.trigger('click')
+    await input.setValue('2026-08-29')
+    await input.trigger('change')
+
+    expect(showPicker).toHaveBeenCalledOnce()
+    expect((wrapper.vm as unknown as { dueDate: string }).dueDate).toBe('2026-08-29')
+    expect(input.element.value).toBe('2026-08-29')
   })
 
   it('falls back without an error when showPicker is unsupported', async () => {
