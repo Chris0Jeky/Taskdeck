@@ -94,6 +94,7 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) "taskdeck-worktree-helpe
 $passed = 0
 $testFailure = $null
 $cleanupFailure = $null
+$fsmonitorFixtureRoot = $null
 $reparseRootToRemove = $null
 $selectedCases = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($caseName in $Case) {
@@ -217,6 +218,37 @@ function Invoke-Git {
     }
 
     return $result.Output.TrimEnd()
+}
+
+function Invoke-FsmonitorFixtureStopAndRemove {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FixtureRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CleanupRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$GitExecutable,
+
+        [string[]]$GitExecutablePrefixArguments = @()
+    )
+
+    $stopArguments = @($GitExecutablePrefixArguments) + @(
+        "-C",
+        $FixtureRoot,
+        "fsmonitor--daemon",
+        "stop"
+    )
+    $stopResult = Invoke-ProcessCapture -FilePath $GitExecutable -Arguments $stopArguments -WorkingDirectory $FixtureRoot
+    if ($stopResult.ExitCode -ne 0) {
+        throw "Fixture-owned fsmonitor daemon stop failed (exit $($stopResult.ExitCode)): git -C $FixtureRoot fsmonitor--daemon stop`n$($stopResult.Output)"
+    }
+
+    if (Test-Path -LiteralPath $CleanupRoot) {
+        Get-ChildItem -LiteralPath $CleanupRoot -Recurse -Force -File | ForEach-Object { $_.IsReadOnly = $false }
+        Remove-Item -LiteralPath $CleanupRoot -Recurse -Force
+    }
 }
 
 function Invoke-Helper {
@@ -353,6 +385,91 @@ function Test-CaseSelected {
     param([string]$Name)
 
     return $selectedCases.Contains($Name)
+}
+
+function Test-FsmonitorFixtureCleanupLauncher {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProbeRoot
+    )
+
+    $fixtureRoot = Join-Path $ProbeRoot "fixture"
+    $cleanupRoot = Join-Path $ProbeRoot "cleanup"
+    $tracePath = Join-Path $ProbeRoot "stop-trace.txt"
+    $launcherPath = Join-Path $ProbeRoot "fake-git.ps1"
+    New-Item -ItemType Directory -Path $fixtureRoot, $cleanupRoot | Out-Null
+    Set-Content -LiteralPath (Join-Path $cleanupRoot "owned.txt") -Value "owned" -Encoding Ascii
+    Set-Content -LiteralPath $launcherPath -Encoding Ascii -Value @(
+        'param(',
+        '    [string]$TracePath,',
+        '    [string]$ExpectedFixtureRoot,',
+        '    [string]$ExpectedCleanupRoot,',
+        '    [Parameter(ValueFromRemainingArguments = $true)]',
+        '    [string[]]$GitArguments',
+        ')',
+        'if ($GitArguments.Count -ne 4 -or $GitArguments[0] -cne "-C" -or $GitArguments[1] -cne $ExpectedFixtureRoot -or $GitArguments[2] -cne "fsmonitor--daemon" -or $GitArguments[3] -cne "stop") {',
+        '    [System.IO.File]::WriteAllText($TracePath, "invalid-argv")',
+        '    exit 43',
+        '}',
+        'if (-not (Test-Path -LiteralPath $ExpectedFixtureRoot -PathType Container) -or -not (Test-Path -LiteralPath $ExpectedCleanupRoot -PathType Container)) {',
+        '    [System.IO.File]::WriteAllText($TracePath, "cleanup-started-too-early")',
+        '    exit 44',
+        '}',
+        '[System.IO.File]::WriteAllText($TracePath, "stop-before-remove")',
+        'exit 0'
+    )
+
+    $launcherArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        $launcherPath,
+        $tracePath,
+        $fixtureRoot,
+        $cleanupRoot
+    )
+    Invoke-FsmonitorFixtureStopAndRemove `
+        -FixtureRoot $fixtureRoot `
+        -CleanupRoot $cleanupRoot `
+        -GitExecutable $powerShellExecutable `
+        -GitExecutablePrefixArguments $launcherArguments
+
+    Assert-Equal "stop-before-remove" (Get-Content -Raw -LiteralPath $tracePath) "The fake fsmonitor launcher did not observe the fixture before cleanup."
+    Assert-True (-not (Test-Path -LiteralPath $cleanupRoot)) "Successful fsmonitor shutdown did not remove the owned fixture root."
+
+    $failingCleanupRoot = Join-Path $ProbeRoot "cleanup-stop-failure"
+    $failingTracePath = Join-Path $ProbeRoot "stop-failure-trace.txt"
+    New-Item -ItemType Directory -Path $failingCleanupRoot | Out-Null
+    Set-Content -LiteralPath (Join-Path $failingCleanupRoot "owned.txt") -Value "owned" -Encoding Ascii
+    $failingLauncherPath = Join-Path $ProbeRoot "fake-git-stop-failure.ps1"
+    Set-Content -LiteralPath $failingLauncherPath -Encoding Ascii -Value @(
+        '[System.IO.File]::WriteAllText($args[0], "stop-failed")',
+        'exit 17'
+    )
+    $failureArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        $failingLauncherPath,
+        $failingTracePath
+    )
+    $stopFailure = $null
+    try {
+        Invoke-FsmonitorFixtureStopAndRemove `
+            -FixtureRoot $fixtureRoot `
+            -CleanupRoot $failingCleanupRoot `
+            -GitExecutable $powerShellExecutable `
+            -GitExecutablePrefixArguments $failureArguments
+    }
+    catch {
+        $stopFailure = $_
+    }
+    Assert-True ($null -ne $stopFailure) "A failed fsmonitor shutdown must fail the fixture cleanup."
+    Assert-NormalizedContains $stopFailure.Exception.Message "exit 17" "The fsmonitor shutdown failure omitted the native exit code."
+    Assert-Equal "stop-failed" (Get-Content -Raw -LiteralPath $failingTracePath) "The fake fsmonitor stop-failure launcher did not run."
+    Assert-True (Test-Path -LiteralPath $failingCleanupRoot -PathType Container) "A failed fsmonitor shutdown must preserve the owned fixture for diagnosis."
 }
 
 function Get-ModeledEffectivePermissionConfiguration {
@@ -2205,6 +2322,11 @@ finally {
     }
 
     if (Test-CaseSelected "git-add-failure") {
+        $fsmonitorCleanupProbeRoot = Join-Path $testRoot "fsmonitor-cleanup-probe"
+        New-Item -ItemType Directory -Path $fsmonitorCleanupProbeRoot | Out-Null
+        Test-FsmonitorFixtureCleanupLauncher -ProbeRoot $fsmonitorCleanupProbeRoot
+        Complete-Test "fixture-owned fsmonitor shutdown precedes removal and preserves stop failures"
+
         $timeoutAttributesPath = Join-Path $seedPath ".gitattributes"
         Set-Content -LiteralPath $timeoutAttributesPath -Value "tracked.txt filter=taskdeck-timeout-gate" -Encoding Ascii
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitattributes")
@@ -2370,6 +2492,13 @@ sleep 30
                 $hiddenTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
                 [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $scenario.Flag, "Process")
                 if ($scenario.RequiresFsmonitor) {
+                    $fsmonitorStart = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("-C", $callerPath, "fsmonitor--daemon", "start") -WorkingDirectory $callerPath
+                    Assert-Equal 0 $fsmonitorStart.ExitCode "Fsmonitor fixture daemon did not start.`n$($fsmonitorStart.Output)"
+                    # Only a proven-started daemon is stopped in the finally block; a failed start must not turn cleanup into a second, bogus failure.
+                    $fsmonitorFixtureRoot = $callerPath
+                    $fsmonitorStatus = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("-C", $callerPath, "fsmonitor--daemon", "status") -WorkingDirectory $callerPath
+                    Assert-Equal 0 $fsmonitorStatus.ExitCode "Fsmonitor fixture daemon status failed.`n$($fsmonitorStatus.Output)"
+                    Assert-NormalizedContains $fsmonitorStatus.Output "fsmonitor-daemon is watching" "Fsmonitor fixture did not prove that its daemon owns the fixture before the scenario ran."
                     # CE_FSMONITOR_VALID bits are stripped from the index on every read while
                     # core.fsmonitor is disabled, so the scenario only exists with it enabled.
                     $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.fsmonitor", $fsmonitorQueryHookArgument)
@@ -2489,7 +2618,13 @@ finally {
             }
         }
 
-        if (Test-Path -LiteralPath $resolvedTestRoot) {
+        if ($null -ne $fsmonitorFixtureRoot) {
+            Invoke-FsmonitorFixtureStopAndRemove `
+                -FixtureRoot $fsmonitorFixtureRoot `
+                -CleanupRoot $resolvedTestRoot `
+                -GitExecutable $gitExecutable
+        }
+        elseif (Test-Path -LiteralPath $resolvedTestRoot) {
             Get-ChildItem -LiteralPath $resolvedTestRoot -Recurse -Force -File | ForEach-Object { $_.IsReadOnly = $false }
             Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force
         }
@@ -2501,6 +2636,9 @@ finally {
 }
 
 if ($null -ne $testFailure) {
+    if ($null -ne $cleanupFailure) {
+        throw "Test failure: $($testFailure.Exception.Message)`nCleanup failure: $($cleanupFailure.Exception.Message)"
+    }
     throw $testFailure
 }
 if ($null -ne $cleanupFailure) {
