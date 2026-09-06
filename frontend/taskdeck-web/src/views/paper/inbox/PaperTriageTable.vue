@@ -768,6 +768,25 @@ function isDetailOpen(item: CaptureItemSummary): boolean {
   return props.readOnly && props.detailItemId === item.id
 }
 
+/**
+ * Keep the archived disclosure name useful without turning it into a copy of
+ * the retained capture. The excerpt is already the bounded row summary; the
+ * timestamp and id are deterministic non-secret fallbacks for empty or invalid
+ * summaries.
+ */
+function detailCaptureLabel(item: CaptureItemSummary): string {
+  const excerpt = (typeof item.textExcerpt === 'string' ? item.textExcerpt : '').trim().replace(/\s+/g, ' ')
+  if (excerpt) return excerpt.length > 80 ? `${excerpt.slice(0, 77)}…` : excerpt
+  return formatDateTime(item.createdAt) || item.id
+}
+
+function detailToggleLabel(item: CaptureItemSummary): string {
+  return t(
+    isDetailOpen(item) ? 'inbox.history.detail.closeFor' : 'inbox.history.detail.openFor',
+    { capture: detailCaptureLabel(item) },
+  )
+}
+
 function detailPanelId(item: CaptureItemSummary): string {
   return `paper-capture-detail-${item.id}`
 }
@@ -932,9 +951,7 @@ function recordedOr(value: string | null | undefined): string {
         <button
           type="button"
           class="paper-triage__open"
-          :aria-label="readOnly
-            ? (isDetailOpen(item) ? t('inbox.history.detail.close') : t('inbox.history.detail.open'))
-            : `Open capture ${item.id}`"
+          :aria-label="readOnly ? detailToggleLabel(item) : `Open capture ${item.id}`"
           :aria-expanded="readOnly ? isDetailOpen(item) : undefined"
           :aria-controls="readOnly ? detailPanelId(item) : undefined"
           :aria-describedby="degradedNotice(item) ? degradedNoticeId(item) : undefined"
@@ -1553,6 +1570,27 @@ function recordedOr(value: string | null | undefined): string {
 @media (max-width: 640px) {
   .paper-triage__row {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .paper-triage__board-pick {
+    align-items: stretch;
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .paper-triage__board-label {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .paper-triage__board-select {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .paper-triage__board-pick .paper-triage__actions {
+    flex: 1 1 100%;
   }
 
   .paper-triage__tags,

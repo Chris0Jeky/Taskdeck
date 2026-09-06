@@ -1,4 +1,9 @@
-param()
+[CmdletBinding()]
+param(
+    [switch]$RequireBash,
+    [AllowEmptyString()]
+    [string]$BashExecutable
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -7,7 +12,23 @@ $credentialScript = Join-Path $PSScriptRoot 'Set-MarketplaceMcpCredentials.ps1'
 $repoRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $drillScript = Join-Path $repoRoot 'scripts\drills\drill-mcp-invalid-credentials.sh'
 $powerShellExecutable = (Get-Process -Id $PID).Path
-$bashCommand = Get-Command -Name bash -CommandType Application -TotalCount 1 -ErrorAction SilentlyContinue
+$bashCommand = if ($PSBoundParameters.ContainsKey('BashExecutable')) {
+    if ([string]::IsNullOrWhiteSpace($BashExecutable)) {
+        $null
+    }
+    else {
+        $resolvedBash = Get-Command -Name $BashExecutable -CommandType Application -TotalCount 1 -ErrorAction SilentlyContinue
+        if ($null -eq $resolvedBash) {
+            # An explicitly requested Bash that does not resolve is an operator error, never a SKIP:
+            # degrading to the "no Bash installed" path would let the drill regressions vanish silently.
+            throw "BashExecutable '$BashExecutable' did not resolve to an application; fix the path or omit the parameter to auto-detect."
+        }
+        $resolvedBash
+    }
+}
+else {
+    Get-Command -Name bash -CommandType Application -TotalCount 1 -ErrorAction SilentlyContinue
+}
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("taskdeck-mcp-profile-tests-$([Guid]::NewGuid().ToString('N'))")
 $fakeDockerScript = Join-Path $fixtureRoot 'FakeDocker.ps1'
 $fakeDockerCommand = Join-Path $fixtureRoot 'docker.cmd'
@@ -111,7 +132,8 @@ function Invoke-ProfileFixture {
     param(
         [string]$Scenario,
         [string]$DefaultServers = 'time,sqlite',
-        [string[]]$AdditionalArguments = @()
+        [string[]]$AdditionalArguments = @(),
+        [switch]$UseProfileDefault
     )
 
     Reset-FakeDocker -Scenario $Scenario
@@ -120,9 +142,15 @@ function Invoke-ProfileFixture {
         '-NoProfile',
         '-NonInteractive',
         '-File',
-        $profileScript,
-        '-DefaultServers',
-        $DefaultServers,
+        $profileScript
+    )
+    if (-not $UseProfileDefault) {
+        $arguments += @(
+            '-DefaultServers',
+            $DefaultServers
+        )
+    }
+    $arguments += @(
         '-DockerExecutable',
         $fakeDockerCommand,
         '-CiMode'
@@ -243,6 +271,11 @@ function Complete-Test {
     Write-Host "PASS: $Name"
 }
 
+$bashDrillSkipped = $false
+if ($RequireBash -and $null -eq $bashCommand) {
+    throw 'Bash is required for the credential-drill regression; pass an available Bash executable.'
+}
+
 New-Item -ItemType Directory -Path $fixtureRoot | Out-Null
 New-Item -ItemType Directory -Path $fakeUserProfile | Out-Null
 
@@ -291,7 +324,13 @@ if ($args.Count -ge 6 -and
     $args[2] -eq 'server' -and
     $args[3] -eq 'ls') {
     $serverEntries = @()
-    foreach ($name in @('time', 'SQLite', 'postman', 'dockerhub')) {
+    $serverNames = if ($scenario -eq 'default-servers') {
+        @('docker', 'docker-docs', 'time', 'jetbrains', 'filesystem', 'SQLite')
+    }
+    else {
+        @('time', 'SQLite', 'postman', 'dockerhub')
+    }
+    foreach ($name in $serverNames) {
         $serverEntries += [ordered]@{
             type = 'image'
             secrets = @('raw-secret-metadata-must-not-be-printed')
@@ -407,6 +446,14 @@ try {
     Assert-Equal 3 $normalCommands.Count 'Normal validation should perform exactly two snapshots and one profile inventory.'
     Complete-Test 'normal success is read-only and proves exact container-state neutrality'
 
+    $profileDefault = Invoke-ProfileFixture -Scenario 'default-servers' -UseProfileDefault
+    Assert-Equal 0 $profileDefault.ExitCode 'The focused suite default-server invocation should pass against the exact six-server fixture inventory.'
+    Assert-Contains $profileDefault.Output 'Configured server names: docker,docker-docs,filesystem,jetbrains,sqlite,time' 'The no-override invocation did not exercise the six-server profile default.'
+    $profileSource = Get-Content -Raw -LiteralPath $profileScript
+    Assert-Contains $profileSource "[string]`$DefaultServers = 'docker,docker-docs,time,jetbrains,filesystem,SQLite'" 'The profile default-server contract drifted from the six-server set.'
+    Assert-NoGatewayOrContainerMutation 'Default-server validation'
+    Complete-Test 'no-override validation pins the exact six-server profile default'
+
     $missing = Invoke-ProfileFixture -Scenario 'normal' -DefaultServers 'time,bogus-server'
     Assert-True ($missing.ExitCode -ne 0) 'A missing requested server must fail even when the profile-list command exits zero.'
     Assert-Contains $missing.Output 'Required Docker MCP server(s) are absent' 'Missing-server failure was not actionable.'
@@ -488,9 +535,20 @@ try {
         Assert-Contains $baselineSuccess.Output 'Bogus server was correctly rejected by read-only validation' 'The drill did not prove its negative case.'
         Assert-Contains $baselineSuccess.Output '[drill-mcp-invalid-credentials] PASS' 'The valid drill path omitted its terminal PASS marker.'
     }
-    Complete-Test 'validator, credential helper, and drill contain no gateway dry-run path and the drill gates its negative case on a positive baseline'
+    else {
+        $bashDrillSkipped = $true
+        Write-Host 'SKIP: credential-drill regressions require Bash; optional local validation did not claim a PASS.'
+    }
+    if (-not $bashDrillSkipped) {
+        Complete-Test 'validator, credential helper, and drill contain no gateway dry-run path and the drill gates its negative case on a positive baseline'
+    }
 
-    Write-Host 'All Docker MCP profile validation tests passed.'
+    if ($bashDrillSkipped) {
+        Write-Host 'Docker MCP profile validation passed; Bash credential-drill regressions were explicitly skipped.'
+    }
+    else {
+        Write-Host 'All Docker MCP profile validation tests passed.'
+    }
 }
 finally {
     foreach ($name in @('TASKDECK_FAKE_DOCKER_SCENARIO', 'TASKDECK_FAKE_DOCKER_STATE', 'TASKDECK_FAKE_DOCKER_LOG')) {
