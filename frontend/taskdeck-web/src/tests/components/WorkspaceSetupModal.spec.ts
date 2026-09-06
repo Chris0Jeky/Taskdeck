@@ -136,7 +136,8 @@ describe('WorkspaceSetupModal', () => {
       bubbles: true,
       cancelable: true,
     })
-    expect(input.element.dispatchEvent(composingEnter)).toBe(false)
+    // Not cancelled: the composing keystroke must reach the IME so the candidate commits.
+    expect(input.element.dispatchEvent(composingEnter)).toBe(true)
     await waitForUi()
     expect(mocks.createBoard).not.toHaveBeenCalled()
 

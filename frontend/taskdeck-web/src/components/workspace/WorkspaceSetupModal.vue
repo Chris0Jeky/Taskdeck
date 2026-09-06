@@ -72,10 +72,14 @@ async function applyStarterPack(boardId: string, starterPackId: string): Promise
 }
 
 function onBoardNameKeydown(event: KeyboardEvent) {
+  // A composing Enter commits an IME candidate; leave it uncancelled so the commit lands
+  // (the same contract as PaperCaptureNib and ApplyToBoardDialog). Only an ordinary Enter
+  // is claimed as the submit gesture.
   if (event.isComposing) {
     return
   }
 
+  event.preventDefault()
   void submitSetup()
 }
 
@@ -162,7 +166,7 @@ watch(
               type="text"
               maxlength="100"
               placeholder="For example: Product Sprint"
-              @keydown.enter.prevent="onBoardNameKeydown"
+              @keydown.enter="onBoardNameKeydown"
             />
           </label>
 
