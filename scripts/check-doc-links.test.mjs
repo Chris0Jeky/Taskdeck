@@ -10,6 +10,8 @@ import {
   extractLocalTargets,
   collectMarkdownFiles,
   findBrokenLinks,
+  formatBrokenLinks,
+  existsCaseExact,
   skippedDirectories,
 } from './check-doc-links.mjs'
 
@@ -131,13 +133,53 @@ test('a percent-encoded target resolves to its decoded path', () => {
   )
 })
 
-test('a target that escapes the repository is reported even when it exists on this machine', () => {
+test('a target that escapes the repository is reported as such on every platform', () => {
+  // Containment is now decided before existence, so this reason no longer depends
+  // on whether the escaped path happens to exist on the machine running the test.
+  // The earlier assertion accepted either 'missing' or 'outside the repository'
+  // and so pinned nothing: on Windows the fixture resolved to a non-existent
+  // C:\Users\etc and reported 'missing', while on Linux it clamped at / and
+  // reached a real /etc.
   withFixture({ 'docs/index.md': '[escape](../../../../../../etc)\n' }, (root) => {
     const broken = findBrokenLinks(root)
-    // Either it does not resolve at all, or it resolves outside the root; both are defects.
     assert.equal(broken.length, 1)
-    assert.ok(['missing', 'outside the repository'].includes(broken[0].reason), broken[0].reason)
+    assert.equal(broken[0].reason, 'outside the repository')
   })
+})
+
+test('a target whose case does not match the file on disk is reported', () => {
+  // existsSync is case-insensitive on Windows and macOS but not on Linux, and
+  // GitHub serves case-sensitively. Without this the check passes locally on a
+  // link that returns 404 for every reader — the exact defect class this script
+  // exists to catch.
+  withFixture(
+    {
+      'docs/index.md': '[wrong case](./STATUS.md) and [right case](./Status.md)\n',
+      'docs/Status.md': '# status\n',
+    },
+    (root) => {
+      const broken = findBrokenLinks(root)
+      assert.equal(broken.length, 1)
+      assert.equal(broken[0].target, './STATUS.md')
+      assert.equal(broken[0].reason, 'wrong case')
+    },
+  )
+})
+
+test('existsCaseExact accepts the real casing and rejects any other', () => {
+  withFixture({ 'docs/Nested/Real.md': '# real\n' }, (root) => {
+    assert.equal(existsCaseExact(join(root, 'docs', 'Nested', 'Real.md'), root), true)
+    assert.equal(existsCaseExact(join(root, 'docs', 'nested', 'Real.md'), root), false)
+    assert.equal(existsCaseExact(join(root, 'docs', 'Nested', 'real.md'), root), false)
+    assert.equal(existsCaseExact(root, root), true)
+  })
+})
+
+test('findings render as readable file:line -> target (reason) lines', () => {
+  assert.deepEqual(
+    formatBrokenLinks([{ file: 'docs/a.md', line: 12, target: './gone.md', reason: 'missing' }]),
+    ['docs/a.md:12 -> ./gone.md (missing)'],
+  )
 })
 
 test('skipped directories are not walked', () => {
@@ -160,5 +202,12 @@ test('skipped directories are not walked', () => {
 })
 
 test('the repository itself has no broken repository-relative links', () => {
-  assert.deepEqual(findBrokenLinks(), [])
+  // Deliberately a repo-state assertion rather than a fixture: it is what keeps
+  // the checker honest about the tree it ships with. It reports through
+  // formatBrokenLinks so a failure reads like the CLI's own output instead of a
+  // raw object diff. An untracked local .md can trip it — see the note on
+  // collectMarkdownFiles.
+  const broken = findBrokenLinks()
+  const rendered = formatBrokenLinks(broken)
+  assert.deepEqual(rendered, [], `broken repository-relative links:\n${rendered.join('\n')}`)
 })

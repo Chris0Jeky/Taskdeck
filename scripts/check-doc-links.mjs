@@ -82,7 +82,57 @@ export function extractLocalTargets(markdown) {
   return found
 }
 
-/** Every tracked Markdown file, repo-relative, in stable order. */
+/**
+ * Directory listings, cached per run, used for the case-exact existence check.
+ * Keyed by absolute directory path; a directory that cannot be read caches as
+ * null so the caller can fall back rather than retry it for every link.
+ */
+const directoryEntries = new Map()
+
+function readDirectoryCached(directory) {
+  if (!directoryEntries.has(directory)) {
+    try {
+      directoryEntries.set(directory, new Set(readdirSync(directory)))
+    } catch {
+      directoryEntries.set(directory, null)
+    }
+  }
+  return directoryEntries.get(directory)
+}
+
+/**
+ * Case-exact existence, because `existsSync` is not.
+ *
+ * Windows and macOS resolve `docs/status.md` to `docs/STATUS.md`; Linux and
+ * GitHub's own file serving do not. Checking with `existsSync` alone therefore
+ * passes a link on a developer's machine that returns 404 for every reader —
+ * exactly the defect this script exists to catch, missed silently. So each
+ * segment is confirmed against its parent's real directory listing.
+ *
+ * `target` must already be absolute and inside `root`.
+ */
+export function existsCaseExact(target, root) {
+  if (!existsSync(target)) return false
+  const relativePath = relative(root, target)
+  if (relativePath === '') return true
+  let current = root
+  for (const segment of relativePath.split(sep)) {
+    const entries = readDirectoryCached(current)
+    // An unreadable directory is not evidence of a bad link; trust existsSync.
+    if (entries === null) return true
+    if (!entries.has(segment)) return false
+    current = join(current, segment)
+  }
+  return true
+}
+
+/** Every Markdown file in the working tree, repo-relative, in stable order.
+ *
+ * This walks the working tree, not `git ls-files`, so an untracked or
+ * gitignored `.md` sitting in the checkout is scanned too. That is deliberate —
+ * the check needs no git process and works in a bare export — but it means a
+ * local scratch document can produce a finding that CI will not reproduce.
+ */
 export function collectMarkdownFiles(root = repoRoot) {
   const files = []
   const walk = (directory) => {
@@ -114,12 +164,14 @@ export function resolveTarget(sourceFile, pathPart, root = repoRoot) {
   // A leading "/" in a repository document means repo-root-relative, not filesystem-absolute.
   const base = decoded.startsWith('/') ? join(root, decoded.slice(1)) : join(dirname(sourceFile), decoded)
   const target = resolve(base)
-  if (!existsSync(target)) return { reason: 'missing' }
-  // Escaping the repository resolves on the author's machine and nowhere else.
+  // Containment is checked before existence, so an escaping target reports the
+  // reason that actually explains it rather than an incidental "missing".
   const inside = relative(root, target)
   if (inside.startsWith('..') || isAbsolute(inside)) {
     return { reason: 'outside the repository' }
   }
+  if (!existsSync(target)) return { reason: 'missing' }
+  if (!existsCaseExact(target, root)) return { reason: 'wrong case' }
   return null
 }
 
@@ -147,22 +199,27 @@ export function findBrokenLinks(root = repoRoot) {
   return broken
 }
 
+/** Render findings the way both the CLI and the test suite should report them. */
+export function formatBrokenLinks(broken) {
+  return broken.map(({ file, line, target, reason }) => `${file}:${line} -> ${target} (${reason})`)
+}
+
 function main() {
-  const scanned = collectMarkdownFiles().length
+  const files = collectMarkdownFiles()
   const broken = findBrokenLinks()
 
   if (broken.length > 0) {
     console.error('Doc link check failed:')
-    for (const { file, line, target, reason } of broken) {
-      console.error(`- ${file}:${line} -> ${target} (${reason})`)
+    for (const line of formatBrokenLinks(broken)) {
+      console.error(`- ${line}`)
     }
     console.error(
-      `\n${broken.length} broken repository-relative link(s) across ${scanned} Markdown files.`,
+      `\n${broken.length} broken repository-relative link(s) across ${files.length} Markdown files.`,
     )
     process.exit(1)
   }
 
-  console.log(`Doc link check passed (${scanned} Markdown files, 0 broken relative links).`)
+  console.log(`Doc link check passed (${files.length} Markdown files, 0 broken relative links).`)
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
