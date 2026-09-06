@@ -8,7 +8,7 @@
 **Commit SHA:** `e5f22488fc8f59640202e33726dde369319bb44d`
 **Browser / OS:** Chrome 143 user agent on Windows 10 x64
 **DB baseline:** existing seeded demo state plus one new board created during the run
-**Artifacts:** [mobile Today screenshot](/C:/Users/jekyt/Downloads/taskdeck-today-mobile-2026-04-01T23-50-28-453Z.png)
+**Artifacts:** one mobile Today screenshot, `taskdeck-today-mobile-2026-04-01T23-50-28-453Z.png`, which was never committed — it lived only in the run author's local Downloads folder and is not recoverable. The original line linked that absolute local path, which resolved for nobody and was the only broken relative link in `docs/**` (link sweep 2026-09-06, `#2235`).
 
 ---
 

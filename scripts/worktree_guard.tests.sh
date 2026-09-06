@@ -26,6 +26,7 @@ PS_GUARD_NATIVE="$PS_GUARD"
 if command -v cygpath >/dev/null 2>&1; then
     PS_GUARD_NATIVE="$(cygpath -w "$PS_GUARD" 2>/dev/null || printf '%s' "$PS_GUARD")"
 fi
+_MKTEMP_COMMAND="${WT_GUARD_MKTEMP:-mktemp}"
 
 PASS=0
 FAIL=0
@@ -155,14 +156,58 @@ expect_sh_output() {
     fi
 }
 
-FIXTURE_ROOT="$(mktemp -d 2>/dev/null || mktemp -d -t wtguard)"
+allocate_fixture_root() {
+    local candidate=""
+    if candidate="$("$_MKTEMP_COMMAND" -d 2>/dev/null)" &&
+        [ -n "$candidate" ] && [ -d "$candidate" ]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
+    if candidate="$("$_MKTEMP_COMMAND" -d -t wtguard 2>/dev/null)" &&
+        [ -n "$candidate" ] && [ -d "$candidate" ]; then
+        printf '%s\n' "$candidate"
+        return 0
+    fi
+
+    return 2
+}
+
+FIXTURE_ROOT=""
 cleanup() {
     # Plain `git worktree remove` only; never --force.
+    if [ -z "${FIXTURE_ROOT:-}" ] || [ ! -d "$FIXTURE_ROOT" ]; then
+        return 0
+    fi
     git -C "$FIXTURE_ROOT/primary" worktree remove "$FIXTURE_ROOT/primary/.worktrees/inrepo" >/dev/null 2>&1 || true
     git -C "$FIXTURE_ROOT/primary" worktree remove "$FIXTURE_ROOT/short" >/dev/null 2>&1 || true
     rm -rf -- "$FIXTURE_ROOT" 2>/dev/null || true
 }
 trap cleanup EXIT
+
+if [ "${WT_GUARD_ALLOCATE_ONLY:-0}" -eq 1 ]; then
+    if FIXTURE_ROOT="$(allocate_fixture_root)"; then
+        if [ -z "$FIXTURE_ROOT" ] || [ ! -d "$FIXTURE_ROOT" ]; then
+            echo "worktree_guard self-tests: mktemp returned an unusable fixture root" >&2
+            exit 2
+        fi
+        rm -rf -- "$FIXTURE_ROOT"
+        FIXTURE_ROOT=""
+        exit 0
+    fi
+    FIXTURE_ROOT=""
+    echo "worktree_guard self-tests: unable to allocate fixture root" >&2
+    exit 2
+fi
+
+if ! FIXTURE_ROOT="$(allocate_fixture_root)"; then
+    echo "worktree_guard self-tests: unable to allocate fixture root" >&2
+    exit 2
+fi
+if [ -z "$FIXTURE_ROOT" ] || [ ! -d "$FIXTURE_ROOT" ]; then
+    echo "worktree_guard self-tests: mktemp returned an unusable fixture root" >&2
+    exit 2
+fi
 
 echo "worktree_guard self-tests (fixture: $FIXTURE_ROOT)"
 
@@ -183,6 +228,69 @@ git init -q --bare "$FIXTURE_ROOT/bare.git"
 # A standalone clone whose path merely LOOKS like a worktree root.
 mkdir -p "$FIXTURE_ROOT/.worktrees"
 git clone -q "$FIXTURE_ROOT/primary" "$FIXTURE_ROOT/.worktrees/decoy-clone"
+
+echo "fixture-root allocation"
+fake_mktemp="$FIXTURE_ROOT/fake-mktemp.sh"
+cat > "$fake_mktemp" <<'EOF'
+#!/usr/bin/env bash
+set -u
+if [ -n "${WT_GUARD_FAKE_LOG:-}" ]; then
+    printf '%s\n' "$*" >> "$WT_GUARD_FAKE_LOG"
+fi
+if [ "${WT_GUARD_MKTEMP_MODE:-}" = "first-fails" ] && [ "$#" -eq 3 ]; then
+    mkdir -p "$WT_GUARD_FAKE_ROOT/fallback"
+    printf '%s\n' "$WT_GUARD_FAKE_ROOT/fallback"
+    exit 0
+fi
+exit 1
+EOF
+chmod +x "$fake_mktemp"
+
+fallback_root="$FIXTURE_ROOT/fallback-probe"
+fallback_log="$fallback_root/mktemp.log"
+mkdir -p "$fallback_root"
+if output="$(
+    WT_GUARD_ALLOCATE_ONLY=1 \
+    WT_GUARD_MKTEMP_MODE=first-fails \
+    WT_GUARD_MKTEMP="$fake_mktemp" \
+    WT_GUARD_FAKE_ROOT="$fallback_root" \
+    WT_GUARD_FAKE_LOG="$fallback_log" \
+    bash "$BASH_SOURCE" 2>&1
+)" &&
+    [ "$(wc -l < "$fallback_log")" -eq 2 ] &&
+    [ ! -d "$fallback_root/fallback" ]; then
+    pass "fixture-root allocation falls back after first mktemp form fails"
+else
+    fail "fixture-root allocation falls back after first mktemp form fails"
+    printf '%s\n' "$output"
+fi
+
+failure_root="$FIXTURE_ROOT/failure-probe"
+failure_log="$failure_root/mktemp.log"
+mkdir -p "$failure_root"
+if output="$(
+    WT_GUARD_ALLOCATE_ONLY=1 \
+    WT_GUARD_MKTEMP_MODE=both-fail \
+    WT_GUARD_MKTEMP="$fake_mktemp" \
+    WT_GUARD_FAKE_ROOT="$failure_root" \
+    WT_GUARD_FAKE_LOG="$failure_log" \
+    bash "$BASH_SOURCE" 2>&1
+)"; then
+    fail "fixture-root allocation fails before fixture commands when both mktemp forms fail"
+    printf '%s\n' "$output"
+else
+    code=$?
+    if [ "$code" -eq 2 ] &&
+        [ "$(wc -l < "$failure_log")" -eq 2 ] &&
+        [ ! -d "$failure_root/primary" ] &&
+        [ ! -d "$failure_root/bare.git" ] &&
+        ! printf '%s' "$output" | grep -qE '/primary|/bare\.git|git -C|rm -rf'; then
+        pass "fixture-root allocation fails before fixture commands when both mktemp forms fail"
+    else
+        fail "fixture-root allocation fails before fixture commands when both mktemp forms fail (exit $code)"
+        printf '%s\n' "$output"
+    fi
+fi
 
 # --- accepted: real linked worktrees -------------------------------------
 echo "accepted linked worktrees"

@@ -6,7 +6,8 @@
 #
 #   ci-required.yml          PR/push/merge_group gate (this file)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
-#     ├── release-workflow-contract            release-desktop dispatch hardening gate (#1795/#1806)
+#     ├── release-workflow-contract            release contract suites: dispatch hardening (#1795/#1806),
+#     │                                         release cache trust, release notes composer (#2234/#2250)
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
@@ -89,9 +90,13 @@ permissions:
   # The required-lane gitleaks job runs in PR scan-mode, which reads the PR commit context. (#1132 review)
   pull-requests: read
 
+# A push run on refs/heads/main is landed-commit evidence, so an in-progress main run is not
+# cancelled by the next merge. GitHub keeps one in-progress plus one pending run per group, so
+# during a merge wave the run in flight completes and the newest tip runs next; intermediate
+# pending main runs are still superseded. PR refs keep cancelling (#2582).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   docs-governance:
@@ -127,8 +132,17 @@ jobs:
       - name: Validate release-desktop dispatch hardening contract
         run: node --test scripts/ci/release-desktop-dispatch.test.mjs
 
+      # The changelog base the release page is generated against (#2250). The
+      # selection is semver ordering, which a workflow-text assertion cannot
+      # execute, so the ordering itself is unit-tested here.
+      - name: Validate changelog base selection
+        run: node --test scripts/ci/select-changelog-base.test.mjs
+
       - name: Validate release cache trust contract
         run: node --test scripts/ci/release-cache-contract.test.mjs
+
+      - name: Validate release notes composer
+        run: node --test scripts/ci/compose-release-notes.test.mjs
 
   backend-architecture:
     name: Backend Architecture

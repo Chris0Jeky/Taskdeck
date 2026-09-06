@@ -73,7 +73,12 @@ after publish. `scripts/ci/compose-release-notes.mjs` renders the body instead, 
    that ships inside the ZIP, and the `Get-FileHash` line for checking the download. For a prerelease this block also
    carries a one-line release-candidate banner. The button is always the first line of the page.
 2. **`## Breaking changes`** — lifted from the tag's own section in **`UPGRADING.md`** (`## <tag> …`), so the section
-   cannot be forgotten at tag time.
+   cannot be forgotten at tag time. A release body is not a file in the tree, so the lift rewrites the section's bare
+   anchors (against `UPGRADING.md`) and relative paths into `blob/<tag>` URLs, leaving fenced blocks, inline code spans,
+   scheme-bearing and root-relative destinations as written. The lift is fence-aware and **fails closed**: a `#`/`##`
+   line inside a fenced block neither starts nor ends the section, and a fence still open at the end of the document is
+   a malformed `UPGRADING.md` that fails the compose for a release candidate as well as a stable tag — rather than
+   publishing every older version's notes under this heading.
 3. **`## Highlights`** — the curated **`docs/releases/notes/<tag>.md`**, written by the pre-tag docs PR.
 4. **`## What's changed`** — the `releases/generate-notes` body, grouped through `.github/release.yml` and carrying its
    full-changelog compare link.
@@ -85,11 +90,18 @@ pointer at `UPGRADING.md`. A missing or mismatched checksum fails either way.
 
 The `compose-notes` job runs on the rehearsal path too and uploads what it rendered as the **`composed-page-body`**
 artifact, so a `no-publish` dispatch previews the exact page before a tag is cut (the changelog section is a placeholder
-there, because `generate-notes` needs a tag that already exists). That artifact name must not match the `release-*` pattern
+there, because `generate-notes` needs a tag that already exists). Left blank, a rehearsal resolves to
+`v0.0.0-dryrun+<sha7>`, which carries a prerelease segment and so renders the release-candidate fallback; the optional
+`preview_tag` dispatch input renders the page as the prospective **stable** tag instead. It is render-only — it never
+names, creates, touches or publishes a Release — and supplying it on a dispatch that actually publishes is REFUSED in
+`resolve-source`, before any build runs, because the two inputs then state two different intents.
+The `composed-page-body` artifact name must not match the `release-*` pattern
 `create-release` uses to collect the built assets — `download-artifact` matches it with minimatch, and a matching name would
 have the rendered Markdown published as a stray asset beside the ZIP; the dispatch suite asserts it with a real glob match.
-On the publish path the changelog base is stated explicitly as the newest published **stable** release, so a stable page
-always spans the whole gap since the last stable release rather than only the last release candidate.
+On the publish path the changelog base is stated explicitly as the newest published **stable** release that sorts
+strictly before the tag being built by semver — not the globally newest stable one by release date — so a stable page
+always spans the whole gap since the last stable release rather than only the last release candidate, and re-running an
+older tag after a newer one has shipped cannot render a changelog that runs backwards.
 `create-release` downloads that artifact by name, refuses an empty
 or button-less body, passes it to `gh release create --notes-file`, and re-asserts it in the same `gh release edit` that
 clears the draft flag — which is what keeps the resumable adopt path ([#1806](https://github.com/Chris0Jeky/Taskdeck/issues/1806))

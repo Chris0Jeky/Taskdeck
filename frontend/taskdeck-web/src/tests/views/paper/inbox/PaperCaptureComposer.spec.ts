@@ -163,6 +163,53 @@ describe('PaperCaptureComposer', () => {
     }
   }
 
+  function surfaceCopy(wrapper: ReturnType<typeof mount>) {
+    return {
+      eyebrow: wrapper.get('.paper-composer__header .tagstamp').text(),
+      meta: wrapper.get('.paper-composer__meta').text(),
+      footer: wrapper.get('.paper-composer__footer .tk-meta').text(),
+      submit: wrapper.get('.paper-composer__footer .phlbtn-label').text(),
+    }
+  }
+
+  it.each([
+    [
+      'en',
+      {
+        eyebrow: 'Capture · Draft',
+        meta: 'local-only · saves to Inbox',
+        footer: 'Captures land in Inbox. Linking to a board creates a proposal, not a card.',
+        submit: 'Capture',
+      },
+    ],
+    [
+      'it',
+      {
+        eyebrow: 'Cattura · Bozza',
+        meta: 'solo locale · salva nell’Inbox',
+        footer: 'Le catture arrivano nell’Inbox. Collegarle a una bacheca crea una proposta, non una scheda.',
+        submit: 'Cattura',
+      },
+    ],
+    [
+      'es',
+      {
+        eyebrow: 'Captura · Borrador',
+        meta: 'solo local · se guarda en Inbox',
+        footer: 'Las capturas llegan al Inbox. Vincularlas a un tablero crea una propuesta, no una tarjeta.',
+        submit: 'Capturar',
+      },
+    ],
+  ] as const)('renders the composer surface copy in %s', (locale, expected) => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = locale as SupportedLocale
+      expect(surfaceCopy(mount(PaperCaptureComposer))).toEqual(expected)
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
   it('renders the field chrome in English on the default locale', () => {
     const wrapper = mount(PaperCaptureComposer)
     const chrome = fieldChrome(wrapper)
@@ -274,6 +321,32 @@ describe('PaperCaptureComposer', () => {
       expect(chrome.body.attributes('aria-label')).toBe(
         'Testo: scrivi il contenuto di questa cattura',
       )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  it('re-renders the composer surface copy when the locale switches after mount', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'en' as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      expect(surfaceCopy(wrapper)).toEqual({
+        eyebrow: 'Capture · Draft',
+        meta: 'local-only · saves to Inbox',
+        footer: 'Captures land in Inbox. Linking to a board creates a proposal, not a card.',
+        submit: 'Capture',
+      })
+
+      i18n.global.locale.value = 'it' as SupportedLocale
+      await nextTick()
+
+      expect(surfaceCopy(wrapper)).toEqual({
+        eyebrow: 'Cattura · Bozza',
+        meta: 'solo locale · salva nell’Inbox',
+        footer: 'Le catture arrivano nell’Inbox. Collegarle a una bacheca crea una proposta, non una scheda.',
+        submit: 'Cattura',
+      })
     } finally {
       i18n.global.locale.value = previousLocale
     }

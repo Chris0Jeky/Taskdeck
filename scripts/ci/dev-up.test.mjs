@@ -665,6 +665,40 @@ async function installPowerShellStubs(fakeBin) {
   )
 }
 
+async function installPowerShellNetstatFallbackProbe(fixture) {
+  const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
+  const source = normalise(await readFile(launcherPath, 'utf8'))
+  const marker = 'Set-StrictMode -Version Latest'
+  const netstatPath = join(fixture.fakeBin, 'netstat.cmd')
+  const probe = String.raw`function Get-NetTCPConnection {
+    [CmdletBinding()]
+    param([string]$State, [int]$LocalPort)
+    throw [System.Management.Automation.CommandNotFoundException]::new("synthetic unavailable")
+}
+`
+  assert.equal(source.split(marker).length - 1, 1, 'unexpected strict-mode marker count')
+  assert.equal(source.includes('$netstat = Join-Path $env:SystemRoot "System32/netstat.exe"'), true)
+  const instrumented = source
+    .replace(marker, `${marker}\n${probe}`)
+    .replace(
+      '$netstat = Join-Path $env:SystemRoot "System32/netstat.exe"',
+      '$netstat = $env:TASKDECK_TEST_NETSTAT_PATH',
+    )
+  assert.notEqual(instrumented, source, 'PowerShell netstat probe did not instrument the launcher')
+  await writeFile(launcherPath, instrumented)
+  await writeFile(
+    netstatPath,
+    [
+      '@echo off',
+      'echo TCP 0.0.0.0:%TASKDECK_TEST_NETSTAT_PORT% 0.0.0.0:0 ABHOEREN 4242',
+      'echo TCP 127.0.0.1:%TASKDECK_TEST_NETSTAT_PORT% 127.0.0.1:51234 WARTEND 0',
+      'exit /b 0',
+      '',
+    ].join('\r\n'),
+  )
+  return netstatPath
+}
+
 async function installBashStubs(fakeBin) {
   const stubs = {
     node: String.raw`#!/usr/bin/env bash
@@ -1244,6 +1278,130 @@ if (powershell) {
 }
 
 if (bash) {
+  test('Bash: localized netstat state still identifies a listening socket', { concurrency: false }, async () => {
+    const source = normalise(await readFile(bashLauncher, 'utf8'))
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-netstat-seam-'))
+    const fakeBin = join(fixtureRoot, 'bin')
+    const fakeNetstat = join(fakeBin, 'netstat')
+    const harness = join(fixtureRoot, 'netstat-seam.sh')
+    try {
+      await mkdir(fakeBin, { recursive: true })
+      await writeFile(
+        fakeNetstat,
+        String.raw`#!/usr/bin/env bash
+printf '%s\n' 'Proto Recv-Q Send-Q Local Address Foreign Address State'
+printf 'tcp 0 0 127.0.0.1:%s 0.0.0.0:* ABHOEREN\n' "$TASKDECK_TEST_NETSTAT_PORT"
+printf 'tcp 0 0 127.0.0.1:%s 127.0.0.1:51234 WARTEND\n' "$TASKDECK_TEST_NETSTAT_PORT"
+printf 'tcp 0 0 127.0.0.1:%s 127.0.0.1:51235 WARTEND\n' "$TASKDECK_TEST_NETSTAT_DRAINED_PORT"
+`,
+      )
+      await chmod(fakeNetstat, 0o755)
+      await writeFile(
+        harness,
+        String.raw`#!/usr/bin/env bash
+set -euo pipefail
+command() {
+  if [[ "$#" -eq 2 && "$1" == '-v' && ("$2" == 'ss' || "$2" == 'lsof') ]]; then return 1; fi
+  builtin command "$@"
+}
+${extractBashFunction(source, 'port_listener_inventory')}
+[[ "$(port_listener_inventory "$TASKDECK_TEST_NETSTAT_PORT")" == 'listening' ]]
+# A port whose only rows are drained connections with a real peer is free, whatever the state token says.
+[[ "$(port_listener_inventory "$TASKDECK_TEST_NETSTAT_DRAINED_PORT")" == 'free' ]]
+`,
+      )
+      const result = spawnSync(bash, [toPosixPath(harness)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+        env: {
+          ...process.env,
+          PATH: `${toPosixPath(fakeBin)}:/usr/local/bin:/usr/bin:/bin`,
+          TASKDECK_TEST_NETSTAT_PORT: '43210',
+          TASKDECK_TEST_NETSTAT_DRAINED_PORT: '43211',
+        },
+      })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    } finally {
+      await removeDirectory(fixtureRoot)
+    }
+  })
+
+  test('Bash: timeout parsing matches PowerShell for whitespace and signed zero', { concurrency: false }, async () => {
+    const source = normalise(await readFile(bashLauncher, 'utf8'))
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-timeout-seam-'))
+    const harness = join(fixtureRoot, 'timeout-seam.sh')
+    try {
+      await writeFile(
+        harness,
+        String.raw`#!/usr/bin/env bash
+set -euo pipefail
+warn() { :; }
+DEFAULT_PORT_RELEASE_TIMEOUT_MS=30000
+${extractBashFunction(source, 'port_release_timeout_ms')}
+assert_value() {
+  local input="$1" expected="$2"
+  TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS="$input"
+  [[ "$(port_release_timeout_ms)" == "$expected" ]]
+}
+assert_value ' 42 ' 42
+assert_value '-0' 0
+assert_value ' +0 ' 0
+assert_value '   ' 30000
+`,
+      )
+      const result = spawnSync(bash, [toPosixPath(harness)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+        env: { ...process.env },
+      })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    } finally {
+      await removeDirectory(fixtureRoot)
+    }
+  })
+
+  test('Bash: now_ms rejects a bare-seconds date result', { concurrency: false }, async () => {
+    const source = normalise(await readFile(bashLauncher, 'utf8'))
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-clock-seam-'))
+    const harness = join(fixtureRoot, 'clock-seam.sh')
+    try {
+      await writeFile(
+        harness,
+        String.raw`#!/usr/bin/env bash
+set -euo pipefail
+DATE_MODE=seconds
+date() {
+  case "$1" in
+    +%s%3N)
+      if [[ "$DATE_MODE" == 'seconds' ]]; then printf '1700000000\n'; else printf '1700000000123\n'; fi
+      ;;
+    +%s) printf '1700000000\n' ;;
+    *) return 1 ;;
+  esac
+}
+${extractBashFunction(source, 'now_ms')}
+[[ "$(now_ms)" == '1700000000000' ]]
+DATE_MODE=milliseconds
+[[ "$(now_ms)" == '1700000000123' ]]
+`,
+      )
+      const result = spawnSync(bash, [toPosixPath(harness)], {
+        encoding: 'utf8',
+        timeout: 5000,
+        windowsHide: true,
+        env: { ...process.env },
+      })
+      assert.ifError(result.error)
+      assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`)
+    } finally {
+      await removeDirectory(fixtureRoot)
+    }
+  })
+
   test('Bash: Match to Mismatch after TERM never escalates to KILL', { concurrency: false }, async () => {
     const source = normalise(await readFile(bashLauncher, 'utf8'))
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'taskdeck-dev-up-identity-seam-'))
@@ -1805,6 +1963,222 @@ for (const platform of platforms) {
       await removeFixture(fixture)
     }
   })
+
+  // #1898/#2378: port release is bounded by an elapsed-time deadline, not a fixed iteration count.
+  // Both cases stop a synthetic state whose recorded PID is already gone, so the only thing under
+  // test is the port-release stage.
+  async function writeReapedState(fixture, { apiPort, frontendPort }) {
+    const runId = '22222222-2222-4222-8222-222222222222'
+    const deadProcess = spawn(process.execPath, ['-e', 'process.exit(0)'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    const deadPid = deadProcess.pid
+    await new Promise((resolve) => deadProcess.once('exit', resolve))
+    await mkdir(fixture.stateDir, { recursive: true })
+    const prefix = join(fixture.stateDir, `dev-up-${runId}`)
+    await writeFile(
+      fixture.stateFile,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          runId,
+          apiPort,
+          frontend: { url: `http://localhost:${frontendPort}/`, port: frontendPort },
+          logs: {
+            apiStdout: `${prefix}-api.stdout.log`,
+            apiStderr: `${prefix}-api.stderr.log`,
+            frontendStdout: `${prefix}-frontend.stdout.log`,
+            frontendStderr: `${prefix}-frontend.stderr.log`,
+          },
+          processes: [
+            { role: 'api', pid: deadPid, name: 'node', creationToken: 'reaped-before-this-stop' },
+            { role: 'frontend', pid: deadPid, name: 'node', creationToken: 'reaped-before-this-stop' },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    )
+  }
+
+  test(
+    `${platform.name}: a frontend port released after the old fixed budget still stops cleanly`,
+    { concurrency: false },
+    async () => {
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      let frontendPort
+      do frontendPort = await getFreePort()
+      while (frontendPort === apiPort)
+      // Held out-of-process because runLauncher blocks this event loop: the holder releases the
+      // port 12s after the launcher starts, well past the 5s fixed budget the old Wait-PortRelease
+      // allowed (50 x 100ms), so this case fails on the pre-fix launchers and passes on these.
+      const holder = spawn(
+        process.execPath,
+        [
+          '-e',
+          "const net=require('node:net');const s=net.createServer();s.listen(Number(process.argv[1]),'127.0.0.1',()=>{console.log('ready');setTimeout(()=>process.exit(0),12000)})",
+          String(frontendPort),
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
+      )
+      try {
+        await new Promise((resolve, reject) => {
+          holder.stdout.once('data', resolve)
+          holder.once('exit', () => reject(new Error('port holder exited before it was ready')))
+        })
+        assert.equal(await canBind(frontendPort, '127.0.0.1'), false, 'port holder did not occupy the port')
+        await writeReapedState(fixture, { apiPort, frontendPort })
+        const result = runLauncher(platform, fixture, {
+          stop: true,
+          timeout: 40_000,
+          env: { TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '20000' },
+        })
+        assert.ifError(result.error)
+        assert.equal(result.status, 0, combinedOutput(result))
+        assert.match(combinedOutput(result), /Stack stopped/)
+        assert.equal(await readOptional(fixture.stateFile), null)
+      } finally {
+        holder.kill('SIGKILL')
+        if (existsSync(fixture.stateFile)) {
+          runLauncher(platform, fixture, {
+            stop: true,
+            env: { TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500' },
+          })
+        }
+        await removeFixture(fixture)
+      }
+    },
+  )
+
+  test(
+    `${platform.name}: a live listener still holding the frontend port fails closed`,
+    { concurrency: false },
+    async () => {
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      const foreign = await listenForeign('127.0.0.1')
+      const frontendPort = foreign.address().port
+      try {
+        await writeReapedState(fixture, { apiPort, frontendPort })
+        const result = runLauncher(platform, fixture, {
+          stop: true,
+          timeout: 30_000,
+          env: { TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500' },
+        })
+        assertFailedClosed(result)
+        assert.match(combinedOutput(result), /Frontend port .* is still occupied/)
+        // Either fail-closed reason is acceptable: a readable listener inventory names the live owner,
+        // and a platform without one (Git Bash on Windows has neither lsof nor ss) must still refuse.
+        assert.match(combinedOutput(result), /held by a live|could not be inventoried/)
+        assert.equal(existsSync(fixture.stateFile), true, 'PID state was dropped despite a live listener')
+        assert.equal(foreign.listening, true, 'the live listener was disturbed')
+      } finally {
+        // No cleanup stop here: the listener is still up on purpose, so another stop would only
+        // burn the deadline again. removeFixture discards the whole state directory.
+        await new Promise((resolve) => foreign.close(resolve))
+        await removeFixture(fixture)
+      }
+    },
+  )
+
+  if (platform.name === 'PowerShell') {
+    test(
+      `${platform.name}: a localized netstat state still identifies a live listener`,
+      { concurrency: false },
+      async () => {
+        const fixture = await createFixture(platform)
+        const apiPort = await getFreePort()
+        const foreign = await listenForeign('127.0.0.1')
+        const frontendPort = foreign.address().port
+        try {
+          const netstatPath = await installPowerShellNetstatFallbackProbe(fixture)
+          await writeReapedState(fixture, { apiPort, frontendPort })
+          const result = runLauncher(platform, fixture, {
+            stop: true,
+            timeout: 30_000,
+            env: {
+              TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500',
+              TASKDECK_TEST_NETSTAT_PATH: netstatPath,
+              TASKDECK_TEST_NETSTAT_PORT: String(frontendPort),
+            },
+          })
+          assertFailedClosed(result)
+          assert.match(combinedOutput(result), /Frontend port .* is still occupied/)
+          assert.match(combinedOutput(result), /still held by a live listener/)
+          assert.equal(existsSync(fixture.stateFile), true, 'PID state was dropped for a localized listener')
+          assert.equal(foreign.listening, true, 'the localized listener was disturbed')
+        } finally {
+          await new Promise((resolve) => foreign.close(resolve))
+          await removeFixture(fixture)
+        }
+      },
+    )
+  }
+
+  // An unprivileged inventory can see that a socket is listening without being able to name its
+  // owner: `ss -p` omits `users:(...)` for another account's socket, and `lsof` cannot see it at
+  // all. An unattributable owner must never be read as "nothing is listening" - otherwise a
+  // root-owned listener (docker-proxy, a systemd unit on 5000/5173) would be reported as a clean
+  // stop and the PID file removed. Stubs reproduce that exact shape.
+  if (platform.name === 'Bash') {
+    test(
+      `${platform.name}: a listening socket with no attributable owner still fails closed`,
+      { concurrency: false },
+      async () => {
+        const fixture = await createFixture(platform)
+        const apiPort = await getFreePort()
+        const foreign = await listenForeign('127.0.0.1')
+        const frontendPort = foreign.address().port
+        try {
+          // Prints a LISTEN row for the frontend port only - and never a `pid=` field.
+          await writeFile(
+            join(fixture.fakeBin, 'ss'),
+            [
+              '#!/usr/bin/env bash',
+              'for arg in "$@"; do',
+              '  case "$arg" in',
+              '    *":$TASKDECK_TEST_UNATTRIBUTABLE_PORT")',
+              '      printf \'LISTEN 0 511 0.0.0.0:%s 0.0.0.0:*\\n\' "$TASKDECK_TEST_UNATTRIBUTABLE_PORT"',
+              '      exit 0 ;;',
+              '  esac',
+              'done',
+              'exit 0',
+              '',
+            ].join('\n'),
+          )
+          await chmod(join(fixture.fakeBin, 'ss'), 0o755)
+          // Deny the lsof attribution fallback too, so the unattributable path is deterministic
+          // whether or not the host has a real lsof.
+          await writeFile(join(fixture.fakeBin, 'lsof'), '#!/usr/bin/env bash\nexit 1\n')
+          await chmod(join(fixture.fakeBin, 'lsof'), 0o755)
+
+          await writeReapedState(fixture, { apiPort, frontendPort })
+          const result = runLauncher(platform, fixture, {
+            stop: true,
+            timeout: 30_000,
+            env: {
+              TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500',
+              TASKDECK_TEST_UNATTRIBUTABLE_PORT: String(frontendPort),
+            },
+          })
+          assertFailedClosed(result)
+          assert.match(combinedOutput(result), /still held by a live listener/)
+          assert.match(combinedOutput(result), /Frontend port .* is still occupied/)
+          assert.equal(
+            existsSync(fixture.stateFile),
+            true,
+            'PID state was dropped for a listener that could not be attributed to a PID',
+          )
+          assert.equal(foreign.listening, true, 'the unattributable listener was disturbed')
+        } finally {
+          await new Promise((resolve) => foreign.close(resolve))
+          await removeFixture(fixture)
+        }
+      },
+    )
+  }
 
   test(`${platform.name}: high-volume stdout and stderr cannot deadlock marker acceptance`, { concurrency: false, timeout: 60_000 }, async () => {
     const fixture = await createFixture(platform)
