@@ -914,7 +914,7 @@ export function usePaperReviewSelectors(
       signal.addEventListener('abort', onAbort, { once: true })
     })
 
-    return Promise.race([runCoreBatchWithSameActionRetry(key), aborted]).finally(() => {
+    return Promise.race([runCoreBatchWithSameActionRetry(key, signal), aborted]).finally(() => {
       if (onAbort) signal.removeEventListener('abort', onAbort)
     })
   }
@@ -925,11 +925,13 @@ export function usePaperReviewSelectors(
    */
   function runCoreBatchWithSameActionRetry(
     key: SelectorKey,
+    callerSignal?: AbortSignal,
   ): Promise<CoreSelectorBatchOutcome> {
     const promise = ensureCoreBatch(key)
     return promise.then((outcome) => {
       if (
         outcome === 'failed' &&
+        !callerSignal?.aborted &&
         activeCoreBatch &&
         selectorKeysEqual(activeCoreBatch.key, key) &&
         activeCoreBatch.promise === promise
