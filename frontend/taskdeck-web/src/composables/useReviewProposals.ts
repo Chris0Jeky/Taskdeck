@@ -618,14 +618,16 @@ export function useReviewProposals() {
   const queueAnnouncementKey = computed(() => awaitingProposalIds.value.join('\n'))
 
   /**
-   * The board scope of a queue read, as one comparable value. Lower-cased
-   * because the scope is the BOARD, not the casing the query string happened to
-   * carry — the same rule `matchesActiveBoardFilter` applies — and an empty
-   * filter is the unscoped queue, exactly as `boardId: activeBoardFilter.value
-   * || undefined` sends it.
+   * The read identity of a queue, as one comparable value. Lower-cased because
+   * the scope is the BOARD, not the casing the query string happened to carry —
+   * the same rule `matchesActiveBoardFilter` applies — and the history mode is
+   * part of the rendered read even though both modes share the board filter.
+   * An empty filter is the unscoped live queue, exactly as
+   * `boardId: activeBoardFilter.value || undefined` sends it.
    */
   function queueScopeOf(boardId: string | null | undefined): string | null {
-    return boardId ? boardId.toLowerCase() : null
+    const boardScope = boardId ? boardId.toLowerCase() : '<unscoped>'
+    return `${boardScope}:${isArchivedHistory.value ? 'archived' : 'live'}`
   }
 
   /**
@@ -635,8 +637,8 @@ export function useReviewProposals() {
   const landedQueueScope = ref<string | null | undefined>(undefined)
 
   /**
-   * Whether a queue read has landed for the board scope currently on screen
-   * (#2599 item 1). This is what the two skins' announcement gates need, and
+   * Whether a queue read has landed for the board-and-mode scope currently on
+   * screen (#2599 item 1). This is what the two skins' announcement gates need, and
    * `!proposalsLoading` was the wrong approximation of it.
    *
    * An explicit `loadProposals` raises `proposalsLoading` WITHOUT clearing
@@ -651,8 +653,8 @@ export function useReviewProposals() {
    * is not a count of the queue on screen:
    *  - before the first read lands (the #2593 skeleton gate — the count is 0
    *    because nothing has been read, not because nothing awaits review);
-   *  - after a board-filter change, until the new scope's read lands: the rows
-   *    still rendered belong to the previous board;
+   *  - after a board-filter or history-mode change, until the new scope's read
+   *    lands: the rows still rendered belong to the previous read identity;
    *  - for a scope no read has landed for, including one whose only read
    *    failed: the entry load, or the first read after a filter change.
    *
@@ -667,7 +669,9 @@ export function useReviewProposals() {
    * degraded and refused disclosures (#2214).
    *
    * A same-scope reload keeps it settled, because the queue it is about is
-   * still the one being counted. `queueAccessRevoked` keeps its own separate
+   * still the one being counted. A live-to-archived or archived-to-live
+   * transition is a new read identity, even on the same board.
+   * `queueAccessRevoked` keeps its own separate
    * gate: a revocation is a different fact with a different remedy.
    */
   const queueScopeLoaded = computed(
@@ -1251,6 +1255,7 @@ export function useReviewProposals() {
     // The scope this read is ASKING about. A late answer -- success or 403 --
     // describes the board it queried, never whichever board is on screen now.
     const requestedBoardId = activeBoardFilter.value || null
+    const requestedHistoryMode = isArchivedHistory.value
     // A hash target is part of the question too. Hash navigation does not start
     // a queue load, so it needs its own snapshot to stop an old by-id answer from
     // inserting or marking unavailable whichever proposal is selected next.
@@ -1264,7 +1269,8 @@ export function useReviewProposals() {
     const isSupersededQueueRead = () =>
       observedLoadId !== latestProposalLoadRequestId ||
       proposalsLoading.value ||
-      (activeBoardFilter.value || null) !== requestedBoardId
+      (activeBoardFilter.value || null) !== requestedBoardId ||
+      isArchivedHistory.value !== requestedHistoryMode
     const isSupersededCompositeRead = () =>
       isSupersededQueueRead() || route.hash !== requestedHash
     // The list and optional by-id request form one composite read. Every guard
@@ -1644,7 +1650,7 @@ export function useReviewProposals() {
   )
 
   watch(
-    () => activeBoardFilter.value,
+    () => [activeBoardFilter.value, isArchivedHistory.value],
     () => { loadProposals().catch(() => {}) },
   )
 
