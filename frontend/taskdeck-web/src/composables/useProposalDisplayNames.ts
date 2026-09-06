@@ -2,6 +2,7 @@ import { boardsApi } from '../api/boardsApi'
 import { columnsApi } from '../api/columnsApi'
 import type { Proposal, ProposalOperation, ProposalAffectedEntity } from '../types/automation'
 import type { Board } from '../types/board'
+import { formatRecordedOperationActionLabel } from '../utils/recordedOperationPresentation'
 
 type IdMap = Map<string, string>
 
@@ -286,7 +287,7 @@ export function createProposalDisplayNameResolver() {
     if (supplied) return supplied
 
     const target = operationHeadlineTarget(proposal, operation)
-    return `${operation.actionType} ${operation.targetType}${target ? ` “${target}”` : ''}`
+    return `${formatRecordedOperationActionLabel(operation.actionType)} ${operation.targetType}${target ? ` “${target}”` : ''}`
   }
 
   function affectedEntity(proposal: Proposal, entity: ProposalAffectedEntity): ProposalAffectedEntity {

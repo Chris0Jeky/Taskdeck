@@ -40,6 +40,7 @@ import {
 } from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
+import { formatRecordedOperationActionLabel } from '../../utils/recordedOperationPresentation'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -556,7 +557,7 @@ const storedOperationsFallback = computed(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map(
       (op, index) =>
-        `${index + 1}. ${formatActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
+        `${index + 1}. ${formatRecordedOperationActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
     )
     .join('\n')
 })
@@ -920,13 +921,6 @@ const headerMeta = computed(() => {
   })
 })
 
-function formatActionLabel(actionType: string): string {
-  return actionType
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .trim()
-}
-
 function summarizeOperation(operation: ProposalOperation): string {
   const proposal = activeProposal.value
   if (!proposal) return t('review.change.after.noParameterPreview')
@@ -945,7 +939,7 @@ function afterOperationTitle(proposal: ApiProposal, operation: ProposalOperation
   ) {
     return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
   }
-  return `${formatActionLabel(operation.actionType)} · ${operation.targetType}`
+  return `${formatRecordedOperationActionLabel(operation.actionType)} · ${operation.targetType}`
 }
 
 const before = computed<ChangeBeforeCard>(() => {
@@ -1020,7 +1014,7 @@ const fields = computed<FieldDiff[]>(() => {
   return [...operations]
     .sort((a, b) => a.sequence - b.sequence)
     .map((operation) => ({
-      key: formatActionLabel(operation.actionType),
+      key: formatRecordedOperationActionLabel(operation.actionType),
       before: proposalDisplayNames.operationTargetLabel(p!, operation) ?? operation.targetType,
       after: summarizeOperation(operation),
     }))
