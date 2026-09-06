@@ -17,7 +17,13 @@ $bashCommand = if ($PSBoundParameters.ContainsKey('BashExecutable')) {
         $null
     }
     else {
-        Get-Command -Name $BashExecutable -CommandType Application -TotalCount 1 -ErrorAction SilentlyContinue
+        $resolvedBash = Get-Command -Name $BashExecutable -CommandType Application -TotalCount 1 -ErrorAction SilentlyContinue
+        if ($null -eq $resolvedBash) {
+            # An explicitly requested Bash that does not resolve is an operator error, never a SKIP:
+            # degrading to the "no Bash installed" path would let the drill regressions vanish silently.
+            throw "BashExecutable '$BashExecutable' did not resolve to an application; fix the path or omit the parameter to auto-detect."
+        }
+        $resolvedBash
     }
 }
 else {
