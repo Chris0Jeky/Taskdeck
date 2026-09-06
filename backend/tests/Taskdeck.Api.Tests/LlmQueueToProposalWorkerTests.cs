@@ -17,6 +17,15 @@ using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
+// The outcome listener below observes the process-global WorkerItemsProcessed counter, which
+// the resilience and transcript-worker test classes also drive; this collection runs alone.
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class WorkerTelemetryCollection
+{
+    public const string Name = "Worker telemetry global state";
+}
+
+[Collection(WorkerTelemetryCollection.Name)]
 public class LlmQueueToProposalWorkerTests
 {
     #region Helper factories
@@ -137,12 +146,25 @@ public class LlmQueueToProposalWorkerTests
         };
         listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
         {
+            string? outcome = null;
+            var thisWorker = false;
             foreach (var tag in tags)
             {
-                if (tag.Key == TaskdeckTelemetryTags.Outcome && tag.Value is string outcome)
+                if (tag.Key == TaskdeckTelemetryTags.Outcome && tag.Value is string value)
+                {
+                    outcome = value;
+                }
+                else if (tag.Key == TaskdeckTelemetryTags.WorkerName && tag.Value is string name)
+                {
+                    thisWorker = name == nameof(LlmQueueToProposalWorker);
+                }
+            }
+
+            if (thisWorker && outcome is not null)
+            {
+                lock (outcomes)
                 {
                     outcomes.Add(outcome);
-                    break;
                 }
             }
         });
@@ -302,7 +324,7 @@ public class LlmQueueToProposalWorkerTests
         // the processing lease expires.
         item.Status.Should().Be(RequestStatus.Pending);
         item.RetryCount.Should().Be(0, "a shutdown mid-item must not consume the retry budget");
-        outcomes.Should().Equal("abandoned_shutdown");
+        outcomes.Should().Equal("released_on_shutdown");
     }
 
     [Fact]
@@ -362,7 +384,7 @@ public class LlmQueueToProposalWorkerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => InvokeProcessBatchAsync(worker, cts.Token));
 
-        outcomes.Should().NotContain("abandoned_shutdown");
+        outcomes.Should().NotContain("released_on_shutdown");
     }
 
     [Fact]

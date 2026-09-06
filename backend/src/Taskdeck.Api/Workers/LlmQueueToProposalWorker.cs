@@ -12,7 +12,10 @@ public class LlmQueueToProposalWorker : BackgroundService
 {
     private const string QueueNameLlm = "llm";
     private const string QueueNameCaptureTriage = "capture-triage";
-    private const string OutcomeAbandonedShutdown = "abandoned_shutdown";
+    // The claim was released back to Pending before the host stopped; nothing was abandoned.
+    private const string OutcomeReleasedOnShutdown = "released_on_shutdown";
+    // The release write failed, so the row stays Processing for the recovery sweep: the unhealthy path.
+    private const string OutcomeShutdownReleaseFailed = "shutdown_release_failed";
     private const string OutcomeCancelledRequeued = "cancelled_requeued";
 
     // Floor on the stuck-recovery lease so an aggressively-low ProcessingLeaseSeconds can never sweep a
@@ -371,7 +374,7 @@ public class LlmQueueToProposalWorker : BackgroundService
         {
             if (await ReleaseClaimOnShutdownAsync(item))
             {
-                RecordWorkerOutcome(OutcomeAbandonedShutdown);
+                RecordWorkerOutcome(OutcomeReleasedOnShutdown);
             }
 
             throw;
@@ -453,6 +456,9 @@ public class LlmQueueToProposalWorker : BackgroundService
                 "Failed to release queue item {ItemId} during shutdown; it stays Processing for the recovery sweep. {ExceptionSummary}",
                 item.Id,
                 SensitiveDataRedactor.SummarizeException(ex));
+            // Only a genuinely failed release write is the unhealthy outcome; a row that had already
+            // moved on (the early returns above) has nothing to release and emits nothing here.
+            RecordWorkerOutcome(OutcomeShutdownReleaseFailed);
             return false;
         }
     }
