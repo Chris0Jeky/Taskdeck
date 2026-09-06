@@ -85,7 +85,7 @@ The lanes are the existing reusable workflows (ADR-0013), parameterized rather t
 | backend-unit | `reusable-backend-unit.yml` (Domain/Application/CLI) | Linux semantic; Windows only via the contract | |
 | api-integration | `reusable-api-integration.yml` → behavioural shards (CI-06) | Linux semantic; Windows contract shard | |
 | migration | `reusable-migration-validation.yml` | hosted Linux | selected by persistence groups |
-| frontend | `reusable-frontend-unit.yml` | Linux once; Windows launcher/platform subset | CI-08 |
+| frontend | `reusable-frontend-unit.yml` | Linux once (launcher suite Linux-only since CI-07 #2331); Windows platform subset without the launcher suite | CI-08 |
 | e2e-journey | `reusable-e2e-smoke.yml` by journey | self-hosted Linux / hosted | CI-08 |
 | containers | `reusable-container-images.yml`, `reusable-container-integration.yml` | self-hosted Linux / hosted | risk-gated (CI-08) |
 | windows-compat | worktree-helper harness, launchers, dev-up, MCP host, SQLite, desktop | Windows (self-hosted after CI-04) | CI-07 |
