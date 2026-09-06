@@ -2492,9 +2492,10 @@ sleep 30
                 $hiddenTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
                 [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $scenario.Flag, "Process")
                 if ($scenario.RequiresFsmonitor) {
-                    $fsmonitorFixtureRoot = $callerPath
                     $fsmonitorStart = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("-C", $callerPath, "fsmonitor--daemon", "start") -WorkingDirectory $callerPath
                     Assert-Equal 0 $fsmonitorStart.ExitCode "Fsmonitor fixture daemon did not start.`n$($fsmonitorStart.Output)"
+                    # Only a proven-started daemon is stopped in the finally block; a failed start must not turn cleanup into a second, bogus failure.
+                    $fsmonitorFixtureRoot = $callerPath
                     $fsmonitorStatus = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("-C", $callerPath, "fsmonitor--daemon", "status") -WorkingDirectory $callerPath
                     Assert-Equal 0 $fsmonitorStatus.ExitCode "Fsmonitor fixture daemon status failed.`n$($fsmonitorStatus.Output)"
                     Assert-NormalizedContains $fsmonitorStatus.Output "fsmonitor-daemon is watching" "Fsmonitor fixture did not prove that its daemon owns the fixture before the scenario ran."
