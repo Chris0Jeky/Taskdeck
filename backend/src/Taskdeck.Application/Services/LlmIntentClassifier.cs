@@ -285,8 +285,11 @@ public static class LlmIntentClassifier
                 timeoutReported = true;
             }
 
-            // Preserve the classifier's existing fallback outcome: a timeout
-            // cannot make a request actionable, but it must not crash the turn.
+            // A timed-out pattern reports "no match" and never crashes the turn.
+            // The sibling patterns of the same rule still run, so the aggregate
+            // outcome can differ from the pre-timeout path (a sibling may match
+            // where the old per-group catch skipped the whole group). Review-first
+            // bounds the effect: nothing executes without explicit approval.
             return false;
         }
     }
