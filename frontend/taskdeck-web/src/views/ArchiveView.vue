@@ -390,7 +390,6 @@ onMounted(() => {
 
 .paper-archive__toolbar {
   display: flex;
-  align-items: center;
   gap: var(--s-2, 8px);
   flex-wrap: wrap;
   margin-bottom: var(--s-4, 16px);
@@ -465,8 +464,6 @@ onMounted(() => {
 }
 
 .paper-archive__input {
-  flex: 1 1 12rem;
-  min-width: 0;
   padding: var(--s-2, 8px) var(--s-3, 12px);
   border: 1px solid var(--line, #d8d0bf);
   border-radius: var(--r-2, 4px);
@@ -513,6 +510,8 @@ onMounted(() => {
   .paper-archive__input,
   .paper-archive__refresh {
     width: 100%;
+    min-width: 0;
+    min-height: 44px;
   }
 
   .paper-archive__row {
