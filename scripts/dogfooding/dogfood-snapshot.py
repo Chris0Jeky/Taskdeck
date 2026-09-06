@@ -38,7 +38,9 @@ Usage
 from __future__ import annotations
 
 import argparse
+import ntpath
 import os
+import posixpath
 import sqlite3
 import sys
 import urllib.parse
@@ -120,23 +122,51 @@ def connect(path: str) -> sqlite3.Connection:
     return con
 
 
-def redact(path: str) -> str:
-    """Home-relative display path. Output is meant to be pasted into public issues, and an
-    absolute path carries the OS username and often a client-specific directory name."""
+def _trim_path_root(path: str, path_module) -> str:
+    drive, tail = path_module.splitdrive(path)
+    trimmed = tail.rstrip("\\/")
+    if trimmed:
+        return drive + trimmed
+    if tail:
+        return drive + tail[:1]
+    return drive
+
+
+def _record_safe_path(path: str) -> str:
+    return "".join(
+        character if character.isprintable() and character != "`" else f"\\x{ord(character):02x}"
+        for character in path
+    )
+
+
+def redact(path: str, *, home: str | None = None, windows: bool | None = None) -> str:
+    """Return a path-flavour-aware, record-safe home-relative display path.
+
+    ``home`` and ``windows`` are injectable so tests can exercise Windows and POSIX
+    fixtures on either host without changing process-global environment state.
+    """
+    use_windows = os.name == "nt" if windows is None else windows
+    path_module = ntpath if use_windows else posixpath
     try:
-        home = os.path.abspath(os.path.expanduser("~")).rstrip("\\/")
-        full = os.path.abspath(path)
-        rest = full[len(home):]
-        # Boundary matters: with home /home/alice, the path /home/alice-client/acme/db would
-        # otherwise render as "~-client/acme/db" and leak the directories it was meant to hide.
-        # Case-fold ONLY on Windows: on a case-sensitive filesystem /home/Alice and /home/alice
-        # are different directories, and folding would render an outside-home path as "~/...".
-        a, b = (full.lower(), home.lower()) if os.name == "nt" else (full, home)
-        if a.startswith(b) and (rest == "" or rest[0] in "\\/"):
-            return "~" + rest.replace("\\", "/")
-        return os.path.basename(full)
+        configured_home = os.path.expanduser("~") if home is None else home
+        home_path = _trim_path_root(path_module.abspath(configured_home), path_module)
+        full_path = _trim_path_root(path_module.abspath(path), path_module)
+        home_compare = path_module.normcase(home_path)
+        full_compare = path_module.normcase(full_path)
+
+        if full_compare == home_compare:
+            redacted = "~"
+        else:
+            home_is_root = home_path.endswith(("\\", "/"))
+            boundary = home_compare if home_is_root else home_compare + path_module.sep
+            if full_compare.startswith(boundary):
+                rest = full_path[len(home_path):].replace("\\", "/")
+                redacted = "~/" + rest.lstrip("/") if home_is_root else "~" + rest
+            else:
+                redacted = path_module.basename(full_path)
+        return _record_safe_path(redacted)
     except Exception:
-        return os.path.basename(path)
+        return _record_safe_path(path_module.basename(path))
 
 
 def has_table(con: sqlite3.Connection, name: str) -> bool:
