@@ -1806,6 +1806,188 @@ for (const platform of platforms) {
     }
   })
 
+  // #1898/#2378: port release is bounded by an elapsed-time deadline, not a fixed iteration count.
+  // Both cases stop a synthetic state whose recorded PID is already gone, so the only thing under
+  // test is the port-release stage.
+  async function writeReapedState(fixture, { apiPort, frontendPort }) {
+    const runId = '22222222-2222-4222-8222-222222222222'
+    const deadProcess = spawn(process.execPath, ['-e', 'process.exit(0)'], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    const deadPid = deadProcess.pid
+    await new Promise((resolve) => deadProcess.once('exit', resolve))
+    await mkdir(fixture.stateDir, { recursive: true })
+    const prefix = join(fixture.stateDir, `dev-up-${runId}`)
+    await writeFile(
+      fixture.stateFile,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          runId,
+          apiPort,
+          frontend: { url: `http://localhost:${frontendPort}/`, port: frontendPort },
+          logs: {
+            apiStdout: `${prefix}-api.stdout.log`,
+            apiStderr: `${prefix}-api.stderr.log`,
+            frontendStdout: `${prefix}-frontend.stdout.log`,
+            frontendStderr: `${prefix}-frontend.stderr.log`,
+          },
+          processes: [
+            { role: 'api', pid: deadPid, name: 'node', creationToken: 'reaped-before-this-stop' },
+            { role: 'frontend', pid: deadPid, name: 'node', creationToken: 'reaped-before-this-stop' },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    )
+  }
+
+  test(
+    `${platform.name}: a frontend port released after the old fixed budget still stops cleanly`,
+    { concurrency: false },
+    async () => {
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      let frontendPort
+      do frontendPort = await getFreePort()
+      while (frontendPort === apiPort)
+      // Held out-of-process because runLauncher blocks this event loop: the holder releases the
+      // port 12s after the launcher starts, well past the 5s fixed budget the old Wait-PortRelease
+      // allowed (50 x 100ms), so this case fails on the pre-fix launchers and passes on these.
+      const holder = spawn(
+        process.execPath,
+        [
+          '-e',
+          "const net=require('node:net');const s=net.createServer();s.listen(Number(process.argv[1]),'127.0.0.1',()=>{console.log('ready');setTimeout(()=>process.exit(0),12000)})",
+          String(frontendPort),
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true },
+      )
+      try {
+        await new Promise((resolve, reject) => {
+          holder.stdout.once('data', resolve)
+          holder.once('exit', () => reject(new Error('port holder exited before it was ready')))
+        })
+        assert.equal(await canBind(frontendPort, '127.0.0.1'), false, 'port holder did not occupy the port')
+        await writeReapedState(fixture, { apiPort, frontendPort })
+        const result = runLauncher(platform, fixture, {
+          stop: true,
+          timeout: 40_000,
+          env: { TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '20000' },
+        })
+        assert.ifError(result.error)
+        assert.equal(result.status, 0, combinedOutput(result))
+        assert.match(combinedOutput(result), /Stack stopped/)
+        assert.equal(await readOptional(fixture.stateFile), null)
+      } finally {
+        holder.kill('SIGKILL')
+        if (existsSync(fixture.stateFile)) {
+          runLauncher(platform, fixture, {
+            stop: true,
+            env: { TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500' },
+          })
+        }
+        await removeFixture(fixture)
+      }
+    },
+  )
+
+  test(
+    `${platform.name}: a live listener still holding the frontend port fails closed`,
+    { concurrency: false },
+    async () => {
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      const foreign = await listenForeign('127.0.0.1')
+      const frontendPort = foreign.address().port
+      try {
+        await writeReapedState(fixture, { apiPort, frontendPort })
+        const result = runLauncher(platform, fixture, {
+          stop: true,
+          timeout: 30_000,
+          env: { TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500' },
+        })
+        assertFailedClosed(result)
+        assert.match(combinedOutput(result), /Frontend port .* is still occupied/)
+        // Either fail-closed reason is acceptable: a readable listener inventory names the live owner,
+        // and a platform without one (Git Bash on Windows has neither lsof nor ss) must still refuse.
+        assert.match(combinedOutput(result), /held by a live|could not be inventoried/)
+        assert.equal(existsSync(fixture.stateFile), true, 'PID state was dropped despite a live listener')
+        assert.equal(foreign.listening, true, 'the live listener was disturbed')
+      } finally {
+        // No cleanup stop here: the listener is still up on purpose, so another stop would only
+        // burn the deadline again. removeFixture discards the whole state directory.
+        await new Promise((resolve) => foreign.close(resolve))
+        await removeFixture(fixture)
+      }
+    },
+  )
+
+  // An unprivileged inventory can see that a socket is listening without being able to name its
+  // owner: `ss -p` omits `users:(...)` for another account's socket, and `lsof` cannot see it at
+  // all. An unattributable owner must never be read as "nothing is listening" - otherwise a
+  // root-owned listener (docker-proxy, a systemd unit on 5000/5173) would be reported as a clean
+  // stop and the PID file removed. Stubs reproduce that exact shape.
+  if (platform.name === 'Bash') {
+    test(
+      `${platform.name}: a listening socket with no attributable owner still fails closed`,
+      { concurrency: false },
+      async () => {
+        const fixture = await createFixture(platform)
+        const apiPort = await getFreePort()
+        const foreign = await listenForeign('127.0.0.1')
+        const frontendPort = foreign.address().port
+        try {
+          // Prints a LISTEN row for the frontend port only - and never a `pid=` field.
+          await writeFile(
+            join(fixture.fakeBin, 'ss'),
+            [
+              '#!/usr/bin/env bash',
+              'for arg in "$@"; do',
+              '  case "$arg" in',
+              '    *":$TASKDECK_TEST_UNATTRIBUTABLE_PORT")',
+              '      printf \'LISTEN 0 511 0.0.0.0:%s 0.0.0.0:*\\n\' "$TASKDECK_TEST_UNATTRIBUTABLE_PORT"',
+              '      exit 0 ;;',
+              '  esac',
+              'done',
+              'exit 0',
+              '',
+            ].join('\n'),
+          )
+          await chmod(join(fixture.fakeBin, 'ss'), 0o755)
+          // Deny the lsof attribution fallback too, so the unattributable path is deterministic
+          // whether or not the host has a real lsof.
+          await writeFile(join(fixture.fakeBin, 'lsof'), '#!/usr/bin/env bash\nexit 1\n')
+          await chmod(join(fixture.fakeBin, 'lsof'), 0o755)
+
+          await writeReapedState(fixture, { apiPort, frontendPort })
+          const result = runLauncher(platform, fixture, {
+            stop: true,
+            timeout: 30_000,
+            env: {
+              TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS: '1500',
+              TASKDECK_TEST_UNATTRIBUTABLE_PORT: String(frontendPort),
+            },
+          })
+          assertFailedClosed(result)
+          assert.match(combinedOutput(result), /still held by a live listener/)
+          assert.match(combinedOutput(result), /Frontend port .* is still occupied/)
+          assert.equal(
+            existsSync(fixture.stateFile),
+            true,
+            'PID state was dropped for a listener that could not be attributed to a PID',
+          )
+          assert.equal(foreign.listening, true, 'the unattributable listener was disturbed')
+        } finally {
+          await new Promise((resolve) => foreign.close(resolve))
+          await removeFixture(fixture)
+        }
+      },
+    )
+  }
+
   test(`${platform.name}: high-volume stdout and stderr cannot deadlock marker acceptance`, { concurrency: false, timeout: 60_000 }, async () => {
     const fixture = await createFixture(platform)
     const apiPort = await getFreePort()
