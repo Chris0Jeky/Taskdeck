@@ -8,6 +8,7 @@ import {
   REVIEW_QUEUE_REFRESH_MS,
 } from '../../composables/useReviewProposals'
 import { resetProposalDisplayNamesForTests } from '../../composables/useProposalDisplayNames'
+import { i18n } from '../../i18n'
 import enReview from '../../locales/en/review'
 
 const vueHelpers = vi.hoisted(async () => {
@@ -992,11 +993,17 @@ describe('ReviewView', () => {
     expect(wrapper.text()).toContain('Rejected archived decision')
     expect(wrapper.text()).not.toContain('Live pending proposal')
     expect(wrapper.find('.td-review__toggle-input').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Clear completed')
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Approve for board')).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Reject')).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Apply to board')).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Dismiss')).toBe(false)
+    const archivedActions = wrapper.findAll('.td-review-card__actions')
+    expect(archivedActions).toHaveLength(2)
+    for (const actions of archivedActions) {
+      expect(actions.find('button.td-btn--primary').exists()).toBe(false)
+      expect(actions.find('button.td-btn--danger').exists()).toBe(false)
+    }
+    expect(
+      wrapper
+        .find('.td-review__hero-actions')
+        .findAll('button.td-btn--secondary'),
+    ).toHaveLength(3)
 
     const storedPreviewButton = wrapper
       .get('#proposal-proposal-applied-history')
@@ -1014,6 +1021,25 @@ describe('ReviewView', () => {
       .find((button) => button.text() === 'Open Inbox')
     await openInboxButton?.trigger('click')
     expect(pushSpy).toHaveBeenCalledWith('/workspace/inbox?boardId=board-99&history=archived')
+
+    i18n.global.locale.value = 'it'
+    mocks.getProposals.mockResolvedValue([
+      buildProposal({
+        id: 'proposal-live-controls',
+        boardId: 'board-99',
+        status: 'PendingReview',
+        summary: 'Live proposal controls',
+      }),
+    ])
+    await router.push('/workspace/review?boardId=board-99')
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    const liveActions = wrapper.get('#proposal-proposal-live-controls .td-review-card__actions')
+    expect(liveActions.find('button.td-btn--primary').exists()).toBe(true)
+    expect(liveActions.find('button.td-btn--danger').exists()).toBe(true)
+    expect(liveActions.find('button.td-btn--secondary').exists()).toBe(true)
+    expect(liveActions.findAll('button')).toHaveLength(4)
   })
 
   it('keeps a dismissed archived proposal addressable by a Legacy history deep link', async () => {
