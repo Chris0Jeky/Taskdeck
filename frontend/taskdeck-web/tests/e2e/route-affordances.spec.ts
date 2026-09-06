@@ -549,7 +549,6 @@ test.beforeEach(async ({ page, request }) => {
 })
 
 test('names a missing mount read before the enclosing test timeout', async ({ page }) => {
-  test.setTimeout(30_000)
   await page.route('**/api/workspace/home', async () => {
     await new Promise<void>(() => {})
   })
