@@ -148,6 +148,10 @@ export default {
   // name are for. `bodyPlaceholder` is a sentence and is capitalized;
   // `labelsPlaceholder` is a fragment continuing the box and is not.
   composer: {
+    eyebrow: 'Capture · Draft',
+    meta: 'local-only · saves to Inbox',
+    footer: 'Captures land in Inbox. Linking to a board creates a proposal, not a card.',
+    submit: 'Capture',
     bodyLabel: 'Body',
     bodyAria: 'Body: write the text of this capture',
     bodyPlaceholder: 'The thought, in plain language…',

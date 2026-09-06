@@ -104,6 +104,10 @@ export default {
   // per scelta; `labelsPlaceholder` è un frammento che prosegue il campo e resta
   // in minuscolo.
   composer: {
+    eyebrow: 'Cattura · Bozza',
+    meta: 'solo locale · salva nell’Inbox',
+    footer: 'Le catture arrivano nell’Inbox. Collegarle a una bacheca crea una proposta, non una scheda.',
+    submit: 'Cattura',
     bodyLabel: 'Testo',
     bodyAria: 'Testo: scrivi il contenuto di questa cattura',
     bodyPlaceholder: 'Il pensiero, in parole semplici…',

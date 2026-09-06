@@ -106,6 +106,10 @@ export default {
   // en mayúscula inicial a propósito; `labelsPlaceholder` es un fragmento que
   // continúa el campo y va en minúscula.
   composer: {
+    eyebrow: 'Captura · Borrador',
+    meta: 'solo local · se guarda en Inbox',
+    footer: 'Las capturas llegan al Inbox. Vincularlas a un tablero crea una propuesta, no una tarjeta.',
+    submit: 'Capturar',
     bodyLabel: 'Texto',
     bodyAria: 'Texto: escribe el contenido de esta captura',
     bodyPlaceholder: 'La idea, en lenguaje sencillo…',
