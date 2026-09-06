@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -8,6 +9,7 @@ using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -2058,6 +2060,50 @@ public class AutomationProposalServiceTests
     #endregion
 
     #region ExpireProposalsAsync Tests
+
+    [Fact]
+    public async Task ExpireProposalsAsync_ShouldKeepSkipTransitionStatePerServiceInstance()
+    {
+        var logger = new InMemoryLogger<AutomationProposalService>();
+        var firstScopeService = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            provenanceRepository: null,
+            policyEngine: null,
+            logger: logger);
+        var secondScopeService = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            provenanceRepository: null,
+            policyEngine: null,
+            logger: logger);
+
+        _proposalRepoMock
+            .SetupSequence(r => r.GetExpiredAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExpiredProposalSweep(
+                Array.Empty<AutomationProposal>(),
+                SkippedArchivedBoardCount: 2))
+            .ReturnsAsync(new ExpiredProposalSweep(
+                Array.Empty<AutomationProposal>(),
+                SkippedArchivedBoardCount: 2))
+            .ReturnsAsync(new ExpiredProposalSweep(
+                Array.Empty<AutomationProposal>(),
+                SkippedArchivedBoardCount: 2));
+
+        await firstScopeService.ExpireProposalsAsync();
+        await firstScopeService.ExpireProposalsAsync();
+        await secondScopeService.ExpireProposalsAsync();
+
+        logger.Entries.Count(
+                entry => entry.Level == LogLevel.Information
+                    && entry.Message.Contains("Skipped expiring")
+                    && entry.Message.Contains("2"))
+            .Should().Be(2);
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Level == LogLevel.Debug
+                && entry.Message.Contains("Still skipping")
+                && entry.Message.Contains("2"));
+    }
 
     [Fact]
     public async Task ExpireProposalsAsync_ShouldExpireAllStaleProposals()
