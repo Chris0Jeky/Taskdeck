@@ -85,21 +85,27 @@ describe('useVisualViewport', () => {
     vi.restoreAllMocks()
   })
 
-  it('warns once for bare or empty prefixes in development', () => {
+  it('warns once per invalid invocation despite viewport events', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const synthetic = installSyntheticVisualViewport(800, 0)
 
-    for (const prefix of ['', 'td-dialog']) {
-      const wrapper = mountHost({ prefix })
-      wrapper.unmount()
-    }
+    const first = mountHost({ prefix: '' })
+    synthetic.set({ height: 420, offsetTop: 120 }, ['resize', 'scroll'])
+    await first.vm.$nextTick()
 
+    expect(warn).toHaveBeenCalledTimes(1)
+    first.unmount()
+
+    const second = mountHost({ prefix: 'td-dialog' })
     expect(warn).toHaveBeenCalledTimes(2)
+
     expect(warn.mock.calls[0]?.[0]).toBe(
       '[useVisualViewport] prefix must start with a CSS custom-property marker (`--`)',
     )
     expect(warn.mock.calls[1]?.[0]).toBe(
       '[useVisualViewport] prefix must start with a CSS custom-property marker (`--`)',
     )
+    second.unmount()
   })
 
   it('does not warn for a valid custom-property prefix', () => {
