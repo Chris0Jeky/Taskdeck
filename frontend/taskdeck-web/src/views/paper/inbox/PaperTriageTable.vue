@@ -775,7 +775,7 @@ function isDetailOpen(item: CaptureItemSummary): boolean {
  * summaries.
  */
 function detailCaptureLabel(item: CaptureItemSummary): string {
-  const excerpt = item.textExcerpt.trim().replace(/\s+/g, ' ')
+  const excerpt = (typeof item.textExcerpt === 'string' ? item.textExcerpt : '').trim().replace(/\s+/g, ' ')
   if (excerpt) return excerpt.length > 80 ? `${excerpt.slice(0, 77)}…` : excerpt
   return formatDateTime(item.createdAt) || item.id
 }
