@@ -318,6 +318,77 @@ you intended:
   $pr = $raw | ConvertFrom-Json
   ```
 
+### PowerShell to WSL multi-step handoff
+
+When a POSIX verification needs more than one command, send WSL a temporary UTF-8 script rather
+than a PowerShell here-string or nested `bash -lc` command. Normalize the payload to LF before
+writing it without a BOM; this keeps a trailing carriage return out of the final file-path
+argument and keeps the quoted Python `-c` snippet inside the POSIX script. `set -euo pipefail` stops the
+inner sequence at its first failure, and the wrapper checks the fresh native exit code so a later
+check cannot mask it. Windows PowerShell 5 reserves `<`, so `cmd.exe` is only the byte-preserving
+file-redirection bridge to `wsl.exe`:
+
+```powershell
+$wsl = Get-Command -Name wsl.exe -CommandType Application -TotalCount 1 -ErrorAction Stop
+$repoWindows = (git rev-parse --show-toplevel).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$repoWsl = (& $wsl.Source --exec wslpath -a $repoWindows).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+function ConvertTo-BashSingleQuotedLiteral {
+    param([Parameter(Mandatory)][string]$Value)
+    return "'" + $Value.Replace("'", "'\''") + "'"
+}
+
+$ledgerWsl = "$repoWsl/scripts/agent_hooks/test_render_failure_ledger.py"
+$ledgerWslQuoted = ConvertTo-BashSingleQuotedLiteral $ledgerWsl
+
+$handoff = @'
+set -euo pipefail
+python3 -B -c 'import sys; assert sys.argv[1] == "quoted"; print(sys.argv[1])' quoted
+python3 -B __LEDGER_WSL__
+'@
+$handoff = $handoff.Replace("`r`n", "`n").Replace('__LEDGER_WSL__', $ledgerWslQuoted)
+$handoffPath = Join-Path $env:TEMP ("taskdeck-wsl-{0}.sh" -f [Guid]::NewGuid().ToString('N'))
+
+try {
+    [IO.File]::WriteAllText($handoffPath, $handoff, [Text.UTF8Encoding]::new($false))
+    $inner = '"{0}" --exec bash -s -- < "{1}"' -f $wsl.Source, $handoffPath
+    $LASTEXITCODE = $null
+    & $env:ComSpec /d /s /c $inner
+    $handoffExit = $LASTEXITCODE
+    if ($null -eq $handoffExit) { throw 'cmd.exe did not return an exit code.' }
+    if ($handoffExit -ne 0) { exit $handoffExit }
+}
+finally {
+    Remove-Item -LiteralPath $handoffPath -Force -ErrorAction SilentlyContinue
+}
+```
+
+The final command above is deliberately a file-path invocation. Replace it with the final POSIX
+verification command while keeping its path in the LF-normalized script. For a single command,
+skip the handoff and invoke the file directly once its WSL path is known:
+
+```powershell
+$wsl = Get-Command -Name wsl.exe -CommandType Application -TotalCount 1 -ErrorAction Stop
+$repoWindows = (git rev-parse --show-toplevel).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$repoWsl = (& $wsl.Source --exec wslpath -a $repoWindows).Trim()
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$ledgerWsl = "$repoWsl/scripts/agent_hooks/render_failure_ledger.py"
+$LASTEXITCODE = $null
+& $wsl.Source --exec python3 -B $ledgerWsl
+$fallbackExit = $LASTEXITCODE
+if ($null -eq $fallbackExit) { throw 'wsl.exe did not return an exit code.' }
+if ($fallbackExit -ne 0) { exit $fallbackExit }
+```
+
+`ConvertTo-BashSingleQuotedLiteral` is a POSIX single-quote escape, so a checkout such as
+`C:\Users\Ada Lovelace\Taskdeck` becomes one Bash argument even when it contains spaces or a
+single quote. Keep the placeholder unquoted in the here-string: the replacement supplies the
+complete shell literal. The direct fallback passes the derived WSL path as one native PowerShell
+argument and never embeds a user-specific checkout path.
+
 When a command still fails, classify the real failure through
 `docs/agentic/FAILURE_LEDGER.md` instead of silently retrying a differently quoted form. Promote a
 reproduced pattern through `docs/agentic/GUIDE_UPDATE_PROTOCOL.md` at the cheapest effective layer.

@@ -34,5 +34,7 @@ export default {
     label: 'Lingua',
     hint: 'Taskdeck viene tradotto una superficie alla volta. Ciò che non è ancora tradotto resta in inglese. Le opzioni contrassegnate come "Traduzione automatica" non sono ancora state riviste da un madrelingua.',
     machineTranslated: 'Traduzione automatica',
+    loading: 'Caricamento di {locale}…',
+    loadFailed: 'Impossibile caricare {locale}. {activeLocale} resta attivo. Riprova.',
   },
 }

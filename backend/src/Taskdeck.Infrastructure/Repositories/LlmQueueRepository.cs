@@ -521,12 +521,14 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             throw new ArgumentOutOfRangeException(nameof(limit), limit, "Limit must be at least 1.");
         }
 
+        var staleBeforeUtc = staleBefore.ToUniversalTime();
+
         if (_context.Database.IsSqlite())
         {
             // SQLite's EF provider cannot translate WHERE/ORDER BY on a DateTimeOffset column, so the
             // staleness comparison + order + LIMIT live in raw SQL. The TEXT comparison is chronological
-            // because every UpdatedAt writer (Entity ctor/Touch and the raw claim UPDATEs) and staleBefore
-            // are all DateTimeOffset.UtcNow, so they share a fixed-width "+00:00" offset and lexical order
+            // because every UpdatedAt writer (Entity ctor/Touch and the raw claim UPDATEs) and the
+            // normalized cutoff are all fixed at a "+00:00" offset, so lexical order
             // equals chronological order -- the same shape the shipped
             // OutboundWebhookDeliveryRepository.GetStuckProcessingAsync relies on.
             // FromSqlInterpolated + Include wraps this in a subquery that does not guarantee the raw
@@ -536,7 +538,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
             // UpdatedAt) and never reads the User/Board navigations, so loading them is wasted work.
             var rows = await _context.LlmRequests
                 .FromSqlInterpolated(
-                    $"SELECT * FROM LlmRequests WHERE Status = {(int)RequestStatus.Processing} AND RequestType NOT LIKE {CaptureRequestTypeLike} AND UpdatedAt <= {staleBefore} ORDER BY UpdatedAt ASC LIMIT {limit}")
+                    $"SELECT * FROM LlmRequests WHERE Status = {(int)RequestStatus.Processing} AND RequestType NOT LIKE {CaptureRequestTypeLike} AND UpdatedAt <= {staleBeforeUtc} ORDER BY UpdatedAt ASC LIMIT {limit}")
                 .ToListAsync(cancellationToken);
             return rows.OrderBy(lr => lr.UpdatedAt).ToList();
         }
@@ -546,7 +548,7 @@ public class LlmQueueRepository : Repository<LlmRequest>, ILlmQueueRepository
         return await _context.LlmRequests
             .Where(lr => lr.Status == RequestStatus.Processing
                 && !EF.Functions.Like(lr.RequestType, CaptureRequestTypeLike)
-                && lr.UpdatedAt <= staleBefore)
+                && lr.UpdatedAt <= staleBeforeUtc)
             .OrderBy(lr => lr.UpdatedAt)
             .Take(limit)
             .ToListAsync(cancellationToken);

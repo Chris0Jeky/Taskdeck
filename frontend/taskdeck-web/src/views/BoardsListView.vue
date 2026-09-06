@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useBoardStore } from '../store/boardStore'
+// Type-only, so the barrel adds no runtime import here: the view's load
+// signature is the store's own list-option type rather than a hand-copied
+// `{ force?: boolean }` that a second option would silently leave behind
+// (#2689 item 9).
+import type { BoardListFetchOptions } from '../store/board'
 import { logError } from '../utils/errorReporting'
 import { TdSkeleton } from '../components/ui'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
@@ -15,6 +20,7 @@ const boardStore = useBoardStore()
 
 const newBoardName = ref('')
 const showCreateForm = ref(false)
+const retryButton = ref<HTMLButtonElement | null>(null)
 
 /**
  * Date formatting goes through `Intl` against the ACTIVE locale, not through a
@@ -48,12 +54,76 @@ function formatCreatedAt(createdAt: string): string {
   return Number.isNaN(parsed.getTime()) ? createdAt : dateFormatter.value.format(parsed)
 }
 
-onMounted(async () => {
+/**
+ * The one load path this view has: the mount read AND the Retry control beside
+ * the error alert both come through here, so a retry produces the same sequence
+ * a mount does — skeleton while the read is in flight, then the grid or the
+ * alert again. It matters since #2685 bounded this read with `skipRetry`: a
+ * one-off 503 or an API restart during mount no longer heals itself in the
+ * retry layer, and without a control the alert stayed until the user navigated
+ * away and back (#2689 item 1).
+ */
+async function loadBoards(options: BoardListFetchOptions = {}) {
   // Catch the rethrown error — boardStore.error is already set by handleApiError
   // so the template can display it. Without this catch, Vue treats the unhandled
   // rejection as a lifecycle-hook error and may tear down the component.
-  await boardStore.fetchBoards().catch(() => {})
+  await boardStore.fetchBoards(undefined, false, options).catch(() => {})
+}
+
+onMounted(() => {
+  void loadBoards()
 })
+
+/**
+ * The Retry click. `force` skips the store's throttle window and nothing else.
+ *
+ * The stamp is written only after a success, but a failure does not reopen the
+ * window: a stamp an earlier success left behind survives every later failure,
+ * including a filtered read's (the activity selector's `includeArchived` read
+ * writes the same shared `state.error` when it FAILS without touching the
+ * stamp; a filtered success writes the stamp like any other success).
+ * So only `force` gets past the THROTTLE — the in-flight share and demo mode
+ * still apply, so it is a skipped window rather than a guaranteed request —
+ * and this path always forces. `state.error` is shared by every board action,
+ * so a create/rename/archive failure two seconds after a good list read puts
+ * this view on its error branch with a live Retry button while the throttle
+ * window from THAT success is still open. Unforced, the click returned inside
+ * the store before `loading` was touched or any request was made: no skeleton,
+ * no request, a dead button until the window passed (#2689 round-2 finding 1;
+ * this docblock corrected in #2689 item 7). The in-flight share is still
+ * respected — `force` does not bypass it, so a click during a read already on
+ * the wire joins that read.
+ */
+async function retryLoad() {
+  await loadBoards({ force: true })
+
+  // Activating Retry unmounts the button that was just activated: the loading
+  // branch replaces the whole error block, and on a failed retry the error
+  // block is rebuilt with a BRAND NEW button, leaving focus fallen back to
+  // <body>. A keyboard or screen-reader user then has to tab from the top of
+  // the page to reach the control they just used (#2689 round-2 finding 3).
+  //
+  // Restored only here, never after the mount read: this runs on a user
+  // action, so moving focus is finishing what the user started rather than
+  // stealing it. `retryButton` is null when the retry SUCCEEDED — the error
+  // block is gone — so the optional call is also the "only on failure" guard.
+  // The alert paragraph is a new node on each failure, so it is announced
+  // again independently of this.
+  //
+  // The second guard is what keeps "restore" from meaning "steal". The read is
+  // bounded at 10 s and the create panel is rendered ABOVE the loading chain,
+  // so it stays interactive for the whole wait: a user who opens "+ New Board"
+  // and starts typing during a hung retry had the caret yanked back to the
+  // rebuilt button when the read finally failed, and their next Space or Enter
+  // re-fired Retry instead of typing (#2689 item 6). Focus is only put back
+  // when it was actually LOST — `document.activeElement` null or <body>, which
+  // is where the browser leaves it after the activated button unmounts.
+  await nextTick()
+  const focused = document.activeElement
+  if (focused === null || focused === document.body) {
+    retryButton.value?.focus()
+  }
+}
 
 async function createBoard() {
   if (!newBoardName.value.trim()) return
@@ -131,9 +201,28 @@ function goToBoard(id: string) {
         </div>
       </div>
 
-      <!-- Error State -->
-      <div v-else-if="boardStore.error" class="paper-boards__error" role="alert">
-        {{ boardStore.error }}
+      <!--
+        Error State.  `role="alert"` sits on the message paragraph, not on the
+        wrapper, so the announcement is the sentence alone and the Retry button
+        is a focusable sibling outside the live region rather than trailing
+        text inside the announcement.  `aria-describedby` gives the button the
+        alert's wording, the same pairing PaperTriageTable uses for its own
+        `retry-board-load` control.
+      -->
+      <div v-else-if="boardStore.error" class="paper-boards__error">
+        <p id="boards-error-message" class="paper-boards__error-message" role="alert">
+          {{ boardStore.error }}
+        </p>
+        <button
+          ref="retryButton"
+          type="button"
+          class="paper-boards__retry"
+          data-action="retry-board-load"
+          aria-describedby="boards-error-message"
+          @click="retryLoad"
+        >
+          {{ $t('boards.error.retry') }}
+        </button>
       </div>
 
       <!-- Empty State -->
@@ -390,12 +479,49 @@ function goToBoard(id: string) {
 /* ── Error & empty states ── */
 
 .paper-boards__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-3, 12px);
   padding: var(--s-4, 16px);
   border-radius: var(--r-3, 6px);
   border: 1px solid var(--overdue, #8c4a26);
   background: var(--overdue-tint, #ecd9c4);
   color: var(--ember-ink, #6e2810);
   font-size: var(--t-md, 13.5px);
+}
+
+.paper-boards__error-message {
+  margin: 0;
+}
+
+/* Mirrors `.paper-triage__retry` (PaperTriageTable) so the two Retry controls
+   read as the same affordance. */
+.paper-boards__retry {
+  border: 1px solid var(--line, #d8d0bf);
+  border-radius: var(--r-2, 4px);
+  background: var(--paper, #f3eee5);
+  color: var(--ink, #1a1814);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: var(--t-xs, 10.5px);
+  letter-spacing: 0.04em;
+  padding: var(--s-2, 8px) var(--s-3, 12px);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background var(--d-quick, 140ms) var(--ease-paper, ease),
+    border-color var(--d-quick, 140ms) var(--ease-paper, ease);
+}
+
+.paper-boards__retry:hover {
+  background: var(--paper-2, #ebe5d8);
+  border-color: var(--ink-2, #3a352d);
+}
+
+.paper-boards__retry:focus-visible {
+  outline: none;
+  border-color: var(--ember, #a8421f);
+  box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 
 .paper-boards__empty {

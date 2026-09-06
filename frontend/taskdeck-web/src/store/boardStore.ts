@@ -59,6 +59,7 @@ export const useBoardStore = defineStore('board', () => {
     fetchBoards: boardCrud.fetchBoards,
     fetchBoard,
     cancelBackgroundBoardFetch: boardCrud.cancelBackgroundBoardFetch,
+    resetForLogout: boardCrud.resetForLogout,
     createBoard: boardCrud.createBoard,
     updateBoard: boardCrud.updateBoard,
     deleteBoard: boardCrud.deleteBoard,

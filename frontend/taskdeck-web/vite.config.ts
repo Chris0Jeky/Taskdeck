@@ -1,10 +1,52 @@
-import { defineConfig, loadEnv } from 'vite'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { defineConfig, loadEnv, type Plugin, type ResolvedConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
+import { hoistWorkerImportScripts } from './src/pwa/hoistWorkerImportScripts.ts'
 import {
   createLocaleCatalogRuntimePattern,
   createStaticAssetRuntimePattern,
 } from './src/pwa/runtimeCachePolicy.ts'
+
+// Loaded by the generated service worker. Shared between the Workbox option below and the
+// hoisting plugin, which has to find this exact call in the emitted `sw.js`.
+const serviceWorkerImportScripts = ['api-cache-cleanup.js', 'share-target-handler.js']
+
+/**
+ * Moves the generated worker's `importScripts` call out of vite-plugin-pwa's asynchronous AMD
+ * factory and up to the top of `dist/sw.js`, so the lifecycle listeners in
+ * `public/api-cache-cleanup.js` are attached during the worker's initial synchronous evaluation
+ * and its `activate` handler cannot depend on microtask ordering to receive its event (#2639).
+ * Only these two imported scripts move: Workbox's own `precacheAndRoute` install handler and
+ * `cleanupOutdatedCaches` activate handler stay inside the factory. The rewrite itself, that
+ * residual, and the reasons it fails the build rather than degrading quietly, live in
+ * `src/pwa/hoistWorkerImportScripts.ts`.
+ *
+ * It runs in `closeBundle` with `order: 'post'`, which is what puts it after vite-plugin-pwa's own
+ * sequential `closeBundle` hook that writes the worker.
+ */
+function hoistServiceWorkerImportScripts(specifiers: readonly string[]): Plugin {
+  let resolvedConfig: ResolvedConfig
+
+  return {
+    name: 'taskdeck:hoist-service-worker-import-scripts',
+    apply: 'build',
+    configResolved(config) {
+      resolvedConfig = config
+    },
+    closeBundle: {
+      sequential: true,
+      order: 'post',
+      handler() {
+        if (resolvedConfig.build.ssr) return
+        const workerPath = resolve(resolvedConfig.root, resolvedConfig.build.outDir, 'sw.js')
+        const generated = readFileSync(workerPath, 'utf8')
+        writeFileSync(workerPath, hoistWorkerImportScripts(generated, specifiers))
+      },
+    },
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -28,7 +70,12 @@ export default defineConfig(({ mode }) => {
         enabled: false,
       },
       workbox: {
-        importScripts: ['api-cache-cleanup.js', 'share-target-handler.js'],
+        // Emitted inside the AMD factory by vite-plugin-pwa; hoisted to the top of the worker by
+        // hoistServiceWorkerImportScripts below so the imported scripts' lifecycle listeners are
+        // attached synchronously instead of depending on the factory's microtask ordering (#2639).
+        // The listeners fired in every Chromium measurement; the hoist removes the dependency, it
+        // does not repair an observed failure.
+        importScripts: serviceWorkerImportScripts,
         // Precache app shell assets (JS, CSS, HTML, icons)
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2}'],
         // Exclude manifest icons from glob — they are precached via the manifest config
@@ -185,6 +232,7 @@ export default defineConfig(({ mode }) => {
         ],
       },
     }),
+    hoistServiceWorkerImportScripts(serviceWorkerImportScripts),
   ],
   build: {
     rollupOptions: {

@@ -144,6 +144,13 @@ function removeLabel(label: string) {
 
 function submit() {
   if (!canSubmit.value) return
+  // GH-2490: the label box can still hold text the user never pressed Enter on.
+  // Submitting without flushing it filed an UNLABELLED capture, and since
+  // GH-2057 the success reset also wipes the box, so the only evidence the
+  // label was lost disappeared with it. `addLabel` is reused rather than
+  // reimplemented so the commit path stays identical (same trim, same dedupe)
+  // and any future label validation gates the shortcut automatically.
+  addLabel()
   emit('submit', {
     text: body.value.trim(),
     boardId: boardId.value,
@@ -173,6 +180,10 @@ function snapshotDraft() {
     labels: [...labels.value],
     dueAt: dueAt.value || null,
     source: source.value,
+    // GH-2490: the uncommitted label text travels too. It is kept as pending
+    // input rather than promoted to a chip — the restored composer must look
+    // like the one the redirect interrupted.
+    labelInput: labelInput.value,
   }
 }
 
@@ -183,6 +194,7 @@ function restoreDraft(draft: {
   labels?: string[]
   dueAt?: string | null
   source?: ComposerSource | null
+  labelInput?: string | null
 }) {
   body.value = draft.text
   boardId.value = draft.boardId ?? null
@@ -192,6 +204,9 @@ function restoreDraft(draft: {
   // keeps an old draft restorable and never silently upgrades it into an LLM
   // extraction the author did not ask for.
   source.value = draft.source === 'TranscriptPaste' ? 'TranscriptPaste' : 'Typed'
+  // Tolerant like `source` above: a stash written before GH-2490 carries no
+  // pending label, and reads back as an empty box rather than failing.
+  labelInput.value = typeof draft.labelInput === 'string' ? draft.labelInput : ''
 }
 
 onMounted(async () => {
@@ -214,21 +229,22 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
 <template>
   <section class="paper-composer card-lift">
     <header class="paper-composer__header">
-      <PaperTagstamp tone="ember">Capture · Draft</PaperTagstamp>
-      <span class="tk-meta paper-composer__meta">local-only · saves to inbox</span>
+      <PaperTagstamp tone="ember">{{ t('inbox.composer.eyebrow') }}</PaperTagstamp>
+      <span class="tk-meta paper-composer__meta">{{ t('inbox.composer.meta') }}</span>
     </header>
 
     <div class="paper-composer__body">
       <div class="paper-composer__main">
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Body</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.bodyLabel') }}</span>
           <textarea
             ref="bodyRef"
             v-model="body"
             class="paper-composer__textarea"
             rows="6"
-            aria-label="Capture body"
-            placeholder="The thought, in plain language…"
+            data-testid="paper-composer-body"
+            :aria-label="t('inbox.composer.bodyAria')"
+            :placeholder="t('inbox.composer.bodyPlaceholder')"
             :disabled="inputsDisabled"
             :aria-invalid="invalid ? 'true' : undefined"
             :aria-describedby="errorId ?? undefined"
@@ -279,20 +295,21 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </p>
 
         <p class="paper-composer__drop tk-meta" data-testid="paper-composer-attachments-unavailable">
-          Attachments are not saved with captures yet.
+          {{ t('inbox.composer.attachmentsUnavailable') }}
         </p>
       </div>
 
       <aside class="paper-composer__aside">
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Board</span>
+          <span class="tk-eyebrow">{{ t('inbox.boardPicker.label') }}</span>
           <select
             v-model="boardId"
             class="paper-composer__select"
-            aria-label="Board picker"
+            data-testid="paper-composer-board"
+            :aria-label="t('inbox.boardPicker.composerAria')"
             :disabled="inputsDisabled"
           >
-            <option :value="null">No board · land in inbox</option>
+            <option :value="null">{{ t('inbox.boardPicker.noBoardOption') }}</option>
             <option
               v-for="board in boardStore.boards"
               :key="board.id"
@@ -309,13 +326,14 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </label>
 
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Labels</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.labelsLabel') }}</span>
           <input
             v-model="labelInput"
             class="paper-composer__input"
             type="text"
-            aria-label="Add label"
-            placeholder="add and press Enter"
+            data-testid="paper-composer-label-input"
+            :aria-label="t('inbox.composer.labelsAria')"
+            :placeholder="t('inbox.composer.labelsPlaceholder')"
             :disabled="inputsDisabled"
             @keydown="onLabelKeydown"
           />
@@ -335,11 +353,12 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
         </label>
 
         <label class="paper-composer__label">
-          <span class="tk-eyebrow">Due (optional)</span>
+          <span class="tk-eyebrow">{{ t('inbox.composer.dueLabel') }}</span>
           <TdDateField
             v-model="dueAt"
             class="paper-composer__input"
-            aria-label="Due date"
+            data-testid="paper-composer-due"
+            :aria-label="t('inbox.composer.dueAria')"
             :disabled="inputsDisabled"
           />
         </label>
@@ -348,10 +367,16 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
 
     <footer class="paper-composer__footer">
       <span class="tk-meta">
-        Captures land in <span class="tk-ink-italic">Inbox</span>. Linking to a board creates a proposal, not a card.
+        {{ t('inbox.composer.footerBefore') }}<span class="tk-ink-italic">{{ t('inbox.composer.footerInbox') }}</span>{{ t('inbox.composer.footerAfter') }}
       </span>
       <span class="paper-composer__spacer" />
-      <PaperHLBtn label="Capture" kbd="mod+enter" variant="ember" :disabled="!canSubmit" @click="submit" />
+      <PaperHLBtn
+        :label="t('inbox.composer.submit')"
+        kbd="mod+enter"
+        variant="ember"
+        :disabled="!canSubmit"
+        @click="submit"
+      />
     </footer>
   </section>
 </template>

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import PaperCaptureComposer from '../../../../views/paper/inbox/PaperCaptureComposer.vue'
+import { i18n, type SupportedLocale } from '../../../../i18n'
 
 type MockBoard = { id: string; name: string; canWrite?: boolean }
 
@@ -80,7 +81,7 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer, {
       props: { invalid: true, errorId: 'paper-inbox-capture-error' },
     })
-    const textarea = wrapper.get('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.get('[data-testid="paper-composer-body"]')
 
     expect(textarea.attributes('aria-invalid')).toBe('true')
     expect(textarea.attributes('aria-describedby')).toBe('paper-inbox-capture-error')
@@ -115,6 +116,240 @@ describe('PaperCaptureComposer', () => {
 
     const submitted = wrapper.emitted('submit')?.[0]?.[0] as { boardId: string | null }
     expect(submitted.boardId).toBe('board-beta')
+  })
+
+  it.each([
+    ['en', 'No board · land in inbox'],
+    ['it', 'Nessuna bacheca · arriva nell’Inbox'],
+    ['es', 'Sin tablero · llega al Inbox'],
+  ] as const)('translates the no-board option in %s', (locale, expected) => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = locale as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      expect(wrapper.find('select option').text()).toBe(expected)
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  // --- field chrome i18n (#1871) -------------------------------------------
+
+  /**
+   * The eyebrows, accessible names and placeholders of the four Composer
+   * fields, in the file's own locale idiom (the `it.each` above, from #2654).
+   *
+   * The English case is the regression guard, and since the selector-to-testid
+   * migration in this PR it can assert the names the a11y rule wants rather
+   * than the pre-extraction English the old selectors froze: every accessible
+   * name leads with its visible eyebrow and then says what the control does
+   * (WCAG 2.5.3, the PR #2675 pattern). The Italian case is the one that proves
+   * the catalogs reach the DOM at all — every assertion in it fails on the
+   * pre-#1871 component, which hardcoded English in the template regardless of
+   * locale.
+   *
+   * Selectors are locale-independent on purpose (testid and class, never the
+   * aria-label being asserted): a selector that reads the string under test
+   * cannot fail when that string is wrong, it just finds nothing.
+   */
+  function fieldChrome(wrapper: ReturnType<typeof mount>) {
+    return {
+      eyebrows: wrapper.findAll('.paper-composer__label .tk-eyebrow').map((node) => node.text()),
+      body: wrapper.get('[data-testid="paper-composer-body"]'),
+      board: wrapper.get('[data-testid="paper-composer-board"]'),
+      label: wrapper.get('[data-testid="paper-composer-label-input"]'),
+      due: wrapper.get('[data-testid="paper-composer-due"]'),
+      attachments: wrapper.get('[data-testid="paper-composer-attachments-unavailable"]'),
+    }
+  }
+
+  function surfaceCopy(wrapper: ReturnType<typeof mount>) {
+    return {
+      eyebrow: wrapper.get('.paper-composer__header .tagstamp').text(),
+      meta: wrapper.get('.paper-composer__meta').text(),
+      footer: wrapper.get('.paper-composer__footer .tk-meta').text(),
+      submit: wrapper.get('.paper-composer__footer .phlbtn-label').text(),
+    }
+  }
+
+  it.each([
+    [
+      'en',
+      {
+        eyebrow: 'Capture · Draft',
+        meta: 'local-only · saves to Inbox',
+        footer: 'Captures land in Inbox. Linking to a board creates a proposal, not a card.',
+        submit: 'Capture',
+      },
+    ],
+    [
+      'it',
+      {
+        eyebrow: 'Cattura · Bozza',
+        meta: 'solo locale · salva nell’Inbox',
+        footer: 'Le catture arrivano nell’Inbox. Collegarle a una bacheca crea una proposta, non una scheda.',
+        submit: 'Cattura',
+      },
+    ],
+    [
+      'es',
+      {
+        eyebrow: 'Captura · Borrador',
+        meta: 'solo local · se guarda en Inbox',
+        footer: 'Las capturas llegan al Inbox. Vincularlas a un tablero crea una propuesta, no una tarjeta.',
+        submit: 'Capturar',
+      },
+    ],
+  ] as const)('renders the composer surface copy in %s', (locale, expected) => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = locale as SupportedLocale
+      expect(surfaceCopy(mount(PaperCaptureComposer))).toEqual(expected)
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  it('renders the field chrome in English on the default locale', () => {
+    const wrapper = mount(PaperCaptureComposer)
+    const chrome = fieldChrome(wrapper)
+
+    expect(chrome.eyebrows).toEqual(['Body', 'Board', 'Labels', 'Due (optional)'])
+    expect(chrome.body.attributes('aria-label')).toBe('Body: write the text of this capture')
+    expect(chrome.body.attributes('placeholder')).toBe('The thought, in plain language…')
+    expect(chrome.board.attributes('aria-label')).toBe(
+      'Board: choose which board this capture is linked to for triage',
+    )
+    expect(chrome.label.attributes('aria-label')).toBe(
+      'Labels: type a label and press Enter to add it',
+    )
+    expect(chrome.label.attributes('placeholder')).toBe('add and press Enter')
+    expect(chrome.due.attributes('aria-label')).toBe(
+      'Due (optional): set a due date for this capture',
+    )
+    expect(chrome.attachments.text()).toBe('Attachments are not saved with captures yet.')
+  })
+
+  /**
+   * WCAG 2.5.3 label-in-name, asserted as a RELATION rather than as four more
+   * literals: each accessible name must START with the eyebrow rendered above
+   * its control. Written this way it keeps holding when the copy is reworded
+   * and it fails on the pre-rewrite names, where `Add label` did not contain
+   * the visible `Labels` and `Due date` did not contain `Due (optional)`.
+   *
+   * It runs in EVERY supported locale, both halves of each pair read off the
+   * DOM. The rule is a property of the catalog, not of English, and the
+   * es/it docblocks tell a translator this test holds them to it — Spanish
+   * composer chrome has no other assertion anywhere, so on the default locale
+   * alone that promise would have been empty.
+   */
+  it.each(['en', 'it', 'es'] as const)(
+    'starts every field accessible name with the visible eyebrow above it in %s',
+    (locale) => {
+      const previousLocale = i18n.global.locale.value
+      try {
+        i18n.global.locale.value = locale as SupportedLocale
+        const wrapper = mount(PaperCaptureComposer)
+        const chrome = fieldChrome(wrapper)
+        const [bodyEyebrow, boardEyebrow, labelsEyebrow, dueEyebrow] = chrome.eyebrows
+
+        const named = [
+          [bodyEyebrow, chrome.body.attributes('aria-label')],
+          [boardEyebrow, chrome.board.attributes('aria-label')],
+          [labelsEyebrow, chrome.label.attributes('aria-label')],
+          [dueEyebrow, chrome.due.attributes('aria-label')],
+        ] as const
+
+        // Reported as pairs so a failure names the eyebrow AND the name that
+        // broke the rule, instead of four indistinguishable `false`s.
+        expect(named.filter(([eyebrow, name]) => !name?.startsWith(`${eyebrow}: `))).toEqual([])
+      } finally {
+        i18n.global.locale.value = previousLocale
+      }
+    },
+  )
+
+  it('re-renders the field chrome in Italian when the locale switches', () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'it' as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      const chrome = fieldChrome(wrapper)
+
+      expect(chrome.eyebrows).toEqual(['Testo', 'Bacheca', 'Etichette', 'Scadenza (facoltativa)'])
+      expect(chrome.body.attributes('aria-label')).toBe(
+        'Testo: scrivi il contenuto di questa cattura',
+      )
+      expect(chrome.body.attributes('placeholder')).toBe('Il pensiero, in parole semplici…')
+      expect(chrome.board.attributes('aria-label')).toBe(
+        'Bacheca: scegli a quale bacheca collegare questa cattura per il triage',
+      )
+      expect(chrome.label.attributes('aria-label')).toBe(
+        'Etichette: scrivi un’etichetta e premi Enter per aggiungerla',
+      )
+      expect(chrome.label.attributes('placeholder')).toBe('aggiungi e premi Enter')
+      expect(chrome.due.attributes('aria-label')).toBe(
+        'Scadenza (facoltativa): scegli quando scade questa cattura',
+      )
+      expect(chrome.attachments.text()).toBe(
+        'Gli allegati non vengono ancora salvati con le catture.',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  /**
+   * The case above sets the locale BEFORE mounting, so it proves first render
+   * only — a component that read `t()` once into a non-reactive snapshot would
+   * still pass it. This one mounts in English and switches AFTER, so the
+   * eyebrows and an accessible name have to change on an already-rendered
+   * component or the assertion fails.
+   */
+  it('re-renders the field chrome when the locale switches after mount', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'en' as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      expect(fieldChrome(wrapper).eyebrows).toEqual(['Body', 'Board', 'Labels', 'Due (optional)'])
+
+      i18n.global.locale.value = 'it' as SupportedLocale
+      await nextTick()
+
+      const chrome = fieldChrome(wrapper)
+      expect(chrome.eyebrows).toEqual(['Testo', 'Bacheca', 'Etichette', 'Scadenza (facoltativa)'])
+      expect(chrome.body.attributes('aria-label')).toBe(
+        'Testo: scrivi il contenuto di questa cattura',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  it('re-renders the composer surface copy when the locale switches after mount', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'en' as SupportedLocale
+      const wrapper = mount(PaperCaptureComposer)
+      expect(surfaceCopy(wrapper)).toEqual({
+        eyebrow: 'Capture · Draft',
+        meta: 'local-only · saves to Inbox',
+        footer: 'Captures land in Inbox. Linking to a board creates a proposal, not a card.',
+        submit: 'Capture',
+      })
+
+      i18n.global.locale.value = 'it' as SupportedLocale
+      await nextTick()
+
+      expect(surfaceCopy(wrapper)).toEqual({
+        eyebrow: 'Cattura · Bozza',
+        meta: 'solo locale · salva nell’Inbox',
+        footer: 'Le catture arrivano nell’Inbox. Collegarle a una bacheca crea una proposta, non una scheda.',
+        submit: 'Cattura',
+      })
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
   })
 
   it('reflects label selections in the submit payload', async () => {
@@ -178,9 +413,9 @@ describe('PaperCaptureComposer', () => {
   it('does not submit while creation is already in flight', async () => {
     const wrapper = mount(PaperCaptureComposer, { props: { submitting: true } })
     expect(wrapper.find('textarea').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('select[aria-label="Board picker"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('input[aria-label="Add label"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('input[aria-label="Due date"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="paper-composer-board"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="paper-composer-label-input"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="paper-composer-due"]').attributes('disabled')).toBeDefined()
 
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
 
@@ -198,7 +433,7 @@ describe('PaperCaptureComposer', () => {
     ]
     const wrapper = mount(PaperCaptureComposer)
 
-    const options = wrapper.findAll('select[aria-label="Board picker"] option')
+    const options = wrapper.findAll('[data-testid="paper-composer-board"] option')
     const readOnly = options.find((option) => option.attributes('value') === 'board-readonly')
 
     // Visible, NOT filtered away.
@@ -214,7 +449,7 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer)
 
     const option = wrapper
-      .findAll('select[aria-label="Board picker"] option')
+      .findAll('[data-testid="paper-composer-board"] option')
       .find((o) => o.attributes('value') === 'board-alpha')
 
     expect(option!.attributes('disabled')).toBeUndefined()
@@ -228,7 +463,7 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer)
 
     const option = wrapper
-      .findAll('select[aria-label="Board picker"] option')
+      .findAll('[data-testid="paper-composer-board"] option')
       .find((o) => o.attributes('value') === 'board-alpha')
 
     expect(option!.attributes('disabled')).toBeUndefined()
@@ -258,16 +493,119 @@ describe('PaperCaptureComposer', () => {
     const wrapper = mount(PaperCaptureComposer)
     await wrapper.find('textarea').setValue('Preserve this if the API fails')
     const labelInput = wrapper.find('input[type="text"]')
-    await labelInput.setValue('uncommitted-label')
+    await labelInput.setValue('committed')
+    await labelInput.trigger('keydown', { key: 'Enter' })
 
     await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('Preserve this if the API fails')
-    expect((labelInput.element as HTMLInputElement).value).toBe('uncommitted-label')
+    expect(wrapper.find('.paper-composer__labels').text()).toContain('committed')
 
     ;(wrapper.vm as unknown as { resetDraft: () => void }).resetDraft()
     await wrapper.vm.$nextTick()
     expect((wrapper.find('textarea').element as HTMLTextAreaElement).value).toBe('')
     expect((labelInput.element as HTMLInputElement).value).toBe('')
+    // GH-2490 -- the committed chips go with the reset. Without this the
+    // `labels.value = []` line is unguarded and a stale chip could ride into
+    // the NEXT capture.
+    expect(wrapper.find('.paper-composer__labels').exists()).toBe(false)
+  })
+
+  // GH-2490 -- typing a label and pressing Cmd/Ctrl+Enter without first pressing
+  // Enter filed a capture with NO label, and the success reset then wiped the
+  // box that was the only evidence of it.
+  describe('pending label on submit (GH-2490)', () => {
+    it('flushes an uncommitted label into the emitted payload', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Ship the label flush')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('  urgent  ')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual(['urgent'])
+      expect((labelInput.element as HTMLInputElement).value).toBe('')
+    })
+
+    it('does not duplicate a pending label that is already a chip', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Dedupe me')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('urgent')
+      await labelInput.trigger('keydown', { key: 'Enter' })
+      await labelInput.setValue('urgent')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual(['urgent'])
+    })
+
+    it('keeps a comma inside the pending label as content (GH-2485 unregressed)', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Commas are content')
+      await wrapper.find('input[type="text"]').setValue('ops, later')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual(['ops, later'])
+    })
+
+    it('flushes nothing when the label box holds only whitespace', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('No label here')
+      await wrapper.find('input[type="text"]').setValue('   ')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { labels: string[] }
+      expect(payload.labels).toEqual([])
+    })
+
+    it('does not flush the pending label when the submit is refused', async () => {
+      mockBoardStore.boards = [{ id: 'board-readonly', name: 'Archive', canWrite: false }]
+      const wrapper = mount(PaperCaptureComposer, { props: { defaultBoardId: 'board-readonly' } })
+      await wrapper.find('textarea').setValue('nowhere to land')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('urgent')
+
+      await wrapper.find('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+
+      expect(wrapper.emitted('submit')).toBeUndefined()
+      // The box still holds the evidence while the capture cannot be filed.
+      expect((labelInput.element as HTMLInputElement).value).toBe('urgent')
+    })
+
+    it('carries the pending label through snapshot and restore', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.find('textarea').setValue('Survive the redirect')
+      const labelInput = wrapper.find('input[type="text"]')
+      await labelInput.setValue('half-typed')
+
+      const vm = wrapper.vm as unknown as {
+        snapshotDraft: () => { labelInput: string }
+        restoreDraft: (draft: { text: string; labelInput?: string | null }) => void
+        resetDraft: () => void
+      }
+      const snapshot = vm.snapshotDraft()
+      expect(snapshot.labelInput).toBe('half-typed')
+
+      vm.resetDraft()
+      vm.restoreDraft({ ...snapshot, text: 'Survive the redirect' })
+      await wrapper.vm.$nextTick()
+      expect((labelInput.element as HTMLInputElement).value).toBe('half-typed')
+    })
+
+    it('restores a pre-GH-2490 draft with no pending label as an empty box', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      const vm = wrapper.vm as unknown as {
+        restoreDraft: (draft: { text: string }) => void
+      }
+      vm.restoreDraft({ text: 'older stash' })
+      await wrapper.vm.$nextTick()
+      expect((wrapper.find('input[type="text"]').element as HTMLInputElement).value).toBe('')
+    })
   })
 
   // GH-2141 -- the Paper skin could not file a transcript without dropping into

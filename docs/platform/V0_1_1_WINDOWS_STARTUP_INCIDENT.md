@@ -159,11 +159,11 @@ Delivered files include:
 - The focused Application/API, archive, architecture, release-contract, docs-governance, Python
   compile, formatting, and marked-package diagnostic checks also passed before publication.
 
-Not verified:
+Not verified at the PR head (historical; the release was published later):
 
 - a final no-publish candidate from the current post-`55dbf6e14` main;
-- v0.1.2 tag workflows or public artifacts;
-- ordinary public v0.1.2 Desktop launch.
+- ordinary public v0.1.2 Desktop launch. Ordinary Explorer/SmartScreen acceptance and inherited-
+  profile migration remain unclaimed on the published artifact.
 
 ## Preserved evidence and cleanup status
 
@@ -181,24 +181,26 @@ Not verified:
 
 ## Current continuation
 
-Do not resume the implementation branch or reopen `#1876`; the correction is already on main. Use
-the live v0.1.2 checkpoint instead:
+Do not resume the implementation branch or reopen `#1876`; the correction is already on main and
+was shipped in the public v0.1.2 release. Use the live release checkpoint instead:
 
 1. Refresh Git, GitHub, ProjectV2, CI, review threads, milestone membership, and worktrees.
-2. Finish and merge the remaining Priority I milestone slices through their own exact-head gates.
-3. From the resulting exact main, run the synthetic desktop receipt -> explicit Apply ->
-   exactly-one-card journey and a blank-tag no-publish Windows candidate.
-4. Assemble the release deck, including inherited-profile migration and ordinary
-   Explorer/SmartScreen evidence or explicit unverified boundaries.
-5. Do not create or push a v0.1.2 tag until the maintainer explicitly accepts that deck. The
-   >=10-day dogfooding floor is the separate q-8 traction/archive checkpoint, not a v0.1.2 tag gate.
+2. Treat the remaining residuals as work on the current release queue; the v0.1.2 milestone is
+   closed and no longer gates release work.
+3. The v0.1.2 tag and public artifact already exist; the remaining release-proof items are ordinary
+   Explorer/SmartScreen acceptance and inherited-profile migration, which remain explicitly
+   unverified until a human runs them.
+4. Route any new startup or upgrade findings to the current release queue — the open milestone on
+   GitHub, not a milestone named here, which goes stale on every ship; do not reopen `#1876` for
+   the already-shipped correction.
 
 ## User-facing status
 
 - Usable at incident close: yes, through the compatibility launch; current process state must be
   rechecked rather than inferred.
 - Safe to describe v0.1.1 as universally double-click-to-use: no.
-- Public v0.1.2 available: no.
+- Public v0.1.2 available: yes — tag `v0.1.2` at `9766edbb5`, with the Windows x64 ZIP, checksum,
+  and provenance published under the accepted release deck.
 - Data or credentials deleted: no.
-- Issue state: `#1876` closed as completed by PR `#2016`; implementation is on main, but no public
-  v0.1.2 artifact exists.
+- Issue state: `#1876` closed as completed by PR `#2016`; implementation is on main and included in
+  the public v0.1.2 artifact.
