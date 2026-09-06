@@ -540,7 +540,11 @@ function Assert-GhApiReadCommand {
         }
     }
 
-    $isGraphQl = $Arguments[0].ToLowerInvariant() -eq "graphql"
+    $endpoint = $Arguments[0]
+    if ($endpoint -ieq "graphql" -and $endpoint -cne "graphql") {
+        Deny-InventoryCommand "gh api endpoint 'graphql' must use its exact lowercase token"
+    }
+    $isGraphQl = $endpoint -ceq "graphql"
     $method = Get-GhApiMethod -Arguments $Arguments
     if ($isGraphQl) {
         if ($null -ne $method -and $method.ToUpperInvariant() -ne "POST") {
@@ -730,6 +734,8 @@ function Invoke-ReadOnlyInventorySelfTest {
     Assert-Denied @("gh", "API", "repos/example/repo/issues") "exact lowercase token"
     Assert-Denied @("gh", "PR", "list") "exact lowercase token"
     Assert-Denied @("gh", "pr", "LIST") "exact lowercase token"
+    Assert-Denied @("gh", "api", "GRAPHQL", "-f", "query=query { viewer { login } }") "exact lowercase token"
+    Assert-Denied @("gh", "api", "GraphQl", "-f", "query=query { viewer { login } }") "exact lowercase token"
 
     # Argument-content policy: the wrapper launches through argv with no shell, so CR/LF inside the
     # value of a gh api field flag cannot splice a command and a real multi-line GraphQL document
