@@ -217,7 +217,7 @@ public class AutomationProposalServiceEdgeCaseTests
         // being expired would be a user-visible lie about archived history.
         _notificationServiceMock.Verify(
             s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
-            Times.AtMostOnce());
+            Times.Once());
 
         var skipEntry = logger.Entries.Should()
             .ContainSingle(entry => entry.Message.Contains("Skipped expiring"))
@@ -228,10 +228,11 @@ public class AutomationProposalServiceEdgeCaseTests
     }
 
     [Fact]
-    public async Task ExpireProposalsAsync_ShouldNotSaveOrLog_WhenEveryExpiredProposalIsWithheld()
+    public async Task ExpireProposalsAsync_ShouldNotSaveOrNotify_WhenEveryExpiredProposalIsWithheld()
     {
         // The all-withheld cycle is the exact shape of the defect: a sweep that finds only
-        // archived-board proposals must be a no-op write, not a silent batch of decisions.
+        // archived-board proposals must be a no-op write, not a silent batch of decisions. The
+        // withheld count is reported once for this transition, but it must not notify the user.
         var logger = new InMemoryLogger<AutomationProposalService>();
         var service = new AutomationProposalService(
             _unitOfWorkMock.Object,
@@ -256,6 +257,77 @@ public class AutomationProposalServiceEdgeCaseTests
             s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
             Times.Never());
         logger.Entries.Should().ContainSingle(entry => entry.Message.Contains("Skipped expiring"));
+    }
+
+    [Fact]
+    public async Task ExpireProposalsAsync_ShouldLogArchivedBoardSkipOnlyOnCountTransitions()
+    {
+        var logger = new InMemoryLogger<AutomationProposalService>();
+        var service = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            provenanceRepository: null,
+            policyEngine: null,
+            logger: logger);
+
+        _proposalRepoMock
+            .Setup(r => r.GetExpiredAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExpiredProposalSweep(
+                Array.Empty<AutomationProposal>(),
+                SkippedArchivedBoardCount: 2));
+
+        await service.ExpireProposalsAsync();
+        await service.ExpireProposalsAsync();
+
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Level == LogLevel.Information && entry.Message.Contains("Skipped expiring"));
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Level == LogLevel.Debug && entry.Message.Contains("Still skipping"));
+    }
+
+    [Fact]
+    public async Task ExpireProposalsAsync_ShouldLogWhenArchivedBoardSkipCountReturnsToZero()
+    {
+        var logger = new InMemoryLogger<AutomationProposalService>();
+        var service = new AutomationProposalService(
+            _unitOfWorkMock.Object,
+            _notificationServiceMock.Object,
+            provenanceRepository: null,
+            policyEngine: null,
+            logger: logger);
+        var expirable = CreatePendingProposal();
+
+        _proposalRepoMock
+            .SetupSequence(r => r.GetExpiredAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ExpiredProposalSweep(
+                Array.Empty<AutomationProposal>(),
+                SkippedArchivedBoardCount: 2))
+            .ReturnsAsync(new ExpiredProposalSweep(
+                new[] { expirable },
+                SkippedArchivedBoardCount: 0));
+
+        await service.ExpireProposalsAsync();
+        var result = await service.ExpireProposalsAsync();
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().Be(1);
+        expirable.Status.Should().Be(ProposalStatus.Expired);
+        _unitOfWorkMock.Verify(
+            u => u.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Once());
+        _notificationServiceMock.Verify(
+            s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()),
+            Times.Once());
+
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Level == LogLevel.Information
+                && entry.Message.Contains("No stale proposals are being withheld"));
+        logger.Entries.Should().ContainSingle(
+            entry => entry.Level == LogLevel.Information
+                && entry.Message.Contains("Skipped expiring")
+                && entry.Message.Contains("2"));
+        logger.Entries.Should().NotContain(
+            entry => entry.Level == LogLevel.Debug && entry.Message.Contains("Still skipping"));
     }
 
     [Fact]

@@ -1,9 +1,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCaptureStore } from '../store/captureStore'
+import type { DetailCacheOutcome } from '../store/captureStore'
 import { boardsApi } from '../api/boardsApi'
 import { isTriageTerminalStatus } from '../types/capture'
-import type { CaptureItem, CaptureItemSummary } from '../types/capture'
+import type { CaptureItem, CaptureItemSummary, CaptureListQuery } from '../types/capture'
 import type { BoardDetail } from '../types/board'
 import { registerEscapeHandler } from './useEscapeStack'
 import { usePerformanceMark } from './usePerformanceMark'
@@ -24,6 +25,24 @@ export function useInboxOrchestrator(options: {
   const activeBatchTriagePollStops = new Set<() => void>()
   let batchActionGeneration = 0
   let scopedBoardLoadGeneration = 0
+  let latestInboxLoadRequestId = 0
+  const isScopeReplacement = ref(false)
+  /**
+   * Which scope a raised `isScopeReplacement` belongs to, and whether that
+   * replacement has already spent its one repair load (#2591).
+   *
+   * Orchestrator bookkeeping rather than a store observable on purpose. The
+   * store keeps its list request id private and publishes only `items`,
+   * `loadingList` and `listError` — and `items` also moves on writes that
+   * prove nothing about the current scope (optimistic summary writes, the
+   * batch poll's reconciliation reader), so watching it would clear the flag
+   * without the new scope's rows ever having landed: the #2501 harm. The
+   * `applied` boolean from `fetchItems` stays the only evidence that a list
+   * response was written, and this record is what tells a LATER load that the
+   * response it is about to report on is the one an outstanding replacement
+   * was waiting for.
+   */
+  let scopeReplacementLatch: { scopeKey: string; repairIssued: boolean } | null = null
 
   // Batch selection state
   const selectedIds = ref<Set<string>>(new Set())
@@ -50,6 +69,39 @@ export function useInboxOrchestrator(options: {
   const isArchivedHistory = computed(
     () => route.query.history === 'archived' && activeBoardId.value !== null,
   )
+
+  /**
+   * The list query for the Inbox's CURRENT scope — the one every list read has
+   * to use, not just the explicit load (#2570). Read it late (see the thunk in
+   * `batchAction`); the scope can change between a read being planned and
+   * issued.
+   *
+   * Archived history carries no key of its own because `CaptureListQuery` has
+   * none (`types/capture.ts`): it is board id and limit only. That is sound
+   * today because archived history is always board-scoped, so `boardId` already
+   * selects the archived board's captures. Adding a `history` key to the query
+   * type has to revisit this helper — `loadInboxInternal` calls it in archived
+   * mode too, so the omission is not covered by `batchAction`'s early return.
+   */
+  function currentListQuery(): CaptureListQuery {
+    return {
+      limit: 200,
+      ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
+    }
+  }
+
+  /**
+   * The Inbox's current scope as a comparable key. Two list loads answer the
+   * same question only when their keys match; a load whose key no longer
+   * matches the current one must not touch scope-replacement state.
+   */
+  function currentScopeKey(): string {
+    return JSON.stringify({
+      boardId: activeBoardId.value,
+      archived: isArchivedHistory.value,
+    })
+  }
+
   const activeBoardName = computed(() => {
     const boardId = activeBoardId.value
     return boardId && scopedBoard.value?.id === boardId ? scopedBoard.value.name : boardId ?? ''
@@ -120,7 +172,15 @@ export function useInboxOrchestrator(options: {
     const ids = Array.from(selectedIds.value)
     const actionGeneration = ++batchActionGeneration
     try {
-      const result = await captureStore.batchTriage(ids, action)
+      // The store re-reads the list after the batch. Hand it this Inbox's
+      // scope so a board-scoped list is not replaced by the unscoped one
+      // (#2570) — for ignore and cancel no poll follows to repair it.
+      //
+      // A THUNK, not a value: the scope can move while the POST is in flight,
+      // and the store resolves this immediately before it issues the read, so
+      // the read follows the user to the new board instead of racing the new
+      // board's own load and winning it with the old board's rows.
+      const result = await captureStore.batchTriage(ids, action, currentListQuery)
       // A board/history scope change invalidates both the selection and the
       // question this response answers. Never start an old scope's poll late.
       if (actionGeneration !== batchActionGeneration) return
@@ -131,10 +191,7 @@ export function useInboxOrchestrator(options: {
         .map((item) => item.itemId)
       if (queuedIds.length === 0) return
       activeBatchTriagePollStops.add(
-        captureStore.pollBatchTriageCompletion(queuedIds, {
-          limit: 200,
-          ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
-        }),
+        captureStore.pollBatchTriageCompletion(queuedIds, currentListQuery()),
       )
     } catch {
       // Store handles toast
@@ -270,6 +327,12 @@ export function useInboxOrchestrator(options: {
     // only the list write is suppressed. Paper loads through `peekDetail` and is
     // unaffected either way.
     const syncSummary = cacheSummary && !isArchivedHistory.value
+    // Both halves of the selection. `selectedItemId` drives `aria-selected` and
+    // the detail panel; `activeItemIndex` drives the active row and
+    // `aria-activedescendant`. Restoring one without the other would leave the
+    // list pointing at a row the panel is not showing.
+    const previousSelectedItemId = selectedItemId.value
+    const previousActiveItemIndex = activeItemIndex.value
     primeSelection(itemId, preferredIndex)
     hashLoadFailedItemId.value = null
     try {
@@ -277,7 +340,47 @@ export function useInboxOrchestrator(options: {
         captureStore.cacheDetail(preloadedDetail, syncSummary)
         return true
       }
-      await captureStore.fetchDetail(itemId, { syncSummary })
+      // `onCacheOutcome` is the store reporting what it did with THIS read
+      // (#2640). `fetchDetail` resolves with the body it fetched on three paths
+      // that write nothing, so resolution alone is not evidence the panel has a
+      // detail to render: returning `true` regardless left `selectedItemId` on
+      // an id `detailById` holds nothing for, which `InboxDetailPanel` renders
+      // as "Unable to load capture detail." for a read that succeeded. A store
+      // that reports nothing is read as `cached`, the behaviour before #2640.
+      // A holder, not a bare `let`: TypeScript's control-flow analysis does not
+      // track an assignment made inside the callback and would narrow a plain
+      // variable to its initializer for every compare below.
+      const detailRead: { outcome: DetailCacheOutcome } = { outcome: 'cached' }
+      const report = (reported: DetailCacheOutcome) => { detailRead.outcome = reported }
+      await captureStore.fetchDetail(itemId, { syncSummary, onCacheOutcome: report })
+
+      // A `generation` drop is a LIVE-session case, not a post-logout one: a
+      // first open observes generation 0 for an uncached item, and a batch
+      // triage that includes it moves that generation while the read is in
+      // flight. `refreshTerminalDetails` skips such an item — it has a list row
+      // and no cached detail — so unlike a detail-path write, the batch write
+      // has cached no body of its own and there is nothing here to render. Not
+      // re-reading turned the click into a silent no-op and stripped a live
+      // deep link. Re-read ONCE, against the generation that caused the drop;
+      // a second collision in that window is left to the user's next click
+      // rather than looped over.
+      if (detailRead.outcome === 'generation' && !captureStore.detailById[itemId]) {
+        detailRead.outcome = 'cached'
+        await captureStore.fetchDetail(itemId, { syncSummary, onCacheOutcome: report })
+      }
+
+      // `superseded` means a newer read for the same id is already the
+      // authority, so the selection stands. Only the logout case is terminal:
+      // there is no newer read coming and no body to show. It is not a failure
+      // either, so restore the selection the user had — both halves of it —
+      // rather than clearing it, and report the read as not opened.
+      if (detailRead.outcome === 'epoch' && !captureStore.detailById[itemId]) {
+        if (selectedItemId.value === itemId) {
+          selectedItemId.value = previousSelectedItemId
+          activeItemIndex.value = previousActiveItemIndex
+        }
+        return false
+      }
       return true
     } catch {
       if (selectedItemId.value === itemId) {
@@ -347,18 +450,90 @@ export function useInboxOrchestrator(options: {
 
   // ---- Inbox loading ----
 
-  async function loadInbox() {
+  async function loadInboxInternal(scopeReplacement = false) {
+    const requestId = ++latestInboxLoadRequestId
+    const requestScopeKey = currentScopeKey()
+    if (scopeReplacement) {
+      isScopeReplacement.value = true
+      // A fresh replacement, and a fresh repair budget with it. The repair
+      // below is a PLAIN load, so it can never refill its own budget.
+      scopeReplacementLatch = { scopeKey: requestScopeKey, repairIssued: false }
+    }
     inboxLoadPerf.start()
+    let repairDroppedReplacement = false
     try {
-      await captureStore.fetchItems({
-        limit: 200,
-        ...(activeBoardId.value ? { boardId: activeBoardId.value } : {}),
-      })
+      // `applied` is the store reporting that THIS call's response was written
+      // into `items` (#2501). `fetchItems` resolves without writing anything
+      // when its own request id has been superseded, so resolution alone is not
+      // evidence the new scope's rows arrived. Clearing the flag on resolution
+      // alone un-hid the retained OLD-scope rows under the NEW scope's label —
+      // the exact state this flag exists to prevent. The request-id and
+      // scope-key checks below stay: they guard against a stale caller, while
+      // `applied` guards against a dropped response.
+      const applied = await captureStore.fetchItems(currentListQuery())
+      // Still the latest load, still answering the scope the user is looking
+      // at. A stale load reports on nothing.
+      const isLatestForThisScope =
+        requestId === latestInboxLoadRequestId && requestScopeKey === currentScopeKey()
+      if (applied && isLatestForThisScope) {
+        isScopeReplacement.value = false
+        scopeReplacementLatch = null
+      } else if (
+        !applied &&
+        isLatestForThisScope &&
+        scopeReplacementLatch?.scopeKey === requestScopeKey
+      ) {
+        // A dropped response under an outstanding replacement for THIS scope
+        // (#2591). Nothing else will clear the flag: the read that superseded
+        // this one is the store's own post-batch refresh, whose `applied`
+        // result the store discards, and no later orchestrator load is coming
+        // (the id check above proved that). Left alone the flag latched
+        // forever, and `PaperTriageTable` then hid the rows AND their count
+        // with no Retry — an empty body under a count-free eyebrow.
+        //
+        // So: repair the scope ONCE with the current scope's query. The flag
+        // stays raised while that read is in flight, so the table shows its
+        // loading state rather than the wrong scope's rows.
+        if (scopeReplacementLatch.repairIssued) {
+          // The repair was dropped too. Do not loop. Clear the flag instead and
+          // let the table state the truth it has: the store's rows with their
+          // count, its empty state, or its error surface with Retry. Clearing
+          // here is safe only while this orchestrator is the sole Paper-side
+          // `fetchItems` caller: a superseding read resolves the same
+          // `currentListQuery` thunk when it is issued, but issued is not
+          // applied, and until it applies `items` still holds the last APPLIED
+          // list, which can be the previous scope's rows. Today the only other
+          // caller is Legacy's `batchTriage` reconciliation read, and Legacy
+          // never renders this flag. A Paper batch surface must clear only once
+          // a read has applied since the latch was raised.
+          isScopeReplacement.value = false
+          scopeReplacementLatch = null
+        } else {
+          scopeReplacementLatch.repairIssued = true
+          repairDroppedReplacement = true
+        }
+      }
     } catch {
-      // Store handles toast + error state.
+      // Store handles toast + error state. The flag stays raised deliberately:
+      // a failed load leaves the previous scope's rows in the store, and the
+      // table's error surface carries a Retry while `listError` is set. (A
+      // later background poll success clears `listError` without touching
+      // this flag; that failure-path shape is tracked on #2591.)
     }
     await openItemFromHash()
     inboxLoadPerf.end()
+    if (repairDroppedReplacement) {
+      // A plain load: it must not restart the replacement, only finish it.
+      await loadInboxInternal()
+    }
+  }
+
+  function loadInbox() {
+    return loadInboxInternal()
+  }
+
+  function loadInboxForScopeReplacement() {
+    return loadInboxInternal(true)
   }
 
   async function openItemFromList(item: CaptureItemSummary, index: number) {
@@ -534,7 +709,7 @@ export function useInboxOrchestrator(options: {
   watch(activeBoardId, () => {
     resetScopedState()
     void loadScopedBoard()
-    void loadInbox()
+    void loadInboxForScopeReplacement()
   })
 
   // Entering or leaving archived history (#1973) is a scope change of its own:
@@ -546,7 +721,7 @@ export function useInboxOrchestrator(options: {
   watch(isArchivedHistory, () => {
     resetScopedState()
     void loadScopedBoard()
-    void loadInbox()
+    void loadInboxForScopeReplacement()
   })
 
   watch(
@@ -577,7 +752,10 @@ export function useInboxOrchestrator(options: {
 
   onMounted(() => {
     void loadScopedBoard()
-    void loadInbox()
+    // Mount is always a fresh scope: captureStore.items can still hold rows from a
+    // previously visited board (the store is not reset on route leave), so the first
+    // load must replace scope rather than retain stale rows on failure.
+    void loadInboxForScopeReplacement()
   })
 
   onUnmounted(() => {
@@ -600,6 +778,7 @@ export function useInboxOrchestrator(options: {
     activeBoardId,
     activeColumnId,
     isArchivedHistory,
+    isScopeReplacement,
     activeBoardName,
     activeColumnName,
     showCaptureModal,
@@ -610,6 +789,7 @@ export function useInboxOrchestrator(options: {
 
     // Actions
     loadInbox,
+    loadInboxForScopeReplacement,
     openItemFromList,
     setActiveIndex,
     handleKeydown,

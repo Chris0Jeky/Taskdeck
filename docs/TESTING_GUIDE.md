@@ -77,8 +77,8 @@ archive Python 35/35, architecture 26 passed + 1 intentional skip, release contr
 an actual marked-package diagnostic, and the full backend solution (8,094 passed + 5 intentional
 skips) passed locally. Exact-head hosted Required CI, dynamic Playwright smoke, and bounded review
 also passed. Exact-main no-publish and isolated synthetic Mock core-loop evidence is recorded below;
-the v0.1.2 tag, unchanged public-artifact proof, inherited-profile migration, and ordinary-profile
-Explorer/SmartScreen acceptance remain unverified.
+the public v0.1.2 tag and artifact now exist (see the `v0.1.2 SHIPPED` block in `docs/STATUS.md`).
+Ordinary Explorer/SmartScreen acceptance and inherited-profile migration remain unverified.
 
 ## 2026-08-24 exact-main Windows candidate rehearsal
 
@@ -1050,7 +1050,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Telemet
 
 ### Proposal Provenance Tests (RFAI-03, `#975`/`#993`)
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalProvenanceTests.cs`, `ProvenanceFieldTests.cs`, `ProposalOutcomeTests.cs`, `EvidenceLinkTests.cs` covering:
+`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalProvenanceTests.cs`, `ProvenanceFieldTests.cs`, `ProposalOutcomeTests.cs`, `ProvenanceEvidenceLinkTests.cs` covering:
 - ProposalProvenance: field addition, parent-ID validation, field count tracking
 - ProvenanceField: extractive quote enforcement, confidence bounds, kind validation
 - ProposalOutcome: content-free decision ledger, decision type coverage
@@ -1064,16 +1064,18 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Provena
 
 ### Proposal Revision Tests (RFAI-04, `#976`/`#994`)
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalRevisionTests.cs`, `ProposalRevisionChainTests.cs`, `CompilerValidationResultTests.cs`, `OperationRiskTests.cs`, `ProposalOutcomeTests.cs`, `UnsupportedOperationFailureTests.cs` — **70 tests** covering:
+The original RFAI-04 suite listed `CompilerValidationResultTests.cs` among its **70 tests**; that
+dead entity and test were removed under `#1305` AC3. The surviving revision suite is:
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalRevisionTests.cs`, `ProposalRevisionChainTests.cs`, `OperationRiskTests.cs`, `ProposalOutcomeTests.cs`, `UnsupportedOperationFailureTests.cs` — covering:
 - ProposalRevision: creation, immutability (private setters), validation, DateTimeOffset precision
 - Revision chain: latest resolution, ordering, no-revisions case, many-revisions integrity, unique constraint
-- CompilerValidationResult: success/failure factory, risk aggregation
 - OperationRisk: value equality semantics, risk level + reason
 - OutcomeType: decision coverage (Approved/EditedThenApproved/Rejected/Ignored)
 
 Run:
 ```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ProposalRevision or FullyQualifiedName~CompilerValidation or FullyQualifiedName~OperationRisk or FullyQualifiedName~UnsupportedOperation"
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ProposalRevision or FullyQualifiedName~OperationRisk or FullyQualifiedName~UnsupportedOperation"
 ```
 
 ## Audit-Finding Remediation Wave Testing (2026-04-24, PRs `#960`–`#969`)
@@ -2616,12 +2618,23 @@ Rehearsals are distinct from the automated failure-injection drill suite (`docs/
 
 ## Development Sandbox Mode
 
-For local development only, authorization bypass can be enabled via:
+For local development only, a read convenience can be enabled via:
 - `backend/src/Taskdeck.Api/appsettings.Development.json`
 - `DevelopmentSandbox.Enabled = true`
 
+What the flag does (ADR-0068, `#1866`):
+- It relaxes **read** authorization only -- board read checks and readable-board-set resolution --
+  so seeded fixtures are browsable without hand-granting access.
+- It **gates** the database and board JSON export/import endpoints, which return `403` unless it is
+  on. Those endpoints are gated *on* the sandbox, not widened *by* it.
+
+What it never does:
+- Write, delete, manage-access and proposal-execute authorization are **never** bypassed. A test
+  fixture that needs to write, delete, manage access or execute a proposal must seed a real
+  `BoardAccess` row (or board ownership); the sandbox will not stand in for one.
+
 Safety boundary:
-- Sandbox bypass is forced off outside Development environment.
+- The flag is forced off outside the Development environment.
 - Validation and data integrity rules still apply.
 
 ## Webhook HMAC Signature Verification Coverage (PR #750, delivered 2026-04-04)

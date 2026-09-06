@@ -7,15 +7,11 @@ const SOURCES = import.meta.glob('../../**/*.{ts,vue}', {
 }) as Record<string, string>
 
 /**
- * These two files are release-lane owned for the v0.3 RC. The runtime PaperHLBtn
- * boundary normalizes PaperInboxView's shipped hint, but this source quarantine
- * stays explicit until the release lane can remove its literals. It may shrink;
- * adding another path would weaken the guard.
+ * The quarantine is now empty: PaperInboxView ships the canonical `mod+;`
+ * descriptor and useReviewKeymap's comment no longer carries a glyph. It may
+ * shrink; adding another path would weaken the guard.
  */
-const RELEASE_LANE_QUARANTINE = [
-  '../../composables/useReviewKeymap.ts',
-  '../../views/paper/PaperInboxView.vue',
-] as const
+const RELEASE_LANE_QUARANTINE: readonly string[] = []
 
 const HARDCODED_MODIFIER = /⌘|Ctrl\/Cmd|Ctrl\+/g
 

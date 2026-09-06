@@ -11,7 +11,7 @@ This document defines the complete testing strategy for Taskdeck, including unit
 ## Table of Contents
 
 1. [Testing Philosophy](#testing-philosophy)
-2. [Test Coverage Goals](#test-coverage-goals)
+2. [Coverage Goals](#coverage-goals)
 3. [Backend Testing](#backend-testing)
 4. [Frontend Testing](#frontend-testing)
 5. [Integration Testing](#integration-testing)

@@ -126,16 +126,7 @@ public class ProposalHousekeepingWorkerTests
     {
         // The line is an exception report, not a per-cycle heartbeat: a worker that logged it every
         // minute on a healthy install would train operators to ignore it.
-        var expirable = new AutomationProposal(
-            ProposalSourceType.Queue,
-            Guid.NewGuid(),
-            "Nothing withheld this cycle",
-            RiskLevel.Low,
-            "proposal-housekeeping-no-skip",
-            expiryMinutes: 1);
-        SetExpiresAt(expirable, DateTime.UtcNow.AddMinutes(-5));
-
-        var repository = new FakeAutomationProposalRepository([expirable]);
+        var repository = new FakeAutomationProposalRepository([]);
         var unitOfWork = new FakeUnitOfWork(repository);
         using var serviceProvider = BuildServiceProvider(unitOfWork);
         var logger = new InMemoryLogger<ProposalHousekeepingWorker>();
@@ -147,7 +138,8 @@ public class ProposalHousekeepingWorkerTests
 
         await InvokeExpireStaleProposalsAsync(worker, CancellationToken.None);
 
-        logger.Entries.Should().NotContain(entry => entry.Message.Contains("Skipped expiring"));
+        logger.Entries.Should().BeEmpty(
+            "a clean sweep with no withheld proposals must not emit an archived-board skip or sentinel log");
     }
 
     [Fact]

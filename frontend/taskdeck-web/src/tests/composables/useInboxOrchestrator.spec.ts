@@ -70,6 +70,7 @@ vi.mock('../../utils/navigation', () => ({
 }))
 
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
+import type { DetailCacheOutcome } from '../../store/captureStore'
 
 function createOrchestrator() {
   mountedCallback = null
@@ -122,6 +123,19 @@ async function flushAsyncWork() {
   await Promise.resolve()
 }
 
+/**
+ * `batchAction` passes the store a THUNK so the store can resolve the scope at
+ * the moment it issues the reconciliation read. Assert on what the thunk
+ * returns, not on the function itself.
+ */
+function resolvedBatchQuery(callIndex = 0) {
+  const call = mockCaptureStore.batchTriage.mock.calls[callIndex]
+  expect(call).toBeDefined()
+  const query = call![2]
+  expect(typeof query).toBe('function')
+  return (query as () => unknown)()
+}
+
 function summaryRow(id: string, boardId: string | null) {
   return {
     id,
@@ -156,6 +170,14 @@ describe('useInboxOrchestrator', () => {
       ],
     })
     mockCaptureStore.pollBatchTriageCompletion.mockReset().mockReturnValue(vi.fn())
+    // `vi.clearAllMocks()` clears recorded calls but keeps implementations,
+    // including UNCONSUMED `mockImplementationOnce` entries. A case that queues
+    // a re-read the code under test does not take would hand that queued
+    // implementation to the next test.
+    mockCaptureStore.fetchDetail.mockReset()
+    // The store reports whether it APPLIED the response (#2501). The default is
+    // the ordinary case: the response was the latest and was written.
+    mockCaptureStore.fetchItems.mockReset().mockResolvedValue(true)
   })
 
   describe('batch selection', () => {
@@ -188,7 +210,8 @@ describe('useInboxOrchestrator', () => {
       orch.toggleItemSelection('a')
       orch.toggleItemSelection('b')
       await orch.batchAction('triage')
-      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage')
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200 })
       expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
         ['a', 'b'],
         { limit: 200 },
@@ -217,6 +240,96 @@ describe('useInboxOrchestrator', () => {
         ['accepted'],
         { limit: 200, boardId: 'board-7' },
       )
+    })
+
+    it('refreshes in the active board scope after a Legacy batch ignore', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('ignore')
+
+      // No poll follows an ignore, so an unscoped refresh would leave the
+      // unscoped rows under the board's label until the next scoped load.
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a'], 'ignore', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200, boardId: 'board-7' })
+    })
+
+    it('refreshes in the active board scope after a Legacy batch cancel', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('cancel')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a'], 'cancel', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200, boardId: 'board-7' })
+    })
+
+    it('refreshes in the active board scope before a triage poll starts', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      orch.toggleItemSelection('b')
+
+      await orch.batchAction('triage')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a', 'b'], 'triage', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200, boardId: 'board-7' })
+      expect(mockCaptureStore.pollBatchTriageCompletion).toHaveBeenCalledWith(
+        ['a', 'b'],
+        { limit: 200, boardId: 'board-7' },
+      )
+      // `batchTriage` is a bare mock here, so this proves only that the STORE
+      // CALL is issued before the poll call — not that the refresh inside it
+      // completed first. The refresh-before-poll property belongs to the real
+      // store, where the read is awaited before `batchTriage` resolves, and is
+      // covered by the captureStore specs.
+      expect(mockCaptureStore.batchTriage.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCaptureStore.pollBatchTriageCompletion.mock.invocationCallOrder[0],
+      )
+    })
+
+    it('resolves the refresh scope when the store issues the read, not when the batch starts', async () => {
+      mockRoute.query = { boardId: 'board-7' }
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+      let resolvedQuery: unknown = null
+      mockCaptureStore.batchTriage.mockImplementationOnce(async (
+        _ids: string[],
+        _action: string,
+        query?: unknown,
+      ) => {
+        // The user moves to another board while the POST is in flight. The
+        // store's reconciliation read is issued AFTER this point, so a scope
+        // captured when the action started would write board-7's rows under
+        // board-9's label — and `fetchItems` supersedes by request id, so the
+        // orchestrator's own board-9 load (issued first) would be the one
+        // dropped, with no poll after ignore/cancel to repair it.
+        mockRoute.query = { boardId: 'board-9' }
+        watcherForSource(orch.activeBoardId)[1]('board-9', 'board-7', () => {})
+        resolvedQuery = typeof query === 'function' ? (query as () => unknown)() : query
+        return {
+          total: 1,
+          succeeded: 1,
+          failed: 0,
+          results: [{ itemId: 'a', success: true }],
+        }
+      })
+
+      await orch.batchAction('ignore')
+
+      expect(resolvedQuery).toEqual({ limit: 200, boardId: 'board-9' })
+    })
+
+    it('refreshes without a boardId when no board scopes the Inbox', async () => {
+      const orch = createOrchestrator()
+      orch.toggleItemSelection('a')
+
+      await orch.batchAction('ignore')
+
+      expect(mockCaptureStore.batchTriage).toHaveBeenCalledWith(['a'], 'ignore', expect.any(Function))
+      expect(resolvedBatchQuery()).toEqual({ limit: 200 })
     })
 
     it('does not poll ignore or cancel batch actions', async () => {
@@ -335,6 +448,7 @@ describe('useInboxOrchestrator', () => {
       await orch.openItemFromList(summaryRow('archived-capture', 'archived-board'), 0)
       expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('archived-capture', {
         syncSummary: false,
+        onCacheOutcome: expect.any(Function),
       })
 
       // Refresh Detail is a READ affordance and stays available in history mode,
@@ -358,6 +472,7 @@ describe('useInboxOrchestrator', () => {
       await orch.openItemFromList(summaryRow('live-capture', 'live-board'), 0)
       expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('live-capture', {
         syncSummary: true,
+        onCacheOutcome: expect.any(Function),
       })
 
       mockCaptureStore.fetchDetail.mockClear()
@@ -434,6 +549,25 @@ describe('useInboxOrchestrator', () => {
       await flushAsyncWork()
       expect(orch.activeBoardName.value).toBe('Board B')
       expect(orch.activeColumnName.value).toBe('Column B')
+    })
+
+    it('marks a route-scope list load as a replacement until it succeeds', async () => {
+      // `true` is the store reporting an APPLIED response (#2501). This test
+      // used to resolve `undefined`, which passed under both the old contract
+      // and the new one and so proved nothing about which was in force.
+      const pendingLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
+      const orch = createOrchestrator()
+
+      mockRoute.query = { boardId: 'board-b' }
+      watcherForSource(orch.activeBoardId)[1]('board-b', null, () => {})
+
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      pendingLoad.resolve(true)
+      await flushAsyncWork()
+
+      expect(orch.isScopeReplacement.value).toBe(false)
     })
   })
 
@@ -560,7 +694,10 @@ describe('useInboxOrchestrator', () => {
       const event = { key: 'Enter', preventDefault: vi.fn() } as unknown as KeyboardEvent
       await orch.handleKeydown(event)
       expect(event.preventDefault).toHaveBeenCalled()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc', { syncSummary: true })
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('abc', {
+        syncSummary: true,
+        onCacheOutcome: expect.any(Function),
+      })
     })
   })
 
@@ -569,7 +706,10 @@ describe('useInboxOrchestrator', () => {
       mockRoute.hash = '#capture-deep-id'
       const orch = createOrchestrator()
       await orch.loadInbox()
-      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id', { syncSummary: true })
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledWith('deep-id', {
+        syncSummary: true,
+        onCacheOutcome: expect.any(Function),
+      })
     })
 
     it('loadInbox does not fetch detail when hash is absent', async () => {
@@ -655,6 +795,24 @@ describe('useInboxOrchestrator', () => {
       expect(mountedCallback).not.toBeNull()
       await mountedCallback!()
       expect(mockCaptureStore.fetchItems).toHaveBeenCalled()
+    })
+
+    it('treats the mount load as a scope replacement so a failed first load hides rows retained from a previous board', async () => {
+      // Simulate re-entering Inbox at a different board with rows left in the store
+      // from the previously visited board (the store is not reset on route leave).
+      mockCaptureStore.items = [{ id: 'stale-1' }, { id: 'stale-2' }]
+      mockRoute.query = { boardId: 'board-2' }
+      mockCaptureStore.fetchItems.mockRejectedValueOnce(new Error('scope load failed'))
+
+      const orch = createOrchestrator()
+      await mountedCallback!()
+
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith(
+        expect.objectContaining({ boardId: 'board-2', limit: 200 }),
+      )
+      // scopeReplacement stays set, so PaperTriageTable hides the stale rows and
+      // suppresses their count under the new board's label.
+      expect(orch.isScopeReplacement.value).toBe(true)
     })
 
     it('onUnmounted stops active triage polling', async () => {
@@ -762,11 +920,199 @@ describe('useInboxOrchestrator', () => {
       )
     })
 
+    // #1984 finding 2: a hand-written or bookmarked URL can still carry a
+    // column. The list request stays board-only, which is why nothing on the
+    // Inbox may present the column as an applied filter. The chip side of this
+    // contract is pinned in `views/paper/inbox/PaperInboxScopeTruth.spec.ts`.
+    it('ignores a columnId in the route and still requests the board only', async () => {
+      mockRoute.query = { boardId: 'board-1', columnId: 'col-ready' }
+      const orch = createOrchestrator()
+      await orch.loadInbox()
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200, boardId: 'board-1' })
+    })
+
     it('calls fetchItems without boardId when none active', async () => {
       mockRoute.query = {}
       const orch = createOrchestrator()
       await orch.loadInbox()
       expect(mockCaptureStore.fetchItems).toHaveBeenCalledWith({ limit: 200 })
+    })
+
+    it('clears the scope-replacement state only after the latest scoped load succeeds', async () => {
+      const pendingLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems.mockReturnValueOnce(pendingLoad.promise)
+      const orch = createOrchestrator()
+
+      const load = orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      // `true` is the store saying it WROTE this response into `items`.
+      pendingLoad.resolve(true)
+      await load
+
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    /**
+     * #2501 MEDIUM-1: `fetchItems` returns without writing anything when its
+     * request id has been superseded, and it does so by resolving, not by
+     * throwing. Resolution alone therefore does not mean the new scope's rows
+     * arrived, and treating it that way un-hid the retained OLD-scope rows
+     * under the NEW scope's chip. Only an applied response clears the flag.
+     *
+     * #2591 keeps that rule and closes what it left open: a dropped response
+     * used to leave the flag latched with nothing coming, so the table hid the
+     * rows AND their count with no Retry. The four cases below pin the whole
+     * contract — a later applied load clears it, a drop with nothing in flight
+     * re-issues ONCE, a second drop stops rather than looping, and a drop under
+     * a changed scope still clears nothing.
+     */
+    it('clears the scope-replacement state when the superseding load applies after the dropped one resolves', async () => {
+      const droppedLoad = deferred<boolean>()
+      const supersedingLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems
+        .mockReturnValueOnce(droppedLoad.promise)
+        .mockReturnValueOnce(supersedingLoad.promise)
+      const orch = createOrchestrator()
+
+      const replacement = orch.loadInboxForScopeReplacement()
+      const superseding = orch.loadInbox()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      // The store dropped the replacement's response because the second
+      // request superseded it, and it resolves AFTER that second request was
+      // issued.
+      droppedLoad.resolve(false)
+      await replacement
+
+      // The superseding load IS the later load for this scope: no repair read
+      // is owed, and the flag stays set until that load reports it applied.
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      mockCaptureStore.items = [{ id: 'a' }, { id: 'b' }]
+      supersedingLoad.resolve(true)
+      await superseding
+
+      // Coherent: rows exposed and the flag down, so the table renders the list
+      // and its count instead of a hidden body under a count-free eyebrow.
+      expect(orch.isScopeReplacement.value).toBe(false)
+      expect(orch.items.value).toHaveLength(2)
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+    })
+
+    it('re-issues the load once when a dropped replacement leaves nothing in flight', async () => {
+      mockRoute.query = { boardId: 'board-1' }
+      const droppedLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems
+        .mockReturnValueOnce(droppedLoad.promise)
+        .mockResolvedValueOnce(true)
+      const orch = createOrchestrator()
+
+      const replacement = orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      // Dropped by a read the orchestrator never issued (the store's own
+      // post-batch refresh), so no later orchestrator load will clear this.
+      mockCaptureStore.items = [{ id: 'a' }]
+      droppedLoad.resolve(false)
+      await replacement
+
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      expect(mockCaptureStore.fetchItems).toHaveBeenLastCalledWith({ limit: 200, boardId: 'board-1' })
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    it('stops after one re-issue when the repair load is dropped too', async () => {
+      mockRoute.query = { boardId: 'board-1' }
+      mockCaptureStore.fetchItems.mockResolvedValue(false)
+      const orch = createOrchestrator()
+      mockCaptureStore.items = [{ id: 'a' }]
+
+      await orch.loadInboxForScopeReplacement()
+
+      // Exactly one repair read, never a loop.
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      // Honest terminal state: the flag comes down with the store's rows
+      // visible, so the table shows the list and its count (or the store's
+      // error surface with Retry when the read recorded one) — not a hidden
+      // body with no affordance.
+      expect(orch.isScopeReplacement.value).toBe(false)
+      expect(orch.items.value).toHaveLength(1)
+    })
+
+    it('keeps the scope-replacement state when a dropped response resolves under a changed scope', async () => {
+      mockRoute.query = { boardId: 'board-1' }
+      const droppedLoad = deferred<boolean>()
+      const newScopeLoad = deferred<boolean>()
+      mockCaptureStore.fetchItems
+        .mockReturnValueOnce(droppedLoad.promise)
+        .mockReturnValueOnce(newScopeLoad.promise)
+      const orch = createOrchestrator()
+
+      const boardOne = orch.loadInboxForScopeReplacement()
+      mockRoute.query = { boardId: 'board-2' }
+      const boardTwo = orch.loadInboxForScopeReplacement()
+
+      droppedLoad.resolve(false)
+      await boardOne
+
+      // No repair read for a scope nobody is looking at, and board-1's rows
+      // stay hidden under board-2's label (#2501).
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      newScopeLoad.resolve(true)
+      await boardTwo
+
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    /**
+     * Replaces the old 'clears the scope-replacement state on the next applied
+     * response' case, whose shape — one dropped response, then a separately
+     * invoked load that applies — is now the repair read itself and is pinned
+     * above. What is left to pin is that the repair budget is per replacement:
+     * an exhausted one must not make the NEXT scope change unrepairable.
+     */
+    it('gives each scope replacement its own single repair read', async () => {
+      mockCaptureStore.fetchItems
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true)
+      const orch = createOrchestrator()
+
+      await orch.loadInboxForScopeReplacement()
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(2)
+      expect(orch.isScopeReplacement.value).toBe(false)
+
+      await orch.loadInboxForScopeReplacement()
+      expect(mockCaptureStore.fetchItems).toHaveBeenCalledTimes(4)
+      expect(orch.isScopeReplacement.value).toBe(false)
+    })
+
+    it('keeps the scope-replacement state after failure so retained rows stay hidden', async () => {
+      mockCaptureStore.fetchItems.mockRejectedValueOnce(new Error('scope load failed'))
+      const orch = createOrchestrator()
+
+      await orch.loadInboxForScopeReplacement()
+
+      expect(orch.isScopeReplacement.value).toBe(true)
+    })
+
+    it('lets a successful retry clear a failed scope replacement', async () => {
+      mockCaptureStore.fetchItems
+        .mockRejectedValueOnce(new Error('scope load failed'))
+        .mockResolvedValueOnce(true)
+      const orch = createOrchestrator()
+
+      await orch.loadInboxForScopeReplacement()
+      expect(orch.isScopeReplacement.value).toBe(true)
+
+      await orch.loadInbox()
+
+      expect(orch.isScopeReplacement.value).toBe(false)
     })
   })
 
@@ -798,6 +1144,172 @@ describe('useInboxOrchestrator', () => {
       orch.selectedItemId.value = null
       await orch.refreshSelectedDetail()
       expect(mockCaptureStore.fetchDetail).not.toHaveBeenCalled()
+    })
+  })
+
+  /**
+   * A DROPPED read is the store resolving with the body it fetched while
+   * writing nothing into its caches (#2640). It is neither a failure nor a
+   * cached detail, and `fetchDetail` used to report it to nobody, so
+   * `selectItemById` returned `true` for it and left `selectedItemId` pointing
+   * at an id `detailById` holds nothing for — the state the Legacy detail panel
+   * renders as "Unable to load capture detail." for a read that succeeded.
+   *
+   * `onCacheOutcome` is the store's report. `mockImplementationOnce` on
+   * purpose: the suite's reset is `vi.clearAllMocks()`, which keeps
+   * implementations, so a persistent one here would follow the tests below.
+   */
+  describe('dropped detail reads', () => {
+    const keptDetail = { id: 'kept', rawText: 'kept body', boardId: null, status: 'New' }
+
+    it('holds the previous selection and active row when a logout dropped the read', async () => {
+      mockCaptureStore.items = [{ id: 'kept' }, { id: 'dropped' }]
+      mockCaptureStore.detailById = { kept: keptDetail }
+      const orch = createOrchestrator()
+
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('cached') })
+      await orch.openItemFromList(summaryRow('kept', null), 0)
+      expect(orch.selectedItemId.value).toBe('kept')
+
+      // The store fetched a body and cached none of it, and nothing else has
+      // put a detail for this id in `detailById` either.
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('epoch') })
+      await orch.openItemFromList(summaryRow('dropped', null), 1)
+
+      expect(orch.selectedItemId.value).toBe('kept')
+      expect(orch.selectedItem.value).toEqual(keptDetail)
+      // `activeItemIndex` drives the active row and `aria-activedescendant`
+      // while `selectedItemId` drives `aria-selected` and the panel. Restoring
+      // one without the other leaves the list pointing at a row the panel is
+      // not showing, so both come back.
+      expect(orch.activeItemIndex.value).toBe(0)
+    })
+
+    it('keeps the selection when a dropped read left a newer detail cached', async () => {
+      mockCaptureStore.items = [{ id: 'superseded' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+
+      // The other pre-existing drop path: a successful write superseded this
+      // read's generation. That write cached its OWN newer body, so the panel
+      // has a detail to render and the selection is honest.
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => {
+        mockCaptureStore.detailById[itemId] = {
+          id: itemId, rawText: 'newer body', boardId: null, status: 'ProposalCreated',
+        }
+        options?.onCacheOutcome?.('generation')
+      })
+      await orch.openItemFromList(summaryRow('superseded', null), 0)
+
+      expect(orch.selectedItemId.value).toBe('superseded')
+      expect(orch.selectedItem.value).toEqual({
+        id: 'superseded', rawText: 'newer body', boardId: null, status: 'ProposalCreated',
+      })
+    })
+
+    /**
+     * The write-generation drop is NOT post-logout-only. A first open observes
+     * generation 0 for an uncached item; a batch triage that includes it moves
+     * that generation through `recordCaptureWrite`, and
+     * `refreshTerminalDetails` skips the item because it has a list row and no
+     * cached detail. So the read is dropped with `detailById` still empty and
+     * NOTHING has cached a body for the id — restoring the selection there
+     * turns a live click into a silent no-op and strips a live deep link.
+     */
+    const reReadDetail = {
+      id: 'crossed', rawText: 'reconciled body', boardId: null, status: 'ProposalCreated',
+    }
+
+    function mockBatchCrossedThenCachingReRead() {
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('generation') })
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => {
+        mockCaptureStore.detailById[itemId] = { ...reReadDetail, id: itemId }
+        options?.onCacheOutcome?.('cached')
+      })
+    }
+
+    it('re-reads once and keeps the deep-link hash when a batch write crossed the read', async () => {
+      mockRoute.hash = '#capture-crossed'
+      mockCaptureStore.items = [{ id: 'crossed' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+      mockBatchCrossedThenCachingReRead()
+
+      await orch.loadInbox()
+
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(2)
+      expect(orch.selectedItemId.value).toBe('crossed')
+      expect(orch.selectedItem.value).toEqual(reReadDetail)
+      // The hash still names a capture the user can see, so nothing clears it.
+      expect(mockRouter.replace).not.toHaveBeenCalled()
+    })
+
+    it('re-reads once so a click still opens an item a batch write crossed', async () => {
+      mockCaptureStore.items = [{ id: 'crossed' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+      mockBatchCrossedThenCachingReRead()
+
+      await orch.openItemFromList(summaryRow('crossed', null), 0)
+
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(2)
+      expect(orch.selectedItemId.value).toBe('crossed')
+      expect(orch.activeItemIndex.value).toBe(0)
+      expect(orch.selectedItem.value).toEqual(reReadDetail)
+    })
+
+    it('does not re-read when the crossing write already cached a body', async () => {
+      mockCaptureStore.items = [{ id: 'crossed' }]
+      mockCaptureStore.detailById = {}
+      const orch = createOrchestrator()
+
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => {
+        mockCaptureStore.detailById[itemId] = { ...reReadDetail, id: itemId }
+        options?.onCacheOutcome?.('generation')
+      })
+
+      await orch.openItemFromList(summaryRow('crossed', null), 0)
+
+      expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(1)
+      expect(orch.selectedItemId.value).toBe('crossed')
+    })
+
+    it('still treats a rejected detail read as a failure', async () => {
+      mockCaptureStore.items = [{ id: 'kept' }, { id: 'broken' }]
+      mockCaptureStore.detailById = { kept: keptDetail }
+      const orch = createOrchestrator()
+
+      mockCaptureStore.fetchDetail.mockImplementationOnce(async (
+        _itemId: string,
+        options?: { onCacheOutcome?: (outcome: DetailCacheOutcome) => void },
+      ) => { options?.onCacheOutcome?.('cached') })
+      await orch.openItemFromList(summaryRow('kept', null), 0)
+
+      mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('detail unavailable'))
+      await orch.openItemFromList(summaryRow('broken', null), 1)
+
+      // A failure clears the selection outright, as before. It does not restore
+      // the previous one: the user asked for this row and the store reported it
+      // unreadable, so the panel's error surface is the honest one.
+      expect(orch.selectedItemId.value).toBeNull()
     })
   })
 })

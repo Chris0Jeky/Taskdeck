@@ -159,6 +159,11 @@ public class AutomationProposalsController : AuthenticatedControllerBase
     /// <summary>
     /// Creates a new automation proposal with operations.
     /// </summary>
+    /// <remarks>
+    /// The producer triple (model id, provider, prompt version) and the token count are
+    /// server-stamped and are not part of this request contract: no API, MCP or agent client may
+    /// self-report the model that produced a proposal or its usage (#1987, #2583, #2604).
+    /// </remarks>
     [HttpPost]
     public async Task<IActionResult> CreateProposal([FromBody] CreateProposalDto dto, CancellationToken cancellationToken = default)
     {
@@ -219,6 +224,16 @@ public class AutomationProposalsController : AuthenticatedControllerBase
             return BadRequest(new ApiErrorResponse(
                 ErrorCodes.ValidationError,
                 $"Cannot approve more than {MaxProposalListLimit} proposals at once"));
+        }
+
+        // A JSON null inside the array binds as a null element - MVC validates the collection, not
+        // its members - so it must be rejected before the first member is dereferenced below. Same
+        // guard, code and message as batch execute's.
+        if (request.Proposals.Any(proposal => proposal is null))
+        {
+            return BadRequest(new ApiErrorResponse(
+                ErrorCodes.ValidationError,
+                "Proposal selections cannot be null"));
         }
 
         if (request.Proposals.Any(proposal =>
@@ -688,6 +703,27 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         // callerUserId comes from claims (never the request body); it only decides which evidence
         // links are marked viewable, never which rows are returned.
         var result = await _provenanceQueryService.GetProvenanceRowsAsync(id, callerUserId, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
+    /// Gets the server-recorded producer metadata (provider/model/promptVersion) for a proposal.
+    /// Shares the board read authorization and 404 parity of <c>{id}/provenance</c>, and exposes
+    /// no capture contents, so an authorized collaborator reviewing another owner's proposal can
+    /// still see what produced it. A proposal with nothing recorded returns 200 with null fields:
+    /// "not recorded" is an answer, and the surface renders it as no producer claim.
+    /// </summary>
+    [HttpGet("{id}/provenance/metadata")]
+    public async Task<IActionResult> GetProposalProvenanceMetadata(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null)
+            return auth.ErrorResult;
+
+        var result = await _provenanceQueryService.GetProvenanceMetadataAsync(id, cancellationToken);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 

@@ -1,5 +1,6 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Moq;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
@@ -365,7 +366,7 @@ public class ProvenanceQueryServiceTests
     public void BuildValue_TruncatesLongQuotes()
     {
         var provenance = CreateProvenance();
-        var longQuote = new string('x', 200);
+        var longQuote = new string('x', 117) + "\uD83D\uDE00tail";
         var field = new ProvenanceField(
             "description",
             ProvenanceKind.Extractive,
@@ -375,9 +376,8 @@ public class ProvenanceQueryServiceTests
 
         var value = ProvenanceQueryService.BuildValue(field);
 
-        // The truncated value should end with "..." and not contain the full 200-char quote.
-        value.Should().Contain("...");
-        value.Length.Should().BeLessThan(longQuote.Length + 50);
+        value.Should().Be($"Extracted: \"{new string('x', 117)}...\" (90% match)");
+        value.Should().NotContain("\uD83D").And.NotContain("\uDE00");
     }
 
     [Fact]
@@ -511,5 +511,141 @@ public class ProvenanceQueryServiceTests
             correlationId: "test-correlation-001",
             modelId: "mock",
             totalTokens: 100);
+    }
+
+    // ----- GetProvenanceMetadataAsync (#1987) -----
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_ReturnsAllNulls_WhenNoProvenanceExists()
+    {
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProposalProvenance?)null);
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        // "Nothing recorded" is an answer, not an error: the surface renders no producer claim.
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().BeNull();
+        result.Value.Model.Should().BeNull();
+        result.Value.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_ReturnsValidationError_WhenProposalIdIsEmpty()
+    {
+        var result = await _service.GetProvenanceMetadataAsync(Guid.Empty);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_ReturnsRecordedTriple_ForALiveProviderProposal()
+    {
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(
+                proposalId, "corr-1", "gpt-5.6-luna", 120, "openai", "llm-triage.v2"));
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(
+            new ProposalProvenanceMetadataDto("openai", "gpt-5.6-luna", "llm-triage.v2"));
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_ReturnsRecordedTriple_ForADeterministicProposal()
+    {
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(
+                proposalId, "corr-1", "deterministic-extractor", 0, "deterministic", "triage.v1"));
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(new ProposalProvenanceMetadataDto(
+            "deterministic", "deterministic-extractor", "triage.v1"));
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_SuppressesModelId_WhenNoProviderWasRecorded()
+    {
+        // Legacy and Chat/Manual rows store an origin label in the required ModelId column.
+        // Reporting it as a model would be a false producer claim, so the payload stays empty.
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(proposalId, "corr-1", "chat-tools"));
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().BeNull();
+        result.Value.Model.Should().BeNull();
+        result.Value.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_SuppressesRealLookingModelId_WhenProviderWasNotRecorded()
+    {
+        // Pre-migration rows can contain a model-looking value while the producer column is
+        // unavailable. The read model must not infer a provider from the model name alone.
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(
+                proposalId,
+                "corr-legacy-model",
+                "gpt-5.6-luna",
+                provider: null));
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().BeNull();
+        result.Value.Model.Should().BeNull();
+        result.Value.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_ReturnsProviderWithoutPromptVersion_WhenOnlyProviderRecorded()
+    {
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(proposalId, "corr-1", "mock", 0, "mock-provider"));
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().Be("mock-provider");
+        result.Value.Model.Should().Be("mock");
+        result.Value.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_DoesNotReadTranscripts()
+    {
+        // The metadata projection exposes no capture or transcript content, which is what lets it
+        // be board-authorized for a collaborator who cannot open the owner-only capture detail.
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(proposalId, "corr-1", "m", 0, "openai", "triage.v1"));
+
+        await _service.GetProvenanceMetadataAsync(proposalId);
+
+        _transcriptRepo.Verify(
+            r => r.FilterOwnedIdsAsync(
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
     }
 }

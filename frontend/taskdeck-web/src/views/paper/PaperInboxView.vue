@@ -11,6 +11,7 @@ import {
   clearCaptureDraft,
   stashCaptureDraft,
   takeCaptureDraft,
+  type CaptureDraftSource,
   type CaptureDraftVariant,
   type StashedCaptureDraft,
 } from '../../utils/captureDraftStash'
@@ -60,6 +61,7 @@ const captureSubmitting = ref(false)
  */
 type CaptureFailure = { message: string; details: string | null }
 const captureErrors = ref<Record<Variant, CaptureFailure | null>>({ nib: null, composer: null })
+const captureErrorAcknowledged = ref<Record<Variant, boolean>>({ nib: false, composer: false })
 const activeCaptureError = computed(() => captureErrors.value[variant.value])
 const nibError = computed(() => (variant.value === 'nib' ? captureErrors.value.nib : null))
 const composerError = computed(() =>
@@ -81,10 +83,9 @@ const {
   captureStore,
   items,
   activeBoardId,
-  activeColumnId,
   isArchivedHistory,
+  isScopeReplacement,
   activeBoardName,
-  activeColumnName,
   loadInbox,
   clearScope,
 } = useInboxOrchestrator({
@@ -96,11 +97,22 @@ const {
 // The eyebrow labels them separately — the total is not a queue.
 const { pendingTriageCount, capturedCount } = useInboxCounts(items)
 
+/**
+ * The applied filter, and only the applied filter (#1984 finding 2).
+ *
+ * This label is the chip AND the scoped empty state's `{scope}`, so anything it
+ * names is read as something the list was narrowed by. The list request is
+ * `fetchItems({ limit: 200, boardId })` — board and nothing else — so a column
+ * must never appear here, even when one is still sitting in the route from an
+ * older link or a hand-written URL. It is not a capture destination either:
+ * `CaptureListQuery` has no column key, the create DTO has no `ColumnId`, and
+ * triage targets the board's default column, so there is no truthful second
+ * line to promote it to. Honouring a column end-to-end is the open half of
+ * `#1984` and needs a product ruling first.
+ */
 const scopeLabel = computed(() => {
   if (!activeBoardId.value) return ''
-  return activeColumnId.value
-    ? t('inbox.scope.boardAndColumn', { board: activeBoardName.value, column: activeColumnName.value })
-    : t('inbox.scope.board', { board: activeBoardName.value })
+  return t('inbox.scope.board', { board: activeBoardName.value })
 })
 
 // Read-only inspection of one retained capture in archived history (#1973).
@@ -108,6 +120,17 @@ const historyDetailItemId = ref<string | null>(null)
 const historyDetail = ref<CaptureItem | null>(null)
 const historyDetailLoading = ref(false)
 const historyDetailError = ref<string | null>(null)
+
+/**
+ * Monotonic id for the current history-detail read — an independent
+ * per-instance counter, following the same pattern as the scoped-board load
+ * generation in `useInboxOrchestrator`. The item id alone cannot separate two
+ * reads of the SAME row, which is exactly what closing a stalled panel and
+ * reopening it produces (#1999): the superseded read would write an error the
+ * newer read never clears, and end the newer read's spinner. Every load
+ * captures this value and writes only while it still holds it.
+ */
+let historyDetailGeneration = 0
 
 /**
  * Deep link from a retained capture to the decision record it produced, kept in
@@ -133,6 +156,9 @@ function toggleVariant() {
 
 function setVariant(next: Variant) {
   if (isArchivedHistory.value) return
+  if (next !== variant.value && captureErrors.value[variant.value]) {
+    captureErrorAcknowledged.value[variant.value] = true
+  }
   variant.value = next
   void nextTick(() => {
     if (next === 'nib') {
@@ -154,7 +180,13 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 async function dispatchCapture(
   sourceVariant: Variant,
   text: string,
-  opts: { boardId?: string | null; dueDate?: string | null; labels?: string[] } = {},
+  opts: {
+    boardId?: string | null
+    dueDate?: string | null
+    labels?: string[]
+    /** Composer-chosen capture source; the nib and Home always file `Typed`. */
+    source?: CaptureDraftSource
+  } = {},
 ): Promise<boolean> {
   if (isArchivedHistory.value) {
     return false
@@ -171,7 +203,9 @@ async function dispatchCapture(
     const created = await captureStore.createItem({
       boardId: Object.hasOwn(opts, 'boardId') ? opts.boardId ?? null : activeBoardId.value,
       text,
-      source: 'Typed',
+      // A transcript source is not cosmetic: the server routes it to the LLM
+      // triage extractor and applies the larger transcript limit (GH-2141).
+      source: opts.source ?? 'Typed',
       ...(metadataRequested
         ? { dueDate: opts.dueDate ?? null, labels: opts.labels ?? [] }
         : {}),
@@ -207,6 +241,7 @@ async function dispatchCapture(
       message: getErrorDisplay(error, t('inbox.capture.errorFallback')).message,
       details: getErrorDetails(error),
     }
+    captureErrorAcknowledged.value[sourceVariant] = false
     return false
   } finally {
     captureSubmitting.value = false
@@ -242,6 +277,7 @@ async function onComposerSubmit(payload: {
   boardId: string | null
   labels: string[]
   dueAt: string | null
+  source: CaptureDraftSource
 }) {
   const metadata = payload.dueAt || payload.labels.length > 0
     ? { dueDate: payload.dueAt, labels: payload.labels }
@@ -250,6 +286,7 @@ async function onComposerSubmit(payload: {
   // the inbox refresh that could 401 (GH-2142).
   await dispatchCapture('composer', payload.text, {
     boardId: payload.boardId,
+    source: payload.source,
     ...metadata,
   })
 }
@@ -314,27 +351,40 @@ async function onTriageOpen(itemId: string) {
     return
   }
 
+  const requestGeneration = ++historyDetailGeneration
+  // The generation alone is decisive today: every mutator of `historyDetailItemId`
+  // advances it, so the id conjunct cannot be the one that fails. It stays as
+  // belt-and-braces against a future writer that forgets the counter — no reader
+  // need hunt for the case where it fires on its own.
+  const isCurrentRead = () =>
+    requestGeneration === historyDetailGeneration && historyDetailItemId.value === itemId
+
   historyDetailItemId.value = itemId
   historyDetail.value = null
   historyDetailError.value = null
   historyDetailLoading.value = true
   try {
     const detail = await captureStore.peekDetail(itemId, { recordError: false, showToast: false })
-    // The user may have collapsed this row or opened another while the request
-    // was in flight; a late payload must not reopen or mislabel the panel.
-    if (historyDetailItemId.value !== itemId) return
+    // The user may have collapsed this row, reopened it, or opened another while
+    // the request was in flight; a superseded payload must not reopen, mislabel,
+    // or overwrite the panel that replaced it.
+    if (!isCurrentRead()) return
     historyDetail.value = detail
   } catch (e: unknown) {
-    if (historyDetailItemId.value !== itemId) return
+    if (!isCurrentRead()) return
     historyDetailError.value = getErrorDisplay(e, t('inbox.history.detail.error')).message
   } finally {
-    if (historyDetailItemId.value === itemId) {
+    // A superseded read must not end the spinner of the read that replaced it.
+    if (isCurrentRead()) {
       historyDetailLoading.value = false
     }
   }
 }
 
 function closeHistoryDetail() {
+  // Closing supersedes any in-flight read, so reopening the same row is a new
+  // generation rather than a second write target for the abandoned one.
+  historyDetailGeneration += 1
   historyDetailItemId.value = null
   historyDetail.value = null
   historyDetailError.value = null
@@ -376,6 +426,8 @@ function handleAuthExpired() {
       boardId?: string | null
       labels?: string[]
       dueAt?: string | null
+      source?: CaptureDraftSource | null
+      labelInput?: string | null
     }
     if (draft.text.trim().length === 0) continue
     stashCaptureDraft({
@@ -385,6 +437,9 @@ function handleAuthExpired() {
       boardId: draft.boardId ?? null,
       labels: draft.labels ?? [],
       dueAt: draft.dueAt ?? null,
+      source: draft.source ?? 'Typed',
+      // GH-2490: the nib has no label box, so this is empty for that surface.
+      labelInput: draft.labelInput ?? '',
       failure:
         captureErrors.value[surface] ?? {
           message: t('inbox.capture.sessionExpiredReason'),
@@ -422,6 +477,8 @@ function restoreStashedDraft() {
       boardId: stashed.boardId,
       labels: stashed.labels,
       dueAt: stashed.dueAt,
+      source: stashed.source,
+      labelInput: stashed.labelInput,
     })
     composerRef.value?.focus()
   })
@@ -480,15 +537,33 @@ defineExpose({ variant, toggleVariant, setVariant })
         <!-- The third argument is the plural CHOICE: it/es agree the participle
              with the total ("1 catturato" vs "2 catturati"), so the count has to
              reach the catalog as a choice and not only as an interpolation. -->
+        <!--
+          While a scope replacement is outstanding the rows still in `items`
+          belong to the OLD scope — the table hides them for that reason — but
+          `useInboxCounts` counts them all the same, so the eyebrow published
+          old-scope numbers next to the NEW scope's chip (#2501). The count-free
+          variant is shown instead: no number is better than a number about
+          somewhere else. The counts return when the response is applied.
+
+          That variant says nothing about the LOAD, deliberately.
+          `isScopeReplacement` is sticky across failure — the orchestrator
+          swallows the throw so the retained rows stay hidden — so a "loading…"
+          word driven off this flag would outlive the load itself and sit above
+          the table's own error and Retry forever. Loading, error and retry are
+          the table's to state; this line's only job is to refuse a count it
+          cannot stand behind.
+        -->
         <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
           {{
             isArchivedHistory
               ? $t('inbox.history.eyebrow')
-              : $t(
-                  'inbox.eyebrow',
-                  { pending: pendingTriageCount, total: capturedCount },
-                  capturedCount,
-                )
+              : isScopeReplacement
+                ? $t('inbox.eyebrowUncounted')
+                : $t(
+                    'inbox.eyebrow',
+                    { pending: pendingTriageCount, total: capturedCount },
+                    capturedCount,
+                  )
           }}
         </div>
         <h1 v-if="isArchivedHistory" class="tk-h1 paper-inbox__title">
@@ -526,7 +601,7 @@ defineExpose({ variant, toggleVariant, setVariant })
           :aria-selected="variant === 'composer'"
           :variant="variant === 'composer' ? 'ember' : 'default'"
           :label="$t('inbox.variant.composer')"
-          kbd="⌘;"
+          kbd="mod+;"
           @click="setVariant('composer')"
         />
       </div>
@@ -580,7 +655,7 @@ defineExpose({ variant, toggleVariant, setVariant })
         v-if="activeCaptureError"
         :id="CAPTURE_ERROR_ID"
         class="paper-inbox__capture-error"
-        role="alert"
+        :role="captureErrorAcknowledged[variant] ? undefined : 'alert'"
         data-testid="paper-inbox-capture-error"
       >
         <strong>{{ $t('inbox.capture.errorLead') }}</strong>
@@ -610,6 +685,7 @@ defineExpose({ variant, toggleVariant, setVariant })
       :items="items"
       :loading-list="captureStore.loadingList"
       :list-error="captureStore.listError"
+      :scope-replacement="isScopeReplacement"
       :action-busy-item-id="captureStore.actionBusyItemId"
       :triage-polling-item-id="captureStore.triagePollingItemId"
       :scope-label="scopeLabel"

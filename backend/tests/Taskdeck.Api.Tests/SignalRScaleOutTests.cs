@@ -4,7 +4,9 @@ using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.Health;
 using Taskdeck.Api.Tests.Support;
@@ -102,6 +104,25 @@ public class SignalRScaleOutTests
         services.Should().Contain(sd =>
             sd.ServiceType.FullName != null &&
             sd.ServiceType.FullName.Contains("SignalR"));
+    }
+
+    /// <summary>
+    /// #2351 / R4: hub exception detail must never reach clients. The framework
+    /// default is already false, so this pins the value rather than changing it —
+    /// a future options delegate cannot flip it without failing here.
+    /// </summary>
+    [Fact]
+    public void AddTaskdeckSignalR_PinsDetailedErrorsOff()
+    {
+        var services = new ServiceCollection();
+        var config = BuildConfig(new Dictionary<string, string?>());
+        var logger = new InMemoryLogger<object>();
+
+        SignalRRegistration.AddTaskdeckSignalR(services, config, logger);
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IOptions<HubOptions>>().Value.EnableDetailedErrors
+            .Should().BeFalse();
     }
 
     // ── RedisBackplaneHealthCheck unit tests ───────────────────────────────

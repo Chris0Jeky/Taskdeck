@@ -52,11 +52,13 @@ jobs:
           # `#aabbccdd` (8-digit alpha) forms with a trailing word boundary.
           HEX_RE='#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6,8})\b'
 
-          # 1. components/paper/** must be hex-free.
-          if hits=$(grep -rEn --include='*.vue' --include='*.ts' --include='*.tsx' \
-                       --exclude='PAPER_NIGHT_AUDIT.md' \
-                       "$HEX_RE" \
-                       frontend/taskdeck-web/src/components/paper 2>/dev/null); then
+          # 1. components/paper/** must be hex-free.  The scanner removes
+          #    JavaScript/CSS/HTML comments first so issue references such as
+          #    `#1932` do not look like four-digit colors, while preserving
+          #    line positions and quoted executable/style values.
+          if hits=$(node scripts/ci/check-paper-color-components.mjs); then
+            :
+          else
             echo "::error::Paper component primitives must use var(--*) tokens, never hex literals."
             echo "$hits" >&2
             exit 1

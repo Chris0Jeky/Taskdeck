@@ -242,6 +242,11 @@ public class TranscriptTriageWorker : BackgroundService
                 item.BoardId,
                 transcript.Id,
                 canonicalPayload,
+                // #2193: the capture's own day, from the server-stamped queue row - a delayed or
+                // retried triage must resolve partial dates exactly as a capture-time run would.
+                CaptureTriageAnchor.FromCapture(
+                    item.CreatedAt,
+                    parsedPayloadResult.Value.ClientCreatedAt),
                 ct);
 
             if (triageResult.IsSuccess)

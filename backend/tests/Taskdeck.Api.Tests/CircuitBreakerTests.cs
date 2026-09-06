@@ -455,6 +455,63 @@ public class CircuitBreakerTests : IClassFixture<TestWebApplicationFactory>
         snapshot.Should().BeNull();
     }
 
+    /// <summary>
+    /// #2351 / R5: an onBreak outcome carrying an exception must record the exception
+    /// type name only. The message can hold API keys and local paths, so neither may
+    /// survive into the snapshot.
+    /// </summary>
+    [Fact]
+    public async Task BuildCircuitBreakerPolicy_RecordsExceptionTypeName_NotTheExceptionMessage()
+    {
+        const string SecretToken = "sk-live-ABCDEFGHIJKLMNOP";
+        const string LocalPath = @"C:\Users\operator\secrets\provider.json";
+
+        var tracker = new CircuitBreakerStateTracker();
+        var settings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 30 };
+
+        var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
+            .BuildCircuitBreakerPolicy(tracker, "SecretCircuit", settings);
+
+        try
+        {
+            await policy.ExecuteAsync(
+                (CancellationToken _) => Task.FromException<HttpResponseMessage>(
+                    new HttpRequestException(
+                        $"Provider call failed using {SecretToken} configured at {LocalPath}")),
+                CancellationToken.None);
+        }
+        catch (HttpRequestException)
+        {
+            // The breaking call rethrows the original exception.
+        }
+
+        var snapshot = tracker.Get("SecretCircuit");
+        snapshot.Should().NotBeNull();
+        snapshot!.State.Should().Be(CircuitState.Open);
+        snapshot.LastFailureReason.Should().Be(nameof(HttpRequestException));
+        snapshot.LastFailureReason.Should().NotContain(SecretToken);
+        snapshot.LastFailureReason.Should().NotContain("operator");
+    }
+
+    /// <summary>
+    /// #2351 / R5: a status-only outcome records the status code, never response text.
+    /// </summary>
+    [Fact]
+    public async Task BuildCircuitBreakerPolicy_RecordsHttpStatus_WhenThereIsNoException()
+    {
+        var tracker = new CircuitBreakerStateTracker();
+        var settings = new CircuitBreakerSettings { FailureThreshold = 1, BreakDurationSeconds = 30 };
+
+        var policy = Taskdeck.Api.Extensions.LlmProviderRegistration
+            .BuildCircuitBreakerPolicy(tracker, "StatusCircuit", settings);
+
+        await policy.ExecuteAsync(
+            _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadGateway)),
+            CancellationToken.None);
+
+        tracker.Get("StatusCircuit")!.LastFailureReason.Should().Be("HTTP 502");
+    }
+
     // ── OAuth backchannel handler construction ─────────────────────────
 
     [Fact]

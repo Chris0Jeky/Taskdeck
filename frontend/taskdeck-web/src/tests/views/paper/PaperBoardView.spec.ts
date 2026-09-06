@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive, ref } from 'vue'
+import { i18n } from '../../../i18n'
 import PaperBoardView from '../../../views/paper/PaperBoardView.vue'
 import PaperBoardColumn from '../../../views/paper/PaperBoardColumn.vue'
 import type { BoardDetail, Card, Column } from '../../../types/board'
@@ -124,7 +125,7 @@ function mountView(props: Record<string, unknown> = {}) {
         CardModal: {
           name: 'CardModal',
           props: ['card', 'isOpen', 'labels', 'presentation'],
-          emits: ['dirty-change'],
+          emits: ['dirty-change', 'updated', 'close'],
           template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
         },
         TdDialog: {
@@ -170,6 +171,7 @@ describe('PaperBoardView', () => {
     window.localStorage.removeItem('td.paper.board-density.v1')
     window.localStorage.removeItem('td.paper.board-column-width.v1')
     window.localStorage.removeItem('td.paper.board-collapsed-columns.v1')
+    window.localStorage.removeItem('td.paper.board-card-detail.v1')
   })
 
   afterEach(() => {
@@ -346,6 +348,110 @@ describe('PaperBoardView', () => {
     expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
   })
 
+  /*
+   * The save/delete signal (#2090 residual).
+   *
+   * `useCardModal` awaits `boardStore.updateCard` / `deleteCard` and only then
+   * calls `onUpdated()` immediately followed by `onClose()` — which `CardModal`
+   * emits as `updated` then `close`. A plain close emits `close` alone. So
+   * `updated` is the one event that means "the unsaved changes are gone", and
+   * these helpers reproduce the two real sequences rather than a single event.
+   */
+  async function openDirtyCard(wrapper: ReturnType<typeof mountView>, card: Card) {
+    wrapper.findAllComponents(PaperBoardColumn)[0]!.vm.$emit('card-click', card)
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+  }
+
+  async function emitSuccessfulSave(wrapper: ReturnType<typeof mountView>) {
+    const modal = wrapper.findComponent({ name: 'CardModal' })
+    modal.vm.$emit('updated')
+    modal.vm.$emit('close')
+    await nextTick()
+  }
+
+  it('continues a pending route navigation after a successful save', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+
+    await emitSuccessfulSave(wrapper)
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
+  /*
+   * The delete path emits the same `updated` + `close` pair
+   * (`useCardModal.handleDeleteConfirm`), so the stub cannot tell it from a
+   * save — what makes this a distinct case is the board state it lands in: the
+   * card is gone from the store, and the navigation must still continue.
+   */
+  it('continues a pending route navigation after a successful delete', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeUpdateGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+
+    const survivingCards = cardsByColumn.get('col-backlog')!.slice(1)
+    mockBoardStore.cardsByColumn = new Map<string, Card[]>([
+      ['col-backlog', survivingCards],
+      ['col-today', []],
+      ['col-progress', []],
+      ['col-done', []],
+    ])
+    mockBoardStore.currentBoardCards = survivingCards
+    await emitSuccessfulSave(wrapper)
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(false)
+  })
+
+  it('still cancels a pending navigation when the inspector is only closed', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('close')
+    await nextTick()
+
+    await expect(navigation).resolves.toBe(false)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('clears the dirty editor on a successful save with no navigation pending', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+    const modal = wrapper.findComponent({ name: 'CardModal' })
+
+    modal.vm.$emit('updated')
+    await nextTick()
+
+    /*
+     * Asserted between the two events on purpose. The card is still selected
+     * here, so `guardDirtyNavigation` cannot short-circuit on its absence and
+     * this is the one place the dirty flag cleared by the `updated` handler is
+     * pinned: were it still set, the guard would open the discard dialog and
+     * return a promise instead of `true`.
+     */
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(true)
+    expect(routeLeaveGuard!()).toBe(true)
+
+    modal.vm.$emit('close')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
   it('requests the browser unload confirmation only for a dirty inspector', async () => {
     const wrapper = mountView()
     const cleanUnload = new Event('beforeunload', { cancelable: true })
@@ -399,6 +505,166 @@ describe('PaperBoardView', () => {
     await nextTick()
 
     expect(wrapper.get('[data-surface="paper-board"]').attributes('data-density')).toBe('compact')
+  })
+
+  it('toggles and persists titles-only card detail through a keyboard-accessible button', async () => {
+    const wrapper = mountView()
+    const toggle = wrapper.get('[data-testid="paper-board-card-detail-toggle"]')
+
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('full')
+
+    // The board keymap listens on `window`; the toggle's own Enter and Space
+    // must stop there, exactly as the density toggle beside it stops them, so
+    // pressing the control cannot also fire a board shortcut.
+    const bubbledKeydown = vi.fn()
+    window.addEventListener('keydown', bubbledKeydown)
+    for (const key of ['Enter', ' ']) {
+      toggle.element.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    }
+    window.removeEventListener('keydown', bubbledKeydown)
+    expect(bubbledKeydown).not.toHaveBeenCalled()
+
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+    expect(window.localStorage.getItem('td.paper.board-card-detail.v1')).toBe('titles')
+
+    await toggle.trigger('click')
+
+    expect(toggle.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('full')
+    expect(window.localStorage.getItem('td.paper.board-card-detail.v1')).toBe('full')
+  })
+
+  it('restores the persisted titles-only card detail after the board unmounts and remounts', async () => {
+    const firstMount = mountView()
+    await firstMount.get('[data-testid="paper-board-card-detail-toggle"]').trigger('click')
+    firstMount.unmount()
+    mountedViews.splice(mountedViews.indexOf(firstMount), 1)
+
+    const reloaded = mountView()
+    await nextTick()
+
+    expect(reloaded.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+    expect(reloaded.get('[data-testid="paper-board-card-detail-toggle"]').attributes('aria-pressed'))
+      .toBe('true')
+  })
+
+  it('falls back to full card detail for invalid stored values', async () => {
+    window.localStorage.setItem('td.paper.board-card-detail.v1', 'headlines')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('full')
+    expect(wrapper.get('[data-testid="paper-board-card-detail-toggle"]').attributes('aria-pressed'))
+      .toBe('false')
+  })
+
+  /*
+   * Titles-only is an attribute plus scoped CSS, never a card prop: the excerpt
+   * and the meta row are hidden by the board's own `[data-card-detail="titles"]`
+   * rules while every card stays whole in the DOM. That is what keeps the
+   * opener, the drag handle and the column count reachable in the mode (#2090
+   * AC2) — a prop that stopped rendering them would not.
+   */
+  it('keeps card titles, column counts, the opener and the drag handle under titles-only', async () => {
+    window.localStorage.setItem('td.paper.board-card-detail.v1', 'titles')
+    const wrapper = mountView()
+    await nextTick()
+
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+    expect(wrapper.findAll('[data-card-id]')).toHaveLength(4)
+
+    const card = wrapper.get('[data-card-id="card-1"]')
+    expect(card.get('.paper-board-card__title').text()).toBe('A')
+    expect(card.find('[data-action="open-card"]').exists()).toBe(true)
+    expect(card.find('[data-action="drag-card-handle"]').exists()).toBe(true)
+    expect(wrapper.get('[data-column-id="col-backlog"] .paper-board-column__count').text()).toBe('3/2')
+  })
+
+  it('reorders paper cards by drag while titles-only card detail is active', async () => {
+    window.localStorage.setItem('td.paper.board-card-detail.v1', 'titles')
+    const wrapper = mountView()
+    await nextTick()
+    expect(wrapper.get('[data-surface="paper-board"]').attributes('data-card-detail')).toBe('titles')
+
+    const handle = wrapper.get('[data-card-id="card-1"] [data-action="drag-card-handle"]')
+    const dragStart = makeDragEvent('dragstart')
+    handle.element.dispatchEvent(dragStart)
+    await nextTick()
+    expect(dragStart.defaultPrevented).toBe(false)
+
+    const targetCard = wrapper.get('[data-card-id="card-3"]')
+    targetCard.element.dispatchEvent(makeDragEvent('dragover'))
+    targetCard.element.dispatchEvent(makeDragEvent('drop'))
+    await flushPromises()
+
+    expect(mockBoardStore.moveCard).toHaveBeenCalledWith('board-1', 'card-1', 'col-backlog', 1)
+  })
+
+  it('localizes the titles-only toggle label and its accessible name', async () => {
+    const wrapper = mountView()
+    const toggle = () => wrapper.get('[data-testid="paper-board-card-detail-toggle"]')
+
+    expect(toggle().text()).toBe('Titles only')
+    expect(toggle().attributes('aria-label')).toBe('Titles only: hide card excerpts and details')
+
+    i18n.global.locale.value = 'es'
+    await flushPromises()
+    expect(toggle().text()).toBe('Solo títulos')
+    expect(toggle().attributes('aria-label'))
+      .toBe('Solo títulos: oculta los extractos y los detalles de las tarjetas')
+
+    i18n.global.locale.value = 'it'
+    await flushPromises()
+    expect(toggle().text()).toBe('Solo titoli')
+    expect(toggle().attributes('aria-label'))
+      .toBe('Solo titoli: nasconde gli estratti e i dettagli delle schede')
+  })
+
+  /*
+   * The width and density controls were the last English-only strings in the
+   * actions row, beside the localized collapse and titles-only controls. The
+   * preset options are part of the control, so they re-render with the locale
+   * too; their `value`s are the stored preference and stay English identifiers.
+   */
+  it('localizes the width and density controls in the actions row', async () => {
+    const wrapper = mountView()
+    const widthLabel = () => wrapper.get('.paper-board-view__width-label')
+    const widthSelect = () => wrapper.get('[data-testid="paper-board-width-select"]')
+    const presets = () => widthSelect().findAll('option').map((option) => option.text())
+    const densityToggle = () => wrapper.get('[data-testid="paper-board-density-toggle"]')
+
+    expect(widthLabel().text()).toBe('Width')
+    expect(widthSelect().attributes('aria-label')).toBe('Column width')
+    expect(presets()).toEqual(['Narrow', 'Standard', 'Wide'])
+    expect(densityToggle().text()).toBe('Compact density')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Compact density: tighten the board spacing to fit more cards')
+
+    i18n.global.locale.value = 'es'
+    await flushPromises()
+    expect(widthLabel().text()).toBe('Ancho')
+    expect(widthSelect().attributes('aria-label')).toBe('Ancho de columna')
+    expect(presets()).toEqual(['Estrecha', 'Estándar', 'Ancha'])
+    expect(densityToggle().text()).toBe('Densidad compacta')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Densidad compacta: reduce el espaciado del tablero para ver más tarjetas')
+
+    i18n.global.locale.value = 'it'
+    await flushPromises()
+    expect(widthLabel().text()).toBe('Larghezza')
+    expect(widthSelect().attributes('aria-label')).toBe('Larghezza della colonna')
+    expect(presets()).toEqual(['Stretta', 'Standard', 'Ampia'])
+    expect(densityToggle().text()).toBe('Densità compatta')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Densità compatta: riduce le spaziature della bacheca per mostrare più schede')
+
+    // The option values are the persisted preference, not copy.
+    expect(widthSelect().findAll('option').map((option) => option.attributes('value')))
+      .toEqual(['narrow', 'standard', 'wide'])
   })
 
   it('changes and persists named column-width presets through a labelled native select', async () => {
@@ -875,6 +1141,22 @@ describe('PaperBoardView — empty board (#1765)', () => {
     expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
       'Your last loaded board is still shown',
     )
+    expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
+  })
+
+  it('keeps a later mutation error visible beside a retryable board-load error', () => {
+    mockBoardStore.currentBoard = board
+    mockBoardStore.currentBoardCards = allCards
+    mockBoardStore.cardsByColumn = cardsByColumn
+    mockBoardStore.error = 'Failed to create card'
+
+    const wrapper = mountView({ boardLoadError: 'Board refresh failed' })
+
+    expect(wrapper.get('[data-testid="paper-board-load-error"]').text()).toContain(
+      'Your last loaded board is still shown',
+    )
+    expect(wrapper.get('[data-testid="paper-board-error"]').text()).toBe('Failed to create card')
+    expect(wrapper.find('[data-testid="paper-board-load-retry"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="paper-board-workspace"]').exists()).toBe(true)
   })
 

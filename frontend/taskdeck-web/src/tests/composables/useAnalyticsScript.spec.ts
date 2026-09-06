@@ -17,6 +17,7 @@ vi.mock('../../api/telemetryApi', () => ({
 }))
 
 const SCRIPT_ID = 'taskdeck-analytics-script'
+const appendChildWithoutScriptExecution = document.head.appendChild.bind(document.head)
 
 function cleanupScript() {
   const script = document.getElementById(SCRIPT_ID)
@@ -30,12 +31,21 @@ describe('useAnalyticsScript', () => {
     setActivePinia(createPinia())
     cleanupScript()
     vi.clearAllMocks()
+    vi.spyOn(document.head, 'appendChild').mockImplementation((node) => {
+      if (node instanceof HTMLScriptElement) {
+        // Preserve the asserted URL and provider attributes without asking happy-dom to load
+        // the test-only external URL when the script enters the document.
+        node.type = 'application/json'
+      }
+      return appendChildWithoutScriptExecution(node)
+    })
   })
 
   afterEach(() => {
     cleanupScript()
     const store = useTelemetryStore()
     store.stopFlushTimer()
+    vi.restoreAllMocks()
   })
 
   describe('useAnalyticsScript composable', () => {

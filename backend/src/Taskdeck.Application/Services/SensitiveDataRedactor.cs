@@ -6,6 +6,26 @@ namespace Taskdeck.Application.Services;
 public static class SensitiveDataRedactor
 {
     public const string RedactedValue = "[redacted]";
+
+    /// <summary>
+    /// The generic string returned to an end user over the wire: the HTTP 500 response
+    /// body and the per-item message inside a batch execution receipt.
+    /// <para>
+    /// It differs from <see cref="GenericUnexpectedFailureMessage"/> deliberately. That
+    /// one is written into persisted state, MCP output and CLI stderr, where the reader
+    /// is an operator who can follow its instruction and look the correlation ID up in
+    /// the server logs; this one is read by an end user for whom that instruction is
+    /// noise. #2351 / R6 gives the two a single shared definition each so the surfaces
+    /// that emit them cannot drift; neither text may change without also changing the
+    /// contract tests and the frontend error mapper that pin it.
+    /// </para>
+    /// </summary>
+    public const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+
+    /// <summary>
+    /// The generic string written to persisted state, MCP output and CLI stderr. See
+    /// <see cref="GenericUnexpectedErrorMessage"/> for why the two differ.
+    /// </summary>
     public const string GenericUnexpectedFailureMessage =
         "Unexpected processing error. Check server logs with the correlation ID.";
     private const int MaxExceptionSummaryDepth = 5;

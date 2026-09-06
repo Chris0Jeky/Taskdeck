@@ -33,10 +33,11 @@ export default {
     toastFailed: 'Non è stato possibile sigillare il giorno. Riprova.',
   },
   note: {
+    inboundLabel: 'La tua riga di ieri',
     action: 'Scrivi una nota',
     hint: 'Porta alla tua riga per domani, qui sotto.',
-    sectionSub: 'Salvata con la data di oggi · la rivedi quando riapri Oggi',
-    meta: 'salvata con la data di oggi',
+    sectionSub: 'Salvata per domani · la rivedrai domani aprendo Oggi',
+    meta: 'salvata per domani',
     metaFailed: 'salvataggio non confermato · modificala di nuovo per riprovare',
   },
   loading: {

@@ -26,6 +26,13 @@ public record ProposalDto(
     List<ProposalOperationDto> Operations
 )
 {
+    /// <summary>
+    /// The username of the actor who approved or rejected this proposal, when the actor still
+    /// resolves to a user. The id remains available separately for technical correlation, but the
+    /// review surface must not present that opaque id as the actor's name (#2195).
+    /// </summary>
+    public string? DecidedByUserName { get; init; }
+
     public ProposalPresentationDto Presentation { get; init; } = ProposalPresentationDto.Empty;
 
     /// <summary>
@@ -179,11 +186,20 @@ public record CreateProposalDto(
     Guid? BoardId = null,
     string? SourceReferenceId = null,
     int ExpiryMinutes = 1440,
-    List<CreateProposalOperationDto>? Operations = null,
-    string? ProvenanceModelId = null,
-    int ProvenanceTotalTokens = 0
+    List<CreateProposalOperationDto>? Operations = null
 )
 {
+    /// <summary>
+    /// Trusted application-side model identifier recorded with the proposal's provenance (#2583).
+    /// Excluded from the HTTP contract for the same reason as <see cref="ProvenanceProvider"/>: a
+    /// model id is a producer-identity claim, and no API, MCP or agent client is ever meant to
+    /// self-report the model that produced a proposal. Only application pipelines set it, from the
+    /// model they actually dispatched to; anything created through the HTTP contract falls back to
+    /// the server's origin label for its source type.
+    /// </summary>
+    [JsonIgnore]
+    public string? ProvenanceModelId { get; init; }
+
     /// <summary>
     /// Trusted application-side confidence metadata. This property is deliberately excluded from
     /// the HTTP contract: callers cannot label their own proposal confidence as model-reported.
@@ -191,6 +207,33 @@ public record CreateProposalDto(
     /// </summary>
     [JsonIgnore]
     public TrustedProposalConfidenceInput? TrustedConfidence { get; init; }
+
+    /// <summary>
+    /// Trusted application-side producer name recorded with the proposal's provenance (#1987).
+    /// Excluded from the HTTP contract for the same reason as <see cref="TrustedConfidence"/>: a
+    /// caller must not be able to label its own proposal as produced by a provider. Only capture
+    /// triage sets it, from the provider it actually dispatched to (or the deterministic
+    /// extractor it fell back to).
+    /// </summary>
+    [JsonIgnore]
+    public string? ProvenanceProvider { get; init; }
+
+    /// <summary>
+    /// Trusted application-side prompt contract version recorded with the proposal's provenance
+    /// (#1987). Excluded from the HTTP contract; see <see cref="ProvenanceProvider"/>.
+    /// </summary>
+    [JsonIgnore]
+    public string? ProvenancePromptVersion { get; init; }
+
+    /// <summary>
+    /// Trusted application-side token count recorded with the proposal's provenance (#2604).
+    /// Excluded from the HTTP contract for the same reason as <see cref="ProvenanceProvider"/>:
+    /// a token count is a producer-side usage measurement, and no API, MCP or agent client may
+    /// self-report the tokens a proposal cost. Only application pipelines set it, from usage they
+    /// actually observed; anything created through the HTTP contract records 0.
+    /// </summary>
+    [JsonIgnore]
+    public int ProvenanceTotalTokens { get; init; }
 }
 
 public record CreateProposalOperationDto(

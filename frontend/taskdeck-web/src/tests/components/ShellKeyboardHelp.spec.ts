@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShellKeyboardHelp from '../../components/shell/ShellKeyboardHelp.vue'
-import { PAPER_SHORTCUT_GROUPS } from '../../utils/keyboardShortcuts'
+import {
+  LEGACY_SHORTCUT_GROUPS,
+  PAPER_SHORTCUT_BINDINGS,
+  PAPER_SHORTCUT_GROUPS,
+} from '../../utils/keyboardShortcuts'
 
 function mountHelp(visible: boolean) {
   return mount(ShellKeyboardHelp, {
@@ -39,19 +43,68 @@ describe('ShellKeyboardHelp', () => {
   it('displays the shared ledger groups plus the help section', () => {
     const wrapper = mountHelp(true)
     const text = bodyText()
-    for (const group of PAPER_SHORTCUT_GROUPS) {
+    for (const group of LEGACY_SHORTCUT_GROUPS) {
       expect(text).toContain(group.title)
     }
     expect(text).toContain('Help')
     wrapper.unmount()
   })
 
-  it('stays in agreement with the Paper overlay by rendering every ledger row', () => {
+  it('renders every ledger row the Legacy skin can actually run', () => {
     const wrapper = mountHelp(true)
-    const ledgerIds = PAPER_SHORTCUT_GROUPS.flatMap((group) => group.rows.map((row) => row.id))
+    const ledgerIds = LEGACY_SHORTCUT_GROUPS.flatMap((group) => group.rows.map((row) => row.id))
     const renderedIds = renderedRows().map((row) => row.id)
 
     expect(renderedIds).toEqual([...ledgerIds, 'keyboard-help', 'escape'])
+    wrapper.unmount()
+  })
+
+  it('drops the review-keymap rows that only the Paper review surface implements', () => {
+    const wrapper = mountHelp(true)
+    const renderedIds = renderedRows().map((row) => row.id)
+
+    // `useReviewKeymap` is installed by PaperReviewView alone; LegacyReviewView
+    // has one element-scoped @keydown doing ArrowDown/ArrowUp. This map used to
+    // advertise all four anyway (#2007 AC1).
+    const reviewKeymapIds = PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.handlerOwner === 'review-keymap')
+      .map((binding) => binding.id)
+
+    expect(reviewKeymapIds).toEqual([
+      'review-apply',
+      'review-reject',
+      'review-request-edit',
+      'review-provenance',
+    ])
+    for (const id of reviewKeymapIds) {
+      expect(renderedIds).not.toContain(id)
+    }
+
+    const text = bodyText()
+    expect(text).not.toContain('Apply / commit decision')
+    expect(text).not.toContain('Reject / dismiss')
+    expect(text).not.toContain('Request edit')
+    expect(text).not.toContain('Provenance pane')
+
+    // The group survives because quick-capture is an app-shell row that runs in
+    // both skins, so the section is not left empty.
+    expect(renderedIds).toContain('quick-capture')
+    wrapper.unmount()
+  })
+
+  it('documents the Legacy board keys the retired hardcoded dialog used to own', () => {
+    const wrapper = mountHelp(true)
+    const rows = renderedRows()
+
+    // `n` and `f` were only ever written down in the deleted board dialog. `n`
+    // runs in both skins; `f` toggles the Legacy filter panel and is gated on
+    // `!paperOn`, so it is the one row this surface carries and Paper does not.
+    expect(rows).toContainEqual({ id: 'board-new-card', key: 'N', label: 'New card in column' })
+    expect(rows).toContainEqual({ id: 'board-toggle-filter', key: 'F', label: 'Filter panel' })
+
+    const paperIds = PAPER_SHORTCUT_GROUPS.flatMap((group) => group.rows.map((row) => row.id))
+    expect(paperIds).toContain('board-new-card')
+    expect(paperIds).not.toContain('board-toggle-filter')
     wrapper.unmount()
   })
 

@@ -77,7 +77,7 @@ test(PAPER_ENUM_TEST_TITLE, async ({
 
   await captureHereButton.click()
   await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
-  const captureBody = page.getByRole('textbox', { name: 'Capture body' })
+  const captureBody = page.getByTestId('paper-composer-body')
   await expect(captureBody).toBeVisible()
 
   const createCaptureResponsePromise = page.waitForResponse((response) =>

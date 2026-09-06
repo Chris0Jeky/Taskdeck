@@ -1,6 +1,6 @@
 # Data Model Reference
 
-Last Verified: 2026-08-30 (Context Fabric block re-verified against `TaskdeckDbContext` after CF-01 `#2255`: `Capture`, `SourceAsset`, `SourceAssetTextPayload`, `CaptureBackfillState`; other regions unchanged since the 2026-08-26 pass -- full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
+Last Verified: 2026-08-30 (ProposalProvenance section re-verified 2026-09-05 for the producer-triple columns; Context Fabric block re-verified against `TaskdeckDbContext` after CF-01 `#2255`: `Capture`, `SourceAsset`, `SourceAssetTextPayload`, `CaptureBackfillState`; other regions unchanged since the 2026-08-26 pass -- full-model recertification against `TaskdeckDbContext` and the EF model snapshot on 2026-08-12; transcript linkage rechecked 2026-08-16 -- issue `#1470`)
 
 This document describes entities in the Taskdeck data model, their fields, constraints, and relationships. The backend uses Entity Framework Core with SQLite. Most entities inherit from a common `Entity` base class; `CardLabel` and the singleton `RegistrationBootstrap` are the exceptions.
 
@@ -488,10 +488,19 @@ backfilling existing proposals. Consumers must handle absence --
 | Id | `Guid` | Yes | PK | |
 | ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade), unique | Owning proposal |
 | CorrelationId | `string` | Yes | 1-100 chars | Ties provenance to the originating pipeline run |
-| ModelId | `string` | Yes | 1-100 chars | Generating model (e.g. `gpt-4o`, `mock`) |
-| TotalTokens | `int` | Yes | >= 0 | Prompt + completion tokens |
+| ModelId | `string` | Yes | 1-100 chars | The model id the creating caller supplied, server-stamped on every path since `#2583` (PR `#2600`): capture triage records the real model (e.g. `gpt-5.6-luna`), and `POST /api/automation/proposals` no longer binds `provenanceModelId` (`[JsonIgnore]`, see `#2499`); when none is supplied, an origin label from the source type (`chat-tools`, `manual`, `queue`; `unknown` only for an out-of-range value), so this column alone never proves a model produced the proposal |
+| Provider | `string?` | No | Max 64 chars | Producer that ran, as capture triage records it: `OpenAI` for the live leg, `deterministic-extractor` for the fallback (the mock provider declines before extraction, so `mock` is never stored); stamped today only by capture triage; null for pre-`20260904030926` rows and for every row whose `ModelId` is an origin label |
+| PromptVersion | `string?` | No | Max 64 chars | Prompt version the producer used; same coverage as `Provider` |
+| TotalTokens | `int` | Yes | >= 0 | Prompt plus completion tokens as an application-layer producer records them; server-stamped and not client-bindable on `POST /api/automation/proposals` (`[JsonIgnore]` since `#2604`, PR `#2611`); no shipped producer records usage yet, so the column is 0 for every new row |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
+
+`GET /api/automation/proposals/{id}/provenance/metadata` projects the producer triple fail-closed
+(`ProvenanceQueryService.MapMetadata`): model and prompt version are reported only alongside a
+recorded `Provider`, so a row whose `Provider` is null answers with all three fields null even when
+`ModelId` holds a real model id (pre-migration live-triage rows), because an origin label rendered as a
+model name would be a false producer claim. `#2499` tracks whether those rows are backfilled from
+the `CaptureProvenanceV1` block the triage workers stamp into `LlmRequest.Payload`.
 
 **Navigation:** Fields (children)
 
@@ -582,7 +591,7 @@ A single message in a chat session.
 | SessionId | `Guid` | Yes | FK to ChatSession | Parent session |
 | Role | `ChatMessageRole` | Yes | Enum: User, Assistant, System | Message author role |
 | Content | `string` | Yes | Non-empty | Message body |
-| MessageType | `string` | Yes | One of: text, proposal-reference, error, status, degraded, clarification | Message classification |
+| MessageType | `string` | Yes | One of: text, proposal-reference, error, status, degraded, clarification, parse-hint | Message classification |
 | ProposalId | `Guid?` | No | | Linked proposal |
 | TokenUsage | `int?` | No | >= 0 | Tokens consumed |
 | DegradedReason | `string?` | No | | Reason for degraded response |
@@ -1041,7 +1050,7 @@ A queued request for LLM processing.
 | RequestType | `string` | Yes | Non-empty | Request category |
 | Payload | `string` | Yes | EF: required `TEXT`; domain rejects null, empty, or whitespace-only values in both construction and `UpdatePayload`; application capture contract parses/serializes the current JSON payload and retains a legacy/plaintext fallback | Request content (current capture contract is JSON) |
 | Status | `RequestStatus` | Yes | Enum: Pending, Processing, Completed, Failed, Cancelled | Lifecycle state |
-| ErrorMessage | `string?` | No | | Failure message |
+| ErrorMessage | `string?` | No | Max 1000 chars | Failure detail for a failed request; for a completed capture-triage request, an optional non-fatal degradation notice when deterministic fallback produced the reviewable result; null when neither applies |
 | ProcessedAt | `DateTimeOffset?` | No | | When processing completed |
 | RetryCount | `int` | Yes | | Number of retry attempts |
 | CreatedAt | `DateTimeOffset` | Yes | | |
@@ -1384,33 +1393,30 @@ One row per user per calendar day, marking whether that day has been sealed.
 
 A short free-text note, at most one per user per date.
 
-**`Date` is the authoring day, not the display day.** The shipped flow is same-day on both sides:
-Paper Today passes the line-for-tomorrow editor a `save-date` of
-`formatLocalDossierDate(dossier.value.date)`
-(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue` -- the computed is
-`lineForTomorrowSaveDate` at `main`, renamed to `dossierLocalDate` by open PR `#1976` with the
-expression unchanged) and re-reads the *same* key on load
-(`useTodayDossier.ts:374-381` fetches `todayApi.getTomorrowNote(formatLocalDossierDate(now.value))`).
-A note written on day X therefore persists as `Date = X` and is read back on day X; at the local day
-rollover the composable clears the field and day X+1 queries key X+1, which returns 204. Neither the
-backend service nor the API applies a one-day shift.
+**`Date` is the display day, not the authoring day** (settled by `#1640`). Paper Today passes the
+line-for-tomorrow editor a `save-date` of the current dossier day
+(`frontend/taskdeck-web/src/views/paper/PaperTodayView.vue`, the `dossierLocalDate` computed) and
+`useTodayDossier.saveLineForTomorrow` shifts it by one local calendar day
+(`nextLocalDossierDate`) before calling `PUT /today/tomorrow-note`. `useTodayDossier` reads TWO notes
+per day so the editor round-trips against the key it writes: `getTomorrowNote(today)` is the inbound
+note left by the previous day (display only, rendered as "your line from yesterday" and never seeded
+into the editor), and `getTomorrowNote(today + 1)` seeds the editor and is the key saves target. A
+note written on day X therefore persists as `Date = X+1`, is re-read into the editor for the rest of
+day X, and is read back by the X+1 self at first open -- the hand-off the UI copy,
+`TodayController.GetTomorrowNote` and the `TomorrowNote` entity summary all describe.
 
-The "tomorrow" framing is *product intent that no code path implements*, and `#1640` still owns the
-open question of which side moves -- whether the server adopts the X -> X+1 handoff or the framing is
-retired. The XML doc on `TodayController.GetTomorrowNote` ("written the previous day and is displayed
-on the specified date's morning open") still describes the X -> X+1 handoff. The Paper UI copy is
-changing in flight: at `main` it reads "A note your tomorrow-self will see at first open"
-(`PaperTodayView.vue`, the `paper-today__section-sub` span in the line-for-tomorrow section), and
-**open PR `#1976` (`#1939`) replaces it** with same-day copy ("Saved with today's date - you see it
-when you reopen Today") plus a spec asserting the surface no longer says "tomorrow-self". That is a
-relabel only: it does not settle `#1640`, and if `#1640` picks the one-day shift the copy moves with
-it. Until then, persist under the current dossier date, not tomorrow's.
+The shift lives entirely on the client: neither `TomorrowNoteService` nor `TodayController` applies
+`AddDays(1)`, and the API contract is unchanged -- the request's `date` is simply defined as the day
+the note is FOR. Notes written before this change persist under their authoring day X and are NOT
+rewritten by any later save: a save now targets X+1, so it creates or updates a different row and
+leaves the legacy row untouched. A legacy row surfaces as day X's inbound note ("your line from
+yesterday") rather than as the editor's content. There is no migration and the rows stay valid.
 
 | Field | Type | Required | Constraints | Description |
 |-------|------|----------|-------------|-------------|
 | Id | `Guid` | Yes | PK | |
 | UserId | `Guid` | Yes | References User (no FK) | Owning user |
-| Date | `DateOnly` | Yes | Required | Calendar day the note is filed under -- the authoring/dossier day (see above) |
+| Date | `DateOnly` | Yes | Required | Calendar day the note is filed under -- the display day, i.e. authoring day + 1 (see above) |
 | Text | `string` | Yes | Max 500 chars; empty allowed, null rejected | Note body |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | | |

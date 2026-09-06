@@ -105,6 +105,40 @@ public class ProvenanceQueryService : IProvenanceQueryService
         return Result.Success<IReadOnlyList<ProvenanceRowDto>>(rows);
     }
 
+    public async Task<Result<ProposalProvenanceMetadataDto>> GetProvenanceMetadataAsync(
+        Guid proposalId,
+        CancellationToken cancellationToken = default)
+    {
+        if (proposalId == Guid.Empty)
+            return Result.Failure<ProposalProvenanceMetadataDto>(
+                ErrorCodes.ValidationError,
+                "ProposalId cannot be empty");
+
+        var provenance = await _provenanceRepository.GetByProposalIdAsync(proposalId, cancellationToken);
+
+        if (provenance is null)
+            return Result.Success(EmptyMetadata);
+
+        return Result.Success(MapMetadata(provenance));
+    }
+
+    private static readonly ProposalProvenanceMetadataDto EmptyMetadata = new(null, null, null);
+
+    /// <summary>
+    /// Projects the recorded triple. Model and prompt version are reported only alongside a
+    /// recorded provider: <c>ModelId</c> is required storage that falls back to an origin label
+    /// ("chat-tools", "manual", "queue") when no producer ran, and an origin label rendered as a
+    /// model name would be a false producer claim.
+    /// </summary>
+    internal static ProposalProvenanceMetadataDto MapMetadata(ProposalProvenance provenance)
+    {
+        if (provenance.Provider is not { } provider)
+            return EmptyMetadata;
+
+        var model = string.IsNullOrWhiteSpace(provenance.ModelId) ? null : provenance.ModelId;
+        return new ProposalProvenanceMetadataDto(provider, model, provenance.PromptVersion);
+    }
+
     /// <summary>
     /// Returns the transcript ids referenced by this provenance that <paramref name="callerUserId"/>
     /// owns. Ids the caller does not own are absent, so nothing about another user's data is
@@ -204,7 +238,7 @@ public class ProvenanceQueryService : IProvenanceQueryService
         {
             // Truncate long quotes to keep the UI scannable.
             var quote = field.ExtractiveQuote.Length > 120
-                ? string.Concat(field.ExtractiveQuote.AsSpan(0, 117), "...")
+                ? SurrogateSafeTruncation.Truncate(field.ExtractiveQuote, 117, "...")
                 : field.ExtractiveQuote;
             return $"Extracted: \"{quote}\" ({confidencePercent}% match)";
         }

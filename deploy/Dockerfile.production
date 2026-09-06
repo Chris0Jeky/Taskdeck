@@ -26,9 +26,10 @@
 FROM node:24-slim AS frontend-build
 WORKDIR /app
 
-# Install dependencies first (layer cache)
+# Install dependencies first (layer cache). Keep npm's cache inside this build
+# stage so a stale /root/.npm cache cannot trigger cacache rename races.
 COPY frontend/taskdeck-web/package.json frontend/taskdeck-web/package-lock.json ./
-RUN npm ci --ignore-scripts=false
+RUN npm ci --cache /tmp/taskdeck-npm-cache --ignore-scripts=false --no-audit --no-fund
 
 # Copy source and build
 COPY frontend/taskdeck-web/ ./

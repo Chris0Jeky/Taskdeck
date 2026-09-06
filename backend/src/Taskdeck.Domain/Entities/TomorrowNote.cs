@@ -5,6 +5,8 @@ namespace Taskdeck.Domain.Entities;
 
 /// <summary>
 /// A short note written on day X intended for display on day X+1's morning open.
+/// <see cref="Date"/> is the display day (X+1), not the authoring day: the client
+/// shifts by one when saving and reads back with the current day (issue 1640).
 /// Each user may have at most one note per date.
 /// </summary>
 public class TomorrowNote : Entity

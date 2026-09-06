@@ -110,6 +110,7 @@ public class CaptureTriageService : ICaptureTriageService
         Guid userId,
         Guid? boardId,
         CapturePayloadV1 payload,
+        CaptureTriageAnchor? anchor = null,
         CancellationToken cancellationToken = default)
         => await CreateProposalCoreAsync(
             captureItemId,
@@ -117,6 +118,7 @@ public class CaptureTriageService : ICaptureTriageService
             boardId,
             transcriptId: null,
             payload,
+            anchor,
             cancellationToken);
 
     public async Task<Result<CaptureTriageProposalResultDto>> CreateProposalFromTranscriptAsync(
@@ -125,6 +127,7 @@ public class CaptureTriageService : ICaptureTriageService
         Guid? boardId,
         Guid transcriptId,
         CapturePayloadV1 payload,
+        CaptureTriageAnchor? anchor = null,
         CancellationToken cancellationToken = default)
     {
         if (transcriptId == Guid.Empty)
@@ -140,6 +143,7 @@ public class CaptureTriageService : ICaptureTriageService
             boardId,
             transcriptId,
             payload,
+            anchor,
             cancellationToken);
     }
 
@@ -149,6 +153,7 @@ public class CaptureTriageService : ICaptureTriageService
         Guid? boardId,
         Guid? transcriptId,
         CapturePayloadV1 payload,
+        CaptureTriageAnchor? anchor,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -260,7 +265,13 @@ public class CaptureTriageService : ICaptureTriageService
 
         if (llmIsCandidate)
         {
-            var extraction = await RunLlmExtractionLegAsync(captureItemId, userId, boardId, payload, cancellationToken);
+            var extraction = await RunLlmExtractionLegAsync(
+                captureItemId,
+                userId,
+                boardId,
+                payload,
+                anchor ?? CaptureTriageAnchor.ForImmediateTriage(payload),
+                cancellationToken);
             if (extraction.Succeeded && extraction.Output is not null)
             {
                 var outputValidation = CaptureTriageOutputContract.Validate(extraction.Output);
@@ -424,10 +435,14 @@ public class CaptureTriageService : ICaptureTriageService
                 CorrelationId: triageRunId.ToString(),
                 BoardId: boardId.Value,
                 SourceReferenceId: captureReferenceId,
-                Operations: operations,
-                ProvenanceModelId: triageModel)
+                Operations: operations)
         {
-            TrustedConfidence = trustedConfidence
+            ProvenanceModelId = triageModel,
+            TrustedConfidence = trustedConfidence,
+            // The producer that actually ran: the dispatched provider, or the deterministic
+            // extractor when the LLM leg was skipped or fell back (#1987).
+            ProvenanceProvider = triageProvider,
+            ProvenancePromptVersion = triagePromptVersion
         };
 
         Result<ProposalDto> createProposalResult;
@@ -818,11 +833,12 @@ public class CaptureTriageService : ICaptureTriageService
         Guid userId,
         Guid? boardId,
         CapturePayloadV1 payload,
+        CaptureTriageAnchor anchor,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await _llmExtractor!.ExtractAsync(userId, boardId, payload, cancellationToken);
+            return await _llmExtractor!.ExtractAsync(userId, boardId, payload, anchor, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

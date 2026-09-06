@@ -340,6 +340,10 @@ public class ActiveUserValidationMiddlewareTests
             => throw new NotImplementedException();
         public Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
+        public Task<IReadOnlyDictionary<Guid, string>> GetUsernamesByIdsAsync(
+            IEnumerable<Guid> ids,
+            CancellationToken cancellationToken = default)
+            => throw new NotImplementedException();
         public Task<bool> ExistsAsync(string username, string email, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();
         public Task<IEnumerable<User>> GetAllAsync(CancellationToken cancellationToken = default)

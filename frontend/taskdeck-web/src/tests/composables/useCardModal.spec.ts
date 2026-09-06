@@ -587,14 +587,25 @@ describe('useCardModal', () => {
 
       await ctx.result.handleSave()
 
-      expect(mockBoardStore.updateCard).toHaveBeenCalledWith(
-        'board-1',
-        'card-1',
-        expect.objectContaining({
-          dueDate: null,
-          clearDueDate: false,
-        }),
-      )
+      const update = mockBoardStore.updateCard.mock.calls[0]![2]
+      expect(Object.prototype.hasOwnProperty.call(update, 'dueDate')).toBe(false)
+      expect(Object.prototype.hasOwnProperty.call(update, 'clearDueDate')).toBe(false)
+    })
+
+    it('omits an unchanged due date when the stored value has a legacy time or offset', async () => {
+      const ctx = mountComposable()
+      ctx.cardRef.value = makeCard({ dueDate: '2025-12-31T18:30:00-05:00' })
+      ctx.isOpenRef.value = true
+      await nextTick()
+      await nextTick()
+
+      ctx.result.title.value = 'Unrelated title edit'
+      await ctx.result.handleSave()
+
+      const update = mockBoardStore.updateCard.mock.calls[0]![2]
+      expect(update.title).toBe('Unrelated title edit')
+      expect(Object.prototype.hasOwnProperty.call(update, 'dueDate')).toBe(false)
+      expect(Object.prototype.hasOwnProperty.call(update, 'clearDueDate')).toBe(false)
     })
 
     it('sends midnight UTC when a calendar due date is set', async () => {

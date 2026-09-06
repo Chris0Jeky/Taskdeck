@@ -13,14 +13,10 @@ public sealed class ProposalExecutionAuthorizationSnapshotReader
     : IProposalExecutionAuthorizationSnapshotReader
 {
     private readonly TaskdeckDbContext _context;
-    private readonly DevelopmentSandboxSettings _sandboxSettings;
 
-    public ProposalExecutionAuthorizationSnapshotReader(
-        TaskdeckDbContext context,
-        DevelopmentSandboxSettings? sandboxSettings = null)
+    public ProposalExecutionAuthorizationSnapshotReader(TaskdeckDbContext context)
     {
         _context = context;
-        _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
     }
 
     public async Task<ProposalExecutionAuthorizationSnapshot?> FindAsync(
@@ -32,18 +28,18 @@ public sealed class ProposalExecutionAuthorizationSnapshotReader
             .AsNoTracking()
             .Where(proposal => proposal.Id == proposalId);
 
-        if (!_sandboxSettings.Enabled)
-        {
-            proposals = proposals.Where(proposal =>
-                (!proposal.BoardId.HasValue && proposal.RequestedByUserId == callerUserId) ||
-                (proposal.BoardId.HasValue &&
-                    (_context.Boards.Any(board =>
-                        board.Id == proposal.BoardId.Value &&
-                        board.OwnerId == callerUserId) ||
-                     _context.BoardAccesses.Any(access =>
-                        access.BoardId == proposal.BoardId.Value &&
-                        access.UserId == callerUserId))));
-        }
+        // The development sandbox never widens this scope (ADR-0068 / #1866): the execute path is
+        // a write lane whose API-side and policy-engine gates are membership-backed in every
+        // environment, so a sandbox-only widening here diverged from both.
+        proposals = proposals.Where(proposal =>
+            (!proposal.BoardId.HasValue && proposal.RequestedByUserId == callerUserId) ||
+            (proposal.BoardId.HasValue &&
+                (_context.Boards.Any(board =>
+                    board.Id == proposal.BoardId.Value &&
+                    board.OwnerId == callerUserId) ||
+                 _context.BoardAccesses.Any(access =>
+                    access.BoardId == proposal.BoardId.Value &&
+                    access.UserId == callerUserId))));
 
         return await proposals
             .Select(proposal => new ProposalExecutionAuthorizationSnapshot(
