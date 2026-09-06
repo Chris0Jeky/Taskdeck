@@ -225,6 +225,52 @@ describe('PaperInboxView', () => {
     wrapper.unmount()
   })
 
+  it('gives archived capture toggles distinct localized names and states', async () => {
+    i18n.global.locale.value = 'en'
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.activeBoardName.value = 'Archived board'
+    orchestratorState.items.value = [
+      { ...captureRow('history-first', 'ProposalCreated'), textExcerpt: 'First archived note' },
+      { ...captureRow('history-second', 'ProposalCreated'), textExcerpt: '', createdAt: 'not-a-date' },
+    ] as CaptureItemSummary[]
+    mockCaptureStore.peekDetail.mockResolvedValue({
+      ...captureRow('history-first', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'First archived note',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+
+    const wrapper = mount(PaperInboxView)
+    const openers = wrapper.findAll<HTMLButtonElement>('[data-testid="capture-history-open"]')
+
+    expect(openers).toHaveLength(2)
+    expect(openers[0].attributes('aria-label')).toBe(
+      'Show the full retained capture for First archived note',
+    )
+    expect(openers[1].attributes('aria-label')).toBe(
+      'Show the full retained capture for history-second',
+    )
+    expect(openers[0].attributes('aria-label')).not.toBe(openers[1].attributes('aria-label'))
+    expect(openers[0].attributes('aria-expanded')).toBe('false')
+
+    await openers[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(openers[0].attributes('aria-expanded')).toBe('true')
+    expect(openers[0].attributes('aria-label')).toBe(
+      'Hide the full retained capture for First archived note',
+    )
+
+    i18n.global.locale.value = 'it'
+    await wrapper.vm.$nextTick()
+    expect(openers[0].attributes('aria-label')).toBe(
+      'Nascondi la cattura conservata completa per First archived note',
+    )
+    i18n.global.locale.value = 'en'
+    wrapper.unmount()
+  })
+
   it('closes a stalled archived detail load, restores row focus, and ignores the late payload', async () => {
     orchestratorState.isArchivedHistory.value = true
     orchestratorState.activeBoardId.value = 'board-archived'
