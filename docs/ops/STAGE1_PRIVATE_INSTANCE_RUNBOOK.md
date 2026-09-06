@@ -81,11 +81,12 @@ docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile bas
 curl -fsS http://localhost:8080/health/ready
 ```
 
-Record the exact image identity the instance runs on, so the evidence names a digest and not a tag:
+Record the exact image identity the instance runs on. The stack builds `taskdeck-api:local` locally, so
+it has no registry digest; the content id is the identity:
 
 ```bash
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env images
-docker inspect --format '{{index .RepoDigests 0}} {{.Id}}' taskdeck-api:local
+docker inspect --format '{{.Id}}' taskdeck-api:local
 ```
 
 Done when: `/health/ready` answers 200 and the image id is written into the evidence record.
@@ -143,10 +144,12 @@ the URL, the mechanism and the outside-check result in the evidence.
 ## 5. Restore drill into a fresh local container — [human runs; agent may review the evidence]
 
 Do this **before** inviting anyone, on the archive from step 3, into a throwaway volume, never the
-live one:
+live one. Prove the throwaway volume is the one mounted at `/app/data` before restoring (an empty
+listing; the live volume would show `taskdeck.db`):
 
 ```bash
 docker volume create taskdeck-drill-data
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \n  -v taskdeck-drill-data:/app/data api sh -c 'ls -A /app/data'
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile baseline run --rm --no-deps \
   -v taskdeck-drill-data:/app/data \
   -v taskdeck-backups:/backups:ro \
@@ -168,8 +171,20 @@ lines and the exit code in the evidence.
    Send the code to the collaborator over a channel you already trust; they register.
 3. **Close registration:** set `TASKDECK_REGISTRATION_MODE=Closed` in `deploy/.env`, re-run the
    `up -d` command from step 2 (or the two-file command from step 7 if live providers are already on)
-   so the container is recreated, then prove it: `curl -s -o /dev/null -w '%{http_code}' -X POST https://<url>/api/auth/register -H 'Content-Type: application/json' -d '{}'`
-   must not be a 2xx.
+   so the container is recreated, then prove it with a **syntactically valid** throwaway registration
+   that also carries the invite code minted in 6.2 (an empty body only proves model validation, which
+   answers 400 in every mode):
+
+   ```bash
+   curl -s -w '
+%{http_code}
+' -X POST https://<url>/api/auth/register -H 'Content-Type: application/json' \n     -d '{"username":"closure-probe","email":"closure-probe@example.invalid","password":"Closure-Probe-Passw0rd!","inviteCode":"<the 6.2 code>"}'
+   ```
+
+   Required: HTTP **403** and the body text `Registration is closed by this Taskdeck instance.`
+   (`RegistrationPolicyService.RegistrationClosedMessage`). `InviteOnly` answers a different forbidden
+   message (`A valid registration invite is required.`) or, with a live invite, succeeds; either means the
+   container was not recreated with `Closed`, and the invite can still create a third account.
 4. Share a board: Boards → the board → Settings → Access → grant the collaborator `Editor`.
 
 Done when: exactly two users exist (`GET /api/users` while logged in), registration is refused,
