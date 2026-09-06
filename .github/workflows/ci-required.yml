@@ -11,7 +11,7 @@
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
 #     ├── reusable-migration-validation.yml    EF Core migration chain validation (TST-61)
-#     ├── reusable-frontend-unit.yml           dev launcher + lint + typecheck + build + unit tests (Ubuntu + Windows)
+#     ├── reusable-frontend-unit.yml           lint + typecheck + build + unit tests (Ubuntu + Windows); dev launcher suite on Ubuntu only (CI-07 #2331)
 #     ├── reusable-paper-color-audit.yml       PAPER-12 hex-literal regression gate (#1008)
 #     ├── reusable-container-images.yml        compose validation + image build (tar export/upload only for nightly/release callers, CI-09)
 #     ├── reusable-gitleaks.yml                secret detection (PR scan, fail-on-detect) (#1132)
