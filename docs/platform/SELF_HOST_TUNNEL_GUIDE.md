@@ -198,6 +198,10 @@ Realtime presence and updates are per-board and re-check read access on join.
 
 ## 7. Care and feeding
 
+> For the production image the encrypted `taskdeck-backup` / `taskdeck-restore` commands in
+> `docs/ops/DISASTER_RECOVERY_RUNBOOK.md` supersede the `scripts/backup.sh` paragraph below
+> (`#2238`, `#2239`); the ordered Stage 1 procedure is `docs/ops/STAGE1_PRIVATE_INSTANCE_RUNBOOK.md`.
+
 - **Backup**: the database lives in the `taskdeck-db` volume
   (`/app/data/taskdeck.db`) in WAL mode — **never copy the file while the app is
   running** (`scripts/backup.sh` and `CLOUD_DEPLOYMENT_GUIDE.md` both warn a live copy
