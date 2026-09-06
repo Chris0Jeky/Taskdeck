@@ -9,8 +9,6 @@ const props = defineProps<{
 
 const { t, locale } = useI18n()
 
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
 const dateLocale = computed(() => {
   const active = locale.value
   const preferred =
@@ -23,8 +21,8 @@ const dateLocale = computed(() => {
 })
 
 const decisionActor = computed(() => {
-  const actor = props.proposal.decidedByUserId?.trim() ?? ''
-  return uuidPattern.test(actor) ? actor : t('review.appliedRecord.value.notRecorded')
+  const actorName = props.proposal.decidedByUserName?.trim() ?? ''
+  return actorName || t('review.appliedRecord.value.notRecorded')
 })
 
 function formatTimestamp(value: string | null): string {

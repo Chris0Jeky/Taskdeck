@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import AppearanceSettingsView from '../../views/AppearanceSettingsView.vue'
 import { useLocaleStore } from '../../store/localeStore'
@@ -66,11 +66,41 @@ describe('AppearanceSettingsView — language', () => {
     expect(useLocaleStore().locale).toBe('en')
   })
 
+  it('shows a pending status without moving the committed selection', () => {
+    const store = useLocaleStore()
+    store.pendingLocale = 'it'
+
+    const wrapper = mount(AppearanceSettingsView)
+    const group = wrapper.find('[data-testid="appearance-language"] [role="group"]')
+    const status = wrapper.find('[data-testid="appearance-language-status"]')
+
+    expect(group.attributes('aria-busy')).toBe('true')
+    expect(localeButton(wrapper, 'en').attributes('aria-pressed')).toBe('true')
+    expect(localeButton(wrapper, 'it').attributes('aria-pressed')).toBe('false')
+    expect(status.attributes('role')).toBe('status')
+    expect(status.text()).toBe('Loading Italiano…')
+    expect(wrapper.findAll('[data-locale]:disabled')).toHaveLength(0)
+  })
+
+  it('names a failed target and the language that remains active', () => {
+    const store = useLocaleStore()
+    store.failedLocale = 'it'
+
+    const wrapper = mount(AppearanceSettingsView)
+    const status = wrapper.find('[data-testid="appearance-language-status"]')
+
+    expect(status.attributes('role')).toBe('alert')
+    expect(status.text()).toBe("Couldn’t load Italiano. English remains active. Try again.")
+    expect(localeButton(wrapper, 'en').attributes('aria-pressed')).toBe('true')
+    expect(localeButton(wrapper, 'it').attributes('aria-pressed')).toBe('false')
+  })
+
   it('selecting a language persists it through the preferences mechanism', async () => {
     const wrapper = mount(AppearanceSettingsView)
     const store = useLocaleStore()
 
     await localeButton(wrapper, 'it').trigger('click')
+    await flushPromises()
 
     expect(store.locale).toBe('it')
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('it')
@@ -85,6 +115,7 @@ describe('AppearanceSettingsView — language', () => {
     expect(wrapper.text()).toContain('Language')
 
     await localeButton(wrapper, 'it').trigger('click')
+    await flushPromises()
 
     // The page it lives on is itself re-rendered in Italian.
     expect(wrapper.text()).toContain('Aspetto')
@@ -94,6 +125,7 @@ describe('AppearanceSettingsView — language', () => {
     expect(wrapper.find('[data-mode="paper"]').text()).toBe('Paper (chiaro)')
 
     await localeButton(wrapper, 'es').trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('Apariencia')
     expect(wrapper.text()).toContain('Idioma')
   })
@@ -102,18 +134,20 @@ describe('AppearanceSettingsView — language', () => {
     const wrapper = mount(AppearanceSettingsView)
 
     await localeButton(wrapper, 'es').trigger('click')
+    await flushPromises()
     expect(document.documentElement.getAttribute('lang')).toBe('es')
 
     await localeButton(wrapper, 'en').trigger('click')
+    await flushPromises()
     expect(document.documentElement.getAttribute('lang')).toBe('en')
   })
 
-  it('restores a persisted language on the next visit', () => {
+  it('restores a persisted language on the next visit', async () => {
     window.localStorage.setItem(STORAGE_KEY, 'es')
     setActivePinia(createPinia())
 
     const store = useLocaleStore()
-    store.apply()
+    await store.apply()
 
     expect(store.locale).toBe('es')
     expect(mount(AppearanceSettingsView).text()).toContain('Apariencia')
@@ -123,7 +157,9 @@ describe('AppearanceSettingsView — language', () => {
     window.localStorage.setItem(STORAGE_KEY, 'klingon')
     setActivePinia(createPinia())
 
-    expect(useLocaleStore().locale).toBe('en')
+    const store = useLocaleStore()
+    expect(store.preferredLocale).toBe('en')
+    expect(store.locale).toBe('en')
   })
 
   it('rejects an unsupported locale passed to setLocale', () => {

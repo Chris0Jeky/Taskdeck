@@ -74,6 +74,43 @@ describe('automationApi', () => {
     expect(vi.mocked(http.get).mock.calls[0]).toEqual(['/automation/proposals/p1'])
   })
 
+  // #2214 item 7. `expectedStatuses` tells the shared response interceptor which
+  // statuses are part of THIS call's contract, so it stops logging them as
+  // 'API Error:'. The background review poll re-reads a hash-pinned proposal by
+  // id and treats 400/403/404 as "this pin is unavailable" -- an outcome, not a
+  // failure -- so those answers must not read as errors in the console or in
+  // Sentry. The option only has that effect if it reaches the request config,
+  // which is what the first case pins.
+  it('forwards expectedStatuses on a single proposal read', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 'p1' } })
+    const controller = new AbortController()
+
+    await automationApi.getProposal('p1', {
+      skipRetry: true,
+      signal: controller.signal,
+      expectedStatuses: [400, 403, 404],
+    })
+
+    expect(http.get).toHaveBeenCalledWith('/automation/proposals/p1', {
+      skipRetry: true,
+      signal: controller.signal,
+      expectedStatuses: [400, 403, 404],
+    })
+  })
+
+  // The option is opt-in per call site. A caller that does not name a status as
+  // expected must keep the interceptor's ordinary error logging, so the key must
+  // be absent rather than sent as undefined.
+  it('sends no expectedStatuses key when a read does not name one', async () => {
+    vi.mocked(http.get).mockResolvedValue({ data: { id: 'p1' } })
+    const controller = new AbortController()
+
+    await automationApi.getProposal('p1', { skipRetry: true, signal: controller.signal })
+
+    const config = vi.mocked(http.get).mock.calls[0][1] as Record<string, unknown>
+    expect(config).not.toHaveProperty('expectedStatuses')
+  })
+
   it('sends idempotency key when executing proposal', async () => {
     vi.mocked(http.post).mockResolvedValue({ data: { id: 'p1' } })
 

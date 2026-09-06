@@ -39,7 +39,11 @@ public class OpenAiLlmProvider : ILlmProvider
                 _allowLocalhostEndpoints))
         {
             _logger.LogWarning("OpenAI provider configuration invalid: {Error}", validationError);
-            return BuildFallbackResult(lastUserMessage, "Live provider configuration is invalid.", GetConfiguredModelOrDefault());
+            return BuildFallbackResult(
+                lastUserMessage,
+                "Live provider configuration is invalid.",
+                GetConfiguredModelOrDefault(),
+                _logger);
         }
 
         try
@@ -61,13 +65,21 @@ public class OpenAiLlmProvider : ILlmProvider
                 _logger.LogWarning(
                     "OpenAI completion request failed with status code {StatusCode}.",
                     (int)response.StatusCode);
-                return BuildFallbackResult(lastUserMessage, "Live provider request failed.", GetConfiguredModelOrDefault());
+                return BuildFallbackResult(
+                    lastUserMessage,
+                    "Live provider request failed.",
+                    GetConfiguredModelOrDefault(),
+                    _logger);
             }
 
             if (!TryParseResponse(body, out var content, out var tokensUsed, out var finishReason))
             {
                 _logger.LogWarning("OpenAI completion response could not be parsed.");
-                return BuildFallbackResult(lastUserMessage, "Live provider response parsing failed.", GetConfiguredModelOrDefault());
+                return BuildFallbackResult(
+                    lastUserMessage,
+                    "Live provider response parsing failed.",
+                    GetConfiguredModelOrDefault(),
+                    _logger);
             }
 
             // Detect truncation: OpenAI returns finish_reason "length" when the
@@ -120,7 +132,7 @@ public class OpenAiLlmProvider : ILlmProvider
 
             // Fallback to static classifier when structured parse fails
             _logger.LogDebug("OpenAI response was not structured JSON; falling back to static classifier.");
-            var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
+            var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage, _logger);
             List<string>? fallbackInstructions = null;
             if (isActionable)
             {
@@ -139,7 +151,11 @@ public class OpenAiLlmProvider : ILlmProvider
             _logger.LogError(
                 "OpenAI completion request failed with unexpected error. {ExceptionSummary}",
                 SensitiveDataRedactor.SummarizeException(ex));
-            return BuildFallbackResult(lastUserMessage, "Live provider request errored.", GetConfiguredModelOrDefault());
+            return BuildFallbackResult(
+                lastUserMessage,
+                "Live provider request errored.",
+                GetConfiguredModelOrDefault(),
+                _logger);
         }
     }
 
@@ -670,9 +686,13 @@ public class OpenAiLlmProvider : ILlmProvider
         }
     }
 
-    private static LlmCompletionResult BuildFallbackResult(string userMessage, string reason, string model)
+    private static LlmCompletionResult BuildFallbackResult(
+        string userMessage,
+        string reason,
+        string model,
+        ILogger<OpenAiLlmProvider> logger)
     {
-        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage, logger);
 
         // When falling back to the static classifier, also extract structured
         // instructions so the parser can handle natural language input.

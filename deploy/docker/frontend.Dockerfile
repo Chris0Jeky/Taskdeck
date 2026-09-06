@@ -2,12 +2,18 @@ FROM node:24.13.1-bookworm-slim AS build
 WORKDIR /app
 
 COPY frontend/taskdeck-web/package.json frontend/taskdeck-web/package-lock.json ./
-RUN npm ci
+# Keep npm's cache inside this build stage. The default /root/.npm cache can
+# retain partial state across container builds and trigger cacache rename races.
+RUN npm ci --cache /tmp/taskdeck-npm-cache --no-audit --no-fund
 
 COPY frontend/taskdeck-web/ ./
 
 ARG VITE_API_BASE_URL=/api
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+# Release builds may override this to keep frontend telemetry aligned with the
+# backend; standalone and local builds retain the development fallback.
+ARG VITE_APP_VERSION=0.0.0-dev
+ENV VITE_APP_VERSION=$VITE_APP_VERSION
 
 RUN npm run build
 

@@ -70,22 +70,55 @@ export default [
     },
   },
 
+  // Measured 2026-09-06: count nonblank, noncomment SFC lines and warn above 700.
+  // These existing high-cohesion seams stay explicitly allowlisted while they are decomposed.
+  {
+    files: ['**/*.vue'],
+    rules: {
+      'max-lines': ['warn', { max: 700, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: [
+      'src/components/paper/PaperSidebar.vue', // paper navigation and triage shell
+      'src/components/shell/ShellSidebar.vue', // shared workspace navigation composition
+      'src/views/CalendarView.vue', // calendar workflow and filtering surface
+      'src/views/HomeView.vue', // home workspace composition
+      'src/views/MetricsView.vue', // metrics dashboard composition
+      'src/views/paper/PaperBoardView.vue', // paper board orchestration
+      'src/views/paper/PaperHomeView.vue', // Paper home route composition
+      'src/views/paper/PaperReviewView.vue', // paper review workflow surface
+      'src/views/paper/inbox/PaperTriageTable.vue', // triage table interactions and layout
+    ],
+    rules: {
+      'max-lines': 'off',
+    },
+  },
+
   // Vue accessibility rules (WCAG compliance)
   ...pluginVueA11y.configs['flat/recommended'],
   {
     files: ['**/*.vue'],
     rules: {
-      // Warn-level for rules that need gradual remediation across the codebase
-      'vuejs-accessibility/click-events-have-key-events': 'warn',
-      'vuejs-accessibility/interactive-supports-focus': 'warn',
+      // GH-1949 dead-affordance guard, lint half. These three rules catch the
+      // exact shapes the 2026-08-22 dogfooding audit found: a labelled control
+      // that is not focusable, and a click handler with no keyboard equivalent.
+      // Promoted warn -> error on 2026-09-04 after measuring 0 violations across
+      // all 177 SFCs, so the codebase is clean at the moment of promotion and
+      // the rule is enforcing rather than advisory. A genuinely delegated-handler
+      // Vue idiom may opt out with an inline eslint-disable-next-line carrying a
+      // one-line reason; none was needed at promotion time.
+      'vuejs-accessibility/click-events-have-key-events': 'error',
+      'vuejs-accessibility/interactive-supports-focus': 'error',
       // Allow mouseenter without focus equivalent (visual enhancement only)
       'vuejs-accessibility/mouse-events-have-key-events': 'warn',
       // form-control-has-label is covered by our manual label audit
       'vuejs-accessibility/form-control-has-label': 'warn',
       // label-has-for: accept either nesting or for/id association (HTML spec allows both)
       'vuejs-accessibility/label-has-for': ['warn', { required: { some: ['nesting', 'id'] } }],
-      // Div/span click handlers are common in Vue component patterns — warn for gradual migration
-      'vuejs-accessibility/no-static-element-interactions': 'warn',
+      // Div/span click handlers: 0 violations measured 2026-09-04, so this is
+      // enforced rather than a gradual-migration warning (GH-1949).
+      'vuejs-accessibility/no-static-element-interactions': 'error',
       // Autofocus is intentional in modals and command palettes for UX
       'vuejs-accessibility/no-autofocus': 'warn',
       // Redundant roles (e.g. role="list" on <ul>) are harmless — warn only

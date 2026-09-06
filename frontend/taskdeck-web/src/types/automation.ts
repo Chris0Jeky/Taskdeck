@@ -49,6 +49,8 @@ export interface Proposal {
   expiresAt: string
   decidedAt: string | null
   decidedByUserId: string | null
+  /** Username resolved by the API for the historical decision actor; absent on legacy payloads. */
+  decidedByUserName?: string | null
   appliedAt: string | null
   failureReason: string | null
   correlationId: string

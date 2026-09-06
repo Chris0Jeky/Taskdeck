@@ -18,6 +18,11 @@
 export default {
   eyebrow:
     'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
+  // Se muestra EN LUGAR de `eyebrow` mientras se sustituye el ámbito (#2501):
+  // los recuentos serían del ámbito que el usuario acaba de dejar. Sin plural:
+  // no hay ningún número con el que concordar. Y sin ninguna palabra sobre la
+  // carga: la tabla es la dueña del estado de carga, del error y del reintento.
+  eyebrowUncounted: 'Inbox · superficie de captura',
   title: {
     lead: '¿Qué tienes en mente,',
     emphasis: 'en dos palabras?',
@@ -32,6 +37,8 @@ export default {
     detail: {
       open: 'Mostrar la captura conservada completa',
       close: 'Ocultar la captura conservada completa',
+      openFor: 'Mostrar la captura conservada completa para {capture}',
+      closeFor: 'Ocultar la captura conservada completa para {capture}',
       title: 'Captura conservada',
       loading: 'Cargando la captura conservada…',
       error: 'No se pudo cargar la captura conservada.',
@@ -73,6 +80,47 @@ export default {
     errorFallback: 'Vuelve a intentarlo cuando la conexión esté disponible.',
     metadataCompatibilityLead: 'Captura guardada sin fecha ni etiquetas.',
     metadataCompatibilityDetail: 'Esta versión del servidor ignoró esos metadatos. No lo intentes de nuevo: la captura ya está en el Inbox.',
+    source: {
+      legend: 'Origen',
+      typed: 'Nota escrita',
+      transcript: 'Transcripción',
+      transcriptNote:
+        'Las capturas de transcripción se envían al asistente configurado para extraer tareas. Las notas escritas no.',
+      tooLong: 'Esta transcripción es demasiado larga. La longitud máxima es de {max} caracteres.',
+    },
+  },
+  // Etiquetas de los campos del Composer (#1871). "Texto" para `body`: es el
+  // texto de la captura, igual que en `triage.edit.label`. "Fecha límite" es el
+  // término del glosario para una fecha de vencimiento, como en
+  // `triage.edit.metadata.dueDate`.
+  //
+  // Cada nombre accesible (`*Aria`) empieza por la etiqueta visible del campo y
+  // después dice qué hace el control (WCAG 2.5.3, el patrón de la PR #2675). Si
+  // se reescribe una etiqueta visible, hay que reescribir su nombre accesible:
+  // `PaperCaptureComposer.spec.ts` comprueba la relación, no solo las cadenas, y
+  // la comprueba también en español, así que romperla aquí pone el test en rojo.
+  //
+  // Los marcadores de posición siguen siendo marcadores: una pista sobre la
+  // FORMA del valor, nunca el nombre del campo, que es lo que aportan la
+  // etiqueta visible y el nombre accesible. `bodyPlaceholder` es una frase y va
+  // en mayúscula inicial a propósito; `labelsPlaceholder` es un fragmento que
+  // continúa el campo y va en minúscula.
+  composer: {
+    eyebrow: 'Captura · Borrador',
+    meta: 'solo local · se guarda en Inbox',
+    footerBefore: 'Las capturas llegan al ',
+    footerInbox: 'Inbox',
+    footerAfter: '. Vincularlas a un tablero crea una propuesta, no una tarjeta.',
+    submit: 'Capturar',
+    bodyLabel: 'Texto',
+    bodyAria: 'Texto: escribe el contenido de esta captura',
+    bodyPlaceholder: 'La idea, en lenguaje sencillo…',
+    labelsLabel: 'Etiquetas',
+    labelsAria: 'Etiquetas: escribe una etiqueta y pulsa Enter para añadirla',
+    labelsPlaceholder: 'añade y pulsa Enter',
+    dueLabel: 'Fecha límite (opcional)',
+    dueAria: 'Fecha límite (opcional): elige cuándo vence esta captura',
+    attachmentsUnavailable: 'Los archivos adjuntos aún no se guardan con las capturas.',
   },
   nib: {
     eyebrow: 'Captura rapida · {shortcut}',
@@ -81,14 +129,20 @@ export default {
     selectedBoard: 'el tablero seleccionado',
     submit: 'Capturar',
   },
+  // `boardAndColumn` se eliminó con #1984 (hallazgo 2): la lista del Inbox se
+  // solicita por tablero y sin columna, así que nombrar una columna aquí
+  // declaraba un filtro que nunca se aplicó.
   scope: {
     board: 'Tablero: {board}',
-    boardAndColumn: 'Tablero: {board} · Columna: {column}',
     clear: 'Mostrar todas las capturas',
   },
   empty: {
     scoped: 'No hay capturas en {scope}. Muestra todas las capturas para restaurar el Inbox completo.',
   },
+  // Se añade a la línea del recuento durante una recarga en el MISMO ámbito,
+  // con las filas todavía visibles y utilizables (#2501). En minúscula: va
+  // detrás de un separador "·".
+  refreshing: 'actualizando…',
   variantToggle: {
     label: 'Variante de captura',
   },
@@ -97,10 +151,28 @@ export default {
     composer: 'Composer',
   },
   boardPicker: {
+    // `label` encabeza los dos selectores de tablero. Los dos nombres
+    // accesibles llevan la etiqueta visible delante (WCAG 2.5.3) y solo se
+    // distinguen por lo que dicen después.
+    //
+    // `composerAria` no puede decir que la captura LLEGUE al tablero elegido:
+    // toda captura llega al Inbox, y el tablero solo la VINCULA para que el
+    // triage proponga sobre él; nada llega al tablero sin aprobar y ejecutar
+    // (ADR-0003). Es lo mismo que dicen el pie del Composer y `nib.destination*`,
+    // así que este nombre dice "se vincula ... para el triage" y el de la fila
+    // conserva "a dónde va esta captura", que es lo que hace ese selector.
+    label: 'Tablero',
+    composerAria: 'Tablero: elige a qué tablero se vincula esta captura para el triage',
+    triageAria: 'Tablero: elige a dónde va esta captura',
+    noBoardOption: 'Sin tablero · llega al Inbox',
+    selectPlaceholder: 'Selecciona un tablero…',
     viewOnlyOption: '{name} · solo lectura',
     viewOnlyHint: 'Los tableros de solo lectura necesitan acceso de escritura antes de poder clasificar nada en ellos.',
   },
   triage: {
+    // Nombre de la región de la lista de capturas: dice qué contiene la
+    // región, no cuáles capturas, así que no cambia en modo de solo lectura.
+    tableAria: 'Elementos capturados',
     boardPick: {
       loading: 'Cargando tableros…',
       loadFailed: 'No se pudieron cargar los tableros. Comprueba la conexión y vuelve a intentarlo.',
@@ -126,6 +198,27 @@ export default {
     tag: {
       state: 'Estado: {label}. Dónde está ahora mismo esta captura.',
       source: 'Origen: {label}. Cómo llegó esta captura — no es un estado.',
+    },
+    // Dónde queda una corrección sin guardar cuya captura sale de la lista
+    // (#1999, punto 3): un cambio del filtro de tablero, una recarga que ya no
+    // devuelve la fila, o el paso al historial de solo lectura. `{capture}` es
+    // el extracto de la propia fila.
+    //
+    // `kept` y `discarded` son recibos de un momento. `held`, `blocked` y
+    // `heldUneditable` son frases vigentes mientras se ven, así que cada una
+    // termina diciendo qué puede hacer quien lee.
+    //
+    // `kept` dice "esta lista" a propósito: la corrección vive en la tabla
+    // mientras la tabla exista, y prometerla tras recargar la página sería una
+    // promesa que este mecanismo no puede cumplir.
+    draft: {
+      kept: 'La corrección sin guardar de “{capture}” no se ha perdido. Se conserva mientras sigas en esta lista de Inbox y vuelve con esa captura cuando reaparezca. No se guardó nada.',
+      held: 'La corrección sin guardar de “{capture}” sigue conservada. Pulsa Editar captura en esa fila para recuperarla.',
+      blocked: 'La corrección sin guardar de “{capture}” sigue conservada. Otra captura está abierta para editar: termina esa y luego pulsa Editar captura en esta fila para recuperarla.',
+      heldUneditable: 'La corrección sin guardar de “{capture}” sigue conservada. Esta lista no edita una captura que está {status}, así que la corrección espera aquí hasta que esa captura vuelva a poder editarse.',
+      restored: 'La corrección sin guardar de “{capture}” vuelve a estar en el editor, sobre la captura tal como está ahora. Guárdala o cancela como siempre.',
+      discarded: 'La corrección sin guardar de “{capture}” se descartó: la captura ahora está {status} y su texto ya no se puede editar. No se guardó nada.',
+      dismiss: 'Descartar estos avisos',
     },
     // Corrección del texto antes de clasificar (GH-1951).
     //

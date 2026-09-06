@@ -312,14 +312,14 @@ describe('MetricsView — accessibility', () => {
     // metrics/forecast fetch chain. That chain previously raced the fixed
     // double-flush waitForUi() under suite load and made this accessibility
     // assertion intermittently time out. The error banner does not depend on
-    // boards, so removing the race makes the test deterministic (#1128).
+    // boards, so keep the fixture isolated and wait for the rendered alert
+    // rather than assuming a fixed number of promise turns (#1128).
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
     mockMetricsStore.error = 'Some error'
     const wrapper = mount(MetricsView)
-    await waitForUi()
-
-    const errorDiv = wrapper.find('[role="alert"]')
-    expect(errorDiv.exists()).toBe(true)
+    await vi.waitFor(() => {
+      expect(wrapper.find('[role="alert"]').exists()).toBe(true)
+    })
   })
 
   it('has aria-label on throughput bar chart', async () => {

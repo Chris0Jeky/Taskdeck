@@ -6,12 +6,13 @@
 #
 #   ci-required.yml          PR/push/merge_group gate (this file)
 #     ├── reusable-docs-governance.yml        docs + golden-principles + ops governance
-#     ├── release-workflow-contract            release-desktop dispatch hardening gate (#1795/#1806)
+#     ├── release-workflow-contract            release contract suites: dispatch hardening (#1795/#1806),
+#     │                                         release cache trust, release notes composer (#2234/#2250)
 #     ├── reusable-backend-architecture.yml    architecture boundary tests
 #     ├── reusable-backend-unit.yml            domain / application / CLI unit tests (Ubuntu + Windows)
 #     ├── reusable-api-integration.yml         API integration tests (Ubuntu + Windows)
 #     ├── reusable-migration-validation.yml    EF Core migration chain validation (TST-61)
-#     ├── reusable-frontend-unit.yml           dev launcher + lint + typecheck + build + unit tests (Ubuntu + Windows)
+#     ├── reusable-frontend-unit.yml           lint + typecheck + build + unit tests (Ubuntu + Windows); dev launcher suite on Ubuntu only (CI-07 #2331)
 #     ├── reusable-paper-color-audit.yml       PAPER-12 hex-literal regression gate (#1008)
 #     ├── reusable-container-images.yml        compose validation + image build (tar export/upload only for nightly/release callers, CI-09)
 #     ├── reusable-gitleaks.yml                secret detection (PR scan, fail-on-detect) (#1132)
@@ -89,9 +90,13 @@ permissions:
   # The required-lane gitleaks job runs in PR scan-mode, which reads the PR commit context. (#1132 review)
   pull-requests: read
 
+# A push run on refs/heads/main is landed-commit evidence, so an in-progress main run is not
+# cancelled by the next merge. GitHub keeps one in-progress plus one pending run per group, so
+# during a merge wave the run in flight completes and the newest tip runs next; intermediate
+# pending main runs are still superseded. PR refs keep cancelling (#2582).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   docs-governance:
@@ -115,12 +120,12 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.13.1
 
@@ -129,6 +134,9 @@ jobs:
 
       - name: Validate release cache trust contract
         run: node --test scripts/ci/release-cache-contract.test.mjs
+
+      - name: Validate release notes composer
+        run: node --test scripts/ci/compose-release-notes.test.mjs
 
   backend-architecture:
     name: Backend Architecture

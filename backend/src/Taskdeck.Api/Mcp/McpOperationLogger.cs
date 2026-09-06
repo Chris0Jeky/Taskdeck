@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Taskdeck.Application.Services;
 using Taskdeck.Api.Telemetry;
 
 namespace Taskdeck.Api.Mcp;
@@ -72,9 +73,10 @@ public sealed class McpOperationLogger
             // Strip control chars first (CWE-117), then truncate so the
             // "...[truncated]" marker is never clipped by a second length limit.
             var cleaned = LogSanitizer.StripControlChars(arguments);
-            var display = cleaned.Length > MaxArgumentLogLength
-                ? string.Concat(cleaned.AsSpan(0, MaxArgumentLogLength), "...[truncated]")
-                : cleaned;
+            var display = LogControlCharacterSanitizer.Truncate(
+                cleaned,
+                MaxArgumentLogLength,
+                "...[truncated]");
             _logger.LogDebug(
                 "MCP {OperationType} arguments: Name={OperationName} Args={Arguments}",
                 safeOperationType,

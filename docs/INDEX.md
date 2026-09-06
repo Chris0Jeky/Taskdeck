@@ -82,7 +82,7 @@ Stable reference material belongs in topical subfolders.
 - `security/`
   - Active security and abuse-protection policies or baselines.
 - `ci/`
-  - The Smart CI Fabric programme (ADR-0066, 2026-08-30): architecture and operating model (`ci/SMART_CI.md`), the self-hosted runner threat model, the private-repository cutover checklist, and the measured CI baseline (`ci/CI_BASELINE.md`) with its generated ledgers under `ci/baselines/`.
+  - The Smart CI Fabric programme (ADR-0066, 2026-08-30): architecture and operating model (`ci/SMART_CI.md`), the self-hosted runner threat model, the private-repository cutover checklist, the public release/source mirror options memo (`ci/PUBLIC_MIRROR_OPTIONS.md`), and the measured CI baseline (`ci/CI_BASELINE.md`) with its generated ledgers under `ci/baselines/`.
 - `codex-tasks/`
   - Codex-friendly task catalog: self-contained, token-efficient task prompts for lightweight agents. Organized by tier (frontend-api, frontend-composables, frontend-stores, backend-domain, backend-services). Each `.md` is a standalone prompt with source paths, pattern files, test cases, and verify commands. Tracked as `TST-CODEX-*` issues (`#415`-`#429`).
 - `tooling/`

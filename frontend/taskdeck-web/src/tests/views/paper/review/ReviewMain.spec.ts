@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
+import { drainCleanups } from '../../../utils/drainCleanups'
 import type {
   ChangeAfterCard,
   ChangeBeforeCard,
@@ -46,48 +48,60 @@ const sideEffects: SideEffects = {
 const conflicts: ConflictRow[] = []
 const history: HistoryRow[] = []
 
+type DeepReviewOptions = {
+  conflicts?: ConflictRow[]
+  history?: HistoryRow[]
+  applyPhase?: 'approve' | 'execute'
+  dismissable?: boolean
+  attachTo?: boolean
+  busy?: boolean
+  attrs?: Record<string, string>
+}
+
+function mainProps(
+  confidence: Partial<ConfidenceBreakdown> = {},
+  deepReview: DeepReviewOptions = {},
+) {
+  return {
+    serial: '#2026-04-25-014',
+    meta: '11:42 PT · awaiting decision',
+    titleParts: [
+      { text: 'Split ' },
+      { text: '“dark mode”', emphasis: true },
+      { text: ' into 3 cards' },
+    ],
+    lede: 'Lede text.',
+    decisionSummary: '3 ops · explicit review · atomic apply',
+    busy: deepReview.busy ?? false,
+    confidence: {
+      overall: confidence.overall === undefined ? 0.84 : confidence.overall,
+      components: confidence.components ?? [],
+      threshold: null,
+      note: confidence.note,
+      source: confidence.source ?? 'model-reported',
+    },
+    before,
+    after,
+    fields,
+    changeSubTitle: '3 changes',
+    provenance,
+    proposalId: 'proposal-001',
+    sideEffects,
+    conflicts: deepReview.conflicts ?? conflicts,
+    history: deepReview.history ?? history,
+    applyPhase: deepReview.applyPhase ?? 'approve',
+    dismissable: deepReview.dismissable ?? false,
+  }
+}
+
 function mountMain(
   confidence: Partial<ConfidenceBreakdown> = {},
-  deepReview: {
-    conflicts?: ConflictRow[]
-    history?: HistoryRow[]
-    applyPhase?: 'approve' | 'execute'
-    dismissable?: boolean
-    attachTo?: boolean
-  } = {},
+  deepReview: DeepReviewOptions = {},
 ) {
   return mount(ReviewMain, {
     attachTo: deepReview.attachTo ? document.body : undefined,
-    props: {
-      serial: '#2026-04-25-014',
-      meta: '11:42 PT · awaiting decision',
-      titleParts: [
-        { text: 'Split ' },
-        { text: '“dark mode”', emphasis: true },
-        { text: ' into 3 cards' },
-      ],
-      lede: 'Lede text.',
-      decisionSummary: '3 ops · explicit review · atomic apply',
-      busy: false,
-      confidence: {
-        overall: confidence.overall === undefined ? 0.84 : confidence.overall,
-        components: confidence.components ?? [],
-        threshold: null,
-        note: confidence.note,
-        source: confidence.source ?? 'model-reported',
-      },
-      before,
-      after,
-      fields,
-      changeSubTitle: '3 changes',
-      provenance,
-      proposalId: 'proposal-001',
-      sideEffects,
-      conflicts: deepReview.conflicts ?? conflicts,
-      history: deepReview.history ?? history,
-      applyPhase: deepReview.applyPhase ?? 'approve',
-      dismissable: deepReview.dismissable ?? false,
-    },
+    attrs: deepReview.attrs,
+    props: mainProps(confidence, deepReview),
   })
 }
 
@@ -222,6 +236,145 @@ describe('ReviewMain', () => {
       expect(document.activeElement).toBe(wrapper.get('[data-testid="decision-apply"]').element)
 
       wrapper.unmount()
+    })
+  })
+
+  /**
+   * #2461 — the Review view renders the post-revision refresh lock above this
+   * column and describes the column with its id. That attribute lands on this
+   * wrapper, which is not focusable, so assistive tech inspecting a disabled
+   * decision button never reached the explanation.
+   */
+  describe('decision lock description (#2461)', () => {
+    const LOCK_ID = 'paper-review-revision-refresh-lock'
+    const decisionTestIds = [
+      'decision-reject',
+      'decision-edit',
+      'decision-defer',
+      'decision-apply',
+    ]
+
+    // Registered by each test, run even when an assertion throws, so a leaked
+    // note id cannot resolve for a later test that expects it to be absent.
+    const cleanups: Array<() => void> = []
+
+    afterEach(() => {
+      drainCleanups(cleanups)
+    })
+
+    function renderLockNote(): void {
+      const note = document.createElement('p')
+      note.id = LOCK_ID
+      note.textContent = 'Refreshing this proposal before your decision.'
+      document.body.appendChild(note)
+      cleanups.push(() => note.remove())
+    }
+
+    it('removes the injected note after a throwing unmount cleanup', () => {
+      renderLockNote()
+      const wrapper = mountMain({}, { attachTo: true, busy: true })
+      const unmountFailure = new Error('unmount cleanup failed')
+      cleanups.push(() => {
+        wrapper.unmount()
+        throw unmountFailure
+      })
+
+      expect(() => drainCleanups(cleanups)).toThrow(unmountFailure)
+      expect(document.getElementById(LOCK_ID)).toBeNull()
+      expect(cleanups).toHaveLength(0)
+    })
+
+    it('forwards the column description ids to every disabled decision control', () => {
+      renderLockNote()
+
+      const wrapper = mountMain(
+        {},
+        { attachTo: true, busy: true, attrs: { 'aria-describedby': LOCK_ID } },
+      )
+      cleanups.push(() => wrapper.unmount())
+
+      // The wrapper keeps the attribute: those notes describe the whole column,
+      // and the Review view asserts that association.
+      expect(wrapper.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
+        .toBe(LOCK_ID)
+
+      for (const testid of decisionTestIds) {
+        const button = wrapper.get(`[data-testid="${testid}"]`)
+        expect(button.attributes('disabled')).toBeDefined()
+        const ids = (button.attributes('aria-describedby') ?? '').split(' ').filter(Boolean)
+        expect(ids).toContain(LOCK_ID)
+        // Attached to the real document, so every referenced id must resolve.
+        for (const id of ids) {
+          expect(document.getElementById(id)).not.toBeNull()
+        }
+      }
+    })
+
+    it('leaves the decision controls undescribed when the column has no explanation', () => {
+      const wrapper = mountMain({}, { attachTo: true, busy: true })
+      cleanups.push(() => wrapper.unmount())
+
+      expect(wrapper.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
+        .toBeUndefined()
+      for (const testid of decisionTestIds) {
+        expect(wrapper.get(`[data-testid="${testid}"]`).attributes('aria-describedby'))
+          .toBeUndefined()
+      }
+    })
+
+    it('never describes ENABLED decision controls, even while a column note is on screen', () => {
+      // The ids the Review view passes are a union: the refresh-lock note is
+      // drawn only during the refresh, but the evidence-unavailable note it can
+      // leave behind outlives the lock. Reject, Request edit and Defer are then
+      // enabled and have nothing to retry, so "no decision was made, choose the
+      // current action again" must not be their description (#2461 review).
+      renderLockNote()
+
+      const wrapper = mountMain(
+        {},
+        { attachTo: true, busy: false, attrs: { 'aria-describedby': LOCK_ID } },
+      )
+      cleanups.push(() => wrapper.unmount())
+
+      // The column itself is still described: the note is genuinely about it.
+      expect(wrapper.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
+        .toBe(LOCK_ID)
+      for (const testid of decisionTestIds) {
+        const button = wrapper.get(`[data-testid="${testid}"]`)
+        expect(button.attributes('disabled')).toBeUndefined()
+        expect(button.attributes('aria-describedby')).toBeUndefined()
+      }
+    })
+
+    it('drops the association from the controls when the lock clears', async () => {
+      // Fallthrough attributes are not reactive, so a cached read would keep
+      // pointing at a note the Review view has already removed. Driven from a
+      // host that re-renders, exactly as the Review view does.
+      renderLockNote()
+
+      const describedBy = ref<string | undefined>(LOCK_ID)
+      const host = mount(
+        {
+          render: () =>
+            h(ReviewMain, {
+              ...mainProps({}, { busy: true }),
+              'aria-describedby': describedBy.value,
+            }),
+        },
+        { attachTo: document.body },
+      )
+      cleanups.push(() => host.unmount())
+
+      expect(host.get('[data-testid="decision-apply"]').attributes('aria-describedby'))
+        .toBe(LOCK_ID)
+
+      describedBy.value = undefined
+      await nextTick()
+
+      expect(host.get('[data-testid="paper-review-main"]').attributes('aria-describedby'))
+        .toBeUndefined()
+      expect(host.get('[data-testid="decision-apply"]').attributes('aria-describedby'))
+        .toBeUndefined()
     })
   })
 

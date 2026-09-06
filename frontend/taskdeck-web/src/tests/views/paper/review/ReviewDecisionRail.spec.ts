@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import ReviewDecisionRail from '../../../../views/paper/review/ReviewDecisionRail.vue'
+import { drainCleanups } from '../../../utils/drainCleanups'
 // Vite's `?raw` rather than `node:fs`: the spec tree is type-checked with
 // `types: ["vite/client", ...]` and deliberately WITHOUT node types
 // (tsconfig.vitest.json), so a `readFileSync` here would fail `npm run typecheck`.
@@ -24,15 +25,27 @@ function mountRail(
     dismissable: boolean
     applyPhase: 'approve' | 'execute'
     editLock: 'off' | 'editing' | 'saving'
+    applyOnly: boolean
+    decisionDescriptionIds: string
   }> = {},
+  options: { attachTo?: boolean } = {},
 ) {
   return mount(ReviewDecisionRail, {
+    attachTo: options.attachTo ? document.body : undefined,
     props: {
       summary: '1 operation · explicit review · atomic apply',
       ...props,
     },
   })
 }
+
+/** The decision controls the rail renders in its actionable (non-filing) mode. */
+const DECISION_TESTIDS = [
+  'decision-reject',
+  'decision-edit',
+  'decision-defer',
+  'decision-apply',
+] as const
 
 describe('ReviewDecisionRail', () => {
   it('renders the four decision actions in the default (actionable) state', () => {
@@ -352,6 +365,111 @@ describe('ReviewDecisionRail', () => {
       expect(ids).toHaveLength(2)
       expect(ids[0]).toBeTruthy()
       expect(ids[0]).not.toBe(ids[1])
+    })
+  })
+
+  /**
+   * #2461 — the post-revision refresh lock is drawn by the Review view, above
+   * the rail. It used to describe only the non-focusable column wrapper, so a
+   * reviewer inspecting a disabled decision button was told nothing about why
+   * the whole row had gone inert.
+   */
+  describe('external decision lock description (#2461)', () => {
+    const EXTERNAL_ID = 'external-refresh-lock'
+
+    // Registered by each test, run even when an assertion throws, so a leaked
+    // note id cannot resolve for a later test that expects it to be absent.
+    const cleanups: Array<() => void> = []
+
+    afterEach(() => {
+      drainCleanups(cleanups)
+    })
+
+    function renderExternalNote(): void {
+      const note = document.createElement('p')
+      note.id = EXTERNAL_ID
+      note.textContent = 'Refreshing this proposal before your decision.'
+      document.body.appendChild(note)
+      cleanups.push(() => note.remove())
+    }
+
+    it('removes the injected note after a throwing unmount cleanup', () => {
+      renderExternalNote()
+      const wrapper = mountRail({ busy: true }, { attachTo: true })
+      const unmountFailure = new Error('unmount cleanup failed')
+      cleanups.push(() => {
+        wrapper.unmount()
+        throw unmountFailure
+      })
+
+      expect(() => drainCleanups(cleanups)).toThrow(unmountFailure)
+      expect(document.getElementById(EXTERNAL_ID)).toBeNull()
+      expect(cleanups).toHaveLength(0)
+    })
+
+    it('describes every disabled decision control with the external explanation', () => {
+      renderExternalNote()
+      const wrapper = mountRail(
+        { busy: true, decisionDescriptionIds: EXTERNAL_ID },
+        { attachTo: true },
+      )
+      cleanups.push(() => wrapper.unmount())
+
+      for (const testid of DECISION_TESTIDS) {
+        const button = wrapper.get(`[data-testid="${testid}"]`)
+        expect(button.attributes('disabled')).toBeDefined()
+        const ids = (button.attributes('aria-describedby') ?? '').split(' ').filter(Boolean)
+        expect(ids).toEqual([EXTERNAL_ID])
+        // Attached to the real document, so every referenced id must resolve.
+        for (const id of ids) {
+          expect(document.getElementById(id)).not.toBeNull()
+        }
+      }
+    })
+
+    it('carries the external explanation and its own edit-lock note together', () => {
+      renderExternalNote()
+      const wrapper = mountRail(
+        { busy: true, editLock: 'editing', decisionDescriptionIds: EXTERNAL_ID },
+        { attachTo: true },
+      )
+      cleanups.push(() => wrapper.unmount())
+
+      const noteId = wrapper.get('[data-testid="decision-lock-note"]').attributes('id')
+      expect(noteId).toBeTruthy()
+      for (const testid of DECISION_TESTIDS) {
+        const ids = (wrapper.get(`[data-testid="${testid}"]`).attributes('aria-describedby') ?? '')
+          .split(' ')
+          .filter(Boolean)
+        expect(ids).toEqual([EXTERNAL_ID, noteId])
+        for (const id of ids) {
+          expect(document.getElementById(id)).not.toBeNull()
+        }
+      }
+    })
+
+    it('describes the only remaining control when a receipt leaves Apply alone', () => {
+      renderExternalNote()
+      const wrapper = mountRail(
+        { busy: true, applyOnly: true, decisionDescriptionIds: EXTERNAL_ID },
+        { attachTo: true },
+      )
+      cleanups.push(() => wrapper.unmount())
+
+      expect(wrapper.find('[data-testid="decision-reject"]').exists()).toBe(false)
+      const apply = wrapper.get('[data-testid="decision-apply"]')
+      expect(apply.attributes('disabled')).toBeDefined()
+      expect(apply.attributes('aria-describedby')).toBe(EXTERNAL_ID)
+    })
+
+    it('adds no attribute when there is no explanation to point at', () => {
+      // A blank string is the shape a caller produces when it joins an empty id
+      // list. It must not become an aria-describedby that references nothing.
+      const wrapper = mountRail({ busy: true, decisionDescriptionIds: '   ' })
+      for (const testid of DECISION_TESTIDS) {
+        expect(wrapper.get(`[data-testid="${testid}"]`).attributes('aria-describedby'))
+          .toBeUndefined()
+      }
     })
   })
 })

@@ -100,10 +100,16 @@ value injected):
 
 | Build | Injection | Reported version |
 | --- | --- | --- |
-| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v and +build>` in `.github/workflows/release-desktop.yml`, taken from the `resolve-source` job's validated tag | e.g. `0.1.0` |
-| Tag push (container) | `TASKDECK_VERSION` build arg → `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
+| Tag push / dispatch naming a tag (desktop) | `VITE_APP_VERSION=<tag minus v and +build>` for the frontend plus `dotnet publish -p:Version=...` for the backend, both derived from `.github/workflows/release-desktop.yml`'s validated `resolve-source` output | e.g. `0.1.0` |
+| Tag push (container) | `VITE_APP_VERSION` and `TASKDECK_VERSION` build args → frontend build and `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
 | Rehearsal dispatch of Release Desktop | `resolve-source`'s generated dry-run tag | `0.0.0-dryrun` |
 | Local build, `docker build`, CI, rehearsal container build | none | `0.0.0-dev` |
+
+Frontend telemetry reads `VITE_APP_VERSION` at Vite build time. Release Desktop and
+Release Container pass the same normalized tag-derived value used for the backend;
+the standalone frontend Dockerfile accepts the same build arg. Builds without that
+value use `0.0.0-dev`, so no frontend source file contains a hand-maintained release
+version.
 
 Where to read it:
 
@@ -207,6 +213,31 @@ also stops startup; recover the complete SQLite set while Taskdeck is stopped.
 Explicit absolute database paths and
 `Data Source=:memory:` remain authoritative. Relative/default desktop paths
 resolve under the same per-user Taskdeck directory as the generated configuration.
+
+The standalone CLI keeps its own `appsettings.local.json` and does not use the
+paths above. `CliFirstRunBootstrapper` writes the connector encryption key it
+auto-generates next to the resolved SQLite data directory, which is the directory
+named by `ConnectionStrings:DefaultConnection` or by the
+`TASKDECK_CONNECTION_STRING` fallback. That directory must sit on a filesystem
+that can store owner-only permissions, such as NTFS, ext4, or APFS. On the runs
+where the CLI resolves that key file itself, meaning no `Connectors__EncryptionKey`
+is configured, it creates the file locked to the current user and re-applies that
+lockdown to a key file an older build left unprotected. A configured
+`Connectors__EncryptionKey` returns from the bootstrap before any path is
+resolved, so no lockdown is re-applied on those runs: an operator who sets the
+variable on an install that predates the owner-only key file must delete or
+restrict the legacy `appsettings.local.json` themselves. Where the filesystem
+cannot store those permissions, which is the case on FAT32, exFAT, and some SMB
+shares, the CLI refuses to persist a new key, warns on stderr, and falls back to a
+transient key generated for that run alone, so connector secrets encrypted in one
+run cannot be read in the next. A key file that already exists on such a volume is
+still used: the CLI keeps the persisted key and warns on every run where the
+filesystem reports that the file could not be restricted to the current user; a
+volume that silently ignores permission changes produces no warning, so treat any
+such directory as unsupported. The fix is the same in both cases: move
+the data directory onto a filesystem that stores permissions, or set
+`Connectors__EncryptionKey` explicitly and remove the key file so the CLI never
+needs to persist or protect a key of its own.
 
 ### `Auth:Registration`
 
@@ -626,7 +657,7 @@ Development when the key is unset (`SettingsRegistration.cs`). Consumed by
 | `SecurityHeaders:HstsMaxAgeDays` | `int` | `365` | `max-age` value for HSTS in days. | No |
 | `SecurityHeaders:HstsIncludeSubDomains` | `bool` | `false` | Include `includeSubDomains` in HSTS. | No |
 | `SecurityHeaders:HstsPreload` | `bool` | `false` | Include `preload` in HSTS. | No |
-| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'` | Raw CSP string. SEC-29: `'unsafe-inline'` removed from `style-src` — API serves JSON (Swagger excluded from CSP), no inline styles needed. | No |
+| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'; manifest-src 'self'` | Raw CSP string. SEC-29: `'unsafe-inline'` removed from `style-src` — API serves JSON (Swagger excluded from CSP), no inline styles needed. | No |
 | `SecurityHeaders:XFrameOptions` | `string` | `DENY` | Value for `X-Frame-Options`. | No |
 | `SecurityHeaders:ReferrerPolicy` | `string` | `no-referrer` | Value for `Referrer-Policy`. | No |
 

@@ -366,7 +366,7 @@ public class ProvenanceQueryServiceTests
     public void BuildValue_TruncatesLongQuotes()
     {
         var provenance = CreateProvenance();
-        var longQuote = new string('x', 200);
+        var longQuote = new string('x', 117) + "\uD83D\uDE00tail";
         var field = new ProvenanceField(
             "description",
             ProvenanceKind.Extractive,
@@ -376,9 +376,8 @@ public class ProvenanceQueryServiceTests
 
         var value = ProvenanceQueryService.BuildValue(field);
 
-        // The truncated value should end with "..." and not contain the full 200-char quote.
-        value.Should().Contain("...");
-        value.Length.Should().BeLessThan(longQuote.Length + 50);
+        value.Should().Be($"Extracted: \"{new string('x', 117)}...\" (90% match)");
+        value.Should().NotContain("\uD83D").And.NotContain("\uDE00");
     }
 
     [Fact]
@@ -583,6 +582,28 @@ public class ProvenanceQueryServiceTests
         _provenanceRepo
             .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ProposalProvenance(proposalId, "corr-1", "chat-tools"));
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().BeNull();
+        result.Value.Model.Should().BeNull();
+        result.Value.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetProvenanceMetadataAsync_SuppressesRealLookingModelId_WhenProviderWasNotRecorded()
+    {
+        // Pre-migration rows can contain a model-looking value while the producer column is
+        // unavailable. The read model must not infer a provider from the model name alone.
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(
+                proposalId,
+                "corr-legacy-model",
+                "gpt-5.6-luna",
+                provider: null));
 
         var result = await _service.GetProvenanceMetadataAsync(proposalId);
 

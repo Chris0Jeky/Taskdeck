@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Taskdeck.Application.Services;
 using Taskdeck.Infrastructure.Persistence;
 using Xunit;
 
@@ -133,7 +134,8 @@ public sealed class CliTestHarnessTests
             await WaitForStartupPhaseAsync(
                 harness.DataDirectory,
                 CliStartupTrace.MigrationBeginPhase,
-                TimeSpan.FromSeconds(10));
+                CliTestHarness.DefaultProcessTimeout,
+                runTask);
 
             harness.LastStartedProcessId.Should().HaveValue();
             ProcessHasExited(harness.LastStartedProcessId!.Value).Should().BeFalse();
@@ -166,6 +168,62 @@ public sealed class CliTestHarnessTests
                     // no child or task escapes the test.
                 }
             }
+        }
+    }
+
+    [Fact]
+    public async Task WaitForStartupPhase_WhenProcessCompletesEarly_ReportsBoundedRedactedDiagnostics()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("taskdeck-cli-readiness-").FullName;
+        try
+        {
+            var completedProcess = Task.FromResult(new CliCommandResult(
+                ExitCode: 17,
+                StdOut: string.Empty,
+                StdErr: "authorization: Bearer TOP_SECRET_SENTINEL"));
+
+            Func<Task> action = async () => await WaitForStartupPhaseAsync(
+                dataDirectory,
+                CliStartupTrace.MigrationBeginPhase,
+                TimeSpan.FromSeconds(5),
+                completedProcess);
+
+            var failure = await action.Should().ThrowAsync<InvalidOperationException>();
+
+            failure.Which.Message.Should().Contain("exitCode=17")
+                .And.Contain("authorization: Bearer [redacted]")
+                .And.Contain("last=none")
+                .And.NotContain("TOP_SECRET_SENTINEL");
+        }
+        finally
+        {
+            Directory.Delete(dataDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task WaitForStartupPhase_WhenReadinessIsMissing_UsesOneBoundedDeadline()
+    {
+        var dataDirectory = Directory.CreateTempSubdirectory("taskdeck-cli-readiness-").FullName;
+        var processCompletion = new TaskCompletionSource<CliCommandResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            Func<Task> action = async () => await WaitForStartupPhaseAsync(
+                dataDirectory,
+                CliStartupTrace.MigrationBeginPhase,
+                TimeSpan.FromMilliseconds(50),
+                processCompletion.Task);
+
+            var failure = await action.Should().ThrowAsync<TimeoutException>();
+
+            failure.Which.Message.Should().Contain("within 0.05s")
+                .And.Contain("last=none");
+        }
+        finally
+        {
+            processCompletion.TrySetResult(new CliCommandResult(0, string.Empty, string.Empty));
+            Directory.Delete(dataDirectory, recursive: true);
         }
     }
 
@@ -1145,35 +1203,104 @@ public sealed class CliTestHarnessTests
     private static async Task WaitForStartupPhaseAsync(
         string dataDirectory,
         string expectedPhase,
-        TimeSpan timeout)
+        TimeSpan timeout,
+        Task<CliCommandResult> processTask)
     {
-        using var timeoutCancellation = new CancellationTokenSource(timeout);
+        ArgumentNullException.ThrowIfNull(processTask);
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        }
+
+        using var observationCancellation = new CancellationTokenSource();
+        var phaseTask = ObserveStartupPhaseAsync(
+            dataDirectory,
+            expectedPhase,
+            observationCancellation.Token);
+        var deadlineTask = Task.Delay(timeout, observationCancellation.Token);
         try
         {
-            while (true)
+            var completedTask = await Task.WhenAny(phaseTask, processTask, deadlineTask);
+            if (completedTask == phaseTask)
             {
-                foreach (var tracePath in Directory.EnumerateFiles(
-                    dataDirectory,
-                    "startup-*.trace",
-                    SearchOption.TopDirectoryOnly))
-                {
-                    var fileName = Path.GetFileNameWithoutExtension(tracePath);
-                    var correlationId = fileName["startup-".Length..];
-                    var snapshot = CliStartupTrace.ReadSnapshot(tracePath, correlationId);
-                    if (string.Equals(snapshot.LastPhase, expectedPhase, StringComparison.Ordinal))
-                    {
-                        return;
-                    }
-                }
+                await phaseTask;
+                return;
+            }
 
-                await Task.Delay(TimeSpan.FromMilliseconds(10), timeoutCancellation.Token);
+            if (completedTask == processTask)
+            {
+                var result = await processTask;
+                var snapshot = ReadStartupTraceSnapshot(dataDirectory);
+                var standardError = FormatDiagnosticStandardError(result.StdErr);
+                throw new InvalidOperationException(
+                    $"CLI process exited before readiness could confirm {expectedPhase} while the " +
+                    "owned child was live; " +
+                    $"exitCode={result.ExitCode}; stderr={standardError}; " +
+                    snapshot.ToDiagnosticString());
+            }
+
+            throw new TimeoutException(
+                $"CLI startup trace did not reach the expected phase within {timeout.TotalSeconds:0.###}s; " +
+                $"{ReadStartupTraceSnapshot(dataDirectory).ToDiagnosticString()}");
+        }
+        finally
+        {
+            observationCancellation.Cancel();
+            try
+            {
+                await phaseTask;
+            }
+            catch (OperationCanceledException) when (observationCancellation.IsCancellationRequested)
+            {
+                // The readiness observer is owned by this bounded probe.
             }
         }
-        catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested)
+    }
+
+    private static async Task ObserveStartupPhaseAsync(
+        string dataDirectory,
+        string expectedPhase,
+        CancellationToken cancellationToken)
+    {
+        while (true)
         {
-            throw new TimeoutException(
-                $"CLI startup trace did not reach the expected phase within {timeout.TotalSeconds}s.");
+            var snapshot = ReadStartupTraceSnapshot(dataDirectory);
+            if (string.Equals(snapshot.LastPhase, expectedPhase, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken);
         }
+    }
+
+    private static CliStartupTraceSnapshot ReadStartupTraceSnapshot(string dataDirectory)
+    {
+        foreach (var tracePath in Directory.EnumerateFiles(
+            dataDirectory,
+            "startup-*.trace",
+            SearchOption.TopDirectoryOnly))
+        {
+            var fileName = Path.GetFileNameWithoutExtension(tracePath);
+            var correlationId = fileName["startup-".Length..];
+            return CliStartupTrace.ReadSnapshot(tracePath, correlationId);
+        }
+
+        return CliStartupTraceSnapshot.Unavailable;
+    }
+
+    private static string FormatDiagnosticStandardError(string standardError)
+    {
+        var redacted = SensitiveDataRedactor.Redact(standardError).ReplaceLineEndings("\\n");
+        if (string.IsNullOrWhiteSpace(redacted))
+        {
+            return "none";
+        }
+
+        const int maximumDiagnosticLength = 512;
+        return redacted.Length <= maximumDiagnosticLength
+            ? redacted
+            : $"{redacted[..maximumDiagnosticLength]}...";
     }
 
     private static async Task ReapThenThrowAsync(Process process, Exception failure)

@@ -8,6 +8,7 @@ import { useKeyboardShortcuts } from '../composables/useKeyboardShortcuts'
 import { createBoardRealtimeController } from '../composables/useBoardRealtime'
 import { useBoardDragDrop } from '../composables/useBoardDragDrop'
 import { useBoardKeyboardNav } from '../composables/useBoardKeyboardNav'
+import { useShellKeyboardHelp } from '../composables/useShellKeyboardHelp'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
 import BoardToolbar from '../components/board/BoardToolbar.vue'
 import BoardActionRail from '../components/board/BoardActionRail.vue'
@@ -30,13 +31,13 @@ const boardStore = useBoardStore()
 const sessionStore = useSessionStore()
 const paperTheme = usePaperThemeStore()
 const paperOn = computed(() => paperTheme.isOn)
+const shellKeyboardHelp = useShellKeyboardHelp()
 
 const newColumnName = ref('')
 const showColumnForm = ref(false)
 const showBoardSettings = ref(false)
 const showLabelManager = ref(false)
 const showStarterPackCatalog = ref(false)
-const showKeyboardHelp = ref(false)
 const showFilterPanel = ref(false)
 const showBoardCaptureModal = ref(false)
 const presenceMembers = ref<BoardPresenceMember[]>([])
@@ -84,7 +85,21 @@ const realtime = createBoardRealtimeController({
       return
     }
 
-    await boardStore.fetchBoard(id, options)
+    const boardLoadErrorAtStart = boardLoadError.value
+    const storeErrorAtStart = boardStore.error
+    const committed = await boardStore.fetchBoard(id, options)
+    if (
+      options.intent === 'background' &&
+      committed &&
+      !viewUnmounted &&
+      id === boardId.value &&
+      boardLoadError.value === boardLoadErrorAtStart
+    ) {
+      boardLoadError.value = null
+      if (boardStore.error === storeErrorAtStart && storeErrorAtStart === boardLoadErrorAtStart) {
+        boardStore.error = null
+      }
+    }
   },
   onPresenceChanged: (snapshot) => {
     if (snapshot.boardId !== boardId.value) {
@@ -334,8 +349,19 @@ function goBack() {
   router.push('/boards')
 }
 
-function toggleKeyboardHelp() {
-  showKeyboardHelp.value = !showKeyboardHelp.value
+/**
+ * The toolbar help button opens the shell's keyboard map -- the same surface
+ * `?` opens -- instead of a board-local dialog with its own hardcoded key list
+ * (#2007). AppShell consumes `?` in the capture phase, so a board-local `?`
+ * binding could never have run and is gone with the dialog.
+ */
+function openShellKeyboardHelp() {
+  if (!shellKeyboardHelp) {
+    logError('Keyboard help requested from a board rendered outside the workspace shell')
+    return
+  }
+
+  shellKeyboardHelp.open()
 }
 
 function toggleFilterPanel() {
@@ -383,11 +409,9 @@ function handleFiltersUpdate(newFilters: CardFilters) {
 }
 
 function closeOpenUi() {
-  if (showKeyboardHelp.value) {
-    showKeyboardHelp.value = false
-    return
-  }
-
+  // The shell's keyboard map is not listed here: it registers its own handler
+  // on the shared escape stack, whose capture-phase listener stops propagation
+  // before this bubble-phase one runs.
   if (showLabelManager.value) {
     showLabelManager.value = false
     return
@@ -491,7 +515,9 @@ useKeyboardShortcuts([
   { key: 'Escape', description: 'Close open dialog/panel', action: closeOpenUi },
 
   // Help
-  { key: '?', description: 'Toggle keyboard shortcuts help', action: toggleKeyboardHelp, enabled: standardBoardOnlyShortcutsEnabled },
+  // `?` is deliberately NOT bound here. AppShell owns it in the capture phase
+  // and calls stopImmediatePropagation, so this bubble-phase listener never saw
+  // it: the binding advertised a board dialog that `?` did not actually open.
   { key: 'f', description: 'Toggle filter panel', action: toggleFilterPanel, enabled: standardBoardOnlyShortcutsEnabled },
 ])
 </script>
@@ -523,7 +549,7 @@ useKeyboardShortcuts([
           :total-card-count="boardStore.totalCardCount"
           @back="goBack"
           @toggle-filter="toggleFilterPanel"
-          @show-keyboard-help="showKeyboardHelp = true"
+          @show-keyboard-help="openShellKeyboardHelp"
           @show-label-manager="showLabelManager = true"
           @show-starter-pack-catalog="showStarterPackCatalog = true"
           @show-board-settings="showBoardSettings = true"
@@ -680,12 +706,10 @@ useKeyboardShortcuts([
       :show-board-settings="showBoardSettings"
       :show-label-manager="showLabelManager"
       :show-starter-pack-catalog="showStarterPackCatalog"
-      :show-keyboard-help="showKeyboardHelp"
       :show-capture-modal="showBoardCaptureModal"
       @update:show-board-settings="showBoardSettings = $event"
       @update:show-label-manager="showLabelManager = $event"
       @update:show-starter-pack-catalog="showStarterPackCatalog = $event"
-      @update:show-keyboard-help="showKeyboardHelp = $event"
       @update:show-capture-modal="showBoardCaptureModal = $event"
     />
   </div>

@@ -1,9 +1,11 @@
+using System.Diagnostics.Metrics;
 using System.Reflection;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Microsoft.Extensions.Logging.Abstractions;
 using Taskdeck.Api.Workers;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
@@ -15,6 +17,15 @@ using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
+// The outcome listener below observes the process-global WorkerItemsProcessed counter, which
+// the resilience and transcript-worker test classes also drive; this collection runs alone.
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class WorkerTelemetryCollection
+{
+    public const string Name = "Worker telemetry global state";
+}
+
+[Collection(WorkerTelemetryCollection.Name)]
 public class LlmQueueToProposalWorkerTests
 {
     #region Helper factories
@@ -119,6 +130,47 @@ public class LlmQueueToProposalWorkerTests
         var task = method!.Invoke(worker, [ct]);
         task.Should().NotBeNull();
         await (Task)task!;
+    }
+
+    private static MeterListener ListenForWorkerOutcomes(List<string> outcomes)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument == TaskdeckTelemetry.WorkerItemsProcessed)
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((instrument, _, tags, _) =>
+        {
+            string? outcome = null;
+            var thisWorker = false;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == TaskdeckTelemetryTags.Outcome && tag.Value is string value)
+                {
+                    outcome = value;
+                }
+                else if (tag.Key == TaskdeckTelemetryTags.WorkerName && tag.Value is string name)
+                {
+                    thisWorker = name == nameof(LlmQueueToProposalWorker);
+                }
+            }
+
+            if (thisWorker && outcome is not null)
+            {
+                lock (outcomes)
+                {
+                    outcomes.Add(outcome);
+                }
+            }
+        });
+        listener.Start();
+        listener.EnableMeasurementEvents(TaskdeckTelemetry.WorkerItemsProcessed);
+        return listener;
     }
 
     #endregion
@@ -246,6 +298,8 @@ public class LlmQueueToProposalWorkerTests
     {
         var item = CreatePendingItem();
         var queueRepo = new FakeLlmQueueRepository([item]);
+        var outcomes = new List<string>();
+        using var listener = ListenForWorkerOutcomes(outcomes);
         using var cts = new CancellationTokenSource();
         var planner = new FakeAutomationPlannerService
         {
@@ -270,6 +324,7 @@ public class LlmQueueToProposalWorkerTests
         // the processing lease expires.
         item.Status.Should().Be(RequestStatus.Pending);
         item.RetryCount.Should().Be(0, "a shutdown mid-item must not consume the retry budget");
+        outcomes.Should().Equal("released_on_shutdown");
     }
 
     [Fact]
@@ -301,6 +356,35 @@ public class LlmQueueToProposalWorkerTests
         unitOfWork.SaveChangesTokens.Should().ContainSingle("the release is the only write on this path");
         unitOfWork.SaveChangesTokens[0].IsCancellationRequested.Should().BeFalse(
             "the release must be persisted with CancellationToken.None, not the cancelled caller token");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_ProposalLaneCallerCancellation_WhenReleaseFails_DoesNotEmitSuccessfulOutcome()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var unitOfWork = new FakeUnitOfWork(queueRepo)
+        {
+            OnSaveChanges = _ => throw new InvalidOperationException("release write failed")
+        };
+        var outcomes = new List<string>();
+        using var listener = ListenForWorkerOutcomes(outcomes);
+        using var cts = new CancellationTokenSource();
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ =>
+            {
+                cts.Cancel();
+                throw new OperationCanceledException(cts.Token);
+            }
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner, unitOfWork: unitOfWork);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(), DefaultSettings(retryBackoff: [0]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        outcomes.Should().NotContain("released_on_shutdown");
     }
 
     [Fact]
@@ -413,6 +497,31 @@ public class LlmQueueToProposalWorkerTests
     }
 
     [Fact]
+    public async Task ProcessBatch_CaptureTriageItem_AnchorsToTheQueueRowsCaptureDay_NotTheTriageDay()
+    {
+        // #2193: this item was captured 9 days ago and is only being drained now. The reference
+        // date handed to triage must be the capture's own day, so "1 September" in the transcript
+        // resolves the way it would have at capture time.
+        var item = CreateCaptureTriageItem();
+        var capturedAt = DateTimeOffset.UtcNow.AddDays(-9);
+        typeof(Taskdeck.Domain.Common.Entity)
+            .GetProperty("CreatedAt")!
+            .SetValue(item, capturedAt);
+        var queueRepo = new FakeLlmQueueRepository([], [item]);
+        var triageService = new FakeCaptureTriageService();
+        using var sp = BuildServiceProvider(queueRepo, triageService: triageService);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>());
+
+        await InvokeProcessBatchAsync(worker, CancellationToken.None);
+
+        var anchor = triageService.ReceivedAnchors.Should().ContainSingle().Subject;
+        anchor.Should().NotBeNull();
+        anchor!.CapturedAtServer.Should().Be(capturedAt);
+        anchor.ReferenceDate.Should().Be(DateOnly.FromDateTime(capturedAt.UtcDateTime));
+        anchor.ReferenceDate.Should().NotBe(DateOnly.FromDateTime(DateTime.UtcNow));
+    }
+
+    [Fact]
     public async Task ProcessBatch_CaptureRetryAfterProposalCrash_ReplaysTheSamePayloadToTheSameProposal()
     {
         // The proposal may have committed before the capture provenance/status save crashes. The
@@ -454,6 +563,10 @@ public class LlmQueueToProposalWorkerTests
         triageService.CallCount.Should().Be(2);
         triageService.ReceivedPayloads.Should().HaveCount(2);
         triageService.ReceivedPayloads[1].Should().Be(triageService.ReceivedPayloads[0]);
+        // #2193: a retry re-resolves the anchor from the same server-stamped row, so both attempts
+        // see the same reference date.
+        triageService.ReceivedAnchors.Should().HaveCount(2);
+        triageService.ReceivedAnchors[1]!.ReferenceDate.Should().Be(triageService.ReceivedAnchors[0]!.ReferenceDate);
     }
 
     #endregion
@@ -576,6 +689,8 @@ public class LlmQueueToProposalWorkerTests
         var item = CreatePendingItem();
         var queueRepo = new FakeLlmQueueRepository([item]);
         var unitOfWork = new FakeUnitOfWork(queueRepo);
+        var outcomes = new List<string>();
+        using var listener = ListenForWorkerOutcomes(outcomes);
         using var cts = new CancellationTokenSource();
         // Cancel from inside the FIRST write (the MarkAsFailed commit) so cancellation lands squarely in
         // the backoff wait that follows -- deterministic, unlike a timer race, and it keeps the token
@@ -603,6 +718,41 @@ public class LlmQueueToProposalWorkerTests
         unitOfWork.SaveChangesTokens.Should().HaveCount(2, "the MarkAsFailed commit and the requeue commit");
         unitOfWork.SaveChangesTokens[1].IsCancellationRequested.Should().BeFalse(
             "the requeue must be persisted with CancellationToken.None; the caller token is already cancelled");
+        outcomes.Should().Equal("cancelled_requeued");
+    }
+
+    [Fact]
+    public async Task ProcessBatch_CancellationDuringRetryBackoff_WhenRequeueFails_DoesNotEmitSuccessfulOutcome()
+    {
+        var item = CreatePendingItem();
+        var queueRepo = new FakeLlmQueueRepository([item]);
+        var unitOfWork = new FakeUnitOfWork(queueRepo);
+        var outcomes = new List<string>();
+        using var listener = ListenForWorkerOutcomes(outcomes);
+        using var cts = new CancellationTokenSource();
+        unitOfWork.OnSaveChanges = saveNumber =>
+        {
+            if (saveNumber == 1)
+            {
+                cts.Cancel();
+            }
+            else if (saveNumber == 2)
+            {
+                throw new InvalidOperationException("requeue write failed");
+            }
+        };
+        var planner = new FakeAutomationPlannerService
+        {
+            ResultFactory = _ => Result.Failure<ProposalDto>(ErrorCodes.UnexpectedError, "transient failure")
+        };
+        using var sp = BuildServiceProvider(queueRepo, planner, unitOfWork: unitOfWork);
+        var worker = CreateWorker(sp.GetRequiredService<IServiceScopeFactory>(),
+            DefaultSettings(maxRetries: 3, retryBackoff: [5]));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => InvokeProcessBatchAsync(worker, cts.Token));
+
+        outcomes.Should().NotContain("cancelled_requeued");
     }
 
     [Fact]
@@ -1533,6 +1683,7 @@ public class LlmQueueToProposalWorkerTests
     {
         public int CallCount { get; private set; }
         public List<CapturePayloadV1> ReceivedPayloads { get; } = [];
+        public List<CaptureTriageAnchor?> ReceivedAnchors { get; } = [];
 
         public Func<Guid, Guid, Guid?, CapturePayloadV1, CancellationToken, Result<CaptureTriageProposalResultDto>>? ResultFactory { get; set; }
 
@@ -1541,10 +1692,12 @@ public class LlmQueueToProposalWorkerTests
             Guid userId,
             Guid? boardId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
         {
             CallCount++;
             ReceivedPayloads.Add(payload);
+            ReceivedAnchors.Add(anchor);
             if (ResultFactory != null)
             {
                 return Task.FromResult(ResultFactory(captureItemId, userId, boardId, payload, cancellationToken));
@@ -1567,8 +1720,9 @@ public class LlmQueueToProposalWorkerTests
             Guid? boardId,
             Guid transcriptId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
-            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, anchor, cancellationToken);
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork

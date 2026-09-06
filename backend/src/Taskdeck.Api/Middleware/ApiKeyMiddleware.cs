@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Extensions;
 using Taskdeck.Api.RateLimiting;
+using Taskdeck.Api.Telemetry;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Domain.Exceptions;
@@ -129,8 +130,20 @@ public sealed class ApiKeyMiddleware
 
         if (authRecord is null)
         {
+            // The token is unauthenticated caller input, so the logged prefix must not be able to
+            // forge a log line in a plain-text sink (CWE-117, #2519). Order matters: the 8-character
+            // slice is taken FIRST and sanitized afterwards, so stripping can only shorten the
+            // prefix — never pull further secret material into the log entry — and at most 8
+            // characters of the presented token are ever logged, whatever the input.
+            //
+            // Stripping can in principle empty the slice; that is reported as "short" rather than as
+            // an empty prefix, so an operator never sees a blank value that reads like a missing
+            // field. The format gate above checks for the "tdsk_" literal with a culture-sensitive
+            // StartsWith, under which ignorable characters may precede the literal, so the empty
+            // case is unlikely but not impossible and the fallback stays.
+            var prefix = token.Length >= 8 ? LogSanitizer.StripControlChars(token[..8]) : string.Empty;
             _logger.LogWarning("MCP API key authentication failed: key not found (prefix: {Prefix})",
-                token.Length >= 8 ? token[..8] : "short");
+                string.IsNullOrEmpty(prefix) ? "short" : prefix);
             await WriteErrorResponse(context, StatusCodes.Status401Unauthorized,
                 "Invalid API key.");
             return;

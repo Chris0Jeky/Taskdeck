@@ -23,8 +23,9 @@ import en from '../locales/en'
  * code-split behind `ensureLocaleMessages()` and fetched the first time the
  * user selects them, so adding translated surfaces no longer spends the
  * total-JS budget for users who never leave English. While a catalog is in
- * flight (or if its chunk fails to load), the silent-fallback semantics above
- * already describe what the user sees: English.
+ * flight (or if its chunk fails to load), the locale store keeps the last
+ * committed language active; the low-level runtime still has English as its
+ * fallback for keys that are not present in the committed catalog.
  */
 
 export const SUPPORTED_LOCALES = ['en', 'it', 'es'] as const
@@ -90,7 +91,8 @@ const loaded = new Set<SupportedLocale>([DEFAULT_LOCALE])
  * Fetch and register a locale's catalog, once. Resolves `true` when the
  * catalog is available (already or newly), `false` when the chunk failed to
  * load — in which case the failure is forgotten so a later switch retries,
- * and the user simply stays on English fallback in the meantime. Never throws.
+ * and callers can retain their previous committed language in the meantime.
+ * Never throws.
  */
 export function ensureLocaleMessages(locale: SupportedLocale): Promise<boolean> {
   if (loaded.has(locale)) return Promise.resolve(true)

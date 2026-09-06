@@ -60,6 +60,18 @@ export const MAX_AGE_MS = 24 * 60 * 60 * 1000
 /** The capture surface a stash belongs to; restoring switches to it. */
 export type CaptureDraftVariant = 'nib' | 'composer'
 
+/**
+ * The composer's capture source (GH-2141). Only the composer has one, and a
+ * record written before GH-2141 has none at all — both read back as `Typed`,
+ * so an old or sourceless stash is restored as a plain note and never as an
+ * assistant-extracted transcript the author did not choose.
+ */
+export type CaptureDraftSource = 'Typed' | 'TranscriptPaste'
+
+function readSource(value: unknown): CaptureDraftSource {
+  return value === 'TranscriptPaste' ? 'TranscriptPaste' : 'Typed'
+}
+
 /** The inline failure receipt (GH-1938) carried across the redirect. */
 export interface CaptureDraftFailure {
   message: string
@@ -75,6 +87,13 @@ export interface CaptureDraftInput {
   boardId?: string | null
   labels?: string[]
   dueAt?: string | null
+  source?: CaptureDraftSource | null
+  /**
+   * The composer's uncommitted label text (GH-2490) — typed but never
+   * Enter-committed. Carried so a 401 does not eat it; dropped whole, like a
+   * committed label, when it is longer than `MAX_LABEL_CHARS`.
+   */
+  labelInput?: string | null
   failure?: CaptureDraftFailure | null
 }
 
@@ -87,6 +106,10 @@ export interface StashedCaptureDraft {
   boardId: string | null
   labels: string[]
   dueAt: string | null
+  /** Composer capture source; `Typed` for the nib and for pre-GH-2141 records. */
+  source: CaptureDraftSource
+  /** Pending label text; `''` for the nib and for pre-GH-2490 records. */
+  labelInput: string
   failure: CaptureDraftFailure | null
   /** True when the body was longer than `MAX_TEXT_CHARS` and lost its tail. */
   truncated: boolean
@@ -146,7 +169,12 @@ export function stashCaptureDraft(input: CaptureDraftInput): boolean {
   const labels = keepableLabels.slice(0, MAX_LABELS)
   // Losing part of a draft is allowed; losing it silently is not. The restore
   // affordance reads this flag and tells the user something was left behind.
-  const labelsDropped = labels.length < requestedLabels.length
+  const requestedLabelInput = typeof input.labelInput === 'string' ? input.labelInput : ''
+  // An over-long pending label is dropped whole for the same reason a committed
+  // one is: a silently shortened label is a different label.
+  const labelInput = requestedLabelInput.length <= MAX_LABEL_CHARS ? requestedLabelInput : ''
+  const labelsDropped =
+    labels.length < requestedLabels.length || labelInput.length < requestedLabelInput.length
 
   const failure = input.failure
     ? {
@@ -165,6 +193,8 @@ export function stashCaptureDraft(input: CaptureDraftInput): boolean {
     boardId: typeof input.boardId === 'string' ? input.boardId : null,
     labels,
     dueAt: typeof input.dueAt === 'string' && input.dueAt.length > 0 ? input.dueAt : null,
+    source: readSource(input.source),
+    labelInput,
     failure,
     truncated: rawText.length > MAX_TEXT_CHARS,
     labelsDropped,
@@ -272,6 +302,13 @@ export function peekCaptureDraft(
           .slice(0, MAX_LABELS)
       : [],
     dueAt: typeof candidate.dueAt === 'string' ? candidate.dueAt : null,
+    source: readSource(candidate.source),
+    // Tolerant read: a record written before GH-2490 has no pending label at
+    // all, and comes back as an empty box rather than an unusable record.
+    labelInput:
+      typeof candidate.labelInput === 'string'
+        ? clampText(candidate.labelInput, MAX_LABEL_CHARS)
+        : '',
     failure: failure && failure.message.length > 0 ? failure : null,
     truncated: candidate.truncated === true,
     labelsDropped: candidate.labelsDropped === true,

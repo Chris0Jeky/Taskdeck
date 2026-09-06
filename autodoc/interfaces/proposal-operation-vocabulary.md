@@ -26,6 +26,7 @@ Invariants:
 - Parameter `boardId`, `cardId`, `columnId`, and typed `TargetId` identities must agree with each other and with the proposal's authorized `BoardId`; cross-board revisions fail before preview or apply.
 - Preview and Apply validate the same effective revision payload with `ProposalOperationContractValidator` and use the same field parsers. Invalid/conflicting dates, malformed labels, or scope redirects cannot produce an approval preview.
 - `ProposalOperationInputValidator` intentionally validates token/JSON shape, size, and depth only. Do not turn it into a verb allowlist; planner, chat, capture, and MCP callers share this extensible boundary.
+- `ProposalDto.Operations` is emitted in ascending `Sequence` on every wire path (`MapToDto` and the revision-materialized `BuildEffectiveProposalDto`), and `Presentation.OperationHeadlines` is built from that same ordered list, so index pairing between the two arrays is part of the contract; ties keep source order (stable sort). Consumers that need the order still sort by `sequence` themselves rather than trusting array order from an older backend (PR `#2609`, `#2563`).
 
 Edit seams:
 

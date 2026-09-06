@@ -1095,6 +1095,7 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
             Guid userId,
             Guid? boardId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
         {
             return Task.FromResult(Result.Failure<CaptureTriageProposalResultDto>(
@@ -1108,7 +1109,8 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
             Guid? boardId,
             Guid transcriptId,
             CapturePayloadV1 payload,
+            CaptureTriageAnchor? anchor = null,
             CancellationToken cancellationToken = default)
-            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, cancellationToken);
+            => CreateProposalFromCaptureAsync(captureItemId, userId, boardId, payload, anchor, cancellationToken);
     }
 }

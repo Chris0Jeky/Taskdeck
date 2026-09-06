@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Services;
 using Xunit;
 
@@ -6,6 +8,61 @@ namespace Taskdeck.Application.Tests.Services;
 
 public class LlmIntentClassifierTests
 {
+    [Fact]
+    public void Classify_RegexTimeout_LogsOneStableRedactedWarningAndPreservesClassification()
+    {
+        const string sensitiveInput = "create card for INTERNAL-REGEX-CANARY";
+        var logger = new RecordingLogger();
+        var timeoutCount = 0;
+
+        var result = LlmIntentClassifier.ClassifyForTests(
+            sensitiveInput,
+            logger,
+            (pattern, input) =>
+            {
+                if (timeoutCount++ < 2)
+                {
+                    throw new RegexMatchTimeoutException(
+                        input,
+                        pattern.ToString(),
+                        TimeSpan.FromSeconds(1));
+                }
+
+                return pattern.IsMatch(input);
+            });
+
+        result.IsActionable.Should().BeTrue();
+        result.ActionIntent.Should().Be("card.create");
+        logger.Entries.Should().ContainSingle();
+        logger.Entries[0].Level.Should().Be(LogLevel.Warning);
+        logger.Entries[0].Message.Should().Contain("negative-context");
+        logger.Entries[0].Message.Should().NotContain(sensitiveInput);
+        logger.Entries[0].Message.Should().NotContain("INTERNAL-REGEX-CANARY");
+        logger.Entries[0].Message.Should().NotContain("RegexMatchTimeoutException");
+    }
+
+    [Fact]
+    public void Classify_RegexTimeout_PreservesNonActionableFallback()
+    {
+        var logger = new RecordingLogger();
+        var timeoutCount = 0;
+
+        var result = LlmIntentClassifier.ClassifyForTests(
+            "ordinary status update",
+            logger,
+            (pattern, input) =>
+            {
+                if (timeoutCount++ < 2)
+                    throw new RegexMatchTimeoutException(input, pattern.ToString(), TimeSpan.FromSeconds(1));
+
+                return false;
+            });
+
+        result.IsActionable.Should().BeFalse();
+        result.ActionIntent.Should().BeNull();
+        logger.Entries.Should().ContainSingle();
+    }
+
     #region Card Creation — Exact Patterns (Backward Compatibility)
 
     [Theory]
@@ -463,4 +520,23 @@ public class LlmIntentClassifierTests
     }
 
     #endregion
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            Entries.Add((logLevel, formatter(state, exception)));
+        }
+    }
 }

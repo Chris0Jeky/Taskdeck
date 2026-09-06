@@ -10,10 +10,17 @@ namespace Taskdeck.Application.Services;
 /// </summary>
 public interface ILlmCaptureTriageExtractor
 {
+    /// <summary>
+    /// Extracts tasks from <paramref name="payload"/>, resolving every partial date against
+    /// <paramref name="anchor"/> — the CAPTURE's own calendar day, not the day this run executes
+    /// (#2193). Passing null falls back to <see cref="CaptureTriageAnchor.ForImmediateTriage"/>,
+    /// which is correct only for a caller triaging at capture time.
+    /// </summary>
     Task<LlmCaptureTriageExtraction> ExtractAsync(
         Guid userId,
         Guid? boardId,
         CapturePayloadV1 payload,
+        CaptureTriageAnchor? anchor = null,
         CancellationToken cancellationToken = default);
 }
 

@@ -904,11 +904,21 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
     }
 
     // ────────────────────────────────────────────────────────────
-    // Performance-relevant: many notifications
+    // Paging behaviour: many notifications
     // ────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Paging correctness over a larger seeded set: a page is bounded to the requested limit,
+    /// consecutive pages do not overlap, and an offset past the end returns nothing.
+    /// The SQL-shape regression for #1133 (paging pushed into SQL as ORDER BY + LIMIT/OFFSET
+    /// rather than materialized and sliced in memory) is owned by
+    /// <c>NotificationRepositoryIntegrationTests.GetByUserIdAsync_WithPaging_PushesLimitAndOffsetIntoSql</c>,
+    /// which captures the SQL that actually reaches SQLite. This test carries no wall-clock bound
+    /// on purpose: a timing assertion reds on slow CI runners while proving nothing about query
+    /// shape (#2489).
+    /// </summary>
     [Fact]
-    public async Task GetNotifications_WithManyNotifications_DoesNotTimeout()
+    public async Task GetNotifications_WithManyNotifications_PagesInBoundedSlices()
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
@@ -932,14 +942,25 @@ public class NotificationDeliveryIntegrationTests : IClassFixture<TestWebApplica
         db.Notifications.AddRange(notifications);
         await db.SaveChangesAsync();
 
-        var start = DateTimeOffset.UtcNow;
-        var results = (await repo.GetByUserIdAsync(user.Id, limit: 20, offset: 0)).ToList();
-        var elapsed = DateTimeOffset.UtcNow - start;
+        var firstPage = (await repo.GetByUserIdAsync(user.Id, limit: 20, offset: 0)).ToList();
 
-        results.Count.Should().Be(20);
-        elapsed.TotalSeconds.Should().BeLessThan(2, "pagination query on 200 rows should complete within 2 seconds");
+        // Bounded to the requested limit, not to the 200 seeded rows.
+        firstPage.Count.Should().Be(20);
+        firstPage.Select(n => n.Id).Should().OnlyHaveUniqueItems();
 
-        // Verify offset beyond total returns empty
+        // Newest first. Only CreatedAt is asserted here: the repository breaks CreatedAt ties by
+        // Id in SQL, and SQLite orders the TEXT-stored Guid differently from Guid.CompareTo, so an
+        // in-memory re-sort could disagree with a correct page whenever two seeded rows share a
+        // CreatedAt tick. Tie ordering is owned by NotificationRepositoryIntegrationTests
+        // .GetByUserIdAsync_WithTiedCreatedAt_PagesDeterministicallyWithoutGapsOrDuplicates.
+        firstPage.Select(n => n.CreatedAt).Should().BeInDescendingOrder();
+
+        // The next page continues where the first stopped: no overlap between pages.
+        var secondPage = (await repo.GetByUserIdAsync(user.Id, limit: 20, offset: 20)).ToList();
+        secondPage.Count.Should().Be(20);
+        secondPage.Select(n => n.Id).Should().NotIntersectWith(firstPage.Select(n => n.Id));
+
+        // An offset past the total returns nothing.
         var emptyPage = (await repo.GetByUserIdAsync(user.Id, limit: 20, offset: 200)).ToList();
         emptyPage.Should().BeEmpty();
     }

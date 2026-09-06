@@ -430,11 +430,13 @@ public class AutomationProposalService : IAutomationProposalService
         // revision" — exactly the null the single-proposal read produces — so the builder maps the
         // proposal's original operations for those items.
         var effectiveRevisions = await GetEffectiveRevisionsAsync(page, cancellationToken);
+        var decidedByUserNames = await ResolveDecidedByUserNamesAsync(page, cancellationToken);
 
         var dtos = page
             .Select(proposal => BuildEffectiveProposalDto(
                 proposal,
-                effectiveRevisions.TryGetValue(proposal.Id, out var revision) ? revision : null))
+                effectiveRevisions.TryGetValue(proposal.Id, out var revision) ? revision : null,
+                GetDecidedByUserName(proposal, decidedByUserNames)))
             .ToList();
 
         return Result.Success<IEnumerable<ProposalDto>>(dtos);
@@ -532,7 +534,11 @@ public class AutomationProposalService : IAutomationProposalService
             // Echo the effective (pinned) operations Apply will run, not the stale originals (#1424).
             // latestRevision IS the pinned revision (its id was stored as ApprovedRevisionId), so map
             // the DTO from it directly rather than re-reading it via GetEffectiveRevisionAsync.
-            return Result.Success(BuildEffectiveProposalDto(proposal, latestRevision));
+            var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+            return Result.Success(BuildEffectiveProposalDto(
+                proposal,
+                latestRevision,
+                GetDecidedByUserName(proposal, decidedByUserNames)));
         }
         catch (DomainException ex)
         {
@@ -732,6 +738,40 @@ public class AutomationProposalService : IAutomationProposalService
 
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             transactionStarted = true;
+
+            // The preflight write-bar check above runs OUTSIDE the commit boundary, so a grant
+            // revoked after it was invisible to the batch: the decision guard below advances each
+            // board row, which catches a concurrent board-row mutation but not a revoked grant.
+            // Re-validating the caller's write bar for each distinct board here NARROWS that window
+            // to the transaction's own read snapshot; it does not close it through commit. A grant
+            // revoked by another connection AFTER this read is still unseen by the decision guard,
+            // by Approve(), and by the save (on SQLite WAL the write upgrade would most likely fail
+            // closed with SQLITE_BUSY_SNAPSHOT; a read-committed provider would commit). That
+            // residual stays acceptable because approve writes nothing to the board and execute
+            // rechecks the caller's bar inside its own transaction, so the worst outcome is a
+            // proposal left Approved that execute then refuses. The recheck runs BEFORE the
+            // decision guard and before Approve(), so a failure rolls back a transaction in which
+            // nothing has been mutated, and it fails with the same 403 the preflight raises.
+            // Boardless proposals carry no board bar to recheck.
+            foreach (var recheckBoardId in proposals
+                .Where(proposal => proposal.BoardId.HasValue)
+                .Select(proposal => proposal.BoardId!.Value)
+                .Distinct())
+            {
+                var writeBarRecheck = await _policyEngine.ValidateBoardAccessAsync(
+                    decidedByUserId,
+                    recheckBoardId,
+                    BoardAccessBar.Write,
+                    cancellationToken);
+                if (!writeBarRecheck.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    transactionStarted = false;
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        writeBarRecheck.ErrorCode,
+                        writeBarRecheck.ErrorMessage);
+                }
+            }
 
             // One marker per distinct board makes an archive/update that wins after the preflight
             // collide with this same atomic save. Boardless proposals need no marker.
@@ -1076,7 +1116,11 @@ public class AutomationProposalService : IAutomationProposalService
         CancellationToken cancellationToken)
     {
         var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
-        return Result.Success(BuildEffectiveProposalDto(proposal, effectiveRevision));
+        var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+        return Result.Success(BuildEffectiveProposalDto(
+            proposal,
+            effectiveRevision,
+            GetDecidedByUserName(proposal, decidedByUserNames)));
     }
 
     /// <summary>
@@ -1103,9 +1147,10 @@ public class AutomationProposalService : IAutomationProposalService
     /// </summary>
     private static ProposalDto BuildEffectiveProposalDto(
         AutomationProposal proposal,
-        ProposalRevision? effectiveRevision)
+        ProposalRevision? effectiveRevision,
+        string? decidedByUserName = null)
     {
-        var dto = MapToDto(proposal) with
+        var dto = MapToDto(proposal, decidedByUserName) with
         {
             LatestRevisionId = proposal.Status == ProposalStatus.PendingReview
                 ? effectiveRevision?.Id
@@ -1127,14 +1172,25 @@ public class AutomationProposalService : IAutomationProposalService
             return dto;
         }
 
+        // Same ascending-Sequence contract MapToDto applies to the originals (#2563). A revision's
+        // operations are parsed in the payload's ARRAY order, which the reviewer's JSON editor can
+        // leave disagreeing with the operations' own `sequence` fields, so a revised proposal could
+        // otherwise carry an operation order its Sequence-ordered headlines do not match. Ordering
+        // the list once here keeps both the returned operations and the presentation built from
+        // them on the same order; it cannot change what Apply does, which re-parses the pinned
+        // revision itself and sorts by Sequence before dispatch.
+        var orderedRevisedOperations = revisedOperations
+            .OrderBy(operation => operation.Sequence)
+            .ToList();
+
         return dto with
         {
-            Operations = revisedOperations,
+            Operations = orderedRevisedOperations,
             Presentation = BuildPresentation(
                 proposal.Summary,
                 proposal.RiskLevel,
                 proposal.SourceType,
-                revisedOperations)
+                orderedRevisedOperations)
         };
     }
 
@@ -1216,7 +1272,8 @@ public class AutomationProposalService : IAutomationProposalService
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
 
-            return Result.Success(MapToDto(proposal));
+            var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+            return Result.Success(MapToDto(proposal, GetDecidedByUserName(proposal, decidedByUserNames)));
         }
         catch (DomainException ex)
         {
@@ -1243,7 +1300,8 @@ public class AutomationProposalService : IAutomationProposalService
             if (!notifyResult.IsSuccess)
                 return Result.Failure<ProposalDto>(notifyResult.ErrorCode, notifyResult.ErrorMessage);
 
-            return Result.Success(MapToDto(proposal));
+            var decidedByUserNames = await ResolveDecidedByUserNamesAsync(new[] { proposal }, cancellationToken);
+            return Result.Success(MapToDto(proposal, GetDecidedByUserName(proposal, decidedByUserNames)));
         }
         catch (DomainException ex)
         {
@@ -1603,9 +1661,50 @@ public class AutomationProposalService : IAutomationProposalService
         CancellationToken cancellationToken) =>
         _policyEngine.GuardProposalDecisionWritesAsync(new[] { boardId }, cancellationToken);
 
-    private static ProposalDto MapToDto(AutomationProposal proposal)
+    private async Task<IReadOnlyDictionary<Guid, string>> ResolveDecidedByUserNamesAsync(
+        IEnumerable<AutomationProposal> proposals,
+        CancellationToken cancellationToken)
     {
-        var operationDtos = proposal.Operations.Select(MapOperationToDto).ToList();
+        var ids = proposals
+            .Select(proposal => proposal.DecidedByUserId)
+            .Where(id => id.HasValue && id.Value != Guid.Empty)
+            .Select(id => id!.Value)
+            .Distinct()
+            .ToList();
+
+        if (ids.Count == 0 || _unitOfWork.Users is null)
+            return new Dictionary<Guid, string>();
+
+        // Actor names are response enrichment. A missing user (for example, a legacy row whose
+        // actor was removed) stays explicitly unavailable rather than leaking the opaque id.
+        var names = await _unitOfWork.Users.GetUsernamesByIdsAsync(ids, cancellationToken);
+        return names ?? new Dictionary<Guid, string>();
+    }
+
+    private static string? GetDecidedByUserName(
+        AutomationProposal proposal,
+        IReadOnlyDictionary<Guid, string> names)
+    {
+        return proposal.DecidedByUserId is Guid id && names.TryGetValue(id, out var name)
+            ? name
+            : null;
+    }
+
+    private static ProposalDto MapToDto(AutomationProposal proposal, string? decidedByUserName = null)
+    {
+        // Ascending Sequence is the DTO's ORDER CONTRACT, not a convenience (#2563). The persisted
+        // collection arrives through an EF `Include` that carries no ORDER BY, and the create path
+        // maps the in-memory collection in AddOperation order, so without this the array order was
+        // whatever the caller or the query plan produced — while `BuildPresentation` below always
+        // builds `OperationHeadlines` in Sequence order. A consumer pairing the two arrays by index
+        // then rendered headline n against a different operation. Ordering here gives every
+        // consumer one contract, and matches what the diff, the executor and the contract validator
+        // already sort by. `OrderBy` is a stable sort, so operations sharing a Sequence keep their
+        // relative source order rather than being shuffled.
+        var operationDtos = proposal.Operations
+            .OrderBy(operation => operation.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
 
         return new ProposalDto(
             proposal.Id,
@@ -1635,6 +1734,7 @@ public class AutomationProposalService : IAutomationProposalService
             Presentation = BuildPresentation(proposal.Summary, proposal.RiskLevel, proposal.SourceType, operationDtos),
             IsExpired = proposal.IsExpired,
             DeferredUntil = proposal.DeferredUntil,
+            DecidedByUserName = decidedByUserName,
             ApprovedRevisionId = proposal.ApprovedRevisionId
         };
     }

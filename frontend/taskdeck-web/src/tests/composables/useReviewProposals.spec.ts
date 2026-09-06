@@ -109,7 +109,11 @@ function localIsStaleProposal(status: string, createdAtMs: number, nowMs: number
 }
 
 function watcherForCurrentSourceValue(expected: unknown) {
-  const watcher = watchers.find(([source]) => typeof source === 'function' && (source as () => unknown)() === expected)
+  const watcher = watchers.find(([source]) => {
+    if (typeof source !== 'function') return false
+    const current = (source as () => unknown)()
+    return Array.isArray(current) ? current[0] === expected : current === expected
+  })
   expect(watcher).toBeDefined()
   return watcher!
 }
@@ -697,6 +701,95 @@ describe('useReviewProposals', () => {
       expect(rp.proposalsLoading.value).toBe(false)
     })
 
+    // #2460 -- a caller that owns a deadline needs its own cancellation told
+    // apart from a server failure, or a timeout would be blamed on the backend.
+    it('reports a caller-aborted explicit load as aborted rather than failed', async () => {
+      const controller = new AbortController()
+      let rejectRead!: (error: Error) => void
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectRead = reject
+        }),
+      )
+      const rp = useReviewProposals()
+
+      const load = rp.loadProposalsWithOutcome({ signal: controller.signal })
+      controller.abort()
+      rejectRead(new Error('canceled'))
+
+      await expect(load).resolves.toBe('aborted')
+      expect(mockToast.error).not.toHaveBeenCalled()
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 200 }),
+        expect.objectContaining({ signal: controller.signal }),
+      )
+    })
+
+    // A deadline-bounded caller must not spend its budget in the shared retry
+    // interceptor's doubling backoff and then be reported as a timeout.
+    it('forwards a caller opt-out of the shared retry interceptor', async () => {
+      const controller = new AbortController()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      const rp = useReviewProposals()
+
+      await expect(
+        rp.loadProposalsWithOutcome({ signal: controller.signal, skipRetry: true }),
+      ).resolves.toBe('landed')
+      expect(mockAutomationApi.getProposals).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 200 }),
+        expect.objectContaining({ signal: controller.signal, skipRetry: true }),
+      )
+    })
+
+    it('does not issue an explicit load whose caller has already given up', async () => {
+      const controller = new AbortController()
+      controller.abort()
+      const rp = useReviewProposals()
+
+      await expect(
+        rp.loadProposalsWithOutcome({ signal: controller.signal }),
+      ).resolves.toBe('aborted')
+      expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+      expect(mockToast.error).not.toHaveBeenCalled()
+    })
+
+    it('reports an aborted deep-link leg as aborted and raises no lookup error', async () => {
+      mockRoute.hash = '#proposal-p-remote'
+      const controller = new AbortController()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      let rejectLookup!: (error: Error) => void
+      mockAutomationApi.getProposal.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectLookup = reject
+        }),
+      )
+      const rp = useReviewProposals()
+
+      const load = rp.loadProposalsWithOutcome({
+        signal: controller.signal,
+        skipRetry: true,
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+      controller.abort()
+      rejectLookup(new Error('canceled'))
+
+      await expect(load).resolves.toBe('aborted')
+      expect(mockToast.error).not.toHaveBeenCalled()
+      // The deep-link leg is part of the same explicit read, so it carries the
+      // same cancellation and retry contract rather than running unbounded.
+      expect(mockAutomationApi.getProposal).toHaveBeenCalledWith(
+        'p-remote',
+        expect.objectContaining({ signal: controller.signal, skipRetry: true }),
+      )
+      // It must NOT carry the background poll's `expectedStatuses` (#2214 item
+      // 7). This read was asked for, so its failures stay loggable; only the
+      // poll's pin leg turns those statuses into a handled outcome.
+      expect(mockAutomationApi.getProposal.mock.calls.at(-1)?.[1]).not.toHaveProperty(
+        'expectedStatuses',
+      )
+    })
+
     it('does not report landed until its deep-link lookup completes', async () => {
       mockRoute.hash = '#proposal-p-remote'
       mockAutomationApi.getProposals.mockResolvedValueOnce([])
@@ -851,6 +944,390 @@ describe('useReviewProposals', () => {
       const rp = useReviewProposals()
       await rp.loadProposals()
       expect(mockToast.error).toHaveBeenCalled()
+    })
+
+    /**
+     * The explicit path used to answer one fact two ways depending on which
+     * leg observed it. A 400 or a 403 on the reviewer's own deep-link read
+     * raised a generic "Failed to load proposal" toast and left no state, so
+     * the surface showed the ordinary empty queue; the very next background
+     * tick turned the same 400 or 403 into the pin-unavailable panel. The
+     * toast said nothing true about which of the two happened, and it was gone
+     * a few seconds later while the panel it contradicted stayed.
+     *
+     * The explicit path now uses exactly the three predicates the background
+     * pin leg uses, and reports one outcome per status CLASS. 404 already
+     * behaved this way; 400 and 403 join it. Everything else — 405, 410, 5xx,
+     * no response — stays a toast, because those are not facts about the
+     * target and a later tick can still resolve the pin.
+     */
+    describe('explicit-path outcome per status class (#2214)', () => {
+      async function openHash(hash: string, failure: unknown) {
+        mockRoute.hash = hash
+        mockAutomationApi.getProposals.mockResolvedValueOnce([])
+        mockAutomationApi.getProposal.mockRejectedValueOnce(failure)
+        const rp = useReviewProposals()
+        await rp.loadProposals()
+        return rp
+      }
+
+      it('turns a 400 into the malformed-link state without a toast', async () => {
+        const rp = await openHash('#proposal-not-a-guid', { response: { status: 400 } })
+        expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+        expect(rp.unavailableProposalMalformed.value).toBe(true)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it('turns a 403 into the unavailable-pin state without a toast', async () => {
+        const rp = await openHash('#proposal-p-forbidden', { response: { status: 403 } })
+        // The by-id 403 is authority over ONE target. The queue-level 403 and
+        // its `queueAccessRevoked` teardown are a different leg and untouched.
+        expect(rp.unavailableProposalId.value).toBe('p-forbidden')
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(rp.queueAccessRevoked.value).toBe(false)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it('keeps the 404 outcome it already had', async () => {
+        const rp = await openHash('#proposal-p-gone', { response: { status: 404 } })
+        expect(rp.unavailableProposalId.value).toBe('p-gone')
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(mockToast.error).not.toHaveBeenCalled()
+      })
+
+      it.each([
+        ['405', { response: { status: 405 } }],
+        ['410', { response: { status: 410 } }],
+        ['500', { response: { status: 500 } }],
+        ['no response', new Error('network down')],
+      ])('keeps the toast and pins nothing for %s', async (_label, failure) => {
+        const rp = await openHash('#proposal-p-transient', failure)
+        // Nothing here is a settled fact about the target: 405 and 410 are the
+        // route misbehaving rather than the id being refused (#2658 draws the
+        // same line on the pin leg), and 5xx or no response may resolve next
+        // tick. Claiming the pin is unavailable would be a false negative.
+        expect(rp.unavailableProposalId.value).toBeNull()
+        expect(rp.unavailableProposalMalformed.value).toBe(false)
+        expect(mockToast.error).toHaveBeenCalled()
+      })
+
+      // Review finding, round 2 (LOW): asserting both flags after ONE explicit
+      // failure could not fail, since both runs need three. This drives the
+      // threshold count, and drives it through the ROUTE-HASH watcher, which
+      // reaches `openProposalFromHash` without a list read -- otherwise each
+      // `loadProposals` success would reset the runs and mask a leak anyway.
+      it.each([
+        ['transient', 500],
+        ['refusal', 404],
+      ])('never feeds the background %s run from the explicit path', async (_class, status) => {
+        mockRoute.hash = '#proposal-p-flaky'
+        mockAutomationApi.getProposals.mockResolvedValueOnce([])
+        mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
+        const rp = useReviewProposals()
+        await rp.loadProposals()
+
+        const openHashAgain = watcherForCurrentSourceValue('#proposal-p-flaky')[1]
+        for (let attempt = 1; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+          mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
+          await openHashAgain()
+        }
+
+        // A deep link the reviewer followed says nothing about whether the
+        // QUEUE poll is healthy, so neither run may advance on it.
+        expect(rp.queueRefreshStale.value).toBe(false)
+        expect(rp.queueRefreshRefused.value).toBe(false)
+        expect(rp.queueAccessRevoked.value).toBe(false)
+      })
+    })
+  })
+
+  describe('explicit list read refused with 403 (#2214, round 2)', () => {
+    /**
+     * Review finding, round 2. Only the POLL's outer catch handled a 403 on the
+     * list read. On a cold entry to a board whose access had been revoked, the
+     * explicit load 403'd into the generic failure toast, and then
+     * `openProposalFromHash` 403'd on the by-id read and -- since this slice
+     * made that a pin-level outcome -- rendered "no longer available to review;
+     * it may have been applied, archived, or removed" about a proposal that was
+     * neither applied nor archived nor removed. The board was simply not this
+     * reviewer's any more. It stood until the next tick set the authority state.
+     */
+    it('sets the same authority state the poll would, and never marks the pin', async () => {
+      mockRoute.query = { boardId: 'board-revoked' }
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.proposals.value).toEqual([])
+      // The whole board is refused, so re-authorising one row inside it can
+      // only produce a second, wrong explanation of the same fact.
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
+    })
+
+    it('leaves an explicit non-403 list failure on the ordinary path', async () => {
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-pinned' }))
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      // A 5xx is not an authority answer: it must not tear the queue down, and
+      // the hash lookup still runs.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(mockAutomationApi.getProposal).toHaveBeenCalled()
+      expect(mockToast.error).toHaveBeenCalled()
+    })
+
+    it('keeps the pin-leg 403 as the single-proposal outcome #2593 shipped', async () => {
+      // A readable board with one proposal this reviewer may not open is the
+      // opposite case, and it must stay the unavailable pin rather than tearing
+      // down a queue the server just served.
+      mockRoute.hash = '#proposal-p-forbidden'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.unavailableProposalId.value).toBe('p-forbidden')
+    })
+
+    it('reports the revocation once, without the generic load-failure toast', async () => {
+      // Two reports for one fact -- the shape #2694 removed on the pin leg and
+      // left standing here. `recordQueueAccessRevoked` raises a DURABLE panel
+      // that is the first branch of both skins' empty chains and names both the
+      // fact and the remedy; the generic "Failed to load proposals" toast beside
+      // it names neither and is gone seconds later, contradicted by a panel that
+      // stays.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+
+      // The OUTCOME contract is untouched: every action composable that calls
+      // `loadProposals` still gets its failure signal.
+      await expect(rp.loadProposalsWithOutcome()).resolves.toBe('failed')
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
+    })
+
+    it('does not let a later hash change mark a pin unavailable under the revoked panel', async () => {
+      // The route-hash watcher had no `queueAccessRevoked` guard, while the
+      // explicit load's own `openProposalFromHash` call site has had one since
+      // #2694. So a `#proposal-` link followed while the revoked panel is up --
+      // a stale rail row, a bookmark, the back button -- still asked the by-id
+      // route about a target inside a board the server had refused wholesale,
+      // and wrote its refusal into `unavailableProposalId` as a second,
+      // narrower and wrong account of the same fact.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(true)
+
+      mockRoute.hash = '#proposal-p-inside-revoked'
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+      await watcherForCurrentSourceValue('#proposal-p-inside-revoked')[1]()
+
+      expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+    })
+  })
+
+  // #2214 item 4. Both skins derived the queue live region's sentence from the
+  // pending COUNT alone, so a poll that removed one pending proposal and added
+  // another rendered a byte-identical "3 proposals awaiting review.": no DOM
+  // mutation, nothing announced, the queue moved under the reviewer in silence.
+  // The ordered awaiting ids are the identity the announcement is keyed on.
+  describe('queue announcement identity (#2214 item 4)', () => {
+    it('changes on a count-neutral replacement and not on a byte-identical queue', () => {
+      const rp = useReviewProposals()
+      rp.proposals.value = [
+        makeProposal({ id: 'p-a', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-b', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.awaitingProposalIds.value).toEqual(['p-a', 'p-b'])
+      const identity = rp.queueAnnouncementKey.value
+
+      // A poll answering with the same queue in a new array is not news.
+      rp.proposals.value = [
+        makeProposal({ id: 'p-a', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-b', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.queueAnnouncementKey.value).toBe(identity)
+
+      // One pending proposal decided elsewhere, one created in its place: the
+      // count is unchanged, so the SENTENCE is byte-identical and only the
+      // identity can carry the change.
+      rp.proposals.value = [
+        makeProposal({ id: 'p-a', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-c', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.awaitingProposalIds.value.length).toBe(2)
+      expect(rp.queueAnnouncementKey.value).not.toBe(identity)
+
+      // Order is part of the identity: the rail renders the queue in order, so
+      // a reordered queue is a queue that moved.
+      const swapped = rp.queueAnnouncementKey.value
+      rp.proposals.value = [
+        makeProposal({ id: 'p-c', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({ id: 'p-a', createdAt: '2026-01-01T00:00:00Z' }),
+      ] as any
+      expect(rp.queueAnnouncementKey.value).not.toBe(swapped)
+    })
+
+    it('tracks exactly the proposals the awaiting count is made of', () => {
+      // The count and its identity must come from ONE predicate or they drift
+      // (#1124 / ADR-0038): announcing on a change the number cannot show would
+      // speak the same sentence for no visible reason.
+      const rp = useReviewProposals()
+      rp.showCompleted.value = true
+      rp.proposals.value = [
+        makeProposal({ id: 'p-pending', createdAt: '2026-01-03T00:00:00Z' }),
+        makeProposal({ id: 'p-applied', status: 'Applied', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({
+          id: 'p-expired',
+          createdAt: '2026-01-01T00:00:00Z',
+          expiresAt: '2026-01-01T00:00:01Z',
+        }),
+      ] as any
+      rp.nowMs.value = new Date('2026-02-01T00:00:00Z').getTime()
+
+      expect(rp.awaitingProposalIds.value).toEqual(['p-pending'])
+      const identity = rp.queueAnnouncementKey.value
+
+      // A settled row changing does not move the awaiting queue.
+      rp.proposals.value = [
+        makeProposal({ id: 'p-pending', createdAt: '2026-01-03T00:00:00Z' }),
+        makeProposal({ id: 'p-rejected', status: 'Rejected', createdAt: '2026-01-02T00:00:00Z' }),
+        makeProposal({
+          id: 'p-expired',
+          createdAt: '2026-01-01T00:00:00Z',
+          expiresAt: '2026-01-01T00:00:01Z',
+        }),
+      ] as any
+      expect(rp.queueAnnouncementKey.value).toBe(identity)
+    })
+  })
+
+  // #2599 item 1. Both skins gated the announcement on "no read is in flight",
+  // so every EXPLICIT reload unmounted the sentence and remounted it: the live
+  // region wrote count -> '' -> count and the restore was spoken even when the
+  // queue had not moved (the header Refresh, and filing away a settled proposal
+  // that leaves the pending-review set identical, both reach it). The gate
+  // actually needs "a read has landed for the board scope on screen", which is
+  // what this signal is: a reload of the SAME scope keeps it settled, a scope
+  // change unsettles it until the new scope's read lands, and a failed read
+  // never settles it at all.
+  describe('queue scope load signal (#2599 item 1)', () => {
+    it('settles on the first landed read and stays settled across a same-scope reload', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      const rp = useReviewProposals()
+      // Nothing has been read yet, so the count is 0 for that reason rather
+      // than because nothing awaits review.
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-a', boardId: 'board-a' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // An explicit reload raises `proposalsLoading` WITHOUT clearing
+      // `proposals`, so the rendered count is still the last landed read's and
+      // still true of the board on screen.
+      let releaseReload!: (value: unknown[]) => void
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          releaseReload = resolve as (value: unknown[]) => void
+        }),
+      )
+      const reload = rp.loadProposals()
+      expect(rp.proposalsLoading.value).toBe(true)
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      releaseReload([makeProposal({ id: 'p-a', boardId: 'board-a' })])
+      await reload
+      expect(rp.proposalsLoading.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('unsettles the moment the board scope changes and settles again when that scope lands', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-a', boardId: 'board-a' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // The rendered queue is still board-a's, so under board-b it counts
+      // nothing that is on screen -- the one case where withholding is right.
+      mockRoute.query = { boardId: 'board-b' }
+      expect(rp.queueScopeLoaded.value).toBe(false)
+      // The composable's own scope watcher is what issues the reload below.
+      expect(watcherForCurrentSourceValue('board-b')).toBeDefined()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-b', boardId: 'board-b' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // Case is the query string's, not the scope's: the same board asked for
+      // twice is one scope, and `matchesActiveBoardFilter` compares it the same
+      // way.
+      mockRoute.query = { boardId: 'BOARD-B' }
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('stays unsettled after a failed entry load and settles on the next successful read', async () => {
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('network down'))
+      await rp.loadProposals()
+
+      // The read is over, so the loading term is false -- and a gate built on
+      // it would announce "0 proposals awaiting review." for a queue nobody has
+      // read.
+      expect(rp.proposalsLoading.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('settles from a background poll, so a failed entry load recovers without an explicit reload', async () => {
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockRejectedValueOnce(new Error('network down'))
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.refreshProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('unsettles when a refusal clears the queue and settles again when access returns', async () => {
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      // `recordQueueAccessRevoked` empties the queue: what is rendered is no
+      // longer any read's answer.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-a' })])
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(true)
     })
   })
 
@@ -1037,6 +1514,86 @@ describe('useReviewProposals', () => {
       await watcherForCurrentSourceValue('board-filter-probe')[1]()
       expect(mockAutomationApi.getProposals).toHaveBeenCalled()
     })
+
+    it('history-mode watcher reloads the same board as a new read identity', async () => {
+      mockRoute.query = { boardId: 'board-history' }
+      const rp = useReviewProposals()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'live', boardId: 'board-history' }),
+      ])
+      await rp.loadProposals()
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      mockRoute.query = { boardId: 'board-history', history: 'archived' }
+      expect(rp.isArchivedHistory.value).toBe(true)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+
+      const watcher = watchers.find(([source]) => {
+        if (typeof source !== 'function') return false
+        const value = (source as () => unknown)()
+        return Array.isArray(value) && value[0] === 'board-history' && value[1] === true
+      })
+      expect(watcher).toBeDefined()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'archived', boardId: 'board-history', status: 'Applied' }),
+      ])
+      await watcher![1]()
+
+      expect(mockAutomationApi.getProposals).toHaveBeenLastCalledWith({
+        limit: 200,
+        boardId: 'board-history',
+      })
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['archived'])
+      expect(rp.queueScopeLoaded.value).toBe(true)
+
+      mockRoute.query = { boardId: 'board-history' }
+      expect(rp.isArchivedHistory.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+      const reverseWatcher = watchers.find(([source]) => {
+        if (typeof source !== 'function') return false
+        const value = (source as () => unknown)()
+        return Array.isArray(value) && value[0] === 'board-history' && value[1] === false
+      })
+      expect(reverseWatcher).toBeDefined()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'live-again', boardId: 'board-history' }),
+      ])
+      await reverseWatcher![1]()
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['live-again'])
+      expect(rp.queueScopeLoaded.value).toBe(true)
+    })
+
+    it('discards a late live response after a same-board history transition', async () => {
+      mockRoute.query = { boardId: 'board-history' }
+      let resolveLive!: (proposals: ReturnType<typeof makeProposal>[]) => void
+      mockAutomationApi.getProposals.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveLive = resolve
+        }),
+      )
+      const rp = useReviewProposals()
+      const liveLoad = rp.loadProposalsWithOutcome()
+
+      mockRoute.query = { boardId: 'board-history', history: 'archived' }
+      const historyWatcher = watchers.find(([source]) => {
+        if (typeof source !== 'function') return false
+        const value = (source as () => unknown)()
+        return Array.isArray(value) && value[0] === 'board-history' && value[1] === true
+      })
+      expect(historyWatcher).toBeDefined()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'archived', boardId: 'board-history', status: 'Applied' }),
+      ])
+
+      await historyWatcher![1]()
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['archived'])
+
+      resolveLive([makeProposal({ id: 'late-live', boardId: 'board-history' })])
+      await expect(liveLoad).resolves.toBe('superseded')
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['archived'])
+    })
   })
 
   // #2194 - with Review open, a proposal created server-side never appeared:
@@ -1156,16 +1713,25 @@ describe('useReviewProposals', () => {
         summary: 'current summary',
         latestRevisionId: 'revision-2',
       }))
+      // Exact options, so a silently dropped one is caught here. The
+      // `expectedStatuses` entry is what keeps a refused or unbindable pin --
+      // an outcome this leg handles explicitly -- from being logged as an API
+      // error on every tick (#2214 item 7).
       expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-open', {
         skipRetry: true,
         signal: expect.any(AbortSignal),
+        expectedStatuses: [400, 403, 404],
       })
       expect(onQueueReplaced).toHaveBeenCalledTimes(1)
       expect(rp.unavailableProposalId.value).toBeNull()
       rp.stopQueueRefresh()
     })
 
-    it.each([403, 404])(
+    // 400 shares this outcome exactly (#2214 item 8): the id in the hash is not
+    // one the by-id route can bind, which is as permanent a fact about that
+    // target as a refusal or a deletion. Running it through the same case keeps
+    // the three statuses provably identical, recovery half included.
+    it.each([400, 403, 404])(
       'drops and marks only an omitted deep-link unavailable when its by-id read returns %s',
       async (status) => {
         vi.useFakeTimers()
@@ -1208,6 +1774,71 @@ describe('useReviewProposals', () => {
         rp.stopQueueRefresh()
       },
     )
+
+    // #2214 item 8: a malformed `#proposal-<id>` (anything that is not a GUID)
+    // makes the by-id route answer with a model-binding 400. That 400 used to
+    // fall through to the transient-failure branch, which RETURNS before
+    // `proposals.value = next` -- so the list answer that had already arrived
+    // was discarded, and because a 400 is not transient the failure counter
+    // reset instead of climbing to the degraded threshold. The queue froze with
+    // no indication, on every tick, for as long as the bad link stayed in the
+    // URL. The list read succeeded, so its answer is the queue; only the pin is
+    // unusable, which is exactly the 403/404 outcome.
+    it('lands the readable queue and marks only the pin unavailable when a malformed deep-link target answers 400', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([
+        makeProposal({ id: 'p-existing', createdAt: '2026-01-02T00:00:00Z' }),
+      ])
+      mockAutomationApi.getProposal.mockRejectedValue({ response: { status: 400 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      // The explicit deep-link path reaches the SAME conclusion from the same
+      // 400, and does so first. It used to raise a generic toast and set no
+      // state, which was the asymmetry #2658 recorded and this slice removed:
+      // one fact, one outcome, whichever leg observed it.
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
+      mockToast.error.mockClear()
+
+      const queueBeforePoll = rp.proposals.value
+      mockAutomationApi.getProposals.mockResolvedValue([
+        makeProposal({ id: 'p-server-new', createdAt: '2026-01-03T00:00:00Z' }),
+      ])
+      const onQueueReplaced = vi.fn()
+      rp.startQueueRefresh(undefined, { onQueueReplaced })
+      await rp.refreshProposals()
+
+      expect(rp.proposals.value).not.toBe(queueBeforePoll)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-server-new'])
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      // A proposal-level refusal is not whole-queue revocation, and the queue on
+      // screen is the freshly read one, so nothing is degraded.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      // The explicit unavailable state owns this transition; the settled-row
+      // notice would otherwise win the render branch and hide it.
+      expect(onQueueReplaced).not.toHaveBeenCalled()
+      expect(mockToast.error).not.toHaveBeenCalled()
+
+      // The consecutive-failure counter is private. The only thing it drives is
+      // the degraded warning at THRESHOLD consecutive transient failures, so
+      // polling that many more times with the same 400 pin proves it is not
+      // being incremented.
+      const pinReadsAfterFirstPoll = mockAutomationApi.getProposal.mock.calls.length
+      for (let i = 0; i < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; i += 1) {
+        await rp.refreshProposals()
+      }
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-server-new'])
+      // Matching the shipped 403/404 behaviour: nothing suppresses the pin read
+      // while the target stays outside the list, so every later tick retries it.
+      expect(mockAutomationApi.getProposal.mock.calls.length).toBe(
+        pinReadsAfterFirstPoll + REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+      )
+      rp.stopQueueRefresh()
+    })
 
     it('rechecks an unavailable deep-link and restores it when it becomes readable outside the list page', async () => {
       vi.useFakeTimers()
@@ -1971,6 +2602,641 @@ describe('useReviewProposals', () => {
       disposers.forEach((dispose) => dispose())
       await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * 3)
       expect(mockAutomationApi.getProposals).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('degraded-queue recovery signal (#2214)', () => {
+    /**
+     * `queueRefreshStale` is the degraded STATE, and it is cleared silently: the
+     * warning is simply gone on the next render, so a reviewer who is not
+     * looking at that corner is never told the queue is trustworthy again. The
+     * recovery signal is the EVENT the surfaces announce, and it must fire only
+     * on a real degraded -> recovered transition. A signal that also fired on an
+     * ordinary success would announce "up to date again" every 15 seconds.
+     */
+    async function pollTransientFailures(count: number) {
+      for (let failure = 0; failure < count; failure += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+    }
+
+    it('fires when a successful poll clears a degraded queue', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      // Still degraded: there is nothing to announce yet.
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('stays silent when a successful poll follows a successful poll', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValue([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // Nothing was ever degraded, so nothing recovered. An ungated signal here
+      // would make both skins announce on every poll.
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('fires when an explicit load clears a degraded queue', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      // The explicit-load clear is the second way out of the degraded state and
+      // is just as invisible to a reviewer who is not watching the warning.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('stays silent when a non-transient failure resets the run with no visible stale state', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      // Two transient failures is below the threshold, so no warning was ever
+      // shown; the 400 then resets the run. The success that follows recovers
+      // nothing the reviewer was ever told about.
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD - 1)
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'quiet' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('retires the recovered sentence on the following success and does not re-fire', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // An announcement is an event. Left standing it becomes a claim about the
+      // present that nothing is re-checking, so the next healthy poll retires
+      // it -- about one poll interval of life, with no timer to tear down.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      // And it stays retired: clearing must not oscillate the live region.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('is not retired by an explicit load inside the poll interval (#2638 item 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The reviewer's already-clicked Approve completes a few hundred
+      // milliseconds after the recovering poll and reloads the queue. Every
+      // explicit reload took the same success path, so it emptied the region
+      // before a polite live region had any chance to speak the sentence --
+      // the #2638 defect. The load itself is unchanged: the fresh queue lands.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'after-decision' })])
+      await rp.loadProposals()
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['after-decision'])
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      expect(rp.queueRefreshRecoveredKind.value).toBe('degraded')
+
+      // Nor does a second one age it: explicit loads never retire, however many
+      // of them land inside the interval.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'and-again' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The next BACKGROUND success is what retires it, exactly as #2630
+      // intended -- about one poll interval of life.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'still-fine' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+      rp.stopQueueRefresh()
+    })
+
+    it('is not retired by an explicit load that follows a FAILED background tick (#2638 item 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // A later background read alone is not the rule: that read has to SUCCEED
+      // and be the one recording the success. This tick fails (below the
+      // threshold, so nothing is disclosed), and the explicit load that follows
+      // is still an explicit load.
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('gives an EXPLICIT-load recovery a full interval before a poll can retire it (#2638 round 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+
+      // The post-decision reload is the read that ends the degraded state here,
+      // and it lands BETWEEN ticks -- 14.9 s into a 15 s cycle in the worst
+      // case. Stamping that raise with the ordinal already on the counter names
+      // a read that has finished, so the tick 100 ms later would retire the
+      // sentence: the same defect this rule exists to close, with the roles
+      // swapped (round-2 review finding).
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      expect(rp.queueRefreshRecoveredKind.value).toBe('degraded')
+
+      // The next poll success is the one the sentence lives THROUGH.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'first-poll' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The one after retires it, so it is bounded exactly as a poll-raised
+      // sentence is -- at least one full interval, never the session.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'second-poll' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+      rp.stopQueueRefresh()
+    })
+
+    it('still retires an explicit-load recovery immediately at a degraded onset (#2638 round 2)', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'explicit' })])
+      await rp.loadProposals()
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // The extra interval of life is about the sentence being OLD. An onset
+      // makes it FALSE, and that retirement stays immediate for either stamp,
+      // or the next real recovery would be silent.
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('clears at the next degraded onset so a second recovery announces again', async () => {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'first' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+
+      // A live region only announces when its TEXT changes, so the signal has to
+      // fall back to false while the queue is degraded again or the second
+      // recovery would be silent.
+      await pollTransientFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+      expect(rp.queueRefreshStale.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'second' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+  })
+
+  describe('refused list-read disclosure (#2214 item 2)', () => {
+    /**
+     * The transient counter (`queueRefreshStale`) deliberately IGNORES a
+     * non-transient answer: a 400/404/405/410 on the LIST read resets its run
+     * and returns. That leaves the worst case of all completely silent — a
+     * `?boardId=not-a-guid` query 400s every single tick, the poll keeps
+     * running, the counter keeps resetting, no degraded state ever rises, and
+     * the surface shows an ordinary queue (or an ordinary empty state)
+     * indefinitely while the server has not confirmed a single one of those
+     * rows since the reviewer arrived.
+     *
+     * `queueRefreshRefused` is that second, separate threshold. Same threshold
+     * and same #2445 ruling as the transient one, but its own uninterrupted
+     * run, because the two facts are different: "the network keeps blipping"
+     * versus "the server is answering and refusing".
+     */
+    async function pollListFailures(count: number, failure: unknown) {
+      for (let attempt = 0; attempt < count; attempt += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce(failure)
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+    }
+
+    async function startedWithCurrentQueue() {
+      vi.useFakeTimers()
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'current' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      return rp
+    }
+
+    it('rises only at the threshold, keeps the last trustworthy queue, and keeps polling', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      for (let failure = 1; failure <= REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        await pollListFailures(1, { response: { status: 400 } })
+        expect(rp.queueRefreshRefused.value).toBe(
+          failure === REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD,
+        )
+      }
+      // The retained queue is exactly what the server last confirmed.
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['current'])
+      // And this is a disclosure, not a stop: the next tick still asks.
+      const callsBefore = mockAutomationApi.getProposals.mock.calls.length
+      await pollListFailures(1, { response: { status: 400 } })
+      expect(mockAutomationApi.getProposals.mock.calls.length).toBe(callsBefore + 1)
+      // The transient counter is a different fact and stays where it was.
+      expect(rp.queueRefreshStale.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('counts 404, 405 and 410 as refusals too', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(1, { response: { status: 404 } })
+      await pollListFailures(1, { response: { status: 405 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      await pollListFailures(1, { response: { status: 410 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not rise on two refusals plus a success', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(2, { response: { status: 400 } })
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'fresh' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+
+      await pollListFailures(2, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('lets an intervening transient failure reset the run without raising it', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(2, { response: { status: 400 } })
+      // A 500 is not a refusal. It breaks the uninterrupted run the disclosure
+      // claims, so the next two 400s cannot complete a three-long streak.
+      await pollListFailures(1, { response: { status: 500 } })
+      await pollListFailures(2, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(false)
+
+      await pollListFailures(1, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not let an intervening transient failure clear a risen disclosure', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      // Symmetric to the #2445 ruling on the transient side: an interruption
+      // resets the RUN, it does not prove the retained queue is current, so it
+      // cannot take a standing disclosure off the screen.
+      await pollListFailures(1, { response: { status: 500 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('clears on the next successful list read and announces the recovery', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['recovered'])
+      // Clearing the warning is silent on its own, exactly as it is for the
+      // transient state (#2630): the recovery sentence is the announcement.
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('announces the retraction with the refusal sentence, not the queue sentence (#2638 item 2)', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 400 } })
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The retraction is raised by the LIST leg, and the composite success
+      // that follows it in the same read must not swap the sentence for the
+      // queue one: this signal's job is to retract the refusal claim, and the
+      // surfaces say only that refreshes are being accepted again.
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      expect(rp.queueRefreshRecoveredKind.value).toBe('refused')
+      rp.stopQueueRefresh()
+    })
+
+    it('leaves the 403 authority path to its own owner', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 403 } })
+      // 403 is revoked access, not a refused refresh: it clears the queue, says
+      // so through `queueAccessRevoked`, and suspends the poll. Two owners for
+      // one fact would render two contradictory panels.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it('excludes 401, which belongs to the HTTP interceptor', async () => {
+      const rp = await startedWithCurrentQueue()
+
+      await pollListFailures(REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD, { response: { status: 401 } })
+      // A 401 is the session ending; `api/http.ts` clears it and redirects to
+      // login. Telling the reviewer to check the board filter on the way out
+      // would be false.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('retracts a risen refusal as soon as the LIST read succeeds, even when the pin leg fails', async () => {
+      // Review finding, round 2. `queueRefreshRefused` was cleared only by
+      // `recordQueueRefreshSuccess`, which needs the WHOLE composite read; a
+      // pin-leg failure returns before it. So once the API recovered but the
+      // by-id read for a hash-pinned row kept failing, the surface went on
+      // saying "the server is refusing the refresh rather than failing
+      // temporarily" every tick, which was no longer true, and because the
+      // refusal copy has precedence the honest degraded copy could never
+      // appear. It survived until an explicit load.
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 404 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(true)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+
+      // The list read answers again; only the pinned row's by-id read is down.
+      const pinLegDown = async () => {
+        mockAutomationApi.getProposals.mockResolvedValueOnce([])
+        mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      await pinLegDown()
+
+      // The claim is about the LIST read, and the list read demonstrably
+      // succeeded, so the claim is retracted on that evidence alone.
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      // And retracting it silently is the #2630 defect, so it announces once.
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      // The composite read still bailed, so the queue was NOT replaced and the
+      // transient state is untouched by the retraction.
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-pinned'])
+      expect(rp.queueRefreshStale.value).toBe(false)
+
+      // The transient counter keeps its #2445 composite semantics: this pin-leg
+      // 500 was its first, and two more take it to the threshold.
+      await pinLegDown()
+      expect(rp.queueRefreshStale.value).toBe(false)
+      await pinLegDown()
+      expect(rp.queueRefreshStale.value).toBe(true)
+      // The degraded onset retires the recovery sentence, as it always has.
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('says nothing about the queue when the pin leg strands the composite read (#2638 item 2)', async () => {
+      // The copy defect PR #2694's round-2 verification recorded on #2214. On a
+      // list-success/pin-fail tick the composite read returns before
+      // `proposals.value = next`, so the rows on screen are exactly the ones
+      // that were there before -- and the shared #2630 sentence's second clause
+      // ("Showing current proposals") stood for up to two further poll
+      // intervals, because the next tick's list success returns early too and
+      // only the degraded onset after it retires the sentence.
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 404 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(true)
+
+      // The list read answers again; only the pinned row's by-id read is down.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      expect(rp.queueRefreshRecovered.value).toBe(true)
+      // The kind is what the surfaces read to pick the sentence, and this is
+      // the tick that proves why the two cannot share one: the queue was NOT
+      // replaced.
+      expect(rp.queueRefreshRecoveredKind.value).toBe('refused')
+      expect(rp.proposals.value.map((p: any) => p.id)).toEqual(['p-pinned'])
+
+      // A LATER background success retires it, the same rule the queue sentence
+      // follows. This tick's list carries the pinned row, so there is no by-id
+      // leg and the composite read completes.
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.queueRefreshRecovered.value).toBe(false)
+      expect(rp.queueRefreshRecoveredKind.value).toBe(null)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not count a pin-leg failure, whose tick read the list successfully', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      // The list answer arrives every tick; only the by-id re-authorization
+      // read fails. The disclosure claims the LIST read is being refused, and
+      // it demonstrably is not.
+      for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+        mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'other' })])
+        mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 405 } })
+        await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      }
+      expect(rp.queueRefreshRefused.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+  })
+
+  describe('malformed vs unavailable pin (#2214)', () => {
+    /**
+     * `unavailableProposalId` collapses two different truths. "This proposal is
+     * no longer available to review; it may have been applied, archived, or
+     * removed" is right for a 403 or a 404 and wrong for a 400: an id the by-id
+     * route cannot bind never named a proposal at all, and no amount of waiting
+     * or retrying will make the link work. The reason rides alongside the id so
+     * both skins can say which one happened.
+     */
+    it('marks a pin the by-id route cannot bind as malformed', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'not-a-guid' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.unavailableProposalId.value).toBe('not-a-guid')
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      rp.stopQueueRefresh()
+    })
+
+    it.each([403, 404])('does not call a %s pin malformed', async (status) => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      // The link named a real proposal. Whether it is gone or forbidden, it is
+      // not a broken address, and telling the reviewer their link is malformed
+      // would send them to fix something that is correct.
+      expect(rp.unavailableProposalId.value).toBe('p-pinned')
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('does not call a wrong-identity or cross-scope answer malformed', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-p-pinned'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'p-pinned' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-different' }))
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+
+      expect(rp.unavailableProposalId.value).toBe('p-pinned')
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
+      rp.stopQueueRefresh()
+    })
+
+    it('retires the malformed reason with the pin it describes', async () => {
+      vi.useFakeTimers()
+      mockRoute.hash = '#proposal-not-a-guid'
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'not-a-guid' })])
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      rp.startQueueRefresh()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+      await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+      expect(rp.unavailableProposalMalformed.value).toBe(true)
+      rp.stopQueueRefresh()
+
+      // A reason that outlived its id would label the NEXT unavailable pin.
+      mockRoute.hash = ''
+      await watcherForCurrentSourceValue('')[1]()
+      expect(rp.unavailableProposalId.value).toBeNull()
+      expect(rp.unavailableProposalMalformed.value).toBe(false)
     })
   })
 })
