@@ -372,6 +372,14 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: var(--s-3, 12px);
+  flex-wrap: wrap;
+}
+
+.paper-archive__section-title { min-width: 0; }
+
+.paper-archive__toggle-hidden {
+  max-width: 100%;
+  white-space: normal;
 }
 
 .paper-archive__helper {
@@ -382,7 +390,9 @@ onMounted(() => {
 
 .paper-archive__toolbar {
   display: flex;
+  align-items: center;
   gap: var(--s-2, 8px);
+  flex-wrap: wrap;
   margin-bottom: var(--s-4, 16px);
 }
 
@@ -455,6 +465,8 @@ onMounted(() => {
 }
 
 .paper-archive__input {
+  flex: 1 1 12rem;
+  min-width: 0;
   padding: var(--s-2, 8px) var(--s-3, 12px);
   border: 1px solid var(--line, #d8d0bf);
   border-radius: var(--r-2, 4px);
@@ -470,10 +482,39 @@ onMounted(() => {
   box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
 
+.paper-archive__refresh {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.paper-archive :deep(.pbtn:focus-visible) {
+  outline: 2px solid var(--ember, #a8421f);
+  outline-offset: 2px;
+}
+
 /* Keep board and item recovery actions reachable on narrow screens. The
  * desktop row stays unchanged; phone rows stack their content, while the
  * four board actions wrap into two comfortable tap-target columns. */
 @media (max-width: 640px) {
+  .paper-archive__section-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .paper-archive__toggle-hidden {
+    width: 100%;
+  }
+
+  .paper-archive__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paper-archive__input,
+  .paper-archive__refresh {
+    width: 100%;
+  }
+
   .paper-archive__row {
     align-items: stretch;
     flex-direction: column;

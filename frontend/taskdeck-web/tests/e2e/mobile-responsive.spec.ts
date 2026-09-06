@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { registerAndAttachSession } from './support/authSession'
+import { API_BASE_URL, registerAndAttachSession } from './support/authSession'
 import { addCard, addColumn, createBoard } from './support/boardUiHelpers'
 
 /**
@@ -518,6 +518,130 @@ test('@mobile workspace views should render correctly on small screen', async ({
   // Body should not be wider than the viewport (no horizontal overflow forcing scroll)
   // Allow small tolerance for scrollbar
   expect(bodyBox!.width).toBeLessThanOrEqual(viewportSize!.width + 20)
+})
+
+test('@mobile archive controls stay inside the viewport with long localized labels', async ({ page, request }) => {
+  const auth = await registerAndAttachSession(page, request, 'archive-geometry', { theme: 'legacy' })
+  const boardResponse = await request.post(`${API_BASE_URL}/boards`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    data: { name: `Archivio con nome molto lungo ${Date.now()}`, description: 'Archive geometry fixture' },
+  })
+  expect(boardResponse.ok()).toBeTruthy()
+  const board = (await boardResponse.json()) as { id: string }
+
+  const archiveResponse = await request.put(`${API_BASE_URL}/boards/${board.id}`, {
+    headers: { Authorization: `Bearer ${auth.token}` },
+    data: { isArchived: true },
+  })
+  expect(archiveResponse.ok()).toBeTruthy()
+
+  await page.goto('/workspace/archive')
+  await expect(page.getByRole('heading', { name: 'Archive', exact: true })).toBeVisible()
+  await expect(page.locator('.paper-archive__row').first()).toBeVisible()
+
+  await page.locator('.paper-archive__toggle-hidden').evaluate((element) => {
+    element.textContent = 'Mostra tutte le schede archiviate e nascoste'
+  })
+  await page.locator('.paper-archive__refresh').evaluate((element) => {
+    element.textContent = 'Aggiorna inventario degli elementi archiviati'
+  })
+  await page.locator('.paper-archive__input').evaluate((element) => {
+    const option = document.createElement('option')
+    option.value = 'localized-long-label'
+    option.textContent = 'Tutti i tipi di elementi archiviati'
+    element.append(option)
+    element.value = option.value
+  })
+
+  const viewportSize = page.viewportSize()
+  expect(viewportSize).not.toBeNull()
+
+  await page.setViewportSize({ width: 1280, height: viewportSize!.height })
+  const desktopFlow = await page.evaluate(() => {
+    const rectFor = (selector: string) => {
+      const rect = document.querySelector<HTMLElement>(selector)?.getBoundingClientRect()
+      if (!rect) throw new Error(`Missing geometry target: ${selector}`)
+      return { top: rect.top, bottom: rect.bottom }
+    }
+
+    return {
+      sectionTitle: rectFor('.paper-archive__section-header .paper-archive__section-title'),
+      hiddenBoardsToggle: rectFor('.paper-archive__toggle-hidden'),
+      filter: rectFor('.paper-archive__input'),
+      refresh: rectFor('.paper-archive__refresh'),
+    }
+  })
+  expect(desktopFlow.hiddenBoardsToggle.top).toBeLessThan(desktopFlow.sectionTitle.bottom)
+  expect(desktopFlow.hiddenBoardsToggle.bottom).toBeGreaterThan(desktopFlow.sectionTitle.top)
+  expect(desktopFlow.refresh.top).toBeLessThan(desktopFlow.filter.bottom)
+  expect(desktopFlow.refresh.bottom).toBeGreaterThan(desktopFlow.filter.top)
+
+  for (const width of [375, 390]) {
+    await page.setViewportSize({ width, height: viewportSize!.height })
+    await expect.poll(async () => page.evaluate(() => document.documentElement.clientWidth)).toBe(width)
+
+    const geometry = await page.evaluate(() => {
+      const selectors = [
+        '.paper-archive__toggle-hidden',
+        '.paper-archive__input',
+        '.paper-archive__refresh',
+        '.paper-archive__actions > *',
+      ]
+      const controls = selectors.flatMap((selector) =>
+        Array.from(document.querySelectorAll<HTMLElement>(selector)),
+      )
+      const rects = controls.map((control) => {
+        const rect = control.getBoundingClientRect()
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+      })
+      const rectFor = (selector: string) => {
+        const rect = document.querySelector<HTMLElement>(selector)?.getBoundingClientRect()
+        if (!rect) throw new Error(`Missing geometry target: ${selector}`)
+        return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }
+      }
+      const actionOrder = Array.from(document.querySelectorAll('.paper-archive__actions > *'))
+        .map((control) => control.textContent?.trim())
+
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        rects,
+        sectionTitle: rectFor('.paper-archive__section-header .paper-archive__section-title'),
+        hiddenBoardsToggle: rectFor('.paper-archive__toggle-hidden'),
+        filter: rectFor('.paper-archive__input'),
+        refresh: rectFor('.paper-archive__refresh'),
+        actionOrder,
+      }
+    })
+
+    expect(geometry.scrollWidth - geometry.clientWidth).toBeLessThanOrEqual(1)
+    expect(geometry.rects).toHaveLength(7)
+    for (const rect of geometry.rects) {
+      expect(rect.left).toBeGreaterThanOrEqual(-1)
+      expect(rect.right).toBeLessThanOrEqual(width + 1)
+    }
+    expect(geometry.hiddenBoardsToggle.top).toBeGreaterThanOrEqual(geometry.sectionTitle.bottom - 1)
+    expect(geometry.refresh.top).toBeGreaterThanOrEqual(geometry.filter.bottom - 1)
+    expect(geometry.actionOrder).toEqual([
+      'View captures',
+      'View decisions',
+      'Restore Board',
+      'Hide',
+    ])
+
+    const refresh = page.locator('.paper-archive__refresh')
+    await refresh.focus()
+    const focusGeometry = await refresh.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      const style = getComputedStyle(element)
+      return {
+        active: document.activeElement === element,
+        insideViewport: rect.left >= 0 && rect.right <= window.innerWidth,
+        focusRing: style.outlineStyle !== 'none' || style.boxShadow !== 'none',
+      }
+    })
+    expect(focusGeometry).toEqual({ active: true, insideViewport: true, focusRing: true })
+  }
 })
 
 test('@mobile board columns stack vertically without horizontal overflow', async ({ page }) => {
