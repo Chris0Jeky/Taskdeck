@@ -413,7 +413,11 @@ function Get-PortListenerInventory {
                     foreach ($row in $rows) {
                         $fields = ($row -split '\s+') | Where-Object { $_ -ne "" }
                         if ($fields.Count -lt 5) { continue }
-                        if ($fields[0] -ne "TCP" -or $fields[3] -ne "LISTENING") { continue }
+                        # Windows localizes netstat's state token, so the state column cannot be
+                        # matched. A listening socket is the only TCP row whose foreign address is
+                        # the wildcard peer (0.0.0.0:0 or [::]:0); TIME_WAIT, CLOSE_WAIT and
+                        # ESTABLISHED rows carry a real peer and are skipped, in every locale.
+                        if ($fields[0] -ne "TCP" -or $fields[2] -notmatch '^(0\.0\.0\.0:0|\[::\]:0)$') { continue }
                         if ($fields[1] -notmatch ":(\d+)$" -or [int]$Matches[1] -ne $Port) { continue }
                         $listening = $true
                         $ownerPid = 0

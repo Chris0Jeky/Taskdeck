@@ -375,13 +375,24 @@ DEFAULT_PORT_RELEASE_TIMEOUT_MS=30000
 port_release_timeout_ms() {
   local raw="${TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS:-}"
   if [[ -n "$raw" ]]; then
-    # Bounded to int32 so the deadline arithmetic matches the PowerShell launcher's [int] parse and
-    # cannot wrap on a 64-bit shell.
-    if [[ "$raw" =~ ^[0-9]{1,10}$ ]] && (( 10#$raw <= 2147483647 )); then
-      printf '%s\n' "$(( 10#$raw ))"
-      return 0
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+    if [[ -n "$raw" ]]; then
+      # Bounded to int32 so the deadline arithmetic cannot wrap on a 64-bit shell. Trim and
+      # normalize whitespace and signed zero to match the PowerShell launcher's parser edge cases.
+      if [[ "$raw" =~ ^-0+$ ]]; then
+        printf '0\n'
+        return 0
+      fi
+      if [[ "$raw" =~ ^\+?[0-9]{1,10}$ ]]; then
+        raw="${raw#+}"
+        if (( 10#$raw <= 2147483647 )); then
+          printf '%s\n' "$(( 10#$raw ))"
+          return 0
+        fi
+      fi
+      warn "Ignoring invalid TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS '$raw'; using ${DEFAULT_PORT_RELEASE_TIMEOUT_MS} ms."
     fi
-    warn "Ignoring invalid TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS '$raw'; using ${DEFAULT_PORT_RELEASE_TIMEOUT_MS} ms."
   fi
   printf '%s\n' "$DEFAULT_PORT_RELEASE_TIMEOUT_MS"
 }
@@ -389,7 +400,9 @@ port_release_timeout_ms() {
 now_ms() {
   local raw
   raw="$(date +%s%3N 2>/dev/null || true)"
-  if [[ "$raw" =~ ^[0-9]+$ ]]; then printf '%s\n' "$raw"; return 0; fi
+  # Some date implementations return bare seconds for %3N. Require an epoch-millisecond-sized
+  # value before trusting it, otherwise a 30-second deadline can become hours long.
+  if [[ "$raw" =~ ^[0-9]{12,}$ ]]; then printf '%s\n' "$raw"; return 0; fi
   printf '%s000\n' "$(date +%s)"
 }
 
@@ -408,7 +421,19 @@ port_listener_inventory() {
     rows="$(ss -ltnH "sport = :$port" 2>/dev/null)" || return 2
   elif command -v netstat >/dev/null 2>&1; then
     all="$(netstat -an -p tcp 2>/dev/null)" || return 2
-    rows="$(printf '%s\n' "$all" | grep -E "[:.]${port}[[:space:]]" | grep -i 'LISTEN' || true)"
+    # The state token is localized and its spelling differs across netstat implementations, so it
+    # is not matched. A listening socket is the only row whose foreign address is the wildcard peer
+    # (0.0.0.0:0, [::]:0, *.*, 0.0.0.0:*, :::*); drained TIME_WAIT/CLOSE_WAIT rows carry a real peer.
+    rows="$(printf '%s\n' "$all" | awk -v port="$port" '
+      function ends_with_port(value) { return value ~ ("[:.]" port "$") }
+      function wild_peer(value) { return value ~ /^(0\.0\.0\.0|\[::\]|::|\*)[:.](0|\*)$/ }
+      {
+        protocol = tolower($1)
+        if (protocol !~ /^tcp[46]{0,2}$/) next
+        if (ends_with_port($2) && wild_peer($3)) { print; next }
+        if (ends_with_port($4) && wild_peer($5)) print
+      }
+    ')"
   else
     return 2
   fi
