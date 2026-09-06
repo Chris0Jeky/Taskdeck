@@ -28,17 +28,17 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.13.1
 
       - name: Planner, gate and pin-inventory self-tests
         run: node --test scripts/ci/smart-ci/*.test.mjs
 
-      - name: External action pin inventory (report only until CI-11 completes the migration)
-        run: node scripts/ci/smart-ci/action-pins.mjs --markdown "$GITHUB_STEP_SUMMARY"
+      - name: External action pin guard (CI-11 — every external action must be pinned to a full SHA)
+        run: node scripts/ci/smart-ci/action-pins.mjs --check --markdown "$GITHUB_STEP_SUMMARY"

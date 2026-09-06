@@ -2,7 +2,6 @@
 import BoardSettingsModal from './BoardSettingsModal.vue'
 import LabelManagerModal from './LabelManagerModal.vue'
 import StarterPackCatalogModal from './StarterPackCatalogModal.vue'
-import KeyboardShortcutsHelp from '../KeyboardShortcutsHelp.vue'
 import CaptureModal from '../common/CaptureModal.vue'
 import type { BoardDetail, Label } from '../../types/board'
 
@@ -13,7 +12,6 @@ defineProps<{
   showBoardSettings: boolean
   showLabelManager: boolean
   showStarterPackCatalog: boolean
-  showKeyboardHelp: boolean
   showCaptureModal: boolean
 }>()
 
@@ -21,7 +19,6 @@ defineEmits<{
   'update:showBoardSettings': [value: boolean]
   'update:showLabelManager': [value: boolean]
   'update:showStarterPackCatalog': [value: boolean]
-  'update:showKeyboardHelp': [value: boolean]
   'update:showCaptureModal': [value: boolean]
 }>()
 </script>
@@ -52,12 +49,11 @@ defineEmits<{
     @updated="() => {}"
   />
 
-  <!-- Keyboard Shortcuts Help -->
-  <KeyboardShortcutsHelp
-    :is-open="showKeyboardHelp"
-    @close="$emit('update:showKeyboardHelp', false)"
-  />
-
+  <!--
+    No keyboard help dialog lives here. The shell renders exactly one help
+    surface per skin from the shared ledger, and the board toolbar opens it
+    through the `useShellKeyboardHelp` seam (#2007).
+  -->
   <CaptureModal
     v-if="showCaptureModal && board"
     :board-id="boardId"

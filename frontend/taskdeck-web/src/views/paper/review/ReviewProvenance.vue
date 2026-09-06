@@ -5,6 +5,8 @@ import ProvenanceDrawer from '../../../components/review/ProvenanceDrawer.vue'
 import type { ProvenanceMetadata, EvidenceLink } from '../../../components/review/ProvenanceDrawer.vue'
 import { classifyProvenanceActor, formatProvenanceActorLabel } from './provenanceActor'
 
+const EMPTY_EVIDENCE_LINKS: EvidenceLink[] = []
+
 const props = withDefaults(defineProps<{
   rows: ProvenanceRow[]
   metadata?: ProvenanceMetadata | null
@@ -140,7 +142,7 @@ function tone(weight: ProvenanceWeight): string {
       :open="drawerOpen"
       :rows="rows"
       :metadata="metadata ?? null"
-      :evidence-links="evidenceLinks ?? []"
+      :evidence-links="evidenceLinks ?? EMPTY_EVIDENCE_LINKS"
       :proposal-id="proposalId"
       :read-only="props.readOnly"
       @close="drawerOpen = false"

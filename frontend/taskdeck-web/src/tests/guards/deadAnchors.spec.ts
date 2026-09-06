@@ -4,12 +4,14 @@ import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler
 /**
  * Dead-affordance source guard.
  *
- * WHAT THIS MECHANIZES: two source shapes that look interactive and do nothing:
+ * WHAT THIS MECHANIZES: source shapes that look interactive and do nothing:
  * an `<a>` tag whose href is a placeholder destination — the bare `#`, the
- * empty string, or a `javascript:` scheme — and an enabled-looking
+ * empty string, or a `javascript:` scheme — an enabled-looking
  * native `<button>` with no detectable action binding or native form semantics,
- * plus interactive `aria-label` semantics that are not native or keyboard
- * reachable. Labelled custom buttons must expose both Enter and Space
+ * an enabled-looking CALL SITE of a wrapper button component (`<PaperHLBtn>`,
+ * `<TdButton>`, `<TdIconButton>`) that binds no click and has no native submit
+ * semantics, plus interactive `aria-label` semantics that are not native or
+ * keyboard reachable. Labelled custom buttons must expose both Enter and Space
  * activation rather than merely listening for an arbitrary key.
  * The GH-1941 defect was the BOUND anchor form, `:href="tuneHref ?? '#'"`, so
  * both static and bound placeholder hrefs are detected.
@@ -26,9 +28,21 @@ import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler
  *    compiler-backed guard below, but remain unproven action evidence.
  *  - A static `draggable="true"` is treated as native drag activation; the
  *    guard cannot prove which ancestor receives the drag event.
- *  - Component tags (for example `<PaperHLBtn>`) are not compiler-expanded;
- *    this guard only checks their explicit role/action source shape. Their
- *    rendered root still needs component tests for the final DOM contract.
+ *  - Component tags are not compiler-expanded. The three wrapper BUTTON
+ *    components are now scanned at their call sites (see
+ *    `WRAPPER_BUTTON_COMPONENTS`), but only for the source shapes listed there:
+ *    their rendered root still needs component tests for the final DOM
+ *    contract, and every other component tag is checked for nothing beyond its
+ *    explicit role/action source shape.
+ *  - A wrapper call site is redeemed by a click binding, a `v-on` object that
+ *    spells out a `click` key, a static `type="submit"` with a proven form
+ *    owner on a component that declares a `type` prop, a permanent disabled, or
+ *    the specimen marker — and by nothing else. Three live-at-runtime shapes
+ *    are still reported: a fallthrough pointer listener (`@mousedown`), because
+ *    a button reachable only by pointer is not operable from the keyboard; a
+ *    `v-on` expression that never spells the key (`v-on="listeners"`), because
+ *    source text cannot say what it resolves to; and `@[dynamicEvent]`, for the
+ *    same reason. None of these shapes exists today.
  *  - `v-on="{ click: fn }"` object syntax and `@[dynamicEvent]` are reported
  *    on native controls by the compiler-backed guard below. No such tag exists
  *    today; do not delete that finding without proving the runtime event.
@@ -37,7 +51,8 @@ import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler
  *  - An expression that concatenates onto the literal (`:href="'#' + id"`)
  *    resolves to a real fragment but IS reported. The guard prefers that false
  *    positive to missing the GH-1941 shape; no such expression exists today.
- *  - The four intentionally inert Paper style-guide specimens carry a narrow
+ *  - The eleven intentionally inert Paper style-guide specimens — four native
+ *    `.pbtn` buttons and seven `<PaperHLBtn>` call sites — carry a narrow
  *    `data-dead-affordance-exempt="visual-specimen"` marker. A new product
  *    control must not copy that marker; the rest of the view is scanned.
  *
@@ -161,6 +176,115 @@ const NATIVE_INTERACTIVE_COMPONENTS = new Set([
   'tdiconbutton',
 ])
 
+/**
+ * The button-shaped subset of `NATIVE_INTERACTIVE_COMPONENTS`, scanned at every
+ * call site (GH-1949).
+ *
+ * Each of these renders a single native `<button>` root and declares `click` as
+ * an emit, so the component FILE always passes the native-button scan above —
+ * its own root carries `@click="onClick"`. What ships dead is the CALL SITE: an
+ * `<PaperHLBtn label="Apply" />` with no `@click` renders an enabled, focusable
+ * button that does nothing, and because the markup contains no click handler at
+ * all, `vuejs-accessibility/click-events-have-key-events` never fires either.
+ * That is the GH-1941 defect wearing component clothing, and until this slice
+ * nothing scanned the ~150 call sites.
+ *
+ * Both spellings of each tag are listed. Vue resolves `<td-button>` and
+ * `<TdButton>` to the same component, and the shared native list already
+ * carries `router-link` alongside `routerlink` for that reason. No kebab call
+ * site exists today; the entry is here so that writing one does not silently
+ * leave the scan. A test below pins each entry against the shared list on its
+ * de-hyphenated name.
+ *
+ * `router-link` and `InputAssistField` are deliberately NOT here: a router link
+ * is actionable through `to`, not a click binding, and the assist field is an
+ * input rather than a command control. Both stay in the shared native list
+ * because that list answers a different question (keyboard reachability for the
+ * aria-label scan).
+ */
+const WRAPPER_BUTTON_COMPONENTS = new Set([
+  'paperhlbtn',
+  'paper-h-l-btn',
+  'tdbutton',
+  'td-button',
+  'tdiconbutton',
+  'td-icon-button',
+])
+
+/**
+ * The subset that can carry native submit semantics.
+ *
+ * `PaperHLBtn` and `TdButton` both DECLARE a `type` prop and pass it to their
+ * root, so `type="submit"` at a call site is a prop the component honours.
+ * `TdIconButton` declares no such prop and hard-codes `type="button"` on its
+ * root, so a `type="submit"` there would be a fallthrough attribute whose
+ * effect depends on Vue's merge precedence over an explicit root attribute.
+ * That precedence is not verified here, so the claim is not made: a
+ * `<TdIconButton type="submit">` is reported like any other unbound call site.
+ */
+const SUBMIT_CAPABLE_WRAPPERS = new Set(['paperhlbtn', 'paper-h-l-btn', 'tdbutton', 'td-button'])
+
+/**
+ * Opening/closing form and wrapper-button tags, with quoted values consumed
+ * whole. Built from the set above so the two cannot drift; the `i` flag is what
+ * makes the lower-cased names match the PascalCase source spelling.
+ */
+const FORM_OR_WRAPPER_BUTTON_TAG = new RegExp(
+  `<\\/?(?:form|${[...WRAPPER_BUTTON_COMPONENTS].join('|')})(?=[\\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>`,
+  'gi',
+)
+
+/**
+ * A `type` attribute with its NAME captured, so a bound `:type` can be rejected
+ * without resolving it — the same trade the native scan makes. Shaped like
+ * `TABINDEX_ATTR` rather than `BUTTON_TYPE_ATTR`, which discards the prefix.
+ */
+const WRAPPER_TYPE_ATTR = /\s((?::|v-bind:)?type)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+
+/** A leading binding prefix on an attribute name, in either spelling. */
+const BINDING_PREFIX = /^(?::|v-bind:)/i
+
+/**
+ * `v-on="…"` object syntax, with the object expression captured.
+ *
+ * On a component whose declared emit is `click` this really can wire
+ * activation, so it redeems a call site — unlike on a native control, where the
+ * compiler-backed scan reports it as unproven.
+ */
+const VON_OBJECT_BINDING = /(?:^|\s)v-on\s*=\s*(?:"([^"]*)"|'([^']*)')/i
+
+/**
+ * A literal `click` KEY inside a `v-on` object expression, in any of the four
+ * spellings JS allows: `{ click: fn }`, `{ 'click': fn }`, `{ "click": fn }`
+ * and the shorthand `{ click }`. The trailing `[:,}]` is what stops
+ * `{ dblclick: … }`, `{ clickOutside: … }` and `{ onclick: … }` from matching.
+ *
+ * Requiring the key is the point. A `v-on` object that binds only
+ * `{ mouseenter: showHint }` is no more of a click handler than an
+ * `@mouseenter` attribute, and this guard reports that one — accepting the
+ * object form of the same non-binding would have been an inconsistency a future
+ * dead control could hide behind.
+ *
+ * An expression that does not spell the key out — `v-on="listeners"`, or an
+ * object built only from a spread — is REPORTED, not accepted. Source text
+ * cannot say what such an expression resolves to, and this file's standing
+ * answer to an unprovable listener is to report it: the compiler-backed scan
+ * treats the same shape on a native control as unproven action evidence. No
+ * `v-on` call site of any kind exists today, so the strictness costs nothing
+ * now; a future one is expected to spell the key or take the false positive.
+ */
+const VON_CLICK_KEY = /[{,]\s*(?:'click'|"click"|click)\s*[:,}]/
+
+/**
+ * Every wrapper call site, for the scan's own vacuity canary. Same tag set and
+ * same lookahead as the scan, without the attribute tail: this counts openings,
+ * not whole tags.
+ */
+const WRAPPER_CALL_SITE = new RegExp(
+  `<(?:${[...WRAPPER_BUTTON_COMPONENTS].join('|')})(?=[\\s>/])`,
+  'gi',
+)
+
 /** Opening tags for native or custom elements. Quoted values are consumed whole. */
 const OPENING_TAG = /<([A-Za-z][\w.-]*)(?=[\s>/])(?:"[^"]*"|'[^']*'|[^>'"])*>/g
 
@@ -245,7 +369,11 @@ function directiveOnlyMarkup(tag: string): string {
 
   for (const match of body.matchAll(OPENING_ATTRIBUTE)) {
     const name = match[1]
-    if (!name.startsWith('@') && !/^v-on:/i.test(name)) continue
+    // `v-on` with no argument is kept as well as `v-on:x`, so the wrapper scan
+    // can read object syntax through the same attribute-boundary parse that
+    // keeps an inert `data-note='v-on="{ click: run }"'` out. Nothing else keys
+    // off a bare `v-on`, so no existing finding changes.
+    if (!name.startsWith('@') && !/^v-on(?::|$)/i.test(name)) continue
 
     directives.push(match[0])
   }
@@ -427,6 +555,81 @@ function findDeadButtons(source: string): string[] {
   return dead
 }
 
+/** True when the call site wires the component's declared `click` emit through `v-on` object syntax. */
+function hasVOnObjectBinding(tag: string): boolean {
+  const match = VON_OBJECT_BINDING.exec(directiveOnlyMarkup(tag))
+  if (!match) return false
+  const expression = (match[1] ?? match[2] ?? '').trim()
+  if (expression.length === 0) return false
+  // Only a spelled-out `click` key counts — see VON_CLICK_KEY.
+  return VON_CLICK_KEY.test(expression)
+}
+
+/**
+ * Native submit semantics for a wrapper call site: a STATIC `type="submit"`
+ * plus a form owner the source can prove.
+ *
+ * The asymmetry with a native button matters and is the reason this is not a
+ * copy of that clause. `<button>` inside a form defaults to `type="submit"`, so
+ * the native scan treats a missing type as submit. `PaperHLBtn` and `TdButton`
+ * declare a `type` prop whose DEFAULT is `'button'`, so either of them inside a
+ * form with no type renders `type="button"` and submits nothing. Only the
+ * explicit static value counts here.
+ *
+ * `TdIconButton` is excluded entirely (see `SUBMIT_CAPABLE_WRAPPERS`): it
+ * declares no `type` prop at all and hard-codes `type="button"` on its root, so
+ * accepting `type="submit"` there would rest on unverified fallthrough merge
+ * precedence. `type="reset"` is accepted for nobody: no call site uses it.
+ */
+function hasStaticSubmitWithFormOwner(
+  tag: string,
+  formDepth: number,
+  knownFormIds: Set<string>,
+): boolean {
+  if (!SUBMIT_CAPABLE_WRAPPERS.has(openingTagName(tag))) return false
+  const match = WRAPPER_TYPE_ATTR.exec(tag)
+  if (!match || BINDING_PREFIX.test(match[1])) return false
+  const type = (match[2] ?? match[3] ?? match[4] ?? '').trim().toLowerCase()
+  if (type !== 'submit') return false
+  return hasFormOwner(tag, formDepth, knownFormIds)
+}
+
+/**
+ * Wrapper-component call sites that look like an enabled button and do nothing.
+ *
+ * Form depth is tracked across the same match stream as the wrapper tags so a
+ * `type="submit"` inside a `<form>` is recognised in document order, exactly as
+ * `findDeadButtons` does for native controls. `formIds` and `hasFormOwner` are
+ * reused rather than reimplemented: the form-ownership proof is one rule.
+ */
+function findDeadWrapperButtons(source: string): string[] {
+  const dead: string[] = []
+  const markup = markupOnly(source)
+  const knownFormIds = formIds(markup)
+  let formDepth = 0
+
+  for (const [tag] of markup.matchAll(FORM_OR_WRAPPER_BUTTON_TAG)) {
+    if (/^<form\b/i.test(tag)) {
+      if (!/\/\s*>$/.test(tag)) formDepth += 1
+      continue
+    }
+    if (/^<\/form\b/i.test(tag)) {
+      formDepth = Math.max(0, formDepth - 1)
+      continue
+    }
+    if (/^<\//.test(tag)) continue
+
+    if (BUTTON_SPECIMEN_MARKER.test(tag)) continue
+    if (hasNonEmptyBinding(tag, CLICK_BINDING)) continue
+    if (hasVOnObjectBinding(tag)) continue
+    if (isPermanentlyDisabled(tag)) continue
+    if (hasStaticSubmitWithFormOwner(tag, formDepth, knownFormIds)) continue
+
+    dead.push(tag.replace(/\s+/g, ' '))
+  }
+  return dead
+}
+
 /** Extract the opening tag name without depending on Vue compiler expansion. */
 function openingTagName(tag: string): string {
   return /^<([A-Za-z][\w.-]*)/.exec(tag)?.[1]?.toLowerCase() ?? ''
@@ -522,6 +725,14 @@ const DEAD_ANCHOR_FIXTURE = `<template><a :href="tuneHref ?? '#'" class="tune">T
 
 /** The GH-1932 avatar shape: a labelled generic element with no focus or action semantics. */
 const DEAD_ARIA_LABEL_FIXTURE = `<template><div class="paper-topbar__avatar" aria-label="Profile: D">D</div></template>`
+
+/**
+ * The GH-1949 wrapper shape: an enabled, labelled `<PaperHLBtn>` call site with
+ * nothing bound. Synthetic for the same reason as `DEAD_ANCHOR_FIXTURE` — the
+ * correct fix for a real offender deletes the string and would silently redden
+ * a canary pinned to it.
+ */
+const DEAD_WRAPPER_BUTTON_FIXTURE = `<template><PaperHLBtn label="Apply" variant="ember" /></template>`
 const COMPILER_DYNAMIC_LISTENER_FIXTURE =
   '<template><button @[eventName]="run">Dynamic</button><button v-on="{ click: run }">Object</button></template>'
 
@@ -537,6 +748,17 @@ describe('dead affordances', () => {
     // The third way: a regex typo turns the repo-wide assertion into a green
     // no-op. The fixture is synthetic on purpose — see DEAD_ANCHOR_FIXTURE.
     expect(findDeadAnchors(DEAD_ANCHOR_FIXTURE)).toHaveLength(1)
+    expect(findDeadWrapperButtons(DEAD_WRAPPER_BUTTON_FIXTURE)).toHaveLength(1)
+
+    // The wrapper scan must be looking at real call sites, not at nothing.
+    // CALL SITES, not files: the components are used ~156 times across ~35
+    // SFCs, and a threshold counting files would still pass if all but one
+    // call site vanished from a file that kept one.
+    const wrapperCallSites = Object.values(VUE_SOURCES).reduce(
+      (total, source) => total + [...markupOnly(source).matchAll(WRAPPER_CALL_SITE)].length,
+      0,
+    )
+    expect(wrapperCallSites).toBeGreaterThan(100)
   })
 
   it('detects the shapes it claims to detect', () => {
@@ -656,6 +878,155 @@ describe('dead affordances', () => {
     expect(findDeadButtons('<template><button data-dead-affordance-exempt="other">Not exempt</button></template>')).toHaveLength(1)
   })
 
+  it('scans only wrapper tags the shared native-component list already knows', () => {
+    // The two sets answer different questions but must not disagree about what
+    // a native-rooted interactive component IS. If a tag is added to one, this
+    // fails until the relationship is restated deliberately. The comparison is
+    // on the de-hyphenated name because the shared list spells these components
+    // without hyphens while this set carries both spellings.
+    for (const tag of WRAPPER_BUTTON_COMPONENTS) {
+      expect(
+        NATIVE_INTERACTIVE_COMPONENTS.has(tag.replace(/-/g, '')),
+        `${tag} missing from the native list`,
+      ).toBe(true)
+    }
+    // Every submit-capable tag is a wrapper tag; the reverse does not hold.
+    for (const tag of SUBMIT_CAPABLE_WRAPPERS) {
+      expect(WRAPPER_BUTTON_COMPONENTS.has(tag), `${tag} is not a scanned wrapper`).toBe(true)
+    }
+  })
+
+  it('detects wrapper button call sites that bind no action', () => {
+    expect(findDeadWrapperButtons(DEAD_WRAPPER_BUTTON_FIXTURE)).toEqual([
+      '<PaperHLBtn label="Apply" variant="ember" />',
+    ])
+    expect(findDeadWrapperButtons('<template><TdButton>Save</TdButton></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><TdIconButton label="Close" /></template>')).toHaveLength(1)
+    // A multi-line call site is still one tag.
+    expect(
+      findDeadWrapperButtons('<template>\n<PaperHLBtn\n  label="Apply"\n  variant="ember"\n/>\n</template>'),
+    ).toHaveLength(1)
+    // An empty or modifier-only handler binds nothing, exactly as for a native button.
+    expect(findDeadWrapperButtons('<template><PaperHLBtn @click="" label="Apply" /></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><PaperHLBtn @click.stop label="Apply" /></template>')).toHaveLength(1)
+    // Handler text quoted inside an inert attribute is not a binding.
+    expect(
+      findDeadWrapperButtons(`<template><PaperHLBtn data-note='@click="run"' label="Apply" /></template>`),
+    ).toHaveLength(1)
+    expect(
+      findDeadWrapperButtons(`<template><PaperHLBtn data-note='v-on="{ click: run }"' label="Apply" /></template>`),
+    ).toHaveLength(1)
+  })
+
+  it('accepts wrapper call sites with a click binding or v-on object syntax', () => {
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" @click="apply" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" @click.stop="apply" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on:click="apply" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><TdButton @click="save">Save</TdButton></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><TdIconButton label="Close" @click="close" /></template>')).toEqual([])
+    // `click` is the declared emit on all three, so object syntax with a
+    // spelled-out click key really does wire activation here — unlike on a
+    // native control, where the compiler scan reports it as unproven.
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ click: apply }" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons(`<template><PaperHLBtn label="Apply" v-on="{ 'click': apply }" /></template>`)).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ click }" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ mouseenter: hint, click: apply }" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ ...base, click: apply }" /></template>')).toEqual([])
+  })
+
+  it('requires a v-on object to spell out the click key', () => {
+    // The reason this rule exists: an object binding only `mouseenter` is no
+    // more of a click handler than the `@mouseenter` attribute beside it, and
+    // that attribute is reported. Accepting the object form of the same
+    // non-binding would be a hole a dead control could hide in.
+    expect(
+      findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ mouseenter: showHint }" /></template>'),
+    ).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" @mouseenter="showHint" /></template>')).toHaveLength(1)
+    // An expression that never spells the key is unprovable from source, and
+    // this guard's standing answer to an unprovable listener is to report it.
+    expect(findDeadWrapperButtons(`<template><PaperHLBtn label="Apply" v-on='listeners' /></template>`)).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ ...listeners }" /></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="" /></template>')).toHaveLength(1)
+    // Keys that merely contain "click" are not the click key.
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ dblclick: apply }" /></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ clickOutside: apply }" /></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" v-on="{ onclick: apply }" /></template>')).toHaveLength(1)
+    // A dynamic event argument resolves to an unknown event: still reported.
+    expect(findDeadWrapperButtons('<template><PaperHLBtn label="Apply" @[eventName]="apply" /></template>')).toHaveLength(1)
+  })
+
+  it('accepts a wrapper submit only with a static type and a proven form owner', () => {
+    expect(findDeadWrapperButtons('<template><form><PaperHLBtn type="submit" label="Save" /></form></template>')).toEqual([])
+    expect(
+      findDeadWrapperButtons('<template><form id="new-board"></form><PaperHLBtn form="new-board" type="submit" label="Save" /></template>'),
+    ).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn type="submit" label="Save" /></template>')).toHaveLength(1)
+    expect(
+      findDeadWrapperButtons('<template><PaperHLBtn form="missing" type="submit" label="Save" /></template>'),
+    ).toHaveLength(1)
+    expect(
+      findDeadWrapperButtons('<template><form><PaperHLBtn :type="mode" label="Save" /></form></template>'),
+    ).toHaveLength(1)
+    // The asymmetry with a native button: `type` defaults to `'button'` on all
+    // three components, so an untyped call site inside a form submits nothing.
+    expect(findDeadWrapperButtons('<template><form><PaperHLBtn label="Save" /></form></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><form><PaperHLBtn type="button" label="Save" /></form></template>')).toHaveLength(1)
+    // A closed form no longer owns what follows it.
+    expect(
+      findDeadWrapperButtons('<template><form><input></form><PaperHLBtn type="submit" label="Save" /></template>'),
+    ).toHaveLength(1)
+    // TdButton declares the prop too, so it submits on the same terms.
+    expect(findDeadWrapperButtons('<template><form><TdButton type="submit">Save</TdButton></form></template>')).toEqual([])
+    // TdIconButton does NOT: it declares no type prop and hard-codes
+    // type="button" on its root, so this would rest on fallthrough merge
+    // precedence that is not verified here.
+    expect(
+      findDeadWrapperButtons('<template><form><TdIconButton type="submit" label="Save" /></form></template>'),
+    ).toHaveLength(1)
+  })
+
+  it('scans both the PascalCase and the kebab spelling of each wrapper', () => {
+    // Vue resolves the two spellings to the same component, so a call site
+    // written either way has to reach the same verdict.
+    expect(findDeadWrapperButtons('<template><td-button>Save</td-button></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><td-icon-button label="Close" /></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><paper-h-l-btn label="Apply" /></template>')).toHaveLength(1)
+    expect(findDeadWrapperButtons('<template><td-button @click="save">Save</td-button></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><form><td-button type="submit">Save</td-button></form></template>')).toEqual([])
+    // Still not a prefix match: the lookahead ends the tag name.
+    expect(findDeadWrapperButtons('<template><td-button-group>Group</td-button-group></template>')).toEqual([])
+  })
+
+  it('exempts a wrapper call site only when it is permanently off or a marked specimen', () => {
+    expect(findDeadWrapperButtons('<template><PaperHLBtn disabled label="Apply" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn :disabled="true" label="Apply" /></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><PaperHLBtn :disabled="busy" label="Apply" /></template>')).toHaveLength(1)
+    expect(
+      findDeadWrapperButtons('<template><PaperHLBtn data-dead-affordance-exempt="visual-specimen" label="Apply" /></template>'),
+    ).toEqual([])
+    expect(
+      findDeadWrapperButtons('<template><PaperHLBtn data-dead-affordance-exempt="other" label="Apply" /></template>'),
+    ).toHaveLength(1)
+  })
+
+  it('scans wrapper markup only, and only the wrapper tags', () => {
+    // Prose about a call site is prose.
+    expect(
+      findDeadWrapperButtons('<script>/* was <PaperHLBtn label="Apply" /> */</script><template><p>ok</p></template>'),
+    ).toEqual([])
+    expect(findDeadWrapperButtons('<template><!-- <PaperHLBtn label="Apply" /> --><p>ok</p></template>')).toEqual([])
+    // Components that are not in the set are not this scan's business.
+    expect(findDeadWrapperButtons('<template><PaperCard variant="flat">Inert</PaperCard></template>')).toEqual([])
+    expect(findDeadWrapperButtons('<template><RouterLink to="/boards">Boards</RouterLink></template>')).toEqual([])
+    // A longer tag name that merely starts with a wrapper name is a different tag.
+    expect(findDeadWrapperButtons('<template><TdButtonGroup>Group</TdButtonGroup></template>')).toEqual([])
+    // A `>` inside a bound expression does not end the tag early.
+    expect(
+      findDeadWrapperButtons('<template><PaperHLBtn :disabled="count > 0" label="Apply" /></template>'),
+    ).toHaveLength(1)
+  })
+
   it('documents source-only limits for dynamic Vue bindings', () => {
     // Dynamic listeners remain unproven for the source-level action guard;
     // compiler-backed coverage below reports their exact AST shape.
@@ -754,6 +1125,18 @@ describe('dead affordances', () => {
 
     for (const [file, source] of Object.entries(VUE_SOURCES)) {
       for (const tag of findDeadButtons(source)) {
+        offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  it('never ships a wrapper button call site without an action', () => {
+    const offenders: string[] = []
+
+    for (const [file, source] of Object.entries(VUE_SOURCES)) {
+      for (const tag of findDeadWrapperButtons(source)) {
         offenders.push(`${file.replace('../../', 'src/')}: ${tag}`)
       }
     }

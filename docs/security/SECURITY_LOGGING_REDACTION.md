@@ -1,8 +1,8 @@
 # Security Logging Redaction Policy
 
-Last Updated: 2026-09-03
+Last Updated: 2026-09-04
 Owner: Taskdeck maintainers
-Linked issues: `#212` (SEC-14), `#2351`
+Linked issues: `#212` (SEC-14), `#2351`, `#2519`
 
 ## Scope
 
@@ -26,6 +26,13 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
   - bearer/auth headers
   - provider keys and token-like values
   - capture payload/body fields that may contain private content
+- `Taskdeck.Application.Services.LogControlCharacterSanitizer` (behind `LogSanitizer` and
+  `LogValueSanitizer`) strips C0, DEL and C1 controls, the Unicode line and paragraph separators
+  (U+2028/U+2029), unpaired surrogates, and every Basic Multilingual Plane format character (general category Cf, checked per UTF-16 code unit,
+  which covers the zero-width and bidirectional overrides U+200B..U+200F, U+202A..U+202E,
+  U+2060..U+2064 and U+FEFF) from caller-controlled values before they reach a log sink. The MCP
+  API-key failure path slices its 8-character token prefix before sanitizing it, so stripping can
+  only shorten what is logged.
 - `UnhandledExceptionMiddleware` logs redacted exception summaries instead of raw exception objects.
 - Capture queue, live-provider, webhook, and housekeeping worker failures log sanitized summaries instead of passing exception objects directly to the logger on sensitive paths.
 - Persisted queue/webhook failure messages are redacted or generalized before they are saved for later inspection.
@@ -53,14 +60,53 @@ It applies to API middleware, SignalR transport request logging, queue/worker lo
 - The standalone `Taskdeck.Cli` entry point wraps its whole run in an unknown-exception boundary
   (`CliUnexpectedFailure`): an unexpected exception prints only the stable generic failure message
   and exits with the normal failure code, instead of letting the runtime print raw exception text
-  and a stack trace. The CLI has **no always-on diagnostic sink** (it clears all logging providers
-  to keep stdout clean JSON), so the full exception is retained only when the harness startup trace
-  is enabled for the run (`TASKDECK_CLI_TEST_TRACE_CORRELATION`): then it is written once to a
-  companion `startup-<correlation>.failure` file, created owner-read/write only on POSIX, and the
-  bounded correlation reference is shown alongside the generic line. In an ordinary operator run no
-  trace exists, so the CLI prints the generic line plus an explicit
-  "diagnostics were not captured" notice and the exception is not retained anywhere. Adding an
-  always-on local diagnostic sink is tracked in #2468.
+  and a stack trace. The CLI clears all logging providers to keep stdout clean JSON, so retention
+  is handled by two sinks, both bounded and both fail-open:
+  - The harness startup trace, enabled only when `TASKDECK_CLI_TEST_TRACE_CORRELATION` is set for
+    the run. It writes the full exception once to a companion `startup-<correlation>.failure` file,
+    created owner-read/write only on POSIX.
+  - The **always-on** local diagnostic sink (`CliFailureSink`, #2468), used on every run including
+    an ordinary operator run. It writes exactly one record file
+    `<data directory>/diagnostics/cli-failure-<yyyyMMddTHHmmssZ>-<reference>.txt`, where the data
+    directory is the directory of the resolved SQLite data source (the same resolution the CLI
+    first-run bootstrap uses, falling back to the working directory for a non-file data source).
+    The record holds the UTC timestamp, the reference, the CLI version, the command line under the
+    argv retention policy below, and `SensitiveDataRedactor.SummarizeException` output — never a
+    raw stack trace and never a raw `Exception.Message`. Bounds: at most 8 KB per record
+    (truncated with an explicit marker) and at most 20 records, oldest evicted first by the
+    timestamp-sorted name. Eviction runs only after the new record has been written and closed, and
+    never removes the record just written, so a create that fails deletes nothing. An eviction
+    that fails leaves the directory over its cap until a later run trims it, and never changes the
+    outcome the caller reports: the record is already closed on disk by then. The file is
+    created with `FileMode.CreateNew`, so a stale file or a planted symlink at the target path
+    makes the write fail rather than being appended to or followed, and on POSIX it is created 0600
+    at creation time (no world-readable window). `TryRecord` accepts only a reference that is hex
+    of exactly 12 characters (the generated reference) or 32 (the harness trace correlation),
+    in either case — the same shapes `CliStartupTrace` accepts, so the sink never refuses a
+    reference the CLI itself printed; any other reference fails open, writing nothing and printing
+    nothing, so the reference can never steer the record out of the diagnostics directory.
+  - **Argv retention policy** (#2577): the record keeps the shape of the failing command, not its
+    values. Exactly two things are written verbatim: the at most two leading command words, which
+    must be short lowercase words such as `cards add`, and the flag names — a token starting with
+    `-`, up to but not past its first `=`. Every value is replaced with the fixed placeholder
+    `[value]`: every other separate token, and the value attached to a flag, so
+    `--title=Secret plan` is recorded as `--title=[value]` whether or not `title` is a key the
+    redactor knows. The result is then still passed through `SensitiveDataRedactor.Redact`, which
+    masks the `key=value` and `key: value` forms whose key it recognises, so `--token=` ends up
+    `[redacted]` rather than `[value]`. This is the conservative option of the three the #2573 review
+    listed: it covers a space-separated secret flag such as `--token abc123`, which the redactor's
+    `key=value` rules do not match, and it keeps ordinary user content such as a card title or
+    description off disk, since nothing was retained on an operator run before this sink existed.
+    A flag name is a dash-prefixed token with no whitespace; a value that starts with a dash and
+    contains whitespace is replaced like any other value, while a single dash-prefixed word used as
+    a value is indistinguishable from a flag name by shape and is retained.
+    So `cards add --title "Secret plan" --token abc123` is recorded as
+    `cards add --title [value] --token [value]`.
+  The reference the CLI prints alongside the generic line is the trace correlation when a trace is
+  enabled and a freshly generated 12-hex-character reference otherwise. It is shown only when a
+  sink actually kept the record; when every sink fails (unwritable directory, full disk, a file
+  already at the target path, permission error) the CLI prints the generic line plus the explicit
+  "diagnostics were not captured" notice, still with no exception text and an unchanged exit code.
 - Deliberate CLI messages are unchanged by that boundary: `DomainException` and failed-`Result`
   messages, usage/validation and parse errors, the recovery and connector-verification commands'
   own stable codes, `PreMigrationBackupException` (its fail-closed text is deliberately actionable

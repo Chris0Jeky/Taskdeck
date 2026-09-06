@@ -592,6 +592,28 @@ public class ProvenanceQueryServiceTests
     }
 
     [Fact]
+    public async Task GetProvenanceMetadataAsync_SuppressesRealLookingModelId_WhenProviderWasNotRecorded()
+    {
+        // Pre-migration rows can contain a model-looking value while the producer column is
+        // unavailable. The read model must not infer a provider from the model name alone.
+        var proposalId = Guid.NewGuid();
+        _provenanceRepo
+            .Setup(r => r.GetByProposalIdAsync(proposalId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProposalProvenance(
+                proposalId,
+                "corr-legacy-model",
+                "gpt-5.6-luna",
+                provider: null));
+
+        var result = await _service.GetProvenanceMetadataAsync(proposalId);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Provider.Should().BeNull();
+        result.Value.Model.Should().BeNull();
+        result.Value.PromptVersion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetProvenanceMetadataAsync_ReturnsProviderWithoutPromptVersion_WhenOnlyProviderRecorded()
     {
         var proposalId = Guid.NewGuid();

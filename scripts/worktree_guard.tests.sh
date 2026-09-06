@@ -144,11 +144,14 @@ expect_sh_output() {
     local name="$1" needle="$2" dir="$3"
     local output
     output="$(run_sh_guard "$dir")"
-    if printf '%s' "$output" | grep -qF -- "$needle"; then
+    local code=$?
+    if [ "$code" -eq 0 ] && printf '%s' "$output" | grep -qF -- "$needle"; then
         pass "sh: $name"
+        return 0
     else
-        fail "sh: $name (output did not contain '$needle')"
+        fail "sh: $name (expected exit 0 and output containing '$needle', got exit $code)"
         printf '%s\n' "$output" | sed 's/^/        /'
+        return 1
     fi
 }
 
@@ -170,6 +173,12 @@ git -C "$FIXTURE_ROOT/primary" -c user.email=t@example.com -c user.name=t \
 git -C "$FIXTURE_ROOT/primary" worktree add -q --detach "$FIXTURE_ROOT/primary/.worktrees/inrepo" HEAD
 git -C "$FIXTURE_ROOT/primary" worktree add -q --detach "$FIXTURE_ROOT/short" HEAD
 mkdir -p "$FIXTURE_ROOT/plain"
+# Mutation control for expect_sh_output: an advisory NOTE must not turn a
+# failing guard into a passing case merely because the text is present.
+cat > "$FIXTURE_ROOT/note-then-fail.sh" <<'EOF'
+echo "NOTE [worktree_guard]: synthetic failure"
+return 1 2>/dev/null || exit 1
+EOF
 git init -q --bare "$FIXTURE_ROOT/bare.git"
 # A standalone clone whose path merely LOOKS like a worktree root.
 mkdir -p "$FIXTURE_ROOT/.worktrees"
@@ -183,6 +192,15 @@ expect_sh "short out-of-repo root accepted" 0 "$FIXTURE_ROOT/short"
 expect_ps "short out-of-repo root accepted" 0 "$FIXTURE_ROOT/short"
 expect_sh_output "out-of-repo root reports the advisory NOTE" \
     "NOTE [worktree_guard]:" "$FIXTURE_ROOT/short"
+if output="$({
+    SH_GUARD="$FIXTURE_ROOT/note-then-fail.sh"
+    expect_sh_output "NOTE-only failure is rejected" \
+        "NOTE [worktree_guard]:" "$FIXTURE_ROOT/plain"
+})"; then
+    fail "sh: NOTE-only failure was accepted"
+else
+    pass "sh: NOTE-only failure is rejected"
+fi
 expect_ps_inprocess "detached worktree leaves a clean in-process exit code" "$FIXTURE_ROOT/short"
 expect_ps_inprocess "in-repo worktree leaves a clean in-process exit code" "$FIXTURE_ROOT/primary/.worktrees/inrepo"
 
@@ -225,13 +243,14 @@ expect_ps "linked git dir aimed at the primary work tree rejected" 1 "$FIXTURE_R
     "GIT_DIR=$FIXTURE_ROOT/primary/.git/worktrees/inrepo" "GIT_WORK_TREE=$FIXTURE_ROOT/primary"
 
 # --- sabotaged .git pointer ----------------------------------------------
-# git itself refuses a worktree whose .git pointer does not round-trip, so both
-# guards surface these as setup errors (exit 2) rather than silent acceptance.
+# A pointer to the common git dir identifies an unrecognized/main checkout, so
+# both guards reject it with the documented fatal exit 1 rather than accepting
+# the root. A malformed pointer cannot be resolved and is a layout error (2).
 echo "sabotaged pointer"
 cp "$FIXTURE_ROOT/short/.git" "$FIXTURE_ROOT/short-gitfile.bak"
 printf 'gitdir: %s\n' "$FIXTURE_ROOT/primary/.git" > "$FIXTURE_ROOT/short/.git"
-expect_sh "gitdir pointer to the common dir rejected" 2 "$FIXTURE_ROOT/short"
-expect_ps "gitdir pointer to the common dir rejected" 2 "$FIXTURE_ROOT/short"
+expect_sh "gitdir pointer to the common dir rejected" 1 "$FIXTURE_ROOT/short"
+expect_ps "gitdir pointer to the common dir rejected" 1 "$FIXTURE_ROOT/short"
 printf 'not a pointer\n' > "$FIXTURE_ROOT/short/.git"
 expect_sh "non-pointer .git file rejected" 2 "$FIXTURE_ROOT/short"
 expect_ps "non-pointer .git file rejected" 2 "$FIXTURE_ROOT/short"

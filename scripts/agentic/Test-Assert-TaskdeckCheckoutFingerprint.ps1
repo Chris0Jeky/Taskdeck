@@ -53,6 +53,27 @@ function Assert-True {
     }
 }
 
+function Get-ExecutableLaneErrorThrowOffsets {
+    param([string]$Text)
+
+    $tokens = $null
+    $parseErrors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Text, [ref]$tokens, [ref]$parseErrors)
+    Assert-True (@($parseErrors).Count -eq 0) 'synthetic guard source did not parse'
+
+    $offsets = New-Object 'System.Collections.Generic.List[int]'
+    foreach ($node in @($ast.FindAll({
+                param($candidate)
+                $candidate -is [System.Management.Automation.Language.ThrowStatementAst]
+            }, $true))) {
+        if ($node.Extent.Text -match '^\s*throw\s+\$laneError\s*$') {
+            $offsets.Add($node.Extent.StartOffset)
+        }
+    }
+
+    return @($offsets)
+}
+
 function Quote-Argument {
     param([string]$Value)
 
@@ -352,13 +373,33 @@ Run-Test 'requires the guarded-lane wrapper to propagate lane failure after clea
         $caught = $text.IndexOf('$laneError = $_', $lane, [StringComparison]::Ordinal)
         $compare = $text.IndexOf('-Mode Compare', $caught, [StringComparison]::Ordinal)
         $cleanup = $text.IndexOf('-Mode Cleanup', [StringComparison]::Ordinal)
-        $rethrown = $text.IndexOf('throw $laneError', $cleanup, [StringComparison]::Ordinal)
+        $rethrown = @(
+            Get-ExecutableLaneErrorThrowOffsets -Text $text |
+                Where-Object { $_ -gt $cleanup } |
+                Select-Object -First 1
+        )
         $propagated = $text.IndexOf('if (-not $laneSucceeded', [StringComparison]::Ordinal)
         Assert-True (
             $errorSlot -ge 0 -and $lane -gt $errorSlot -and $saved -gt $lane -and $caught -gt $saved -and
-            $compare -gt $caught -and $cleanup -gt $compare -and $rethrown -gt $cleanup -and $propagated -gt $rethrown
+            $compare -gt $caught -and $cleanup -gt $compare -and $rethrown.Count -eq 1 -and
+            $rethrown[0] -gt $cleanup -and $propagated -gt $rethrown[0]
         ) ('lane failure gate is missing or misordered in ' + $skill)
     }
+}
+
+Run-Test 'does not treat comment or string text as an executable lane-error throw' {
+    $commentOnly = @'
+# throw $laneError
+Write-Output 'throw $laneError'
+'@
+    $commentThrows = @(Get-ExecutableLaneErrorThrowOffsets -Text $commentOnly)
+    Assert-True ($commentThrows.Count -eq 0) 'comment or string text satisfied the executable throw anchor'
+
+    $executable = @'
+throw $laneError
+'@
+    $executableThrows = @(Get-ExecutableLaneErrorThrowOffsets -Text $executable)
+    Assert-True ($executableThrows.Count -eq 1) 'an executable lane-error throw was not found'
 }
 
 Run-Test 'anchors the guard path before a lane changes location' {

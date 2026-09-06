@@ -32,7 +32,7 @@ test.describe('Paper responsive shell', () => {
     )
     expect(contentPaddingBottom).toBeGreaterThanOrEqual(56)
 
-    const more = page.getByRole('button', { name: 'More' })
+    const more = page.getByRole('button', { name: 'More', exact: true })
     await expect(more).toHaveAttribute('aria-expanded', 'false')
     await more.click()
     await expect(more).toHaveAttribute('aria-expanded', 'true')

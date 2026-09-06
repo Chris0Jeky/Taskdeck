@@ -10,7 +10,8 @@ namespace Taskdeck.Application.Services;
 
 public class AutomationExecutorService : IAutomationExecutorService
 {
-    private const string GenericUnexpectedErrorMessage = "An unexpected error occurred.";
+    private const string GenericUnexpectedErrorMessage =
+        SensitiveDataRedactor.GenericUnexpectedErrorMessage;
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAutomationProposalService _proposalService;

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Net.Http.Headers;
 using Taskdeck.Api.Tests.Support;
+using Taskdeck.Application.Services;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -76,6 +77,36 @@ public class SecurityHeadersApiTests : IClassFixture<TestWebApplicationFactory>
         fontSrcDirective.Should().Be("font-src 'self'");
         fontSrcDirective.Should().NotContain("fonts.googleapis.com");
         fontSrcDirective.Should().NotContain("fonts.gstatic.com");
+    }
+
+    [Fact]
+    public async Task SecurityHeaders_CspManifestSrc_ShouldAllowOnlySameOriginManifests()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/health/live");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.TryGetValues("Content-Security-Policy", out var cspValues).Should().BeTrue();
+        var csp = cspValues.Should().ContainSingle().Subject;
+        var directives = csp.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        directives
+            .Should()
+            .ContainSingle(directive => directive.StartsWith("default-src ", StringComparison.Ordinal))
+            .Which.Should().Be("default-src 'none'");
+
+        directives
+            .Should()
+            .ContainSingle(directive => directive.StartsWith("manifest-src ", StringComparison.Ordinal))
+            .Which.Should().Be("manifest-src 'self'");
+
+        // The code-side default must carry the same directive, so a deployment whose
+        // configuration omits SecurityHeaders:ContentSecurityPolicy behaves the same way.
+        new SecurityHeadersSettings().ContentSecurityPolicy
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Should()
+            .Contain("manifest-src 'self'");
     }
 
     [Fact]

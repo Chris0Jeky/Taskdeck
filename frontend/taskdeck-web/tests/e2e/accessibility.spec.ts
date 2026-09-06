@@ -177,6 +177,64 @@ test('Paper Board view has no WCAG 2.1 AA violations', async ({ page, request })
   await expect(densityToggle).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('[data-surface="paper-board"]')).toHaveAttribute('data-density', 'compact')
 
+  // Titles-only (#2090). The mode hides the excerpt and the meta row through
+  // the board's scoped rules, so the card DOM is untouched: the title, the
+  // column count and the opener all survive it, at 1280 and at 390 by 844.
+  // It is exercised on top of compact density on purpose — the two preferences
+  // are independent attributes on the same root and must compose.
+  const cardDetailToggle = page.getByTestId('paper-board-card-detail-toggle')
+  await expect(cardDetailToggle).toHaveAttribute('aria-pressed', 'false')
+  // Both regions are asserted PRESENT and shown first. `toBeHidden` also passes
+  // for an element that does not exist, so without this an excerpt or a meta row
+  // that never rendered would satisfy the hidden assertions for the wrong reason.
+  await expect(card.locator('.paper-board-card__excerpt')).toBeVisible()
+  await expect(card.locator('.paper-board-card__meta')).toBeVisible()
+
+  try {
+    await cardDetailToggle.focus()
+    await page.keyboard.press('Enter')
+    await expect(cardDetailToggle).toBeFocused()
+    await expect(cardDetailToggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-surface="paper-board"]'))
+      .toHaveAttribute('data-card-detail', 'titles')
+    await expect(card.locator('.paper-board-card__title')).toHaveText(cardTitle)
+    await expect(card.locator('.paper-board-card__excerpt')).toBeHidden()
+    await expect(card.locator('.paper-board-card__meta')).toBeHidden()
+    await expect(column.locator('.paper-board-column__count')).toHaveText('1')
+    await expect(opener).toBeVisible()
+    await expectNoAxeViolations(page, 'PaperBoardView titles-only')
+
+    await page.setViewportSize({ width: 390, height: 844 })
+    await expect(cardDetailToggle).toHaveAttribute('aria-pressed', 'true')
+    await expect(card.locator('.paper-board-card__title')).toHaveText(cardTitle)
+    await expect(card.locator('.paper-board-card__excerpt')).toBeHidden()
+    await expect(card.locator('.paper-board-card__meta')).toBeHidden()
+    await expect(column.locator('.paper-board-column__count')).toHaveText('1')
+    await expectNoAxeViolations(page, 'PaperBoardView titles-only at 390 by 844')
+
+    await opener.focus()
+    await expect(opener).toBeFocused()
+    await page.keyboard.press('Enter')
+    const titlesOnlyEditor = page.getByRole('dialog', { name: 'Edit Card' })
+    await expect(titlesOnlyEditor).toBeVisible()
+    await titlesOnlyEditor.getByRole('button', { name: 'Close card editor' }).click()
+    await expect(titlesOnlyEditor).toHaveCount(0)
+  } finally {
+    // Full detail and the desktop viewport come back whatever the leg did, so a
+    // failure inside it cannot silently re-run the pre-existing inspector
+    // assertions below against a titles-only board at 390. Nothing is asserted
+    // in here on purpose: a throw in a `finally` would replace the leg's real
+    // failure with a restore failure.
+    if (await cardDetailToggle.getAttribute('aria-pressed') === 'true') {
+      await cardDetailToggle.focus()
+      await page.keyboard.press('Enter')
+    }
+    await page.setViewportSize({ width: 1280, height: 720 })
+  }
+
+  await expect(cardDetailToggle).toHaveAttribute('aria-pressed', 'false')
+  await expect(card.locator('.paper-board-card__excerpt')).toBeVisible()
+
   await opener.focus()
   await page.keyboard.press('Enter')
   const editor = page.getByRole('dialog', { name: 'Edit Card' })

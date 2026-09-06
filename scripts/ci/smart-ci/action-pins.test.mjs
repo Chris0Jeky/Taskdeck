@@ -36,3 +36,40 @@ test('renderPinsMarkdown renders the summary line and a row per action', () => {
   assert.match(markdown, /4 external references/);
   assert.match(markdown, /\| actions\/checkout \| 1 \| 0 \| `v7` \|/);
 });
+
+const pinnedWorkflow = `
+jobs:
+  a:
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020" # v7.0.0
+`;
+
+test('a fully pinned workflow with version comments passes the guard shape --check enforces', () => {
+  const inventory = inventoryActionPins([{ path: '.github/workflows/pinned.yml', text: pinnedWorkflow }]);
+  assert.equal(inventory.summary.external, 2);
+  assert.equal(inventory.summary.unpinned, 0);
+  assert.equal(inventory.summary.missingVersionComment, 0);
+  assert.ok(inventory.entries.every((entry) => entry.pinned && entry.versionComment));
+});
+
+test('an unpinned major-tag reference is counted as unpinned (what --check exits 1 on)', () => {
+  const inventory = inventoryActionPins([{ path: 'w.yml', text: '      - uses: actions/checkout@v7' }]);
+  assert.equal(inventory.summary.unpinned, 1);
+  assert.equal(inventory.entries[0].pinned, false);
+  assert.equal(inventory.entries[0].ref, 'v7');
+});
+
+const commentlessWorkflow = `
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # bumped by hand
+`;
+
+test('a SHA pin with no version comment, or a non-version comment, is reported', () => {
+  const inventory = inventoryActionPins([{ path: 'w.yml', text: commentlessWorkflow }]);
+  assert.equal(inventory.summary.unpinned, 0);
+  assert.equal(inventory.summary.missingVersionComment, 2);
+  assert.equal(inventory.entries[0].versionComment, false);
+  assert.equal(inventory.entries[1].versionComment, false);
+  assert.match(renderPinsMarkdown(inventory), /2 pinned reference\(s\) carry no/);
+});
