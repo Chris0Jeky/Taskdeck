@@ -18,6 +18,26 @@ export interface CardFilters {
   showBlockedOnly: boolean
 }
 
+/**
+ * The card-filter defaults: nothing searched, no labels selected, no due-date
+ * narrowing, blocked cards not isolated.
+ *
+ * The single source for all three sites that reset to this value — the initial
+ * state below, `cardFilterStore.clearFilters` and `boardCrudStore.resetForLogout`
+ * — which previously each carried the literal.  A function rather than a shared
+ * constant because every site needs its own object: `labelIds` is an array, so
+ * one exported instance would let a filter change in one board reach the value
+ * the next reset restores.
+ */
+export function initialCardFilters(): CardFilters {
+  return {
+    searchText: '',
+    labelIds: [],
+    dueDateFilter: 'all',
+    showBlockedOnly: false,
+  }
+}
+
 export function createBoardState() {
   const boards = ref<Board[]>([])
   const activeBoardId = ref<string | null>(null)
@@ -30,12 +50,7 @@ export function createBoardState() {
   const loading = ref(false)
   const error = ref<string | null>(null)
 
-  const filters = ref<CardFilters>({
-    searchText: '',
-    labelIds: [],
-    dueDateFilter: 'all',
-    showBlockedOnly: false,
-  })
+  const filters = ref<CardFilters>(initialCardFilters())
 
   return {
     boards,

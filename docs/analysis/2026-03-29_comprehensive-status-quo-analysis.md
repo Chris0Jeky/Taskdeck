@@ -1,6 +1,9 @@
 # Taskdeck Comprehensive Status Quo Analysis
 
 **Date:** 2026-03-29
+
+> **Historical snapshot — 2026-03-29.** This document records the analysis and assumptions at that time, not the current release plan or verified status. For current status and execution order, see [STATUS.md](../STATUS.md) and [ISSUE_EXECUTION_GUIDE.md](../ISSUE_EXECUTION_GUIDE.md).
+
 **Scope:** Full project audit — codebase, backlog, infrastructure, trajectory, risks, opinions
 **Methodology:** Automated discovery (backend/frontend/CI/backlog exploration agents), manual doc review, live test execution
 

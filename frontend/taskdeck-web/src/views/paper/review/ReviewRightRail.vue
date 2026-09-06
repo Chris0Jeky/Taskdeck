@@ -6,6 +6,7 @@ import ReviewKeysCard from './ReviewKeysCard.vue'
 import type { ApplyPhase } from './ReviewDecisionRail.vue'
 import type {
   ConfidenceBreakdown,
+  PaperReviewEvidenceStatus,
   SimilarPastRow,
 } from '../../../composables/usePaperReviewSelectors'
 
@@ -34,6 +35,14 @@ withDefaults(
     appliedRecord?: boolean
     /** Required evidence could not be refreshed for the active saved revision. */
     evidenceUnavailable?: boolean
+    /**
+     * State of the core evidence batch `breakdown` and `similarPast` came from,
+     * forwarded verbatim to the two cards that state something about them
+     * (#1940). The default is the CONSERVATIVE one: a caller that does not know
+     * the state gets cards that withhold their claims rather than cards that
+     * assert emptiness on values whose read may still be running.
+     */
+    evidenceState?: PaperReviewEvidenceStatus
   }>(),
   {
     applyPhase: 'approve',
@@ -41,6 +50,7 @@ withDefaults(
     receiptActive: false,
     appliedRecord: false,
     evidenceUnavailable: false,
+    evidenceState: 'loading',
   },
 )
 </script>
@@ -55,12 +65,14 @@ withDefaults(
       :proposed-time="proposedTime"
       :proposed-num="proposedNum"
       :breakdown="breakdown"
+      :evidence-state="evidenceState"
     />
     <ReviewWhyNow :body="whyNowBody" />
     <ReviewSimilarPast
       v-if="!evidenceUnavailable"
       :rows="similarPast"
       :apply-rate="similarPastApplyRate"
+      :evidence-state="evidenceState"
     />
     <ReviewKeysCard
       v-if="!appliedRecord && (!receiptActive || applyOnly)"

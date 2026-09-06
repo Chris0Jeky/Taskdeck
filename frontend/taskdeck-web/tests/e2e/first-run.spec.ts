@@ -60,7 +60,7 @@ test('Paper first-run path guides setup through capture, review, apply, and boar
   await page.getByRole('button', { name: 'Capture here' }).click()
   await expect(page).toHaveURL(new RegExp(`/workspace/inbox\\?boardId=${boardId}$`))
 
-  const captureBody = page.getByRole('textbox', { name: 'Capture body' })
+  const captureBody = page.getByTestId('paper-composer-body')
   const createCaptureResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && /\/api\/capture\/items$/i.test(response.url()))

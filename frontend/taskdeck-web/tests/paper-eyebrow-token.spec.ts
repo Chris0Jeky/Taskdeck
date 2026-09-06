@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
+import { PAPER_VIEW_ROOTS } from '../src/tests/views/paperRootInventory'
+
 /**
  * Canonical eyebrow token across the Paper view roots (#1842, ADR-0053).
  *
@@ -47,33 +49,9 @@ const CANONICAL_EYEBROW_TOKEN = '--mute'
 /** Its literal fallback, for Legacy ("Paper off") where Paper vars are absent. */
 const CANONICAL_EYEBROW_FALLBACK = '#635c4e'
 
-/**
- * Every Paper-idiom view root that has a page-header eyebrow. Mirrors the roots
- * in `src/tests/views/paperViewLegacySubstrate.spec.ts`, minus
- * `AutomationChatView` and `DevToolsView`, which have no eyebrow.
- */
-const EYEBROW_ROOTS: ReadonlyArray<[view: string, rule: string]> = [
-  ['ActivityView.vue', '.paper-activity__eyebrow'],
-  ['AgentRunDetailView.vue', '.paper-run-detail__eyebrow'],
-  ['AgentRunsView.vue', '.paper-agent-runs__eyebrow'],
-  ['AgentsView.vue', '.paper-agents__eyebrow'],
-  ['ApiKeySettingsView.vue', '.paper-api-keys__eyebrow'],
-  ['AppearanceSettingsView.vue', '.paper-appearance__eyebrow'],
-  ['ArchiveView.vue', '.paper-archive__eyebrow'],
-  ['AutomationQueueView.vue', '.paper-queue__eyebrow'],
-  ['BoardAccessView.vue', '.paper-access__eyebrow'],
-  ['BoardsListView.vue', '.paper-boards__eyebrow'],
-  ['CalendarView.vue', '.paper-calendar__eyebrow'],
-  ['ExportImportView.vue', '.paper-portability__eyebrow'],
-  ['IntegrationsView.vue', '.paper-int__eyebrow'],
-  ['MetricsView.vue', '.paper-metrics__eyebrow'],
-  ['NotFoundView.vue', '.paper-not-found__eyebrow'],
-  ['NotificationInboxView.vue', '.paper-notifications__eyebrow'],
-  ['NotificationPreferencesView.vue', '.paper-prefs__eyebrow'],
-  ['OpsConsoleView.vue', '.paper-ops__eyebrow'],
-  ['ProfileSettingsView.vue', '.paper-profile__eyebrow'],
-  ['SavedViewsView.vue', '.paper-views__eyebrow'],
-]
+const EYEBROW_ROOTS = PAPER_VIEW_ROOTS.flatMap(({ view, eyebrow }) =>
+  eyebrow === undefined ? [] : ([[view, eyebrow]] as const),
+)
 
 /** The four core-loop surfaces, and the eyebrow markup each was measured at. */
 const CORE_LOOP_SURFACES: ReadonlyArray<[surface: string, file: string]> = [

@@ -122,8 +122,10 @@ describe('PaperInboxView', () => {
 
   it('defaults to the composer variant', () => {
     const wrapper = mount(PaperInboxView)
-    // Composer renders a textarea with an aria label "Capture body".
-    expect(wrapper.find('textarea[aria-label="Capture body"]').exists()).toBe(true)
+    // The Composer's body field is identified by its own `data-testid`, not by
+    // its accessible name (#1871): the name is translated copy that WCAG 2.5.3
+    // may reword, and a selector reading it turns a copy edit into a test edit.
+    expect(wrapper.find('textarea[data-testid="paper-composer-body"]').exists()).toBe(true)
     expect(wrapper.attributes('data-variant')).toBe('composer')
   })
 
@@ -138,7 +140,7 @@ describe('PaperInboxView', () => {
     expect(wrapper.attributes('data-history-mode')).toBe('archived')
     expect(wrapper.text()).toContain('Archived capture history')
     expect(wrapper.find('[data-testid="paper-inbox-capture"]').exists()).toBe(false)
-    expect(wrapper.find('textarea[aria-label="Capture body"]').exists()).toBe(false)
+    expect(wrapper.find('textarea[data-testid="paper-composer-body"]').exists()).toBe(false)
     expect(wrapper.find('textarea[aria-label="Quick capture input"]').exists()).toBe(false)
     expect(wrapper.find('[data-action="accept"]').exists()).toBe(false)
     expect(wrapper.find('[data-action="reject"]').exists()).toBe(false)
@@ -223,6 +225,52 @@ describe('PaperInboxView', () => {
     wrapper.unmount()
   })
 
+  it('gives archived capture toggles distinct localized names and states', async () => {
+    i18n.global.locale.value = 'en'
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.activeBoardName.value = 'Archived board'
+    orchestratorState.items.value = [
+      { ...captureRow('history-first', 'ProposalCreated'), textExcerpt: 'First archived note' },
+      { ...captureRow('history-second', 'ProposalCreated'), textExcerpt: '', createdAt: 'not-a-date' },
+    ] as CaptureItemSummary[]
+    mockCaptureStore.peekDetail.mockResolvedValue({
+      ...captureRow('history-first', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'First archived note',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+
+    const wrapper = mount(PaperInboxView)
+    const openers = wrapper.findAll<HTMLButtonElement>('[data-testid="capture-history-open"]')
+
+    expect(openers).toHaveLength(2)
+    expect(openers[0].attributes('aria-label')).toBe(
+      'Show the full retained capture for First archived note',
+    )
+    expect(openers[1].attributes('aria-label')).toBe(
+      'Show the full retained capture for history-second',
+    )
+    expect(openers[0].attributes('aria-label')).not.toBe(openers[1].attributes('aria-label'))
+    expect(openers[0].attributes('aria-expanded')).toBe('false')
+
+    await openers[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(openers[0].attributes('aria-expanded')).toBe('true')
+    expect(openers[0].attributes('aria-label')).toBe(
+      'Hide the full retained capture for First archived note',
+    )
+
+    i18n.global.locale.value = 'it'
+    await wrapper.vm.$nextTick()
+    expect(openers[0].attributes('aria-label')).toBe(
+      'Nascondi la cattura conservata completa per First archived note',
+    )
+    i18n.global.locale.value = 'en'
+    wrapper.unmount()
+  })
+
   it('closes a stalled archived detail load, restores row focus, and ignores the late payload', async () => {
     orchestratorState.isArchivedHistory.value = true
     orchestratorState.activeBoardId.value = 'board-archived'
@@ -271,6 +319,202 @@ describe('PaperInboxView', () => {
     expect(wrapper.find('[data-testid="capture-history-detail"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Late retained detail must stay hidden.')
     expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  // The same-item close-and-reopen race recorded as #2426's residual on #1999.
+  // Rejecting by item id alone cannot separate two loads for the SAME row, so a
+  // superseded failure wrote an error the newer read never clears, and the
+  // table's error branch outranks the loaded detail.
+  it('does not let a superseded failed load mask the reopened detail', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [captureRow('history-capture', 'ProposalCreated')]
+
+    let rejectFirst: (reason: unknown) => void = () => undefined
+    let resolveSecond: (detail: CaptureItem) => void = () => undefined
+    mockCaptureStore.peekDetail
+      .mockReturnValueOnce(new Promise<CaptureItem>((_resolve, reject) => {
+        rejectFirst = reject
+      }))
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveSecond = resolve
+      }))
+
+    const wrapper = mount(PaperInboxView, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const opener = wrapper.get<HTMLButtonElement>('[data-testid="capture-history-open"]')
+
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="capture-history-loading-close"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="capture-history-detail"]').exists()).toBe(false)
+
+    // Reopening the same row starts a second, current load.
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+
+    rejectFirst(new Error('the superseded read failed'))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-history-detail-error"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="capture-history-detail"] [role="status"]').text(),
+    ).toContain('Loading')
+
+    resolveSecond({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'The reopened retained capture must be visible.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-history-detail-error"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="capture-history-text"]').text()).toBe(
+      'The reopened retained capture must be visible.',
+    )
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  // The other half of the same race: a superseded load's `finally` ended the
+  // spinner of the load that replaced it, so the row read "loaded" while its
+  // current read was still in flight.
+  it('does not let a superseded resolve clear the current load spinner', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [captureRow('history-capture', 'ProposalCreated')]
+
+    let resolveFirst: (detail: CaptureItem) => void = () => undefined
+    let resolveSecond: (detail: CaptureItem) => void = () => undefined
+    mockCaptureStore.peekDetail
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveFirst = resolve
+      }))
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveSecond = resolve
+      }))
+
+    const wrapper = mount(PaperInboxView, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const opener = wrapper.get<HTMLButtonElement>('[data-testid="capture-history-open"]')
+
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="capture-history-loading-close"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    await opener.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+
+    resolveFirst({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'The superseded payload must stay hidden.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('The superseded payload must stay hidden.')
+    expect(
+      wrapper.get('[data-testid="capture-history-detail"] [role="status"]').text(),
+    ).toContain('Loading')
+
+    resolveSecond({
+      ...captureRow('history-capture', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'The current payload is the one that renders.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="capture-history-text"]').text()).toBe(
+      'The current payload is the one that renders.',
+    )
+    expect(wrapper.find('[data-testid="capture-history-detail"] [role="status"]').exists()).toBe(
+      false,
+    )
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  // The cross-item half of the same guard. The item id already covered this
+  // before #1999, so it is a regression net for the generation gate: switching
+  // rows must supersede the first read exactly the way close-and-reopen does.
+  it('does not let a superseded read of another row settle into the open one', async () => {
+    orchestratorState.isArchivedHistory.value = true
+    orchestratorState.activeBoardId.value = 'board-archived'
+    orchestratorState.items.value = [
+      captureRow('history-capture-x', 'ProposalCreated'),
+      captureRow('history-capture-y', 'ProposalCreated'),
+    ]
+
+    let resolveX: (detail: CaptureItem) => void = () => undefined
+    let resolveY: (detail: CaptureItem) => void = () => undefined
+    mockCaptureStore.peekDetail
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveX = resolve
+      }))
+      .mockReturnValueOnce(new Promise<CaptureItem>((resolve) => {
+        resolveY = resolve
+      }))
+
+    const wrapper = mount(PaperInboxView, {
+      attachTo: document.body,
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    const openers = wrapper.findAll<HTMLButtonElement>('[data-testid="capture-history-open"]')
+    expect(openers).toHaveLength(2)
+
+    await openers[0].trigger('click')
+    await wrapper.vm.$nextTick()
+    await openers[1].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[data-testid="capture-history-detail"]').attributes('id')).toBe(
+      'paper-capture-detail-history-capture-y',
+    )
+
+    resolveX({
+      ...captureRow('history-capture-x', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'Row X must not settle under row Y.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Row X must not settle under row Y.')
+    expect(wrapper.find('[data-testid="capture-history-detail-error"]').exists()).toBe(false)
+    expect(
+      wrapper.get('[data-testid="capture-history-detail"] [role="status"]').text(),
+    ).toContain('Loading')
+
+    resolveY({
+      ...captureRow('history-capture-y', 'ProposalCreated'),
+      boardId: 'board-archived',
+      rawText: 'Row Y is the open row and the one that renders.',
+      retryCount: 0,
+      provenance: null,
+    } as CaptureItem)
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="capture-history-text"]').text()).toBe(
+      'Row Y is the open row and the one that renders.',
+    )
+    expect(mockCaptureStore.peekDetail).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 
@@ -327,7 +571,12 @@ describe('PaperInboxView', () => {
     wrapper.unmount()
   })
 
-  it('discloses the board and column scope, then clears it without reloading', async () => {
+  // #1984 finding 2: this pin used to require "Column: Ready" in the chip while
+  // the list request was board-only, so a green suite defended the untruth. The
+  // chip names the applied filter and nothing else. The chip and the request are
+  // asserted together in `inbox/PaperInboxScopeTruth.spec.ts`, which mounts this
+  // view over the real orchestrator; here the orchestrator is a stub.
+  it('discloses only the board scope the list request applies, then clears it without reloading', async () => {
     orchestratorState.activeBoardId.value = 'board-active'
     orchestratorState.activeColumnId.value = 'column-ready'
     orchestratorState.activeBoardName.value = 'Payments API Migration'
@@ -340,7 +589,8 @@ describe('PaperInboxView', () => {
 
     const wrapper = mount(PaperInboxView)
     expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Board: Payments API Migration')
-    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).toContain('Column: Ready')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).not.toContain('Column')
+    expect(wrapper.find('[data-testid="paper-scope-disclosure"]').text()).not.toContain('Ready')
 
     await wrapper.find('[data-testid="paper-scope-clear"]').trigger('click')
     await wrapper.vm.$nextTick()
@@ -359,6 +609,21 @@ describe('PaperInboxView', () => {
     expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
     await empty.trigger('click')
     expect(orchestratorState.clearScope).toHaveBeenCalledTimes(1)
+  })
+
+  // #1984 finding 2: the scoped empty state interpolates the same label as the
+  // chip, so a column left in the route used to make it read "No captures in
+  // Board: X · Column: Y" over a list that was never column-filtered.
+  it('names only the applied scope in an empty Inbox when the route still carries a column', async () => {
+    orchestratorState.activeBoardId.value = 'board-active'
+    orchestratorState.activeColumnId.value = 'column-ready'
+    orchestratorState.activeBoardName.value = 'Payments API Migration'
+    orchestratorState.activeColumnName.value = 'Ready'
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.text()).toContain('No captures in Board: Payments API Migration')
+    expect(wrapper.text()).not.toContain('Column: Ready')
+    expect(wrapper.find('[data-testid="paper-triage-clear-scope"]').exists()).toBe(true)
   })
 
   it('toggles between composer and nib when Cmd+; is pressed globally', async () => {
@@ -410,7 +675,7 @@ describe('PaperInboxView', () => {
   it('preserves composer and nib drafts while switching capture variants', async () => {
     const wrapper = mount(PaperInboxView)
     const setVariant = (wrapper.vm as unknown as { setVariant: (next: 'nib' | 'composer') => void }).setVariant
-    const composer = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]')
+    const composer = wrapper.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]')
     await composer.setValue('Composer draft')
 
     setVariant('nib')
@@ -437,14 +702,14 @@ describe('PaperInboxView', () => {
 
     setVariant('composer')
     await wrapper.vm.$nextTick()
-    expect(document.activeElement).toBe(wrapper.find('textarea[aria-label="Capture body"]').element)
+    expect(document.activeElement).toBe(wrapper.find('[data-testid="paper-composer-body"]').element)
 
     wrapper.unmount()
   })
 
   it('resets the composer draft after capture creation succeeds', async () => {
     const wrapper = mount(PaperInboxView)
-    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Ship the inbox fix')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
@@ -463,7 +728,7 @@ describe('PaperInboxView', () => {
   it('sends the composer transcript source through the capture request', async () => {
     const wrapper = mount(PaperInboxView)
     await wrapper.find('[data-testid="paper-composer-source-transcript"]').setValue()
-    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Ana: ship it Friday.')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
@@ -492,11 +757,11 @@ describe('PaperInboxView', () => {
 
   it('sends composer due date and labels through the capture request', async () => {
     const wrapper = mount(PaperInboxView)
-    await wrapper.find('textarea[aria-label="Capture body"]').setValue('Buy milk and gas')
-    await wrapper.find('input[aria-label="Add label"]').setValue('shopping')
-    await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
-    await wrapper.find('input[aria-label="Due date"]').setValue('2026-08-23')
-    await wrapper.find('textarea[aria-label="Capture body"]').trigger('keydown', { key: 'Enter', metaKey: true })
+    await wrapper.find('[data-testid="paper-composer-body"]').setValue('Buy milk and gas')
+    await wrapper.find('[data-testid="paper-composer-label-input"]').setValue('shopping')
+    await wrapper.find('[data-testid="paper-composer-label-input"]').trigger('keydown', { key: 'Enter' })
+    await wrapper.find('[data-testid="paper-composer-due"]').setValue('2026-08-23')
+    await wrapper.find('[data-testid="paper-composer-body"]').trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
 
     expect(mockCaptureStore.createItem).toHaveBeenCalledWith({
@@ -515,12 +780,12 @@ describe('PaperInboxView', () => {
       composerRef: { resetDraft: () => void }
     }).composerRef
     const resetDraft = vi.spyOn(composer, 'resetDraft')
-    const textarea = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]')
 
     await textarea.setValue('Prepare regional report')
-    await wrapper.find('input[aria-label="Add label"]').setValue('Sales')
-    await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
-    await wrapper.find('input[aria-label="Due date"]').setValue('2026-08-30')
+    await wrapper.find('[data-testid="paper-composer-label-input"]').setValue('Sales')
+    await wrapper.find('[data-testid="paper-composer-label-input"]').trigger('keydown', { key: 'Enter' })
+    await wrapper.find('[data-testid="paper-composer-due"]').setValue('2026-08-30')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
 
@@ -540,7 +805,7 @@ describe('PaperInboxView', () => {
 
     const wrapper = mount(PaperInboxView)
     await flushPromises()
-    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Capture in board context')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
@@ -558,8 +823,8 @@ describe('PaperInboxView', () => {
 
     const wrapper = mount(PaperInboxView)
     await flushPromises()
-    await wrapper.find('select[aria-label="Board picker"]').setValue('')
-    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    await wrapper.find('select[data-testid="paper-composer-board"]').setValue('')
+    const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Capture without board context')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
@@ -617,7 +882,7 @@ describe('PaperInboxView', () => {
   it('preserves the composer draft when capture creation fails', async () => {
     mockCaptureStore.createItem.mockRejectedValueOnce(new Error('offline'))
     const wrapper = mount(PaperInboxView)
-    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Do not lose this draft')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
@@ -628,7 +893,7 @@ describe('PaperInboxView', () => {
   it('associates the composer body exactly while its capture error receipt is mounted', async () => {
     mockCaptureStore.createItem.mockRejectedValueOnce(new Error('offline'))
     const wrapper = mount(PaperInboxView)
-    const textarea = wrapper.get('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.get('[data-testid="paper-composer-body"]')
 
     expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
     expect(textarea.attributes('aria-invalid')).toBeUndefined()
@@ -677,7 +942,7 @@ describe('PaperInboxView', () => {
     }))
 
     const wrapper = mount(PaperInboxView)
-    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Submit this once')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
@@ -795,7 +1060,7 @@ describe('PaperInboxView', () => {
       throw new Error('Inbox refresh unavailable')
     })
     const wrapper = mount(PaperInboxView)
-    const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+    const textarea = wrapper.find('[data-testid="paper-composer-body"]')
     await textarea.setValue('Saved despite the follow-up refresh')
     await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
     await flushPromises()
@@ -822,6 +1087,77 @@ describe('PaperInboxView', () => {
     expect(table.get('.paper-triage__list').attributes('style')).toContain('display: none')
     expect(table.findAll('.paper-triage__row')).toHaveLength(1)
     expect(table.text()).not.toContain('1 item')
+  })
+
+  /**
+   * #2501: during a scope replacement the rows still in `items` belong to the
+   * OLD scope — the table hides them for exactly that reason — while the scope
+   * chip already names the NEW one. `useInboxCounts` counts whatever is in
+   * `items`, so the eyebrow published old-scope numbers beside a new-scope
+   * label. It drops the counts instead of relabelling them.
+   */
+  it('drops the eyebrow counts while a scope replacement is in flight', () => {
+    orchestratorState.items.value = [
+      captureRow('old-scope-1', 'New'),
+      captureRow('old-scope-2', 'Converted'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    expect(eyebrow).not.toContain('awaiting triage')
+    expect(eyebrow).not.toContain('captured')
+    expect(eyebrow).not.toMatch(/\d/)
+    expect(eyebrow).toBe('Inbox · capture surface')
+  })
+
+  /**
+   * `isScopeReplacement` is deliberately STICKY across failure — the
+   * orchestrator swallows the throw so the retained rows stay hidden rather
+   * than being presented as the new scope. So a failed replacement leaves the
+   * flag true indefinitely, and an eyebrow that said "loading captures…" on
+   * that flag alone would claim a load that had already stopped, permanently,
+   * directly above the table's own error and Retry. The replacement eyebrow
+   * therefore makes NO claim about the load at all; the table owns that state.
+   */
+  it('makes no loading claim in the eyebrow when the replacement has failed', () => {
+    orchestratorState.items.value = [
+      captureRow('old-scope-1', 'New'),
+      captureRow('old-scope-2', 'Converted'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+    mockCaptureStore.loadingList = false
+    mockCaptureStore.listError = 'Failed to load inbox items'
+
+    const wrapper = mount(PaperInboxView)
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+
+    expect(eyebrow).not.toMatch(/\d/)
+    expect(eyebrow).not.toContain('loading captures')
+    expect(eyebrow.toLowerCase()).not.toContain('loading')
+    expect(eyebrow).toBe('Inbox · capture surface')
+    // The table still says what actually happened.
+    const table = wrapper.findComponent({ name: 'PaperTriageTable' })
+    expect(table.find('[role="alert"]').text()).toContain('Failed to load inbox items')
+  })
+
+  it('publishes the eyebrow counts again once the replacement resolves', async () => {
+    orchestratorState.items.value = [
+      captureRow('new-scope-1', 'New'),
+      captureRow('new-scope-2', 'New'),
+    ] as CaptureItemSummary[]
+    orchestratorState.isScopeReplacement.value = true
+
+    const wrapper = mount(PaperInboxView)
+    expect(wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()).toBe('Inbox · capture surface')
+
+    orchestratorState.isScopeReplacement.value = false
+    await wrapper.vm.$nextTick()
+
+    const eyebrow = wrapper.find('[data-testid="paper-inbox-eyebrow"]').text()
+    expect(eyebrow).toContain('2 awaiting triage')
+    expect(eyebrow).toContain('2 captured')
   })
 
   it('guards nib submissions while capture creation is in flight', async () => {
@@ -1149,11 +1485,11 @@ describe('PaperInboxView', () => {
       const wrapper = mount(PaperInboxView)
       await flushPromises()
 
-      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Do not lose this')
-      await wrapper.find('select[aria-label="Board picker"]').setValue('board-9')
-      await wrapper.find('input[aria-label="Add label"]').setValue('ops')
-      await wrapper.find('input[aria-label="Add label"]').trigger('keydown', { key: 'Enter' })
-      await wrapper.find('input[aria-label="Due date"]').setValue('2026-09-02')
+      await wrapper.find('[data-testid="paper-composer-body"]').setValue('Do not lose this')
+      await wrapper.find('select[data-testid="paper-composer-board"]').setValue('board-9')
+      await wrapper.find('[data-testid="paper-composer-label-input"]').setValue('ops')
+      await wrapper.find('[data-testid="paper-composer-label-input"]').trigger('keydown', { key: 'Enter' })
+      await wrapper.find('[data-testid="paper-composer-due"]').setValue('2026-09-02')
 
       expireSession()
 
@@ -1175,8 +1511,8 @@ describe('PaperInboxView', () => {
       const wrapper = mount(PaperInboxView)
       await flushPromises()
 
-      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Do not lose this')
-      await wrapper.find('input[aria-label="Add label"]').setValue('half-typed')
+      await wrapper.find('[data-testid="paper-composer-body"]').setValue('Do not lose this')
+      await wrapper.find('[data-testid="paper-composer-label-input"]').setValue('half-typed')
 
       expireSession()
 
@@ -1188,7 +1524,7 @@ describe('PaperInboxView', () => {
       const restored = mount(PaperInboxView)
       await flushPromises()
       expect(
-        restored.find<HTMLInputElement>('input[aria-label="Add label"]').element.value,
+        restored.find<HTMLInputElement>('[data-testid="paper-composer-label-input"]').element.value,
       ).toBe('half-typed')
     })
 
@@ -1198,7 +1534,7 @@ describe('PaperInboxView', () => {
         config: { method: 'post', url: '/capture' },
       })
       const wrapper = mount(PaperInboxView)
-      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      const textarea = wrapper.find('[data-testid="paper-composer-body"]')
       await textarea.setValue('Receipt keeper')
       await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
       await flushPromises()
@@ -1244,12 +1580,12 @@ describe('PaperInboxView', () => {
       const wrapper = mount(PaperInboxView)
       await flushPromises()
 
-      const textarea = wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]')
+      const textarea = wrapper.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]')
       expect(textarea.element.value).toBe('Survived the redirect')
       expect(
-        wrapper.find<HTMLSelectElement>('select[aria-label="Board picker"]').element.value,
+        wrapper.find<HTMLSelectElement>('select[data-testid="paper-composer-board"]').element.value,
       ).toBe('board-9')
-      expect(wrapper.find<HTMLInputElement>('input[aria-label="Due date"]').element.value).toBe(
+      expect(wrapper.find<HTMLInputElement>('[data-testid="paper-composer-due"]').element.value).toBe(
         '2026-09-02',
       )
       expect(wrapper.text()).toContain('ops')
@@ -1307,7 +1643,7 @@ describe('PaperInboxView', () => {
       await flushPromises()
 
       expect(
-        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+        wrapper.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]').element.value,
       ).toBe('')
       expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-inbox-capture-error"]').exists()).toBe(false)
@@ -1320,7 +1656,7 @@ describe('PaperInboxView', () => {
       // A stash left behind by an earlier interrupted attempt in this tab.
       stashCaptureDraft({ userId: 'user-a', variant: 'composer', text: 'Stale interrupted attempt' })
 
-      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      const textarea = wrapper.find('[data-testid="paper-composer-body"]')
       await textarea.setValue('Saved for real')
       await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
       await flushPromises()
@@ -1350,9 +1686,9 @@ describe('PaperInboxView', () => {
 
       const before = mount(PaperInboxView)
       await flushPromises()
-      const textarea = before.find('textarea[aria-label="Capture body"]')
+      const textarea = before.find('[data-testid="paper-composer-body"]')
       await textarea.setValue('Survives a real 401')
-      await before.find('select[aria-label="Board picker"]').setValue('board-9')
+      await before.find('select[data-testid="paper-composer-board"]').setValue('board-9')
       await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
       await flushPromises()
 
@@ -1374,10 +1710,10 @@ describe('PaperInboxView', () => {
       await flushPromises()
 
       expect(
-        after.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+        after.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]').element.value,
       ).toBe('Survives a real 401')
       expect(
-        after.find<HTMLSelectElement>('select[aria-label="Board picker"]').element.value,
+        after.find<HTMLSelectElement>('select[data-testid="paper-composer-board"]').element.value,
       ).toBe('board-9')
       expect(after.get('[data-testid="paper-inbox-capture-restored"]').text()).toContain(
         'Draft restored.',
@@ -1401,7 +1737,7 @@ describe('PaperInboxView', () => {
       await flushPromises()
 
       expect(
-        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+        wrapper.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]').element.value,
       ).toBe('')
       expect(wrapper.find('[data-testid="paper-inbox-capture-restored"]').exists()).toBe(false)
       expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
@@ -1414,7 +1750,7 @@ describe('PaperInboxView', () => {
       await flushPromises()
 
       expect(
-        owner.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+        owner.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]').element.value,
       ).toBe("A's private thought")
       owner.unmount()
     })
@@ -1423,7 +1759,7 @@ describe('PaperInboxView', () => {
       mockSessionStore.userId = null
       const wrapper = mount(PaperInboxView)
       await flushPromises()
-      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Unowned draft')
+      await wrapper.find('[data-testid="paper-composer-body"]').setValue('Unowned draft')
 
       expireSession()
 
@@ -1463,7 +1799,7 @@ describe('PaperInboxView', () => {
         'composer',
       )
       await wrapper.vm.$nextTick()
-      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Composer text')
+      await wrapper.find('[data-testid="paper-composer-body"]').setValue('Composer text')
 
       expireSession()
 
@@ -1483,7 +1819,7 @@ describe('PaperInboxView', () => {
       })
       const wrapper = mount(PaperInboxView)
       await flushPromises()
-      const textarea = wrapper.find('textarea[aria-label="Capture body"]')
+      const textarea = wrapper.find('[data-testid="paper-composer-body"]')
       await textarea.setValue('Already saved once')
       await textarea.trigger('keydown', { key: 'Enter', metaKey: true })
       await flushPromises()
@@ -1491,7 +1827,7 @@ describe('PaperInboxView', () => {
       expect(mockCaptureStore.createItem).toHaveBeenCalledTimes(1)
       expect(window.sessionStorage.getItem(CAPTURE_DRAFT_STORAGE_KEY)).toBeNull()
       expect(
-        wrapper.find<HTMLTextAreaElement>('textarea[aria-label="Capture body"]').element.value,
+        wrapper.find<HTMLTextAreaElement>('[data-testid="paper-composer-body"]').element.value,
       ).toBe('')
     })
 
@@ -1499,7 +1835,7 @@ describe('PaperInboxView', () => {
       const removeSpy = vi.spyOn(window, 'removeEventListener')
       const wrapper = mount(PaperInboxView)
       await flushPromises()
-      await wrapper.find('textarea[aria-label="Capture body"]').setValue('Gone with the view')
+      await wrapper.find('[data-testid="paper-composer-body"]').setValue('Gone with the view')
 
       wrapper.unmount()
 

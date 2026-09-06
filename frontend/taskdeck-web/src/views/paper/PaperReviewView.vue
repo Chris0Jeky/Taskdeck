@@ -40,6 +40,7 @@ import {
 } from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
+import { formatRecordedOperationActionLabel } from '../../utils/recordedOperationPresentation'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -74,10 +75,17 @@ const {
   proposals,
   proposalsLoading,
   unavailableProposalId,
+  unavailableProposalMalformed,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRefused,
+  queueRefreshRecovered,
+  queueRefreshRecoveredKind,
   nowMs,
   visibleProposals,
+  awaitingProposalIds,
+  queueAnnouncementKey,
+  queueScopeLoaded,
   dismissableProposalIds,
   activeBoardFilter,
   activeBoardName,
@@ -517,11 +525,21 @@ function clearPreviewDiff() {
 
 // The read-only banner label for the active proposal's stored preview: 'Expired'
 // when the clock/domain says so, otherwise its terminal status.
+//
+// #1434 finding 3: Applied is spelled "Applied to board" here, the way the
+// Legacy card's `reviewStatusLabel` spells it (ReviewProposalCard.vue). That
+// helper is component-local — not a composable or util this view may import —
+// so the two shells converge through the catalog key instead. Every other
+// status already matched. The Applied case reaches the screen through the
+// #1397 LOW-5 conversion — a pane opened before the apply, not a key press,
+// since the preview key is inert once the record is applied.
 const previewReadOnlyLabel = computed(() => {
   const p = activeProposal.value
   if (!p) return ''
   if (isProposalExpired(p)) return t('review.status.expired')
-  return t(`review.status.${statusKeySuffix(normalizeProposalStatus(p.status))}`)
+  const status = normalizeProposalStatus(p.status)
+  if (status === 'Applied') return t('review.status.appliedToBoard')
+  return t(`review.status.${statusKeySuffix(status)}`)
 })
 
 // Read-only fallback when the proposal never captured a `diffPreview` (normal
@@ -539,9 +557,27 @@ const storedOperationsFallback = computed(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map(
       (op, index) =>
-        `${index + 1}. ${formatActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
+        `${index + 1}. ${formatRecordedOperationActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
     )
     .join('\n')
+})
+
+// The read-only banner names the content actually on screen, the way the Legacy
+// card's `readOnlyDiffBanner` does (ReviewProposalCard.vue): the captured stored
+// preview, the recorded-operations fallback synthesized above (the COMMON
+// expired path — normal creation flows never populate `diffPreview`), or
+// neither. Claiming a "stored preview from the original submission" for the
+// synthesized listing was inaccurate, and claiming one when nothing was captured
+// contradicted the empty state right below it (#1434 finding 2).
+//
+// The recorded-operations sentence lives on the banner ALONE. Unlike the Legacy
+// card, which renders a note under its banner saying the same thing, this pane
+// has no such note — so the fact is stated once.
+const previewReadOnlyBanner = computed(() => {
+  const status = previewReadOnlyLabel.value
+  if (previewDiff.value) return t('review.diff.storedBanner', { status })
+  if (storedOperationsFallback.value) return t('review.diff.storedBannerRecorded', { status })
+  return t('review.diff.storedBannerNone', { status })
 })
 // Guards against a double-click firing two feedback POSTs (the backend is idempotent as a backstop).
 const reportingProposalId = ref<string | null>(null)
@@ -726,12 +762,14 @@ function clearRevisionEditorPayload() {
 
 // --- Queue rail data ---------------------------------------------------
 
-const awaitingCount = computed(() => {
-  return visibleProposals.value.filter(
-    (p) =>
-      normalizeProposalStatus(p.status) === 'PendingReview' && !isProposalExpired(p),
-  ).length
-})
+// The count and the identity the rail's announcement is keyed on come from ONE
+// composable predicate (#2214 item 4). This view recomputed the same filter
+// inline and Legacy read it off `summaryCards`, so neither skin had any notion
+// of WHICH proposals the number stood for — which is how a poll that removed
+// one pending proposal and added another announced nothing at all. The rendered
+// value is unchanged: `awaitingProposalIds` is this exact predicate over
+// `visibleProposals`.
+const awaitingCount = computed(() => awaitingProposalIds.value.length)
 
 const staleCount = computed(() =>
   // Route through the SHARED isStaleProposal (PendingReview + inclusive >=24h)
@@ -883,13 +921,6 @@ const headerMeta = computed(() => {
   })
 })
 
-function formatActionLabel(actionType: string): string {
-  return actionType
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .trim()
-}
-
 function summarizeOperation(operation: ProposalOperation): string {
   const proposal = activeProposal.value
   if (!proposal) return t('review.change.after.noParameterPreview')
@@ -908,7 +939,7 @@ function afterOperationTitle(proposal: ApiProposal, operation: ProposalOperation
   ) {
     return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
   }
-  return `${formatActionLabel(operation.actionType)} · ${operation.targetType}`
+  return `${formatRecordedOperationActionLabel(operation.actionType)} · ${operation.targetType}`
 }
 
 const before = computed<ChangeBeforeCard>(() => {
@@ -983,7 +1014,7 @@ const fields = computed<FieldDiff[]>(() => {
   return [...operations]
     .sort((a, b) => a.sequence - b.sequence)
     .map((operation) => ({
-      key: formatActionLabel(operation.actionType),
+      key: formatRecordedOperationActionLabel(operation.actionType),
       before: proposalDisplayNames.operationTargetLabel(p!, operation) ?? operation.targetType,
       after: summarizeOperation(operation),
     }))
@@ -1047,7 +1078,10 @@ const proposedNum = computed(() => {
 })
 
 const authorMeta = computed(() => {
-  const c = selectors.confidenceBreakdown.value
+  // The KEYED snapshot, not the bare read: this sentence carries a confidence
+  // number into the rail, and the bare read still holds the previous proposal's
+  // number while the new one's batch is in flight (#1940).
+  const c = selectors.railEvidence.value.confidenceBreakdown
   if (c.overall === null || !Number.isFinite(c.overall)) return ''
   if (c.source === 'model-reported') {
     return t('review.author.modelConfidence', { value: c.overall.toFixed(2) })
@@ -1186,6 +1220,55 @@ const applyConfirmRevisionCount = computed<number | null>(() => {
 // is a shared primitive with no return-focus target prop and is deliberately
 // not touched here.
 const mainColRef = ref<HTMLElement | null>(null)
+
+/**
+ * Sticky-offset handshake between the pinned degraded warning and the decision
+ * rail (#2214 item 4, round 2).
+ *
+ * Both are `position: sticky; top: 0` inside the SAME scroller (the main
+ * column), and the rail is opaque (`card-lift`) and taller, so once the
+ * reviewer scrolled past the card header the rail covered the pinned warning
+ * completely — in exactly the scrolled state the pin exists for. The rail now
+ * sticks BELOW the warning by reading `--paper-review-sticky-offset`, and this
+ * view is the only place that knows the warning's rendered height.
+ *
+ * The property is written only while the warning is on screen; with no warning
+ * there is nothing to clear and the rail's own `var(..., 0)` fallback puts it
+ * back at the top of the scroller, which is its pre-#2214 behaviour.
+ */
+const queueStaleRef = ref<HTMLElement | null>(null)
+const stickyOffsetPx = ref(0)
+let stickyOffsetObserver: ResizeObserver | null = null
+
+const mainColStickyStyle = computed(() =>
+  (queueRefreshStale.value || queueRefreshRefused.value) && !queueAccessRevoked.value
+    ? { '--paper-review-sticky-offset': `${stickyOffsetPx.value}px` }
+    : {},
+)
+
+function disconnectStickyOffsetObserver() {
+  stickyOffsetObserver?.disconnect()
+  stickyOffsetObserver = null
+}
+
+watch(queueStaleRef, (element) => {
+  disconnectStickyOffsetObserver()
+  if (!element) {
+    stickyOffsetPx.value = 0
+    return
+  }
+  stickyOffsetPx.value = element.offsetHeight
+  // jsdom and happy-dom lay nothing out and may not implement ResizeObserver at
+  // all. The offset then stays 0, which is the pre-#2214 behaviour rather than
+  // a broken one: the rail pins to the top and the warning is behind it, as it
+  // was before this issue.
+  if (typeof ResizeObserver === 'undefined') return
+  stickyOffsetObserver = new ResizeObserver(() => {
+    stickyOffsetPx.value = element.offsetHeight
+  })
+  stickyOffsetObserver.observe(element)
+})
+
 const reviewViewRef = ref<HTMLElement | null>(null)
 const reviewMainRef = ref<InstanceType<typeof ReviewMain> | null>(null)
 let applyReturnFocusEl: HTMLElement | null = null
@@ -1197,7 +1280,122 @@ let revisionEditEpoch = 0
 let revisionReturnFocusEpoch: number | null = null
 let revisionReviewEpoch = 0
 const revisionReviewRefreshEpochs = new Map<string, number>()
-const revisionReviewUnavailableKeys = ref<Set<string>>(new Set())
+
+/**
+ * #2460 — the longest one post-revision truth refresh may hold the decision rail.
+ *
+ * The barrier is a COMPOSITE read: one authoritative queue read, then the six
+ * core evidence reads, plus at most one same-action retry of that batch. Every
+ * leg is bounded by the transport already, but a leg that never answers at all
+ * would hold the shared decision lock forever: the rail stays disabled, the
+ * keymap stays inert, and the reviewer has no way back to their own decision.
+ * So the CALLER caps the whole attempt, in the same spirit as
+ * `BOARD_REQUEST_TIMEOUT_MS` in `api/http.ts` caps one board read — long enough
+ * for a realistic composite round trip on a slow link, short enough that a
+ * locked rail still reads as work in progress rather than as broken.
+ *
+ * What this budget assumes about retries, because they are what make a cap of
+ * this size tight: the queue read (and its deep-link leg) is issued with
+ * `skipRetry`, so it costs one round trip and reports the first honest answer.
+ * The six core evidence reads are NOT, because they are served by the batch
+ * `usePaperReviewSelectors` shares with its own automatic refresh — a per-call
+ * opt-out there would apply only when the barrier happened to be the batch's
+ * creator, which is worse than retrying uniformly. So this budget must still
+ * cover one shared-interceptor retry pass on the evidence leg, and a genuinely
+ * flaky evidence read can exhaust it.
+ *
+ * That is an acceptable trade because timing out costs one more explicit action
+ * and nothing else: the per-proposal barrier is RETAINED, so the retry refreshes
+ * again before any decision can be made on pre-revision evidence.
+ */
+const POST_REVISION_REVIEW_DEADLINE_MS = 12_000
+
+/** Race marker for {@link POST_REVISION_REVIEW_DEADLINE_MS}. */
+const REVISION_REVIEW_DEADLINE = 'post-revision-review-deadline' as const
+
+/**
+ * Why the barrier is telling the reviewer that evidence is not current. The two
+ * reasons need different copy: a failed read is a server or transport answer the
+ * reviewer cannot influence, a timed-out one is an attempt that may simply need
+ * longer. Collapsing them into one message would make the surface guess.
+ */
+type RevisionReviewUnavailableReason = 'failed' | 'timed-out'
+
+/**
+ * How one barrier attempt ended. Deliberately five distinct members rather than
+ * a boolean: only `refreshed` may clear the barrier, and the other four each
+ * call for different user-facing treatment.
+ */
+type RevisionReviewRefreshOutcome =
+  | 'refreshed'
+  | 'failed'
+  | 'timed-out'
+  | 'aborted'
+  | 'superseded'
+
+interface RevisionReviewAttempt {
+  /** Shared by the queue read and the six core selector reads. */
+  signal: AbortSignal
+  /** Resolves with {@link REVISION_REVIEW_DEADLINE} when the attempt expires. */
+  deadline: Promise<typeof REVISION_REVIEW_DEADLINE>
+  /** True once the deadline fired, which names an abort as a timeout. */
+  readonly timedOut: boolean
+  dispose: () => void
+}
+
+/**
+ * One cancellation contract per barrier attempt.
+ *
+ * Aborting is not enough on its own: a transport (or a test double) may ignore
+ * the signal and never settle, which is exactly the stall this guards against.
+ * So the deadline both aborts the shared controller AND resolves a race marker,
+ * and the caller releases its lock on whichever arrives first.
+ */
+function startRevisionReviewAttempt(): RevisionReviewAttempt {
+  const controller = new AbortController()
+  let timedOut = false
+  let resolveDeadline!: (value: typeof REVISION_REVIEW_DEADLINE) => void
+  const deadline = new Promise<typeof REVISION_REVIEW_DEADLINE>((resolve) => {
+    resolveDeadline = resolve
+  })
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+    resolveDeadline(REVISION_REVIEW_DEADLINE)
+  }, POST_REVISION_REVIEW_DEADLINE_MS)
+  return {
+    signal: controller.signal,
+    deadline,
+    get timedOut() {
+      return timedOut
+    },
+    dispose() {
+      clearTimeout(timer)
+      // Cancel what this attempt still holds open. Clearing the timer alone
+      // would leave an early failed or superseded ending -- and an unmount --
+      // with reads still running for a decision nobody is waiting on.
+      controller.abort()
+    },
+  }
+}
+
+/**
+ * The attempt currently holding the decision lock, so teardown can cancel it.
+ * A barrier attempt outlives its route otherwise: its deadline timer would fire
+ * after the reviewer has navigated away and report on whatever page they are on.
+ */
+let activeRevisionReviewAttempt: RevisionReviewAttempt | null = null
+
+/**
+ * Generation of the barrier attempt that currently owns the decision lock. A
+ * late attempt must not unlock a rail another attempt is holding, and must not
+ * write barrier state on behalf of a screen that has moved on.
+ */
+let revisionReviewAttemptGeneration = 0
+
+const revisionReviewUnavailableKeys = ref<Map<string, RevisionReviewUnavailableReason>>(
+  new Map(),
+)
 
 function revisionReviewKey(proposalId: string): string {
   return proposalId.toLowerCase()
@@ -1220,11 +1418,11 @@ function requireRevisionReviewRefresh(proposalId: string) {
 function setRevisionReviewUnavailable(
   proposalId: string,
   revisionIdentity: string | null,
-  unavailable: boolean,
+  reason: RevisionReviewUnavailableReason | null,
 ) {
   const key = revisionReviewUnavailableKey(proposalId, revisionIdentity)
-  const next = new Set(revisionReviewUnavailableKeys.value)
-  if (unavailable) next.add(key)
+  const next = new Map(revisionReviewUnavailableKeys.value)
+  if (reason) next.set(key, reason)
   else next.delete(key)
   revisionReviewUnavailableKeys.value = next
 }
@@ -1240,15 +1438,33 @@ function isRevisionReviewUnavailableVisible(proposal: ApiProposal): boolean {
   )
 }
 
-const activeRevisionReviewUnavailable = computed(() => {
-  const proposal = activeProposal.value
-  return (
-    !!proposal &&
-    isRevisionReviewUnavailableVisible(proposal) &&
-    revisionReviewUnavailableKeys.value.has(
-      revisionReviewUnavailableKey(proposal.id, proposalRevisionIdentity(proposal)),
+const activeRevisionReviewUnavailableReason = computed<RevisionReviewUnavailableReason | null>(
+  () => {
+    const proposal = activeProposal.value
+    if (!proposal || !isRevisionReviewUnavailableVisible(proposal)) return null
+    return (
+      revisionReviewUnavailableKeys.value.get(
+        revisionReviewUnavailableKey(proposal.id, proposalRevisionIdentity(proposal)),
+      ) ?? null
     )
-  )
+  },
+)
+
+const activeRevisionReviewUnavailable = computed(
+  () => activeRevisionReviewUnavailableReason.value !== null,
+)
+
+/**
+ * The note the reviewer reads when the barrier could not confirm current truth.
+ * Both messages state the same non-negotiable fact — no decision was made — and
+ * differ only in why, and in whether waiting is worth another try.
+ */
+const revisionReviewUnavailableNote = computed(() => {
+  const reason = activeRevisionReviewUnavailableReason.value
+  if (!reason) return ''
+  return reason === 'timed-out'
+    ? t('review.toast.revisionReviewTimedOut')
+    : t('review.toast.revisionReviewUnavailable')
 })
 
 watch(
@@ -1268,7 +1484,7 @@ watch(
     // not inherit it. Clear it when that proposal leaves the actionable review
     // state, or when the active proposal itself is replaced.
     if (!sameProposal || !current?.eligible) {
-      setRevisionReviewUnavailable(previous.proposalId, previous.revisionIdentity, false)
+      setRevisionReviewUnavailable(previous.proposalId, previous.revisionIdentity, null)
     }
   },
 )
@@ -1465,67 +1681,170 @@ function restoreApplyFocus(captured: HTMLElement | null) {
   })
 }
 
+/**
+ * Run one barrier attempt and report exactly how it ended.
+ *
+ * The barrier clears -- and the action becomes approvable on the NEXT explicit
+ * press -- only on `refreshed`: the authoritative proposal DTO and all six core
+ * evidence reads landed for one identity, status, expiry, defer state and
+ * effective revision. Every other ending leaves the epoch in place, so the next
+ * Approve or Apply refreshes again instead of deciding on pre-revision truth.
+ *
+ * This decides the outcome and writes nothing. `clearRevisionReviewBarrier` is
+ * what actually clears the epoch, once the caller has checked that this attempt
+ * still owns the barrier.
+ */
+async function runRevisionReviewRefresh(
+  proposal: ApiProposal,
+  attempt: RevisionReviewAttempt,
+): Promise<RevisionReviewRefreshOutcome> {
+  const queueOutcome = await Promise.race([
+    // `skipRetry`: the interceptor's doubling backoff can spend most of this
+    // attempt's budget re-asking a question the barrier would rather answer
+    // honestly and let the reviewer retry deliberately.
+    loadProposalsWithOutcome({ signal: attempt.signal, skipRetry: true }),
+    attempt.deadline,
+  ])
+  if (queueOutcome === REVISION_REVIEW_DEADLINE) return 'timed-out'
+  // Only this attempt aborts that signal, so an abort it did not schedule
+  // itself can only be a teardown -- never a deadline the reviewer should retry.
+  if (queueOutcome === 'aborted') return attempt.timedOut ? 'timed-out' : 'aborted'
+  if (queueOutcome === 'failed') return 'failed'
+  if (queueOutcome !== 'landed') return 'superseded'
+
+  const refreshed = activeProposal.value
+  if (
+    !refreshed ||
+    !proposalIdsEqual(refreshed.id, proposal.id) ||
+    !isApplyActionable(refreshed) ||
+    isProposalDeferred(refreshed)
+  ) return 'superseded'
+
+  const status = normalizeProposalStatus(refreshed.status)
+  const revisionIdentity = proposalRevisionIdentity(refreshed)
+  const expiresAt = refreshed.expiresAt ?? null
+  const deferredUntil = refreshed.deferredUntil ?? null
+  const selectorOutcome = await Promise.race([
+    selectors.waitForCoreBatch(refreshed.id, revisionIdentity, { signal: attempt.signal }),
+    attempt.deadline,
+  ])
+  if (selectorOutcome === REVISION_REVIEW_DEADLINE) return 'timed-out'
+  if (selectorOutcome === 'aborted') return attempt.timedOut ? 'timed-out' : 'aborted'
+  if (selectorOutcome === 'failed') return 'failed'
+  if (selectorOutcome !== 'settled') return 'superseded'
+
+  const verified = activeProposal.value
+  if (
+    !verified ||
+    !proposalIdsEqual(verified.id, proposal.id) ||
+    normalizeProposalStatus(verified.status) !== status ||
+    !revisionIdentitiesEqual(proposalRevisionIdentity(verified), revisionIdentity) ||
+    (verified.expiresAt ?? null) !== expiresAt ||
+    (verified.deferredUntil ?? null) !== deferredUntil ||
+    !isApplyActionable(verified) ||
+    isProposalDeferred(verified)
+  ) return 'superseded'
+
+  return 'refreshed'
+}
+
+/**
+ * Clear the barrier for one attempt. This is the ONE piece of state whose loss
+ * matters -- everything else the attempt writes is a note or a toast -- so it is
+ * written last, behind the attempt-generation guard in the caller.
+ *
+ * The epoch is re-read here rather than trusted from the verification block: a
+ * save that landed while this attempt was resolving arms a NEWER epoch, and
+ * deleting that would drop a barrier this attempt never satisfied.
+ */
+function clearRevisionReviewBarrier(
+  proposal: ApiProposal,
+  requiredEpoch: number,
+): RevisionReviewRefreshOutcome {
+  const key = revisionReviewKey(proposal.id)
+  if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return 'superseded'
+  revisionReviewRefreshEpochs.delete(key)
+  return 'refreshed'
+}
+
+/**
+ * Report one attempt's ending to the reviewer.
+ *
+ * The note and the toast are ONE report about ONE proposal, so they share ONE
+ * guard. The queue rail stays clickable while the barrier reads (only the
+ * decision rail and the keymap are locked), so a reviewer can be looking at B
+ * when A's attempt ends. Every message here says "choose the current action
+ * again" -- addressed to B, that is an instruction to press Apply on a proposal
+ * with no barrier, which falls straight through to a real decision. So a report
+ * that cannot be attributed to what is on screen is not shown at all.
+ *
+ * Withholding it costs nothing: the barrier state itself is written separately
+ * and independently of what is displayed, so returning to A still refreshes.
+ */
+function applyRevisionReviewOutcome(
+  proposal: ApiProposal,
+  outcome: RevisionReviewRefreshOutcome,
+) {
+  // Nothing to tell the reviewer: the screen they were deciding on is gone or
+  // was replaced, and the barrier stays armed for whatever replaced it.
+  if (outcome === 'aborted' || outcome === 'superseded') return
+
+  const current = activeProposal.value
+  if (!current || !proposalIdsEqual(current.id, proposal.id)) return
+  const revisionIdentity = proposalRevisionIdentity(current)
+
+  switch (outcome) {
+    case 'refreshed':
+      setRevisionReviewUnavailable(current.id, revisionIdentity, null)
+      toast.info(t('review.toast.revisionReviewRefreshed'))
+      return
+    case 'failed':
+      setRevisionReviewUnavailable(current.id, revisionIdentity, 'failed')
+      toast.error(t('review.toast.revisionReviewUnavailable'))
+      return
+    case 'timed-out':
+      setRevisionReviewUnavailable(current.id, revisionIdentity, 'timed-out')
+      toast.error(t('review.toast.revisionReviewTimedOut'))
+      return
+  }
+}
+
 async function refreshRevisionReviewBeforeApply(
   proposal: ApiProposal,
   requiredEpoch: number,
 ) {
   const captured = applyReturnFocusEl
+  const generation = ++revisionReviewAttemptGeneration
+  const attempt = startRevisionReviewAttempt()
+  activeRevisionReviewAttempt = attempt
   applyGuardBusy.value = true
   revisionReviewRefreshBusy.value = true
   try {
-    const queueOutcome = await loadProposalsWithOutcome()
-    if (queueOutcome !== 'landed') return
-
-    const refreshed = activeProposal.value
-    if (
-      !refreshed ||
-      !proposalIdsEqual(refreshed.id, proposal.id) ||
-      !isApplyActionable(refreshed) ||
-      isProposalDeferred(refreshed)
-    ) return
-
-    const status = normalizeProposalStatus(refreshed.status)
-    const revisionIdentity = proposalRevisionIdentity(refreshed)
-    const expiresAt = refreshed.expiresAt ?? null
-    const deferredUntil = refreshed.deferredUntil ?? null
-    const selectorOutcome = await selectors.waitForCoreBatch(
-      refreshed.id,
-      revisionIdentity,
+    const outcome = await runRevisionReviewRefresh(proposal, attempt)
+    // A late attempt writes nothing: a newer attempt (or an unmount) owns the
+    // barrier, the rail and the note, and this one's answer is by definition
+    // older. The barrier clear sits behind this guard for that reason.
+    if (generation !== revisionReviewAttemptGeneration) return
+    applyRevisionReviewOutcome(
+      proposal,
+      outcome === 'refreshed'
+        ? clearRevisionReviewBarrier(proposal, requiredEpoch)
+        : outcome,
     )
-    if (selectorOutcome === 'failed') {
-      setRevisionReviewUnavailable(proposal.id, revisionIdentity, true)
-      toast.error(t('review.toast.revisionReviewUnavailable'))
-      return
-    }
-    if (selectorOutcome !== 'settled') return
-
-    const verified = activeProposal.value
-    if (
-      !verified ||
-      !proposalIdsEqual(verified.id, proposal.id) ||
-      normalizeProposalStatus(verified.status) !== status ||
-      !revisionIdentitiesEqual(proposalRevisionIdentity(verified), revisionIdentity) ||
-      (verified.expiresAt ?? null) !== expiresAt ||
-      (verified.deferredUntil ?? null) !== deferredUntil ||
-      !isApplyActionable(verified) ||
-      isProposalDeferred(verified)
-    ) return
-
-    const key = revisionReviewKey(proposal.id)
-    if (revisionReviewRefreshEpochs.get(key) !== requiredEpoch) return
-    revisionReviewRefreshEpochs.delete(key)
-    setRevisionReviewUnavailable(proposal.id, revisionIdentity, false)
-    toast.info(t('review.toast.revisionReviewRefreshed'))
   } finally {
-    revisionReviewRefreshBusy.value = false
-    applyGuardBusy.value = false
-    applyReturnFocusEl = null
-    // The preflight consumes this action unconditionally. Return focus only
-    // after the shared lock releases, so a keyboard reviewer can inspect the
-    // refreshed evidence and deliberately invoke the current action again.
-    void nextTick(() => {
-      restoreApplyFocus(captured)
-    })
+    attempt.dispose()
+    if (activeRevisionReviewAttempt === attempt) activeRevisionReviewAttempt = null
+    if (generation === revisionReviewAttemptGeneration) {
+      revisionReviewRefreshBusy.value = false
+      applyGuardBusy.value = false
+      applyReturnFocusEl = null
+      // The preflight consumes this action unconditionally. Return focus only
+      // after the shared lock releases, so a keyboard reviewer can inspect the
+      // refreshed evidence and deliberately invoke the current action again.
+      void nextTick(() => {
+        restoreApplyFocus(captured)
+      })
+    }
   }
 }
 
@@ -1815,7 +2134,15 @@ async function onDefer() {
   // deep-linked proposal whose re-defer failed would otherwise vanish (its prior deferredUntil is
   // still in effect) with no retry path, despite the error toast.
   if (deferred) {
-    recordDecisionReceipt(p.id, 'deferred')
+    // The queue remains interactive while the request is in flight. Only
+    // surface a receipt when the reviewer is still at the decision locus that
+    // started this defer; a late response must not pull them back to proposal A
+    // after they have selected proposal B. Keep deep-link cleanup separate:
+    // it is tied to the successful server result, not to the visible receipt.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (proposalIdsEqual(currentDecisionLocusId, p.id)) {
+      recordDecisionReceipt(p.id, 'deferred')
+    }
     void clearProposalDeepLink(p.id)
   }
 }
@@ -1827,6 +2154,14 @@ async function onConfirmExecute() {
     ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
     : undefined
   if (applied && normalizeProposalStatus(applied.status) === 'Applied') {
+    // The queue stays interactive across the execute round trip, so the
+    // reviewer can be on another proposal by the time it lands. Only surface a
+    // receipt when they are still at the decision locus this execute started
+    // from. Prefer the explicit selection over the route hash, because router
+    // navigation can lag behind a queue click: a late response must never pull
+    // them back to proposal A after they have selected proposal B.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, applied.id)) return
     recordDecisionReceipt(applied.id, 'applied')
   }
 }
@@ -1838,6 +2173,12 @@ async function onConfirmReject(reason: string) {
     ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
     : undefined
   if (rejected && normalizeProposalStatus(rejected.status) === 'Rejected') {
+    // Reject shares that interactive-queue window with execute above, and with
+    // approve (#2069) and defer (PR #2629): the same locus check decides only
+    // whether the receipt is surfaced. The collected reason and the status
+    // check are untouched — the rejection itself already stands.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, rejected.id)) return
     recordDecisionReceipt(rejected.id, 'rejected')
   }
 }
@@ -2220,6 +2561,14 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // #2460: a barrier attempt outlives its route unless it is cancelled here.
+  // Bumping the generation first stops any outcome being applied to a surface
+  // that no longer exists; disposing then clears the deadline timer -- whose
+  // ending would otherwise toast over whatever page the reviewer moved to --
+  // and aborts the reads it was holding open.
+  revisionReviewAttemptGeneration += 1
+  activeRevisionReviewAttempt?.dispose()
+  activeRevisionReviewAttempt = null
   // Prevent an in-flight metadata open or save continuation from restoring
   // focus into a component that no longer owns the document.
   invalidateRevisionOpening()
@@ -2228,6 +2577,7 @@ onUnmounted(() => {
   stopClock()
   stopQueueRefresh()
   collaboration.stop()
+  disconnectStickyOffsetObserver()
 })
 
 function selectProposal(id: string) {
@@ -2242,9 +2592,37 @@ function selectProposal(id: string) {
   openProposal(id)
 }
 
-function returnToReview() {
+/**
+ * The queue rail, for the focus handoff below. The rail owns its rows, so it
+ * owns the "focus the first one" answer; this view only asks.
+ */
+const queueRailRef = ref<InstanceType<typeof ReviewQueueRail> | null>(null)
+
+/**
+ * The empty column, when nothing replaces the panel but another empty state.
+ * `tabindex="-1"` in the template makes it a programmatic focus target only.
+ */
+const emptyColRef = ref<HTMLElement | null>(null)
+
+/**
+ * Leave the refused deep link (#2214). Mirror of
+ * `LegacyReviewView.returnToReview` so the two skins cannot drift (#1124 /
+ * ADR-0038).
+ *
+ * The click removes the panel the control lives in, so focus is moved on
+ * deliberately (#2599 item 2) — the same handoff `settledElsewhereReturnRef`
+ * already makes one branch over. Without it focus falls to `<body>`: nothing is
+ * announced and the reviewer's next keystroke acts on nothing.
+ */
+async function returnToReview() {
   if (!unavailableProposalId.value) return
-  void clearProposalDeepLink(unavailableProposalId.value)
+  await clearProposalDeepLink(unavailableProposalId.value)
+  // After the DOM has settled on whichever of the two replaces the panel.
+  await nextTick()
+  // The queue the panel was standing in front of, at its first row; failing
+  // that, the empty state that stands in for it.
+  if (queueRailRef.value?.focusFirstQueueRow?.()) return
+  emptyColRef.value?.focus?.()
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
@@ -2293,7 +2671,77 @@ async function onClearBoardScope() {
     data-testid="paper-review-view"
     :data-history-mode="isArchivedHistory ? 'archived' : undefined"
   >
+    <!--
+      Recovery is the half of the degraded disclosure that was missing (#2214).
+      The warning below simply disappears when the queue is trustworthy again,
+      which tells a reviewer who was not watching that corner nothing at all.
+
+      Same construction as the rail's count region (#2593): the region stays
+      MOUNTED and withholds its text, because a live region inserted at the same
+      moment its text appears is unreliably announced. `queueRefreshStale`
+      cannot carry this — it is a state, and a state that is merely gone
+      announces nothing. `queueRefreshRecovered` is the transition.
+
+      TWO sentences through this one region, because the composable retracts two
+      different disclosures and they claim different things (#2638 item 2). A
+      'degraded' recovery follows a completed read, so it may say the rows are
+      current; a 'refused' one is raised as soon as the LIST read answers, on a
+      tick that may never replace the queue, so it says only that the server is
+      accepting refreshes again. One region rather than two: they are the same
+      job — the retraction of whichever disclosure was standing — and only one
+      can stand at a time.
+
+      It lives HERE, above the `v-if="activeProposal"` / `v-else` pair, and not
+      once inside each arm. The recovering poll assigns the queue and records
+      the success in one synchronous block, so a recovery that puts a proposal
+      back into an empty queue flips the branch in the same render that the
+      sentence appears — a per-arm region would then mount already carrying its
+      text, which is the exact case this construction exists to avoid. One node
+      above the pair survives every branch flip.
+
+      Absolutely positioned by `.sr-only`, so it is not a grid item and does not
+      take a column of `.paper-review-deep`'s three-column track list.
+    -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-queue-recovered"
+    >{{
+      queueRefreshRecovered && !queueAccessRevoked
+        ? $t(
+            queueRefreshRecoveredKind === 'refused'
+              ? 'review.queue.refused.recovered'
+              : 'review.queue.degraded.recovered',
+          )
+        : ''
+    }}</p>
+
+    <!--
+      The refused-refresh disclosure (#2214 item 2), built the same way and
+      hoisted for the same reason: the visible warning is rendered inside the
+      `v-if="activeProposal"` / `v-else` pair below, so it can mount already
+      carrying its text, which a live region announces unreliably. This region
+      is above the pair, always mounted, and withholds its text until the
+      disclosure rises.
+
+      A separate region from the recovery one above rather than a shared slot:
+      they are different jobs and can be true in sequence within one poll
+      interval, and one region cannot speak twice about two different facts.
+      Both are `.sr-only` and therefore absolutely positioned, so neither takes
+      a column of the three-column track list.
+    -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-queue-refused"
+    >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
+
     <ReviewQueueRail
+      ref="queueRailRef"
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
       :awaiting-count="awaitingCount"
@@ -2307,6 +2755,9 @@ async function onClearBoardScope() {
       :recently-applied="recentlyApplied"
       :cadence="cadence"
       :author-partition-available="authorPartitionAvailable"
+      :queue-scope-loaded="queueScopeLoaded"
+      :queue-unavailable="queueAccessRevoked"
+      :announcement-key="queueAnnouncementKey"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @toggle-batch="toggleBatchSelection"
@@ -2316,16 +2767,28 @@ async function onClearBoardScope() {
       @clear-scope="onClearBoardScope"
     />
 
-    <div v-if="activeProposal" ref="mainColRef" class="paper-review-deep__main-col">
+    <div
+      v-if="activeProposal"
+      ref="mainColRef"
+      class="paper-review-deep__main-col"
+      :style="mainColStickyStyle"
+    >
+      <!-- ONE visible slot for both background-refresh disclosures. They are
+           alternatives, not additions: "refreshes are being refused" subsumes
+           "the queue may be out of date", and rendering both would put "while
+           Taskdeck retries" beside a sentence saying the retries are answered
+           and refused. Keeping it one element also keeps `queueStaleRef` and
+           the #2630 sticky-offset handshake exactly as they shipped. -->
       <p
-        v-if="queueRefreshStale && !queueAccessRevoked"
-        class="paper-review-deep__queue-stale tk-meta"
+        v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
+        ref="queueStaleRef"
+        class="paper-review-deep__queue-stale paper-review-deep__queue-stale--pinned tk-meta"
         role="status"
         aria-live="polite"
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        This review queue may be out of date. Showing the last available proposals while Taskdeck retries.
+        {{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}
       </p>
       <div
         v-if="revisionCount > 0"
@@ -2354,7 +2817,7 @@ async function onClearBoardScope() {
         aria-atomic="true"
         data-testid="paper-review-evidence-unavailable"
       >
-        {{ $t('review.toast.revisionReviewUnavailable') }}
+        {{ revisionReviewUnavailableNote }}
       </p>
       <ReviewMain
         ref="reviewMainRef"
@@ -2420,14 +2883,15 @@ async function onClearBoardScope() {
           <h3 class="tk-h3 paper-review-deep__diff-title">{{ $t('review.diff.title') }}</h3>
           <span class="tk-meta paper-review-deep__diff-sub">{{ $t('review.diff.hint') }}</span>
         </header>
-        <!-- Read-only banner: a terminal/expired proposal's stored preview (#1397) -->
+        <!-- Read-only banner for a terminal/expired proposal (#1397), naming the
+             content mode actually on screen (#1434). -->
         <p
           v-if="previewDiffMode === 'stored'"
           class="paper-review-deep__diff-banner tk-meta"
           role="status"
           data-testid="paper-review-diff-banner"
         >
-          {{ $t('review.diff.storedBanner', { status: previewReadOnlyLabel }) }}
+          {{ previewReadOnlyBanner }}
         </p>
         <!-- diffPreview is creation-time content revisions never update, so a revised
              proposal's stored preview — or the recorded-operations fallback when no
@@ -2531,16 +2995,25 @@ async function onClearBoardScope() {
         @cancel="onCancelRevision"
       />
     </div>
-    <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
+    <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
+         else: leaving the unavailable pin with an empty queue hands focus here
+         (#2599 item 2), and it never enters the tab order. -->
+    <div
+      v-else
+      ref="emptyColRef"
+      class="paper-review-deep__empty"
+      tabindex="-1"
+      data-testid="paper-review-empty"
+    >
       <p
-        v-if="queueRefreshStale && !queueAccessRevoked"
+        v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
         class="paper-review-deep__queue-stale tk-meta"
         role="status"
         aria-live="polite"
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        This review queue may be out of date. Showing the last available proposals while Taskdeck retries.
+        {{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}
       </p>
       <template v-if="queueAccessRevoked">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>
@@ -2569,9 +3042,16 @@ async function onClearBoardScope() {
       </template>
       <template v-else-if="unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>
-        <h2 class="tk-h2">{{ $t('review.empty.unavailable.title') }}</h2>
+        <!-- A 400 means the by-id route could not bind the id, so the link
+             never named a proposal: it cannot be retried and it will not come
+             back. Saying "it may have been applied, archived, or removed"
+             there sends the reviewer to wait for a recovery that cannot
+             arrive (#2214). -->
+        <h2 class="tk-h2">
+          {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedTitle') : $t('review.empty.unavailable.title') }}
+        </h2>
         <p class="tk-lede">
-          {{ $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
+          {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedBody', { id: unavailableProposalId }) : $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
         </p>
         <button
           type="button"
@@ -2607,6 +3087,14 @@ async function onClearBoardScope() {
       </template>
     </div>
 
+    <!-- The rail's evidence props all come from ONE keyed snapshot
+         (`selectors.railEvidence`), never from the bare selector reads: the
+         bare reads still hold the previous proposal's confidence and
+         similar-past rows until the new proposal's batch lands, and its cards
+         cannot tell a pending read from a proven absence (#1940). The snapshot
+         carries the state and withholds the values unless the batch settled for
+         the ACTIVE key. `evidenceUnavailable` below is a different fact — the
+         Apply-time refresh — and keeps its own prop. -->
     <ReviewRightRail
       v-if="activeProposal"
       :key="activeProposal.id"
@@ -2616,9 +3104,10 @@ async function onClearBoardScope() {
       :proposed-time="proposedTime"
       :proposed-num="proposedNum"
       :why-now-body="whyNowBody"
-      :breakdown="selectors.confidenceBreakdown.value"
-      :similar-past="selectors.similarPast.value"
-      :similar-past-apply-rate="selectors.similarPastApplyRate.value"
+      :breakdown="selectors.railEvidence.value.confidenceBreakdown"
+      :similar-past="selectors.railEvidence.value.similarPast"
+      :similar-past-apply-rate="selectors.railEvidence.value.similarPastApplyRate"
+      :evidence-state="selectors.railEvidence.value.status"
       :evidence-unavailable="activeRevisionReviewUnavailable"
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"
@@ -2679,6 +3168,38 @@ async function onClearBoardScope() {
 .paper-review-deep__main-col {
   overflow: auto;
   min-width: 0;
+}
+/*
+ * The main column is the scroller, and a reviewer acts from a scrolled
+ * position, so an in-flow warning at the top of the column is gone by the time
+ * the decision is made (#2214 item 4). Pinning keeps the queue's honesty on
+ * screen for as long as it is true.
+ *
+ * A DEDICATED modifier, not `__queue-stale` itself: the two sibling notes that
+ * share that class (the decision-refresh lock and the evidence-unavailable
+ * note) describe the record currently on screen, not the trustworthiness of the
+ * whole queue, and they belong in flow beside it.
+ *
+ * TWO STICKIES, ONE BAND. `ReviewDecisionRail` is also `position: sticky;
+ * top: 0` in this same scroller, and it is opaque (`card-lift`) and taller, so
+ * pinning the warning alone would have bought nothing: past the card header the
+ * rail covered it completely. The rail now sticks BELOW the warning by reading
+ * `--paper-review-sticky-offset`, which the view writes onto this column from
+ * the warning's measured height. Both stay visible.
+ *
+ * `z-index: 1` stays below the rail's own `2` anyway. Winning the band here
+ * instead would put an opaque paragraph over the Approve/Reject controls and
+ * swallow clicks aimed at them; the offset is what separates them, not the
+ * stacking order.
+ */
+.paper-review-deep__queue-stale--pinned {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  /* Opaque, or the retained proposal scrolls through the warning's own text. */
+  background: var(--paper);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
 }
 .paper-review-deep__revision-badge {
   padding: 4px 12px;

@@ -739,6 +739,40 @@ public class AutomationProposalService : IAutomationProposalService
             await _unitOfWork.BeginTransactionAsync(cancellationToken);
             transactionStarted = true;
 
+            // The preflight write-bar check above runs OUTSIDE the commit boundary, so a grant
+            // revoked after it was invisible to the batch: the decision guard below advances each
+            // board row, which catches a concurrent board-row mutation but not a revoked grant.
+            // Re-validating the caller's write bar for each distinct board here NARROWS that window
+            // to the transaction's own read snapshot; it does not close it through commit. A grant
+            // revoked by another connection AFTER this read is still unseen by the decision guard,
+            // by Approve(), and by the save (on SQLite WAL the write upgrade would most likely fail
+            // closed with SQLITE_BUSY_SNAPSHOT; a read-committed provider would commit). That
+            // residual stays acceptable because approve writes nothing to the board and execute
+            // rechecks the caller's bar inside its own transaction, so the worst outcome is a
+            // proposal left Approved that execute then refuses. The recheck runs BEFORE the
+            // decision guard and before Approve(), so a failure rolls back a transaction in which
+            // nothing has been mutated, and it fails with the same 403 the preflight raises.
+            // Boardless proposals carry no board bar to recheck.
+            foreach (var recheckBoardId in proposals
+                .Where(proposal => proposal.BoardId.HasValue)
+                .Select(proposal => proposal.BoardId!.Value)
+                .Distinct())
+            {
+                var writeBarRecheck = await _policyEngine.ValidateBoardAccessAsync(
+                    decidedByUserId,
+                    recheckBoardId,
+                    BoardAccessBar.Write,
+                    cancellationToken);
+                if (!writeBarRecheck.IsSuccess)
+                {
+                    await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                    transactionStarted = false;
+                    return Result.Failure<BatchApproveProposalsResultDto>(
+                        writeBarRecheck.ErrorCode,
+                        writeBarRecheck.ErrorMessage);
+                }
+            }
+
             // One marker per distinct board makes an archive/update that wins after the preflight
             // collide with this same atomic save. Boardless proposals need no marker.
             var decisionGuard = await _policyEngine.GuardProposalDecisionWritesAsync(
@@ -1138,14 +1172,25 @@ public class AutomationProposalService : IAutomationProposalService
             return dto;
         }
 
+        // Same ascending-Sequence contract MapToDto applies to the originals (#2563). A revision's
+        // operations are parsed in the payload's ARRAY order, which the reviewer's JSON editor can
+        // leave disagreeing with the operations' own `sequence` fields, so a revised proposal could
+        // otherwise carry an operation order its Sequence-ordered headlines do not match. Ordering
+        // the list once here keeps both the returned operations and the presentation built from
+        // them on the same order; it cannot change what Apply does, which re-parses the pinned
+        // revision itself and sorts by Sequence before dispatch.
+        var orderedRevisedOperations = revisedOperations
+            .OrderBy(operation => operation.Sequence)
+            .ToList();
+
         return dto with
         {
-            Operations = revisedOperations,
+            Operations = orderedRevisedOperations,
             Presentation = BuildPresentation(
                 proposal.Summary,
                 proposal.RiskLevel,
                 proposal.SourceType,
-                revisedOperations)
+                orderedRevisedOperations)
         };
     }
 
@@ -1647,7 +1692,19 @@ public class AutomationProposalService : IAutomationProposalService
 
     private static ProposalDto MapToDto(AutomationProposal proposal, string? decidedByUserName = null)
     {
-        var operationDtos = proposal.Operations.Select(MapOperationToDto).ToList();
+        // Ascending Sequence is the DTO's ORDER CONTRACT, not a convenience (#2563). The persisted
+        // collection arrives through an EF `Include` that carries no ORDER BY, and the create path
+        // maps the in-memory collection in AddOperation order, so without this the array order was
+        // whatever the caller or the query plan produced — while `BuildPresentation` below always
+        // builds `OperationHeadlines` in Sequence order. A consumer pairing the two arrays by index
+        // then rendered headline n against a different operation. Ordering here gives every
+        // consumer one contract, and matches what the diff, the executor and the contract validator
+        // already sort by. `OrderBy` is a stable sort, so operations sharing a Sequence keep their
+        // relative source order rather than being shuffled.
+        var operationDtos = proposal.Operations
+            .OrderBy(operation => operation.Sequence)
+            .Select(MapOperationToDto)
+            .ToList();
 
         return new ProposalDto(
             proposal.Id,

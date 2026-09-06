@@ -2,13 +2,13 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 /**
- * Catalog-load failure revert (#1858 review round).
+ * Catalog-load failure and atomic locale commit (#2003).
  *
- * When a lazy locale chunk fails to load, the flip-first switch must not leave
- * the app claiming Italian while rendering English: the runtime locale,
- * `<html lang>`, and the in-memory store value all revert to English. The
- * persisted preference is kept on purpose so a transient failure self-heals on
- * the next boot — that asymmetry is asserted here too.
+ * A lazy locale switch must not claim Italian while the Italian catalog is
+ * still loading or has failed: the previously committed runtime locale,
+ * `<html lang>`, and store value remain aligned. The persisted preference is
+ * kept on purpose so a transient failure self-heals on the next boot — that
+ * asymmetry is asserted here too.
  */
 
 vi.mock('../../i18n', async (importOriginal) => {
@@ -21,12 +21,24 @@ import { useLocaleStore } from '../../store/localeStore'
 
 const STORAGE_KEY = 'td.locale.v1'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe('localeStore — catalog load failure', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     window.localStorage.clear()
     i18n.global.locale.value = 'en'
+    document.documentElement.setAttribute('lang', 'en')
     vi.mocked(ensureLocaleMessages).mockClear()
+    vi.mocked(ensureLocaleMessages).mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -34,12 +46,16 @@ describe('localeStore — catalog load failure', () => {
     document.documentElement.removeAttribute('lang')
   })
 
-  it('reverts runtime locale, <html lang>, and store state — but keeps the persisted preference', async () => {
+  it('keeps the committed locale aligned while a switch fails, and reports the failed target', async () => {
     const store = useLocaleStore()
 
     const pending = store.setLocale('it')
-    // Flip-first window: the switch is live while the (doomed) load runs.
-    expect(i18n.global.locale.value).toBe('it')
+    // Atomic commit: the previous language remains live while the catalog is
+    // in flight, and the pending target is explicit state for the picker.
+    expect(store.locale).toBe('en')
+    expect(store.pendingLocale).toBe('it')
+    expect(i18n.global.locale.value).toBe('en')
+    expect(document.documentElement.getAttribute('lang')).toBe('en')
 
     await pending
 
@@ -47,22 +63,92 @@ describe('localeStore — catalog load failure', () => {
     expect(i18n.global.locale.value).toBe('en')
     expect(document.documentElement.getAttribute('lang')).toBe('en')
     expect(store.locale).toBe('en')
+    expect(store.pendingLocale).toBeNull()
+    expect(store.failedLocale).toBe('it')
     // Kept: a transient failure retries from storage on the next boot.
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('it')
   })
 
-  it('does not fight a newer switch that happened while the load was failing', async () => {
+  it('restores a stored locale atomically during startup when its catalog fails', async () => {
+    window.localStorage.setItem(STORAGE_KEY, 'it')
+    setActivePinia(createPinia())
+
     const store = useLocaleStore()
+    const pending = store.apply()
+
+    expect(store.locale).toBe('en')
+    expect(store.pendingLocale).toBe('it')
+    expect(i18n.global.locale.value).toBe('en')
+    expect(document.documentElement.getAttribute('lang')).toBe('en')
+
+    await pending
+
+    expect(store.locale).toBe('en')
+    expect(store.pendingLocale).toBeNull()
+    expect(store.failedLocale).toBe('it')
+    expect(i18n.global.locale.value).toBe('en')
+    expect(document.documentElement.getAttribute('lang')).toBe('en')
+  })
+
+  it('lets the latest request win when an obsolete catalog resolves first', async () => {
+    const store = useLocaleStore()
+    const italian = deferred<boolean>()
+    const spanish = deferred<boolean>()
+
+    vi.mocked(ensureLocaleMessages).mockImplementation((locale) =>
+      locale === 'it' ? italian.promise : spanish.promise,
+    )
 
     const first = store.setLocale('it')
     const second = store.setLocale('es')
-    await Promise.all([first, second])
 
-    // The failed 'it' load must not revert the meanwhile-selected 'es'... which
-    // itself failed too, so the final state is the reverted default — but via
-    // the 'es' revert, never a stale 'it' writer. Either way the invariant
-    // holds: runtime and store agree, and they are a supported value.
-    expect(store.locale).toBe(i18n.global.locale.value)
     expect(store.locale).toBe('en')
+    expect(store.pendingLocale).toBe('es')
+    expect(i18n.global.locale.value).toBe('en')
+
+    italian.resolve(true)
+    await first
+
+    // The obsolete success must not commit Italian or clear Spanish's
+    // pending state.
+    expect(store.locale).toBe('en')
+    expect(store.pendingLocale).toBe('es')
+    expect(i18n.global.locale.value).toBe('en')
+
+    spanish.resolve(true)
+    await second
+
+    expect(store.locale).toBe('es')
+    expect(store.pendingLocale).toBeNull()
+    expect(store.failedLocale).toBeNull()
+    expect(i18n.global.locale.value).toBe('es')
+    expect(document.documentElement.getAttribute('lang')).toBe('es')
+  })
+
+  it('does not let an obsolete failure undo a newer successful switch', async () => {
+    const store = useLocaleStore()
+    const italian = deferred<boolean>()
+    const spanish = deferred<boolean>()
+
+    vi.mocked(ensureLocaleMessages).mockImplementation((locale) =>
+      locale === 'it' ? italian.promise : spanish.promise,
+    )
+
+    const first = store.setLocale('it')
+    const second = store.setLocale('es')
+
+    spanish.resolve(true)
+    await second
+    expect(store.locale).toBe('es')
+    expect(store.failedLocale).toBeNull()
+
+    italian.resolve(false)
+    await first
+
+    expect(store.locale).toBe('es')
+    expect(store.pendingLocale).toBeNull()
+    expect(store.failedLocale).toBeNull()
+    expect(i18n.global.locale.value).toBe('es')
+    expect(document.documentElement.getAttribute('lang')).toBe('es')
   })
 })

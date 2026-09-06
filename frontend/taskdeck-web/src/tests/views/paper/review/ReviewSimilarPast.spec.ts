@@ -1,0 +1,252 @@
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import ReviewSimilarPast from '../../../../views/paper/review/ReviewSimilarPast.vue'
+import type {
+  PaperReviewEvidenceStatus,
+  SimilarPastRow,
+} from '../../../../composables/usePaperReviewSelectors'
+
+/**
+ * ReviewSimilarPast — the card must tell the truth BEFORE the disclosure opens
+ * (#1940, the retained residual of #2166).
+ *
+ * The card shipped with the whole empty state locked inside a collapsed
+ * region: a reviewer looking at a proposal with no comparable history saw only
+ * "Show similar decisions" and had to open it to learn there was nothing to
+ * show. The fix keeps the disclosure in every state — PaperReviewView.spec.ts,
+ * PaperReviewView.language.spec.ts and the required E2E smoke all drive that
+ * button on an empty fixture — and hoists the fact above it.
+ *
+ * The empty sentence lives in exactly one place. Duplicating it above and
+ * inside the region would make the open state read as two separate findings.
+ */
+
+const ROWS: SimilarPastRow[] = [
+  { serial: '#PAST-1', title: 'A prior comparable decision', verdict: 'applied', date: '2026-08-20' },
+  { serial: '#PAST-2', title: 'A prior rejected decision', verdict: 'rejected', date: '2026-08-19' },
+]
+
+const EMPTY_SENTENCE = 'No comparable past decisions.'
+
+/**
+ * `settled` is the default because it is the state the cases below were written
+ * for: every assertion about what an empty list MEANS presumes the read that
+ * proves it has landed. The state cases pass their own.
+ */
+function mountCard(rows: SimilarPastRow[], evidenceState: PaperReviewEvidenceStatus = 'settled') {
+  return mount(ReviewSimilarPast, {
+    attachTo: document.body,
+    props: {
+      rows,
+      applyRate:
+        rows.length === 0
+          ? { applied: 0, total: 0, ratio: 0 }
+          : { applied: 1, total: 2, ratio: 0.5 },
+      evidenceState,
+    },
+  })
+}
+
+/** How many times a sentence appears in the rendered text of the whole card. */
+function occurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1
+}
+
+describe('ReviewSimilarPast', () => {
+  describe('with no comparable decisions', () => {
+    it('states the emptiness at first paint, above the still-collapsed disclosure', () => {
+      const wrapper = mountCard([])
+      const empty = wrapper.get('[data-testid="paper-review-similar-past-empty"]')
+      const details = wrapper.get('[data-testid="paper-review-similar-past-details"]')
+
+      expect(empty.text()).toBe(EMPTY_SENTENCE)
+      expect(empty.isVisible()).toBe(true)
+      // The hoisted line is a sibling of the region, not a child of it: a
+      // child would still be invisible while the region is collapsed.
+      expect(details.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(details.isVisible()).toBe(false)
+
+      wrapper.unmount()
+    })
+
+    it('says so on the disclosure label too, so the closed control is not a promise', () => {
+      const wrapper = mountCard([])
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+
+      expect(button.text()).toContain('Show similar decisions')
+      expect(button.text()).toContain('none found')
+
+      wrapper.unmount()
+    })
+
+    it('keeps the disclosure present and correctly paired while collapsed', () => {
+      const wrapper = mountCard([])
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+      const details = wrapper.get('[data-testid="paper-review-similar-past-details"]')
+
+      expect(button.element.tagName).toBe('BUTTON')
+      expect(button.attributes('type')).toBe('button')
+      expect(button.attributes('aria-expanded')).toBe('false')
+      expect(button.attributes('aria-controls')).toBe(details.attributes('id'))
+      expect(details.attributes('aria-labelledby')).toBe(button.attributes('id'))
+      expect(details.attributes('role')).toBe('region')
+
+      wrapper.unmount()
+    })
+
+    it('never says the same thing twice', async () => {
+      const wrapper = mountCard([])
+      const details = wrapper.get('[data-testid="paper-review-similar-past-details"]')
+
+      expect(occurrences(wrapper.text(), EMPTY_SENTENCE)).toBe(1)
+      expect(details.text()).not.toContain(EMPTY_SENTENCE)
+
+      await wrapper.get('[data-testid="paper-review-similar-past-disclosure"]').trigger('click')
+
+      expect(occurrences(wrapper.text(), EMPTY_SENTENCE)).toBe(1)
+      expect(details.text()).not.toContain(EMPTY_SENTENCE)
+
+      wrapper.unmount()
+    })
+
+    it('opens onto an explanation rather than onto nothing', async () => {
+      const wrapper = mountCard([])
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+      const details = wrapper.get('[data-testid="paper-review-similar-past-details"]')
+
+      await button.trigger('click')
+
+      expect(button.attributes('aria-expanded')).toBe('true')
+      expect(details.isVisible()).toBe(true)
+      // A region that opens to a zero-height void reads as a broken control,
+      // and the required E2E asserts this region is *visible* once opened.
+      expect(details.get('[data-testid="paper-review-similar-past-empty-detail"]').text()).toBe(
+        'Decisions on comparable proposals will be listed here.',
+      )
+      expect(wrapper.find('.paper-review-past__rate').exists()).toBe(false)
+
+      wrapper.unmount()
+    })
+  })
+
+  describe('with comparable decisions', () => {
+    it('keeps the rows and the apply-rate footer behind the disclosure', async () => {
+      const wrapper = mountCard(ROWS)
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+      const details = wrapper.get('[data-testid="paper-review-similar-past-details"]')
+      const rate = wrapper.get('.paper-review-past__rate')
+
+      expect(wrapper.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(EMPTY_SENTENCE)
+      expect(button.text()).toContain('Show similar decisions')
+      expect(button.text()).not.toContain('none found')
+      expect(details.isVisible()).toBe(false)
+      expect(rate.isVisible()).toBe(false)
+
+      await button.trigger('click')
+
+      expect(details.isVisible()).toBe(true)
+      expect(details.text()).toContain('A prior comparable decision')
+      expect(details.text()).toContain('A prior rejected decision')
+      expect(rate.isVisible()).toBe(true)
+      expect(rate.text()).toContain('1 of 2 (50%)')
+      expect(
+        wrapper.find('[data-testid="paper-review-similar-past-empty-detail"]').exists(),
+      ).toBe(false)
+
+      wrapper.unmount()
+    })
+  })
+
+  /**
+   * #1940, the second residual recorded with PR #2662. An empty array reaches
+   * this card from three different situations and only one of them makes the
+   * empty sentence true. The card now receives which one it is holding.
+   */
+  describe('an empty list it cannot yet call empty', () => {
+    const stateLine = '[data-testid="paper-review-similar-past-state"]'
+    const stateDetail = '[data-testid="paper-review-similar-past-state-detail"]'
+
+    it('says the read is still running rather than that nothing was found', async () => {
+      const wrapper = mountCard([], 'loading')
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+
+      expect(wrapper.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(EMPTY_SENTENCE)
+      expect(wrapper.get(stateLine).text()).toBe('Reading comparable past decisions…')
+      expect(wrapper.get(stateLine).isVisible()).toBe(true)
+      // The label is the same claim in miniature: "(none found)" is a finding.
+      expect(button.text()).toContain('Show similar decisions')
+      expect(button.text()).not.toContain('none found')
+
+      await button.trigger('click')
+
+      expect(wrapper.get(stateDetail).text()).toBe(
+        'Comparable decisions will be listed here once this read finishes.',
+      )
+      expect(
+        wrapper.find('[data-testid="paper-review-similar-past-empty-detail"]').exists(),
+      ).toBe(false)
+
+      wrapper.unmount()
+    })
+
+    it('says the read failed rather than that nothing was found', async () => {
+      const wrapper = mountCard([], 'failed')
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+
+      expect(wrapper.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(EMPTY_SENTENCE)
+      expect(wrapper.get(stateLine).text()).toBe('Comparable past decisions could not be read.')
+      expect(button.text()).not.toContain('none found')
+
+      await button.trigger('click')
+
+      expect(wrapper.get(stateDetail).text()).toBe(
+        'The read failed, so whether there are comparable past decisions is unknown.',
+      )
+
+      wrapper.unmount()
+    })
+
+    it('states nothing at all when no proposal is active', () => {
+      const wrapper = mountCard([], 'idle')
+
+      expect(wrapper.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(wrapper.find(stateLine).exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(EMPTY_SENTENCE)
+
+      wrapper.unmount()
+    })
+
+    it('adds no state line to rows that already answer the question', () => {
+      const wrapper = mountCard(ROWS, 'loading')
+
+      expect(wrapper.find(stateLine).exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-similar-past-details"]').text()).toContain(
+        'A prior comparable decision',
+      )
+
+      wrapper.unmount()
+    })
+  })
+
+  // Matches ReviewProvenance.vue: `v-show` alone leaves the collapsed region in
+  // the accessibility tree for anything that reads the DOM rather than the
+  // computed style.
+  it('binds `hidden` to the collapsed state, like the provenance card', async () => {
+    const wrapper = mountCard(ROWS)
+    const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+    const details = wrapper.get('[data-testid="paper-review-similar-past-details"]')
+
+    expect(details.attributes('hidden')).toBeDefined()
+
+    await button.trigger('click')
+    expect(details.attributes('hidden')).toBeUndefined()
+
+    await button.trigger('click')
+    expect(details.attributes('hidden')).toBeDefined()
+
+    wrapper.unmount()
+  })
+})

@@ -312,7 +312,7 @@ function onCardDragOver(card: Card, e: DragEvent) {
         <button
           type="button"
           class="paper-board-column__capture"
-          :aria-label="t('boardDetail.card.captureAria', { column: column.name })"
+          :aria-label="t('boardDetail.card.captureAria')"
           :data-action="`capture-column-${column.id}`"
           data-testid="paper-column-capture"
           @click="onCapture"

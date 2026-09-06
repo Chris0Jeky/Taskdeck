@@ -180,6 +180,11 @@ created inside Taskdeck, and authenticate local API/MCP clients; never put a `td
   [UPGRADING.md](../../UPGRADING.md#version-notes). v0.1.2 and later print the accurate
   diagnostic below instead.
 - **From v0.3.0-rc.1 onward** — `TASKDECK_DESKTOP_WARNING code=retired_provider_configuration_ignored`: Taskdeck started normally after ignoring retired Gemini settings inherited from this machine's environment (environment variables only — a retired selector passed on the command line still fails closed); no retired value was kept, logged, or printed, and the provider actually in use is the one shown in Taskdeck's provider status. Clear those leftover variables with the commands below when convenient. **The published v0.2.0 archive does not have this behaviour**: there the same leftover variables produce the fatal below, and the commands are a required workaround rather than optional tidying.
+- **Unreleased (`main` after 2026-09-05, the build after `v0.3.0-rc.1`)** `TASKDECK_DESKTOP_FATAL
+  code=connector_encryption_key_missing`: you started the packaged exe with `TASKDECK_HEADLESS` set (the
+  supply-your-own-key contract) and no `Connectors__EncryptionKey` was configured. Set a stable
+  base64-encoded 256-bit key, or reuse the key already stored for this data folder, and start again. The
+  message prints no settings. Earlier builds report this case as the generic `code=startup_failed`.
 - `TASKDECK_DESKTOP_FATAL code=retired_provider_configuration`: Taskdeck found configuration for the
   retired Gemini provider and refused to switch providers silently. **In v0.2.0 and earlier this
   fires for retired Gemini settings from any source, including leftover `Llm__Gemini__*` variables

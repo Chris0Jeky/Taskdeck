@@ -1,4 +1,5 @@
 import { computed, onMounted, onUnmounted, ref, type ComputedRef, type Ref } from 'vue'
+import { logWarn } from '../utils/errorReporting'
 
 /**
  * Observes `window.visualViewport` and exposes it as CSS custom properties so a
@@ -50,6 +51,10 @@ export interface UseVisualViewportResult {
 
 export function useVisualViewport(options: UseVisualViewportOptions): UseVisualViewportResult {
   const { prefix, fallback = 'layout' } = options
+
+  if (import.meta.env.DEV && (typeof prefix !== 'string' || !prefix.startsWith('--') || prefix === '--')) {
+    logWarn('[useVisualViewport] prefix must start with a CSS custom-property marker (`--`)', prefix)
+  }
 
   const supported = ref(false)
   const height = ref(0)
