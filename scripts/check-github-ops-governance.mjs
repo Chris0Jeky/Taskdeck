@@ -8,7 +8,10 @@ import { fileURLToPath } from 'node:url'
 
 const errors = []
 
-const expectedParkedStagingGateSha256 = 'e3d1987cd7ffdab2d9f7bafe6ddc7d750be7b6eb421684dd973bef58e820248a'
+// Regenerated 2026-09-04 (CI-11 #2335): the only delta from the previously reviewed parked
+// text is that its four external actions are now pinned to full commit SHAs. A parked
+// workflow must be SHA-pinned too, so the pins are kept and the digest is re-frozen over them.
+const expectedParkedStagingGateSha256 = 'fb43cd8e585310ebd47fe954444f2ea7b7edcca16843c3f762c3f5b10c91f44b'
 
 const requiredIssueTemplateFiles = [
   '.github/ISSUE_TEMPLATE/bug_report.md',

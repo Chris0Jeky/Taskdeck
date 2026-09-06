@@ -201,7 +201,7 @@ function readSiblingWithInputs(lines, usesIndex, propertyIndent, location, viola
     if (!line.structural || line.raw.trim() === '' || line.raw.trim().startsWith('#')) continue
     if (line.indent < propertyIndent) break
     if (line.indent === propertyIndent) {
-      const withMatch = /^\s*(?:with|"with"|'with')\s*:\s*(.*?)\s*$/.exec(line.raw)
+      const withMatch = /^\s*(?:with|"with"|'with')\s*:\s*(.*?)\s*$/.exec(stripYamlComment(line.raw))
       if (withMatch) {
         if (cleanScalar(withMatch[1]) !== '') {
           violations.add(`${location}: with must use a block mapping, not an inline scalar or flow mapping`)
@@ -1079,6 +1079,39 @@ test('tagged with input values cannot satisfy the cache-dependency-path contract
   assert.throws(
     () => enforceReleaseCacheContract(sources),
     /YAML tags in with input values are unsupported by the release cache scanner/,
+  )
+})
+
+test('trailing comments on with keys do not become inline inputs', () => {
+  const commentSources = validSyntheticClosure()
+  commentSources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    commentSources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm`,
+      `      - uses: actions/setup-node@v7
+        with: # inputs below
+          cache: npm`,
+    ),
+  )
+  assert.doesNotThrow(() => enforceReleaseCacheContract(commentSources))
+
+  const inlineSources = validSyntheticClosure()
+  inlineSources.set(
+    `${workflowPrefix}reusable-release-build.yml`,
+    inlineSources.get(`${workflowPrefix}reusable-release-build.yml`).replace(
+      `      - uses: actions/setup-node@v7
+        with:
+          cache: npm`,
+      `      - uses: actions/setup-node@v7
+        with: inline
+          cache: npm`,
+    ),
+  )
+  assert.throws(
+    () => enforceReleaseCacheContract(inlineSources),
+    /with must use a block mapping, not an inline scalar or flow mapping/,
   )
 })
 

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ReviewSimilarPast from '../../../../views/paper/review/ReviewSimilarPast.vue'
-import type { SimilarPastRow } from '../../../../composables/usePaperReviewSelectors'
+import type {
+  PaperReviewEvidenceStatus,
+  SimilarPastRow,
+} from '../../../../composables/usePaperReviewSelectors'
 
 /**
  * ReviewSimilarPast — the card must tell the truth BEFORE the disclosure opens
@@ -25,7 +28,12 @@ const ROWS: SimilarPastRow[] = [
 
 const EMPTY_SENTENCE = 'No comparable past decisions.'
 
-function mountCard(rows: SimilarPastRow[]) {
+/**
+ * `settled` is the default because it is the state the cases below were written
+ * for: every assertion about what an empty list MEANS presumes the read that
+ * proves it has landed. The state cases pass their own.
+ */
+function mountCard(rows: SimilarPastRow[], evidenceState: PaperReviewEvidenceStatus = 'settled') {
   return mount(ReviewSimilarPast, {
     attachTo: document.body,
     props: {
@@ -34,6 +42,7 @@ function mountCard(rows: SimilarPastRow[]) {
         rows.length === 0
           ? { applied: 0, total: 0, ratio: 0 }
           : { applied: 1, total: 2, ratio: 0.5 },
+      evidenceState,
     },
   })
 }
@@ -144,6 +153,79 @@ describe('ReviewSimilarPast', () => {
       expect(
         wrapper.find('[data-testid="paper-review-similar-past-empty-detail"]').exists(),
       ).toBe(false)
+
+      wrapper.unmount()
+    })
+  })
+
+  /**
+   * #1940, the second residual recorded with PR #2662. An empty array reaches
+   * this card from three different situations and only one of them makes the
+   * empty sentence true. The card now receives which one it is holding.
+   */
+  describe('an empty list it cannot yet call empty', () => {
+    const stateLine = '[data-testid="paper-review-similar-past-state"]'
+    const stateDetail = '[data-testid="paper-review-similar-past-state-detail"]'
+
+    it('says the read is still running rather than that nothing was found', async () => {
+      const wrapper = mountCard([], 'loading')
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+
+      expect(wrapper.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(EMPTY_SENTENCE)
+      expect(wrapper.get(stateLine).text()).toBe('Reading comparable past decisions…')
+      expect(wrapper.get(stateLine).isVisible()).toBe(true)
+      // The label is the same claim in miniature: "(none found)" is a finding.
+      expect(button.text()).toContain('Show similar decisions')
+      expect(button.text()).not.toContain('none found')
+
+      await button.trigger('click')
+
+      expect(wrapper.get(stateDetail).text()).toBe(
+        'Comparable decisions will be listed here once this read finishes.',
+      )
+      expect(
+        wrapper.find('[data-testid="paper-review-similar-past-empty-detail"]').exists(),
+      ).toBe(false)
+
+      wrapper.unmount()
+    })
+
+    it('says the read failed rather than that nothing was found', async () => {
+      const wrapper = mountCard([], 'failed')
+      const button = wrapper.get('[data-testid="paper-review-similar-past-disclosure"]')
+
+      expect(wrapper.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(EMPTY_SENTENCE)
+      expect(wrapper.get(stateLine).text()).toBe('Comparable past decisions could not be read.')
+      expect(button.text()).not.toContain('none found')
+
+      await button.trigger('click')
+
+      expect(wrapper.get(stateDetail).text()).toBe(
+        'The read failed, so whether there are comparable past decisions is unknown.',
+      )
+
+      wrapper.unmount()
+    })
+
+    it('states nothing at all when no proposal is active', () => {
+      const wrapper = mountCard([], 'idle')
+
+      expect(wrapper.find('[data-testid="paper-review-similar-past-empty"]').exists()).toBe(false)
+      expect(wrapper.find(stateLine).exists()).toBe(false)
+      expect(wrapper.text()).not.toContain(EMPTY_SENTENCE)
+
+      wrapper.unmount()
+    })
+
+    it('adds no state line to rows that already answer the question', () => {
+      const wrapper = mountCard(ROWS, 'loading')
+
+      expect(wrapper.find(stateLine).exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-similar-past-details"]').text()).toContain(
+        'A prior comparable decision',
+      )
 
       wrapper.unmount()
     })

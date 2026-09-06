@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import ReviewDecisionRail from '../../../../views/paper/review/ReviewDecisionRail.vue'
+import { drainCleanups } from '../../../utils/drainCleanups'
 // Vite's `?raw` rather than `node:fs`: the spec tree is type-checked with
 // `types: ["vite/client", ...]` and deliberately WITHOUT node types
 // (tsconfig.vitest.json), so a `readFileSync` here would fail `npm run typecheck`.
@@ -381,7 +382,7 @@ describe('ReviewDecisionRail', () => {
     const cleanups: Array<() => void> = []
 
     afterEach(() => {
-      for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+      drainCleanups(cleanups)
     })
 
     function renderExternalNote(): void {
@@ -391,6 +392,20 @@ describe('ReviewDecisionRail', () => {
       document.body.appendChild(note)
       cleanups.push(() => note.remove())
     }
+
+    it('removes the injected note after a throwing unmount cleanup', () => {
+      renderExternalNote()
+      const wrapper = mountRail({ busy: true }, { attachTo: true })
+      const unmountFailure = new Error('unmount cleanup failed')
+      cleanups.push(() => {
+        wrapper.unmount()
+        throw unmountFailure
+      })
+
+      expect(() => drainCleanups(cleanups)).toThrow(unmountFailure)
+      expect(document.getElementById(EXTERNAL_ID)).toBeNull()
+      expect(cleanups).toHaveLength(0)
+    })
 
     it('describes every disabled decision control with the external explanation', () => {
       renderExternalNote()

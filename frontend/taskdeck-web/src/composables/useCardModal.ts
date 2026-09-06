@@ -138,7 +138,7 @@ export function useCardModal(options: UseCardModalOptions) {
           boardStore.setEditingCard(null)
         }
         boardStore.setEditingCard(newCard.id)
-        void boardStore.fetchCardComments(newCard.boardId, newCard.id)
+        void loadCardComments(newCard)
         void loadCaptureProvenance()
       }
     }
@@ -149,7 +149,7 @@ export function useCardModal(options: UseCardModalOptions) {
     async (isOpen) => {
       if (isOpen) {
         expectedUpdatedAt.value = card.value.updatedAt
-        await boardStore.fetchCardComments(card.value.boardId, card.value.id)
+        void loadCardComments(card.value)
         await loadCaptureProvenance()
         boardStore.setEditingCard(card.value.id)
         return
@@ -175,6 +175,15 @@ export function useCardModal(options: UseCardModalOptions) {
     },
     { immediate: true }
   )
+
+  function loadCardComments(targetCard: Card) {
+    return boardStore.fetchCardComments(targetCard.boardId, targetCard.id).catch((error: unknown) => {
+      // The store owns the user-facing error state and toast. Keep cached comments intact
+      // and let the rest of the card editor continue loading, but never swallow the failure
+      // silently: this is the only reporting sink once the rejection is caught here.
+      logError('Failed to load card comments:', error)
+    })
+  }
 
   // Provenance
   async function loadCaptureProvenance() {

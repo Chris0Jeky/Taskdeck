@@ -3,7 +3,11 @@ export type { CardFilters, BoardState } from './boardState'
 export { createBoardHelpers } from './boardStoreHelpers'
 export type { BoardHelpers } from './boardStoreHelpers'
 export { createBoardCrudActions } from './boardCrudStore'
-export type { BoardFetchIntent, BoardFetchOptions } from './boardCrudStore'
+export type {
+  BoardFetchIntent,
+  BoardFetchOptions,
+  BoardListFetchOptions,
+} from './boardCrudStore'
 export { createColumnActions } from './columnStore'
 export { createCardActions } from './cardStore'
 export { createCardCommentActions } from './cardCommentStore'

@@ -87,6 +87,18 @@ const FALLBACK_LABEL: Record<Toast['type'], ToastLabel> = {
   info: 'noted',
 }
 
+/** Keep every supported toast label tied to a checked, static catalog key. */
+const TOAST_LABEL_KEYS: Record<ToastLabel, string> = {
+  saved: 'shell.toast.label.saved',
+  queued: 'shell.toast.label.queued',
+  approved: 'shell.toast.label.approved',
+  applied: 'shell.toast.label.applied',
+  done: 'shell.toast.label.done',
+  noted: 'shell.toast.label.noted',
+  warning: 'shell.toast.label.warning',
+  failed: 'shell.toast.label.failed',
+}
+
 /** The outcome word this toast is stamped with — the caller's, else severity's. */
 function labelKind(toast: Toast): ToastLabel {
   return toast.label ?? FALLBACK_LABEL[toast.type]
@@ -99,7 +111,7 @@ function labelKind(toast: Toast): ToastLabel {
  */
 function describe(toast: Toast): ToastDescriptor {
   const kind = labelKind(toast)
-  const label = t(`shell.toast.label.${kind}`)
+  const label = t(TOAST_LABEL_KEYS[kind])
   switch (toast.type) {
     case 'success':
       return { tone: 'applied', tagstamp: 'applied', glyph: '✓', labelKind: kind, label }

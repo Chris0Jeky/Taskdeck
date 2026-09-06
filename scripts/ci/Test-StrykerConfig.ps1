@@ -285,7 +285,7 @@ function Test-MutationWorkflowContract {
     $artifactStep = @(
         '      - name: Upload Stryker report',
         '        if: always()',
-        '        uses: actions/upload-artifact@v7',
+        '        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1',
         '        with:',
         '          name: stryker-net-report',
         '          path: backend/StrykerOutput/**/reports/',

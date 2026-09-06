@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { createCardFilterActions } from '../../../store/board/cardFilterStore'
+import { createBoardState, initialCardFilters } from '../../../store/board/boardState'
 import type { Card } from '../../../types/board'
 
 function makeCard(overrides: Partial<Card> = {}): Card {
@@ -288,6 +289,42 @@ describe('cardFilterStore', () => {
       const { clearFilters } = createCardFilterActions(state as any)
       clearFilters()
       expect(state.filters.value).toEqual({
+        searchText: '',
+        labelIds: [],
+        dueDateFilter: 'all',
+        showBlockedOnly: false,
+      })
+    })
+
+    it('clears to the same value the store’s initial state starts from', () => {
+      const state = createMockState([])
+      state.filters.value = {
+        searchText: 'something',
+        labelIds: ['a', 'b'],
+        dueDateFilter: 'overdue',
+        showBlockedOnly: true,
+      }
+      const { clearFilters } = createCardFilterActions(state as any)
+      clearFilters()
+
+      // One source, three sites: this one, createBoardState below, and
+      // boardCrudStore.resetForLogout (covered in its own spec).
+      expect(state.filters.value).toEqual(initialCardFilters())
+      expect(createBoardState().filters.value).toEqual(initialCardFilters())
+    })
+  })
+
+  describe('initialCardFilters', () => {
+    it('returns a fresh object every call so one site cannot mutate another', () => {
+      const first = initialCardFilters()
+      const second = initialCardFilters()
+
+      expect(first).not.toBe(second)
+      expect(first.labelIds).not.toBe(second.labelIds)
+
+      first.searchText = 'leaked'
+      first.labelIds.push('leaked')
+      expect(initialCardFilters()).toEqual({
         searchText: '',
         labelIds: [],
         dueDateFilter: 'all',

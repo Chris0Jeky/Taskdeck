@@ -113,10 +113,11 @@ jobs:
       # builds, names an asset or writes a Release ever reads these.
       render_tag: ${{ steps.resolve.outputs.render_tag }}
       render_prerelease: ${{ steps.resolve.outputs.render_prerelease }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       # Only the tag validator is needed here; nothing in this job writes to Git.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -205,6 +206,16 @@ jobs:
           # Re-validate the final tag, which also covers the generated rehearsal name.
           tag="$(bash scripts/ci/validate-release-tag.sh "${tag}")"
 
+          # The frontend and backend must receive the same normalized version. Keep
+          # this derived from the validated final tag so no frontend source needs a
+          # hand-maintained release number.
+          version="${tag#v}"
+          version="${version%%+*}"
+          if ! printf '%s' "${version}" | grep -Eq '^[0-9A-Za-z][0-9A-Za-z.-]*$'; then
+            printf '::error::Refusing product version %q — not a plain version token.\n' "${version}"
+            exit 1
+          fi
+
           # --- 4. Decide the publish semantics from that same tag ------------
           # Read off the VALIDATED tag string, so the release's label and the
           # bytes published under it can never disagree about which tag they
@@ -260,6 +271,7 @@ jobs:
             printf 'prerelease=%s\n' "${prerelease}"
             printf 'render_tag=%s\n' "${render_tag}"
             printf 'render_prerelease=%s\n' "${render_prerelease}"
+            printf 'version=%s\n' "${version}"
           } >> "${GITHUB_OUTPUT}"
 
           # The Markdown code-span delimiter is held in a variable and passed as a
@@ -275,6 +287,7 @@ jobs:
             printf '| publishes a release | %s%s%s |\n' "${bt}" "${publish}" "${bt}"
             printf '| published as a prerelease | %s%s%s |\n' "${bt}" "${prerelease}" "${bt}"
             printf '| page rendered as (render only) | %s%s%s |\n' "${bt}" "${render_tag}" "${bt}"
+            printf '| normalized version | %s%s%s |\n' "${bt}" "${version}" "${bt}"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   # ---------------------------------------------------------------------------
@@ -287,7 +300,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve-source.outputs.sha }}
           persist-credentials: false
@@ -307,7 +320,7 @@ jobs:
           printf 'Release source commit verified: %s\n' "${actual_sha}"
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -321,10 +334,11 @@ jobs:
         working-directory: frontend/taskdeck-web
         env:
           VITE_API_BASE_URL: /api
+          VITE_APP_VERSION: ${{ needs.resolve-source.outputs.version }}
         run: npx vite build
 
       - name: Upload frontend dist
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: frontend-dist
           path: frontend/taskdeck-web/dist/
@@ -347,7 +361,7 @@ jobs:
             archive_ext: zip
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve-source.outputs.sha }}
           persist-credentials: false
@@ -367,7 +381,7 @@ jobs:
           printf 'Release source commit verified: %s\n' "${actual_sha}"
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
           cache: true
@@ -377,7 +391,7 @@ jobs:
             backend/**/*.csproj
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -390,7 +404,7 @@ jobs:
           npx playwright install chromium
 
       - name: Download frontend dist
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: frontend-dist
           path: frontend-dist
@@ -625,7 +639,7 @@ jobs:
             -LiveOpenAIIfConfigured
 
       - name: Upload release artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-${{ matrix.rid }}
           path: |
@@ -659,7 +673,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve-source.outputs.sha }}
           persist-credentials: false
@@ -723,12 +737,12 @@ jobs:
           printf 'Workflow tooling checked out from %s (HEAD commit %s).\n' "${TOOLING_SHA}" "${tooling_commit}"
 
       - name: Setup Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Download built release assets
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
           merge-multiple: true
@@ -880,7 +894,7 @@ jobs:
       # release-desktop-dispatch suite pins this with a real glob match rather
       # than a string comparison, so a future rename cannot silently re-break it.
       - name: Upload the rendered release notes
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: composed-page-body
           path: release-notes.md
@@ -905,7 +919,7 @@ jobs:
       # Pinned to the resolved release commit, and credentials are NOT persisted:
       # every write here goes through `gh` with an explicit GH_TOKEN.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve-source.outputs.sha }}
           persist-credentials: false
@@ -930,7 +944,7 @@ jobs:
       # artifacts/openapi: is a directory", v0.1.0 run 32211340173). Rehearsals skip this job,
       # so only a real tag push could surface it.
       - name: Download all release artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-*
           merge-multiple: true
@@ -939,7 +953,7 @@ jobs:
       # The composed page body (#2234), rendered by compose-notes from this same
       # commit. Kept out of release-assets/ so it is never uploaded as an asset.
       - name: Download the composed release notes
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: composed-page-body
           path: release-notes/

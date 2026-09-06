@@ -12,6 +12,7 @@ import {
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 import { resetProposalDisplayNamesForTests } from '../../../../composables/useProposalDisplayNames'
 import enReview from '../../../../locales/en/review'
+import { i18n, DEFAULT_LOCALE } from '../../../../i18n'
 
 // Two sticky rules decide whether the degraded warning is actually visible, and
 // both live in scoped stylesheets that vitest never processes, so they have to
@@ -203,9 +204,17 @@ async function mountView(
   columns: unknown[] = [],
   // `document.activeElement` only tracks elements that are in the document, so
   // the focus specs need a real attachment; everything else mounts detached.
-  options: { attachTo?: boolean } = {},
+  options: { attachTo?: boolean; listReadRejectsWith?: unknown } = {},
 ) {
-  mocks.getProposals.mockResolvedValueOnce(proposals)
+  // A test that needs the FIRST list read to fail must route it through here.
+  // Queueing a rejection at the call site instead would leave the
+  // `mockResolvedValueOnce` below unconsumed, and that leftover entry shifts
+  // the once-queue for every later test in this file.
+  if ('listReadRejectsWith' in options) {
+    mocks.getProposals.mockRejectedValueOnce(options.listReadRejectsWith)
+  } else {
+    mocks.getProposals.mockResolvedValueOnce(proposals)
+  }
   // The Review surface re-reads its queue on a bounded poll while it is open
   // (#2194), so a `...Once` fixture alone would leave any timer-advancing test
   // facing a drained mock and an empty queue. A real server keeps answering
@@ -270,6 +279,25 @@ async function confirmApplyDialog() {
   ).not.toBeNull()
   accept!.click()
   await flushPromises()
+}
+
+/**
+ * `mountView` keeps its router private, so the live instance is reached through
+ * the mounted component. Structural casts, matching the `$route` idiom the
+ * deep-link specs above already use: the spec tree is type-checked without the
+ * router's own generics (tsconfig.vitest.json).
+ */
+function routerOf(wrapper: { vm: unknown }) {
+  return (wrapper.vm as {
+    $router: {
+      beforeEach: (guard: (to: { hash: string }) => false | undefined) => () => void
+      replace: (path: string) => Promise<unknown>
+    }
+  }).$router
+}
+
+function hashOf(wrapper: { vm: unknown }): string {
+  return (wrapper.vm as { $route: { hash: string } }).$route.hash
 }
 
 describe('PaperReviewView', () => {
@@ -1255,6 +1283,108 @@ describe('PaperReviewView', () => {
     expect(wrapper.find('[data-testid="paper-review-main"]').text()).toContain('First proposal')
   })
 
+  it('says a malformed pin is a broken link, not an unavailable proposal (#2214)', async () => {
+    // A 400 from the by-id route is model binding refusing the id, so the link
+    // never named a proposal: "it may have been applied, archived, or removed"
+    // describes a proposal that existed, and pointing a reviewer at a recovery
+    // that cannot arrive is worse than saying nothing.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      const wrapper = await mountView(
+        [makeProposal({ id: 'proposal-not-a-guid' })],
+        '/workspace/review#proposal-proposal-not-a-guid',
+      )
+
+      mocks.getProposals.mockResolvedValue([])
+      mocks.getProposal.mockRejectedValue({ response: { status: 400 } })
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const empty = wrapper.get('[data-testid="paper-review-empty"]')
+      expect(empty.text()).toContain(enReview.empty.unavailable.malformedTitle)
+      expect(empty.text()).not.toContain(enReview.empty.unavailable.title)
+      expect(empty.text()).toContain('proposal-not-a-guid')
+      expect(wrapper.find('[data-testid="paper-review-unavailable-return"]').exists()).toBe(true)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the revoked-access panel, not the unavailable pin, on a cold entry to a revoked board (#2214)', async () => {
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review?boardId=board-revoked#proposal-p-pinned',
+      [],
+      [],
+      { listReadRejectsWith: { response: { status: 403 } } },
+    )
+
+    expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(true)
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.title)
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.malformedTitle)
+    expect(mocks.getProposal).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-PROPOSAL-FORBIDDEN',
+    )
+
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).toContain(enReview.empty.unavailable.title)
+    expect(empty.text()).toContain('PROPOSAL-FORBIDDEN')
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-access-revoked"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('says a malformed link is malformed on the explicit path too (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 400 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-not-a-guid',
+    )
+
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).toContain(enReview.empty.unavailable.malformedTitle)
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.title)
+    expect(mocks.errorToast).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the explicit deep-link toast for a transient class (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 500 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-PROPOSAL-FLAKY',
+    )
+
+    expect(mocks.errorToast).toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="paper-review-empty"]').text()).not.toContain(
+      enReview.empty.unavailable.title,
+    )
+    wrapper.unmount()
+  })
+
+  it('keeps the ordinary unavailable copy for a pin that is gone (#2214)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+    )
+
+    const empty = wrapper.get('[data-testid="paper-review-empty"]')
+    expect(empty.text()).toContain(enReview.empty.unavailable.title)
+    expect(empty.text()).not.toContain(enReview.empty.unavailable.malformedTitle)
+    wrapper.unmount()
+  })
+
   it('updates the hash when manual queue selection replaces a deep-link target', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-first' }))
     const wrapper = await mountView(
@@ -1662,6 +1792,259 @@ describe('PaperReviewView', () => {
     expect(mocks.successToast).toHaveBeenCalledWith(
       'Snoozed for 1 hour — it will return to your queue.',
     )
+  })
+
+  it('does not record a defer receipt for a proposal left during the await', async () => {
+    let resolveDefer!: (proposal: Proposal) => void
+    mocks.deferProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveDefer = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+
+    // The queue stays interactive while the defer request is in flight.
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    // Keep the current explicit selection while removing the route hash; this
+    // makes a stale receipt visible if the continuation re-anchors itself.
+    await wrapper.vm.$router.replace('/workspace/review')
+    await flushPromises()
+
+    resolveDefer(makeProposal({
+      id: 'aaa-1',
+      summary: 'First proposal',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    }))
+    await flushPromises()
+
+    expect(mocks.deferProposal).toHaveBeenCalledWith('aaa-1')
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('records a defer receipt when the current decision locus still matches', async () => {
+    let resolveDefer!: (proposal: Proposal) => void
+    mocks.deferProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveDefer = resolve }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'matching-defer' })])
+
+    await wrapper.find('[data-testid="decision-defer"]').trigger('click')
+    await Promise.resolve()
+    resolveDefer(makeProposal({
+      id: 'matching-defer',
+      deferredUntil: new Date(Date.now() + 60 * 60_000).toISOString(),
+    }))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'))
+      .toBe('deferred')
+  })
+
+  // #2128: the two confirm-gated recorders are the siblings of the approve
+  // (#2069) and defer (PR #2629) guards. Same locus expression, same hazard —
+  // the queue stays interactive across the execute/reject round trip, so the
+  // continuation must not pull the reviewer back to the proposal they left.
+  it('does not record an applied receipt for a proposal left during the execute confirmation', async () => {
+    let resolveExecute!: (proposal: Proposal) => void
+    mocks.executeProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveExecute = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', status: 'Approved', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await confirmApplyDialog()
+
+    // The queue stays interactive while the execute request is in flight.
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    // Keep the current explicit selection while removing the route hash; this
+    // makes a stale receipt visible if the continuation re-anchors itself.
+    await wrapper.vm.$router.replace('/workspace/review')
+    await flushPromises()
+
+    resolveExecute(makeProposal({
+      id: 'aaa-1',
+      status: 'Applied',
+      summary: 'First proposal',
+      appliedAt: new Date().toISOString(),
+    }))
+    await flushPromises()
+
+    expect(mocks.executeProposal).toHaveBeenCalledWith('aaa-1', expect.any(String))
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('records an applied receipt when the current decision locus still matches', async () => {
+    let resolveExecute!: (proposal: Proposal) => void
+    mocks.executeProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveExecute = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'matching-execute', status: 'Approved' }),
+    ])
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await confirmApplyDialog()
+    resolveExecute(makeProposal({
+      id: 'matching-execute',
+      status: 'Applied',
+      appliedAt: new Date().toISOString(),
+    }))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'))
+      .toBe('applied')
+  })
+
+  it('suppresses the applied receipt while the deep-link hash still names the proposal the reviewer left', async () => {
+    let resolveExecute!: (proposal: Proposal) => void
+    mocks.executeProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveExecute = resolve }),
+    )
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'aaa-1', status: 'Approved', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ],
+      '/workspace/review#proposal-aaa-1',
+    )
+    const router = routerOf(wrapper)
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await confirmApplyDialog()
+
+    // Router navigation can lag behind a queue click — the reason the locus
+    // reads the explicit selection FIRST and the hash only as a fallback. Hold
+    // the hash on the proposal the reviewer left so the two disagree at the
+    // moment the response lands.
+    const releaseHash = router.beforeEach((to) => (to.hash === '#proposal-bbb-1' ? false : undefined))
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    releaseHash()
+
+    resolveExecute(makeProposal({
+      id: 'aaa-1',
+      status: 'Applied',
+      summary: 'First proposal',
+      appliedAt: new Date().toISOString(),
+    }))
+    await flushPromises()
+
+    // Neither confirm recorder touches the deep link (only onDefer/onFileAway
+    // do), so the hash is exactly where the queue click left it and the
+    // visibleProposals carve-out still anchors the surface on the linked row.
+    expect(hashOf(wrapper)).toBe('#proposal-aaa-1')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+
+    // Dropping the hash reveals the locus underneath: still the reviewer's own
+    // selection, not the proposal a stale receipt would have re-pinned.
+    await router.replace('/workspace/review')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('does not record a rejected receipt for a proposal left during the reject confirmation', async () => {
+    let resolveReject!: (proposal: Proposal) => void
+    mocks.rejectProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveReject = resolve }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+      makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+    ])
+
+    await wrapper.find('[data-serial="#AAA-"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+    await acceptRejectDialog()
+
+    // The queue stays interactive while the reject request is in flight.
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    // Keep the current explicit selection while removing the route hash; this
+    // makes a stale receipt visible if the continuation re-anchors itself.
+    await wrapper.vm.$router.replace('/workspace/review')
+    await flushPromises()
+
+    resolveReject(makeProposal({ id: 'aaa-1', status: 'Rejected', summary: 'First proposal' }))
+    await flushPromises()
+
+    expect(mocks.rejectProposal).toHaveBeenCalledWith('aaa-1', null)
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+  })
+
+  it('records a rejected receipt when the current decision locus still matches', async () => {
+    let resolveReject!: (proposal: Proposal) => void
+    mocks.rejectProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveReject = resolve }),
+    )
+    const wrapper = await mountView([makeProposal({ id: 'matching-reject' })])
+
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+    await acceptRejectDialog('no longer needed')
+    resolveReject(makeProposal({ id: 'matching-reject', status: 'Rejected' }))
+    await flushPromises()
+
+    expect(mocks.rejectProposal).toHaveBeenCalledWith('matching-reject', 'no longer needed')
+    expect(wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'))
+      .toBe('rejected')
+  })
+
+  it('suppresses the rejected receipt while the deep-link hash still names the proposal the reviewer left', async () => {
+    let resolveReject!: (proposal: Proposal) => void
+    mocks.rejectProposal.mockImplementationOnce(
+      () => new Promise<Proposal>((resolve) => { resolveReject = resolve }),
+    )
+    const wrapper = await mountView(
+      [
+        makeProposal({ id: 'aaa-1', summary: 'First proposal' }),
+        makeProposal({ id: 'bbb-1', summary: 'Second proposal' }),
+      ],
+      '/workspace/review#proposal-aaa-1',
+    )
+    const router = routerOf(wrapper)
+
+    await wrapper.find('[data-testid="decision-reject"]').trigger('click')
+    await flushPromises()
+    await acceptRejectDialog()
+
+    // Same lagging-navigation window as the execute sibling above.
+    const releaseHash = router.beforeEach((to) => (to.hash === '#proposal-bbb-1' ? false : undefined))
+    await wrapper.find('[data-serial="#BBB-"]').trigger('click')
+    await flushPromises()
+    releaseHash()
+
+    resolveReject(makeProposal({ id: 'aaa-1', status: 'Rejected', summary: 'First proposal' }))
+    await flushPromises()
+
+    expect(hashOf(wrapper)).toBe('#proposal-aaa-1')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('First proposal')
+
+    await router.replace('/workspace/review')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+    expect(wrapper.find('[data-testid="paper-review-decision-receipt"]').exists()).toBe(false)
   })
 
   it('removes a snoozed proposal from the visible queue after defer resolves', async () => {
@@ -2509,6 +2892,254 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('names the stored preview in the read-only banner when one was captured (#1434 finding 2)', async () => {
+    // Parity anchor for the three banner modes below: with a captured
+    // diffPreview on screen the banner keeps the Legacy card's exact sentence
+    // (ReviewProposalCard.vue readOnlyDiffBanner).
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-stored',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: '0. Create card "Archived plan"',
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired · read-only')
+    expect(banner.text()).toContain('showing the stored preview from the original submission')
+
+    wrapper.unmount()
+  })
+
+  it('names the recorded operations in the read-only banner when no stored preview was captured (#1434 finding 2)', async () => {
+    // The banner used to claim a "stored preview from the original submission"
+    // even for the synthesized recorded-operations fallback — the COMMON expired
+    // path, since normal creation flows never populate diffPreview. It must name
+    // what is actually on screen, in the Legacy card's wording.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-ops',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="paper-review-diff-stored-operations"]').exists()).toBe(true)
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired · read-only')
+    expect(banner.text()).toContain("showing the proposal's recorded operations")
+    expect(banner.text()).not.toContain('stored preview')
+    // Said ONCE: the Paper pane renders no separate note under the banner, so
+    // the banner alone carries the sentence (the LOW recorded on the Legacy
+    // side, where the banner repeats the note directly below it).
+    const section = wrapper.find('[data-testid="paper-review-diff"]')
+    expect(
+      section.text().split("showing the proposal's recorded operations").length - 1,
+    ).toBe(1)
+
+    wrapper.unmount()
+  })
+
+  it('does not claim a stored preview in the read-only banner when nothing was captured (#1434 finding 2)', async () => {
+    // Nothing to show at all: the banner states the status and that the record
+    // is read-only, and the empty state below keeps its own sentence. The banner
+    // must neither claim a preview exists nor repeat that sentence.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-none',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+        operations: [],
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Expired · read-only')
+    expect(banner.text()).not.toContain('stored preview')
+    expect(banner.text()).not.toContain('showing')
+    const storedEmpty = wrapper.find('[data-testid="paper-review-diff-stored-empty"]')
+    expect(storedEmpty.exists()).toBe(true)
+    expect(storedEmpty.text()).toContain('No stored preview is available for this proposal.')
+    const section = wrapper.find('[data-testid="paper-review-diff"]')
+    expect(section.text().toLowerCase().split('no stored preview').length - 1).toBe(1)
+
+    wrapper.unmount()
+  })
+
+  it('keeps the revised caveat consistent with the recorded-operations banner (#1434 finding 2)', async () => {
+    // Banner and caveat must describe the same content: the fallback tail already
+    // says "recorded operations", so the banner above it may not say "stored
+    // preview" for the same pane.
+    const now = new Date().toISOString()
+    mocks.getRevisions.mockResolvedValue([
+      {
+        id: 'rev-1',
+        proposalId: 'banner-ops-revised',
+        revisionNumber: 1,
+        editorUserId: 'u-1',
+        revisedPayload: '{"operations":[]}',
+        revisedAt: now,
+        reason: 'edit',
+        createdAt: now,
+      },
+    ])
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-ops-revised',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        diffPreview: null,
+      }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain("showing the proposal's recorded operations")
+    expect(banner.text()).not.toContain('stored preview')
+    const revisedNote = wrapper.find('[data-testid="paper-review-diff-revised-note"]')
+    expect(revisedNote.exists()).toBe(true)
+    expect(revisedNote.text()).toContain('recorded operations')
+    expect(revisedNote.text()).not.toContain('stored preview')
+
+    wrapper.unmount()
+  })
+
+  it('converges the read-only banner status on the Legacy card\'s "Applied to board" wording (#1434 finding 3)', async () => {
+    // Legacy renders Applied through reviewStatusLabel as "Applied to board"
+    // (ReviewProposalCard.vue); Paper's previewReadOnlyLabel rendered the bare
+    // normalized status. reviewStatusLabel is component-local — not a composable
+    // or util this view may import — so the convergence is the catalog key the
+    // banner reads.
+    expect(enReview.status.appliedToBoard).toBe('Applied to board')
+
+    // The preview key is inert on an applied record (useReviewKeymap's
+    // `isActionEnabled` allows only onReject while `activeAppliedProposal` is
+    // set), so the banner cannot be OPENED on one — asserted below. It is
+    // reached the other way instead: a pane opened before the apply converts to
+    // the stored presentation when the apply lands, which the next two specs
+    // drive end to end.
+    const wrapper = await mountView([
+      makeProposal({
+        id: 'banner-applied',
+        status: 'Applied',
+        summary: 'Applied banner probe',
+        diffPreview: '0. Create card "Stored"',
+        appliedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      }),
+    ])
+
+    const row = wrapper
+      .findAll('.paper-review-recent__row')
+      .find((button) => button.text().includes('Applied banner probe'))!
+    await row.trigger('click')
+    await flushPromises()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="paper-review-diff"]').exists()).toBe(false)
+
+    wrapper.unmount()
+  })
+
+  // The route that renders the Applied banner: open the live pane on a pending
+  // proposal, then approve and apply it (#1942's two clicks plus the phase-2
+  // dialog). Nothing on that path clears the pane — the proposal-change watcher
+  // sees the same id and a revision identity that only went to null, and the
+  // decision receipt keeps the applied proposal active — so the #1397 LOW-5
+  // watcher converts the open live pane to the stored read-only presentation.
+  async function applyWithOpenLivePane(id: string) {
+    mocks.getProposalDiff.mockResolvedValueOnce('0. Create card "Live"')
+    mocks.approveProposal.mockResolvedValueOnce(
+      makeProposal({ id, status: 'Approved', diffPreview: '0. Create card "Stored"' }),
+    )
+    mocks.executeProposal.mockResolvedValueOnce(
+      makeProposal({
+        id,
+        status: 'Applied',
+        diffPreview: '0. Create card "Stored"',
+        appliedAt: new Date().toISOString(),
+      }),
+    )
+    const wrapper = await mountView([
+      makeProposal({ id, status: 'PendingReview', diffPreview: '0. Create card "Stored"' }),
+    ])
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', cancelable: true }))
+    await flushPromises()
+    // The pane is live and actionable at this point: no read-only banner yet.
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Live')
+    expect(wrapper.find('[data-testid="paper-review-diff-banner"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="decision-apply"]').trigger('click')
+    await flushPromises()
+    await confirmApplyDialog()
+    await wrapper.vm.$nextTick()
+
+    return wrapper
+  }
+
+  it('renders the Legacy "Applied to board" wording when the apply converts an open pane (#1434 finding 3)', async () => {
+    const wrapper = await applyWithOpenLivePane('banner-applied-live')
+
+    const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('Applied to board · read-only')
+    expect(banner.text()).toContain('showing the stored preview from the original submission')
+    // The conversion also swapped the live diff for the decision-time stored
+    // preview, which is the content the banner now names.
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').text()).toContain('Stored')
+
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['it', 'Applicata alla bacheca', 'sola lettura'],
+    ['es', 'Aplicada al tablero', 'solo lectura'],
+  ] as const)(
+    'renders the %s appliedToBoard label in the converted banner (#1434 finding 3)',
+    async (locale, label, readOnly) => {
+      // The banner label is the one string this catalog key reaches the DOM
+      // through, so the translated forms are proven here rather than only in the
+      // catalog-parity guard.
+      i18n.global.locale.value = locale
+      try {
+        const wrapper = await applyWithOpenLivePane(`banner-applied-${locale}`)
+
+        const banner = wrapper.find('[data-testid="paper-review-diff-banner"]')
+        expect(banner.exists()).toBe(true)
+        expect(banner.text()).toContain(label)
+        expect(banner.text()).toContain(readOnly)
+        expect(banner.text()).not.toContain('Applied to board')
+
+        wrapper.unmount()
+      } finally {
+        i18n.global.locale.value = DEFAULT_LOCALE
+      }
+    },
+  )
+
   it('renders the invalid verdict with the backend reason (not a toast) when /diff 400s for a pending proposal (#1397)', async () => {
     mocks.getProposalDiff.mockRejectedValueOnce({
       response: {
@@ -3178,6 +3809,195 @@ describe('PaperReviewView', () => {
     }
   })
 
+  it('re-announces the rail count when a poll swaps the queue without changing its size (#2214 item 4)', async () => {
+    // The Paper half of the item-4 repair, wired end to end: the composable's
+    // ordered awaiting ids reach the rail as its announcement key, so the same
+    // count-neutral replacement that Legacy now announces is announced here too
+    // (#1124 / ADR-0038 -- a one-skin fix is the drift class).
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    let wrapper: ReturnType<typeof mount> | null = null
+    try {
+      wrapper = await mountView([makeProposal({ id: 'swap-first', status: 'PendingReview' })])
+
+      const region = wrapper.get('[data-testid="paper-review-queue-live"]').element
+      const announced = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+      expect(announced.text()).toContain('1 proposal awaiting review')
+      const beforeSwap = announced.element
+
+      // The same queue again: nothing to say.
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(beforeSwap)
+
+      mocks.getProposals.mockResolvedValue([
+        makeProposal({ id: 'swap-second', status: 'PendingReview' }),
+      ])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const afterSwap = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+      expect(afterSwap.text()).toContain('1 proposal awaiting review')
+      expect(afterSwap.element).not.toBe(beforeSwap)
+      expect(wrapper.get('[data-testid="paper-review-queue-live"]').element).toBe(region)
+    } finally {
+      wrapper?.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps the same announcement node across an explicit reload that did not change the queue (#2599 item 1)', async () => {
+    // The rail's gate was the parent's `loading` flag, which an explicit
+    // `loadProposals` raises without clearing the queue: the node unmounted and
+    // came back with the same sentence, and a node addition is exactly what a
+    // live region speaks. Filing away a settled proposal is the path #2599 item
+    // 1 names -- it reloads the queue and leaves the pending-review set
+    // identical, so the reviewer heard the same count read back for nothing.
+    const wrapper = await mountView([
+      makeProposal({ id: 'pending-1', status: 'PendingReview', summary: 'Still pending' }),
+      makeProposal({
+        id: 'settled-1',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Settled already',
+      }),
+      makeProposal({
+        id: 'settled-2',
+        status: 'Expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        summary: 'Settled too',
+      }),
+    ])
+    try {
+      const region = wrapper.get('[data-testid="paper-review-queue-live"]').element
+      const before = wrapper.get('[data-testid="paper-review-queue-announcement"]')
+      expect(before.text()).toContain('1 proposal awaiting review')
+      const beforeEl = before.element
+
+      let releaseReload!: (value: Proposal[]) => void
+      const reload = new Promise<Proposal[]>((resolve) => {
+        releaseReload = resolve
+      })
+      // Fewer dismissed than asked for, which is the branch that re-reads the
+      // queue authoritatively instead of patching it locally -- an explicit
+      // `loadProposals` that leaves the pending-review set untouched.
+      mocks.dismissProposals.mockResolvedValueOnce({ dismissed: 1 })
+      mocks.getProposals.mockReturnValue(reload)
+
+      await wrapper.get('[data-testid="queue-file-away-all"]').trigger('click')
+      await flushPromises()
+
+      // The reload really is in flight: without this the identity assertions
+      // below would pass on a surface that never reloaded at all.
+      expect(mocks.getProposals).toHaveBeenCalledTimes(2)
+      // Mid-read: the pending-review count on screen is still this board's.
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(beforeEl)
+
+      releaseReload([
+        makeProposal({ id: 'pending-1', status: 'PendingReview', summary: 'Still pending' }),
+      ])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').element).toBe(beforeEl)
+      expect(wrapper.get('[data-testid="paper-review-queue-live"]').element).toBe(region)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('withholds the rail announcement across a board-filter change until the new scope lands (#2599 item 1)', async () => {
+    // The one reload where the count really does stop being real: the rail is
+    // still rendering the previous board's queue.
+    const wrapper = await mountView(
+      [makeProposal({ id: 'board-a-1', status: 'PendingReview', boardId: 'board-a' })],
+      '/workspace/review?boardId=board-a',
+    )
+    try {
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').text()).toContain(
+        '1 proposal awaiting review',
+      )
+
+      let releaseScopeRead!: (value: Proposal[]) => void
+      mocks.getProposals.mockReturnValue(
+        new Promise<Proposal[]>((resolve) => {
+          releaseScopeRead = resolve
+        }),
+      )
+      await routerOf(wrapper).replace('/workspace/review?boardId=board-b')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('[data-testid="paper-review-queue-announcement"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="paper-review-queue-live"]').text()).toBe('')
+
+      releaseScopeRead([
+        makeProposal({ id: 'board-b-1', status: 'PendingReview', boardId: 'board-b' }),
+        makeProposal({ id: 'board-b-2', status: 'PendingReview', boardId: 'board-b' }),
+      ])
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.get('[data-testid="paper-review-queue-announcement"]').text()).toContain(
+        '2 proposals awaiting review',
+      )
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('moves focus to the first queue row after leaving an unavailable pin (#2599 item 2)', async () => {
+    // The unavailable panel is the whole decision column, so the click that
+    // dismisses it removes the element focus is in and focus falls to <body>.
+    // Paper's settled-elsewhere notice already hands focus on (#2215); this is
+    // the same handoff one branch over, and the same target Legacy uses.
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first', summary: 'First proposal' })],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+      [],
+      [],
+      { attachTo: true },
+    )
+    try {
+      expect(wrapper.get('[data-testid="paper-review-empty"]').text()).toContain(
+        'This proposal is unavailable.',
+      )
+
+      await wrapper.get('[data-testid="paper-review-unavailable-return"]').trigger('click')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const firstRow = wrapper.get('.paper-review-rail__queue-row button').element
+      expect(document.activeElement).toBe(firstRow)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('moves focus to the empty state after leaving an unavailable pin with nothing left to review (#2599 item 2)', async () => {
+    mocks.getProposal.mockRejectedValueOnce({ response: { status: 404 } })
+    const wrapper = await mountView(
+      [],
+      '/workspace/review#proposal-PROPOSAL-MISSING',
+      [],
+      [],
+      { attachTo: true },
+    )
+    try {
+      await wrapper.get('[data-testid="paper-review-unavailable-return"]').trigger('click')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const empty = wrapper.get('[data-testid="paper-review-empty"]').element
+      expect(empty.getAttribute('tabindex')).toBe('-1')
+      expect(document.activeElement).toBe(empty)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('says the queue is no longer available when a poll is refused with 403 (#2194)', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
     try {
@@ -3224,12 +4044,15 @@ describe('PaperReviewView', () => {
       expect(queue.element.parentElement).toBe(root.element)
       expect(main.element.parentElement).toBe(root.element)
       expect(right.element.parentElement).toBe(root.element)
-      // The hoisted recovery region is the first child so it survives every
-      // flip of the branch pair below it (#2214 round 2); the three columns
-      // keep their order and their parent.
+      // The hoisted disclosure regions are the first children so they survive
+      // every flip of the branch pair below them (#2214 round 2); the three
+      // columns keep their order and their parent. Both are `.sr-only` and
+      // therefore absolutely positioned, so neither takes a grid column.
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
+        refused.element,
         queue.element,
         main.element,
         right.element,
@@ -3262,8 +4085,10 @@ describe('PaperReviewView', () => {
       const right = wrapper.get('.paper-review-deep__rail-empty')
       expect(stale.element.parentElement).toBe(empty.element)
       const recovered = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      const refused = wrapper.get('[data-testid="paper-review-queue-refused"]')
       expect(Array.from(root.element.children)).toEqual([
         recovered.element,
+        refused.element,
         queue.element,
         empty.element,
         right.element,
@@ -3334,6 +4159,139 @@ describe('PaperReviewView', () => {
       // 15 seconds for as long as the surface is open.
       expect(wrapper.find('[data-testid="paper-review-queue-stale"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="paper-review-queue-recovered"]').text()).toBe('')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('discloses a list read the server keeps refusing, from a region that was already mounted (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+
+      const before = wrapper.find('[data-testid="paper-review-queue-refused"]')
+      expect(before.exists()).toBe(true)
+      expect(before.attributes('role')).toBe('status')
+      expect(before.attributes('aria-live')).toBe('polite')
+      expect(before.attributes('aria-atomic')).toBe('true')
+      expect(before.text()).toBe('')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const after = wrapper.find('[data-testid="paper-review-queue-refused"]')
+      expect(after.text()).toBe(enReview.queue.refused.body)
+      expect(after.element).toBe(before.element)
+
+      // The visible warning is the SAME pinned slot the degraded state uses, so
+      // the sticky/offset handshake from #2630 keeps working unchanged; only
+      // its copy differs.
+      const visible = wrapper.get('[data-testid="paper-review-queue-stale"]')
+      expect(visible.text()).toBe(enReview.queue.refused.body)
+      expect(visible.classes()).toContain('paper-review-deep__queue-stale--pinned')
+      const main = wrapper.get('.paper-review-deep__main-col')
+      expect(visible.element.parentElement).toBe(main.element)
+      expect(main.attributes('style') ?? '').toContain('--paper-review-sticky-offset')
+      expect(wrapper.text()).toContain('Split "dark mode" into 3 cards')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('announces a refusal retraction with the refusal sentence, not the queue one (#2638)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+      const region = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      expect(region.text()).toBe('')
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-testid="paper-review-queue-refused"]').text()).toBe(
+        enReview.queue.refused.body,
+      )
+
+      mocks.getProposals.mockResolvedValue([makeProposal({ id: 'retained-1' })])
+      vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      // One region, two sentences, picked by the kind the composable reports.
+      // The refusal retraction is raised by the LIST leg on a tick that may
+      // never replace the rendered rows, so "Showing current proposals" would
+      // overclaim (#2214, PR #2694 round 2); the degraded recovery beside it
+      // keeps saying exactly that, and its own test asserts so.
+      const after = wrapper.get('[data-testid="paper-review-queue-recovered"]')
+      expect(after.text()).toBe(enReview.queue.refused.recovered)
+      expect(after.text()).not.toBe(enReview.queue.degraded.recovered)
+      // Still the region that was mounted before anything went wrong (#2630).
+      expect(after.element).toBe(region.element)
+      expect(wrapper.find('[data-testid="paper-review-queue-refused"]').text()).toBe('')
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders the refusal warning in the empty column too (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([])
+      mocks.getProposals.mockRejectedValue({ response: { status: 405 } })
+
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      const stale = wrapper.get('[data-testid="paper-review-queue-stale"]')
+      expect(stale.text()).toBe(enReview.queue.refused.body)
+      const empty = wrapper.get('[data-testid="paper-review-empty"]')
+      expect(stale.element.parentElement).toBe(empty.element)
+      wrapper.unmount()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('prefers the refusal copy over the degraded copy when both states stand (#2214)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout', 'Date'] })
+    try {
+      const wrapper = await mountView([makeProposal({ id: 'retained-1' })])
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-testid="paper-review-queue-stale"]').text()).toBe(
+        enReview.queue.degraded.body,
+      )
+
+      mocks.getProposals.mockRejectedValue({ response: { status: 410 } })
+      for (let failure = 0; failure < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; failure += 1) {
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+      }
+      await wrapper.vm.$nextTick()
+
+      // "Showing the last available proposals while Taskdeck retries" is no
+      // longer true: the retries are being answered and refused.
+      expect(wrapper.get('[data-testid="paper-review-queue-stale"]').text()).toBe(
+        enReview.queue.refused.body,
+      )
       wrapper.unmount()
     } finally {
       vi.useRealTimers()
@@ -6249,6 +7207,250 @@ describe('PaperReviewView', () => {
       } finally {
         vi.useRealTimers()
       }
+    })
+  })
+
+  /**
+   * Right-rail evidence truth (#1940 — the two residuals recorded with PR
+   * #2662).
+   *
+   * The rail's cards are pure props components. They were handed the selector
+   * values with nothing about the read behind them, so while proposal B's batch
+   * was in flight they rendered proposal A's confidence number and A's
+   * similar-past rows under B's header, and they read an empty array as a
+   * proven absence whether the read was pending, had failed, or had genuinely
+   * found nothing. The view now passes ONE keyed snapshot: the values only
+   * under the key they were read for, and the state alongside them.
+   */
+  describe('right-rail evidence identity and state (#1940)', () => {
+    const A_ROW = {
+      serial: '#PAST-A',
+      title: 'A prior comparable decision',
+      verdict: 'Applied',
+      date: '2026-08-20',
+    }
+    const A_CONFIDENCE = {
+      overall: 0.84,
+      components: [],
+      note: null,
+      threshold: null,
+      source: 'model-reported',
+      meetsThreshold: null,
+    }
+    const A_META = '0.84 model-reported average'
+
+    function rail(wrapper: ReturnType<typeof mount>) {
+      return wrapper.get('[data-testid="paper-review-right-rail"]')
+    }
+
+    async function selectSecondProposal(wrapper: ReturnType<typeof mount>) {
+      const row = wrapper
+        .findAll('.paper-review-q')
+        .find((candidate) => candidate.text().includes('Second proposal'))
+      expect(row, 'expected the second queue row to be present').toBeDefined()
+      await row!.trigger('click')
+      await flushPromises()
+    }
+
+    it('shows none of the previous proposal evidence under the new one while its batch loads', async () => {
+      let releaseSimilar!: (value: unknown) => void
+      let releaseConfidence!: (value: unknown) => void
+      mocks.getSimilarPast.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve({ decisions: [A_ROW], applyRate: 1 })
+          : new Promise((resolve) => {
+              releaseSimilar = resolve
+            }),
+      )
+      mocks.getConfidence.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve(A_CONFIDENCE)
+          : new Promise((resolve) => {
+              releaseConfidence = resolve
+            }),
+      )
+
+      const wrapper = await mountView(
+        [
+          makeProposal({ id: 'proposal-a', summary: 'First proposal' }),
+          makeProposal({ id: 'proposal-b', summary: 'Second proposal' }),
+        ],
+        '/workspace/review#proposal-proposal-a',
+      )
+
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(rail(wrapper).text()).toContain(A_META)
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+
+      await selectSecondProposal(wrapper)
+
+      expect(wrapper.get('[data-testid="paper-review-main"]').text()).toContain('Second proposal')
+      // The residual: every one of these was proposal A's evidence, rendered
+      // under proposal B's header while B's batch was still in flight.
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-author-confidence-source"]').exists(),
+      ).toBe(false)
+      expect(rail(wrapper).text()).not.toContain(A_META)
+      expect(rail(wrapper).text()).not.toContain(A_ROW.title)
+      expect(rail(wrapper).text()).not.toContain('No comparable past decisions.')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-state"]').text(),
+      ).toBe('Reading the confidence evidence for this proposal…')
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-state"]').text()).toBe(
+        'Reading comparable past decisions…',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-disclosure"]').text(),
+      ).not.toContain('none found')
+
+      releaseSimilar({ decisions: [], applyRate: 0 })
+      releaseConfidence({
+        overall: null,
+        components: [],
+        note: null,
+        threshold: null,
+        source: 'not-reported',
+        meetsThreshold: null,
+      })
+      await flushPromises()
+
+      // B's own read has landed, so B's emptiness is now a fact about B.
+      expect(rail(wrapper).find('[data-testid="paper-review-similar-past-state"]').exists()).toBe(
+        false,
+      )
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-empty"]').text()).toBe(
+        'No comparable past decisions.',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(rail(wrapper).text()).not.toContain(A_ROW.title)
+    })
+
+    it('says the evidence read failed instead of claiming there is nothing to show', async () => {
+      mocks.getSimilarPast.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve({ decisions: [A_ROW], applyRate: 1 })
+          : Promise.reject(new Error('similar past unavailable')),
+      )
+      mocks.getConfidence.mockImplementation((id: string) =>
+        id === 'proposal-a'
+          ? Promise.resolve(A_CONFIDENCE)
+          : Promise.resolve({
+              overall: null,
+              components: [],
+              note: null,
+              threshold: null,
+              source: 'not-reported',
+              meetsThreshold: null,
+            }),
+      )
+
+      const wrapper = await mountView(
+        [
+          makeProposal({ id: 'proposal-a', summary: 'First proposal' }),
+          makeProposal({ id: 'proposal-b', summary: 'Second proposal' }),
+        ],
+        '/workspace/review#proposal-proposal-a',
+      )
+
+      await selectSecondProposal(wrapper)
+
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-state"]').text()).toBe(
+        'Comparable past decisions could not be read.',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-state"]').text(),
+      ).toBe('Confidence evidence could not be read, so its source is unknown.')
+      expect(rail(wrapper).text()).not.toContain('No comparable past decisions.')
+      expect(rail(wrapper).text()).not.toContain('No model confidence reported')
+      expect(rail(wrapper).text()).not.toContain(A_ROW.title)
+      expect(rail(wrapper).text()).not.toContain(A_META)
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-disclosure"]').text(),
+      ).not.toContain('none found')
+    })
+
+    /**
+     * A decision takes `latestRevisionId` to null and pins no replacement, and
+     * the receipt keeps the proposal on screen, so the rail must still show the
+     * evidence rather than an endless "reading" line (#1940 round 2).
+     *
+     * A GUARD, not a red-first case: it passed before the round-2 fix too. The
+     * composable-level defect it guards against is real and is proven red in
+     * usePaperReviewSelectors.spec.ts, but this flow does not depend on it —
+     * measured here, the decision issues a SECOND evidence batch (one read
+     * before it, two after), so the rail is repopulated by a fresh read rather
+     * than by the record it already held. Nothing in this flow asks for that
+     * restart, which is exactly why the snapshot must not depend on it; this
+     * case fails the day the restart stops happening.
+     */
+    it('keeps the settled evidence on screen after a decision drops the revision identity', async () => {
+      mocks.getSimilarPast.mockResolvedValue({ decisions: [A_ROW], applyRate: 1 })
+      const rejected = makeProposal({
+        id: 'proposal-a',
+        summary: 'First proposal',
+        status: 'Rejected',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+      })
+      mocks.rejectProposal.mockResolvedValueOnce(rejected)
+      const wrapper = await mountView([
+        makeProposal({ id: 'proposal-a', summary: 'First proposal', latestRevisionId: 'rev-1' }),
+      ])
+      // `latestRevisionId` is PendingReview-only on the wire, so every read
+      // after the decision answers with it null. Without this the standing list
+      // fixture would hand `rev-1` back on the next refresh and restore the
+      // identity the decision just retired.
+      mocks.getProposals.mockResolvedValue([rejected])
+
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+
+      await wrapper.get('[data-testid="decision-reject"]').trigger('click')
+      await flushPromises()
+      await acceptRejectDialog('not needed')
+
+      expect(
+        wrapper.get('[data-testid="paper-review-decision-receipt"]').attributes('data-decision'),
+      ).toBe('rejected')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-details"]').text(),
+      ).toContain(A_ROW.title)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-similar-past-state"]').exists(),
+      ).toBe(false)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-author-confidence-state"]').exists(),
+      ).toBe(false)
+    })
+
+    it('keeps the settled empty sentences from #2662 exactly as they were', async () => {
+      const wrapper = await mountView([makeProposal()])
+
+      expect(rail(wrapper).get('[data-testid="paper-review-similar-past-empty"]').text()).toBe(
+        'No comparable past decisions.',
+      )
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-author-confidence-source"]').text(),
+      ).toBe('No model confidence reported')
+      expect(
+        rail(wrapper).get('[data-testid="paper-review-similar-past-disclosure"]').text(),
+      ).toContain('none found')
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-similar-past-state"]').exists(),
+      ).toBe(false)
+      expect(
+        rail(wrapper).find('[data-testid="paper-review-author-confidence-state"]').exists(),
+      ).toBe(false)
     })
   })
 })

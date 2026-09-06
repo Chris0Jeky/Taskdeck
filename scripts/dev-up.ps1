@@ -58,6 +58,8 @@ $FrontendDir = Join-Path $RepoRoot "frontend/taskdeck-web"
 $DataDir = Join-Path $env:LOCALAPPDATA "Taskdeck"
 $DevDbPath = Join-Path $DataDir "taskdeck-dev.db"
 $PidFile = Join-Path $DataDir "dev-up.pids"
+# Hosted-safe default; override with TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS.
+$DefaultPortReleaseTimeoutMs = 30000
 $OperationLockFile = Join-Path $DataDir "dev-up.operation.lock"
 
 $MinimumNodeVersion = [version]"24.13.1"
@@ -364,13 +366,110 @@ function Test-PortBindable {
     return $true
 }
 
+function Get-PortReleaseTimeoutMs {
+    $raw = $env:TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS
+    if (-not [string]::IsNullOrWhiteSpace($raw)) {
+        $parsed = 0
+        if ([int]::TryParse($raw.Trim(), [ref]$parsed) -and $parsed -ge 0) { return $parsed }
+        Write-DevWarning "Ignoring invalid TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS '$raw'; using $DefaultPortReleaseTimeoutMs ms."
+    }
+    return $DefaultPortReleaseTimeoutMs
+}
+
+# Inventory of TCP LISTEN sockets on $Port. Determined=$false means nothing could be read at all,
+# and the caller must fail closed rather than assume the port is free of a foreign server.
+#
+# Socket EXISTENCE and PID ATTRIBUTION are deliberately separate. Existence comes from the kernel's
+# TCP table, which lists every listener regardless of the owning account; attribution (a process
+# name for the diagnostic) can fail for a socket owned by another user or by SYSTEM, so an
+# unattributable owner must never read as "nothing is listening".
+function Get-PortListenerInventory {
+    param([int]$Port)
+    $owners = New-Object System.Collections.Generic.List[string]
+    $determined = $false
+    $listening = $false
+    try {
+        $connections = @(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction Stop)
+        $determined = $true
+        foreach ($connection in $connections) {
+            $listening = $true
+            $owners.Add((Format-ListenerOwner -OwnerPid ([int]$connection.OwningProcess)))
+        }
+    } catch [System.Management.Automation.CommandNotFoundException] {
+        $determined = $false
+    } catch {
+        # Get-NetTCPConnection throws ObjectNotFound when nothing matches the port filter.
+        if ($_.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::ObjectNotFound) {
+            $determined = $true
+        }
+    }
+    if (-not $determined) {
+        $netstat = Join-Path $env:SystemRoot "System32/netstat.exe"
+        if (Test-Path -LiteralPath $netstat -PathType Leaf) {
+            try {
+                $rows = & $netstat -ano -p TCP 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    $determined = $true
+                    foreach ($row in $rows) {
+                        $fields = ($row -split '\s+') | Where-Object { $_ -ne "" }
+                        if ($fields.Count -lt 5) { continue }
+                        if ($fields[0] -ne "TCP" -or $fields[3] -ne "LISTENING") { continue }
+                        if ($fields[1] -notmatch ":(\d+)$" -or [int]$Matches[1] -ne $Port) { continue }
+                        $listening = $true
+                        $ownerPid = 0
+                        if ([int]::TryParse($fields[4], [ref]$ownerPid)) {
+                            $owners.Add((Format-ListenerOwner -OwnerPid $ownerPid))
+                        }
+                    }
+                }
+            } catch { $determined = $false }
+        }
+    }
+    return [pscustomobject]@{
+        Determined = $determined
+        Listening  = $listening
+        Owners     = @($owners | Sort-Object -Unique)
+    }
+}
+
+function Format-ListenerOwner {
+    param([int]$OwnerPid)
+    if ($OwnerPid -le 0) { return "PID $OwnerPid" }
+    $owner = Get-Process -Id $OwnerPid -ErrorAction SilentlyContinue
+    if ($null -ne $owner) { return "PID $OwnerPid ($($owner.ProcessName))" }
+    return "PID $OwnerPid"
+}
+
+# Waits on an elapsed-time deadline, not a fixed iteration count: a loaded hosted runner can hold a
+# listening socket well past a short fixed budget after taskkill (#1898/#2378, same family as the
+# #2157 marker budget). Once the deadline passes, a port with no listening socket at all is a
+# lingering kernel socket behind our own confirmed-dead tree, so it counts as released. Any
+# surviving listener - and any port whose sockets cannot be inventoried - fails closed.
 function Wait-PortRelease {
     param([int]$Port)
-    for ($attempt = 0; $attempt -lt 50; $attempt++) {
+    $timeoutMs = Get-PortReleaseTimeoutMs
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
         if (Test-PortBindable -Port $Port) { return $true }
-        Start-Sleep -Milliseconds 100
+        if ($stopwatch.ElapsedMilliseconds -ge $timeoutMs) { break }
+        Start-Sleep -Milliseconds 250
     }
-    return $false
+    $elapsed = [int]$stopwatch.ElapsedMilliseconds
+    $inventory = Get-PortListenerInventory -Port $Port
+    if (-not $inventory.Determined) {
+        Write-DevWarning "Port $Port stayed unbindable for $elapsed ms and its listening sockets could not be inventoried."
+        return $false
+    }
+    if ($inventory.Listening) {
+        if ($inventory.Owners.Count -gt 0) {
+            Write-DevWarning "Port $Port is still held by a live listener ($($inventory.Owners -join ', ')) after $elapsed ms."
+        } else {
+            Write-DevWarning "Port $Port is still held by a live listener that could not be attributed to a process after $elapsed ms."
+        }
+        return $false
+    }
+    Write-Info "Port $Port stayed unbindable for $elapsed ms but nothing is listening on it; treating the lingering socket as released."
+    return $true
 }
 
 function Find-SafeApiPort {

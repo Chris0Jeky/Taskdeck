@@ -132,6 +132,17 @@ function assertGuardedRowsAreAssertableWithoutActivation(inventory: RouteEntry[]
         )
       }
 
+      // DEAD AT RUNTIME, AND THE TYPE IS WHY. `AffordanceStatus`'s
+      // `guarded-not-activated` variant declares `assertEnabled: true` as a
+      // REQUIRED LITERAL, so a row that reaches this line has already been
+      // proved to satisfy it by `npm run typecheck`; this `!== true` can never
+      // be true for a real inventory row. That is the difference from the
+      // consequence check above, whose bad shape the type DOES permit (a
+      // `response` consequence on a guarded row type-checks — assertion 9
+      // builds exactly that row with no cast) and which therefore earns a
+      // canary. This branch has none because there is no cast-free way to
+      // reach it. It is kept as belt-and-braces: it is the check that starts
+      // doing work the moment the field is widened to `boolean`.
       if (status.assertEnabled !== true) {
         throw new Error(
           `guarded row '${affordance.id}' (${entry.routeName}) must set assertEnabled: true. `
@@ -274,9 +285,30 @@ describe('route affordance inventory coverage (GH-1949 AC4)', () => {
    * The walk asserts `guarded-not-activated` rows and never clicks them, so a
    * `response` consequence copied onto one from an activated sibling would
    * assert NOTHING and still count as walked — the row would be reported as
-   * covered while proving only that the control rendered. `assertEnabled` is
-   * likewise load-bearing: the walk reads it to decide whether the declined
-   * control has to be a live choice.
+   * covered while proving only that the control rendered.
+   *
+   * THE TWO HALVES ARE NOT ENFORCED THE SAME WAY. The consequence half is a
+   * live check: a `response` consequence on a guarded row type-checks, so the
+   * shape it rejects is one someone can actually write, which is why assertion
+   * 9 below carries a canary for it. The `assertEnabled` half is NOT: the
+   * guarded status variant declares `assertEnabled: true` as a required
+   * literal, so `npm run typecheck` has already rejected every row this check
+   * could catch, and its `!== true` throw cannot fire for a real row. Both the
+   * checker here and the walk's `if (affordance.status.assertEnabled)` in
+   * `tests/e2e/route-affordances.spec.ts` are kept as belt-and-braces, and
+   * each says so at its own site. Neither describes a per-row choice — the
+   * type forecloses the choice. Widening the field to `boolean` is what would
+   * make them live, and would then owe this assertion a canary of its own.
+   *
+   * ELEMENT CONSEQUENCES ARE SAFE TO OFFER A GUARDED ROW, INCLUDING THE
+   * NEGATED ONE. The permitted list below includes `textChangedFrom`, whose
+   * assertion is `not.toHaveText`. A negated matcher would be worthless here
+   * if it passed on a selector that matched nothing, but Playwright fails a
+   * zero-element `not.toHaveText` with `element(s) not found` rather than
+   * passing it — measured on 1.62.1 and recorded in full on the
+   * `textChangedFrom` kind in `tests/e2e/support/routeAffordanceInventory.ts`.
+   * So every kind classified `element` really does assert something about a
+   * node that exists.
    */
   it('gives every guarded-not-activated row an element consequence and assertEnabled', () => {
     const guardedRows = ROUTE_AFFORDANCE_INVENTORY.flatMap((entry) =>

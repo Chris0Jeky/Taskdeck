@@ -35,6 +35,8 @@ export default {
     detail: {
       open: 'Mostra la cattura conservata completa',
       close: 'Nascondi la cattura conservata completa',
+      openFor: 'Mostra la cattura conservata completa per {capture}',
+      closeFor: 'Nascondi la cattura conservata completa per {capture}',
       title: 'Cattura conservata',
       loading: 'Caricamento della cattura conservata…',
       error: 'Non è stato possibile caricare la cattura conservata.',
@@ -85,6 +87,39 @@ export default {
       tooLong: 'Questa trascrizione è troppo lunga. La lunghezza massima è di {max} caratteri.',
     },
   },
+  // Etichette dei campi del Composer (#1871). "Testo" per `body`: è il testo
+  // della cattura, come in `triage.edit.label`, e "Corpo" in italiano richiama
+  // il corpo di un messaggio, non un appunto.
+  //
+  // Ogni nome accessibile (`*Aria`) inizia con l'etichetta visibile del campo e
+  // poi dice cosa fa il controllo (WCAG 2.5.3, il modello della PR #2675). Se
+  // si riscrive un'etichetta visibile va riscritto anche il suo nome
+  // accessibile: `PaperCaptureComposer.spec.ts` verifica la relazione, non solo
+  // le stringhe, e la verifica anche in italiano, quindi romperla qui fa
+  // fallire il test.
+  //
+  // I segnaposto restano segnaposto: un suggerimento sulla FORMA del valore,
+  // mai il nome del campo, che è quello che danno l'etichetta visibile e il
+  // nome accessibile. `bodyPlaceholder` è una frase e ha l'iniziale maiuscola
+  // per scelta; `labelsPlaceholder` è un frammento che prosegue il campo e resta
+  // in minuscolo.
+  composer: {
+    eyebrow: 'Cattura · Bozza',
+    meta: 'solo locale · salva nell’Inbox',
+    footerBefore: 'Le catture arrivano nell’',
+    footerInbox: 'Inbox',
+    footerAfter: '. Collegarle a una bacheca crea una proposta, non una scheda.',
+    submit: 'Cattura',
+    bodyLabel: 'Testo',
+    bodyAria: 'Testo: scrivi il contenuto di questa cattura',
+    bodyPlaceholder: 'Il pensiero, in parole semplici…',
+    labelsLabel: 'Etichette',
+    labelsAria: 'Etichette: scrivi un’etichetta e premi Enter per aggiungerla',
+    labelsPlaceholder: 'aggiungi e premi Enter',
+    dueLabel: 'Scadenza (facoltativa)',
+    dueAria: 'Scadenza (facoltativa): scegli quando scade questa cattura',
+    attachmentsUnavailable: 'Gli allegati non vengono ancora salvati con le catture.',
+  },
   nib: {
     eyebrow: 'Cattura rapida · {shortcut}',
     destinationWithBoard: 'Questa cattura arriva nell’Inbox, collegata a {board}, per il triage.',
@@ -114,10 +149,29 @@ export default {
     composer: 'Composer',
   },
   boardPicker: {
+    // `label` sta sopra entrambi i selettori di bacheca. Entrambi i nomi
+    // accessibili portano l'etichetta visibile per prima (WCAG 2.5.3) e si
+    // distinguono solo per quello che dicono dopo.
+    //
+    // `composerAria` non può dire che la cattura ARRIVI sulla bacheca scelta:
+    // ogni cattura arriva nell'Inbox, e la bacheca la COLLEGA soltanto perché il
+    // triage possa proporre su di essa; niente arriva alla bacheca senza
+    // approvare ed eseguire (ADR-0003). È quello che dicono il piè di pagina del
+    // Composer e `nib.destination*`, quindi questo nome dice "collegare ... per
+    // il triage" e quello della riga conserva "dove va questa cattura", che è il
+    // compito di quel selettore.
+    label: 'Bacheca',
+    composerAria: 'Bacheca: scegli a quale bacheca collegare questa cattura per il triage',
+    triageAria: 'Bacheca: scegli dove va questa cattura',
+    noBoardOption: 'Nessuna bacheca · arriva nell’Inbox',
+    selectPlaceholder: 'Seleziona una bacheca…',
     viewOnlyOption: '{name} · sola lettura',
     viewOnlyHint: 'Le bacheche in sola lettura richiedono un accesso in scrittura prima di poterci smistare qualcosa.',
   },
   triage: {
+    // Nome della regione dell'elenco catture: dice cosa contiene la regione,
+    // non quali catture, così resta stabile anche in sola lettura.
+    tableAria: 'Elementi catturati',
     boardPick: {
       loading: 'Caricamento delle bacheche…',
       loadFailed: 'Impossibile caricare le bacheche. Controlla la connessione e riprova.',
@@ -143,6 +197,27 @@ export default {
     tag: {
       state: 'Stato: {label}. Il punto in cui si trova ora questa cattura.',
       source: 'Origine: {label}. Come è arrivata questa cattura — non è uno stato.',
+    },
+    // Dove resta una correzione non salvata la cui cattura esce dall'elenco
+    // (#1999, punto 3): un cambio del filtro bacheca, un aggiornamento che non
+    // restituisce più la riga, oppure il passaggio allo storico in sola
+    // lettura. `{capture}` è l'estratto della riga stessa.
+    //
+    // `kept` e `discarded` sono ricevute di un momento. `held`, `blocked` e
+    // `heldUneditable` sono frasi valide finché restano a schermo, quindi
+    // ognuna finisce dicendo che cosa può fare chi legge.
+    //
+    // `kept` dice "questo elenco" di proposito: la correzione vive nella
+    // tabella finché la tabella esiste, e prometterla dopo un ricaricamento
+    // sarebbe una promessa che questo meccanismo non può mantenere.
+    draft: {
+      kept: 'La correzione non salvata di “{capture}” non è andata persa. Resta conservata finché rimani su questo elenco Inbox e torna con quella cattura quando ricompare. Non è stato salvato nulla.',
+      held: 'La correzione non salvata di “{capture}” è ancora conservata. Premi Modifica cattura su quella riga per riprenderla.',
+      blocked: 'La correzione non salvata di “{capture}” è ancora conservata. Un\'altra cattura è aperta in modifica: concludi quella, poi premi Modifica cattura su questa riga per riprenderla.',
+      heldUneditable: 'La correzione non salvata di “{capture}” è ancora conservata. Questo elenco non modifica una cattura che è {status}, quindi la correzione resta qui finché quella cattura non torna modificabile.',
+      restored: 'La correzione non salvata di “{capture}” è di nuovo nell\'editor, sopra la cattura così com\'è ora. Salvala o annulla come sempre.',
+      discarded: 'La correzione non salvata di “{capture}” è stata scartata: la cattura ora è {status} e il suo testo non è più modificabile. Non è stato salvato nulla.',
+      dismiss: 'Chiudi queste note',
     },
     // Correzione del testo prima dello smistamento (GH-1951).
     //

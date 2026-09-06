@@ -100,10 +100,16 @@ value injected):
 
 | Build | Injection | Reported version |
 | --- | --- | --- |
-| Tag push / dispatch naming a tag (desktop) | `dotnet publish -p:Version=<tag minus v and +build>` in `.github/workflows/release-desktop.yml`, taken from the `resolve-source` job's validated tag | e.g. `0.1.0` |
-| Tag push (container) | `TASKDECK_VERSION` build arg → `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
+| Tag push / dispatch naming a tag (desktop) | `VITE_APP_VERSION=<tag minus v and +build>` for the frontend plus `dotnet publish -p:Version=...` for the backend, both derived from `.github/workflows/release-desktop.yml`'s validated `resolve-source` output | e.g. `0.1.0` |
+| Tag push (container) | `VITE_APP_VERSION` and `TASKDECK_VERSION` build args → frontend build and `/p:Version=` in `deploy/Dockerfile.production`, passed by `.github/workflows/release-container.yml` | e.g. `0.1.0` |
 | Rehearsal dispatch of Release Desktop | `resolve-source`'s generated dry-run tag | `0.0.0-dryrun` |
 | Local build, `docker build`, CI, rehearsal container build | none | `0.0.0-dev` |
+
+Frontend telemetry reads `VITE_APP_VERSION` at Vite build time. Release Desktop and
+Release Container pass the same normalized tag-derived value used for the backend;
+the standalone frontend Dockerfile accepts the same build arg. Builds without that
+value use `0.0.0-dev`, so no frontend source file contains a hand-maintained release
+version.
 
 Where to read it:
 
@@ -651,7 +657,7 @@ Development when the key is unset (`SettingsRegistration.cs`). Consumed by
 | `SecurityHeaders:HstsMaxAgeDays` | `int` | `365` | `max-age` value for HSTS in days. | No |
 | `SecurityHeaders:HstsIncludeSubDomains` | `bool` | `false` | Include `includeSubDomains` in HSTS. | No |
 | `SecurityHeaders:HstsPreload` | `bool` | `false` | Include `preload` in HSTS. | No |
-| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'` | Raw CSP string. SEC-29: `'unsafe-inline'` removed from `style-src` — API serves JSON (Swagger excluded from CSP), no inline styles needed. | No |
+| `SecurityHeaders:ContentSecurityPolicy` | `string` | `default-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; connect-src 'self'; img-src 'self'; font-src 'self'; style-src 'self'; script-src 'self'; manifest-src 'self'` | Raw CSP string. SEC-29: `'unsafe-inline'` removed from `style-src` — API serves JSON (Swagger excluded from CSP), no inline styles needed. | No |
 | `SecurityHeaders:XFrameOptions` | `string` | `DENY` | Value for `X-Frame-Options`. | No |
 | `SecurityHeaders:ReferrerPolicy` | `string` | `no-referrer` | Value for `Referrer-Policy`. | No |
 

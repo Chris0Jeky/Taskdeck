@@ -370,10 +370,98 @@ port_is_bindable() {
   ' "$port" >/dev/null 2>&1
 }
 
+DEFAULT_PORT_RELEASE_TIMEOUT_MS=30000
+
+port_release_timeout_ms() {
+  local raw="${TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS:-}"
+  if [[ -n "$raw" ]]; then
+    # Bounded to int32 so the deadline arithmetic matches the PowerShell launcher's [int] parse and
+    # cannot wrap on a 64-bit shell.
+    if [[ "$raw" =~ ^[0-9]{1,10}$ ]] && (( 10#$raw <= 2147483647 )); then
+      printf '%s\n' "$(( 10#$raw ))"
+      return 0
+    fi
+    warn "Ignoring invalid TASKDECK_DEV_UP_PORT_RELEASE_TIMEOUT_MS '$raw'; using ${DEFAULT_PORT_RELEASE_TIMEOUT_MS} ms."
+  fi
+  printf '%s\n' "$DEFAULT_PORT_RELEASE_TIMEOUT_MS"
+}
+
+now_ms() {
+  local raw
+  raw="$(date +%s%3N 2>/dev/null || true)"
+  if [[ "$raw" =~ ^[0-9]+$ ]]; then printf '%s\n' "$raw"; return 0; fi
+  printf '%s000\n' "$(date +%s)"
+}
+
+# Inventory of TCP LISTEN sockets on $1. First stdout line is "listening" or "free"; any further
+# lines are attributable owner PIDs. Exit 2 means nothing could be read at all.
+#
+# Socket EXISTENCE and PID ATTRIBUTION are deliberately separate. An unprivileged `lsof -t` cannot
+# see another user's socket at all, and `ss -p` prints the row but omits `users:(...)`, so an empty
+# owner list is NOT evidence that the port is free - a root-owned listener (docker-proxy, a systemd
+# unit on 5000/5173) would look ownerless. Existence therefore comes from a source that reads
+# /proc/net/tcp for every user (`ss -ltn`, or `netstat -an` on BSD/macOS); attribution is
+# best-effort and only decorates the diagnostic.
+port_listener_inventory() {
+  local port="$1" rows="" all="" pids="" pid
+  if command -v ss >/dev/null 2>&1; then
+    rows="$(ss -ltnH "sport = :$port" 2>/dev/null)" || return 2
+  elif command -v netstat >/dev/null 2>&1; then
+    all="$(netstat -an -p tcp 2>/dev/null)" || return 2
+    rows="$(printf '%s\n' "$all" | grep -E "[:.]${port}[[:space:]]" | grep -i 'LISTEN' || true)"
+  else
+    return 2
+  fi
+  rows="$(printf '%s' "$rows" | tr -d '[:space:]')"
+  if [[ -z "$rows" ]]; then printf 'free\n'; return 0; fi
+  printf 'listening\n'
+  if command -v ss >/dev/null 2>&1; then
+    pids="$(ss -ltnHp "sport = :$port" 2>/dev/null | grep -oE 'pid=[0-9]+' | cut -d= -f2 || true)"
+  fi
+  if [[ -z "$pids" ]] && command -v lsof >/dev/null 2>&1; then
+    pids="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true)"
+  fi
+  for pid in $(printf '%s\n' "$pids" | sort -u); do
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || continue
+    kill -0 "$pid" 2>/dev/null && printf '%s\n' "$pid"
+  done
+  return 0
+}
+
+# Elapsed-time deadline, not a fixed iteration count: a loaded runner can hold a listening socket
+# past a short fixed budget after the tree is reaped (#1898/#2378). After the deadline, a port with
+# no listening socket at all is a lingering kernel socket behind our own confirmed-dead tree and
+# counts as released. Any surviving listener - and any port whose sockets cannot be inventoried -
+# fails closed.
 wait_for_port_release() {
-  local port="$1"
-  for _ in {1..50}; do port_is_bindable "$port" && return 0; sleep 0.1; done
-  return 1
+  local port="$1" timeout_ms status=0 inventory state owners
+  timeout_ms="$(port_release_timeout_ms)"
+  local started_at deadline elapsed
+  started_at="$(now_ms)"
+  deadline=$(( started_at + timeout_ms ))
+  while true; do
+    port_is_bindable "$port" && return 0
+    (( $(now_ms) >= deadline )) && break
+    sleep 0.25
+  done
+  elapsed=$(( $(now_ms) - started_at ))
+  inventory="$(port_listener_inventory "$port")" || status=$?
+  if [[ "$status" -ne 0 ]]; then
+    warn "Port $port stayed unbindable for ${elapsed} ms and its listening sockets could not be inventoried."
+    return 1
+  fi
+  state="$(printf '%s\n' "$inventory" | head -n 1)"
+  owners="$(printf '%s\n' "$inventory" | tail -n +2 | tr '\n' ' ' | sed 's/  */ /g; s/^ //; s/ $//')"
+  if [[ "$state" != "free" ]]; then
+    if [[ -n "$owners" ]]; then
+      warn "Port $port is still held by a live listener (PID $owners) after ${elapsed} ms."
+    else
+      warn "Port $port is still held by a live listener that could not be attributed to a PID after ${elapsed} ms."
+    fi
+    return 1
+  fi
+  info "Port $port stayed unbindable for ${elapsed} ms but nothing is listening on it; treating the lingering socket as released."
+  return 0
 }
 
 find_safe_api_port() {

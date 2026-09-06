@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
+import { PAPER_VIEW_ROOTS } from './paperRootInventory'
+
 import activitySource from '../../views/ActivityView.vue?raw'
 import agentRunDetailSource from '../../views/AgentRunDetailView.vue?raw'
 import agentRunsSource from '../../views/AgentRunsView.vue?raw'
@@ -50,34 +52,38 @@ import savedViewsSource from '../../views/SavedViewsView.vue?raw'
  * "node", and its quarantine list may only shrink.
  */
 
-const VIEW_ROOTS: ReadonlyArray<{ view: string; selector: string; source: string }> = [
-  // #1780 / PR #1807 — the four high-traffic roots the guard was written for.
-  { view: 'MetricsView.vue', selector: '.paper-metrics', source: metricsSource },
-  { view: 'ActivityView.vue', selector: '.paper-activity', source: activitySource },
-  { view: 'CalendarView.vue', selector: '.paper-calendar', source: calendarSource },
-  { view: 'BoardsListView.vue', selector: '.paper-boards', source: boardsSource },
-  // #1775 / #1813 — the Saved Views restyle.
-  { view: 'SavedViewsView.vue', selector: '.paper-views', source: savedViewsSource },
-  // PR #1808 — the six Settings roots.
-  { view: 'ApiKeySettingsView.vue', selector: '.paper-api-keys', source: apiKeysSource },
-  { view: 'AppearanceSettingsView.vue', selector: '.paper-appearance', source: appearanceSource },
-  { view: 'BoardAccessView.vue', selector: '.paper-access', source: boardAccessSource },
-  { view: 'ExportImportView.vue', selector: '.paper-portability', source: exportImportSource },
-  { view: 'NotificationPreferencesView.vue', selector: '.paper-prefs', source: notificationPrefsSource },
-  { view: 'ProfileSettingsView.vue', selector: '.paper-profile', source: profileSource },
-  // PR #1810 — the secondary views.
-  { view: 'AgentRunDetailView.vue', selector: '.paper-run-detail', source: agentRunDetailSource },
-  { view: 'AgentRunsView.vue', selector: '.paper-agent-runs', source: agentRunsSource },
-  { view: 'AgentsView.vue', selector: '.paper-agents', source: agentsSource },
-  { view: 'ArchiveView.vue', selector: '.paper-archive', source: archiveSource },
-  { view: 'AutomationChatView.vue', selector: '.paper-chat', source: automationChatSource },
-  { view: 'AutomationQueueView.vue', selector: '.paper-queue', source: automationQueueSource },
-  { view: 'DevToolsView.vue', selector: '.paper-devtools', source: devToolsSource },
-  { view: 'IntegrationsView.vue', selector: '.paper-int', source: integrationsSource },
-  { view: 'NotFoundView.vue', selector: '.paper-not-found', source: notFoundSource },
-  { view: 'NotificationInboxView.vue', selector: '.paper-notifications', source: notificationInboxSource },
-  { view: 'OpsConsoleView.vue', selector: '.paper-ops', source: opsConsoleSource },
-]
+type PaperViewName = (typeof PAPER_VIEW_ROOTS)[number]['view']
+
+const VIEW_SOURCES: Readonly<Record<PaperViewName, string>> = {
+  'ActivityView.vue': activitySource,
+  'AgentRunDetailView.vue': agentRunDetailSource,
+  'AgentRunsView.vue': agentRunsSource,
+  'AgentsView.vue': agentsSource,
+  'ApiKeySettingsView.vue': apiKeysSource,
+  'AppearanceSettingsView.vue': appearanceSource,
+  'ArchiveView.vue': archiveSource,
+  'AutomationChatView.vue': automationChatSource,
+  'AutomationQueueView.vue': automationQueueSource,
+  'BoardAccessView.vue': boardAccessSource,
+  'BoardsListView.vue': boardsSource,
+  'CalendarView.vue': calendarSource,
+  'DevToolsView.vue': devToolsSource,
+  'ExportImportView.vue': exportImportSource,
+  'IntegrationsView.vue': integrationsSource,
+  'MetricsView.vue': metricsSource,
+  'NotFoundView.vue': notFoundSource,
+  'NotificationInboxView.vue': notificationInboxSource,
+  'NotificationPreferencesView.vue': notificationPrefsSource,
+  'OpsConsoleView.vue': opsConsoleSource,
+  'ProfileSettingsView.vue': profileSource,
+  'SavedViewsView.vue': savedViewsSource,
+}
+
+const VIEW_ROOTS = PAPER_VIEW_ROOTS.map(({ view, selector }) => ({
+  view,
+  selector,
+  source: VIEW_SOURCES[view],
+}))
 
 /**
  * A root satisfies the invariant by painting ANY Paper substrate token, not

@@ -73,7 +73,12 @@ after publish. `scripts/ci/compose-release-notes.mjs` renders the body instead, 
    that ships inside the ZIP, and the `Get-FileHash` line for checking the download. For a prerelease this block also
    carries a one-line release-candidate banner. The button is always the first line of the page.
 2. **`## Breaking changes`** — lifted from the tag's own section in **`UPGRADING.md`** (`## <tag> …`), so the section
-   cannot be forgotten at tag time.
+   cannot be forgotten at tag time. A release body is not a file in the tree, so the lift rewrites the section's bare
+   anchors (against `UPGRADING.md`) and relative paths into `blob/<tag>` URLs, leaving fenced blocks, inline code spans,
+   scheme-bearing and root-relative destinations as written. The lift is fence-aware and **fails closed**: a `#`/`##`
+   line inside a fenced block neither starts nor ends the section, and a fence still open at the end of the document is
+   a malformed `UPGRADING.md` that fails the compose for a release candidate as well as a stable tag — rather than
+   publishing every older version's notes under this heading.
 3. **`## Highlights`** — the curated **`docs/releases/notes/<tag>.md`**, written by the pre-tag docs PR.
 4. **`## What's changed`** — the `releases/generate-notes` body, grouped through `.github/release.yml` and carrying its
    full-changelog compare link.

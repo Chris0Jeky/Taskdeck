@@ -73,6 +73,49 @@ function ConvertTo-DiagnosticText {
     return $text
 }
 
+function Get-FingerprintFailureDiagnostic {
+    param([object]$ErrorRecord)
+
+    $message = ''
+    if ($null -ne $ErrorRecord -and $null -ne $ErrorRecord.Exception) {
+        $message = [string]$ErrorRecord.Exception.Message
+    }
+
+    $code = switch -Regex ($message) {
+        '^mode and a nonempty caller token are required$' { 'E_ARGUMENTS_INVALID'; break }
+        '^mode is not supported$' { 'E_MODE_UNSUPPORTED'; break }
+        '^checkout path is required$|^checkout identity is malformed$|^checkout identity is uncertain$|^checkout HEAD identity is uncertain$|^checkout HEAD reference identity is uncertain$' { 'E_CHECKOUT_IDENTITY'; break }
+        '^could not start git$|^git exceeded the configured deadline$|^git output exceeds the configured byte limit$|^git could not establish checkout identity$' { 'E_GIT_EXECUTION'; break }
+        '^git status record is malformed$|^git rename record is malformed$|^git returned an ignored artifact despite ignored=no$|^git status path is malformed$|^git status path is ambiguous$|^git status path identity is ambiguous$|^git status path escapes the checkout$|^status artifact disappeared before it could be fingerprinted$|^status artifact changed before it could be fingerprinted$|^status artifact changed while it was fingerprinted$|^status inventory changed while it was fingerprinted:|^status artifact is not a regular file:' { 'E_STATUS_INVENTORY'; break }
+        '^status artifact count exceeds the configured limit$|^status artifact exceeds the per-file byte limit$|^status artifact total exceeds the configured limit$|^status artifact total exceeds the configured byte limit$' { 'E_STATUS_BOUNDS'; break }
+        '^operating-system temp root|^linked worktree identity is uncertain$' { 'E_TEMP_ROOT_PROVENANCE'; break }
+        '^state path|^state file is missing$|^state file already exists$|^state file identity is uncertain$' { 'E_STATE_PATH'; break }
+        '^state file exceeds the bounded size limit$|^state payload exceeds the bounded file limit$' { 'E_STATE_BOUNDS'; break }
+        '^state file is malformed$|^state payload is malformed$' { 'E_STATE_FORMAT'; break }
+        '^state file authentication failed$' { 'E_STATE_AUTHENTICATION'; break }
+        '^state payload identity is uncertain$|^state payload path identity is ambiguous$' { 'E_STATE_IDENTITY'; break }
+        default { 'E_GUARD_INTERNAL_FAILURE'; break }
+    }
+
+    $remediation = switch ($code) {
+        'E_ARGUMENTS_INVALID' { 'Provide a supported mode and a non-empty caller token.'; break }
+        'E_MODE_UNSUPPORTED' { 'Use Capture, Compare, or Cleanup.'; break }
+        'E_CHECKOUT_IDENTITY' { 'Retry from a checkout whose Git identity can be authenticated.'; break }
+        'E_GIT_EXECUTION' { 'Retry after confirming Git is available and responsive.'; break }
+        'E_STATUS_INVENTORY' { 'Retry after the checkout status inventory is stable and regular.'; break }
+        'E_STATUS_BOUNDS' { 'Reduce the status-artifact envelope or use the declared bounds.'; break }
+        'E_TEMP_ROOT_PROVENANCE' { 'Retry with a directly authenticated operating-system temp root.'; break }
+        'E_STATE_PATH' { 'Use the authenticated state path emitted by Capture.'; break }
+        'E_STATE_BOUNDS' { 'Use an authenticated state wrapper within the declared size bounds.'; break }
+        'E_STATE_FORMAT' { 'Capture a fresh authenticated state wrapper.'; break }
+        'E_STATE_AUTHENTICATION' { 'Capture a fresh state or provide the matching caller token.'; break }
+        'E_STATE_IDENTITY' { 'Capture a fresh authenticated state with an unambiguous identity.'; break }
+        default { 'Do not trust the result; the raw cause is withheld from stderr by design, so retry once with the same arguments and, if it recurs, report the reason code with the exact command line.'; break }
+    }
+
+    return ('Checkout fingerprint failed: {0}. {1}' -f $code, $remediation)
+}
+
 function Get-ArtifactKindText {
     param([object]$Item)
 
@@ -782,7 +825,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
     }
     catch {
-        [Console]::Error.WriteLine('Checkout fingerprint failed: ' + $_.Exception.Message)
+        [Console]::Error.WriteLine((Get-FingerprintFailureDiagnostic -ErrorRecord $_))
         $exitCode = 1
     }
 

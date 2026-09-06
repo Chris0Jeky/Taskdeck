@@ -12,7 +12,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
-const AUTH_HEADER_ENV = 'TASKDECK_GIT_HTTP_EXTRAHEADER';
+export const AUTH_HEADER_ENV = 'TASKDECK_GIT_HTTP_EXTRAHEADER';
 
 export const MAX_ATTEMPTS = 3;
 export const RETRY_DELAY_MS = 1_000;
@@ -98,6 +98,41 @@ export async function observeMergeRef({
   return { mergeSha, baseSha, headSha, treeSha };
 }
 
+/**
+ * Read the base branch's current tip on origin. GitHub regenerates `refs/pull/N/merge`
+ * against whatever the base branch points at *now*, so when the base advances between the
+ * event dispatch and this fetch, the merge ref's first parent is that newer tip rather than
+ * the control base. Confirming the observed first parent IS that live tip keeps the
+ * binding honest without failing the run (CI-03 #2327).
+ */
+export async function observeBaseTip({
+  baseRef,
+  token = process.env.GH_TOKEN,
+  cwd = process.cwd(),
+  executeGit = executeGitDefault,
+}) {
+  if (typeof baseRef !== 'string' || baseRef.length === 0) {
+    throw new Error('base ref is required to read the base branch tip');
+  }
+
+  await executeGit([
+    `--config-env=http.extraHeader=${AUTH_HEADER_ENV}`,
+    'fetch',
+    '--no-tags',
+    '--depth=1',
+    'origin',
+    `refs/heads/${baseRef}`,
+  ], {
+    cwd,
+    env: authenticatedGitEnvironment(token),
+  });
+
+  const output = await executeGit(['rev-parse', 'FETCH_HEAD^{commit}'], { cwd, env: process.env });
+  const tip = String(output).trim();
+  if (!SHA_PATTERN.test(tip)) throw new Error('the fetched base ref did not yield one commit SHA');
+  return tip.toLowerCase();
+}
+
 function removeOutputs(paths) {
   for (const path of paths) rmSync(path, { force: true });
 }
@@ -141,6 +176,14 @@ function mismatchReason(observation, expectedBase, expectedHead) {
 /**
  * Resolve one exact control-base/event-head merge identity. Failed or mismatched
  * observations are retried twice, then remain fail-closed with no output files.
+ *
+ * The event head must match exactly — that is the untrusted side of the merge and is never
+ * negotiable. The first parent is allowed to be the base branch's *live* tip on origin when
+ * the base advanced after dispatch (`merge-ref-moved`): GitHub regenerates the merge ref
+ * against the current base, so demanding the dispatch-time control base turned every base
+ * push during a run into a planner error (CI-03 #2327). Both accepted first parents are heads
+ * of the same branch that already supplies the control-plane tooling, so no untrusted content
+ * enters the binding.
  */
 export async function resolveMergeRef({
   expectedBase,
@@ -148,6 +191,7 @@ export async function resolveMergeRef({
   mergeOutput,
   treeOutput,
   observe,
+  resolveBaseTip = null,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   log = () => {},
 }) {
@@ -163,6 +207,7 @@ export async function resolveMergeRef({
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     let observation = null;
+    let movedBase = null;
     try {
       observation = await observe();
       finalReason = mismatchReason(observation, normalizedBase, normalizedHead);
@@ -170,10 +215,30 @@ export async function resolveMergeRef({
       finalReason = 'merge ref unavailable';
     }
 
+    if (finalReason === 'base mismatch' && typeof resolveBaseTip === 'function') {
+      // The head already matched exactly; only the first parent moved. Accept it if — and
+      // only if — it is the live tip of the base ref on origin.
+      try {
+        const tip = await resolveBaseTip();
+        if (SHA_PATTERN.test(String(tip ?? '')) && String(tip).toLowerCase() === observation.baseSha.toLowerCase()) {
+          movedBase = String(tip).toLowerCase();
+          finalReason = null;
+        } else {
+          finalReason = 'base mismatch (not the live base branch tip)';
+        }
+      } catch {
+        finalReason = 'base mismatch (the base branch tip could not be read)';
+      }
+    }
+
     if (finalReason === null) {
       publishOutputs(observation, mergeOutputPath, treeOutputPath);
-      log(`merge ref matched the control base and event head on attempt ${attempt}/${MAX_ATTEMPTS}`);
-      return observation;
+      if (movedBase) {
+        log(`merge-ref-moved — the base advanced from ${normalizedBase} to the live base branch tip ${movedBase} after dispatch; the event head matched exactly on attempt ${attempt}/${MAX_ATTEMPTS}`);
+      } else {
+        log(`merge ref matched the control base and event head on attempt ${attempt}/${MAX_ATTEMPTS}`);
+      }
+      return { ...observation, mergeRefMoved: movedBase !== null, baseTipSha: movedBase };
     }
 
     if (attempt < MAX_ATTEMPTS) {
@@ -186,13 +251,28 @@ export async function resolveMergeRef({
   throw new Error(`merge ref resolution failed closed after ${MAX_ATTEMPTS} attempts: ${finalReason}`);
 }
 
+/**
+ * Write the planner note for an accepted `merge-ref-moved` resolution. Always LF-terminated so
+ * the note the planner receives does not depend on the checkout's line endings.
+ */
+export function writeMergeRefNote(noteOutput, expectedBase, resolved) {
+  mkdirSync(dirname(noteOutput), { recursive: true });
+  writeFileSync(
+    noteOutput,
+    `merge-ref-moved: the base advanced from ${String(expectedBase).toLowerCase()} to ${resolved.baseTipSha} after dispatch; the merge ref was regenerated against the base branch live tip on origin and the event head matched exactly\n`,
+    { encoding: 'utf8' },
+  );
+}
+
 function parseArgs(argv) {
   const args = {
     pullRequestNumber: null,
     expectedBase: null,
     expectedHead: null,
+    baseRef: null,
     mergeOutput: null,
     treeOutput: null,
+    noteOutput: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -201,8 +281,10 @@ function parseArgs(argv) {
       case '--pr': args.pullRequestNumber = Number(next()); break;
       case '--base': args.expectedBase = next(); break;
       case '--head': args.expectedHead = next(); break;
+      case '--base-ref': args.baseRef = next(); break;
       case '--merge-out': args.mergeOutput = next(); break;
       case '--tree-out': args.treeOutput = next(); break;
+      case '--note-out': args.noteOutput = next(); break;
       default: throw new Error(`unknown argument: ${argument}`);
     }
   }
@@ -211,7 +293,8 @@ function parseArgs(argv) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  await resolveMergeRef({
+  if (args.noteOutput) rmSync(args.noteOutput, { force: true });
+  const resolved = await resolveMergeRef({
     expectedBase: args.expectedBase,
     expectedHead: args.expectedHead,
     mergeOutput: args.mergeOutput,
@@ -220,8 +303,14 @@ async function main() {
       pullRequestNumber: args.pullRequestNumber,
       token: process.env.GH_TOKEN,
     }),
+    resolveBaseTip: args.baseRef
+      ? () => observeBaseTip({ baseRef: args.baseRef, token: process.env.GH_TOKEN })
+      : null,
     log: (message) => process.stderr.write(`${message}\n`),
   });
+  if (args.noteOutput && resolved.mergeRefMoved) {
+    writeMergeRefNote(args.noteOutput, args.expectedBase, resolved);
+  }
 }
 
 if (process.argv[1] && /resolve-merge-ref\.mjs$/i.test(process.argv[1])) {

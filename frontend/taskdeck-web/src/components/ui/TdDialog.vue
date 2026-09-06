@@ -289,21 +289,6 @@ onUnmounted(() => {
   .td-dialog {
     width: 100%;
     max-width: 100%;
-    /* DEAD, kept only as documentation of what this rule used to do — these
-     * four declarations can no longer take effect anywhere. The `100%` pair
-     * below is later in source order and percentages resolve against the
-     * backdrop in every browser that supports them, so it always wins. Do not
-     * read the vh/dvh pair as a live fallback chain; the live chain for this
-     * component is the three-step ladder on `.td-dialog` above — a viewport-unit
-     * floor, then the same declaration reading
-     * `--td-dialog-visual-viewport-height` with a `100vh` fallback, then the
-     * same again inside the `dvh` feature query with a `100dvh` fallback.
-     * Historical intent: vh for iOS Safari <= 15.4 without dvh, dvh to survive
-     * browser-chrome collapse. */
-    max-height: 100vh;
-    height: 100vh;
-    max-height: 100dvh;
-    height: 100dvh;
     /* The backdrop is already sized to the visual viewport (or 100dvh when the
      * VisualViewport API is missing, or 100vh when dvh is missing too), so fill
      * it rather than re-deriving a layout-viewport height here. */

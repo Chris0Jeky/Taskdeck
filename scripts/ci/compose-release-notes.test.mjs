@@ -25,6 +25,8 @@ import {
   extractUpgradingSection,
   parseChecksum,
   parseArgs,
+  rewriteRelativeLinks,
+  MalformedUpgradingSectionError,
   MAX_RELEASE_BODY_LENGTH,
 } from './compose-release-notes.mjs'
 
@@ -206,6 +208,171 @@ test('a version heading matches on a tag boundary, never a bare prefix', () => {
 test('an UPGRADING heading with no body is treated as missing', () => {
   const empty = `# Version notes\n\n## ${RC_TAG}\n\n## v0.2.0 — 2026-08-29\n\nreal content\n`
   assert.equal(extractUpgradingSection(empty, RC_TAG), null)
+})
+
+// -----------------------------------------------------------------------------
+// 4b. Fenced code blocks are content, never headings (#2250 item 5)
+// -----------------------------------------------------------------------------
+
+const FENCED = [
+  '# Version notes',
+  '',
+  `## ${RC_TAG} — release candidate`,
+  '',
+  'Run the migration by hand:',
+  '',
+  '```bash',
+  '# comment that is not a heading',
+  '## also not a heading',
+  'taskdeck migrate',
+  '```',
+  '',
+  'Then restart the service.',
+  '',
+  '## v0.2.0 — 2026-08-29',
+  '',
+  'older notes',
+  '',
+].join('\n')
+
+test('a fenced block inside the section is kept whole, hash lines and all', () => {
+  const section = extractUpgradingSection(FENCED, RC_TAG)
+  assert.ok(section.includes('# comment that is not a heading'), section)
+  assert.ok(section.includes('## also not a heading'), section)
+  assert.ok(section.includes('taskdeck migrate'), section)
+  assert.ok(
+    section.endsWith('Then restart the service.'),
+    `the section must run to the next real heading, got: ${section}`,
+  )
+  assert.ok(!section.includes('older notes'), 'extraction still stops at the next version heading')
+})
+
+test('a fence closed before the next heading restores heading detection', () => {
+  const doc = [
+    `## ${RC_TAG}`,
+    '',
+    '~~~text',
+    '## inside a tilde fence',
+    '~~~',
+    '',
+    'after the fence',
+    '',
+    '## v0.2.0',
+    '',
+    'older notes',
+  ].join('\n')
+  const section = extractUpgradingSection(doc, RC_TAG)
+  assert.ok(section.includes('## inside a tilde fence'), section)
+  assert.ok(section.includes('after the fence'), section)
+  assert.ok(!section.includes('older notes'), section)
+})
+
+test('a tag heading that only appears inside a fence is not a section start', () => {
+  const doc = [
+    '# Version notes',
+    '',
+    '```markdown',
+    `## ${RC_TAG}`,
+    'sample body',
+    '```',
+    '',
+    '## v0.2.0',
+    '',
+    'older notes',
+  ].join('\n')
+  assert.equal(extractUpgradingSection(doc, RC_TAG), null)
+})
+
+// An unterminated fence would otherwise swallow every OLDER version's notes into
+// the Breaking-changes heading, and the body-length guard cannot catch it because
+// the whole of UPGRADING.md is far under the limit. The document is malformed, so
+// the compose fails at tag time instead of publishing a wrong page.
+const UNTERMINATED_FENCE = [
+  '# Version notes',
+  '',
+  `## ${RC_TAG}`,
+  '',
+  '```bash',
+  '## looks like a heading',
+  '',
+  '## v0.2.0',
+  '',
+  'older notes',
+  '',
+].join('\n')
+
+test('an unterminated fence in the section is a malformed document, not a longer section', () => {
+  assert.throws(
+    () => extractUpgradingSection(UNTERMINATED_FENCE, RC_TAG),
+    (error) => {
+      assert.ok(error instanceof MalformedUpgradingSectionError, `wrong error type: ${error}`)
+      assert.ok(error.message.includes(RC_TAG), error.message)
+      assert.match(error.message, /unterminated fenced code block in the UPGRADING section/)
+      return true
+    },
+  )
+})
+
+test('a malformed UPGRADING section is an ERROR for an RC as well as a stable tag', () => {
+  for (const prerelease of [true, false]) {
+    const tag = RC_TAG
+    const { errors } = composeReleaseNotes({
+      tag,
+      prerelease,
+      repo: REPO,
+      assetName: assetFor(tag),
+      checksumText: checksumFor(tag),
+      upgradingText: UNTERMINATED_FENCE,
+      notesText: NOTES,
+      generatedNotes: GENERATED,
+    })
+    const malformed = errors.find((e) => e.includes('unterminated fenced code block in the UPGRADING section'))
+    assert.ok(malformed, `prerelease=${prerelease}: expected a hard failure, got ${JSON.stringify(errors)}`)
+    assert.ok(malformed.includes(tag), malformed)
+  }
+})
+
+test('a closing fence must match the opening character and length', () => {
+  const doc = [
+    `## ${RC_TAG}`,
+    '',
+    '````text',
+    '```',
+    '## still inside the outer fence',
+    '````',
+    '',
+    'after the fence',
+    '',
+    '## v0.2.0',
+    '',
+    'older notes',
+  ].join('\n')
+  const section = extractUpgradingSection(doc, RC_TAG)
+  assert.ok(section.includes('## still inside the outer fence'), section)
+  assert.ok(section.includes('after the fence'), section)
+  assert.ok(!section.includes('older notes'), section)
+})
+
+test('a fence indented up to three spaces still opens a block', () => {
+  const doc = [
+    `## ${RC_TAG}`,
+    '',
+    '- step one:',
+    '',
+    '   ```sql',
+    '## not a heading',
+    '   ```',
+    '',
+    'after the fence',
+    '',
+    '## v0.2.0',
+    '',
+    'older notes',
+  ].join('\n')
+  const section = extractUpgradingSection(doc, RC_TAG)
+  assert.ok(section.includes('## not a heading'), section)
+  assert.ok(section.includes('after the fence'), section)
+  assert.ok(!section.includes('older notes'), section)
 })
 
 test('a missing UPGRADING section is a WARNING for an RC and a fallback pointer', () => {
@@ -478,6 +645,27 @@ test('the CLI exits non-zero and writes NOTHING when a stable tag is missing its
   assert.equal(result.body, null, 'no half-rendered page may reach --notes-file')
 })
 
+test('the CLI fails closed on a malformed UPGRADING section, naming it on the ::error line', () => {
+  const result = runCli(
+    (paths) => [
+      '--tag', RC_TAG,
+      '--prerelease', 'true',
+      '--repo', REPO,
+      '--asset', assetFor(RC_TAG),
+      '--checksum-file', paths['checksum.sha256'],
+      '--upgrading', paths['UPGRADING.md'],
+      '--notes', paths['notes.md'],
+      '--generated-notes', paths['generated.json'],
+    ],
+    { ...cliFiles, 'UPGRADING.md': UNTERMINATED_FENCE },
+  )
+  assert.notEqual(result.status, 0, result.stderr)
+  assert.match(result.stderr, /::error::/)
+  assert.match(result.stderr, /unterminated fenced code block in the UPGRADING section/)
+  assert.ok(result.stderr.includes(RC_TAG), result.stderr)
+  assert.equal(result.body, null, 'a wrong page must never reach --notes-file')
+})
+
 test('the CLI refuses a missing required option with exit 2', () => {
   const result = runCli(() => ['--tag', RC_TAG], {})
   assert.equal(result.status, 2)
@@ -492,4 +680,122 @@ test('the shipped UPGRADING.md yields a section for the last stable tag', () => 
   const upgrading = readFileSync(join(repoRoot, 'UPGRADING.md'), 'utf8')
   const section = extractUpgradingSection(upgrading, 'v0.2.0')
   assert.ok(section && section.includes('BREAKING'), 'the real document must match the extractor the workflow uses')
+})
+
+// -----------------------------------------------------------------------------
+// 11. Relative links are absolute on the release page (#2250 item 5)
+// -----------------------------------------------------------------------------
+
+const LINK_BASE = `https://github.com/${REPO}/blob/${RC_TAG}`
+
+function rewrite(markdown) {
+  return rewriteRelativeLinks(markdown, { repo: REPO, tag: RC_TAG })
+}
+
+test('a bare anchor resolves against UPGRADING.md at the tag', () => {
+  assert.equal(
+    rewrite('restore the [snapshot](#automatic-pre-migration-backups) first'),
+    `restore the [snapshot](${LINK_BASE}/UPGRADING.md#automatic-pre-migration-backups) first`,
+  )
+})
+
+test('a relative path becomes a blob URL at the tag, with and without a ./ prefix', () => {
+  assert.equal(
+    rewrite('[guide](docs/platform/LLM_PROVIDER_SETUP_GUIDE.md)'),
+    `[guide](${LINK_BASE}/docs/platform/LLM_PROVIDER_SETUP_GUIDE.md)`,
+  )
+  assert.equal(rewrite('[guide](./docs/platform/x.md)'), `[guide](${LINK_BASE}/docs/platform/x.md)`)
+})
+
+test('a fragment on a relative path is preserved', () => {
+  assert.equal(rewrite('[x](docs/x.md#a-section)'), `[x](${LINK_BASE}/docs/x.md#a-section)`)
+})
+
+test('absolute, root-relative and mailto destinations are left untouched', () => {
+  const untouched = [
+    '[a](https://github.com/Chris0Jeky/Taskdeck/pull/2248)',
+    '[b](http://example.com/x)',
+    '[c](mailto:someone@example.com)',
+    '[d](/already/root/relative.md)',
+  ].join('\n')
+  assert.equal(rewrite(untouched), untouched)
+})
+
+test('a link inside a fenced code block is left untouched', () => {
+  const doc = ['```markdown', '[x](docs/x.md)', '```', '[y](docs/y.md)'].join('\n')
+  assert.equal(
+    rewrite(doc),
+    ['```markdown', '[x](docs/x.md)', '```', `[y](${LINK_BASE}/docs/y.md)`].join('\n'),
+  )
+})
+
+test('a link inside an inline code span is left untouched', () => {
+  assert.equal(
+    rewrite('write `[x](docs/x.md)` and link [y](docs/y.md)'),
+    `write \`[x](docs/x.md)\` and link [y](${LINK_BASE}/docs/y.md)`,
+  )
+})
+
+test('a reference-style link definition gets the same treatment', () => {
+  assert.equal(rewrite('[guide]: docs/x.md'), `[guide]: ${LINK_BASE}/docs/x.md`)
+  assert.equal(rewrite('[anchor]: #automatic-pre-migration-backups'), `[anchor]: ${LINK_BASE}/UPGRADING.md#automatic-pre-migration-backups`)
+  assert.equal(rewrite('[keep]: https://example.com/x'), '[keep]: https://example.com/x')
+})
+
+test('an angle-bracketed destination is rewritten inside its brackets', () => {
+  assert.equal(rewrite('[x](<docs/x.md>)'), `[x](<${LINK_BASE}/docs/x.md>)`)
+  assert.equal(rewrite('[x](<./docs/x.md#a-section>)'), `[x](<${LINK_BASE}/docs/x.md#a-section>)`)
+  assert.equal(rewrite('[x](<#anchor>)'), `[x](<${LINK_BASE}/UPGRADING.md#anchor>)`)
+  assert.equal(rewrite('[x](<https://example.com/x>)'), '[x](<https://example.com/x>)')
+  assert.equal(rewrite('[ref]: <docs/x.md>'), `[ref]: <${LINK_BASE}/docs/x.md>`)
+})
+
+test('prose shaped like a reference definition is left alone, but its inline links are not', () => {
+  assert.equal(
+    rewrite('[Note]: see [the guide](docs/x.md) before upgrading'),
+    `[Note]: see [the guide](${LINK_BASE}/docs/x.md) before upgrading`,
+  )
+  assert.equal(rewrite('[Warning]: back up first, then run the migration'), '[Warning]: back up first, then run the migration')
+  // A real definition, with and without each CommonMark title form, still rewrites.
+  assert.equal(rewrite('[guide]: docs/x.md "The guide"'), `[guide]: ${LINK_BASE}/docs/x.md "The guide"`)
+  assert.equal(rewrite("[guide]: docs/x.md 'The guide'"), `[guide]: ${LINK_BASE}/docs/x.md 'The guide'`)
+  assert.equal(rewrite('[guide]: docs/x.md (The guide)'), `[guide]: ${LINK_BASE}/docs/x.md (The guide)`)
+})
+
+test('the tag is percent-encoded exactly as the UPGRADING fallback link encodes it', () => {
+  const oddTag = 'v1.0.0+build/1'
+  assert.equal(
+    rewriteRelativeLinks('[x](docs/x.md)', { repo: REPO, tag: oddTag }),
+    `[x](https://github.com/${REPO}/blob/${encodeURIComponent(oddTag)}/docs/x.md)`,
+  )
+})
+
+const UPGRADING_WITH_LINKS = UPGRADING.replace(
+  '- The `AddApiKeyScopes` migration backfills existing keys to Full.',
+  '- Restore the [snapshot](#automatic-pre-migration-backups); see [the guide](docs/platform/LLM_PROVIDER_SETUP_GUIDE.md).',
+)
+
+test('the composed page carries absolute links for the UPGRADING section', () => {
+  const { body, errors } = compose({ upgradingText: UPGRADING_WITH_LINKS })
+  assert.deepEqual(errors, [])
+  assert.ok(body.includes(`${LINK_BASE}/UPGRADING.md#automatic-pre-migration-backups`), body)
+  assert.ok(body.includes(`${LINK_BASE}/docs/platform/LLM_PROVIDER_SETUP_GUIDE.md`), body)
+  assert.ok(!body.includes('](#automatic-pre-migration-backups)'), 'no bare anchor may survive onto the page')
+})
+
+test('the release-body length guard still fires after links are rewritten', () => {
+  const huge = [
+    '# Version notes',
+    '',
+    `## ${RC_TAG} — release candidate (prerelease)`,
+    '',
+    '[x](docs/x.md)',
+    '',
+    'y'.repeat(MAX_RELEASE_BODY_LENGTH),
+    '',
+  ].join('\n')
+  const { body, errors } = compose({ upgradingText: huge })
+  assert.ok(body.includes(`${LINK_BASE}/docs/x.md`), 'the rewrite still ran on the oversized section')
+  const overflow = errors.find((e) => e.includes('over the'))
+  assert.ok(overflow, `expected a length error, got: ${JSON.stringify(errors)}`)
 })

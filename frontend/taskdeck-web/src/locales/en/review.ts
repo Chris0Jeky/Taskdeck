@@ -85,10 +85,34 @@ export default {
   // successful read. Translators: keep it in the same register as `body`, and
   // keep it a statement of the CURRENT state — the surface does not promise that
   // any particular proposal arrived, only that the queue is trustworthy again.
+  //
+  // `refused.body` is the OTHER failure (#2214 item 2), and it deliberately
+  // says something `degraded.body` does not. Degraded means "retrying"; refused
+  // means the server keeps ANSWERING and rejecting the query — a
+  // `?boardId=not-a-guid` in the address bar 400s every tick — so waiting for a
+  // recovery is exactly the wrong thing to do. Translators: all three clauses
+  // are load-bearing. The queue shown is the last one the server CONFIRMED;
+  // the refusal is not a temporary failure; and the reviewer has two things to
+  // try. It shares the visible slot with `degraded.body` and takes precedence
+  // over it, and it is also the text of a mounted sr-only live region in each
+  // skin, so keep it speakable as one sentence run.
+  //
+  // `refused.recovered` is that failure's own recovery sentence, and it is
+  // deliberately NARROWER than `degraded.recovered` (#2638 item 2). The refusal
+  // is retracted the moment the LIST read answers, on a tick whose composite
+  // read can still fail at the deep-link leg and leave the rendered rows
+  // untouched, so this sentence must say only that the server is accepting the
+  // refresh again. Translators: do NOT add a clause about the proposals being
+  // current or up to date — that is `degraded.recovered`'s job, and saying it
+  // here overclaimed for up to two poll intervals before this key existed.
   queue: {
     degraded: {
       body: 'This review queue may be out of date. Showing the last available proposals while Taskdeck retries.',
       recovered: 'This review queue is up to date again. Showing current proposals.',
+    },
+    refused: {
+      body: 'This review queue has stopped updating. The server is refusing the refresh rather than failing temporarily, so these are the last proposals it confirmed. Reload the page, or check the board filter in the address bar.',
+      recovered: 'The server is accepting refreshes for this review queue again.',
     },
   },
 
@@ -460,6 +484,11 @@ export default {
     derivedConfidence: '{value} derived average',
     deterministic: 'Deterministic extraction · no model confidence',
     notReported: 'No model confidence reported',
+    // The two sentences above are claims about a response that has landed. While
+    // the read is in flight, or after it failed, the card says which of those it
+    // is holding instead of asserting an absence it cannot know (#1940).
+    confidenceLoading: 'Reading the confidence evidence for this proposal…',
+    confidenceFailed: 'Confidence evidence could not be read, so its source is unknown.',
     actor: {
       assistant: 'Assistant',
       capture: 'Capture',
@@ -478,6 +507,12 @@ export default {
     // Shown inside the disclosure when there is nothing to list, so opening the
     // control explains itself instead of revealing an empty region (#1940).
     emptyDetail: 'Decisions on comparable proposals will be listed here.',
+    // `empty` is a fact only once the read has landed. These two say what is
+    // true of the other states instead of claiming an absence (#1940).
+    loading: 'Reading comparable past decisions…',
+    loadingDetail: 'Comparable decisions will be listed here once this read finishes.',
+    failed: 'Comparable past decisions could not be read.',
+    failedDetail: 'The read failed, so whether there are comparable past decisions is unknown.',
     details: {
       show: 'Show similar decisions',
       // The empty-state label. It keeps the `show` wording and adds the count,
@@ -535,8 +570,22 @@ export default {
     title: 'Operation details',
     hint: 'Press Space to hide',
     loading: 'Loading diff…',
+    // The read-only banner names the content that is ACTUALLY on screen, in the
+    // three modes the pane can be in — #1434 finding 2. The first two are worded
+    // exactly as the Legacy card words them (ReviewProposalCard.vue
+    // `readOnlyDiffBanner`); the third deliberately drops Legacy's trailing
+    // "no stored preview is available" clause, for the reason four lines down.
+    // `storedBannerRecorded` is the common expired path: normal creation flows
+    // never populate `diffPreview`, so the pane synthesizes a listing from the
+    // proposal's own operations. That sentence lives HERE and nowhere else on
+    // the Paper pane, which renders no note under the banner.
     storedBanner:
       '{status} · read-only — showing the stored preview from the original submission.',
+    storedBannerRecorded: "{status} · read-only — showing the proposal's recorded operations.",
+    // Nothing to show: `storedEmpty` below is the empty state's own sentence and
+    // renders directly under this banner, so the banner states the status and
+    // the read-only fact and does not repeat it.
+    storedBannerNone: '{status} · read-only.',
     // Rendered `✎ {lead} <strong>{emphasis}</strong> {tail}` — the spaces come
     // from the template, so `lead` must not carry a trailing space.
     revised: {
@@ -635,10 +684,21 @@ export default {
       body: 'Someone else decided, withdrew, or deferred it while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
       return: 'Reload the queue',
     },
+    // Two different truths, deliberately not sharing a sentence (#2214).
+    // `title`/`body` describe a proposal that exists or existed and that this
+    // reviewer cannot see now (403), or that is gone (404) — a state a later
+    // read can legitimately reverse. `malformedTitle`/`malformedBody` describe
+    // an id the by-id route refuses to bind at all (400): the address never
+    // named a proposal, so there is nothing to wait for and retrying is
+    // pointless. Translators: keep that distinction. The malformed copy must
+    // not promise a recovery, and must point at the link rather than at the
+    // proposal. The eyebrow and the return control are shared by both.
     unavailable: {
       eyebrow: 'Requested proposal',
       title: 'This proposal is unavailable.',
       body: 'Proposal {id} is no longer available to review. It may have been applied, archived, or removed.',
+      malformedTitle: 'This link is not a valid proposal link.',
+      malformedBody: 'The address asks for {id}, which is not a proposal id, so there is nothing to open here. Retrying will not help. Go back to Review and pick a proposal from the queue.',
       return: 'Back to Review',
     },
   },
@@ -664,10 +724,18 @@ export default {
   },
 
   // Rendered status labels. The wire values themselves are never keys.
+  // `appliedToBoard` is the read-only diff banner's form of `applied`: the
+  // Legacy card names that status "Applied to board" there (#1434 finding 3),
+  // and its `reviewStatusLabel` is component-local, so the two shells converge
+  // on the wording through this key rather than through a shared helper.
   status: {
     pendingReview: 'Pending review',
     approved: 'Approved',
+    // `appliedToBoard` supersedes `applied` for the read-only diff banner, the
+    // only surface reading this group today; `applied` is kept as the plain
+    // status label for any other surface that extracts into it.
     applied: 'Applied',
+    appliedToBoard: 'Applied to board',
     rejected: 'Rejected',
     failed: 'Failed',
     expired: 'Expired',

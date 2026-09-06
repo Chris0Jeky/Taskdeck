@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import type {
+  PaperReviewEvidenceStatus,
   SimilarPastRow,
 } from '../../../composables/usePaperReviewSelectors'
 
@@ -14,29 +15,38 @@ import type {
  * nothing behind it. The disclosure stays present in every state because the
  * review view specs and the required E2E smoke drive it on an empty fixture.
  *
- * KNOWN GAP, unfixable at this layer (#1940). This card receives rows and an
- * apply rate, nothing about the fetch, so three different situations arrive as
- * the same empty array:
- *   - the selector batch is still in flight,
- *   - the batch FAILED (`usePaperReviewSelectors` leaves `similarPastData` at
- *     its empty default with no flag, and `evidenceUnavailable` is set only
- *     from the Apply-time refresh, never from the page-load batch),
- *   - the read succeeded and there genuinely is no comparable history.
- * Only the third makes "No comparable past decisions." a true statement, and
- * this card cannot tell which one it is holding. The composable does expose
- * `loading`, but nothing threads it into `ReviewRightRail`, and the only place
- * that could is `PaperReviewView.vue`.
+ * Three different situations used to arrive here as the same empty array — the
+ * batch still in flight, the batch failed, and a read that genuinely found no
+ * comparable history — and only the last makes "No comparable past decisions."
+ * a true statement. `evidenceState` is the missing fact (#1940): the card now
+ * says which of the three it is holding, and reserves the claim of emptiness
+ * for the settled read that actually proves it.
  *
- * The wrong-state copy predates #1940: the same sentence rendered inside the
- * disclosure. Hoisting it makes an existing false claim easier to see rather
- * than creating one, and the gap stays tracked on #1940.
+ * `idle` states nothing at all. It means no proposal is active, and the rail
+ * does not render without one, so there is no sentence to write for it.
  */
 const props = defineProps<{
   rows: SimilarPastRow[]
   applyRate: { applied: number; total: number; ratio: number }
+  /** State of the core evidence batch these rows came from. */
+  evidenceState: PaperReviewEvidenceStatus
 }>()
 
 const isEmpty = computed(() => props.rows.length === 0)
+
+/** The only state in which an empty list is a fact about the proposal. */
+const settledEmpty = computed(() => isEmpty.value && props.evidenceState === 'settled')
+
+/**
+ * Which honest not-yet-known sentence to show instead. Rows on screen already
+ * answer the question, so a contradictory state alongside them says nothing.
+ */
+const pendingStateKey = computed<'loading' | 'failed' | null>(() => {
+  if (!isEmpty.value) return null
+  if (props.evidenceState === 'loading') return 'loading'
+  if (props.evidenceState === 'failed') return 'failed'
+  return null
+})
 const detailsExpanded = ref(false)
 const detailsId = 'paper-review-similar-past-details'
 const disclosureId = 'paper-review-similar-past-disclosure'
@@ -46,11 +56,18 @@ const disclosureId = 'paper-review-similar-past-disclosure'
   <section class="card paper-review-past">
     <div class="tk-eyebrow paper-review-past__eyebrow">{{ $t('review.similarPast.heading') }}</div>
     <div
-      v-if="isEmpty"
+      v-if="settledEmpty"
       class="tk-meta paper-review-past__empty"
       data-testid="paper-review-similar-past-empty"
     >
       {{ $t('review.similarPast.empty') }}
+    </div>
+    <div
+      v-else-if="pendingStateKey"
+      class="tk-meta paper-review-past__empty"
+      data-testid="paper-review-similar-past-state"
+    >
+      {{ $t(`review.similarPast.${pendingStateKey}`) }}
     </div>
     <button
       :id="disclosureId"
@@ -64,7 +81,7 @@ const disclosureId = 'paper-review-similar-past-disclosure'
       <span>{{
         detailsExpanded
           ? $t('review.similarPast.details.hide')
-          : isEmpty
+          : settledEmpty
             ? $t('review.similarPast.details.showEmpty')
             : $t('review.similarPast.details.show')
       }}</span>
@@ -79,11 +96,20 @@ const disclosureId = 'paper-review-similar-past-disclosure'
       :hidden="!detailsExpanded"
     >
       <p
-        v-if="isEmpty"
+        v-if="settledEmpty"
         class="tk-meta paper-review-past__empty-detail"
         data-testid="paper-review-similar-past-empty-detail"
       >
         {{ $t('review.similarPast.emptyDetail') }}
+      </p>
+      <!-- The region must not open onto a void while the read is pending or
+           after it failed either, and it must not repeat the card-level line. -->
+      <p
+        v-else-if="pendingStateKey"
+        class="tk-meta paper-review-past__empty-detail"
+        data-testid="paper-review-similar-past-state-detail"
+      >
+        {{ $t(`review.similarPast.${pendingStateKey}Detail`) }}
       </p>
       <div
         v-for="row in rows"

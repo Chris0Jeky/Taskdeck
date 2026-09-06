@@ -786,6 +786,7 @@ describe('useProposalRevisions', () => {
     await flushMicrotasks()
 
     expect(revisionsLoaded.value).toBe(false)
+    expect(revisionCount.value).toBe(0)
     // And a poll the reviewer never asked for must not raise a toast — the same
     // silent doctrine refreshProposals holds on the far side of the tick.
     expect(toastMocks.error).not.toHaveBeenCalled()
