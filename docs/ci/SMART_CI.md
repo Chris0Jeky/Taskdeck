@@ -158,7 +158,7 @@ unusable evidence, `2` insufficient or zero-failure evidence, and `3` a recall m
 | Phase | What lands | Gate to the next phase |
 | --- | --- | --- |
 | 0 measure | `measure-ci-estate.mjs`, `docs/ci/CI_BASELINE.md` | baseline committed |
-| 1 shadow | policy + planner + schemas + fixtures; `smart-ci-shadow.yml`; observation-mode gate; action-pin inventory | ≥20 PRs; recall report; zero false reds |
+| 1 shadow | policy + planner + schemas + fixtures; `smart-ci-shadow.yml`; observation-mode gate; action-pin inventory and `--check` guard (CI-11 slice 1, advisory until SC-4/SC-5) | ≥20 PRs; recall report; zero false reds |
 | 2 gate | gate evaluator with receipts; landed verifier; consolidated control job; **maintainer** registers the gate and rules `strict` / `enforce_admins` on the evidence (SC-4) | one merge proven; direct-push escalation proven |
 | 3 dedupe | `push: main` full run removed; Windows frontend full run removed; Windows API → contract shard; containers risk-gated; nightly consolidated | recall stays 100%; weekly sweep exists |
 | 4 runners | isolated VMs bootstrapped; broker; runbook; rehearsals (hosted-only while public) | after cutover: **maintainer** registers runners, mode → `hybrid` |
@@ -175,7 +175,7 @@ unusable evidence, `2` insufficient or zero-failure evidence, and `3` a recall m
 | Plan one change locally (what-if, no event payload) | `node scripts/ci/smart-ci/plan.mjs --policy ci/policy.v1.json --base-sha <sha> --head-sha <sha> --changed-files <one path per line> --out ci-plan.json` |
 | Evaluate a plan receipt locally | `node scripts/ci/smart-ci/evaluate-gate.mjs --plan ci-plan.json --policy ci/policy.v1.json --mode shadow` |
 | Measure shadow recall (read-only) | `node scripts/ci/smart-ci/recall-report.mjs --since YYYY-MM-DDTHH:mm:ssZ --until YYYY-MM-DDTHH:mm:ssZ --out-json artifacts/ci-recall.json --out-md artifacts/ci-recall.md` |
-| Action pin inventory | `node scripts/ci/smart-ci/action-pins.mjs` |
+| Action pin inventory / guard | `node scripts/ci/smart-ci/action-pins.mjs` (inventory) · `node scripts/ci/smart-ci/action-pins.mjs --check` (exit 1 on any unpinned external action; run by Planner Self-Test) |
 | Runner VM broker (Hyper-V, no GitHub calls) | `scripts/ci/runners/Invoke-TaskdeckCiRunnerVm.ps1 -Action Status` |
 
 ## 11. File map
@@ -188,7 +188,7 @@ scripts/ci/smart-ci/plan.mjs               deterministic planner
 scripts/ci/smart-ci/evaluate-gate.mjs      gate evaluator
 scripts/ci/smart-ci/recall-report.mjs      exact-evidence shadow recall report
 scripts/ci/smart-ci/measure-ci-estate.mjs  estate measurement (CI-01)
-scripts/ci/smart-ci/action-pins.mjs        external action pin inventory (CI-11)
+scripts/ci/smart-ci/action-pins.mjs        external action pin inventory and `--check` guard (CI-11)
 scripts/ci/runners/                        VM bootstrap, broker, runbook (CI-04)
 .github/workflows/smart-ci-shadow.yml      shadow planner + observation gate
 docs/ci/                                   this document, threat model, cutover checklist, baselines
