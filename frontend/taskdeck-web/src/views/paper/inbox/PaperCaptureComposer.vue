@@ -229,8 +229,8 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
 <template>
   <section class="paper-composer card-lift">
     <header class="paper-composer__header">
-      <PaperTagstamp tone="ember">Capture · Draft</PaperTagstamp>
-      <span class="tk-meta paper-composer__meta">local-only · saves to inbox</span>
+      <PaperTagstamp tone="ember">{{ t('inbox.composer.eyebrow') }}</PaperTagstamp>
+      <span class="tk-meta paper-composer__meta">{{ t('inbox.composer.meta') }}</span>
     </header>
 
     <div class="paper-composer__body">
@@ -367,10 +367,16 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
 
     <footer class="paper-composer__footer">
       <span class="tk-meta">
-        Captures land in <span class="tk-ink-italic">Inbox</span>. Linking to a board creates a proposal, not a card.
+        {{ t('inbox.composer.footerBefore') }}<span class="tk-ink-italic">{{ t('inbox.composer.footerInbox') }}</span>{{ t('inbox.composer.footerAfter') }}
       </span>
       <span class="paper-composer__spacer" />
-      <PaperHLBtn label="Capture" kbd="mod+enter" variant="ember" :disabled="!canSubmit" @click="submit" />
+      <PaperHLBtn
+        :label="t('inbox.composer.submit')"
+        kbd="mod+enter"
+        variant="ember"
+        :disabled="!canSubmit"
+        @click="submit"
+      />
     </footer>
   </section>
 </template>
