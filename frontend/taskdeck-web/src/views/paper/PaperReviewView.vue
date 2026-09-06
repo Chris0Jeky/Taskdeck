@@ -40,6 +40,7 @@ import {
 } from '../../utils/proposalIdentity'
 import type { Proposal as ApiProposal, ProposalOperation } from '../../types/automation'
 import { proposalDisplayNames } from '../../composables/useProposalDisplayNames'
+import { formatRecordedOperationActionLabel } from '../../utils/recordedOperationPresentation'
 import { useRoute } from 'vue-router'
 import type {
   ChangeAfterCard,
@@ -74,11 +75,17 @@ const {
   proposals,
   proposalsLoading,
   unavailableProposalId,
+  unavailableProposalMalformed,
   queueAccessRevoked,
   queueRefreshStale,
+  queueRefreshRefused,
   queueRefreshRecovered,
+  queueRefreshRecoveredKind,
   nowMs,
   visibleProposals,
+  awaitingProposalIds,
+  queueAnnouncementKey,
+  queueScopeLoaded,
   dismissableProposalIds,
   activeBoardFilter,
   activeBoardName,
@@ -518,11 +525,21 @@ function clearPreviewDiff() {
 
 // The read-only banner label for the active proposal's stored preview: 'Expired'
 // when the clock/domain says so, otherwise its terminal status.
+//
+// #1434 finding 3: Applied is spelled "Applied to board" here, the way the
+// Legacy card's `reviewStatusLabel` spells it (ReviewProposalCard.vue). That
+// helper is component-local — not a composable or util this view may import —
+// so the two shells converge through the catalog key instead. Every other
+// status already matched. The Applied case reaches the screen through the
+// #1397 LOW-5 conversion — a pane opened before the apply, not a key press,
+// since the preview key is inert once the record is applied.
 const previewReadOnlyLabel = computed(() => {
   const p = activeProposal.value
   if (!p) return ''
   if (isProposalExpired(p)) return t('review.status.expired')
-  return t(`review.status.${statusKeySuffix(normalizeProposalStatus(p.status))}`)
+  const status = normalizeProposalStatus(p.status)
+  if (status === 'Applied') return t('review.status.appliedToBoard')
+  return t(`review.status.${statusKeySuffix(status)}`)
 })
 
 // Read-only fallback when the proposal never captured a `diffPreview` (normal
@@ -540,9 +557,27 @@ const storedOperationsFallback = computed(() => {
     .sort((a, b) => a.sequence - b.sequence)
     .map(
       (op, index) =>
-        `${index + 1}. ${formatActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
+        `${index + 1}. ${formatRecordedOperationActionLabel(op.actionType)} ${op.targetType}${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op) ? ` “${proposalDisplayNames.operationTargetLabel(activeProposal.value!, op)}”` : ''}`,
     )
     .join('\n')
+})
+
+// The read-only banner names the content actually on screen, the way the Legacy
+// card's `readOnlyDiffBanner` does (ReviewProposalCard.vue): the captured stored
+// preview, the recorded-operations fallback synthesized above (the COMMON
+// expired path — normal creation flows never populate `diffPreview`), or
+// neither. Claiming a "stored preview from the original submission" for the
+// synthesized listing was inaccurate, and claiming one when nothing was captured
+// contradicted the empty state right below it (#1434 finding 2).
+//
+// The recorded-operations sentence lives on the banner ALONE. Unlike the Legacy
+// card, which renders a note under its banner saying the same thing, this pane
+// has no such note — so the fact is stated once.
+const previewReadOnlyBanner = computed(() => {
+  const status = previewReadOnlyLabel.value
+  if (previewDiff.value) return t('review.diff.storedBanner', { status })
+  if (storedOperationsFallback.value) return t('review.diff.storedBannerRecorded', { status })
+  return t('review.diff.storedBannerNone', { status })
 })
 // Guards against a double-click firing two feedback POSTs (the backend is idempotent as a backstop).
 const reportingProposalId = ref<string | null>(null)
@@ -727,12 +762,14 @@ function clearRevisionEditorPayload() {
 
 // --- Queue rail data ---------------------------------------------------
 
-const awaitingCount = computed(() => {
-  return visibleProposals.value.filter(
-    (p) =>
-      normalizeProposalStatus(p.status) === 'PendingReview' && !isProposalExpired(p),
-  ).length
-})
+// The count and the identity the rail's announcement is keyed on come from ONE
+// composable predicate (#2214 item 4). This view recomputed the same filter
+// inline and Legacy read it off `summaryCards`, so neither skin had any notion
+// of WHICH proposals the number stood for — which is how a poll that removed
+// one pending proposal and added another announced nothing at all. The rendered
+// value is unchanged: `awaitingProposalIds` is this exact predicate over
+// `visibleProposals`.
+const awaitingCount = computed(() => awaitingProposalIds.value.length)
 
 const staleCount = computed(() =>
   // Route through the SHARED isStaleProposal (PendingReview + inclusive >=24h)
@@ -884,13 +921,6 @@ const headerMeta = computed(() => {
   })
 })
 
-function formatActionLabel(actionType: string): string {
-  return actionType
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[_-]+/g, ' ')
-    .trim()
-}
-
 function summarizeOperation(operation: ProposalOperation): string {
   const proposal = activeProposal.value
   if (!proposal) return t('review.change.after.noParameterPreview')
@@ -909,7 +939,7 @@ function afterOperationTitle(proposal: ApiProposal, operation: ProposalOperation
   ) {
     return proposalDisplayNames.operationHeadline(proposal, operation, suppliedHeadline)
   }
-  return `${formatActionLabel(operation.actionType)} · ${operation.targetType}`
+  return `${formatRecordedOperationActionLabel(operation.actionType)} · ${operation.targetType}`
 }
 
 const before = computed<ChangeBeforeCard>(() => {
@@ -984,7 +1014,7 @@ const fields = computed<FieldDiff[]>(() => {
   return [...operations]
     .sort((a, b) => a.sequence - b.sequence)
     .map((operation) => ({
-      key: formatActionLabel(operation.actionType),
+      key: formatRecordedOperationActionLabel(operation.actionType),
       before: proposalDisplayNames.operationTargetLabel(p!, operation) ?? operation.targetType,
       after: summarizeOperation(operation),
     }))
@@ -1048,7 +1078,10 @@ const proposedNum = computed(() => {
 })
 
 const authorMeta = computed(() => {
-  const c = selectors.confidenceBreakdown.value
+  // The KEYED snapshot, not the bare read: this sentence carries a confidence
+  // number into the rail, and the bare read still holds the previous proposal's
+  // number while the new one's batch is in flight (#1940).
+  const c = selectors.railEvidence.value.confidenceBreakdown
   if (c.overall === null || !Number.isFinite(c.overall)) return ''
   if (c.source === 'model-reported') {
     return t('review.author.modelConfidence', { value: c.overall.toFixed(2) })
@@ -1208,7 +1241,7 @@ const stickyOffsetPx = ref(0)
 let stickyOffsetObserver: ResizeObserver | null = null
 
 const mainColStickyStyle = computed(() =>
-  queueRefreshStale.value && !queueAccessRevoked.value
+  (queueRefreshStale.value || queueRefreshRefused.value) && !queueAccessRevoked.value
     ? { '--paper-review-sticky-offset': `${stickyOffsetPx.value}px` }
     : {},
 )
@@ -2101,7 +2134,15 @@ async function onDefer() {
   // deep-linked proposal whose re-defer failed would otherwise vanish (its prior deferredUntil is
   // still in effect) with no retry path, despite the error toast.
   if (deferred) {
-    recordDecisionReceipt(p.id, 'deferred')
+    // The queue remains interactive while the request is in flight. Only
+    // surface a receipt when the reviewer is still at the decision locus that
+    // started this defer; a late response must not pull them back to proposal A
+    // after they have selected proposal B. Keep deep-link cleanup separate:
+    // it is tied to the successful server result, not to the visible receipt.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (proposalIdsEqual(currentDecisionLocusId, p.id)) {
+      recordDecisionReceipt(p.id, 'deferred')
+    }
     void clearProposalDeepLink(p.id)
   }
 }
@@ -2113,6 +2154,14 @@ async function onConfirmExecute() {
     ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
     : undefined
   if (applied && normalizeProposalStatus(applied.status) === 'Applied') {
+    // The queue stays interactive across the execute round trip, so the
+    // reviewer can be on another proposal by the time it lands. Only surface a
+    // receipt when they are still at the decision locus this execute started
+    // from. Prefer the explicit selection over the route hash, because router
+    // navigation can lag behind a queue click: a late response must never pull
+    // them back to proposal A after they have selected proposal B.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, applied.id)) return
     recordDecisionReceipt(applied.id, 'applied')
   }
 }
@@ -2124,6 +2173,12 @@ async function onConfirmReject(reason: string) {
     ? proposals.value.find((proposal) => proposalIdsEqual(proposal.id, proposalId))
     : undefined
   if (rejected && normalizeProposalStatus(rejected.status) === 'Rejected') {
+    // Reject shares that interactive-queue window with execute above, and with
+    // approve (#2069) and defer (PR #2629): the same locus check decides only
+    // whether the receipt is surfaced. The collected reason and the status
+    // check are untouched — the rejection itself already stands.
+    const currentDecisionLocusId = explicitActiveId.value ?? activeProposal.value?.id
+    if (!proposalIdsEqual(currentDecisionLocusId, rejected.id)) return
     recordDecisionReceipt(rejected.id, 'rejected')
   }
 }
@@ -2537,9 +2592,37 @@ function selectProposal(id: string) {
   openProposal(id)
 }
 
-function returnToReview() {
+/**
+ * The queue rail, for the focus handoff below. The rail owns its rows, so it
+ * owns the "focus the first one" answer; this view only asks.
+ */
+const queueRailRef = ref<InstanceType<typeof ReviewQueueRail> | null>(null)
+
+/**
+ * The empty column, when nothing replaces the panel but another empty state.
+ * `tabindex="-1"` in the template makes it a programmatic focus target only.
+ */
+const emptyColRef = ref<HTMLElement | null>(null)
+
+/**
+ * Leave the refused deep link (#2214). Mirror of
+ * `LegacyReviewView.returnToReview` so the two skins cannot drift (#1124 /
+ * ADR-0038).
+ *
+ * The click removes the panel the control lives in, so focus is moved on
+ * deliberately (#2599 item 2) — the same handoff `settledElsewhereReturnRef`
+ * already makes one branch over. Without it focus falls to `<body>`: nothing is
+ * announced and the reviewer's next keystroke acts on nothing.
+ */
+async function returnToReview() {
   if (!unavailableProposalId.value) return
-  void clearProposalDeepLink(unavailableProposalId.value)
+  await clearProposalDeepLink(unavailableProposalId.value)
+  // After the DOM has settled on whichever of the two replaces the panel.
+  await nextTick()
+  // The queue the panel was standing in front of, at its first row; failing
+  // that, the empty state that stands in for it.
+  if (queueRailRef.value?.focusFirstQueueRow?.()) return
+  emptyColRef.value?.focus?.()
 }
 
 function onQueueFilterChange(filter: QueueFilter) {
@@ -2599,6 +2682,15 @@ async function onClearBoardScope() {
       cannot carry this — it is a state, and a state that is merely gone
       announces nothing. `queueRefreshRecovered` is the transition.
 
+      TWO sentences through this one region, because the composable retracts two
+      different disclosures and they claim different things (#2638 item 2). A
+      'degraded' recovery follows a completed read, so it may say the rows are
+      current; a 'refused' one is raised as soon as the LIST read answers, on a
+      tick that may never replace the queue, so it says only that the server is
+      accepting refreshes again. One region rather than two: they are the same
+      job — the retraction of whichever disclosure was standing — and only one
+      can stand at a time.
+
       It lives HERE, above the `v-if="activeProposal"` / `v-else` pair, and not
       once inside each arm. The recovering poll assigns the queue and records
       the success in one synchronous block, so a recovery that puts a proposal
@@ -2616,9 +2708,40 @@ async function onClearBoardScope() {
       aria-live="polite"
       aria-atomic="true"
       data-testid="paper-review-queue-recovered"
-    >{{ queueRefreshRecovered && !queueAccessRevoked ? $t('review.queue.degraded.recovered') : '' }}</p>
+    >{{
+      queueRefreshRecovered && !queueAccessRevoked
+        ? $t(
+            queueRefreshRecoveredKind === 'refused'
+              ? 'review.queue.refused.recovered'
+              : 'review.queue.degraded.recovered',
+          )
+        : ''
+    }}</p>
+
+    <!--
+      The refused-refresh disclosure (#2214 item 2), built the same way and
+      hoisted for the same reason: the visible warning is rendered inside the
+      `v-if="activeProposal"` / `v-else` pair below, so it can mount already
+      carrying its text, which a live region announces unreliably. This region
+      is above the pair, always mounted, and withholds its text until the
+      disclosure rises.
+
+      A separate region from the recovery one above rather than a shared slot:
+      they are different jobs and can be true in sequence within one poll
+      interval, and one region cannot speak twice about two different facts.
+      Both are `.sr-only` and therefore absolutely positioned, so neither takes
+      a column of the three-column track list.
+    -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-queue-refused"
+    >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
 
     <ReviewQueueRail
+      ref="queueRailRef"
       :items="queueItems"
       :active-id="activeProposal?.id ?? null"
       :awaiting-count="awaitingCount"
@@ -2632,8 +2755,9 @@ async function onClearBoardScope() {
       :recently-applied="recentlyApplied"
       :cadence="cadence"
       :author-partition-available="authorPartitionAvailable"
-      :loading="proposalsLoading"
+      :queue-scope-loaded="queueScopeLoaded"
       :queue-unavailable="queueAccessRevoked"
+      :announcement-key="queueAnnouncementKey"
       @filter-change="onQueueFilterChange"
       @select="selectProposal"
       @toggle-batch="toggleBatchSelection"
@@ -2649,8 +2773,14 @@ async function onClearBoardScope() {
       class="paper-review-deep__main-col"
       :style="mainColStickyStyle"
     >
+      <!-- ONE visible slot for both background-refresh disclosures. They are
+           alternatives, not additions: "refreshes are being refused" subsumes
+           "the queue may be out of date", and rendering both would put "while
+           Taskdeck retries" beside a sentence saying the retries are answered
+           and refused. Keeping it one element also keeps `queueStaleRef` and
+           the #2630 sticky-offset handshake exactly as they shipped. -->
       <p
-        v-if="queueRefreshStale && !queueAccessRevoked"
+        v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
         ref="queueStaleRef"
         class="paper-review-deep__queue-stale paper-review-deep__queue-stale--pinned tk-meta"
         role="status"
@@ -2658,7 +2788,7 @@ async function onClearBoardScope() {
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        {{ $t('review.queue.degraded.body') }}
+        {{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}
       </p>
       <div
         v-if="revisionCount > 0"
@@ -2753,14 +2883,15 @@ async function onClearBoardScope() {
           <h3 class="tk-h3 paper-review-deep__diff-title">{{ $t('review.diff.title') }}</h3>
           <span class="tk-meta paper-review-deep__diff-sub">{{ $t('review.diff.hint') }}</span>
         </header>
-        <!-- Read-only banner: a terminal/expired proposal's stored preview (#1397) -->
+        <!-- Read-only banner for a terminal/expired proposal (#1397), naming the
+             content mode actually on screen (#1434). -->
         <p
           v-if="previewDiffMode === 'stored'"
           class="paper-review-deep__diff-banner tk-meta"
           role="status"
           data-testid="paper-review-diff-banner"
         >
-          {{ $t('review.diff.storedBanner', { status: previewReadOnlyLabel }) }}
+          {{ previewReadOnlyBanner }}
         </p>
         <!-- diffPreview is creation-time content revisions never update, so a revised
              proposal's stored preview — or the recorded-operations fallback when no
@@ -2864,16 +2995,25 @@ async function onClearBoardScope() {
         @cancel="onCancelRevision"
       />
     </div>
-    <div v-else class="paper-review-deep__empty" data-testid="paper-review-empty">
+    <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
+         else: leaving the unavailable pin with an empty queue hands focus here
+         (#2599 item 2), and it never enters the tab order. -->
+    <div
+      v-else
+      ref="emptyColRef"
+      class="paper-review-deep__empty"
+      tabindex="-1"
+      data-testid="paper-review-empty"
+    >
       <p
-        v-if="queueRefreshStale && !queueAccessRevoked"
+        v-if="(queueRefreshStale || queueRefreshRefused) && !queueAccessRevoked"
         class="paper-review-deep__queue-stale tk-meta"
         role="status"
         aria-live="polite"
         aria-atomic="true"
         data-testid="paper-review-queue-stale"
       >
-        {{ $t('review.queue.degraded.body') }}
+        {{ queueRefreshRefused ? $t('review.queue.refused.body') : $t('review.queue.degraded.body') }}
       </p>
       <template v-if="queueAccessRevoked">
         <div class="tk-eyebrow">{{ $t('review.empty.eyebrow', { count: 0 }) }}</div>
@@ -2902,9 +3042,16 @@ async function onClearBoardScope() {
       </template>
       <template v-else-if="unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.unavailable.eyebrow') }}</div>
-        <h2 class="tk-h2">{{ $t('review.empty.unavailable.title') }}</h2>
+        <!-- A 400 means the by-id route could not bind the id, so the link
+             never named a proposal: it cannot be retried and it will not come
+             back. Saying "it may have been applied, archived, or removed"
+             there sends the reviewer to wait for a recovery that cannot
+             arrive (#2214). -->
+        <h2 class="tk-h2">
+          {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedTitle') : $t('review.empty.unavailable.title') }}
+        </h2>
         <p class="tk-lede">
-          {{ $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
+          {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedBody', { id: unavailableProposalId }) : $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
         </p>
         <button
           type="button"
@@ -2940,6 +3087,14 @@ async function onClearBoardScope() {
       </template>
     </div>
 
+    <!-- The rail's evidence props all come from ONE keyed snapshot
+         (`selectors.railEvidence`), never from the bare selector reads: the
+         bare reads still hold the previous proposal's confidence and
+         similar-past rows until the new proposal's batch lands, and its cards
+         cannot tell a pending read from a proven absence (#1940). The snapshot
+         carries the state and withholds the values unless the batch settled for
+         the ACTIVE key. `evidenceUnavailable` below is a different fact — the
+         Apply-time refresh — and keeps its own prop. -->
     <ReviewRightRail
       v-if="activeProposal"
       :key="activeProposal.id"
@@ -2949,9 +3104,10 @@ async function onClearBoardScope() {
       :proposed-time="proposedTime"
       :proposed-num="proposedNum"
       :why-now-body="whyNowBody"
-      :breakdown="selectors.confidenceBreakdown.value"
-      :similar-past="selectors.similarPast.value"
-      :similar-past-apply-rate="selectors.similarPastApplyRate.value"
+      :breakdown="selectors.railEvidence.value.confidenceBreakdown"
+      :similar-past="selectors.railEvidence.value.similarPast"
+      :similar-past-apply-rate="selectors.railEvidence.value.similarPastApplyRate"
+      :evidence-state="selectors.railEvidence.value.status"
       :evidence-unavailable="activeRevisionReviewUnavailable"
       :apply-phase="applyPhase"
       :apply-only="activeDecisionReceipt === 'approved'"

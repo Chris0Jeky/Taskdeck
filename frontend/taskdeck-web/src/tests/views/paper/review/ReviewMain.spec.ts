@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { h, nextTick, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import ReviewMain from '../../../../views/paper/review/ReviewMain.vue'
+import { drainCleanups } from '../../../utils/drainCleanups'
 import type {
   ChangeAfterCard,
   ChangeBeforeCard,
@@ -258,7 +259,7 @@ describe('ReviewMain', () => {
     const cleanups: Array<() => void> = []
 
     afterEach(() => {
-      for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+      drainCleanups(cleanups)
     })
 
     function renderLockNote(): void {
@@ -268,6 +269,20 @@ describe('ReviewMain', () => {
       document.body.appendChild(note)
       cleanups.push(() => note.remove())
     }
+
+    it('removes the injected note after a throwing unmount cleanup', () => {
+      renderLockNote()
+      const wrapper = mountMain({}, { attachTo: true, busy: true })
+      const unmountFailure = new Error('unmount cleanup failed')
+      cleanups.push(() => {
+        wrapper.unmount()
+        throw unmountFailure
+      })
+
+      expect(() => drainCleanups(cleanups)).toThrow(unmountFailure)
+      expect(document.getElementById(LOCK_ID)).toBeNull()
+      expect(cleanups).toHaveLength(0)
+    })
 
     it('forwards the column description ids to every disabled decision control', () => {
       renderLockNote()

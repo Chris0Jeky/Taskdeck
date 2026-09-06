@@ -61,27 +61,60 @@ const props = withDefaults(
      */
     authorPartitionAvailable?: boolean
     /**
-     * Whether the queue read behind `awaitingCount` is still in flight (#2214).
-     * While it is, the count is 0 because nothing has been read yet — not
-     * because nothing is awaiting review — so the polite announcement is
-     * withheld rather than telling a screen-reader user "0 proposals awaiting
-     * review." under the loading state and then the real count.
+     * Whether a queue read has landed for the board scope `awaitingCount`
+     * belongs to (#2599 item 1). It replaced a `loading` flag, which was the
+     * wrong question: an explicit reload raises that without clearing the
+     * queue, so the rail unmounted this announcement for the length of every
+     * reload and remounted it with the identical sentence — and a node addition
+     * inside a live region is spoken. The reviewer heard the same count read
+     * back after a Refresh, or after filing a settled proposal away, for a
+     * queue that had not moved.
      *
-     * Optional and defaulting to `false`: an omitted flag keeps the existing
-     * announcement exactly as it is, so a parent that does not pass it is
-     * unaffected. `PaperReviewView` passes its own `proposalsLoading`.
+     * False covers the cases where the count is not a count of the queue on
+     * screen: before the first read lands, after a board-filter change until
+     * the new scope's read lands, and for a scope no read has landed for,
+     * including one whose only read failed. It stays TRUE after a later read
+     * failed — the rows on screen are still the last landed answer, and
+     * withholding there would put back the count -> '' -> count flicker for a
+     * read that changed nothing. A failing refresh is reported by the
+     * degraded/refused disclosures instead (#2214).
+     *
+     * Optional and defaulting to `false`, which WITHHOLDS: a parent that cannot
+     * say a read has landed cannot have its count spoken, because 0 from a
+     * never-read queue is the #2593 defect. `PaperReviewView` passes the shared
+     * composable's `queueScopeLoaded`, the same signal `LegacyReviewView` gates
+     * its own region on (#1124 / ADR-0038).
      */
-    loading?: boolean
+    queueScopeLoaded?: boolean
     /**
      * Whether the queue was withdrawn rather than read (#2214 round 2). A
      * current-scope 403 sets `queueAccessRevoked` AND clears the queue, so
      * `awaitingCount` drops to 0 for a reason that is not "nothing is awaiting
      * review" — and because that is a CHANGE, an ungated live region speaks it.
-     * Kept separate from `loading` so the parent passes its two real states
-     * rather than a derived boolean whose reason is lost at the call site;
+     * Kept separate from `queueScopeLoaded` so the parent passes its two real
+     * states rather than a derived boolean whose reason is lost at the call site;
      * `PaperReviewView` passes its own `queueAccessRevoked`.
      */
     queueUnavailable?: boolean
+    /**
+     * The identity of the queue `awaitingCount` counts, as one primitive
+     * (#2214 item 4). It is the `key` of the node carrying the announcement,
+     * never spoken text.
+     *
+     * A live region only speaks when it changes, so a poll that removed one
+     * pending proposal and added another rendered a byte-identical
+     * "3 proposals awaiting review." and announced nothing. Re-keying replaces
+     * that node inside a region that stays mounted, which is the node addition
+     * `aria-live`'s default `aria-relevant="additions text"` announces.
+     *
+     * The rail cannot derive this itself: `items` is the whole visible queue,
+     * not the awaiting set the count is about, and a rail-local derivation is
+     * exactly how the two skins drift (#1124 / ADR-0038). `PaperReviewView`
+     * passes the shared composable's `queueAnnouncementKey`, the same value
+     * `LegacyReviewView` keys its own region on. Optional and defaulting to a
+     * constant, so a parent that does not pass it keeps today's behaviour.
+     */
+    announcementKey?: string
   }>(),
   {
     dismissableCount: 0,
@@ -89,8 +122,9 @@ const props = withDefaults(
     batchExecutableCount: 0,
     busy: false,
     authorPartitionAvailable: true,
-    loading: false,
+    queueScopeLoaded: false,
     queueUnavailable: false,
+    announcementKey: '',
   },
 )
 
@@ -119,11 +153,51 @@ const visible = computed<QueueRailItem[]>(() => {
 })
 
 /**
- * Whether `awaitingCount` is a real count right now (#2214). A queue that is
- * still loading and one whose access was revoked both carry 0 because nothing
- * has been read, not because nothing awaits review; neither is speakable.
+ * Whether `awaitingCount` is a real count right now (#2214, #2599 item 1). A
+ * queue no read has landed for in this scope and one whose access was revoked
+ * both carry 0 because nothing has been read, not because nothing awaits
+ * review; neither is speakable. Kept in step with
+ * `LegacyReviewView.countIsAnnounceable`, which gates the identical region on
+ * the same two states (#1124 / ADR-0038).
  */
-const countIsAnnounceable = computed<boolean>(() => !props.loading && !props.queueUnavailable)
+const countIsAnnounceable = computed<boolean>(
+  () => props.queueScopeLoaded && !props.queueUnavailable,
+)
+
+/** The rail's own root, so the focus handoff below stays inside this subtree. */
+const railRef = ref<HTMLElement | null>(null)
+
+/**
+ * Move focus to the first row of the queue, reporting whether there was one
+ * (#2599 item 2).
+ *
+ * The target-unavailable panel's return control removes the element focus is
+ * in, so focus would fall to `<body>`: nothing announced, and the next
+ * keystroke acting on nothing. `PaperReviewView` calls this to hand focus to
+ * the queue the panel was standing in front of, and falls back to its own empty
+ * state when this reports `false`.
+ *
+ * The rail owns the rows, so it owns the handoff: a parent reaching into this
+ * subtree for a row element is the seam the two skins drift at. Document order
+ * is the queue's rendered order, which is why this reads the DOM rather than a
+ * `v-for` ref array (Vue does not promise those match the source order).
+ *
+ * Legacy does NOT land on the same kind of element, and that divergence is
+ * deliberate rather than drift (#2599 item 2). A row here is a `<button>`, so
+ * focus announces that row and Enter selects it; Legacy's rows are not
+ * focusable at all, so it focuses its queue `<section>`, which announces the
+ * region label and takes Enter as nothing. The shared rule is the rule about
+ * WHERE focus goes — the queue that replaced the panel, else the empty state
+ * that did — not the element type, which each skin's queue widget decides.
+ */
+function focusFirstQueueRow(): boolean {
+  const first = railRef.value?.querySelector<HTMLElement>('.paper-review-rail__queue-row button')
+  if (!first) return false
+  first.focus()
+  return true
+}
+
+defineExpose({ focusFirstQueueRow })
 
 /** Real 7-day cadence to render; null hides the mini-cadence bars entirely. */
 const hasCadence = computed<boolean>(
@@ -170,7 +244,7 @@ function onFilterPillClick(key: QueueFilter) {
 </script>
 
 <template>
-  <aside class="paper-review-rail" data-testid="paper-review-queue-rail">
+  <aside ref="railRef" class="paper-review-rail" data-testid="paper-review-queue-rail">
     <div class="paper-review-rail__head">
       <div class="tk-eyebrow">
         {{
@@ -191,13 +265,21 @@ function onFilterPillClick(key: QueueFilter) {
         withholds its content (#2214): a live region inserted at the same moment
         its text appears is unreliably announced, so gating with `v-if` would
         trade one defect for another.
+
+        Only the node INSIDE it is keyed and replaced, on `announcementKey`, so
+        a queue whose contents changed without changing size is announced once
+        with the sentence it always had (#2214 item 4).
       -->
       <p
         class="sr-only"
         role="status"
         aria-live="polite"
         data-testid="paper-review-queue-live"
-      >{{ countIsAnnounceable ? $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) : '' }}</p>
+      ><span
+        v-if="countIsAnnounceable"
+        :key="announcementKey"
+        data-testid="paper-review-queue-announcement"
+      >{{ $t('review.queueRail.liveAnnounce', { count: awaitingCount }, awaitingCount) }}</span></p>
       <PaperScopeDisclosure
         v-if="scopeLabel && scopeClearLabel"
         :label="scopeLabel"

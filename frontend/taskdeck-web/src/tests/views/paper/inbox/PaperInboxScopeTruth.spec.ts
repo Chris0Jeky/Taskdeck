@@ -40,7 +40,7 @@ const mockCaptureStore = reactive({
   listError: null as string | null,
   actionBusyItemId: null as string | null,
   triagePollingItemId: null as string | null,
-  fetchItems: vi.fn<(...args: unknown[]) => Promise<void>>(),
+  fetchItems: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
   fetchDetail: vi.fn(),
   peekDetail: vi.fn(),
   cacheDetail: vi.fn(),
@@ -129,7 +129,12 @@ describe('Paper Inbox scope truth (#1984)', () => {
     mockCaptureStore.detailById = {}
     mockCaptureStore.loadingList = false
     mockCaptureStore.listError = null
-    mockCaptureStore.fetchItems.mockResolvedValue(undefined)
+    // The store REPORTS whether it applied the response (#2501/#2584); this
+    // mock predates that contract and resolved `undefined`, which the
+    // orchestrator now correctly reads as a dropped response and repairs with
+    // a second read (#2591). The ordinary case under test here is an applied
+    // one, so say so.
+    mockCaptureStore.fetchItems.mockResolvedValue(true)
     mockBoardsApi.getBoard.mockResolvedValue(scopedBoard())
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
     mockSessionStore.userId = 'user-a'

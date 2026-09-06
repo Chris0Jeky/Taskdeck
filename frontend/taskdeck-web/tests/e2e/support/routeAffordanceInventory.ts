@@ -70,13 +70,44 @@ export type AffordanceSelector =
 
 /**
  * What must become observably true after the affordance is activated. `url` and
- * `response` pattern strings are regular-expression SOURCES; the `{boardId}`
- * and `{metricsBoardId}` tokens in either are substituted before use.
+ * `response` pattern strings are regular-expression SOURCES.
+ *
+ * WHERE TOKENS ARE SUBSTITUTED, EXACTLY. `fillTokens` in
+ * `tests/e2e/route-affordances.spec.ts` recognises `{boardId}`, `{boardName}`,
+ * `{metricsBoardId}` and `{openingMonthLabel}`, and the walk calls it at five
+ * places only: `url.pathPattern`, `response.urlPattern`, `value.value`,
+ * `text.text` and `textChangedFrom.from` — plus the `name` of a `role` selector
+ * (see `AffordanceSelector` above). Everywhere else the string is used
+ * VERBATIM — the complete list: `attribute`'s `selector`, `attribute` and
+ * `value`; the `enabled` selector; the `selector` of `value`, `text` and
+ * `textChangedFrom` (only their `value`/`text`/`from` payloads are filled, not
+ * the node they are read from); the `node` and `focus` test ids; and every
+ * `css` and `testId` selector value. A token written into one of those is
+ * matched literally, so the row quietly fails to find its node rather than
+ * reporting a bad token.
+ *
+ * Which token appears where today: `{boardId}` in three `url.pathPattern`s, and
+ * once more in the `workspace-board` entry's `entryPath`, where nothing
+ * substitutes it (see `RouteEntry.entryPath` below); `{metricsBoardId}` in
+ * three `response.urlPattern`s and in the `value.value` of the metrics
+ * board-select post-condition; `{boardName}` in one `role` selector name; and
+ * `{openingMonthLabel}` in exactly two places —
+ * the `textChangedFrom.from` of `calendar.previous-month` and the `text.text`
+ * of `calendar.next-month`. `{openingMonthLabel}` appears in no `url` or
+ * `response` pattern at all, which is what the sentence this replaced got
+ * wrong.
  *
  * A `response` consequence proves an endpoint answered, which on its own cannot
  * tell the click's own request apart from one the view already had in flight.
  * Rows that can carry an independent DOM post-condition declare it in
  * `postCondition`, and the walk asserts it after the response.
+ *
+ * ADDING A KIND. Every kind here must be classified in
+ * `CONSEQUENCE_ASSERTION_SITE` in `src/tests/guards/routeAffordanceCoverage.spec.ts`
+ * (a `Record` keyed by this union, so a new kind fails `npm run typecheck`
+ * until it is classified) and handled by `expectConsequence` in
+ * `tests/e2e/route-affordances.spec.ts` (an exhaustive switch whose default
+ * throws, because that file is not type-checked by any gate).
  */
 export type AffordanceConsequence =
   | { kind: 'url'; pathPattern: string }
@@ -87,8 +118,37 @@ export type AffordanceConsequence =
   | { kind: 'focus'; testId: string }
   /** The named control is present and enabled without being activated. */
   | { kind: 'enabled'; selector: string }
-  /** A form control's own value, which no network wait can vouch for. */
+  /**
+   * A form control's own DOM value. Read the note on the metrics rows before
+   * trusting this to catch a dead control: when the walk drives a `<select>`
+   * with `selectOption`, the browser sets that value itself, so the check
+   * passes whether or not the control is wired to anything.
+   */
   | { kind: 'value'; selector: string; value: string }
+  /** The named node's rendered text, after token substitution. */
+  | { kind: 'text'; selector: string; text: string }
+  /**
+   * The named node's rendered text must no longer read `from`. For a control
+   * whose new text depends on the runtime clock (the calendar month label),
+   * this is the strongest claim the inventory can make without re-implementing
+   * the view's own date formatting inside the test.
+   *
+   * THE NEGATION IS NOT VACUOUS ON A MISSING NODE. The obvious worry about a
+   * negated matcher is that it passes when the selector matches nothing, which
+   * would make this kind assert nothing at all. Playwright does not behave that
+   * way: `expect(locator).not.toHaveText(x)` FAILS on a zero-element locator.
+   * Only `to.be.visible`, `to.be.hidden`, `to.be.attached`, `to.be.detached`,
+   * `to.be.in.viewport` and the `.array`/`to.have.count` expressions are
+   * special-cased for a missing node; every other expression falls through to
+   * `matches = options.isNot`, which the retry loop reads as "not satisfied
+   * yet", so the assertion polls to its timeout and reports `element(s) not
+   * found`. Measured on Playwright 1.62.1 — `playwright-core/lib/coreBundle.js`
+   * (`Frame._expectInternal` and `Frame.expect`) for the code, and a chromium
+   * probe for the behaviour. So no `toHaveCount` companion is needed, and
+   * `calendar.previous-month` stands on its own rather than leaning on
+   * `calendar.next-month`'s positive check one row later.
+   */
+  | { kind: 'textChangedFrom'; selector: string; from: string }
 
 /** Why a row is or is not activated by the walk. */
 export type AffordanceStatus =
@@ -118,10 +178,17 @@ export interface RouteAffordance {
   precondition: AffordancePrecondition
   consequence: AffordanceConsequence
   /**
-   * An independent second assertion, checked after `consequence`. It exists for
-   * `response` rows: a network wait alone can be satisfied by a request the view
-   * issued on mount, so a control that does nothing would still pass. Omitted
-   * where the surface renders nothing that changes (see the notifications rows).
+   * A second assertion, checked after `consequence`. It exists for `response`
+   * rows: a network wait alone can be satisfied by a request the view issued on
+   * mount, so a control that does nothing would still pass. Omitted where the
+   * surface renders nothing that changes (see the notifications rows).
+   *
+   * HOW INDEPENDENT IT IS DEPENDS ON THE KIND. A `text` or `textChangedFrom`
+   * post-condition reads state the view itself rendered, so it fails for a
+   * control that did nothing (the calendar rows). A `value` post-condition on a
+   * `<select>` the walk drove with `selectOption` does NOT: the browser assigns
+   * the DOM value, so the check passes on a dead control too (the metrics rows,
+   * whose real defences are documented there).
    */
   postCondition?: AffordanceConsequence
   status: AffordanceStatus
@@ -130,7 +197,13 @@ export interface RouteAffordance {
 export interface RouteEntry {
   /** Must equal a `name` in the real `router.getRoutes()` table. */
   routeName: string
-  /** Concrete path the walk navigates to; `{boardId}` is substituted. */
+  /**
+   * The route's entry path, written the way the patterns write theirs so the
+   * two read alike. DOCUMENTATION ONLY: nothing reads this field — the walk
+   * navigates with its own literal `page.goto` calls and the coverage guard
+   * compares route NAMES — so `{boardId}` here is never substituted by
+   * anything. Changing it changes no assertion.
+   */
   entryPath: string
   /** Two to five affordances. Fewer says nothing; more is a second slice. */
   affordances: RouteAffordance[]
@@ -153,6 +226,12 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'testId', value: 'paper-home-capture-input' },
         source: 'src/views/paper/PaperHomeView.vue:609',
         precondition: 'session',
+        // NO MOUNT READ CAN SETTLE THIS. The defence here is the method, not a
+        // post-condition: PaperHomeView's `onMounted` fetches the home summary
+        // and nothing else (PaperHomeView.vue:381-384), so a POST to
+        // /api/capture/items can only have been raised by this submit. The walk
+        // consumes that summary GET before it starts, but for first paint, not
+        // to isolate this row.
         consequence: { kind: 'response', method: 'POST', urlPattern: '/api/capture/items$' },
         status: { activate: true },
       },
@@ -316,7 +395,7 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         id: 'inbox.capture-submit',
         label: 'Composer Capture submits a capture item',
         selector: { kind: 'role', role: 'button', name: '^Capture', namePattern: true },
-        source: 'src/views/paper/inbox/PaperCaptureComposer.vue:369',
+        source: 'src/views/paper/inbox/PaperCaptureComposer.vue:373',
         precondition: 'session',
         consequence: { kind: 'response', method: 'POST', urlPattern: '/api/capture/items$' },
         status: { activate: false, reason: 'covered-elsewhere', coveredBy: 'tests/e2e/review-proposals.spec.ts:88' },
@@ -345,6 +424,11 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '[data-action="reject"]' },
         source: 'src/views/paper/inbox/PaperTriageTable.vue:838',
         precondition: 'seeded-capture',
+        // NO MOUNT READ CAN SETTLE THIS. Same defence as the Home quick
+        // capture, doubly so: PaperInboxView's `onMounted`
+        // (PaperInboxView.vue:504-508) issues no request at all, and the
+        // pattern is anchored to a POST on /archive, which nothing fetches.
+        // Only this click can raise it.
         consequence: { kind: 'response', method: 'POST', urlPattern: '/api/capture/items/[^/]+/archive$' },
         status: { activate: true },
       },
@@ -369,6 +453,11 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '[data-testid="decision-apply"][data-apply-phase="approve"]' },
         source: 'src/views/paper/review/ReviewDecisionRail.vue:252',
         precondition: 'seeded-proposal',
+        // NO MOUNT READ CAN SETTLE THIS. PaperReviewView's `onMounted`
+        // (PaperReviewView.vue:2546-2558) loads the board options and the
+        // proposals and starts a queue poll, all GETs; nothing POSTs on mount
+        // or on the poll. The pattern is anchored to /approve, phase 1 of the
+        // ADR-0003 gate, which this control alone reaches.
         consequence: { kind: 'response', method: 'POST', urlPattern: '/automation/proposals/[^/]+/approve$' },
         status: { activate: true },
       },
@@ -459,20 +548,47 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
     affordances: [
       {
         id: 'calendar.previous-month',
-        label: 'Previous month re-reads the calendar window',
+        label: 'Previous month re-reads the calendar window and moves the month label',
         selector: { kind: 'role', role: 'button', name: 'Previous month' },
         source: 'src/views/CalendarView.vue:218',
         precondition: 'session',
+        // CalendarView fetches in `onMounted` and again on every `viewDate`
+        // change (CalendarView.vue:178-179), so the walk consumes the mount read
+        // before arming this one. The post-condition is the independent half:
+        // the label is rendered from `viewDate` (CalendarView.vue:36-39), so a
+        // button that did not move the month cannot satisfy it.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/workspace/calendar' },
+        postCondition: {
+          kind: 'textChangedFrom',
+          selector: '.paper-calendar__month-label',
+          from: '{openingMonthLabel}',
+        },
         status: { activate: true },
       },
       {
         id: 'calendar.next-month',
-        label: 'Next month re-reads the calendar window',
+        label: 'Next month re-reads the calendar window and returns the month label',
         selector: { kind: 'role', role: 'button', name: 'Next month' },
         source: 'src/views/CalendarView.vue:227',
         precondition: 'session',
+        // THE MOUNT READ IS ALREADY SPENT. Like the row above, this waits on a
+        // GET CalendarView also issues in `onMounted` (CalendarView.vue:178-179)
+        // — but the walk consumed that read before `calendar.previous-month`,
+        // and that row's own wait consumed the next one, so by the time this
+        // row arms only a third request can settle it.
+        //
+        // Walked immediately after `calendar.previous-month`, which is why the
+        // post-condition can name an exact string: stepping forward from the
+        // previous month lands back on the label the route opened with, with no
+        // date formatting re-implemented in the test. The label is rendered from
+        // `viewDate` (CalendarView.vue:36-39), so that string is the independent
+        // half here just as the negated one is on the previous row.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/workspace/calendar' },
+        postCondition: {
+          kind: 'text',
+          selector: '.paper-calendar__month-label',
+          text: '{openingMonthLabel}',
+        },
         status: { activate: true },
       },
       {
@@ -500,10 +616,16 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '#board-select' },
         source: 'src/views/MetricsView.vue:167',
         precondition: 'seeded-board',
-        // Pinned to the board the walk SELECTS, which is deliberately not the
-        // one MetricsView auto-selects on mount (MetricsView.vue:86), so the
-        // mount read cannot satisfy this wait.
+        // THE DEFENCES AGAINST A DEAD SELECT ARE THE PIN AND THE ANCHOR, not the
+        // post-condition. The board id is the one the walk SELECTS, deliberately
+        // not the one MetricsView auto-selects on mount (MetricsView.vue:86),
+        // and `?from=` anchors the pattern to a metrics read; together they mean
+        // only a request this selection caused can settle the wait.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/{metricsBoardId}\\?from=' },
+        // A VALUE CHECK ONLY. `selectOption` makes the browser assign the DOM
+        // value, and nothing re-renders it away, so this passes for a select
+        // wired to nothing. It records that the walk drove the control it meant
+        // to drive; it cannot catch a dead one.
         postCondition: { kind: 'value', selector: '#board-select', value: '{metricsBoardId}' },
         status: { activate: true },
       },
@@ -513,8 +635,13 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
         selector: { kind: 'css', value: '#range-select' },
         source: 'src/views/MetricsView.vue:181',
         precondition: 'seeded-board',
-        // from= pins this to a metrics read rather than any /metrics/boards/ URL.
+        // Same two defences as the row above: the board id is pinned to the one
+        // the walk selected (never the mount's auto-selection) and `?from=`
+        // anchors the pattern to a metrics read, so this row can only be settled
+        // by a request the range change caused.
         consequence: { kind: 'response', method: 'GET', urlPattern: '/api/metrics/boards/{metricsBoardId}\\?from=' },
+        // A VALUE CHECK ONLY, for the same reason as the board select: the
+        // browser sets `#range-select` to 90 whether or not the view listens.
         postCondition: { kind: 'value', selector: '#range-select', value: '90' },
         status: { activate: true },
       },

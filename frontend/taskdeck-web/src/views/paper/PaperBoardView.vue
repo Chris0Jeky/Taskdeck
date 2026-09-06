@@ -113,10 +113,15 @@ type BoardCardDetail = 'full' | 'titles'
 const BOARD_CARD_DETAIL_KEY = 'td.paper.board-card-detail.v1'
 const DEFAULT_BOARD_CARD_DETAIL: BoardCardDetail = 'full'
 const cardDetail = ref<BoardCardDetail>(DEFAULT_BOARD_CARD_DETAIL)
+/*
+ * `value` is the persisted preference (`td.paper.board-column-width.v1`) and
+ * the type guard's vocabulary, so it stays an English identifier and never
+ * follows the locale; only `labelKey` is copy.
+ */
 const BOARD_COLUMN_WIDTH_PRESETS = [
-  { value: 'narrow', label: 'Narrow', width: '240px' },
-  { value: 'standard', label: 'Standard', width: '280px' },
-  { value: 'wide', label: 'Wide', width: '340px' },
+  { value: 'narrow', labelKey: 'boardDetail.actions.widthNarrow', width: '240px' },
+  { value: 'standard', labelKey: 'boardDetail.actions.widthStandard', width: '280px' },
+  { value: 'wide', labelKey: 'boardDetail.actions.widthWide', width: '340px' },
 ] as const
 type BoardColumnWidth = typeof BOARD_COLUMN_WIDTH_PRESETS[number]['value']
 const DEFAULT_BOARD_COLUMN_WIDTH: BoardColumnWidth = 'standard'
@@ -419,6 +424,28 @@ function closeCard() {
   selectedCard.value = null
   pendingCard.value = null
   cardEditorDirty.value = false
+}
+
+/**
+ * CardModal's `updated` — a card that was successfully saved or deleted.
+ *
+ * `useCardModal` awaits `boardStore.updateCard` / `deleteCard` and only then
+ * calls `onUpdated()` immediately followed by `onClose()`; a plain close emits
+ * `close` alone. So `updated` is the one signal that the unsaved changes the
+ * route guard is holding a navigation for are gone, and the navigation
+ * continues instead of being cancelled.
+ *
+ * This runs before the `close` that follows it, so `closeCard` sees no pending
+ * navigation and only clears the editor. The nulling is not what makes that
+ * safe — the promise is already settled, so a later `resolve(false)` is a
+ * no-op either way — it is the same "take it, clear it, resolve it" shape the
+ * other two exits from this dialog use.
+ */
+function handleCardUpdated() {
+  const navigation = pendingNavigation.value
+  pendingNavigation.value = null
+  cardEditorDirty.value = false
+  navigation?.resolve(true)
 }
 
 function handleCardEditorDirtyChange(dirty: boolean) {
@@ -784,11 +811,11 @@ async function addStarterColumns() {
             class="paper-board-view__width-control"
             data-testid="paper-board-width-control"
           >
-            <span class="paper-board-view__width-label">Width</span>
+            <span class="paper-board-view__width-label">{{ t('boardDetail.actions.width') }}</span>
             <select
               class="paper-board-view__width-select"
               :value="columnWidth"
-              aria-label="Column width"
+              :aria-label="t('boardDetail.actions.widthAria')"
               data-testid="paper-board-width-select"
               @keydown.stop
               @change="changeColumnWidth"
@@ -798,12 +825,13 @@ async function addStarterColumns() {
                 :key="preset.value"
                 :value="preset.value"
               >
-                {{ preset.label }}
+                {{ t(preset.labelKey) }}
               </option>
             </select>
           </label>
           <PaperHLBtn
-            label="Compact density"
+            :label="t('boardDetail.actions.compactDensity')"
+            :aria-label="t('boardDetail.actions.compactDensityAria')"
             :aria-pressed="density === 'compact'"
             data-testid="paper-board-density-toggle"
             @keydown.enter.stop
@@ -1059,7 +1087,7 @@ async function addStarterColumns() {
           :labels="boardStore.currentBoardLabels"
           :presentation="cardPresentation"
           @close="closeCard"
-          @updated="closeCard"
+          @updated="handleCardUpdated"
           @dirty-change="handleCardEditorDirtyChange"
         />
 

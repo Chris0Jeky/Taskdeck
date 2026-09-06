@@ -7,11 +7,11 @@ import { useLocaleStore } from '../../store/localeStore'
  *
  * Only `en` is registered at module load; `it`/`es` arrive through
  * `ensureLocaleMessages()`. The global test setup preloads every catalog (so
- * the wider suite can keep flipping locales synchronously), which means this
- * spec asserts the CONTRACT of the loader — idempotence, registration, and the
- * flip-first switch semantics — not the pre-load empty state. The "en-only in
- * the initial chunk" claim itself is a build-graph property, proven by the
- * bundle-budget CI gate and the emitted per-locale chunks, not assertable here.
+ * the wider suite can keep checking translated rendering), which means this
+ * spec asserts the loader contract plus the atomic switch boundary. The
+ * "en-only in the initial chunk" claim itself is a build-graph property,
+ * proven by the bundle-budget CI gate and the emitted per-locale chunks, not
+ * assertable here.
  */
 
 describe('lazy locale catalogs (#1858)', () => {
@@ -30,17 +30,24 @@ describe('lazy locale catalogs (#1858)', () => {
     expect(second).toBe(true)
   })
 
-  it('setLocale flips the runtime locale synchronously and returns the catalog promise', async () => {
+  it('keeps the committed locale until the catalog promise settles', async () => {
     const store = useLocaleStore()
 
     const pending = store.setLocale('es')
-    // Flip-first: the locale is live before the catalog promise settles, so a
-    // slow chunk shows English fallback rather than blocking the switch.
-    expect(i18n.global.locale.value).toBe('es')
+    // A slow chunk must not make the UI claim Spanish while the old language
+    // is still rendering.
+    expect(store.locale).toBe('en')
+    expect(store.pendingLocale).toBe('es')
+    expect(i18n.global.locale.value).toBe('en')
     expect(pending).toBeInstanceOf(Promise)
     await pending
 
+    expect(store.locale).toBe('es')
+    expect(store.pendingLocale).toBeNull()
+    expect(i18n.global.locale.value).toBe('es')
+
     await store.setLocale('en')
+    expect(store.locale).toBe('en')
     expect(i18n.global.locale.value).toBe('en')
   })
 })

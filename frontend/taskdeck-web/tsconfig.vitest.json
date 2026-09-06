@@ -42,9 +42,9 @@
   // TypeScript files under `src/tests/` (284 specs plus `setup.ts` and one mock), measured
   // 2026-08-07.
   //
-  // CURRENT: **40 files remain.** The 24 files that carried exactly one error each were fixed and
-  // un-quarantined in #1607 (24 of the 415 errors cleared; 391 remain across the 40). That leaves
-  // **262 of the 326 spec files Vitest runs** type-checked (re-measured 2026-08-22: 302 src-tree
+  // CURRENT: **39 files remain** (BoardCanvas.spec.ts admitted 2026-09-06 under #1607, its two fixture fields fixed). The 24 files that carried exactly one error each were fixed and
+  // un-quarantined in #1607 (24 of the 415 errors cleared; 389 remain across the 39). That leaves
+  // **263 of the 326 spec files Vitest runs** type-checked (re-measured 2026-08-22: 302 src-tree
   // specs minus the 40 quarantined, plus zero of the 24 frontend-root specs); the 64 that are not
   // are these 40 plus the 24 in the frontend-root `tests/` directory.
   //
@@ -73,7 +73,6 @@
   ],
   "exclude": [
     "src/tests/api/http.spec.ts",
-    "src/tests/components/BoardCanvas.spec.ts",
     "src/tests/components/BoardDialogHost.spec.ts",
     "src/tests/components/CaptureModal.spec.ts",
     "src/tests/components/CardItem.coverage.spec.ts",

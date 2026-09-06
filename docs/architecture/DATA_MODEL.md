@@ -1050,7 +1050,7 @@ A queued request for LLM processing.
 | RequestType | `string` | Yes | Non-empty | Request category |
 | Payload | `string` | Yes | EF: required `TEXT`; domain rejects null, empty, or whitespace-only values in both construction and `UpdatePayload`; application capture contract parses/serializes the current JSON payload and retains a legacy/plaintext fallback | Request content (current capture contract is JSON) |
 | Status | `RequestStatus` | Yes | Enum: Pending, Processing, Completed, Failed, Cancelled | Lifecycle state |
-| ErrorMessage | `string?` | No | | Failure message |
+| ErrorMessage | `string?` | No | Max 1000 chars | Failure detail for a failed request; for a completed capture-triage request, an optional non-fatal degradation notice when deterministic fallback produced the reviewable result; null when neither applies |
 | ProcessedAt | `DateTimeOffset?` | No | | When processing completed |
 | RetryCount | `int` | Yes | | Number of retry attempts |
 | CreatedAt | `DateTimeOffset` | Yes | | |

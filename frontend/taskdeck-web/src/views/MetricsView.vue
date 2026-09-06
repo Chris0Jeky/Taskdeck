@@ -35,6 +35,18 @@ async function loadBoards() {
   try {
     await boardStore.fetchBoards()
     boards.value = boardStore.boards
+  } catch {
+    // The board store already set `error` and toasted through handleApiError,
+    // so there is nothing left for this view to report — and letting the
+    // rejection out is not free. `loadBoards` is awaited inside an async
+    // `onMounted` callback, so Vue took it as a lifecycle-hook error: with no
+    // `app.config.errorHandler` installed it is rethrown from Vue's own
+    // `.catch`, which surfaces as a window `unhandledrejection` and is
+    // forwarded to Sentry by `installWindowErrorListeners` (#2689 item 2).
+    // Every other caller of this store already catches; this one predated the
+    // #2685 bound that made a failing list read an ordinary outcome. `boards`
+    // is deliberately left at its previous value — a failed read learned
+    // nothing about the list, so it must not be reported as empty.
   } finally {
     boardsLoading.value = false
   }

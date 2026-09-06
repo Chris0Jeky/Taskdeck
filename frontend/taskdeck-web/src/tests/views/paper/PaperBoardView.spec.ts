@@ -125,7 +125,7 @@ function mountView(props: Record<string, unknown> = {}) {
         CardModal: {
           name: 'CardModal',
           props: ['card', 'isOpen', 'labels', 'presentation'],
-          emits: ['dirty-change'],
+          emits: ['dirty-change', 'updated', 'close'],
           template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
         },
         TdDialog: {
@@ -348,6 +348,110 @@ describe('PaperBoardView', () => {
     expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
   })
 
+  /*
+   * The save/delete signal (#2090 residual).
+   *
+   * `useCardModal` awaits `boardStore.updateCard` / `deleteCard` and only then
+   * calls `onUpdated()` immediately followed by `onClose()` — which `CardModal`
+   * emits as `updated` then `close`. A plain close emits `close` alone. So
+   * `updated` is the one event that means "the unsaved changes are gone", and
+   * these helpers reproduce the two real sequences rather than a single event.
+   */
+  async function openDirtyCard(wrapper: ReturnType<typeof mountView>, card: Card) {
+    wrapper.findAllComponents(PaperBoardColumn)[0]!.vm.$emit('card-click', card)
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('dirty-change', true)
+  }
+
+  async function emitSuccessfulSave(wrapper: ReturnType<typeof mountView>) {
+    const modal = wrapper.findComponent({ name: 'CardModal' })
+    modal.vm.$emit('updated')
+    modal.vm.$emit('close')
+    await nextTick()
+  }
+
+  it('continues a pending route navigation after a successful save', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+
+    await emitSuccessfulSave(wrapper)
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
+  /*
+   * The delete path emits the same `updated` + `close` pair
+   * (`useCardModal.handleDeleteConfirm`), so the stub cannot tell it from a
+   * save — what makes this a distinct case is the board state it lands in: the
+   * card is gone from the store, and the navigation must still continue.
+   */
+  it('continues a pending route navigation after a successful delete', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeUpdateGuard!()
+    await nextTick()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard and leave')
+
+    const survivingCards = cardsByColumn.get('col-backlog')!.slice(1)
+    mockBoardStore.cardsByColumn = new Map<string, Card[]>([
+      ['col-backlog', survivingCards],
+      ['col-today', []],
+      ['col-progress', []],
+      ['col-done', []],
+    ])
+    mockBoardStore.currentBoardCards = survivingCards
+    await emitSuccessfulSave(wrapper)
+
+    await expect(navigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-card-id="card-1"]').exists()).toBe(false)
+  })
+
+  it('still cancels a pending navigation when the inspector is only closed', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+
+    const navigation = routeLeaveGuard!()
+    await nextTick()
+    wrapper.findComponent({ name: 'CardModal' }).vm.$emit('close')
+    await nextTick()
+
+    await expect(navigation).resolves.toBe(false)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('clears the dirty editor on a successful save with no navigation pending', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+    const modal = wrapper.findComponent({ name: 'CardModal' })
+
+    modal.vm.$emit('updated')
+    await nextTick()
+
+    /*
+     * Asserted between the two events on purpose. The card is still selected
+     * here, so `guardDirtyNavigation` cannot short-circuit on its absence and
+     * this is the one place the dirty flag cleared by the `updated` handler is
+     * pinned: were it still set, the guard would open the discard dialog and
+     * return a promise instead of `true`.
+     */
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(true)
+    expect(routeLeaveGuard!()).toBe(true)
+
+    modal.vm.$emit('close')
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
+  })
+
   it('requests the browser unload confirmation only for a dirty inspector', async () => {
     const wrapper = mountView()
     const cleanUnload = new Event('beforeunload', { cancelable: true })
@@ -518,6 +622,49 @@ describe('PaperBoardView', () => {
     expect(toggle().text()).toBe('Solo titoli')
     expect(toggle().attributes('aria-label'))
       .toBe('Solo titoli: nasconde gli estratti e i dettagli delle schede')
+  })
+
+  /*
+   * The width and density controls were the last English-only strings in the
+   * actions row, beside the localized collapse and titles-only controls. The
+   * preset options are part of the control, so they re-render with the locale
+   * too; their `value`s are the stored preference and stay English identifiers.
+   */
+  it('localizes the width and density controls in the actions row', async () => {
+    const wrapper = mountView()
+    const widthLabel = () => wrapper.get('.paper-board-view__width-label')
+    const widthSelect = () => wrapper.get('[data-testid="paper-board-width-select"]')
+    const presets = () => widthSelect().findAll('option').map((option) => option.text())
+    const densityToggle = () => wrapper.get('[data-testid="paper-board-density-toggle"]')
+
+    expect(widthLabel().text()).toBe('Width')
+    expect(widthSelect().attributes('aria-label')).toBe('Column width')
+    expect(presets()).toEqual(['Narrow', 'Standard', 'Wide'])
+    expect(densityToggle().text()).toBe('Compact density')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Compact density: tighten the board spacing to fit more cards')
+
+    i18n.global.locale.value = 'es'
+    await flushPromises()
+    expect(widthLabel().text()).toBe('Ancho')
+    expect(widthSelect().attributes('aria-label')).toBe('Ancho de columna')
+    expect(presets()).toEqual(['Estrecha', 'Estándar', 'Ancha'])
+    expect(densityToggle().text()).toBe('Densidad compacta')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Densidad compacta: reduce el espaciado del tablero para ver más tarjetas')
+
+    i18n.global.locale.value = 'it'
+    await flushPromises()
+    expect(widthLabel().text()).toBe('Larghezza')
+    expect(widthSelect().attributes('aria-label')).toBe('Larghezza della colonna')
+    expect(presets()).toEqual(['Stretta', 'Standard', 'Ampia'])
+    expect(densityToggle().text()).toBe('Densità compatta')
+    expect(densityToggle().attributes('aria-label'))
+      .toBe('Densità compatta: riduce le spaziature della bacheca per mostrare più schede')
+
+    // The option values are the persisted preference, not copy.
+    expect(widthSelect().findAll('option').map((option) => option.attributes('value')))
+      .toEqual(['narrow', 'standard', 'wide'])
   })
 
   it('changes and persists named column-width presets through a labelled native select', async () => {

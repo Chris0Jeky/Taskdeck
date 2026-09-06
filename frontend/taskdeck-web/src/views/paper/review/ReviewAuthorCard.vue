@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import PaperStamp from '../../../components/paper/PaperStamp.vue'
-import type { ConfidenceBreakdown } from '../../../composables/usePaperReviewSelectors'
+import type {
+  ConfidenceBreakdown,
+  PaperReviewEvidenceStatus,
+} from '../../../composables/usePaperReviewSelectors'
 
 /**
  * ReviewAuthorCard — author badge with absolute-positioned PaperStamp
@@ -16,21 +19,15 @@ import type { ConfidenceBreakdown } from '../../../composables/usePaperReviewSel
  * sources, which left this sentence as the only statement on screen about where
  * the number came from — hidden behind a control with no reason to be opened.
  *
- * KNOWN GAP, unfixable at this layer (#1940), mirroring ReviewSimilarPast. The
- * card receives a breakdown and nothing about the fetch that produced it, and
- * `usePaperReviewSelectors` initialises `confidenceData` to `EMPTY_CONFIDENCE`
- * — zero components, source `not-reported`, no note — resets it there on every
- * proposal switch, and LEAVES it there when the batch fails, with no flag
- * (`evidenceUnavailable` is set only from the Apply-time refresh, never from
- * the page-load batch). So "No model confidence reported" also renders while
- * the read is in flight and after it failed, where it is a claim about a
- * response that never arrived. The composable exposes `loading`, but nothing
- * threads it into `ReviewRightRail`, and the only place that could is
- * `PaperReviewView.vue`.
+ * The empty breakdown is ambiguous on its own, exactly as in ReviewSimilarPast:
+ * `usePaperReviewSelectors` holds `EMPTY_CONFIDENCE` — zero components, source
+ * `not-reported` — while a read is in flight and after one failed, so "No model
+ * confidence reported" was also a claim about a response that never arrived.
+ * `evidenceState` resolves it (#1940): the source sentence is reserved for a
+ * settled read, and the other two states say what is actually true of them.
  *
- * The wrong-state copy predates #1940: the same sentence rendered inside the
- * disclosure. Hoisting it makes an existing false claim easier to see rather
- * than creating one, and the gap stays tracked on #1940.
+ * `idle` states nothing at all. It means no proposal is active, and the rail
+ * does not render without one, so there is no sentence to write for it.
  */
 const props = defineProps<{
   authorName: string
@@ -39,6 +36,8 @@ const props = defineProps<{
   proposedTime: string
   proposedNum: string
   breakdown: ConfidenceBreakdown
+  /** State of the core evidence batch this breakdown came from. */
+  evidenceState: PaperReviewEvidenceStatus
 }>()
 
 const confidenceDetailsExpanded = ref(false)
@@ -47,6 +46,20 @@ const confidenceDisclosureId = 'paper-review-confidence-disclosure'
 
 /** No per-component bars to show, so the source sentence is all there is. */
 const noComponents = computed(() => props.breakdown.components.length === 0)
+
+/** The only state in which the absent breakdown says something about the model. */
+const settledSource = computed(() => noComponents.value && props.evidenceState === 'settled')
+
+/**
+ * Which honest not-yet-known sentence replaces it otherwise. Bars on screen
+ * already show where the number came from, so no state line is added to them.
+ */
+const pendingStateKey = computed<'confidenceLoading' | 'confidenceFailed' | null>(() => {
+  if (!noComponents.value) return null
+  if (props.evidenceState === 'loading') return 'confidenceLoading'
+  if (props.evidenceState === 'failed') return 'confidenceFailed'
+  return null
+})
 
 /**
  * The heading is derived from what is actually rendered, not from the claimed
@@ -88,7 +101,7 @@ function barColor(value: number): string {
       </div>
     </div>
     <p
-      v-if="noComponents"
+      v-if="settledSource"
       class="paper-review-author__empty tk-meta"
       data-testid="paper-review-author-confidence-source"
     >
@@ -97,6 +110,13 @@ function barColor(value: number): string {
           ? $t('review.author.deterministic')
           : $t('review.author.notReported')
       }}
+    </p>
+    <p
+      v-else-if="pendingStateKey"
+      class="paper-review-author__empty tk-meta"
+      data-testid="paper-review-author-confidence-state"
+    >
+      {{ $t(`review.author.${pendingStateKey}`) }}
     </p>
     <button
       :id="confidenceDisclosureId"

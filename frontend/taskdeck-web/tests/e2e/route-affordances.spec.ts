@@ -22,7 +22,7 @@
  * control is asserted disabled (#1944) and never clicked. Openers are opened
  * and dismissed, never submitted.
  *
- * BUDGET. Four `test()` blocks. E2E Smoke runs every spec in `tests/e2e` on
+ * BUDGET. Four route-walk `test()` blocks plus one focused timeout guard. E2E Smoke runs every spec in `tests/e2e` on
  * chromium with `workers: 1`, a 45 s per-test timeout, a 12 min `globalTimeout`
  * and a 12 min step timeout, so this file's cost is charged to a shared
  * ceiling. Two blocks raise their own timeout to 90 s, the same relief
@@ -32,12 +32,33 @@
  *
  * RESPONSE WAITS. A `page.waitForResponse` armed just before a click can be
  * satisfied by a request the view issued on MOUNT, which would let a dead
- * control pass. Every route whose rows assert a response therefore consumes its
- * mount read first — armed before `page.goto` and awaited, so the row's own wait
- * is registered only once the mount traffic is gone — and the rows carry a
- * `postCondition` wherever the surface renders something independent that
- * changes. The metrics rows additionally pin the board id to the one the walk
- * SELECTS, which is never the one the view auto-selects.
+ * control pass. Every walked `response` row is therefore covered one of two
+ * ways, and which one holds is stated per row in the inventory:
+ *
+ *   - The row waits on a GET the view ALSO issues on mount — notifications
+ *     (refresh, unread-only), calendar (previous, next), metrics (board select,
+ *     range select). Each of those routes arms the mount read before
+ *     `page.goto` and awaits it, so the row's own wait is registered only once
+ *     the mount traffic is gone. The calendar and metrics rows additionally
+ *     carry a `postCondition`; the notifications rows cannot (the filtered and
+ *     unfiltered empty states render identical copy), and the metrics rows also
+ *     pin the board id to the one the walk SELECTS, which is never the one the
+ *     view auto-selects — that pin, not their `value` post-condition, is what
+ *     rules out a dead select.
+ *   - The row waits on a request no mount can raise — the POST rows (home quick
+ *     capture, inbox archive, review approve: no view POSTs on mount) and
+ *     `metrics.export-csv`, whose pattern is anchored to `/export`, which no
+ *     mount read touches.
+ *
+ * A `response` row's wait is armed BEFORE the act and its rejection is parked
+ * immediately (see `activate`), so a control that never becomes actionable
+ * reports its own actionability failure rather than an unhandled rejection.
+ * The mount reads those routes consume first are armed before `page.goto` for
+ * the same reason and parked the same way (see `readOnMount`), so a `goto` that
+ * throws reports its own failure instead of trailing a `waitForResponse`
+ * settlement with no test left to own it. Note the asymmetry in what BOUNDS the
+ * two: `activate` and `readOnMount` both pass `{ timeout: 15_000 }`, so a
+ * missing mount response fails as the named mount read before the test timeout.
  *
  * COMPLETENESS. Every block ends with `assertBlockCompleted`, which proves the
  * declared `WALK_PLAN` still names exactly the inventory's `activate: true` and
@@ -54,7 +75,7 @@
  * run summary for four passing blocks is what closes that.
  */
 
-import { expect, test, type Locator, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test'
 import { registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import {
@@ -194,6 +215,13 @@ interface WalkContext {
    * auto-selects on mount, so the mount read cannot satisfy those rows' waits.
    */
   metricsBoardId?: string
+  /**
+   * The month label the calendar route opened on, read from the page. The two
+   * month rows declare their post-conditions against it: previous month must
+   * move off it, next month must land back on it. Read rather than computed, so
+   * the walk does not re-implement `CalendarView`'s own date formatting.
+   */
+  openingMonthLabel?: string
 }
 
 function affordanceById(id: string): RouteAffordance {
@@ -207,12 +235,28 @@ function affordanceById(id: string): RouteAffordance {
   return found
 }
 
-/** Substitutes the tokens the inventory uses in selectors and patterns. */
+/**
+ * Substitutes the tokens the inventory uses in selectors and patterns.
+ *
+ * A token the context has not set yet THROWS rather than substituting an empty
+ * string. An empty substitution turns a real assertion into a vacuous one — a
+ * `textChangedFrom` post-condition against `''` passes for any non-empty label,
+ * whether the control moved the month or not.
+ */
 function fillTokens(value: string, context: WalkContext): string {
-  return value
-    .replace(/\{metricsBoardId\}/g, context.metricsBoardId ?? '')
-    .replace(/\{boardId\}/g, context.boardId ?? '')
-    .replace(/\{boardName\}/g, context.boardName ?? '')
+  return value.replace(
+    /\{(boardId|boardName|metricsBoardId|openingMonthLabel)\}/g,
+    (_match, token: keyof WalkContext) => {
+      const resolved = context[token]
+      if (resolved === undefined || resolved === '') {
+        throw new Error(
+          `the walk substituted '{${token}}' before the context set it, which would assert `
+            + `against an empty string. Set context.${token} before the row that uses it.`,
+        )
+      }
+      return resolved
+    },
+  )
 }
 
 function locate(
@@ -239,6 +283,16 @@ function locate(
  * driven inside one triage row or one board column must have its consequence
  * checked there too: with two columns or two captures on screen, a page-wide
  * `.first()` can be satisfied by a node the walk never opened.
+ *
+ * EXHAUSTIVE ON PURPOSE. This dispatch used to be an if-chain that fell through
+ * to nothing, so a kind it did not know about asserted NOTHING while the row
+ * still counted as walked (#2678). The switch's default assigns to `never`, and
+ * this file is not type-checked by any gate (`tsconfig.app.json` and
+ * `tsconfig.vitest.json` both cover `src/` only, and ESLint here is not
+ * type-aware), so the throw is the half that actually runs. The type-checked
+ * half is `CONSEQUENCE_ASSERTION_SITE` in
+ * `src/tests/guards/routeAffordanceCoverage.spec.ts`, which fails
+ * `npm run typecheck` when a kind is added to the union.
  */
 async function expectConsequence(
   page: Page,
@@ -247,47 +301,95 @@ async function expectConsequence(
   consequence: AffordanceConsequence,
   context: WalkContext,
 ): Promise<void> {
-  if (consequence.kind === 'url') {
-    // Navigation is a property of the page, never of a scoped locator.
-    await expect(page, `${id} must navigate to ${consequence.pathPattern}`)
-      .toHaveURL(new RegExp(fillTokens(consequence.pathPattern, context)))
-    return
+  switch (consequence.kind) {
+    case 'url':
+      // Navigation is a property of the page, never of a scoped locator.
+      await expect(page, `${id} must navigate to ${consequence.pathPattern}`)
+        .toHaveURL(new RegExp(fillTokens(consequence.pathPattern, context)))
+      return
+
+    case 'node':
+      await expect(
+        scope.getByTestId(consequence.testId).first(),
+        `${id} must render [data-testid="${consequence.testId}"] within its own scope`,
+      ).toBeVisible()
+      return
+
+    case 'focus':
+      await expect(
+        scope.getByTestId(consequence.testId).first(),
+        `${id} must leave [data-testid="${consequence.testId}"] holding focus`,
+      ).toBeFocused()
+      return
+
+    case 'enabled': {
+      const control = scope.locator(consequence.selector).first()
+      await expect(control, `${id} must render ${consequence.selector}`).toBeVisible()
+      await expect(control, `${id} must leave ${consequence.selector} enabled`).toBeEnabled()
+      return
+    }
+
+    case 'value':
+      await expect(
+        scope.locator(consequence.selector).first(),
+        `${id} must leave ${consequence.selector} holding the value ${consequence.value}`,
+      ).toHaveValue(fillTokens(consequence.value, context))
+      return
+
+    case 'attribute':
+      await expect(
+        scope.locator(consequence.selector).first(),
+        `${id} must leave ${consequence.selector} carrying ${consequence.attribute}="${consequence.value}"`,
+      ).toHaveAttribute(consequence.attribute, consequence.value)
+      return
+
+    case 'text':
+      await expect(
+        scope.locator(consequence.selector).first(),
+        `${id} must leave ${consequence.selector} reading '${consequence.text}'`,
+      ).toHaveText(fillTokens(consequence.text, context))
+      return
+
+    case 'textChangedFrom':
+      // THE ONLY NEGATED MATCHER IN THIS SWITCH, AND IT IS NOT VACUOUS ON A
+      // MISSING NODE. `expect(locator).not.toHaveText(x)` FAILS when the
+      // locator resolves to zero elements — it does not quietly pass the way
+      // `not.toBeVisible()` does. Playwright special-cases only
+      // visible/hidden/attached/detached/in-viewport and the array expressions
+      // for a missing node; `to.have.text` falls through to "not satisfied
+      // yet", polls to the timeout and reports `element(s) not found`.
+      // Confirmed against Playwright 1.62.1; the code references and the
+      // chromium probe are recorded on the `textChangedFrom` kind in
+      // `support/routeAffordanceInventory.ts`. So this needs no `toHaveCount`
+      // companion, and `calendar.previous-month` proves its own move rather
+      // than leaning on `calendar.next-month` one row later.
+      await expect(
+        scope.locator(consequence.selector).first(),
+        `${id} must move ${consequence.selector} off '${consequence.from}'`,
+      ).not.toHaveText(fillTokens(consequence.from, context))
+      return
+
+    case 'response':
+      // Only reachable through a misdeclared row: a response is asserted by the
+      // wait `activate` arms BEFORE the act, so there is nothing to check here.
+      // A guarded row declaring one is rejected by assertion 8 of
+      // `src/tests/guards/routeAffordanceCoverage.spec.ts`.
+      throw new Error(
+        `${id} declares a 'response' consequence where only an element assertion can be made. `
+          + 'A response is proved by the wait armed around an activation; a row that is never '
+          + 'activated, or a postCondition, must declare an element consequence instead.',
+      )
+
+    default: {
+      const unhandled: never = consequence
+      throw new Error(
+        `${id} declares an unhandled consequence kind: ${JSON.stringify(unhandled)}. `
+          + 'Every kind in AffordanceConsequence must be asserted here and classified in '
+          + 'CONSEQUENCE_ASSERTION_SITE (src/tests/guards/routeAffordanceCoverage.spec.ts); '
+          + 'a kind this switch does not know would otherwise assert nothing at all.',
+      )
+    }
   }
-  if (consequence.kind === 'node') {
-    await expect(
-      scope.getByTestId(consequence.testId).first(),
-      `${id} must render [data-testid="${consequence.testId}"] within its own scope`,
-    ).toBeVisible()
-    return
-  }
-  if (consequence.kind === 'focus') {
-    await expect(
-      scope.getByTestId(consequence.testId).first(),
-      `${id} must leave [data-testid="${consequence.testId}"] holding focus`,
-    ).toBeFocused()
-    return
-  }
-  if (consequence.kind === 'enabled') {
-    const control = scope.locator(consequence.selector).first()
-    await expect(control, `${id} must render ${consequence.selector}`).toBeVisible()
-    await expect(control, `${id} must leave ${consequence.selector} enabled`).toBeEnabled()
-    return
-  }
-  if (consequence.kind === 'value') {
-    await expect(
-      scope.locator(consequence.selector).first(),
-      `${id} must leave ${consequence.selector} holding the value ${consequence.value}`,
-    ).toHaveValue(fillTokens(consequence.value, context))
-    return
-  }
-  if (consequence.kind === 'attribute') {
-    await expect(
-      scope.locator(consequence.selector).first(),
-      `${id} must leave ${consequence.selector} carrying ${consequence.attribute}="${consequence.value}"`,
-    ).toHaveAttribute(consequence.attribute, consequence.value)
-  }
-  // 'response' consequences are awaited inside `activate`, which has to arm the
-  // wait before the click rather than after it.
 }
 
 /**
@@ -326,8 +428,21 @@ async function activate(
         response.request().method() === consequence.method && pattern.test(response.url()),
       { timeout: 15_000 },
     )
+    // Park the outcome NOW, before the act. If the act itself fails — a control
+    // that never becomes actionable — nothing would await this promise, and its
+    // 15 s rejection would surface as an unhandled rejection attributed to the
+    // worker rather than the actionability failure that actually happened. The
+    // handler attached here keeps the bound and lets the act's own error win.
+    const settledResponse = responsePromise.then(
+      (response) => ({ settled: 'fulfilled' as const, response }),
+      (reason: unknown) => ({ settled: 'rejected' as const, reason }),
+    )
     await (options.act ? options.act(target) : target.click())
-    await assertOk(await responsePromise, `${id} (${affordance.source})`)
+    const outcome = await settledResponse
+    if (outcome.settled === 'rejected') {
+      throw outcome.reason instanceof Error ? outcome.reason : new Error(String(outcome.reason))
+    }
+    await assertOk(outcome.response, `${id} (${affordance.source})`)
   } else {
     await (options.act ? options.act(target) : target.click())
     await expectConsequence(page, scope, id, consequence, context)
@@ -344,9 +459,11 @@ async function activate(
 
 /**
  * Assert a `guarded-not-activated` row WITHOUT clicking it. The row's declared
- * consequence carries what must hold — for the seal confirm, that the control
- * itself is enabled: it must be a live, reachable choice the walk declines, not
- * merely a panel that rendered.
+ * consequence carries what must hold, and `assertEnabled` adds the check that
+ * survives whatever that consequence happens to be: the located control itself
+ * must be a live, reachable choice the walk declines, not merely a panel that
+ * rendered. Losing that check is how a guarded row whose consequence names some
+ * OTHER node would end up proving nothing about the control it guards (#2678).
  */
 async function assertReachableButNotActivated(
   page: Page,
@@ -361,7 +478,64 @@ async function assertReachableButNotActivated(
   const target = locate(page, affordance.selector, context)
   await expect(target, `${id} (${affordance.source}) must be present`).toBeVisible()
   await expectConsequence(page, page, id, affordance.consequence, context)
+  // THE TYPE IS THE ENFORCEMENT; THIS READ CANNOT TAKE ITS FALSE BRANCH.
+  // `AffordanceStatus`'s guarded variant declares `assertEnabled: true` as a
+  // REQUIRED LITERAL, so no row reaching here can have it false or absent and
+  // the `else` is unreachable at runtime. It is kept as belt-and-braces: it
+  // documents at the point of use that the enabled check is conditional on the
+  // flag, and it is what starts working if the field is ever widened to
+  // `boolean`. Read it as "the type already guaranteed this", not as a choice
+  // rows make. The guard's matching read (assertion 8 in
+  // `src/tests/guards/routeAffordanceCoverage.spec.ts`) is dead for the same
+  // reason and says so there.
+  if (affordance.status.assertEnabled) {
+    await expect(
+      target,
+      `${id} (${affordance.source}) must be enabled: a declined choice has to be a live one`,
+    ).toBeEnabled()
+  }
   guardedIds.add(id)
+}
+
+/**
+ * Navigate to a route and consume the read it issues on MOUNT.
+ *
+ * WHY THE MOUNT READ IS CONSUMED AT ALL. Four routes here (calendar, metrics,
+ * notifications, home) fetch on mount, and three of them own `response` rows
+ * waiting on the SAME endpoint. A wait armed after navigation could be settled
+ * by the mount's own request, so a dead control would still pass. Awaiting the
+ * mount read here takes it off the wire before any row arms its own wait.
+ *
+ * WHY THE OUTCOME IS PARKED. The wait must be armed BEFORE `page.goto` — that
+ * is the whole point, the response can arrive during the navigation — but a
+ * `goto` that throws would then leave the `waitForResponse` promise with
+ * nothing awaiting it. Parking the outcome the moment it is armed, exactly as
+ * `activate` does for row waits, keeps the navigation's own error first while
+ * still failing on a mount read that never arrives. The success path is
+ * unchanged: armed before, awaited after, asserted 2xx.
+ *
+ * BOUND AND NAMED. The same `{ timeout: 15_000 }` cap used by `activate` keeps a
+ * dead mount read from consuming the 45/90 s test budget. The rejection is
+ * wrapped with the supplied label after its outcome was parked, so navigation
+ * failures still win while a missing response identifies the read it owns.
+ */
+async function readOnMount(
+  page: Page,
+  label: string,
+  matches: (response: Response) => boolean,
+  navigate: () => Promise<unknown>,
+): Promise<void> {
+  const settledRead = page.waitForResponse(matches, { timeout: 15_000 }).then(
+    (response) => ({ settled: 'fulfilled' as const, response }),
+    (reason: unknown) => ({ settled: 'rejected' as const, reason }),
+  )
+  await navigate()
+  const outcome = await settledRead
+  if (outcome.settled === 'rejected') {
+    const reason = outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)
+    throw new Error(`${label}: ${reason}`)
+  }
+  await assertOk(outcome.response, label)
 }
 
 function uniqueSeed(): string {
@@ -372,6 +546,26 @@ test.beforeEach(async ({ page, request }) => {
   walkedIds.clear()
   guardedIds.clear()
   auth = await registerAndAttachSession(page, request, 'route-affordances')
+})
+
+test('names a missing mount read before the enclosing test timeout', async ({ page }) => {
+  await page.route('**/api/workspace/home', async () => {
+    await new Promise<void>(() => {})
+  })
+
+  try {
+    await expect(
+      readOnMount(
+        page,
+        'Home summary read on first paint',
+        (response) =>
+          response.request().method() === 'GET' && /\/api\/workspace\/home$/.test(response.url()),
+        () => page.goto('/workspace/home'),
+      ),
+    ).rejects.toThrow('Home summary read on first paint')
+  } finally {
+    await page.unroute('**/api/workspace/home')
+  }
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -428,15 +622,28 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   await activate(page, 'review.clear-board-scope', context)
 
   // ── /workspace/calendar ──────────────────────────────────────────────────
-  await page.goto('/workspace/calendar')
+  // CalendarView fetches in onMounted and again on every viewDate change
+  // (CalendarView.vue:178-179), so a wait armed after navigation could be
+  // settled by the mount read and a dead month button would still pass. Same
+  // treatment as metrics and notifications: consume the mount read first. The
+  // month label is then the independent half, declared as a postCondition on
+  // both rows rather than asserted ad hoc here.
+  await readOnMount(
+    page,
+    'calendar read issued on mount',
+    (response) =>
+      response.request().method() === 'GET' && /\/api\/workspace\/calendar/.test(response.url()),
+    () => page.goto('/workspace/calendar'),
+  )
+
   const monthLabel = page.locator('.paper-calendar__month-label')
   await expect(monthLabel).toBeVisible()
   const openingMonth = (await monthLabel.textContent())?.trim()
+  expect(openingMonth, 'the calendar must render a month label to walk against').toBeTruthy()
+  context.openingMonthLabel = openingMonth
 
   await activate(page, 'calendar.previous-month', context)
-  await expect(monthLabel, 'the month label must actually move').not.toHaveText(openingMonth ?? '')
   await activate(page, 'calendar.next-month', context)
-  await expect(monthLabel).toHaveText(openingMonth ?? '')
   // `calendar.timeline-mode` is out of slice 1: the empty-state branch at
   // CalendarView.vue:260 wins over both view modes while totalCards is 0.
 
@@ -446,13 +653,14 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   // mount read and a dead select would still pass. Two defences: consume the
   // mount read here, and pin the rows to the OTHER of the two boards this block
   // seeded, so the mount's URL can never match them.
-  const mountMetricsRead = page.waitForResponse(
+  await readOnMount(
+    page,
+    'metrics read issued on mount',
     (response) =>
       response.request().method() === 'GET'
       && /\/api\/metrics\/boards\/[a-f0-9-]+\?from=/.test(response.url()),
+    () => page.goto('/workspace/metrics'),
   )
-  await page.goto('/workspace/metrics')
-  await assertOk(await mountMetricsRead, 'metrics read issued on mount')
 
   const boardSelect = page.locator('#board-select')
   await expect(boardSelect, 'the board select must settle on its auto-selection first')
@@ -489,12 +697,13 @@ test('walks the board-seeded route affordances', async ({ page, request }) => {
   // it first: only a genuinely new request can settle the rows below. Neither
   // row can carry a post-condition, because the filtered and unfiltered empty
   // states render identical copy for a user with no notifications.
-  const mountNotificationsRead = page.waitForResponse(
+  await readOnMount(
+    page,
+    'notifications read issued on mount',
     (response) =>
       response.request().method() === 'GET' && /\/api\/notifications(\?|$)/.test(response.url()),
+    () => page.goto('/workspace/notifications'),
   )
-  await page.goto('/workspace/notifications')
-  await assertOk(await mountNotificationsRead, 'notifications read issued on mount')
 
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible()
   await activate(page, 'notifications.refresh', context)
@@ -519,12 +728,13 @@ test('walks the Home quick capture and the Inbox triage affordances', async ({ p
   const captureText = `Route walk boardless capture ${seed}`
 
   // ── /workspace/home — await the summary read rather than sleeping ────────
-  const homeSummary = page.waitForResponse(
+  await readOnMount(
+    page,
+    'Home summary read on first paint',
     (response) =>
       response.request().method() === 'GET' && /\/api\/workspace\/home$/.test(response.url()),
+    () => page.goto('/workspace/home'),
   )
-  await page.goto('/workspace/home')
-  await assertOk(await homeSummary, 'Home summary read on first paint')
   await expect(page.getByTestId('paper-home')).toBeVisible()
 
   // The Home quick capture posts `boardId: null`, so it seeds the boardless

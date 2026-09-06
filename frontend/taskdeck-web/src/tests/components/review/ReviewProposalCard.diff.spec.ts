@@ -175,7 +175,10 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
       selectedDiff: null,
     })
 
-    expect(wrapper.find('[data-testid="review-diff-banner"]').exists()).toBe(true)
+    const banner = wrapper.find('[data-testid="review-diff-banner"]')
+    expect(banner.exists()).toBe(true)
+    expect(banner.text()).toContain('no stored preview is available')
+    expect(banner.text()).not.toContain('stored preview from the original submission')
     const storedEmpty = wrapper.find('[data-testid="review-diff-stored-empty"]')
     expect(storedEmpty.exists()).toBe(true)
     expect(storedEmpty.text()).toContain('No stored preview')
@@ -224,8 +227,11 @@ describe('ReviewProposalCard diff presentation (#1397)', () => {
     expect(wrapper.find('[data-testid="review-diff-stored-ops-note"]').exists()).toBe(true)
     const ops = wrapper.find('[data-testid="review-diff-stored-operations"]')
     expect(ops.exists()).toBe(true)
-    // Sequence-ordered: CreateCard (seq 0) before MoveCard (seq 1).
-    expect(ops.text()).toMatch(/1\. CreateCard Card[\s\S]*2\. MoveCard Card/)
+    const banner = wrapper.find('[data-testid="review-diff-banner"]')
+    expect(banner.text()).toContain('recorded operations')
+    expect(banner.text()).not.toContain('stored preview from the original submission')
+    // Sequence-ordered: Create Card (seq 0) before Move Card (seq 1).
+    expect(ops.text()).toMatch(/1\. Create Card Card[\s\S]*2\. Move Card Card/)
     expect(ops.text()).not.toContain('card-9')
     expect(wrapper.find('[data-testid="review-diff-stored-empty"]').exists()).toBe(false)
   })

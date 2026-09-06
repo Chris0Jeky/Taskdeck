@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 import PaperTriageTable from '../../../../views/paper/inbox/PaperTriageTable.vue'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../../types/capture'
+import { i18n, type SupportedLocale } from '../../../../i18n'
 
 type MockBoard = { id: string; name: string; canWrite?: boolean }
 
@@ -392,6 +393,98 @@ describe('PaperTriageTable', () => {
     await wrapper.findAll('button[data-action="accept"]')[0].trigger('click')
     return wrapper
   }
+
+  it.each([
+    ['en', 'Select a board…'],
+    ['it', 'Seleziona una bacheca…'],
+    ['es', 'Selecciona un tablero…'],
+  ] as const)('translates the board-picker placeholder in %s', async (locale, expected) => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = locale as SupportedLocale
+      const wrapper = await openBoardPicker(defaultBoards())
+      expect(wrapper.get('[data-testid="capture-board-pick"] option').text()).toBe(expected)
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  // --- region name and board-pick chrome i18n (#1871) ----------------------
+
+  /**
+   * The table's region name and the board-pick eyebrow and accessible name, in
+   * the file's own locale idiom (the `it.each` above, from #2654).
+   *
+   * The Italian case fails on the pre-#1871 component in every assertion: the
+   * section's `aria-label`, the eyebrow and the select's `aria-label` were
+   * template literals that never varied by locale.
+   *
+   * The region name is read off the mounted root because the component's root
+   * IS the labelled `<section>`; the board-pick chrome is scoped by the
+   * existing `capture-board-pick` testid, so no selector reads a string this
+   * test is asserting.
+   */
+  it('names the capture region in English on the default locale', () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    expect(wrapper.attributes('aria-label')).toBe('Captured items')
+  })
+
+  it('re-renders the region name and the board-pick chrome in Italian', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'it' as SupportedLocale
+      const wrapper = await openBoardPicker(defaultBoards())
+
+      expect(wrapper.attributes('aria-label')).toBe('Elementi catturati')
+      const pick = wrapper.get('[data-testid="capture-board-pick"]')
+      expect(pick.get('.tk-eyebrow').text()).toBe('Bacheca')
+      expect(pick.get('select').attributes('aria-label')).toBe(
+        'Bacheca: scegli dove va questa cattura',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  /**
+   * The Italian case above sets the locale BEFORE mounting, so it proves first
+   * render only — a component that read `t()` once into a non-reactive snapshot
+   * would still pass it. This one mounts in English and switches AFTER, so the
+   * region name and the board-pick chrome have to change on an already-rendered
+   * component or the assertion fails.
+   */
+  it('re-renders the region name and the board-pick chrome when the locale switches after mount', async () => {
+    const previousLocale = i18n.global.locale.value
+    try {
+      i18n.global.locale.value = 'en' as SupportedLocale
+      const wrapper = await openBoardPicker(defaultBoards())
+      expect(wrapper.attributes('aria-label')).toBe('Captured items')
+
+      i18n.global.locale.value = 'it' as SupportedLocale
+      await nextTick()
+
+      expect(wrapper.attributes('aria-label')).toBe('Elementi catturati')
+      const pick = wrapper.get('[data-testid="capture-board-pick"]')
+      expect(pick.get('.tk-eyebrow').text()).toBe('Bacheca')
+      expect(pick.get('select').attributes('aria-label')).toBe(
+        'Bacheca: scegli dove va questa cattura',
+      )
+    } finally {
+      i18n.global.locale.value = previousLocale
+    }
+  })
+
+  it('labels the board-pick select with the visible eyebrow first in English', async () => {
+    // WCAG 2.5.3 / the PR #2675 pattern: the accessible name repeats the
+    // visible label before saying what the control does.
+    const wrapper = await openBoardPicker(defaultBoards())
+    const pick = wrapper.get('[data-testid="capture-board-pick"]')
+
+    expect(pick.get('.tk-eyebrow').text()).toBe('Board')
+    expect(pick.get('select').attributes('aria-label')).toBe(
+      'Board: choose where this capture goes',
+    )
+  })
 
   it('renders a read-only board visible but disabled and annotated view-only', async () => {
     const wrapper = await openBoardPicker([
@@ -1039,15 +1132,451 @@ describe('PaperTriageTable', () => {
     expect(wrapper.get('button[data-action="edit-save"]').attributes('disabled')).toBeDefined()
   })
 
-  it('closes a stale editor when its row leaves the list', async () => {
-    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
-    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+
+  // --- draft fate when the edited row leaves the list (#1999 item 3) --------
+
+  /**
+   * Until now this closed the editor and destroyed the unsaved correction
+   * WITHOUT a word: switching the Inbox board filter replaced the list, the
+   * edited row was not in the replacement, and the `items` watcher cleared
+   * `editItemId`. The draft went with the unmounted child. That was pinned as
+   * intended; the pin is replaced here by preserve-and-announce.
+   *
+   * The list replacement below IS the board-filter change as this component
+   * sees it: `useInboxOrchestrator`'s `activeBoardId` watcher reloads the
+   * inbox for the new scope and a new `items` array arrives. A same-scope
+   * refresh that drops the row reaches the table through exactly the same
+   * prop, which is why one case covers both.
+   *
+   * Restoring is the user's move, never the table's: a held correction comes
+   * back only through Edit capture on its row. The notices region says the
+   * correction is there to come back to.
+   */
+  function noticeKinds(wrapper: ReturnType<typeof mount>): string[] {
+    return wrapper
+      .findAll('[data-testid="capture-draft-notices"] p')
+      .map((line) => line.attributes('data-notice') ?? '')
+  }
+
+  function noticeFor(wrapper: ReturnType<typeof mount>, kind: string) {
+    return wrapper.get(`[data-testid="capture-draft-notices"] p[data-notice="${kind}"]`)
+  }
+
+  async function openEditorAndType(
+    wrapper: ReturnType<typeof mount>,
+    rowIndex: number,
+    text: string,
+  ) {
+    await wrapper.findAll('button[data-action="edit"]')[rowIndex].trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="capture-edit-textarea"]').setValue(text)
+    return text
+  }
+
+  it('mounts the notices region before it has anything to say', () => {
+    // A live region inserted at the same moment its text appears is announced
+    // unreliably (#2593/#2630). It is mounted and silent instead, so a notice
+    // is a mutation of a region that was already there.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const region = wrapper.get('[data-testid="capture-draft-notices"]')
+
+    expect(region.attributes('role')).toBe('status')
+    expect(region.attributes('aria-live')).toBe('polite')
+    expect(region.text()).toBe('')
+    expect(noticeKinds(wrapper)).toEqual([])
+  })
+
+  it('keeps an unsaved correction and names the capture when its row leaves the list', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction the filter change must not eat')
 
     await wrapper.setProps({ items: makeItems().slice(1) })
     await flushPromises()
 
+    // The editor still closes — the row it belongs to is gone.
     expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+
+    const kept = noticeFor(wrapper, 'kept')
+    // Named by the same excerpt the row shows, so the user knows WHICH capture.
+    expect(kept.text()).toContain('First excerpt')
+    expect(kept.text()).toContain('this Inbox list')
+
+    // Nothing was written anywhere: this is component state, not a save.
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+    expect(wrapper.emitted('accept')).toBeUndefined()
+    expect(wrapper.emitted('keep')).toBeUndefined()
+    expect(wrapper.emitted('reject')).toBeUndefined()
+  })
+
+  it('says nothing and keeps nothing when the row leaves with an untouched editor', async () => {
+    // The receipt must describe a real loss. An editor that was opened and not
+    // typed into has no correction to keep, and announcing one would be noise.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).toEqual([])
+  })
+
+  it('offers a held correction back on the returning row, and restores it on Edit', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'the correction that has to survive the round trip')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    // No editor opens by itself: restoring is an explicit action, like every
+    // other write-adjacent move on this surface.
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+    const held = noticeFor(wrapper, 'held')
+    expect(held.text()).toContain('First excerpt')
+    expect(held.text()).toContain('Edit capture')
+
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+    expect(noticeFor(wrapper, 'restored').text()).toContain('First excerpt')
+    // The server's current text is re-read on the way back in, so the draft is
+    // measured against what the capture says NOW, not what it said before.
+    expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(2)
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('holds the correction while another editor is open, and says that is why', async () => {
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'New' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction waiting for its row')
+
+    // capture-1 leaves; its correction is kept.
+    await wrapper.setProps({ items: items.slice(1) })
+    await flushPromises()
+
+    // The user starts editing the row that stayed, then capture-1 comes back.
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    await wrapper.setProps({ items })
+    await flushPromises()
+
+    // One editor, on capture-2 — the open-editor gate is not broken by a return.
+    const rows = wrapper.findAll('.paper-triage__row')
+    expect(wrapper.findAll('[data-testid="capture-edit"]')).toHaveLength(1)
+    expect(rows[1].find('[data-testid="capture-edit"]').exists()).toBe(true)
+    expect(rows[0].find('[data-testid="capture-edit"]').exists()).toBe(false)
+    const blocked = noticeFor(wrapper, 'blocked')
+    expect(blocked.text()).toContain('First excerpt')
+
+    // Still held: closing the open editor and asking for capture-1 brings it back.
+    await wrapper.get('button[data-action="edit-cancel"]').trigger('click')
+    await flushPromises()
+    expect(noticeKinds(wrapper)).toContain('held')
+
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  /**
+   * The editor can be open without being able to say anything about a draft:
+   * loading, failed, or refused by the server. Treating that silence as
+   * "nothing unsaved" released the held correction, so the second filter change
+   * in this test used to destroy it — the same silent loss, one layer in.
+   */
+  it('keeps a correction whose editor could not load before the list changed again', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction behind a failing read')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    // Restoring it hits a detail read that fails, so the editor can say nothing.
+    mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('offline'))
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="capture-edit-load-error"]').exists()).toBe(true)
+
+    // The filter changes again while that error panel is open.
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    expect(noticeFor(wrapper, 'kept').text()).toContain('First excerpt')
+
+    // The correction survived: it is offered back, and it comes back.
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('keeps a correction when the reader closes an editor that failed to load', async () => {
+    // Cancel on the error panel answers the failed READ. The user never saw the
+    // correction, so it cannot be their answer to it.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction the reader never got to see')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    mockCaptureStore.fetchDetail.mockRejectedValueOnce(new Error('offline'))
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="capture-edit-load-error"] button[data-action="edit-cancel"]')
+      .trigger('click')
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).toContain('held')
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('keeps a correction when the reader closes an editor the server refused', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction behind a refused edit')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    // The server answers "not editable" this time — a transcript-linked capture
+    // reads that way whatever its status.
+    mockCaptureStore.fetchDetail.mockResolvedValueOnce({
+      id: 'capture-1',
+      userId: 'user-1',
+      boardId: 'board-alpha',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'First excerpt',
+      rawText: 'First excerpt in full',
+      createdAt: new Date('2026-04-25T09:42:00Z').toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+      canEditSuggestion: false,
+    })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="capture-edit-blocked"] button[data-action="edit-cancel"]')
+      .trigger('click')
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).toContain('held')
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  /**
+   * Editability for the DISCARD decision is the server's rule
+   * (`CaptureService.IsSuggestionEditableStatus`: New, Failed, Triaged), never
+   * this list's action gate. Dropping a correction is irreversible, so it may
+   * not be keyed on a client-side product policy that a ruling could change,
+   * and never on a status the capture is only passing through.
+   */
+  // `Triaged` is a capture this list will not edit under the current gate;
+  // `Triaging` is one it is only passing through. Neither is the server saying
+  // no, so neither may cost the reader their correction.
+  it.each(['Triaged', 'Triaging'] as const)('keeps a correction whose capture comes back %s, and says why', async (status) => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction for a capture that moved on')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    const returned = makeItems()
+    returned[0] = { ...returned[0], status: status as CaptureStatusValue }
+    await wrapper.setProps({ items: returned })
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).not.toContain('discarded')
+    const held = noticeFor(wrapper, 'heldUneditable')
+    expect(held.text()).toContain('First excerpt')
+    expect(held.text()).toContain(status)
+
+    // And it really is still there once the capture is editable again.
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it.each([
+    ['ProposalCreated', 'Ready for review'],
+    ['Converted', 'Applied to board'],
+    ['Ignored', 'Ignored'],
+  ] as const)('drops a correction with a stated reason once the capture is %s', async (status, label) => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction with nowhere left to land')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    // These are the settled states the server itself would refuse a text edit
+    // in, so the correction can never be applied and holding it would be a
+    // promise this surface cannot keep.
+    const returned = makeItems()
+    returned[0] = { ...returned[0], status: status as CaptureStatusValue }
+    await wrapper.setProps({ items: returned })
+    await flushPromises()
+
+    const discarded = noticeFor(wrapper, 'discarded')
+    expect(discarded.text()).toContain('First excerpt')
+    expect(discarded.text()).toContain(label)
+
+    // And it is really gone: an editable capture-1 later opens on server text.
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe('First excerpt in full')
+    expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('never announces a discard for a capture the reader has open', async () => {
+    // The correction is on screen in the textarea. Announcing that it was
+    // dropped would be false, and dropping it would take what the user is
+    // looking at.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction being read right now')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    const converted = makeItems()
+    converted[0] = { ...converted[0], status: 'Converted' }
+    await wrapper.setProps({ items: converted })
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).not.toContain('discarded')
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('carries one line per capture, so one correction never speaks over another', async () => {
+    const items = makeItems()
+    items[1] = { ...items[1], status: 'New' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+
+    await openEditorAndType(wrapper, 0, 'the first correction')
+    await wrapper.setProps({ items: items.slice(1) })
+    await flushPromises()
+    await openEditorAndType(wrapper, 0, 'the second correction')
+    await wrapper.setProps({ items: [] })
+    await flushPromises()
+
+    // One list change settles both: capture-1 is past editing, capture-2 is not.
+    const returned = [{ ...items[0], status: 'Converted' as CaptureStatusValue }, items[1]]
+    await wrapper.setProps({ items: returned })
+    await flushPromises()
+    expect(noticeKinds(wrapper).sort()).toEqual(['discarded', 'held'])
+
+    // Restoring capture-2 must not take capture-1's receipt off the surface.
+    await wrapper.findAll('button[data-action="edit"]')[1].trigger('click')
+    await flushPromises()
+    expect(noticeKinds(wrapper).sort()).toEqual(['discarded', 'restored'])
+    expect(noticeFor(wrapper, 'discarded').text()).toContain('First excerpt')
+    expect(noticeFor(wrapper, 'restored').text()).toContain('Second excerpt')
+  })
+
+  it('does not drop a kept correction merely because the list changed again', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction that outlives two filter changes')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: [] })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('keeps the correction when the list switches to archived history', async () => {
+    // Entering read-only history clears the editor through its own watcher, so
+    // it is a second door onto the same silent loss.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction interrupted by the archive')
+
+    await wrapper.setProps({ readOnly: true })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+    expect(noticeFor(wrapper, 'kept').text()).toContain('First excerpt')
+  })
+
+  it('lets the reader dismiss the receipts and leaves focus on the region', async () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems() },
+      attachTo: document.body,
+    })
+    try {
+      await openEditorAndType(wrapper, 0, 'a correction whose receipt has been read')
+
+      await wrapper.setProps({ items: makeItems().slice(1) })
+      await flushPromises()
+      expect(noticeKinds(wrapper)).toEqual(['kept'])
+
+      await wrapper.get('button[data-action="dismiss-draft-notice"]').trigger('click')
+      await flushPromises()
+
+      const region = wrapper.get('[data-testid="capture-draft-notices"]')
+      // The region stays mounted; only what it was saying goes away.
+      expect(noticeKinds(wrapper)).toEqual([])
+      expect(document.activeElement).toBe(region.element)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('forgets the correction when the user cancels a loaded edit', async () => {
+    // Cancel still means cancel: the held copy is not a second life for text
+    // the user has explicitly abandoned in an editor they could see.
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    await openEditorAndType(wrapper, 0, 'a correction the user changed their mind about')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    await wrapper.get('button[data-action="edit-cancel"]').trigger('click')
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).toEqual([])
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe('First excerpt in full')
   })
 })

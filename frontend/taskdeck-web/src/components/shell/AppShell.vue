@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
+import { useBoardStore } from '../../store/boardStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
@@ -45,6 +46,7 @@ const router = useRouter()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
 const capture = useCaptureStore()
+const board = useBoardStore()
 const paperTheme = usePaperThemeStore()
 const { mode: viewportMode } = useViewportMode()
 
@@ -183,6 +185,34 @@ function activeKeyboardOwningSurfaces(): HTMLElement[] {
 }
 
 /**
+ * One surface scan per keydown, shared by the two guards below (#2636).
+ *
+ * The capture-phase listener always runs before the bubble-phase one for the
+ * same event, so whichever asks first pays for the `querySelectorAll` plus
+ * `getComputedStyle` sweep and the other reads the answer. Without the memo the
+ * bubble guard would double the per-keystroke cost #1968 went out of its way to
+ * make lazy.
+ *
+ * The answer is deliberately pinned to the event rather than re-read on the
+ * bubble: a surface handler may have closed its own surface on the way up (a
+ * palette option activating, say), and the key still belonged to the surface
+ * that was open when it was pressed.
+ *
+ * Per shell instance, not per module: these live in this `setup()` closure, so
+ * two shells (as tests mount them) never share a memo.
+ */
+let scannedEvent: KeyboardEvent | null = null
+let scannedSurfaces: HTMLElement[] = []
+
+function keyboardOwningSurfacesFor(event: KeyboardEvent): HTMLElement[] {
+  if (scannedEvent !== event) {
+    scannedEvent = event
+    scannedSurfaces = activeKeyboardOwningSurfaces()
+  }
+  return scannedSurfaces
+}
+
+/**
  * True when this action's own surface is among the active ones and every active
  * surface belongs to the shell. That is what makes `?` and `mod+k` toggles
  * rather than one-way openers: the help dialog owns `?`, the command palette
@@ -276,6 +306,63 @@ function guardSurfaceFromPageShortcuts(event: KeyboardEvent, surfaces: readonly 
   event.stopPropagation()
 }
 
+/**
+ * The other half of the same guard, for keys pressed from INSIDE the surface
+ * (#2636).
+ *
+ * `guardSurfaceFromPageShortcuts` above runs in the capture phase and has to
+ * stand aside when the target is inside the surface, because at that point the
+ * surface's own handlers have not run yet. That carve-out was the leak PR #2635
+ * recorded: Tab into the open help dialog on a Legacy board and press `f` or
+ * `n`, and the event ran the dialog's handlers and then kept bubbling out to
+ * `BoardView`'s `useKeyboardShortcuts` window listener -- the filter panel
+ * toggled and the add-card composer pulled focus out of the dialog.
+ *
+ * This listener sits on `document` in the bubble phase. The invariant that
+ * makes that safe is narrower than "the surfaces handle their own keys first",
+ * so state it exactly:
+ *
+ *   A surface keeps a key only if it handles that key AT OR BELOW `document`
+ *   -- an element-level handler, anywhere from the event target up to and
+ *   including `document` -- or if the key is Escape, which is carved out below.
+ *   Anything a surface binds on `window` is one hop OUTSIDE this guard and,
+ *   unless it is Escape, will be silenced while a surface is active.
+ *
+ * Every surface in the tree satisfies that today by binding element-level
+ * handlers: the palettes' `@keydown.down/up/enter`, `CaptureModal`'s
+ * `@keydown`, the review dialogs' listeners on their own dialog elements. The
+ * one surface that does NOT is `PaperShortcutsOverlay`, whose Escape handler is
+ * a `window` bubble listener; it survives purely on the Escape carve-out, not
+ * on the premise above. So a new `window`-level NON-Escape handler belonging to
+ * a modal is a forbidden shape here -- it would be silenced -- and there is a
+ * spec pinning that from the Paper help overlay.
+ *
+ * Note the reach: this is not scoped to the four shell surfaces. It fires for
+ * every `dialog[open]`, `[role="alertdialog"]` or `[aria-modal="true"]` in the
+ * app -- `CardModal`, `TdDialog` and the review dialogs built on it,
+ * `ProvenanceDrawer`, `PaperBoardDialogShell`, the board modals,
+ * `WorkspaceSetupModal`, `MfaChallengeModal` -- which is the point, since the
+ * page-level listeners it has to silence all bind on `window`.
+ *
+ * Two carve-outs, for the same reasons the capture half has them:
+ *   - Escape is never stopped. `useEscapeStack` listens in the capture phase so
+ *     it is already past, but `BoardView.closeOpenUi` and
+ *     `PaperShortcutsOverlay` both take Escape on the window bubble, and
+ *     stopping it here would strand their surfaces open.
+ *   - Text-entry targets are left alone. Typing is not a page shortcut:
+ *     `useKeyboardShortcuts` ignores text entry outright, and honouring the
+ *     early-out keeps the #1968 promise that an ordinary keystroke in a field
+ *     never pays for the surface scan.
+ */
+function guardPageListenersFromSurfaceKeys(event: KeyboardEvent) {
+  if (event.key === 'Escape') return
+  if (event.isComposing) return
+  if (isTextEntryTarget(event.target)) return
+  if (keyboardOwningSurfacesFor(event).length === 0) return
+
+  event.stopPropagation()
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (event.isComposing) {
     clearPendingChord()
@@ -286,9 +373,9 @@ function handleKeydown(event: KeyboardEvent) {
 
   // Scanned at most once per event, and only once something actually needs the
   // answer, so an ordinary keystroke typed into a field never pays for the
-  // `querySelectorAll` plus `getComputedStyle` sweep (#1968).
-  let surfaces: HTMLElement[] | null = null
-  const keyboardOwningSurfaces = () => (surfaces ??= activeKeyboardOwningSurfaces())
+  // `querySelectorAll` plus `getComputedStyle` sweep (#1968). The memo is shared
+  // with the bubble-phase guard so the pair still scans only once (#2636).
+  const keyboardOwningSurfaces = () => keyboardOwningSurfacesFor(event)
 
   if (pendingChord) {
     const chord = pendingChord
@@ -364,6 +451,9 @@ function handleLogout() {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown, true)
+  // Bubble phase on `document`: after the surface's own handlers, before the
+  // page-level `window` listeners (#2636).
+  document.addEventListener('keydown', guardPageListenersFromSurfaceKeys)
 })
 
 function hydratePreferencesIfNeeded() {
@@ -380,6 +470,9 @@ watch(
       // The capture store's per-item generation guards are keyed by capture id
       // and belong to the session that recorded them (#2571).
       capture.resetForLogout()
+      // Board list and detail state, and the reads still in flight for them,
+      // belong to the account that was signed in (#1961).
+      board.resetForLogout()
       return
     }
 
@@ -398,6 +491,12 @@ watch(
 onUnmounted(() => {
   clearPendingChord()
   window.removeEventListener('keydown', handleKeydown, true)
+  document.removeEventListener('keydown', guardPageListenersFromSurfaceKeys)
+  // Belt-and-braces. The memo lives in this instance's `setup()` closure, not at
+  // module scope, so it is already unreachable once the instance is gone; this
+  // just drops the last event and surface references at a known point.
+  scannedEvent = null
+  scannedSurfaces = []
 })
 </script>
 

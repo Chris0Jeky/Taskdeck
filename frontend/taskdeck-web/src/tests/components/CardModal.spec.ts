@@ -103,6 +103,65 @@ describe('CardModal', () => {
     expect(mockStore.fetchCardProvenance).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the editor and cached comments usable when comment loading fails', async () => {
+    mockStore.getCardComments.mockReturnValue([makeOwnComment()])
+    mockStore.fetchCardComments.mockRejectedValue(new Error('comments unavailable'))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await flushPromises()
+
+    expect(wrapper.get('#card-title').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Delete me')
+    expect(mockStore.fetchCardProvenance).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(mockStore.setEditingCard).toHaveBeenCalledWith('card-1')
+
+    wrapper.unmount()
+  })
+
+  it('does not let a stale comment rejection disturb a newer card session', async () => {
+    const firstLoad = createDeferred<CardComment[]>()
+    const secondLoad = createDeferred<CardComment[]>()
+    const firstComment = makeOwnComment()
+    const secondComment: CardComment = {
+      ...firstComment,
+      id: 'comment-2',
+      cardId: 'card-2',
+      content: 'Card B comment',
+    }
+    mockStore.fetchCardComments.mockImplementation((_boardId: string, cardId: string) => (
+      cardId === 'card-1' ? firstLoad.promise : secondLoad.promise
+    ))
+    mockStore.getCardComments.mockImplementation((cardId: string) => (
+      cardId === 'card-1' ? [firstComment] : [secondComment]
+    ))
+
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels },
+    })
+    await nextTick()
+
+    const secondCard: Card = {
+      ...card,
+      id: 'card-2',
+      title: 'Card B',
+      updatedAt: '2026-08-26T12:00:00.000Z',
+    }
+    await wrapper.setProps({ card: secondCard })
+    await nextTick()
+
+    firstLoad.reject(new Error('stale comments unavailable'))
+    secondLoad.resolve([secondComment])
+    await flushPromises()
+
+    expect((wrapper.get('#card-title').element as HTMLInputElement).value).toBe('Card B')
+    expect(wrapper.text()).toContain('Card B comment')
+    expect(mockStore.setEditingCard).toHaveBeenLastCalledWith('card-2')
+
+    wrapper.unmount()
+  })
+
   it('keeps provenance responses scoped to the card that requested them', async () => {
     let resolveFirst!: (value: any) => void
     let resolveSecond!: (value: any) => void
@@ -624,6 +683,32 @@ describe('CardModal', () => {
     const bugLabelCheckbox = labelCheckboxes[1] as any
 
     expect(bugLabelCheckbox.element.checked).toBe(true)
+  })
+
+  it('uses the card modal surface for the selected label ring offset', () => {
+    const cardWithLabel = {
+      ...card,
+      labels: [labels[0]],
+    }
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card: cardWithLabel,
+        isOpen: true,
+        labels,
+      },
+    })
+
+    const selectedInput = wrapper.get('#label-label-1')
+    const unselectedInput = wrapper.get('#label-label-2')
+    const selectedLabel = selectedInput.element.closest('label')
+    const unselectedLabel = unselectedInput.element.closest('label')
+
+    expect(selectedLabel).toBeDefined()
+    expect(unselectedLabel).toBeDefined()
+    expect(selectedLabel!.classList).toContain('ring-offset-surface-container')
+    expect(selectedLabel!.classList).toContain('ring-offset-2')
+    expect(unselectedLabel!.classList).not.toContain('ring-offset-surface-container')
   })
 
   it('should create a new comment from modal comment input', async () => {

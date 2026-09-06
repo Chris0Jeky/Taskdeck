@@ -155,7 +155,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
                     });
                 }
 
-                var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
+                var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage, _logger);
                 var fallbackInstructions = isActionable
                     ? NaturalLanguageInstructionExtractor.Extract(userMessage, actionIntent)
                     : [];
@@ -1002,7 +1002,7 @@ internal sealed class OpenAiCompatibleLlmProvider : ILlmProvider
         bool shouldSettleQuotaReservation,
         LlmProviderFailureKind failureKind)
     {
-        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage, _logger);
         var instructions = isActionable ? NaturalLanguageInstructionExtractor.Extract(userMessage, actionIntent) : [];
         var content = isActionable
             ? $"I can help with that. I'll create a proposal to {actionIntent}. ({reason})"

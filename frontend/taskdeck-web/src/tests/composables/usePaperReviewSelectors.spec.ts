@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ref, computed, nextTick, effectScope } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { usePaperReviewSelectors } from '../../composables/usePaperReviewSelectors'
 import {
   proposalDeepReviewApi,
   type CardHistoryRowDto,
+  type ConfidenceBreakdownDto,
   type ConflictRowDto,
   type ProvenanceRowDto,
+  type SimilarPastResultDto,
 } from '../../api/proposalDeepReviewApi'
 import { captureApi } from '../../api/captureApi'
 import type { Proposal as ApiProposal } from '../../types/automation'
@@ -657,6 +660,75 @@ describe('usePaperReviewSelectors', () => {
     expect(historySignals).toHaveLength(2)
     expect(historySignals[1]?.aborted).toBe(false)
     await expect(selectors.waitForCoreBatch('p-1', 'rev-2')).resolves.toBe('settled')
+  })
+
+  it('does not retry an evidence batch after its owning scope is disposed', async () => {
+    mockAllEndpointsEmpty()
+    let rejectHistory!: (reason: Error) => void
+    vi.mocked(proposalDeepReviewApi.getHistory).mockImplementationOnce(
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectHistory = reject
+        }),
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const activeProposal = computed(() => proposal.value)
+    const scope = effectScope()
+    const selectors = scope.run(() => usePaperReviewSelectors(activeProposal))!
+
+    await vi.waitFor(() => {
+      expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    })
+    const wait = selectors.waitForCoreBatch('p-1', 'rev-1')
+
+    scope.stop()
+    rejectHistory(new Error('evidence read settled after disposal'))
+
+    await expect(wait).resolves.toBe('superseded')
+    expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not retry a caller-aborted evidence batch after its read later fails', async () => {
+    mockAllEndpointsEmpty()
+    let rejectHistory!: (reason: Error) => void
+    let historySignal: AbortSignal | undefined
+    vi.mocked(proposalDeepReviewApi.getHistory).mockImplementationOnce(
+      (_id: string, options?: { signal?: AbortSignal }) => {
+        historySignal = options?.signal
+        return new Promise<never>((_resolve, reject) => {
+          rejectHistory = reject
+        })
+      },
+    )
+
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: 'rev-1' }))
+    const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+    const controller = new AbortController()
+
+    await vi.waitFor(() => {
+      expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    })
+    const wait = selectors.waitForCoreBatch('p-1', 'rev-1', { signal: controller.signal })
+
+    controller.abort()
+    await expect(wait).resolves.toBe('aborted')
+    expect(historySignal?.aborted).toBe(true)
+
+    rejectHistory(new Error('evidence read settled after caller abort'))
+    await flushPromises()
+
+    expect(proposalDeepReviewApi.getProvenance).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConfidence).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSideEffects).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getConflicts).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getHistory).toHaveBeenCalledTimes(1)
+    expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledTimes(1)
   })
 
   it('still reports a genuine read failure as failed when a signal is supplied', async () => {
@@ -1474,6 +1546,260 @@ describe('usePaperReviewSelectors', () => {
       await vi.waitFor(() => {
         expect(selectors.provenanceMetadata.value?.provider).toBe('openai')
       })
+    })
+  })
+
+  /**
+   * The rail-facing keyed snapshot (#1940 — the two residuals recorded with PR
+   * #2662).
+   *
+   * Both come from the same missing fact. The bare reads keep the previous
+   * proposal's confidence and similar-past rows until the new proposal's batch
+   * lands, and they hold an empty default both while a read is in flight and
+   * after one failed — so a consumer could neither tell A's values from B's nor
+   * a pending read from a proven absence. The snapshot answers both: it names
+   * the key its values belong to and withholds them in every other state.
+   */
+  describe('railEvidence — the keyed snapshot the review rail renders', () => {
+    const A_ROW = {
+      serial: '#PAST-A',
+      title: 'A prior comparable decision',
+      verdict: 'Applied',
+      date: '2026-08-20',
+    }
+
+    function proposalA() {
+      return makeProposal({
+        id: 'p-1',
+        sourceType: 'Queue',
+        sourceReferenceId: 'capture-1',
+        latestRevisionId: 'rev-1',
+      })
+    }
+
+    function proposalB() {
+      return makeProposal({
+        id: 'p-2',
+        sourceType: 'Queue',
+        sourceReferenceId: 'capture-2',
+        latestRevisionId: 'rev-2',
+      })
+    }
+
+    it('names the key its settled values were read for', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getSimilarPast).mockResolvedValue({
+        decisions: [A_ROW, { ...A_ROW, serial: '#PAST-B', verdict: 'Rejected' }],
+        applyRate: 0.5,
+      })
+      const selectors = usePaperReviewSelectors(computed(() => proposalA()))
+
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('settled')
+      })
+
+      const evidence = selectors.railEvidence.value
+      expect(evidence.key).toEqual({
+        proposalId: 'p-1',
+        captureReference: 'capture-1',
+        revisionIdentity: 'rev-1',
+      })
+      expect(evidence.failure).toBeNull()
+      expect(evidence.similarPast.map((row) => row.serial)).toEqual(['#PAST-A', '#PAST-B'])
+      expect(evidence.similarPastApplyRate).toEqual({ applied: 1, total: 2, ratio: 0.5 })
+      expect(evidence.confidenceBreakdown.components).toHaveLength(1)
+    })
+
+    it('withholds the previous proposal values while the new key is still loading', async () => {
+      mockAllEndpointsEmpty()
+      let releaseSimilar!: (value: SimilarPastResultDto) => void
+      let releaseConfidence!: (value: ConfidenceBreakdownDto) => void
+      vi.mocked(proposalDeepReviewApi.getSimilarPast).mockImplementation((id) =>
+        id === 'p-1'
+          ? Promise.resolve({ decisions: [A_ROW], applyRate: 1 })
+          : new Promise((resolve) => {
+              releaseSimilar = resolve
+            }),
+      )
+      vi.mocked(proposalDeepReviewApi.getConfidence).mockImplementation((id) =>
+        id === 'p-1'
+          ? Promise.resolve({
+              overall: 0.84,
+              components: [{ key: 'Operation 1: create card', value: 0.84 }],
+              note: null,
+              threshold: null,
+              source: 'model-reported',
+              meetsThreshold: null,
+            })
+          : new Promise((resolve) => {
+              releaseConfidence = resolve
+            }),
+      )
+
+      const proposal = ref<ApiProposal | null>(proposalA())
+      const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('settled')
+      })
+      expect(selectors.railEvidence.value.similarPast[0]?.serial).toBe('#PAST-A')
+
+      proposal.value = proposalB()
+      await nextTick()
+      await vi.waitFor(() => {
+        expect(proposalDeepReviewApi.getSimilarPast).toHaveBeenCalledTimes(2)
+      })
+
+      // The residual, exactly: the bare reads STILL hold proposal A's evidence
+      // while B loads. That is what the rail was rendering under B's header.
+      expect(selectors.similarPast.value[0]?.serial).toBe('#PAST-A')
+      expect(selectors.confidenceBreakdown.value.overall).toBe(0.84)
+
+      const pending = selectors.railEvidence.value
+      expect(pending.status).toBe('loading')
+      expect(pending.failure).toBeNull()
+      // No identity, because nothing is being offered to render under one.
+      expect(pending.key).toBeNull()
+      expect(pending.similarPast).toEqual([])
+      expect(pending.similarPastApplyRate).toEqual({ applied: 0, total: 0, ratio: 0 })
+      expect(pending.confidenceBreakdown.overall).toBeNull()
+      expect(pending.confidenceBreakdown.components).toEqual([])
+      expect(pending.confidenceBreakdown.source).toBe('not-reported')
+      expect(selectors.loading.value).toBe(true)
+
+      releaseSimilar({ decisions: [], applyRate: 0 })
+      releaseConfidence({
+        overall: null,
+        components: [],
+        note: null,
+        threshold: null,
+        source: 'not-reported',
+        meetsThreshold: null,
+      })
+
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('settled')
+      })
+      const settled = selectors.railEvidence.value
+      expect(settled.key).toEqual({
+        proposalId: 'p-2',
+        captureReference: 'capture-2',
+        revisionIdentity: 'rev-2',
+      })
+      // B's own evidence, and B's own emptiness — now a fact about B.
+      expect(settled.similarPast).toEqual([])
+      expect(settled.confidenceBreakdown.overall).toBeNull()
+    })
+
+    it('reports a failed batch as failed, keeping the outcome, never as empty evidence', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getSimilarPast).mockImplementation((id) =>
+        id === 'p-1'
+          ? Promise.resolve({ decisions: [A_ROW], applyRate: 1 })
+          : Promise.reject(new Error('similar past unavailable')),
+      )
+
+      const proposal = ref<ApiProposal | null>(proposalA())
+      const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('settled')
+      })
+
+      proposal.value = proposalB()
+      await nextTick()
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('failed')
+      })
+
+      const failed = selectors.railEvidence.value
+      expect(failed.failure).toBe('failed')
+      expect(failed.key).toBeNull()
+      expect(failed.similarPast).toEqual([])
+      expect(failed.confidenceBreakdown.source).toBe('not-reported')
+      expect(selectors.loading.value).toBe(false)
+    })
+
+    it('reports a settled empty read as settled, so emptiness can be stated', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getConfidence).mockResolvedValue({
+        overall: null,
+        components: [],
+        note: null,
+        threshold: null,
+        source: 'deterministic',
+        meetsThreshold: null,
+      })
+      const selectors = usePaperReviewSelectors(computed(() => proposalA()))
+
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('settled')
+      })
+
+      const evidence = selectors.railEvidence.value
+      expect(evidence.failure).toBeNull()
+      expect(evidence.key?.proposalId).toBe('p-1')
+      expect(evidence.similarPast).toEqual([])
+      expect(evidence.confidenceBreakdown.components).toEqual([])
+      expect(evidence.confidenceBreakdown.source).toBe('deterministic')
+    })
+
+    /**
+     * The snapshot and the watcher must answer "does the settled read still
+     * cover what is on screen?" the same way.
+     *
+     * `proposalRevisionMoved` is deliberately asymmetric: `rev-Y` becoming null
+     * is NOT a move, because a revision identity can only reach null by the
+     * proposal leaving PendingReview. The watcher therefore starts no new batch
+     * on that transition and no record is ever written for the new key. A
+     * snapshot that demanded an EXACT key match would hold a record for a key
+     * that never arrives and report `loading` forever — on the ordinary path of
+     * rejecting a revised proposal, where the receipt keeps it on screen.
+     */
+    it('keeps the settled read when a decision drops the revision identity to null', async () => {
+      mockAllEndpointsEmpty()
+      vi.mocked(proposalDeepReviewApi.getSimilarPast).mockResolvedValue({
+        decisions: [A_ROW],
+        applyRate: 1,
+      })
+      const proposal = ref<ApiProposal | null>(proposalA())
+      const selectors = usePaperReviewSelectors(computed(() => proposal.value))
+      await vi.waitFor(() => {
+        expect(selectors.railEvidence.value.status).toBe('settled')
+      })
+      const readsBefore = vi.mocked(proposalDeepReviewApi.getSimilarPast).mock.calls.length
+
+      // The rejected DTO as the backend returns it: non-pending, and
+      // `AutomationProposal.Reject` pins no approved revision, so BOTH revision
+      // fields come back null while the proposal stays selected.
+      proposal.value = makeProposal({
+        id: 'p-1',
+        sourceType: 'Queue',
+        sourceReferenceId: 'capture-1',
+        status: 'Rejected',
+        latestRevisionId: null,
+        approvedRevisionId: null,
+      })
+      await nextTick()
+      await nextTick()
+
+      const evidence = selectors.railEvidence.value
+      expect(evidence.status).toBe('settled')
+      expect(evidence.similarPast[0]?.serial).toBe('#PAST-A')
+      expect(evidence.confidenceBreakdown.components).toHaveLength(1)
+      expect(selectors.loading.value).toBe(false)
+      // And no new read was issued: which transitions start a batch is the
+      // watcher's decision and this change does not touch it.
+      expect(vi.mocked(proposalDeepReviewApi.getSimilarPast).mock.calls.length).toBe(readsBefore)
+    })
+
+    it('is idle with no active proposal, so the rail states nothing at all', async () => {
+      const selectors = usePaperReviewSelectors(computed(() => null))
+
+      await nextTick()
+
+      expect(selectors.railEvidence.value.status).toBe('idle')
+      expect(selectors.railEvidence.value.key).toBeNull()
+      expect(selectors.railEvidence.value.similarPast).toEqual([])
+      expect(selectors.loading.value).toBe(false)
     })
   })
 })

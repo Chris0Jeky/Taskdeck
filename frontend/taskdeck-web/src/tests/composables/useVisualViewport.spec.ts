@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { mount } from '@vue/test-utils'
 import { useVisualViewport, type UseVisualViewportOptions } from '../../composables/useVisualViewport'
@@ -82,6 +82,39 @@ function hostStyle(wrapper: ReturnType<typeof mountHost>) {
 describe('useVisualViewport', () => {
   afterEach(() => {
     restoreVisualViewport()
+    vi.restoreAllMocks()
+  })
+
+  it('warns once per invalid invocation despite viewport events', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const synthetic = installSyntheticVisualViewport(800, 0)
+
+    const first = mountHost({ prefix: '' })
+    synthetic.set({ height: 420, offsetTop: 120 }, ['resize', 'scroll'])
+    await first.vm.$nextTick()
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    first.unmount()
+
+    const second = mountHost({ prefix: 'td-dialog' })
+    expect(warn).toHaveBeenCalledTimes(2)
+
+    expect(warn.mock.calls[0]?.[0]).toBe(
+      '[useVisualViewport] prefix must start with a CSS custom-property marker (`--`)',
+    )
+    expect(warn.mock.calls[1]?.[0]).toBe(
+      '[useVisualViewport] prefix must start with a CSS custom-property marker (`--`)',
+    )
+    second.unmount()
+  })
+
+  it('does not warn for a valid custom-property prefix', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const wrapper = mountHost({ prefix: '--td-dialog' })
+
+    expect(warn).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 
   it('emits the visual viewport height and offset as prefixed custom properties', () => {
