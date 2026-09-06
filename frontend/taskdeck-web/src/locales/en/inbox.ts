@@ -54,6 +54,8 @@ export default {
     detail: {
       open: 'Show the full retained capture',
       close: 'Hide the full retained capture',
+      openFor: 'Show the full retained capture for {capture}',
+      closeFor: 'Hide the full retained capture for {capture}',
       title: 'Retained capture',
       loading: 'Loading the retained capture…',
       error: 'The retained capture could not be loaded.',
