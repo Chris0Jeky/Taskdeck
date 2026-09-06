@@ -343,7 +343,7 @@ public sealed class ArtefactExtractionServiceTests
         try
         {
             await FluentActions
-                .Awaiting(() => task)
+                .Awaiting(() => task.WaitAsync(TimeSpan.FromSeconds(30)))
                 .Should()
                 .ThrowAsync<OperationCanceledException>();
             extractor.CallCount.Should().Be(1);
