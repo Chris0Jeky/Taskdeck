@@ -21,6 +21,7 @@ This folder contains deployment, observability, and human-operator runbooks.
 - `TASKDECK_HUMAN_OPERATIONS.md`
 - `GITHUB_LABEL_TAXONOMY.md`
 - `DISASTER_RECOVERY_RUNBOOK.md`
+- `STAGE1_PRIVATE_INSTANCE_RUNBOOK.md` — the ordered CL-1 deployment procedure for the trusted private instance (`#1772`)
 - `INCIDENT_REHEARSAL_CADENCE.md`
 - `SBOM_RELEASE_PROVENANCE.md`
 
