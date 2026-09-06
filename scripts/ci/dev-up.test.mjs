@@ -691,6 +691,7 @@ async function installPowerShellNetstatFallbackProbe(fixture) {
     [
       '@echo off',
       'echo TCP 0.0.0.0:%TASKDECK_TEST_NETSTAT_PORT% 0.0.0.0:0 ABHOEREN 4242',
+      'echo TCP 127.0.0.1:%TASKDECK_TEST_NETSTAT_PORT% 127.0.0.1:51234 WARTEND 0',
       'exit /b 0',
       '',
     ].join('\r\n'),
@@ -1290,6 +1291,8 @@ if (bash) {
         String.raw`#!/usr/bin/env bash
 printf '%s\n' 'Proto Recv-Q Send-Q Local Address Foreign Address State'
 printf 'tcp 0 0 127.0.0.1:%s 0.0.0.0:* ABHOEREN\n' "$TASKDECK_TEST_NETSTAT_PORT"
+printf 'tcp 0 0 127.0.0.1:%s 127.0.0.1:51234 WARTEND\n' "$TASKDECK_TEST_NETSTAT_PORT"
+printf 'tcp 0 0 127.0.0.1:%s 127.0.0.1:51235 WARTEND\n' "$TASKDECK_TEST_NETSTAT_DRAINED_PORT"
 `,
       )
       await chmod(fakeNetstat, 0o755)
@@ -1303,6 +1306,8 @@ command() {
 }
 ${extractBashFunction(source, 'port_listener_inventory')}
 [[ "$(port_listener_inventory "$TASKDECK_TEST_NETSTAT_PORT")" == 'listening' ]]
+# A port whose only rows are drained connections with a real peer is free, whatever the state token says.
+[[ "$(port_listener_inventory "$TASKDECK_TEST_NETSTAT_DRAINED_PORT")" == 'free' ]]
 `,
       )
       const result = spawnSync(bash, [toPosixPath(harness)], {
@@ -1313,6 +1318,7 @@ ${extractBashFunction(source, 'port_listener_inventory')}
           ...process.env,
           PATH: `${toPosixPath(fakeBin)}:/usr/local/bin:/usr/bin:/bin`,
           TASKDECK_TEST_NETSTAT_PORT: '43210',
+          TASKDECK_TEST_NETSTAT_DRAINED_PORT: '43211',
         },
       })
       assert.ifError(result.error)

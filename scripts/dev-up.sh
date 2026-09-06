@@ -421,15 +421,17 @@ port_listener_inventory() {
     rows="$(ss -ltnH "sport = :$port" 2>/dev/null)" || return 2
   elif command -v netstat >/dev/null 2>&1; then
     all="$(netstat -an -p tcp 2>/dev/null)" || return 2
-    # The state token is localized and its spelling differs across netstat implementations. Match
-    # only the local-address column and accept any non-empty state token as conservative evidence.
+    # The state token is localized and its spelling differs across netstat implementations, so it
+    # is not matched. A listening socket is the only row whose foreign address is the wildcard peer
+    # (0.0.0.0:0, [::]:0, *.*, 0.0.0.0:*, :::*); drained TIME_WAIT/CLOSE_WAIT rows carry a real peer.
     rows="$(printf '%s\n' "$all" | awk -v port="$port" '
       function ends_with_port(value) { return value ~ ("[:.]" port "$") }
+      function wild_peer(value) { return value ~ /^(0\.0\.0\.0|\[::\]|::|\*)[:.](0|\*)$/ }
       {
         protocol = tolower($1)
         if (protocol !~ /^tcp[46]?$/) next
-        if (ends_with_port($2) && $4 != "") { print; next }
-        if (ends_with_port($4) && $6 != "") print
+        if (ends_with_port($2) && wild_peer($3)) { print; next }
+        if (ends_with_port($4) && wild_peer($5)) print
       }
     ')"
   else
