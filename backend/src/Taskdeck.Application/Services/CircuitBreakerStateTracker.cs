@@ -233,7 +233,17 @@ public sealed class CircuitBreakerStateTracker
         string circuitName,
         CircuitState state,
         string? lastFailureReason = null) =>
-        new(circuitName, state, _timeProvider.GetUtcNow(), lastFailureReason);
+        new(circuitName, state, _timeProvider.GetUtcNow(), SanitizeReason(lastFailureReason));
+
+    /// <summary>
+    /// #2351 / R5 defence in depth. Callers classify a failure before recording it, so
+    /// no raw exception message should reach this type. Anything that does is stripped
+    /// of control characters and bounded by <see cref="LogValueSanitizer"/> (200
+    /// characters plus a truncation marker) before it enters an operator-visible
+    /// snapshot. A null reason stays null.
+    /// </summary>
+    private static string? SanitizeReason(string? lastFailureReason) =>
+        lastFailureReason is null ? null : LogValueSanitizer.Sanitize(lastFailureReason);
 
     private static bool LeaseMatches(ProviderFailureState state, CircuitRequestLease lease) =>
         state.Generation == lease.Generation &&

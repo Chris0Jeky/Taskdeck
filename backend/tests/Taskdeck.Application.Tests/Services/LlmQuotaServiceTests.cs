@@ -1,10 +1,12 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
+using Taskdeck.Tests.Support;
 using Xunit;
 
 namespace Taskdeck.Application.Tests.Services;
@@ -177,6 +179,141 @@ public class LlmQuotaServiceTests
                 It.IsAny<DateTimeOffset>(),
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(-9, 1)]
+    [InlineData(4_096, 4_096)]
+    public async Task ReserveAsync_ShouldFloorEstimateAtOneWithoutChangingPositiveValues(
+        int requestedEstimate,
+        int expectedEstimate)
+    {
+        var settings = new LlmQuotaSettings
+        {
+            RequestsPerHour = 60,
+            TokensPerDay = 100_000,
+            GlobalBudgetCeilingTokens = 200_000
+        };
+        var service = new LlmQuotaService(_unitOfWorkMock.Object, settings);
+        var userId = Guid.NewGuid();
+        var reservationId = Guid.NewGuid();
+        using var cancellation = new CancellationTokenSource();
+        var cancellationToken = cancellation.Token;
+
+        _usageRepoMock
+            .Setup(repository => repository.TryReserveAsync(
+                userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                settings.RequestsPerHour,
+                settings.TokensPerDay,
+                settings.GlobalBudgetCeilingTokens,
+                expectedEstimate,
+                It.IsAny<DateTimeOffset>(),
+                cancellationToken))
+            .ReturnsAsync(new QuotaReservationOutcome(
+                QuotaReservationDecision.Allowed,
+                reservationId,
+                RequestCount: 1,
+                UserTokens: expectedEstimate,
+                GlobalTokens: expectedEstimate));
+
+        var result = await service.ReserveAsync(
+            userId,
+            LlmSurface.CaptureTriage,
+            requestedEstimate,
+            cancellationToken);
+
+        result.Allowed.Should().BeTrue();
+        result.EstimatedTokens.Should().Be(expectedEstimate);
+        _usageRepoMock.Verify(
+            repository => repository.TryReserveAsync(
+                userId,
+                LlmSurface.CaptureTriage,
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<DateTimeOffset>(),
+                settings.RequestsPerHour,
+                settings.TokensPerDay,
+                settings.GlobalBudgetCeilingTokens,
+                expectedEstimate,
+                It.IsAny<DateTimeOffset>(),
+                cancellationToken),
+            Times.Once);
+    }
+
+    [Theory]
+    [InlineData(QuotaCommitResult.Committed, false)]
+    [InlineData(QuotaCommitResult.RecoveredExpired, true)]
+    [InlineData(QuotaCommitResult.AlreadySettled, false)]
+    public async Task CommitReservationAsync_ShouldForwardOutcomeAndWarnOnlyWhenReservationWasRecovered(
+        QuotaCommitResult repositoryResult,
+        bool expectsRecoveryWarning)
+    {
+        var logger = new InMemoryLogger<LlmQuotaService>();
+        var settings = new LlmQuotaSettings { ReservationTtlSeconds = 120 };
+        var service = new LlmQuotaService(_unitOfWorkMock.Object, settings, logger);
+        var reservationId = Guid.NewGuid();
+        var userId = Guid.NewGuid();
+        const LlmSurface surface = LlmSurface.Chat;
+        const string provider = "OpenAI";
+        const string model = "gpt-4o-mini";
+        const int inputTokens = 123;
+        const int outputTokens = 45;
+        using var cancellation = new CancellationTokenSource();
+        var cancellationToken = cancellation.Token;
+
+        _usageRepoMock
+            .Setup(repository => repository.CommitReservationAsync(
+                reservationId,
+                userId,
+                surface,
+                provider,
+                model,
+                inputTokens,
+                outputTokens,
+                cancellationToken))
+            .ReturnsAsync(repositoryResult);
+
+        await service.CommitReservationAsync(
+            reservationId,
+            userId,
+            surface,
+            provider,
+            model,
+            inputTokens,
+            outputTokens,
+            cancellationToken);
+
+        _usageRepoMock.Verify(
+            repository => repository.CommitReservationAsync(
+                reservationId,
+                userId,
+                surface,
+                provider,
+                model,
+                inputTokens,
+                outputTokens,
+                cancellationToken),
+            Times.Once);
+        _usageRepoMock.Verify(
+            repository => repository.AddAsync(It.IsAny<LlmUsageRecord>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        var warnings = logger.Entries
+            .Where(entry => entry.Level == LogLevel.Warning)
+            .ToList();
+        warnings.Should().HaveCount(expectsRecoveryWarning ? 1 : 0);
+        if (expectsRecoveryWarning)
+        {
+            warnings[0].Message.Should().Contain("expired mid-call");
+            warnings[0].Message.Should().Contain("168 billed tokens recovered");
+        }
     }
 
     [Fact]

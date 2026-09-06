@@ -1,5 +1,8 @@
 import http from './http'
 import type { RetryableRequestConfig } from './httpRetry'
+import { apiRootFrom } from '../utils/apiRoot'
+
+export { apiRootFrom } from '../utils/apiRoot'
 
 /**
  * Product-version lookup (#1948).
@@ -25,18 +28,6 @@ export interface LiveHealthResponse {
   status?: string
   version?: string
   timestamp?: string
-}
-
-/**
- * Pure derivation of the server root from an API base: strips one trailing
- * `/api` segment, with or without its trailing slash. Split out from
- * `resolveApiRoot()` because `VITE_API_BASE_URL` is inlined at build time —
- * a test can only reach the *rule* through a function that takes the base as
- * an argument, and every deployment shape (`/api`, `/taskdeck/api`, an
- * absolute origin, empty) has to be covered.
- */
-export function apiRootFrom(apiBase: string): string {
-  return apiBase.replace(/\/api\/?$/i, '')
 }
 
 /**

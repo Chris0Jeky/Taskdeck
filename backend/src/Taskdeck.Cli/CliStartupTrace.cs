@@ -11,6 +11,14 @@ namespace Taskdeck.Cli;
 internal sealed class CliStartupTrace
 {
     internal const string CorrelationEnvironmentVariable = "TASKDECK_CLI_TEST_TRACE_CORRELATION";
+
+    /// <summary>
+    /// Length, in hex characters, of a trace correlation. Single source of truth: it is also the
+    /// second reference shape <see cref="CliFailureSink"/> files a failure record under, and the
+    /// two acceptance checks must not drift apart.
+    /// </summary>
+    internal const int CorrelationLength = 32;
+
     internal const int MaximumTraceBytes = 8 * 1024;
     internal const int MaximumTraceRecords = 32;
 
@@ -257,8 +265,8 @@ internal sealed class CliStartupTrace
         return true;
     }
 
-    private static bool IsCorrelationId(string? correlationId) =>
-        correlationId is { Length: 32 } && correlationId.All(Uri.IsHexDigit);
+    internal static bool IsCorrelationId(string? correlationId) =>
+        correlationId is { Length: CorrelationLength } && correlationId.All(Uri.IsHexDigit);
 }
 
 internal sealed record CliStartupTraceSnapshot(

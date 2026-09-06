@@ -39,7 +39,11 @@ public class OllamaLlmProvider : ILlmProvider
                 _allowLocalhostEndpoints))
         {
             _logger.LogWarning("Ollama provider configuration invalid: {Error}", validationError);
-            return BuildFallbackResult(lastUserMessage, "Local provider configuration is invalid.", GetConfiguredModelOrDefault());
+            return BuildFallbackResult(
+                lastUserMessage,
+                "Local provider configuration is invalid.",
+                GetConfiguredModelOrDefault(),
+                _logger);
         }
 
         try
@@ -60,13 +64,21 @@ public class OllamaLlmProvider : ILlmProvider
                 _logger.LogWarning(
                     "Ollama completion request failed with status code {StatusCode}.",
                     (int)response.StatusCode);
-                return BuildFallbackResult(lastUserMessage, "Local provider request failed.", GetConfiguredModelOrDefault());
+                return BuildFallbackResult(
+                    lastUserMessage,
+                    "Local provider request failed.",
+                    GetConfiguredModelOrDefault(),
+                    _logger);
             }
 
             if (!TryParseResponse(body, out var content, out var tokensUsed, out var doneReason))
             {
                 _logger.LogWarning("Ollama completion response could not be parsed.");
-                return BuildFallbackResult(lastUserMessage, "Local provider response parsing failed.", GetConfiguredModelOrDefault());
+                return BuildFallbackResult(
+                    lastUserMessage,
+                    "Local provider response parsing failed.",
+                    GetConfiguredModelOrDefault(),
+                    _logger);
             }
 
             if (string.Equals(doneReason, "length", StringComparison.OrdinalIgnoreCase))
@@ -113,7 +125,7 @@ public class OllamaLlmProvider : ILlmProvider
             }
 
             _logger.LogDebug("Ollama response was not structured JSON; falling back to static classifier.");
-            var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage);
+            var (isActionable, actionIntent) = LlmIntentClassifier.Classify(lastUserMessage, _logger);
             List<string>? fallbackInstructions = null;
             if (isActionable)
             {
@@ -132,7 +144,11 @@ public class OllamaLlmProvider : ILlmProvider
             _logger.LogError(
                 "Ollama completion request failed with unexpected error. {ExceptionSummary}",
                 SensitiveDataRedactor.SummarizeException(ex));
-            return BuildFallbackResult(lastUserMessage, "Local provider request errored.", GetConfiguredModelOrDefault());
+            return BuildFallbackResult(
+                lastUserMessage,
+                "Local provider request errored.",
+                GetConfiguredModelOrDefault(),
+                _logger);
         }
     }
 
@@ -334,9 +350,13 @@ public class OllamaLlmProvider : ILlmProvider
         }
     }
 
-    private static LlmCompletionResult BuildFallbackResult(string userMessage, string reason, string model)
+    private static LlmCompletionResult BuildFallbackResult(
+        string userMessage,
+        string reason,
+        string model,
+        ILogger<OllamaLlmProvider> logger)
     {
-        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage);
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(userMessage, logger);
 
         List<string>? instructions = null;
         if (isActionable)

@@ -70,6 +70,31 @@ export default [
     },
   },
 
+  // Measured 2026-09-06: count nonblank, noncomment SFC lines and warn above 700.
+  // These existing high-cohesion seams stay explicitly allowlisted while they are decomposed.
+  {
+    files: ['**/*.vue'],
+    rules: {
+      'max-lines': ['warn', { max: 700, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: [
+      'src/components/paper/PaperSidebar.vue', // paper navigation and triage shell
+      'src/components/shell/ShellSidebar.vue', // shared workspace navigation composition
+      'src/views/CalendarView.vue', // calendar workflow and filtering surface
+      'src/views/HomeView.vue', // home workspace composition
+      'src/views/MetricsView.vue', // metrics dashboard composition
+      'src/views/paper/PaperBoardView.vue', // paper board orchestration
+      'src/views/paper/PaperHomeView.vue', // Paper home route composition
+      'src/views/paper/PaperReviewView.vue', // paper review workflow surface
+      'src/views/paper/inbox/PaperTriageTable.vue', // triage table interactions and layout
+    ],
+    rules: {
+      'max-lines': 'off',
+    },
+  },
+
   // Vue accessibility rules (WCAG compliance)
   ...pluginVueA11y.configs['flat/recommended'],
   {

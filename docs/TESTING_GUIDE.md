@@ -2,7 +2,7 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-09-02
+Last Updated: 2026-09-05
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
@@ -77,8 +77,8 @@ archive Python 35/35, architecture 26 passed + 1 intentional skip, release contr
 an actual marked-package diagnostic, and the full backend solution (8,094 passed + 5 intentional
 skips) passed locally. Exact-head hosted Required CI, dynamic Playwright smoke, and bounded review
 also passed. Exact-main no-publish and isolated synthetic Mock core-loop evidence is recorded below;
-the v0.1.2 tag, unchanged public-artifact proof, inherited-profile migration, and ordinary-profile
-Explorer/SmartScreen acceptance remain unverified.
+the public v0.1.2 tag and artifact now exist (see the `v0.1.2 SHIPPED` block in `docs/STATUS.md`).
+Ordinary Explorer/SmartScreen acceptance and inherited-profile migration remain unverified.
 
 ## 2026-08-24 exact-main Windows candidate rehearsal
 
@@ -1050,7 +1050,7 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Telemet
 
 ### Proposal Provenance Tests (RFAI-03, `#975`/`#993`)
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalProvenanceTests.cs`, `ProvenanceFieldTests.cs`, `ProposalOutcomeTests.cs`, `EvidenceLinkTests.cs` covering:
+`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalProvenanceTests.cs`, `ProvenanceFieldTests.cs`, `ProposalOutcomeTests.cs`, `ProvenanceEvidenceLinkTests.cs` covering:
 - ProposalProvenance: field addition, parent-ID validation, field count tracking
 - ProvenanceField: extractive quote enforcement, confidence bounds, kind validation
 - ProposalOutcome: content-free decision ledger, decision type coverage
@@ -1064,16 +1064,18 @@ dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~Provena
 
 ### Proposal Revision Tests (RFAI-04, `#976`/`#994`)
 
-`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalRevisionTests.cs`, `ProposalRevisionChainTests.cs`, `CompilerValidationResultTests.cs`, `OperationRiskTests.cs`, `ProposalOutcomeTests.cs`, `UnsupportedOperationFailureTests.cs` — **70 tests** covering:
+The original RFAI-04 suite listed `CompilerValidationResultTests.cs` among its **70 tests**; that
+dead entity and test were removed under `#1305` AC3. The surviving revision suite is:
+
+`backend/tests/Taskdeck.Domain.Tests/Entities/ProposalRevisionTests.cs`, `ProposalRevisionChainTests.cs`, `OperationRiskTests.cs`, `ProposalOutcomeTests.cs`, `UnsupportedOperationFailureTests.cs` — covering:
 - ProposalRevision: creation, immutability (private setters), validation, DateTimeOffset precision
 - Revision chain: latest resolution, ordering, no-revisions case, many-revisions integrity, unique constraint
-- CompilerValidationResult: success/failure factory, risk aggregation
 - OperationRisk: value equality semantics, risk level + reason
 - OutcomeType: decision coverage (Approved/EditedThenApproved/Rejected/Ignored)
 
 Run:
 ```bash
-dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ProposalRevision or FullyQualifiedName~CompilerValidation or FullyQualifiedName~OperationRisk or FullyQualifiedName~UnsupportedOperation"
+dotnet test backend/Taskdeck.sln -c Release --filter "FullyQualifiedName~ProposalRevision or FullyQualifiedName~OperationRisk or FullyQualifiedName~UnsupportedOperation"
 ```
 
 ## Audit-Finding Remediation Wave Testing (2026-04-24, PRs `#960`–`#969`)
@@ -2267,6 +2269,8 @@ powershell -File ./scripts/mcp/Test-DockerMcpProfile.ps1
 powershell -File ./scripts/mcp/Test-DockerMcpProfile.Tests.ps1
 ```
 
+The test runner's credential-drill regressions run the real `scripts/drills/drill-mcp-invalid-credentials.sh` under Bash. Without a resolvable `bash` on `PATH` the runner prints `SKIP: credential-drill regressions require Bash` and still exits 0, so a Bash-less box has **not** exercised that coverage; pass `-RequireBash` to make the absence a failure (CI and pre-PR proving should), or `-BashExecutable <path>` to name the Bash to use (a named path that does not resolve is an error, never a skip).
+
 The validator is deliberately non-starting: it reads the user-scope profile and requires the exact sorted set of all container IDs labeled `docker-mcp=true`, including stopped containers, to match before and after the check. Normal output exposes only counts and SHA-256 fingerprints, never profile JSON or container IDs. Any inventory error or identity-set drift fails closed, and the validator never stops or removes containers because the shared Docker daemon provides no invocation identity that proves ownership. This proves profile membership and zero container churn during the validation window; it does not prove live gateway startup.
 
 Optional servers (`postman`, `dockerhub`) warning mode:
@@ -2334,6 +2338,17 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Lint + coverage-threshold Vitest + typecheck + build
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
+
+  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs as a step of this job on
+  the **Linux leg only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
+  cases therefore still run on every PR; the PowerShell launcher cases are local Windows evidence,
+  run from the repository root on Windows with
+  `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`, until the
+  CI-04 `#2328` laptop runner is registered. On a Windows developer box that command is known to
+  red its `Bash:` cases under Git Bash (the local `#2378` cohort, recorded in `docs/STATUS.md`); the
+  `PowerShell:` cases are the evidence being asked for, so read the result per case rather than as
+  one pass/fail. The Windows leg keeps lint, typecheck, build and coverage unchanged.
+  `scripts/ci/smart-ci/launcher-suite-placement.test.mjs` pins that placement.
 - `container-images`
   - Runs `scripts/deploy/Test-TaskdeckReverseProxyConfig.ps1` against all four machine prefixes,
     static/rendered-template parity, forwarding/timeouts, hub WebSockets, MCP buffering, and SPA fallback

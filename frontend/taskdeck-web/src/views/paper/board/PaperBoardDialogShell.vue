@@ -114,7 +114,26 @@ const { style: visualViewportStyle } = useVisualViewport({
   left: 0;
   right: 0;
   top: var(--paper-board-dialog-visual-viewport-offset-top, 0px);
+  /* Three declarations, deliberately, one per browser class. `top` above is
+   * consumed unconditionally, so `height` must be too: a browser that has the
+   * VisualViewport API but not `dvh` would otherwise take the offset while
+   * staying `100vh` tall, and the sheet would hang off the bottom of the screen
+   * by exactly `offsetTop` with its footer under the software keyboard.
+   *
+   *   1. No custom properties at all -> `var()` does not parse, the next two
+   *      declarations are dropped at parse time, and this floor stands.
+   *   2. Custom properties, no `dvh` -> the live visual-viewport height, or
+   *      `100vh` when `useVisualViewport`'s `'unset'` fallback emits nothing.
+   *   3. `dvh` too -> same, with the fallback upgraded to `100dvh` below.
+   *
+   * The fallback inside `var()` here MUST be `100vh`, never `100dvh`: `var()`
+   * parses in every browser with custom properties, so an unguarded
+   * `100dvh` fallback would substitute a value that is invalid at
+   * computed-value time on a `dvh`-less browser. Per the CSS Variables spec
+   * this non-inherited property would then compute to its INITIAL value
+   * (`auto`) and the discarded floor would not resurface. */
   height: 100vh;
+  height: var(--paper-board-dialog-visual-viewport-height, 100vh);
   box-sizing: border-box;
   z-index: 60;
   background: rgba(26, 24, 20, 0.2);
@@ -125,6 +144,11 @@ const { style: visualViewportStyle } = useVisualViewport({
   overflow-y: auto;
 }
 
+/* Upgrade the FALLBACK only. The visual-viewport binding itself is already
+ * unconditional above; this block exists so a browser with `dvh` but no
+ * VisualViewport API gets `100dvh` (which survives browser-chrome collapse)
+ * instead of `100vh`. It carries no extra specificity, so it wins on source
+ * order alone. */
 @supports (height: 100dvh) {
   .paper-board-dialog__backdrop {
     height: var(--paper-board-dialog-visual-viewport-height, 100dvh);

@@ -20,6 +20,17 @@ namespace Taskdeck.Api.Tests.Resilience;
 /// </summary>
 public class WorkerResilienceTests
 {
+    /// <summary>
+    /// Ceiling for a condition a worker reaches inside its first loop iteration.
+    /// </summary>
+    private static readonly TimeSpan WaitCeiling = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Ceiling for a condition that can only hold after a periodic tick elapses
+    /// (<see cref="WorkerSettings.QueuePollIntervalSeconds"/> is 1 second in these tests).
+    /// </summary>
+    private static readonly TimeSpan TickWaitCeiling = TimeSpan.FromSeconds(10);
+
     // ── Worker Exception in Main Loop ──────────────────────────────────
 
     [Fact]
@@ -48,9 +59,15 @@ public class WorkerResilienceTests
 
         using var cts = new CancellationTokenSource();
 
-        // Act: run the worker for long enough to complete at least one iteration, then cancel.
+        // Act: run the worker until it has actually completed a failing iteration, then cancel. Waiting on
+        // the iteration's own evidence rather than on the clock keeps a contended runner from turning
+        // "the worker has not been scheduled yet" into a failed assertion (#2572).
         var runTask = worker.StartAsync(cts.Token);
-        await Task.Delay(1500);
+        await WaitUntilAsync(
+            () => callCount >= 1 && logger.Entries.Any(e =>
+                e.Level == LogLevel.Error &&
+                e.Message.Contains("Error in LlmQueueToProposalWorker iteration")),
+            WaitCeiling);
         cts.Cancel();
 
         try { await runTask; } catch (OperationCanceledException) { }
@@ -89,7 +106,11 @@ public class WorkerResilienceTests
 
         using var cts = new CancellationTokenSource();
         var runTask = worker.StartAsync(cts.Token);
-        await Task.Delay(300);
+        await WaitUntilAsync(
+            () => callCount > 0 && logger.Entries.Any(e =>
+                e.Level == LogLevel.Error &&
+                e.Message.Contains("Error in ProposalHousekeepingWorker iteration")),
+            WaitCeiling);
         cts.Cancel();
 
         try { await runTask; } catch (OperationCanceledException) { }
@@ -107,9 +128,12 @@ public class WorkerResilienceTests
     [Fact]
     public async Task LlmWorker_WhenCancelled_ExitsWithoutCrashing()
     {
-        // Arrange: the worker has nothing to process; we test clean cancellation.
+        // Arrange: the worker has nothing to process; we test clean cancellation. The work-read counter is
+        // synchronization only -- it lets the act phase wait for a completed idle cycle instead of guessing
+        // at a delay.
+        var workReadCount = 0;
         var mockLlmQueue = new Mock<ILlmQueueRepository>();
-        StubEmptyQueue(mockLlmQueue);
+        StubEmptyQueue(mockLlmQueue, onWorkRead: () => Interlocked.Increment(ref workReadCount));
 
         var mockUnitOfWork = new Mock<IUnitOfWork>();
         mockUnitOfWork.Setup(u => u.LlmQueue).Returns(mockLlmQueue.Object);
@@ -131,8 +155,15 @@ public class WorkerResilienceTests
         using var cts = new CancellationTokenSource();
         await worker.StartAsync(cts.Token);
 
-        // Let it run at least one cycle.
-        await Task.Delay(1500);
+        // Let it run at least one cycle: wait for the startup log and for a completed work read rather
+        // than for the clock.
+        await WaitUntilAsync(
+            () => Volatile.Read(ref workReadCount) > 0 && logger.Entries.Any(e =>
+                e.Level == LogLevel.Information &&
+                e.Message.Contains("LlmQueueToProposalWorker starting")),
+            WaitCeiling);
+        Volatile.Read(ref workReadCount).Should().BeGreaterThan(0,
+            "the worker should have completed at least one work read before it is stopped");
 
         // StopAsync triggers cancellation and waits for ExecuteAsync to complete.
         // This should NOT throw -- the BackgroundService infrastructure handles OperationCanceledException.
@@ -194,11 +225,7 @@ public class WorkerResilienceTests
         await worker.StartAsync(cts.Token);
 
         // Poll until the worker has run at least one batch (bounded by a generous timeout).
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (capturedLimits.IsEmpty && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(50);
-        }
+        await WaitUntilAsync(() => !capturedLimits.IsEmpty, WaitCeiling);
 
         await worker.StopAsync(CancellationToken.None);
 
@@ -233,7 +260,24 @@ public class WorkerResilienceTests
 
         using var cts = new CancellationTokenSource();
         var runTask = worker.StartAsync(cts.Token);
-        await Task.Delay(1500);
+
+        // This assertion is negative (the queue must never be read), so a fixed delay would prove nothing
+        // on a slow runner: an unscheduled worker also reads nothing. Wait instead on positive evidence
+        // that the worker looped past the point where it would have processed -- the heartbeat is stamped
+        // at the top of every iteration, so a second, later heartbeat means one full iteration (skip
+        // decision included) completed.
+        await WaitUntilAsync(
+            () => heartbeat.GetLastHeartbeat(nameof(LlmQueueToProposalWorker)) is not null,
+            WaitCeiling);
+        var firstHeartbeat = heartbeat.GetLastHeartbeat(nameof(LlmQueueToProposalWorker));
+        firstHeartbeat.Should().NotBeNull("the worker should have entered its poll loop and reported a heartbeat");
+        await WaitUntilAsync(
+            () => heartbeat.GetLastHeartbeat(nameof(LlmQueueToProposalWorker)) > firstHeartbeat,
+            TickWaitCeiling);
+        heartbeat.GetLastHeartbeat(nameof(LlmQueueToProposalWorker)).Should().BeAfter(
+            firstHeartbeat!.Value,
+            "the worker must have completed a full poll iteration for the negative assertion below to mean anything");
+
         cts.Cancel();
 
         try { await runTask; } catch (OperationCanceledException) { }
@@ -249,6 +293,22 @@ public class WorkerResilienceTests
     }
 
     // ── Helpers ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Polls <paramref name="condition"/> every 20 ms and returns as soon as it holds, giving up after
+    /// <paramref name="ceiling"/>. Synchronizing on the evidence a worker actually produces instead of on a
+    /// fixed wall-clock delay keeps a contended runner from turning "not scheduled yet" into a failed
+    /// assertion (#2572). On timeout this returns quietly so the caller's own assertion still runs and
+    /// reports the failure with its original message.
+    /// </summary>
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan ceiling)
+    {
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        while (!condition() && elapsed.Elapsed < ceiling)
+        {
+            await Task.Delay(20);
+        }
+    }
 
     /// <summary>
     /// Creates an IServiceScopeFactory where resolving IUnitOfWork invokes

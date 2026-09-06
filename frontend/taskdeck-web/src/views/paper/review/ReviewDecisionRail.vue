@@ -60,6 +60,21 @@ const props = withDefaults(
     editLock?: EditLock
     /** An approved receipt leaves Apply as the only remaining decision. */
     applyOnly?: boolean
+    /**
+     * Space-separated DOM ids of explanations rendered OUTSIDE the rail that say
+     * why the decision controls are locked. The shipped one is the post-revision
+     * refresh lock, which the Review view draws above this column while it
+     * re-reads the proposal (#2461).
+     *
+     * Whitespace is normalized and empty tokens are ignored. The resulting ids are
+     * applied to each rendered decision control (Reject, Request edit, Defer and
+     * Apply); `applyOnly` can hide the first three, while `dismissable` renders only
+     * File away without this decision description. The rail may append its own
+     * edit-lock note when that lock is active. The caller owns ensuring each supplied
+     * id resolves to a rendered explanation for the controls' CURRENT state; a
+     * dangling reference reports nothing while the markup claims otherwise.
+     */
+    decisionDescriptionIds?: string
   }>(),
   { applyPhase: 'approve', editLock: 'off', applyOnly: false },
 )
@@ -82,11 +97,24 @@ const editLockNote = computed(() =>
 )
 
 /**
- * `aria-describedby` is only attached while the explanation exists — a dangling
+ * Every disabled decision control names its reason, wherever that reason is
+ * drawn. The edit-lock note lives inside the rail; the post-revision refresh
+ * lock is drawn by the Review view above this column and arrives as
+ * `decisionDescriptionIds`. Before #2461 that second reason described only the
+ * non-focusable column wrapper, so assistive tech inspecting a disabled Reject,
+ * Request edit, Defer or Approve was told nothing about why it was inert.
+ *
+ * External ids come first, matching the order the notes appear on screen.
+ *
+ * `aria-describedby` is only attached while an explanation exists — a dangling
  * reference to an absent id is worse than none, because assistive tech reports
  * nothing and the markup claims otherwise.
  */
-const decisionDescribedBy = computed(() => (showEditLock.value ? lockNoteId : undefined))
+const decisionDescribedBy = computed(() => {
+  const ids = (props.decisionDescriptionIds ?? '').split(/\s+/).filter(Boolean)
+  if (showEditLock.value) ids.push(lockNoteId)
+  return ids.length > 0 ? ids.join(' ') : undefined
+})
 
 /**
  * Both phase labels are rendered, always, into the SAME grid cell of the
@@ -274,7 +302,13 @@ const emit = defineEmits<{
   flex-wrap: wrap;
   gap: 12px;
   position: sticky;
-  top: 0;
+  /* The review surface's degraded-queue warning is pinned at the top of this
+   * same scroller (#2214 item 4). This rail is opaque and taller, so sticking
+   * at 0 covered it completely once the reviewer scrolled past the card header.
+   * PaperReviewView writes the warning's measured height onto the scrolling
+   * column as `--paper-review-sticky-offset`; with no warning the property is
+   * absent and this falls back to 0, the rail's original position. */
+  top: var(--paper-review-sticky-offset, 0);
   z-index: 2;
 }
 /* The text half. `flex: 1 1 0` is load-bearing twice over: it keeps the group

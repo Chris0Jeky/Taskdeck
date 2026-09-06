@@ -39,6 +39,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
     private readonly string _databasePath;
     private readonly string _connectionString;
     private readonly bool _provisionEncryptionKey;
+    private readonly bool _enableStartupTrace;
     private readonly TimeSpan _processTimeout;
     private readonly CliProcessLaunchGate _processLaunchGate;
     private readonly CancellationToken _processCancellationToken;
@@ -63,6 +64,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         string dbPrefix = "taskdeck-cli-tests",
         bool provisionEncryptionKey = true,
         bool preprovisionDatabase = true,
+        bool enableStartupTrace = true,
         TimeSpan? processTimeout = null,
         CliProcessLaunchGate? processLaunchGate = null,
         CancellationToken processCancellationToken = default,
@@ -117,6 +119,7 @@ internal sealed class CliTestHarness : IAsyncDisposable
         }
 
         _provisionEncryptionKey = provisionEncryptionKey;
+        _enableStartupTrace = enableStartupTrace;
         _processLaunchGate = processLaunchGate ?? DefaultProcessLaunchGate;
         _processCancellationToken = processCancellationToken;
         _terminateAndReapAsync = terminateAndReapAsync ?? TerminateAndReapAsync;
@@ -221,8 +224,19 @@ internal sealed class CliTestHarness : IAsyncDisposable
             }
 
             var traceCorrelationId = Guid.NewGuid().ToString("N");
-            var tracePath = CliStartupTrace.TryGetTracePath(_dataDirectory, traceCorrelationId);
-            startInfo.Environment[CliStartupTrace.CorrelationEnvironmentVariable] = traceCorrelationId;
+            string? tracePath = null;
+            if (_enableStartupTrace)
+            {
+                tracePath = CliStartupTrace.TryGetTracePath(_dataDirectory, traceCorrelationId);
+                startInfo.Environment[CliStartupTrace.CorrelationEnvironmentVariable] = traceCorrelationId;
+            }
+            else
+            {
+                // Ordinary operator run: the harness trace is opt-in, so a test that must
+                // exercise the always-on sink removes the variable the harness normally sets
+                // (and any value inherited from the parent environment).
+                startInfo.Environment.Remove(CliStartupTrace.CorrelationEnvironmentVariable);
+            }
 
             using var process = new Process { StartInfo = startInfo };
             using var timeoutCts = new CancellationTokenSource(_processTimeout);

@@ -24,6 +24,13 @@ function toSummary(item: CaptureItem): CaptureItemSummary {
   }
 }
 
+/**
+ * What `fetchDetail` did with a response it resolved with (#2640). `cached` is
+ * the only value that means `detailById` holds this item's detail; the other
+ * three name which guard rejected the response. See `onCacheOutcome`.
+ */
+export type DetailCacheOutcome = 'cached' | 'superseded' | 'generation' | 'epoch'
+
 type DetailLoadOptions = {
   forceRefresh?: boolean
   recordError?: boolean
@@ -31,6 +38,55 @@ type DetailLoadOptions = {
   syncSummary?: boolean
   requestOptions?: CaptureReadOptions
   shouldCache?: () => boolean
+  /**
+   * Whether this read owns the store-wide `loadingDetail` flag (default true).
+   *
+   * That flag is what the open detail panel renders from: while it is set the
+   * panel body is replaced by a "Refreshing detail..." spinner and its Refresh
+   * Detail button is disabled. A background reconciliation of some OTHER
+   * capture must not do that to the detail the user is reading (#2304), so the
+   * quiet reads pass `false` and leave the flag to foreground loads.
+   */
+  trackLoading?: boolean
+  /**
+   * REPORT what this call did with its response (#2640) — the detail-read
+   * counterpart of `fetchItems`'s applied boolean.
+   *
+   * `fetchDetail` has three paths that resolve with the body they fetched and
+   * write nothing, and resolution alone therefore never meant "the store now
+   * holds this detail". Callers that assumed it did acted on a response the
+   * store had dropped: `useInboxOrchestrator.selectItemById` left
+   * `selectedItemId` pointing at an id with no detail, which the Legacy panel
+   * renders as "Unable to load capture detail." for a read that succeeded, and
+   * `refreshTerminalDetails` announced a reconciliation that never reached
+   * `detailById`.
+   *
+   * The REASON is reported, not just the fact, because the three drops call for
+   * different handling and only one of them is post-logout-only:
+   *
+   * - `cached` — the response is in `detailById` now. Also covers the two paths
+   *   that resolve from state already present, the non-forced cached early
+   *   return and the demo branch: the question a caller asks is whether the
+   *   store holds this detail, not whether this call did the writing.
+   * - `superseded` — the caller's own `shouldCache` said no, so a newer read
+   *   for the same id is already the authority.
+   * - `generation` — a successful write for this id landed mid-read. Reachable
+   *   in a LIVE session, not only after a logout: a first open observes
+   *   generation 0 for an uncached item and a batch triage that includes it
+   *   moves that generation. The write has cached its own newer body only when
+   *   it went through the detail path; a batch write has not, so a caller that
+   *   needs a body must re-read rather than treat this as final.
+   * - `epoch` — `resetForLogout` moved the session epoch under this read.
+   *
+   * A read that THROWS reports nothing: failure and a drop stay
+   * distinguishable.
+   *
+   * A callback rather than a return value because `fetchDetail` resolves with
+   * the `CaptureItem` itself and a view annotates that type
+   * (`views/paper/inbox/PaperTriageRowEdit.vue`), so widening the return would
+   * change a surface outside this seam.
+   */
+  onCacheOutcome?: (outcome: DetailCacheOutcome) => void
 }
 
 export const BATCH_TRIAGE_POLL_INTERVAL_MS = 3_000
@@ -102,9 +158,20 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   let latestListLoadRequestId = 0
-  let nextCaptureWriteGeneration = 0
+  // One monotonic clock for both guards below. A write records it to reject
+  // older reads; a summary records it so an older BACKGROUND list snapshot
+  // cannot regress a row that moved after that read began (#2301).
+  let nextCaptureGeneration = 0
   let latestListWriteGeneration = 0
   const latestDetailWriteGenerationById = new Map<string, number>()
+  const latestSummaryGenerationById = new Map<string, number>()
+  // Bumped by `resetForLogout`. Every read that is compared against the
+  // generations above captures it when its request is issued — the detail reads
+  // through `fetchDetail`, the single-item triage poll, and the background list
+  // snapshot in `pollBatchTriageCompletion` (#2640) — so a response that
+  // crosses a logout is dropped outright instead of being compared against
+  // generations the reset has already discarded.
+  let sessionEpoch = 0
   const actionBusyItemId = ref<string | null>(null)
   const listError = ref<string | null>(null)
   const detailError = ref<string | null>(null)
@@ -113,6 +180,10 @@ export const useCaptureStore = defineStore('capture', () => {
   const hasItems = computed(() => items.value.length > 0)
 
   function upsertSummary(summary: CaptureItemSummary) {
+    // Every per-item summary write — an explicit detail load, the single-item
+    // triage poll, an optimistic mutation — stamps the shared clock so a list
+    // read that started earlier cannot overwrite it with older status.
+    latestSummaryGenerationById.set(summary.id, ++nextCaptureGeneration)
     const existingIndex = items.value.findIndex((item) => item.id === summary.id)
     if (existingIndex >= 0) {
       items.value[existingIndex] = summary
@@ -135,7 +206,7 @@ export const useCaptureStore = defineStore('capture', () => {
    * callers, but they must not replace the newer mutation response.
    */
   function recordCaptureWrite(itemId: string, syncSummary: boolean) {
-    const generation = ++nextCaptureWriteGeneration
+    const generation = ++nextCaptureGeneration
     latestDetailWriteGenerationById.set(itemId, generation)
     if (syncSummary) {
       latestListWriteGeneration = generation
@@ -146,31 +217,83 @@ export const useCaptureStore = defineStore('capture', () => {
     return latestDetailWriteGenerationById.get(itemId) ?? 0
   }
 
-  async function fetchItems(query?: CaptureListQuery) {
+  /**
+   * Apply a BACKGROUND list snapshot without regressing rows that moved after
+   * the read began (#2301).
+   *
+   * `latestListWriteGeneration` rejects a whole snapshot that a mutation has
+   * outdated, but the single-item triage poll and an explicit detail load are
+   * READS: they write a fresher summary through `upsertSummary` without
+   * recording a capture write, so a slower batch-list response landing after
+   * them used to put the row back to `Triaging`. The snapshot stays the
+   * authority for membership and order — the list still owns scope and the
+   * newest-first cap — and only a row whose own summary is newer than this
+   * read keeps its local value.
+   *
+   * This compare is only meaningful WITHIN one session. `resetForLogout` clears
+   * `latestSummaryGenerationById`, which puts the read below back at 0 for
+   * every row, so the caller drops a snapshot the reset crossed before calling
+   * here at all (#2640) rather than letting the cleared map invert the guard.
+   */
+  function applyBackgroundListSnapshot(
+    loadedItems: CaptureItemSummary[],
+    observedGeneration: number,
+  ) {
+    const currentById = new Map(items.value.map((item) => [item.id, item]))
+    items.value = loadedItems.map((loaded) => {
+      if ((latestSummaryGenerationById.get(loaded.id) ?? 0) <= observedGeneration) return loaded
+      return currentById.get(loaded.id) ?? loaded
+    })
+  }
+
+  /**
+   * Load the Inbox list, and REPORT whether this call's response was applied
+   * (#2501).
+   *
+   * A superseded call resolves without writing anything — twice over, once in
+   * the success path and once in the catch — so resolution alone never meant
+   * "the rows on screen are now this call's rows". A caller that inferred
+   * success from resolution therefore acted on a response the store had
+   * dropped; `useInboxOrchestrator` cleared its scope-replacement flag that
+   * way, un-hiding the retained OLD-scope rows under the NEW scope's label.
+   *
+   * `true` means this response was written into `items`. `false` means it was
+   * dropped as superseded and the caller's assumptions about `items` are
+   * unchanged. A failure that is still the latest request throws, as before, so
+   * failure and supersession stay distinguishable. The value is additive:
+   * existing `await fetchItems(...)` call sites that ignore it are unaffected.
+   */
+  async function fetchItems(query?: CaptureListQuery): Promise<boolean> {
     const requestId = ++latestListLoadRequestId
     if (isDemoMode) {
       loadingList.value = true
       listError.value = null
+      // The guard is pre-existing and cannot currently fail: nothing awaits
+      // between the id bump above and this check, so no other call can have
+      // superseded this one. It is kept, with its `false` arm, so the branch
+      // stays correct and total if the demo path ever becomes genuinely async.
       if (requestId === latestListLoadRequestId) {
         items.value = buildDemoCaptureItems()
         loadingList.value = false
+        return true
       }
-      return
+      return false
     }
 
     try {
       loadingList.value = true
       listError.value = null
       const loadedItems = await captureApi.listItems(query)
-      if (requestId !== latestListLoadRequestId) return
+      if (requestId !== latestListLoadRequestId) return false
       // This is the explicit/user-facing list load. A successful mutation may
       // finish while a scope replacement is in flight, but that must not make
       // the newer scope response disappear. The request id still gives the
       // usual latest-load-wins ordering; background batch polls keep the write
       // generation guard in their own reader below.
       items.value = loadedItems
+      return true
     } catch (e: unknown) {
-      if (requestId !== latestListLoadRequestId) return
+      if (requestId !== latestListLoadRequestId) return false
       const message = getErrorDisplay(e, 'Failed to load inbox items').message
       listError.value = message
       toast.error(message)
@@ -190,9 +313,12 @@ export const useCaptureStore = defineStore('capture', () => {
       syncSummary = true,
       requestOptions,
       shouldCache = () => true,
+      trackLoading = true,
+      onCacheOutcome,
     } = options
 
     if (!forceRefresh && detailById.value[itemId]) {
+      onCacheOutcome?.('cached')
       return detailById.value[itemId]
     }
 
@@ -201,22 +327,39 @@ export const useCaptureStore = defineStore('capture', () => {
       if (summary) {
         const detail = { ...summary, rawText: summary.textExcerpt, retryCount: 0, provenance: null }
         cacheDetail(detail, syncSummary)
+        onCacheOutcome?.('cached')
         return detail
       }
     }
 
     const observedDetailWriteGeneration = detailWriteGeneration(itemId)
+    const observedSessionEpoch = sessionEpoch
     try {
-      loadingDetail.value = true
+      if (trackLoading) {
+        loadingDetail.value = true
+      }
       if (recordError) {
         detailError.value = null
       }
       const detail = requestOptions
         ? await captureApi.getItem(itemId, requestOptions)
         : await captureApi.getItem(itemId)
-      if (!shouldCache()) return detail
-      if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) return detail
-      cacheDetail(detail, syncSummary)
+      // The three drop paths, in the order they have always been checked and
+      // now named for the caller (#2640). The epoch comes before any generation
+      // compare: the reset discards the generations this read observed, so
+      // after a logout the compare is no longer meaningful.
+      let outcome: DetailCacheOutcome = 'cached'
+      if (!shouldCache()) {
+        outcome = 'superseded'
+      } else if (observedSessionEpoch !== sessionEpoch) {
+        outcome = 'epoch'
+      } else if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) {
+        outcome = 'generation'
+      }
+      if (outcome === 'cached') {
+        cacheDetail(detail, syncSummary)
+      }
+      onCacheOutcome?.(outcome)
       return detail
     } catch (e: unknown) {
       const message = getErrorDisplay(e, 'Failed to load inbox item').message
@@ -228,11 +371,16 @@ export const useCaptureStore = defineStore('capture', () => {
       }
       throw e
     } finally {
-      loadingDetail.value = false
+      if (trackLoading) {
+        loadingDetail.value = false
+      }
     }
   }
 
   async function peekDetail(itemId: string, options: DetailLoadOptions = {}) {
+    // Shares `DetailLoadOptions` and therefore ACCEPTS `onCacheOutcome`, but
+    // never calls it: this read writes neither cache, so it has no cache
+    // outcome to report (#2640).
     const {
       forceRefresh = false,
       recordError = true,
@@ -393,9 +541,15 @@ export const useCaptureStore = defineStore('capture', () => {
 
       try {
         const observedDetailWriteGeneration = detailWriteGeneration(itemId)
+        const observedSessionEpoch = sessionEpoch
         const detail = await captureApi.getItem(itemId)
         if (stopped) return
-        if (observedDetailWriteGeneration === detailWriteGeneration(itemId)) {
+        // The epoch is checked first: a logout discards the generations this
+        // read observed, so its response can no longer be reconciled.
+        if (
+          observedSessionEpoch === sessionEpoch &&
+          observedDetailWriteGeneration === detailWriteGeneration(itemId)
+        ) {
           cacheDetail(detail)
 
           if (isTriageTerminalStatus(detail.status)) {
@@ -533,6 +687,13 @@ export const useCaptureStore = defineStore('capture', () => {
     await Promise.all(
       stale.map(async (id) => {
         try {
+          // `onRefreshed` is the caller's record that this id was RECONCILED,
+          // and for a tracked item with no summary row it is the whole of the
+          // batch poll's completion evidence. `fetchDetail` resolves on its
+          // drop paths too, so firing on resolution alone claimed a
+          // reconciliation that never reached `detailById` and let the poll
+          // complete on pre-batch state (#2640).
+          let cached = false
           await fetchDetail(id, {
             forceRefresh: true,
             showToast: false,
@@ -541,10 +702,31 @@ export const useCaptureStore = defineStore('capture', () => {
             // endpoint lags it briefly, do not regress the row back to Triaging
             // or reinsert an item that fell beyond the visible list cap.
             syncSummary: false,
+            // Quiet in every respect, for BOTH callers: this reconciliation
+            // runs over the tracked batch, not over whatever detail is open,
+            // so it must not take the panel-wide loading flag away from that
+            // detail (#2304).
+            //
+            // `batchTriage` is a FOREGROUND caller and still reconciles
+            // quietly on purpose (#2571). `loadingDetail` is one store-wide
+            // boolean: raising it here would blank the panel and disable
+            // Refresh Detail for an open capture that is not in the batch
+            // selection, and the first of these parallel reads to settle would
+            // clear the flag under any genuine foreground detail load still in
+            // flight. The foreground feedback for a batch is `batchBusy`,
+            // which stays true for the whole `batchTriage` body and renders
+            // "Processing..." on the Legacy skin's batch buttons
+            // (`LegacyInboxView.vue` -> `InboxListPanel.vue`). That is the only
+            // skin either flag reaches: nothing under `views/paper/` binds
+            // `batchBusy` or `loadingDetail`, so the Paper inbox neither gains
+            // nor loses anything here. The `trackLoading` docstring above
+            // describes the same Legacy panel.
+            trackLoading: false,
             requestOptions: options.requestOptions,
             shouldCache: isCurrent,
+            onCacheOutcome: (outcome) => { cached = outcome === 'cached' },
           })
-          if (isCurrent()) options.onRefreshed?.(id)
+          if (cached && isCurrent()) options.onRefreshed?.(id)
         } catch {
           // A later poll tick retries transient detail failures.
         }
@@ -562,7 +744,49 @@ export const useCaptureStore = defineStore('capture', () => {
     let deadlineTimerId: ReturnType<typeof setTimeout> | null = null
     let activeRequest: AbortController | null = null
     const refreshedDetailIds = new Set<string>()
+    const countedTerminalIds = new Set<string>()
     let observedPostEnqueueList = false
+
+    /**
+     * A tracked item whose terminal outcome this poll has actually observed
+     * since the batch was enqueued — the same truth `isComplete` reads, one id
+     * at a time. Cached pre-batch state never qualifies.
+     */
+    function isObservedTerminal(itemId: string): boolean {
+      const summary = items.value.find((item) => item.id === itemId)
+      if (summary) {
+        return observedPostEnqueueList && isTriageTerminalStatus(summary.status)
+      }
+      const detail = detailById.value[itemId]
+      return Boolean(
+        detail &&
+        refreshedDetailIds.has(itemId) &&
+        isTriageTerminalStatus(detail.status),
+      )
+    }
+
+    /**
+     * Move the badges for outcomes this poll observed but has not counted yet
+     * (#2303).
+     *
+     * The count is `New + Failed`, so a single item finishing changes it —
+     * waiting for the whole batch left the sidebar and Home stale for up to a
+     * minute whenever one item lagged, and stale forever when the deadline
+     * stopped the poll first. The counted set makes this idempotent: an
+     * unchanged snapshot notifies nobody.
+     */
+    function refreshCountsForNewTerminalOutcomes() {
+      let observedNewOutcome = false
+      for (const id of trackedIds) {
+        if (countedTerminalIds.has(id)) continue
+        if (!isObservedTerminal(id)) continue
+        countedTerminalIds.add(id)
+        observedNewOutcome = true
+      }
+      if (observedNewOutcome) {
+        notifyTriageCountChanged()
+      }
+    }
 
     function stop() {
       if (stopped) return
@@ -583,6 +807,9 @@ export const useCaptureStore = defineStore('capture', () => {
 
     function stopAtDeadline() {
       if (stopped) return
+      // An outcome this poll already observed still moved the workload count,
+      // even when the tick that saw it was aborted here before reconciling.
+      refreshCountsForNewTerminalOutcomes()
       // The batch write already succeeded. A deadline only means automatic
       // checking stopped; the server-side triage may still be running.
       if (!isComplete()) {
@@ -632,20 +859,39 @@ export const useCaptureStore = defineStore('capture', () => {
 
       const observedListLoadRequestId = latestListLoadRequestId
       const observedListWriteGeneration = latestListWriteGeneration
+      const observedSummaryGeneration = nextCaptureGeneration
+      const observedSessionEpoch = sessionEpoch
       const controller = new AbortController()
       activeRequest = controller
       const requestOptions = { signal: controller.signal, skipRetry: true }
+      // The epoch is checked first, for the same reason the detail path checks
+      // it first (#2640). `applyBackgroundListSnapshot` keeps a locally newer
+      // row only while `latestSummaryGenerationById` outranks this read's
+      // observed generation, and the reset CLEARS that map: the read comes back
+      // 0, so an older in-flight snapshot would outrank a row a newer read had
+      // moved and regress it. Dropping a snapshot the reset crossed leaves both
+      // halves of the guard with one post-logout contract.
       const isCurrent = () =>
         !stopped &&
         !controller.signal.aborted &&
         activeRequest === controller &&
+        observedSessionEpoch === sessionEpoch &&
         observedListLoadRequestId === latestListLoadRequestId &&
         observedListWriteGeneration === latestListWriteGeneration
 
       try {
         const loadedItems = await captureApi.listItems(query, requestOptions)
         if (!isCurrent()) return
-        items.value = loadedItems
+        applyBackgroundListSnapshot(loadedItems, observedSummaryGeneration)
+        // A foreground read failure hides every row behind its message, so a
+        // batch whose immediate post-POST refresh exhausted its retries left
+        // the inbox looking empty-and-broken until the user pressed Retry
+        // (#2305). This accepted snapshot is proof the same list is readable
+        // again, and it is the rows now on screen. Only this success path
+        // clears the error: an aborted, superseded (newer explicit load or
+        // newer capture write), 401 or 403 response fails `isCurrent()` or
+        // lands in the catch below and leaves the foreground error standing.
+        listError.value = null
         observedPostEnqueueList = true
         await refreshTerminalDetails(trackedIds, {
           requestOptions,
@@ -653,8 +899,8 @@ export const useCaptureStore = defineStore('capture', () => {
           onRefreshed: (id) => refreshedDetailIds.add(id),
         })
         if (!isCurrent()) return
+        refreshCountsForNewTerminalOutcomes()
         if (isComplete()) {
-          notifyTriageCountChanged()
           stop()
           return
         }
@@ -688,7 +934,27 @@ export const useCaptureStore = defineStore('capture', () => {
   const batchBusy = ref(false)
   const batchError = ref<string | null>(null)
 
-  async function batchTriage(itemIds: string[], action: BatchTriageAction): Promise<BatchTriageResult> {
+  /**
+   * Enqueue a batch action, then reconcile the list.
+   *
+   * `query` is the CALLER'S list scope (#2570). The reconciliation read
+   * replaces `items`, so an unscoped read under a board-scoped Inbox replaced
+   * the visible rows with the unscoped list — for `ignore` and `cancel` no poll
+   * follows, so those wrong rows persisted until the next scoped load. Callers
+   * that pass nothing keep the unscoped read they always had.
+   *
+   * Pass a THUNK when the scope can move while the POST is in flight. It is
+   * called once, immediately before the read is issued, so the read uses the
+   * scope that is current THEN rather than the one that was current when the
+   * batch started. That matters because `fetchItems` supersedes by request id:
+   * a stale-scope read issued last wins the list and drops the caller's own
+   * newer-scope load, writing the old board's rows under the new board's label.
+   */
+  async function batchTriage(
+    itemIds: string[],
+    action: BatchTriageAction,
+    query?: CaptureListQuery | (() => CaptureListQuery),
+  ): Promise<BatchTriageResult> {
     guardDemoMutation()
     batchBusy.value = true
     batchError.value = null
@@ -729,7 +995,12 @@ export const useCaptureStore = defineStore('capture', () => {
       // reclassify a successfully queued batch as a failed write or prevent
       // the caller from starting its bounded completion poll.
       try {
-        await fetchItems()
+        // Resolve the scope HERE, at the moment the read is issued, so a scope
+        // change during the POST is honoured rather than overwritten.
+        //
+        // The applied boolean is deliberately ignored: a post-batch read that a
+        // newer list load superseded is not a failed write.
+        await fetchItems(typeof query === 'function' ? query() : query)
         await refreshTerminalDetails(itemIds)
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } } | null)?.response?.status
@@ -769,6 +1040,47 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
+  /**
+   * End the session's per-item generation bookkeeping (#2571).
+   *
+   * EVICTION, not a bound. Both maps are keyed by capture id and take an entry
+   * for every summary write and every successful mutation, and nothing else
+   * ever removes one, so a session's entries would otherwise live as long as
+   * the store. This is the only eviction point. WITHIN a session both still
+   * grow by one entry per distinct capture id touched, exactly as before.
+   *
+   * INVALIDATION is what makes an in-flight read safe, and clearing the maps
+   * alone would not: it would INVERT the detail write guard. A read that
+   * starts with no recorded write for its id observes generation 0; if a write
+   * then lands (generation N) and the map is cleared, the read's compare
+   * becomes 0 !== 0, which is false, and the PRE-write body would be cached
+   * over the newer one and its status pushed back into the list. Clearing
+   * `latestSummaryGenerationById` inverts the summary half the same way, which
+   * is why the background list snapshot is guarded too (#2640). So the epoch
+   * moves here, after the clear: every read that is compared against these
+   * generations captures it when it issues its request and drops its response
+   * when it moved, before any generation compare. The shared clock itself stays
+   * monotonic.
+   *
+   * SCOPE, stated exactly: the reads that capture the epoch are `fetchDetail`,
+   * the single-item triage poll, and the batch poll's list snapshot. NOT
+   * `peekDetail` — it is compared against no generation because it writes
+   * neither cache. The `detailById` write on that path is the caller's:
+   * `useInboxOrchestrator.openBoardScopedHashItem` hands the body to
+   * `selectItemById` as `preloadedDetail` with `cacheSummary: false`, which
+   * reaches `cacheDetail` guarded only by the route-hash re-check. Capturing
+   * the epoch inside `peekDetail` would not cover that write, since the write
+   * is not `peekDetail`'s to drop; the guard would have to live in the
+   * composable, a per-mount surface the logout's route change tears down
+   * anyway. What the `cacheSummary: false` buys is that nothing from that path
+   * can reach `items`, so no row of a previous session's list survives it.
+   */
+  function resetForLogout() {
+    latestDetailWriteGenerationById.clear()
+    latestSummaryGenerationById.clear()
+    sessionEpoch += 1
+  }
+
   return {
     items,
     detailById,
@@ -796,5 +1108,6 @@ export const useCaptureStore = defineStore('capture', () => {
     pollBatchTriageCompletion,
     batchTriage,
     updateSuggestion,
+    resetForLogout,
   }
 })

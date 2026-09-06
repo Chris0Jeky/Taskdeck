@@ -631,6 +631,33 @@ public class LlmQueueRepositoryIntegrationTests : IClassFixture<HostedWorkerDisa
     }
 
     [Fact]
+    public async Task GetStuckProcessingNonCaptureAsync_WithNonUtcThreshold_ComparesByInstant()
+    {
+        await WithSqliteRepoAsync(async (db, repo) =>
+        {
+            var user = new User("stuck-offset", "stuck-offset@example.com", "hash");
+            db.Users.Add(user);
+
+            var stale = new LlmRequest(user.Id, "instruction", "{}");
+            stale.MarkAsProcessing();
+            var fresh = new LlmRequest(user.Id, "instruction", "{}");
+            fresh.MarkAsProcessing();
+
+            var cutoffUtc = new DateTimeOffset(2026, 1, 1, 22, 0, 0, TimeSpan.Zero);
+            db.Entry(stale).Property(nameof(Entity.UpdatedAt)).CurrentValue = cutoffUtc.AddHours(-1);
+            db.Entry(fresh).Property(nameof(Entity.UpdatedAt)).CurrentValue = cutoffUtc.AddHours(1);
+            db.LlmRequests.AddRange(stale, fresh);
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var nonUtcCutoff = cutoffUtc.ToOffset(TimeSpan.FromHours(2));
+            var stuck = await repo.GetStuckProcessingNonCaptureAsync(nonUtcCutoff, 50);
+
+            stuck.Select(request => request.Id).Should().Equal(stale.Id);
+        });
+    }
+
+    [Fact]
     public async Task GetStuckProcessingNonCaptureAsync_ReturnsOldestFirstAndRespectsLimit()
     {
         // #1209: proves the raw-SQL DateTimeOffset comparison across DISTINCT timestamps, the
