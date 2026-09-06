@@ -1,6 +1,6 @@
 # Visual Regression Policy
 
-Last Updated: 2026-04-09
+Last Updated: 2026-09-06
 
 ## Purpose
 
@@ -112,32 +112,17 @@ These files are **committed to the repository**. This is intentional:
 - Changes to baselines require explicit approval
 - History is preserved in git
 
-### Generating Initial Baselines
+### Generating or updating baselines
 
-When adding a new visual test or running for the first time:
-
-```bash
-cd frontend/taskdeck-web
-npm run test:visual:update
-```
-
-This runs all visual tests and saves the current render as the baseline. Review the generated images before committing.
-
-### Updating Baselines
+**The only supported source of a committed baseline is the hosted Linux lane** — see the section above. `npm run test:visual:update` is for *seeing* your change locally while you work; its output must not be what lands.
 
 When a legitimate UI change causes visual test failures:
 
-1. **Verify the change is intentional** by reviewing the diff artifacts from CI
-2. **Update baselines locally**:
-   ```bash
-   cd frontend/taskdeck-web
-   npm run test:visual:update
-   ```
-3. **Review updated baselines** before committing:
-   - Check that only the expected views changed
-   - Verify no unintended regressions in other screenshots
-4. **Commit baseline changes in a dedicated commit** (separate from code changes) so reviewers can clearly identify what changed visually
-5. **PR reviewers should inspect baseline image diffs** using GitHub's image diff viewer
+1. **Verify the change is intentional.** The `visual-regression-diffs` artifact from the failing run shows `*-actual.png` against `*-expected.png`. Read them; do not commit them (`maxFailures: 5` means the artifact holds only the first five failures, so it is never the whole picture).
+2. **Regenerate on Linux** by the bootstrap procedure above: delete `frontend/taskdeck-web/tests/visual/__screenshots__/`, push, and take the `visual-regression-baselines` artifact from that run. Mark the PR draft while the directory is empty — with no baselines the suite passes vacuously and detects nothing.
+3. **Review every regenerated image** before committing: only the expected views changed, no per-run value leaked in, no transient overlay (toast, tooltip, session warning) was captured.
+4. **Commit baseline changes in a dedicated commit** (separate from code changes) so reviewers can clearly identify what changed visually.
+5. **PR reviewers should inspect baseline image diffs** using GitHub's image diff viewer.
 
 ### CI Baseline Generation
 
@@ -148,15 +133,11 @@ The CI workflow automatically detects when no baselines exist and runs with `--u
 1. Push the branch and trigger the visual regression CI job
 2. Download the `visual-regression-baselines` artifact from the CI run
 3. Place the files in `frontend/taskdeck-web/tests/visual/__screenshots__/`
-4. Commit and push
+4. Review every image, then commit and push
 
-To regenerate CI-compatible baselines after intentional UI changes:
-1. Download the `visual-regression-diffs` artifact from the failing CI run
-2. Review the `*-actual.png` images to verify the changes are intentional
-3. Download the actual images and place them as the new baselines in `__screenshots__/`
-4. Commit and push
+**Regenerating after an intentional UI change uses the same four steps.** Do *not* lift `*-actual.png` out of the `visual-regression-diffs` artifact and commit those: `maxFailures: 5` caps that artifact at the first five failures, so a change touching more than five surfaces leaves the rest stale, and the next run simply fails on the images you did not replace. Read the diffs to confirm the change is intentional; regenerate through the bootstrap path.
 
-Alternatively, if you have access to an identical Ubuntu environment (Docker, WSL2 with matching fonts), generate baselines there.
+An identical Ubuntu environment (Docker, or WSL2 with matching fonts) is the one local alternative that can produce committable images. Unless you have verified the fonts match, treat the hosted lane as the only source.
 
 ## CI Integration
 
@@ -192,13 +173,13 @@ npm run test:visual:update
 npx playwright test --config playwright.visual.config.ts tests/visual/board-view.visual.spec.ts
 ```
 
-Note: Local baselines may differ from CI baselines due to font rendering. The committed baselines should match the CI platform (Ubuntu).
+Note: local baselines **will** differ from CI baselines due to font rendering — this is not an occasional risk, it fails on essentially every image. Committed baselines must come from the CI platform (Ubuntu).
 
 ## Adding New Visual Tests
 
 1. Create a new `*.visual.spec.ts` file in `frontend/taskdeck-web/tests/visual/`
 2. Follow the existing pattern: register session, navigate, prepare, screenshot
 3. Use `prepareForScreenshot()` before every `toHaveScreenshot()` call
-4. Generate baselines: `npm run test:visual:update`
+4. Iterate locally with `npm run test:visual:update` until the shot is what you want, then **discard those images** and generate the committable ones on the hosted Linux lane (see *Baselines are captured on Linux* above)
 5. Add the new surface to the table at the top of this document
 6. Commit baselines in a separate commit for clear PR review
