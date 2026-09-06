@@ -71,6 +71,14 @@ async function applyStarterPack(boardId: string, starterPackId: string): Promise
   }
 }
 
+function onBoardNameKeydown(event: KeyboardEvent) {
+  if (event.isComposing) {
+    return
+  }
+
+  void submitSetup()
+}
+
 async function submitSetup() {
   if (!canSubmit.value || !selectedSetup.value) {
     return
@@ -154,7 +162,7 @@ watch(
               type="text"
               maxlength="100"
               placeholder="For example: Product Sprint"
-              @keydown.enter.prevent="submitSetup"
+              @keydown.enter.prevent="onBoardNameKeydown"
             />
           </label>
 
