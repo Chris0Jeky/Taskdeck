@@ -1040,6 +1040,11 @@ describe('ReviewView', () => {
     expect(liveActions.find('button.td-btn--danger').exists()).toBe(true)
     expect(liveActions.find('button.td-btn--secondary').exists()).toBe(true)
     expect(liveActions.findAll('button')).toHaveLength(4)
+    expect(
+      wrapper
+        .find('.td-review__hero-actions')
+        .findAll('button.td-btn--secondary'),
+    ).toHaveLength(4)
   })
 
   it('keeps a dismissed archived proposal addressable by a Legacy history deep link', async () => {
@@ -1069,10 +1074,18 @@ describe('ReviewView', () => {
     )
     expect(wrapper.find('#proposal-proposal-other-history').exists()).toBe(false)
     expect(wrapper.find('.td-review__toggle-input').exists()).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Approve for board')).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Reject')).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Apply to board')).toBe(false)
-    expect(wrapper.findAll('button').some((button) => button.text() === 'Dismiss')).toBe(false)
+    const dismissedActions = wrapper.get(
+      '#proposal-proposal-dismissed-history .td-review-card__actions',
+    )
+    expect(dismissedActions.find('button.td-btn--primary').exists()).toBe(false)
+    expect(dismissedActions.find('button.td-btn--danger').exists()).toBe(false)
+    expect(dismissedActions.findAll('button')).toHaveLength(1)
+    expect(dismissedActions.find('button.td-btn--secondary').exists()).toBe(true)
+    expect(
+      wrapper
+        .find('.td-review__hero-actions')
+        .findAll('button.td-btn--secondary'),
+    ).toHaveLength(3)
   })
 
   it('closes a pending apply gate when the route enters archived history', async () => {
