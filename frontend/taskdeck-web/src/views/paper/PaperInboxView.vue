@@ -122,6 +122,17 @@ const historyDetailLoading = ref(false)
 const historyDetailError = ref<string | null>(null)
 
 /**
+ * Monotonic id for the current history-detail read — an independent
+ * per-instance counter, following the same pattern as the scoped-board load
+ * generation in `useInboxOrchestrator`. The item id alone cannot separate two
+ * reads of the SAME row, which is exactly what closing a stalled panel and
+ * reopening it produces (#1999): the superseded read would write an error the
+ * newer read never clears, and end the newer read's spinner. Every load
+ * captures this value and writes only while it still holds it.
+ */
+let historyDetailGeneration = 0
+
+/**
  * Deep link from a retained capture to the decision record it produced, kept in
  * archived history mode so the destination is the read-only Review queue rather
  * than the live one. Null when triage never recorded a proposal for it.
@@ -340,27 +351,40 @@ async function onTriageOpen(itemId: string) {
     return
   }
 
+  const requestGeneration = ++historyDetailGeneration
+  // The generation alone is decisive today: every mutator of `historyDetailItemId`
+  // advances it, so the id conjunct cannot be the one that fails. It stays as
+  // belt-and-braces against a future writer that forgets the counter — no reader
+  // need hunt for the case where it fires on its own.
+  const isCurrentRead = () =>
+    requestGeneration === historyDetailGeneration && historyDetailItemId.value === itemId
+
   historyDetailItemId.value = itemId
   historyDetail.value = null
   historyDetailError.value = null
   historyDetailLoading.value = true
   try {
     const detail = await captureStore.peekDetail(itemId, { recordError: false, showToast: false })
-    // The user may have collapsed this row or opened another while the request
-    // was in flight; a late payload must not reopen or mislabel the panel.
-    if (historyDetailItemId.value !== itemId) return
+    // The user may have collapsed this row, reopened it, or opened another while
+    // the request was in flight; a superseded payload must not reopen, mislabel,
+    // or overwrite the panel that replaced it.
+    if (!isCurrentRead()) return
     historyDetail.value = detail
   } catch (e: unknown) {
-    if (historyDetailItemId.value !== itemId) return
+    if (!isCurrentRead()) return
     historyDetailError.value = getErrorDisplay(e, t('inbox.history.detail.error')).message
   } finally {
-    if (historyDetailItemId.value === itemId) {
+    // A superseded read must not end the spinner of the read that replaced it.
+    if (isCurrentRead()) {
       historyDetailLoading.value = false
     }
   }
 }
 
 function closeHistoryDetail() {
+  // Closing supersedes any in-flight read, so reopening the same row is a new
+  // generation rather than a second write target for the abandoned one.
+  historyDetailGeneration += 1
   historyDetailItemId.value = null
   historyDetail.value = null
   historyDetailError.value = null
@@ -513,15 +537,33 @@ defineExpose({ variant, toggleVariant, setVariant })
         <!-- The third argument is the plural CHOICE: it/es agree the participle
              with the total ("1 catturato" vs "2 catturati"), so the count has to
              reach the catalog as a choice and not only as an interpolation. -->
+        <!--
+          While a scope replacement is outstanding the rows still in `items`
+          belong to the OLD scope — the table hides them for that reason — but
+          `useInboxCounts` counts them all the same, so the eyebrow published
+          old-scope numbers next to the NEW scope's chip (#2501). The count-free
+          variant is shown instead: no number is better than a number about
+          somewhere else. The counts return when the response is applied.
+
+          That variant says nothing about the LOAD, deliberately.
+          `isScopeReplacement` is sticky across failure — the orchestrator
+          swallows the throw so the retained rows stay hidden — so a "loading…"
+          word driven off this flag would outlive the load itself and sit above
+          the table's own error and Retry forever. Loading, error and retry are
+          the table's to state; this line's only job is to refuse a count it
+          cannot stand behind.
+        -->
         <div class="tk-eyebrow" data-testid="paper-inbox-eyebrow">
           {{
             isArchivedHistory
               ? $t('inbox.history.eyebrow')
-              : $t(
-                  'inbox.eyebrow',
-                  { pending: pendingTriageCount, total: capturedCount },
-                  capturedCount,
-                )
+              : isScopeReplacement
+                ? $t('inbox.eyebrowUncounted')
+                : $t(
+                    'inbox.eyebrow',
+                    { pending: pendingTriageCount, total: capturedCount },
+                    capturedCount,
+                  )
           }}
         </div>
         <h1 v-if="isArchivedHistory" class="tk-h1 paper-inbox__title">

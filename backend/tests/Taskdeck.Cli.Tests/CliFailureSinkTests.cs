@@ -125,9 +125,10 @@ public sealed class CliFailureSinkTests
         var sink = CliFailureSink.ForDataDirectory(directory.Path);
 
         // argv is the only unbounded input: the exception summary is already capped by the
-        // redactor at five levels and 1024 characters.
+        // redactor at five levels and 1024 characters. Values are replaced, so the unbounded part
+        // is what the policy still retains — the flag names themselves.
         var hugeArguments = Enumerable.Range(0, 400)
-            .Select(index => $"--flag{index.ToString(CultureInfo.InvariantCulture)}=" + new string('x', 40))
+            .Select(index => $"--flag{index.ToString(CultureInfo.InvariantCulture)}-" + new string('x', 40))
             .ToArray();
 
         var captured = sink.TryRecord(CreateLeakyException(), Reference, hugeArguments, FixedTimestamp);
@@ -279,6 +280,285 @@ public sealed class CliFailureSinkTests
         // Same current-directory root the resolver uses for any other unresolvable data source.
         sink.DiagnosticsDirectory.Should().Be(Path.GetFullPath(
             Path.Combine(Directory.GetCurrentDirectory(), CliFailureSink.DirectoryName)));
+    }
+
+    /// <summary>
+    /// #2577 item 1: eviction must run only after the new record is on disk. A stale file at the
+    /// exact target name makes the CreateNew write fail, and a failed write must delete nothing,
+    /// otherwise the failure mode is net diagnostic loss instead of fail-open-with-no-change.
+    /// </summary>
+    [Fact]
+    public void TryRecord_WhenTheWriteFailsAtTheCap_DeletesNoOlderRecord()
+    {
+        using var directory = new TemporaryDirectory();
+        var diagnostics = Path.Combine(directory.Path, CliFailureSink.DirectoryName);
+        Directory.CreateDirectory(diagnostics);
+
+        // Exactly the cap: one stale file planted at the target name, plus older records that a
+        // pre-write eviction would delete to make room for a write that then cannot happen.
+        var targetName = CliFailureSink.BuildFileName(Reference, FixedTimestamp);
+        const string planted = "planted-content";
+        File.WriteAllText(Path.Combine(diagnostics, targetName), planted);
+
+        var seeded = new List<string> { targetName };
+        for (var index = 1; index < CliFailureSink.MaximumRecordCount; index++)
+        {
+            var name = CliFailureSink.BuildFileName(
+                "aaaaaaaaaaaa",
+                FixedTimestamp.AddSeconds(index - CliFailureSink.MaximumRecordCount));
+            File.WriteAllText(Path.Combine(diagnostics, name), "seed");
+            seeded.Add(name);
+        }
+
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+        var captured = sink.TryRecord(CreateLeakyException(), Reference, arguments: null, FixedTimestamp);
+
+        captured.Should().BeFalse();
+        var remaining = Directory
+            .GetFiles(diagnostics, CliFailureSink.FileNameSearchPattern)
+            .Select(Path.GetFileName)
+            .ToArray();
+        remaining.Should().BeEquivalentTo(seeded);
+        File.ReadAllText(Path.Combine(diagnostics, targetName)).Should().Be(planted);
+    }
+
+    /// <summary>
+    /// #2577 item 2: the reference is interpolated into the record file name, so TryRecord checks
+    /// its shape itself instead of trusting the callers to keep the invariant. Only hex of exactly
+    /// 12 characters (the generated reference) or 32 (the harness trace correlation) is accepted;
+    /// anything else fails open, writing nothing anywhere under the data directory.
+    /// </summary>
+    [Theory]
+    [InlineData("../x")]
+    [InlineData("a/../../x")]
+    [InlineData("0a1b2c3d4e5")]
+    [InlineData("0a1b2c3d4e5f0")]
+    [InlineData("zzzzzzzzzzzz")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryRecord_WithAReferenceThatIsNotAnAcceptedCorrelation_FailsOpenAndWritesNothing(
+        string reference)
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var captured = sink.TryRecord(CreateLeakyException(), reference, arguments: null, FixedTimestamp);
+
+        captured.Should().BeFalse();
+        Directory.GetFiles(directory.Path, "*", SearchOption.AllDirectories).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The 32-character lowercase-hex harness trace correlation stays accepted: it is the
+    /// reference a harness run's record is filed under.
+    /// </summary>
+    [Fact]
+    public void TryRecord_AcceptsTheThirtyTwoCharacterHarnessCorrelation()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+        var correlation = Guid.NewGuid().ToString("N");
+
+        sink.TryRecord(CreateLeakyException(), correlation, arguments: null, FixedTimestamp)
+            .Should().BeTrue();
+
+        File.Exists(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(correlation, FixedTimestamp))).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// #2577 item 3: the record keeps the command grammar (the group, the command and the flag
+    /// names) and replaces every other argv token with a fixed placeholder, so neither a
+    /// space-separated secret nor ordinary user content such as a card title reaches disk.
+    /// </summary>
+    [Fact]
+    public void TryRecord_KeepsCommandAndFlagNamesButNoArgumentValues()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var captured = sink.TryRecord(
+            CreateLeakyException(),
+            Reference,
+            new[] { "cards", "add", "--title", "Secret plan", "--token", "abc123" },
+            FixedTimestamp);
+
+        captured.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(Reference, FixedTimestamp)));
+
+        content.Should().Contain("argv: cards add --title [value] --token [value]");
+        content.Should().NotContain("Secret plan");
+        content.Should().NotContain("abc123");
+    }
+
+    /// <summary>
+    /// Eviction runs after the stream is closed, so the record is already durable by then: an
+    /// enumeration failure there must not be reported as a capture failure, or the CLI prints the
+    /// "diagnostics were not captured" notice for a record that exists on disk.
+    /// </summary>
+    [Fact]
+    public void TryRecord_WhenEvictionFails_StillReportsTheAlreadyWrittenRecordAsKept()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(
+            directory.Path,
+            listRecords: (_, _) => throw new IOException("record enumeration failed"));
+
+        var captured = sink.TryRecord(CreateLeakyException(), Reference, arguments: null, FixedTimestamp);
+
+        captured.Should().BeTrue();
+        var path = Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(Reference, FixedTimestamp));
+        File.Exists(path).Should().BeTrue();
+        File.ReadAllText(path).Should().Contain($"correlation: {Reference}");
+    }
+
+    /// <summary>
+    /// A record must never evict itself. When the record just written is the oldest name at the
+    /// cap, the surplus has to come out of the next-oldest instead.
+    /// </summary>
+    [Fact]
+    public void TryRecord_WhenTheNewRecordIsTheOldestAtTheCap_EvictsAnotherAndKeepsItself()
+    {
+        using var directory = new TemporaryDirectory();
+        var diagnostics = Path.Combine(directory.Path, CliFailureSink.DirectoryName);
+        Directory.CreateDirectory(diagnostics);
+
+        // Exactly the cap, all newer than the record about to be written, so ordinal name order
+        // puts the new record first and the skip branch is the only thing that can save it.
+        var seeded = new List<string>();
+        for (var index = 1; index <= CliFailureSink.MaximumRecordCount; index++)
+        {
+            var name = CliFailureSink.BuildFileName(
+                "aaaaaaaaaaaa",
+                FixedTimestamp.AddSeconds(index));
+            File.WriteAllText(Path.Combine(diagnostics, name), "seed");
+            seeded.Add(name);
+        }
+
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+        var captured = sink.TryRecord(CreateLeakyException(), Reference, arguments: null, FixedTimestamp);
+
+        captured.Should().BeTrue();
+        var remaining = Directory
+            .GetFiles(diagnostics, CliFailureSink.FileNameSearchPattern)
+            .Select(Path.GetFileName)
+            .ToArray();
+        remaining.Should().HaveCount(CliFailureSink.MaximumRecordCount);
+        remaining.Should().Contain(CliFailureSink.BuildFileName(Reference, FixedTimestamp));
+        // The oldest seeded record went instead of the new one.
+        remaining.Should().NotContain(seeded[0]);
+        remaining.Should().Contain(seeded[1]);
+        remaining.Should().Contain(seeded[^1]);
+    }
+
+    /// <summary>
+    /// The sink must not refuse a reference the CLI itself printed: <c>CliStartupTrace</c> accepts
+    /// hex in either case, so the sink has to as well.
+    /// </summary>
+    [Fact]
+    public void TryRecord_AcceptsEveryCorrelationTheStartupTraceAccepts()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var correlations = new[]
+        {
+            Guid.NewGuid().ToString("N"),
+            Guid.NewGuid().ToString("N").ToUpperInvariant(),
+            new string('a', CliStartupTrace.CorrelationLength),
+            new string('F', CliStartupTrace.CorrelationLength)
+        };
+
+        for (var index = 0; index < correlations.Length; index++)
+        {
+            var correlation = correlations[index];
+            CliStartupTrace.IsCorrelationId(correlation).Should().BeTrue();
+
+            var timestamp = FixedTimestamp.AddSeconds(index);
+            sink.TryRecord(CreateLeakyException(), correlation, arguments: null, timestamp)
+                .Should().BeTrue();
+            File.Exists(Path.Combine(
+                directory.Path,
+                CliFailureSink.DirectoryName,
+                CliFailureSink.BuildFileName(correlation, timestamp))).Should().BeTrue();
+        }
+    }
+
+    /// <summary>The generated 12-character reference shape is accepted in either case too.</summary>
+    [Theory]
+    [InlineData("0A1B2C3D4E5F")]
+    [InlineData("0a1B2c3D4e5F")]
+    public void TryRecord_AcceptsAGeneratedReferenceInEitherCase(string reference)
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        sink.TryRecord(CreateLeakyException(), reference, arguments: null, FixedTimestamp)
+            .Should().BeTrue();
+
+        File.Exists(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(reference, FixedTimestamp))).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// #2577 follow-up: an attached value must go the same way as a separate one, whether or not
+    /// its flag name is one the redactor knows. Only the flag name survives.
+    /// </summary>
+    [Fact]
+    public void TryRecord_ReplacesADashLeadingValueThatContainsWhitespace()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var captured = sink.TryRecord(
+            CreateLeakyException(),
+            Reference,
+            new[] { "cards", "add", "--title", "- fix login for jane@acme.com", "--board", "b1" },
+            FixedTimestamp);
+
+        captured.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(Reference, FixedTimestamp)));
+
+        content.Should().Contain("argv: cards add --title [value] --board [value]");
+        content.Should().NotContain("fix login");
+        content.Should().NotContain("jane@acme.com");
+    }
+
+    [Fact]
+    public void TryRecord_ReplacesAnAttachedValueEvenWhenTheFlagIsNotASecretKeyword()
+    {
+        using var directory = new TemporaryDirectory();
+        var sink = CliFailureSink.ForDataDirectory(directory.Path);
+
+        var captured = sink.TryRecord(
+            CreateLeakyException(),
+            Reference,
+            new[] { "cards", "add", "--title=Secret plan", "--token=abc123" },
+            FixedTimestamp);
+
+        captured.Should().BeTrue();
+        var content = File.ReadAllText(Path.Combine(
+            directory.Path,
+            CliFailureSink.DirectoryName,
+            CliFailureSink.BuildFileName(Reference, FixedTimestamp)));
+
+        content.Should().Contain("argv: cards add --title=[value] ");
+        content.Should().Contain($"--token={SensitiveDataRedactor.RedactedValue}");
+        content.Should().NotContain("Secret plan");
+        content.Should().NotContain("abc123");
     }
 
     private sealed class TemporaryDirectory : IDisposable

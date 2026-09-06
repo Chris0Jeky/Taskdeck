@@ -38,7 +38,7 @@ function isStatus(value: number | string, target: keyof typeof captureStatus): b
 export async function createCaptureItem(
   request: APIRequestContext,
   auth: AuthResult,
-  boardId: string,
+  boardId: string | null,
   captureText: string,
 ): Promise<CaptureItemDto> {
   const response = await request.post(`${API_BASE_URL}/capture/items`, {

@@ -1,9 +1,14 @@
+using System.Collections.Concurrent;
+using System.Data.Common;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
@@ -139,6 +144,87 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
         var loadedCard = loadedColumn.Cards.First(c => c.Id == card.Id);
         loadedCard.CardLabels.Should().HaveCountGreaterThanOrEqualTo(1);
         loadedCard.CardLabels.First().Label.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// Regression for #1133: the graph-correctness assertion alone cannot distinguish the
+    /// split-query implementation from a single cartesian fan-out query. Capture the commands
+    /// for only this read and prove that the real SQLite provider executed multiple SELECTs.
+    /// </summary>
+    [Fact]
+    public async Task GetByIdWithDetailsAsync_WithMultipleCollections_ExecutesSplitSelects()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-board-split-{Guid.NewGuid():N}.db");
+        var interceptor = new CapturingCommandInterceptor();
+        try
+        {
+            var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(TestSqlite.ConnectionString(dbPath))
+                .AddInterceptors(interceptor)
+                .Options;
+
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+
+            var user = new User("brd-split-user", "brd-split@example.com", "hash");
+            var board = new Board("Split-query board", ownerId: user.Id);
+            var firstColumn = new Column(board.Id, "Todo", 0);
+            var secondColumn = new Column(board.Id, "Done", 1);
+            var firstLabel = new Label(board.Id, "Bug", "#FF0000");
+            var secondLabel = new Label(board.Id, "Feature", "#00FF00");
+            db.Users.Add(user);
+            db.Boards.Add(board);
+            db.Columns.AddRange(firstColumn, secondColumn);
+            db.Labels.AddRange(firstLabel, secondLabel);
+            await db.SaveChangesAsync();
+
+            var firstCard = new Card(board.Id, firstColumn.Id, "Fix the query");
+            var secondCard = new Card(board.Id, secondColumn.Id, "Ship the proof");
+            db.Cards.AddRange(firstCard, secondCard);
+            await db.SaveChangesAsync();
+
+            db.CardLabels.AddRange(
+                new CardLabel(firstCard.Id, firstLabel.Id),
+                new CardLabel(secondCard.Id, secondLabel.Id));
+            await db.SaveChangesAsync();
+
+            db.ChangeTracker.Clear();
+            interceptor.Clear();
+
+            var result = await new BoardRepository(db).GetByIdWithDetailsAsync(board.Id);
+
+            result.Should().NotBeNull();
+            result!.Columns.Should().HaveCount(2);
+            result.Columns.SelectMany(column => column.Cards).Should().HaveCount(2);
+            result.Labels.Should().HaveCount(2);
+            result.Columns
+                .SelectMany(column => column.Cards)
+                .SelectMany(card => card.CardLabels)
+                .Should()
+                .HaveCount(2)
+                .And.OnlyContain(cardLabel => cardLabel.Label != null);
+
+            var selectCommands = interceptor.Snapshot()
+                .Where(sql => sql.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            selectCommands.Should().HaveCountGreaterThan(
+                1,
+                "the board's sibling collections must be loaded by multiple real SQLite SELECTs");
+        }
+        finally
+        {
+            foreach (var suffix in new[] { "", "-wal", "-shm", "-journal", ".migrate.lock" })
+            {
+                var path = dbPath + suffix;
+                if (!File.Exists(path))
+                {
+                    continue;
+                }
+
+                try { File.Delete(path); }
+                catch (IOException) { /* best-effort test cleanup */ }
+            }
+        }
     }
 
     [Fact]
@@ -423,5 +509,33 @@ public class BoardRepositoryIntegrationTests : IClassFixture<TestWebApplicationF
         await db.SaveChangesAsync();
 
         (await repo.CountCollaborationMembersAsync(grantee.Id)).Should().Be(1);
+    }
+
+    private sealed class CapturingCommandInterceptor : DbCommandInterceptor
+    {
+        private readonly ConcurrentQueue<string> _commands = new();
+
+        public IReadOnlyList<string> Snapshot() => _commands.ToArray();
+
+        public void Clear() => _commands.Clear();
+
+        public override InterceptionResult<DbDataReader> ReaderExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result)
+        {
+            _commands.Enqueue(command.CommandText);
+            return base.ReaderExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            _commands.Enqueue(command.CommandText);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 }

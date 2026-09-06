@@ -257,8 +257,26 @@ describe('ReviewMain', () => {
     // note id cannot resolve for a later test that expects it to be absent.
     const cleanups: Array<() => void> = []
 
+    function drainCleanups(): void {
+      const errors: unknown[] = []
+      while (cleanups.length > 0) {
+        const cleanup = cleanups.pop()
+        if (!cleanup) continue
+        try {
+          cleanup()
+        } catch (error: unknown) {
+          errors.push(error)
+        }
+      }
+
+      if (errors.length === 1) throw errors[0]
+      if (errors.length > 1) {
+        throw new AggregateError(errors, 'One or more cleanup callbacks failed')
+      }
+    }
+
     afterEach(() => {
-      for (const cleanup of cleanups.splice(0).reverse()) cleanup()
+      drainCleanups()
     })
 
     function renderLockNote(): void {
@@ -268,6 +286,21 @@ describe('ReviewMain', () => {
       document.body.appendChild(note)
       cleanups.push(() => note.remove())
     }
+
+    it('drains every cleanup when one callback throws', () => {
+      const events: string[] = []
+      const throwingCleanup = new Error('cleanup failed')
+      cleanups.push(() => events.push('oldest'))
+      cleanups.push(() => {
+        events.push('throwing')
+        throw throwingCleanup
+      })
+      cleanups.push(() => events.push('newest'))
+
+      expect(drainCleanups).toThrow(throwingCleanup)
+      expect(events).toEqual(['newest', 'throwing', 'oldest'])
+      expect(cleanups).toHaveLength(0)
+    })
 
     it('forwards the column description ids to every disabled decision control', () => {
       renderLockNote()

@@ -469,4 +469,34 @@ onMounted(() => {
   border-color: var(--ember, #a8421f);
   box-shadow: 0 0 0 2px var(--ember-bloom, #a8421f1a);
 }
+
+/* Keep board and item recovery actions reachable on narrow screens. The
+ * desktop row stays unchanged; phone rows stack their content, while the
+ * four board actions wrap into two comfortable tap-target columns. */
+@media (max-width: 640px) {
+  .paper-archive__row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .paper-archive__info {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .paper-archive__actions {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .paper-archive__actions > * {
+    flex: 1 1 calc(50% - var(--s-2, 8px));
+    min-height: 44px;
+  }
+
+  .paper-archive__restore-item {
+    align-self: stretch;
+    min-height: 44px;
+  }
+}
 </style>

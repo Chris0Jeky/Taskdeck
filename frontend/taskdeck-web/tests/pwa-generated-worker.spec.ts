@@ -57,12 +57,14 @@ function createFakeCacheStorage(seed: Record<string, string[]>): FakeCacheStorag
 }
 
 /**
- * Evaluates the real emitted cleanup script the way the generated worker loads it:
- * via `importScripts()` from inside vite-plugin-pwa's asynchronous AMD `define()`
- * factory, i.e. AFTER the worker's lifecycle events have already been dispatched.
- * Nothing here dispatches `activate`, which is the whole point - a build that only
- * retires the caches from an `activate` listener never retires them at all, which is
- * exactly what a real Chromium showed before this was fixed.
+ * Evaluates the real emitted cleanup script against a fake `CacheStorage` and hands back the
+ * listeners it registered. Nothing here dispatches `activate` unless a case asks for it, so the
+ * evaluation-time sweep is exercised on its own: a build that retires the caches ONLY from an
+ * `activate` listener fails the case below.
+ *
+ * These are handler-contract cases. A dispatched fake event cannot prove that the real worker's
+ * listener is attached in time to receive the real one - only the emitted worker's structure can,
+ * which is what the top-level-importScripts case above asserts.
  */
 async function evaluateCleanupWithoutActivate(
   cacheStorage: FakeCacheStorage,
@@ -161,6 +163,33 @@ describe('generated PWA worker runtime-cache contract', () => {
     }
   })
 
+  it('loads the cleanup script from a top-level importScripts, ahead of the AMD factory', () => {
+    // The repair for #2639. vite-plugin-pwa emits the configured `importScripts` call INSIDE the
+    // asynchronous AMD `define()` factory it wraps the worker in, so the cleanup script's
+    // listeners are attached from a promise continuation - only after that factory's microtasks
+    // drain. PR #2416 measured that as a missed `activate` (`__proofActivateFired: false`); the
+    // 2026-09-05 re-measurement in Chromium 151.0.7922.34 saw the listener fire on every run
+    // (3 of 3 on each of first install, skip-waiting, and restart-into-activation), so the two
+    // measurements disagree and the older one is not treated as fact here. What is not in dispute
+    // is that the attachment order depends on microtask draining no specification promises. The
+    // build hoists that call to the top of the emitted worker - see
+    // src/pwa/hoistWorkerImportScripts.ts - so the listener exists during the worker's initial
+    // synchronous evaluation and the dependency is gone, which is what gives `event.waitUntil` on
+    // activate its unconditional meaning.
+    //
+    // This is a STRUCTURAL assertion on purpose: no fake event can prove attachment order, and the
+    // handler-contract cases below dispatch `activate` by hand precisely because they cannot.
+    const worker = loadGeneratedWorker()
+    const cleanupImport = /importScripts\(\s*["']api-cache-cleanup\.js["']/g
+    const matches = [...worker.matchAll(cleanupImport)]
+    expect(matches).toHaveLength(1)
+
+    const [match] = matches
+    // Nothing at all may precede it: not the AMD shim, not the `define()` call, not a comment.
+    expect(worker.slice(0, match.index)).toBe('')
+    expect(worker.indexOf('define(')).toBeGreaterThan(match.index!)
+  })
+
   it('retires the runtime caches the generated worker names, without an activate event', async () => {
     const runtimeCacheNames = generatedRuntimeCacheNames()
     expect(runtimeCacheNames).toContain('taskdeck-static-assets')
@@ -228,14 +257,16 @@ describe('generated PWA worker runtime-cache contract', () => {
     expect(remaining).toContain('taskdeck-pwa-cache-policy-v2')
   })
 
-  it('fails activation when the forced sweep cannot complete', async () => {
+  it('rejects the activation promise when the forced sweep cannot complete', async () => {
     const cacheStorage = createFakeCacheStorage({ 'taskdeck-static-assets': [] })
     const { dispatchActivate } = await evaluateCleanupWithoutActivate(cacheStorage)
 
     cacheStorage.delete = () => Promise.reject(new Error('storage unavailable'))
 
-    // A worker must not control the page and report the current policy marker from a
-    // partially cleaned state.
+    // The failure must reach the `waitUntil` promise rather than be swallowed. It does NOT abort
+    // activation - the Service Worker spec only aborts on a rejected INSTALL - so this pins that
+    // the sweep failure is reported by the browser (a console error in Chromium), not that the
+    // worker is prevented from controlling the page.
     await expect(dispatchActivate()).rejects.toThrow('storage unavailable')
   })
 

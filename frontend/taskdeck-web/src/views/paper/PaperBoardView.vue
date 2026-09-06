@@ -101,10 +101,27 @@ const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
 const BOARD_COLUMN_WIDTH_KEY = 'td.paper.board-column-width.v1'
 const BOARD_COLLAPSED_COLUMNS_KEY = 'td.paper.board-collapsed-columns.v1'
+/*
+ * Card detail is a *presentation* preference, not a card prop: `titles` hides
+ * the excerpt and the meta row through the board's own scoped rules while every
+ * card renders whole. Passing it down to `PaperBoardCard` and dropping those
+ * nodes would also drop nothing the user needs — but it would put the opener
+ * and the drag handle one refactor away from disappearing with them, and #2090
+ * AC2 requires keyboard access, counts and drag order to survive the mode.
+ */
+type BoardCardDetail = 'full' | 'titles'
+const BOARD_CARD_DETAIL_KEY = 'td.paper.board-card-detail.v1'
+const DEFAULT_BOARD_CARD_DETAIL: BoardCardDetail = 'full'
+const cardDetail = ref<BoardCardDetail>(DEFAULT_BOARD_CARD_DETAIL)
+/*
+ * `value` is the persisted preference (`td.paper.board-column-width.v1`) and
+ * the type guard's vocabulary, so it stays an English identifier and never
+ * follows the locale; only `labelKey` is copy.
+ */
 const BOARD_COLUMN_WIDTH_PRESETS = [
-  { value: 'narrow', label: 'Narrow', width: '240px' },
-  { value: 'standard', label: 'Standard', width: '280px' },
-  { value: 'wide', label: 'Wide', width: '340px' },
+  { value: 'narrow', labelKey: 'boardDetail.actions.widthNarrow', width: '240px' },
+  { value: 'standard', labelKey: 'boardDetail.actions.widthStandard', width: '280px' },
+  { value: 'wide', labelKey: 'boardDetail.actions.widthWide', width: '340px' },
 ] as const
 type BoardColumnWidth = typeof BOARD_COLUMN_WIDTH_PRESETS[number]['value']
 const DEFAULT_BOARD_COLUMN_WIDTH: BoardColumnWidth = 'standard'
@@ -151,6 +168,13 @@ function isBoardColumnWidth(value: string | null): value is BoardColumnWidth {
   return BOARD_COLUMN_WIDTH_PRESETS.some((preset) => preset.value === value)
 }
 
+// Total over the stored string: anything that is not one of the two written
+// values — a stale key, a hand-edited value, another tab's future mode — is not
+// a card-detail mode, and the board falls back to full detail.
+function isBoardCardDetail(value: string | null): value is BoardCardDetail {
+  return value === 'full' || value === 'titles'
+}
+
 function parseCollapsedColumnIds(value: string | null): Set<string> {
   if (!value) return new Set()
 
@@ -180,6 +204,14 @@ onMounted(() => {
     columnWidth.value = DEFAULT_BOARD_COLUMN_WIDTH
   }
   try {
+    const storedCardDetail = window.localStorage.getItem(BOARD_CARD_DETAIL_KEY)
+    cardDetail.value = isBoardCardDetail(storedCardDetail)
+      ? storedCardDetail
+      : DEFAULT_BOARD_CARD_DETAIL
+  } catch {
+    cardDetail.value = DEFAULT_BOARD_CARD_DETAIL
+  }
+  try {
     persistedCollapsedColumnIds.value = parseCollapsedColumnIds(
       window.localStorage.getItem(BOARD_COLLAPSED_COLUMNS_KEY),
     )
@@ -193,6 +225,15 @@ function toggleDensity() {
   density.value = density.value === 'compact' ? 'comfortable' : 'compact'
   try {
     window.localStorage.setItem(BOARD_DENSITY_KEY, density.value)
+  } catch {
+    // Local fallback only. The preference remains active for this mounted board.
+  }
+}
+
+function toggleCardDetail() {
+  cardDetail.value = cardDetail.value === 'titles' ? 'full' : 'titles'
+  try {
+    window.localStorage.setItem(BOARD_CARD_DETAIL_KEY, cardDetail.value)
   } catch {
     // Local fallback only. The preference remains active for this mounted board.
   }
@@ -383,6 +424,28 @@ function closeCard() {
   selectedCard.value = null
   pendingCard.value = null
   cardEditorDirty.value = false
+}
+
+/**
+ * CardModal's `updated` — a card that was successfully saved or deleted.
+ *
+ * `useCardModal` awaits `boardStore.updateCard` / `deleteCard` and only then
+ * calls `onUpdated()` immediately followed by `onClose()`; a plain close emits
+ * `close` alone. So `updated` is the one signal that the unsaved changes the
+ * route guard is holding a navigation for are gone, and the navigation
+ * continues instead of being cancelled.
+ *
+ * This runs before the `close` that follows it, so `closeCard` sees no pending
+ * navigation and only clears the editor. The nulling is not what makes that
+ * safe — the promise is already settled, so a later `resolve(false)` is a
+ * no-op either way — it is the same "take it, clear it, resolve it" shape the
+ * other two exits from this dialog use.
+ */
+function handleCardUpdated() {
+  const navigation = pendingNavigation.value
+  pendingNavigation.value = null
+  cardEditorDirty.value = false
+  navigation?.resolve(true)
 }
 
 function handleCardEditorDirtyChange(dirty: boolean) {
@@ -730,6 +793,7 @@ async function addStarterColumns() {
     data-surface="paper-board"
     :data-density="density"
     :data-column-width="columnWidth"
+    :data-card-detail="cardDetail"
   >
     <div class="paper-board-view__inner">
       <header class="paper-board-view__head">
@@ -747,11 +811,11 @@ async function addStarterColumns() {
             class="paper-board-view__width-control"
             data-testid="paper-board-width-control"
           >
-            <span class="paper-board-view__width-label">Width</span>
+            <span class="paper-board-view__width-label">{{ t('boardDetail.actions.width') }}</span>
             <select
               class="paper-board-view__width-select"
               :value="columnWidth"
-              aria-label="Column width"
+              :aria-label="t('boardDetail.actions.widthAria')"
               data-testid="paper-board-width-select"
               @keydown.stop
               @change="changeColumnWidth"
@@ -761,17 +825,34 @@ async function addStarterColumns() {
                 :key="preset.value"
                 :value="preset.value"
               >
-                {{ preset.label }}
+                {{ t(preset.labelKey) }}
               </option>
             </select>
           </label>
           <PaperHLBtn
-            label="Compact density"
+            :label="t('boardDetail.actions.compactDensity')"
+            :aria-label="t('boardDetail.actions.compactDensityAria')"
             :aria-pressed="density === 'compact'"
             data-testid="paper-board-density-toggle"
             @keydown.enter.stop
             @keydown.space.stop
             @click="toggleDensity"
+          />
+          <!--
+            The accessible name opens with the visible label, so it satisfies
+            WCAG 2.5.3 and a voice user can still say what they read. Enter and
+            Space stop here for the same reason they stop on the density toggle
+            beside it: the board keymap listens further up, and a control that
+            let its own activation keys through would fire a shortcut too.
+          -->
+          <PaperHLBtn
+            :label="t('boardDetail.actions.titlesOnly')"
+            :aria-label="t('boardDetail.actions.titlesOnlyAria')"
+            :aria-pressed="cardDetail === 'titles'"
+            data-testid="paper-board-card-detail-toggle"
+            @keydown.enter.stop
+            @keydown.space.stop
+            @click="toggleCardDetail"
           />
           <PaperHLBtn
             v-if="routedBoard"
@@ -1006,7 +1087,7 @@ async function addStarterColumns() {
           :labels="boardStore.currentBoardLabels"
           :presentation="cardPresentation"
           @close="closeCard"
-          @updated="closeCard"
+          @updated="handleCardUpdated"
           @dirty-change="handleCardEditorDirtyChange"
         />
 
@@ -1281,6 +1362,18 @@ async function addStarterColumns() {
 .paper-board-view[data-density="compact"] :deep(.paper-board-card__meta) {
   margin-top: 4px;
   padding-top: 4px;
+}
+
+/* Titles-only. The excerpt and the meta row are the two card regions that carry
+ * no control and no focus stop — labels, due date, subtask tally and age are
+ * plain spans — so hiding them leaves the card's serial, title, tagstamp, drag
+ * handle and full-face opener in place, and the column count is the column's,
+ * not the card's. `display: none` (not `visibility`) keeps them out of the
+ * accessibility tree too, which is the point of the mode. It composes with
+ * compact density: the two attributes are independent. */
+.paper-board-view[data-card-detail="titles"] :deep(.paper-board-card__excerpt),
+.paper-board-view[data-card-detail="titles"] :deep(.paper-board-card__meta) {
+  display: none;
 }
 
 .paper-board-view__lane {

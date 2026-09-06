@@ -94,6 +94,7 @@ $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) "taskdeck-worktree-helpe
 $passed = 0
 $testFailure = $null
 $cleanupFailure = $null
+$fsmonitorFixtureRoot = $null
 $reparseRootToRemove = $null
 $selectedCases = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
 foreach ($caseName in $Case) {
@@ -219,6 +220,37 @@ function Invoke-Git {
     return $result.Output.TrimEnd()
 }
 
+function Invoke-FsmonitorFixtureStopAndRemove {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FixtureRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$CleanupRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$GitExecutable,
+
+        [string[]]$GitExecutablePrefixArguments = @()
+    )
+
+    $stopArguments = @($GitExecutablePrefixArguments) + @(
+        "-C",
+        $FixtureRoot,
+        "fsmonitor--daemon",
+        "stop"
+    )
+    $stopResult = Invoke-ProcessCapture -FilePath $GitExecutable -Arguments $stopArguments -WorkingDirectory $FixtureRoot
+    if ($stopResult.ExitCode -ne 0) {
+        throw "Fixture-owned fsmonitor daemon stop failed (exit $($stopResult.ExitCode)): git -C $FixtureRoot fsmonitor--daemon stop`n$($stopResult.Output)"
+    }
+
+    if (Test-Path -LiteralPath $CleanupRoot) {
+        Get-ChildItem -LiteralPath $CleanupRoot -Recurse -Force -File | ForEach-Object { $_.IsReadOnly = $false }
+        Remove-Item -LiteralPath $CleanupRoot -Recurse -Force
+    }
+}
+
 function Invoke-Helper {
     param(
         [Parameter(Mandatory = $true)]
@@ -278,6 +310,70 @@ function Assert-NormalizedContains {
     Assert-Contains ($Text -replace '\s+', ' ') ($ExpectedSubstring -replace '\s+', ' ') $Message
 }
 
+function Assert-NormalizedNotContains {
+    param(
+        [string]$Text,
+        [string]$ForbiddenSubstring,
+        [string]$Message
+    )
+
+    $normalizedText = $Text -replace '\s+', ' '
+    $normalizedForbidden = $ForbiddenSubstring -replace '\s+', ' '
+    if ($normalizedText.Contains($normalizedForbidden)) {
+        throw "$Message`nForbidden substring: <$ForbiddenSubstring>`nActual output:`n$Text"
+    }
+}
+
+function Wait-ForScheduledWorktreeRemoval {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$LiteralPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$RegistrationRepositoryPath,
+
+        [int]$TimeoutSeconds = 90
+    )
+
+    # The initializer hands orphan removal to a detached PowerShell host that re-verifies the
+    # worktree's top level, common directory and HEAD, re-inventories its content, and only then
+    # runs 'git worktree remove'. That is one host start, a poll until the initializer process exits, and
+    # seven Git invocations against a fresh checkout; a fixed 5 s poll expired before it finished on the
+    # hosted Windows runner (#2664).
+    # Wait on a deadline instead and report the elapsed time so a genuine orphan stays diagnosable.
+    #
+    # 'git worktree remove' deletes the working directory before it deletes the admin entry under
+    # .git/worktrees, so a strict registration check taken the moment the directory disappears can
+    # race that second step. Wait for both facts on the same deadline and report them separately, so
+    # a leftover admin entry fails as a stale registration instead of as a timing flake (#2670).
+    # Git prints registration paths with forward slashes on Windows while the fixture paths are
+    # backslash-separated, so both sides are normalized before comparison.
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    $normalizedPath = $LiteralPath.Replace('\', '/')
+    $removed = $false
+    $unregistered = $false
+    $registrations = ""
+    while ($true) {
+        $removed = -not (Test-Path -LiteralPath $LiteralPath)
+        $registrations = Invoke-Git -WorkingDirectory $RegistrationRepositoryPath -Arguments @("worktree", "list", "--porcelain")
+        $unregistered = -not $registrations.Replace('\', '/').Contains($normalizedPath)
+        if (($removed -and $unregistered) -or [DateTimeOffset]::UtcNow -ge $deadline) {
+            break
+        }
+
+        Start-Sleep -Milliseconds 100
+    }
+    $stopwatch.Stop()
+
+    return [pscustomobject]@{
+        Removed        = $removed
+        Unregistered   = $unregistered
+        Registrations  = $registrations
+        ElapsedSeconds = [Math]::Round($stopwatch.Elapsed.TotalSeconds, 1)
+    }
+}
+
 function Complete-Test {
     param([string]$Name)
 
@@ -289,6 +385,91 @@ function Test-CaseSelected {
     param([string]$Name)
 
     return $selectedCases.Contains($Name)
+}
+
+function Test-FsmonitorFixtureCleanupLauncher {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ProbeRoot
+    )
+
+    $fixtureRoot = Join-Path $ProbeRoot "fixture"
+    $cleanupRoot = Join-Path $ProbeRoot "cleanup"
+    $tracePath = Join-Path $ProbeRoot "stop-trace.txt"
+    $launcherPath = Join-Path $ProbeRoot "fake-git.ps1"
+    New-Item -ItemType Directory -Path $fixtureRoot, $cleanupRoot | Out-Null
+    Set-Content -LiteralPath (Join-Path $cleanupRoot "owned.txt") -Value "owned" -Encoding Ascii
+    Set-Content -LiteralPath $launcherPath -Encoding Ascii -Value @(
+        'param(',
+        '    [string]$TracePath,',
+        '    [string]$ExpectedFixtureRoot,',
+        '    [string]$ExpectedCleanupRoot,',
+        '    [Parameter(ValueFromRemainingArguments = $true)]',
+        '    [string[]]$GitArguments',
+        ')',
+        'if ($GitArguments.Count -ne 4 -or $GitArguments[0] -cne "-C" -or $GitArguments[1] -cne $ExpectedFixtureRoot -or $GitArguments[2] -cne "fsmonitor--daemon" -or $GitArguments[3] -cne "stop") {',
+        '    [System.IO.File]::WriteAllText($TracePath, "invalid-argv")',
+        '    exit 43',
+        '}',
+        'if (-not (Test-Path -LiteralPath $ExpectedFixtureRoot -PathType Container) -or -not (Test-Path -LiteralPath $ExpectedCleanupRoot -PathType Container)) {',
+        '    [System.IO.File]::WriteAllText($TracePath, "cleanup-started-too-early")',
+        '    exit 44',
+        '}',
+        '[System.IO.File]::WriteAllText($TracePath, "stop-before-remove")',
+        'exit 0'
+    )
+
+    $launcherArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        $launcherPath,
+        $tracePath,
+        $fixtureRoot,
+        $cleanupRoot
+    )
+    Invoke-FsmonitorFixtureStopAndRemove `
+        -FixtureRoot $fixtureRoot `
+        -CleanupRoot $cleanupRoot `
+        -GitExecutable $powerShellExecutable `
+        -GitExecutablePrefixArguments $launcherArguments
+
+    Assert-Equal "stop-before-remove" (Get-Content -Raw -LiteralPath $tracePath) "The fake fsmonitor launcher did not observe the fixture before cleanup."
+    Assert-True (-not (Test-Path -LiteralPath $cleanupRoot)) "Successful fsmonitor shutdown did not remove the owned fixture root."
+
+    $failingCleanupRoot = Join-Path $ProbeRoot "cleanup-stop-failure"
+    $failingTracePath = Join-Path $ProbeRoot "stop-failure-trace.txt"
+    New-Item -ItemType Directory -Path $failingCleanupRoot | Out-Null
+    Set-Content -LiteralPath (Join-Path $failingCleanupRoot "owned.txt") -Value "owned" -Encoding Ascii
+    $failingLauncherPath = Join-Path $ProbeRoot "fake-git-stop-failure.ps1"
+    Set-Content -LiteralPath $failingLauncherPath -Encoding Ascii -Value @(
+        '[System.IO.File]::WriteAllText($args[0], "stop-failed")',
+        'exit 17'
+    )
+    $failureArguments = @(
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-File",
+        $failingLauncherPath,
+        $failingTracePath
+    )
+    $stopFailure = $null
+    try {
+        Invoke-FsmonitorFixtureStopAndRemove `
+            -FixtureRoot $fixtureRoot `
+            -CleanupRoot $failingCleanupRoot `
+            -GitExecutable $powerShellExecutable `
+            -GitExecutablePrefixArguments $failureArguments
+    }
+    catch {
+        $stopFailure = $_
+    }
+    Assert-True ($null -ne $stopFailure) "A failed fsmonitor shutdown must fail the fixture cleanup."
+    Assert-NormalizedContains $stopFailure.Exception.Message "exit 17" "The fsmonitor shutdown failure omitted the native exit code."
+    Assert-Equal "stop-failed" (Get-Content -Raw -LiteralPath $failingTracePath) "The fake fsmonitor stop-failure launcher did not run."
+    Assert-True (Test-Path -LiteralPath $failingCleanupRoot -PathType Container) "A failed fsmonitor shutdown must preserve the owned fixture for diagnosis."
 }
 
 function Get-ModeledEffectivePermissionConfiguration {
@@ -833,13 +1014,20 @@ finally {
                 throw "Askpass HTTP probe server did not start."
             }
 
-            $serverReadyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+            # The readiness marker is written after a cold PowerShell host start plus a TcpListener
+            # bind, both of which are slow on the hosted Windows runner. A fixed 10 s deadline was the
+            # same class of short fixed wait that #2664 hit; use the suite's 90 s host-start order and
+            # report the elapsed time so a genuine bind failure stays distinguishable (#2670).
+            $serverReadyStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+            $serverReadyDeadline = [DateTimeOffset]::UtcNow.AddSeconds(90)
             while (-not (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) -and
                 -not $serverProcess.HasExited -and
                 [DateTimeOffset]::UtcNow -lt $serverReadyDeadline) {
                 Start-Sleep -Milliseconds 50
             }
-            Assert-True (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) "Askpass HTTP probe server did not become ready."
+            $serverReadyStopwatch.Stop()
+            $serverReadyElapsedSeconds = [Math]::Round($serverReadyStopwatch.Elapsed.TotalSeconds, 1)
+            Assert-True (Test-Path -LiteralPath $askPassServerReady -PathType Leaf) "Askpass HTTP probe server did not become ready (waited $serverReadyElapsedSeconds s; host exited: $($serverProcess.HasExited))."
 
             $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @(
                 "remote", "add", "askpass-probe", "http://127.0.0.1:$askPassPort/repo.git"
@@ -1385,12 +1573,9 @@ finally {
         Assert-True ($collision.ExitCode -ne 0) "A post-helper branch collision should fail the initializer."
         Assert-NormalizedContains $collision.Output "git switch -c failed" "Branch collision should retain its switch failure diagnostic."
         Assert-NormalizedContains $collision.Output "removal of the unused helper-created worktree was scheduled" "Late branch collision should report cleanup scheduling."
-        for ($attempt = 0; $attempt -lt 50 -and (Test-Path -LiteralPath $initializerWorktree); $attempt++) {
-            Start-Sleep -Milliseconds 100
-        }
-        Assert-True (-not (Test-Path -LiteralPath $initializerWorktree)) "Late branch collision must not leave an orphan helper-created worktree."
-        $registrationsAfterCollision = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
-        Assert-True (-not $registrationsAfterCollision.Contains($initializerWorktree)) "Late branch collision must remove the worktree registration."
+        $collisionRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $initializerWorktree -RegistrationRepositoryPath $callerPath
+        Assert-True $collisionRemoval.Removed "Late branch collision must not leave an orphan helper-created worktree (waited $($collisionRemoval.ElapsedSeconds) s for the scheduled removal).`n$($collisionRemoval.Registrations)"
+        Assert-True $collisionRemoval.Unregistered "Late branch collision must remove the worktree registration for '$initializerWorktree' (waited $($collisionRemoval.ElapsedSeconds) s for the scheduled removal).`n$($collisionRemoval.Registrations)"
 
         $ignoredCollisionResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "498", "-Slug", "ignored-collision")
         Assert-Equal 0 $ignoredCollisionResult.ExitCode "Ignored-collision fixture worktree creation should succeed.`n$($ignoredCollisionResult.Output)"
@@ -1416,7 +1601,10 @@ finally {
         Assert-True ($ignoredCollision.ExitCode -ne 0) "A late branch collision with ignored content should fail the initializer."
         Assert-NormalizedContains $ignoredCollision.Output "cleanup was refused because the helper-created worktree contains tracked, untracked, or ignored content" "Ignored-content collision should explain why cleanup was refused."
         Assert-NormalizedContains $ignoredCollision.Output "the worktree was preserved at" "Ignored-content collision should report preservation instead of scheduled removal."
-        Start-Sleep -Milliseconds 500
+        # A wrongly scheduled detached cleanup host deletes the canary one host start and seven Git
+        # invocations later, so no settle delay proves preservation. Assert positively that no cleanup
+        # was scheduled, then assert the content that a scheduled cleanup would have destroyed (#2670).
+        Assert-NormalizedNotContains $ignoredCollision.Output "removal of the unused helper-created worktree was scheduled" "Ignored-content collision must refuse cleanup outright, never schedule the detached removal host."
         Assert-True (Test-Path -LiteralPath $ignoredCanaryPath -PathType Leaf) "Refused collision cleanup deleted ignored worktree content."
         Assert-True (Test-Path -LiteralPath $ignoredCollisionWorktree -PathType Container) "Refused collision cleanup deleted the helper-created worktree."
         $ignoredRegistrationsAfter = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
@@ -1441,6 +1629,7 @@ finally {
             $hiddenCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $hiddenCollisionScript) -WorkingDirectory $hiddenWorktree
             Assert-True ($hiddenCollision.ExitCode -ne 0) "Hidden-index collision must fail for $hiddenFlag."
             Assert-NormalizedContains $hiddenCollision.Output "index-hidden entries" "Hidden-index collision must explain preservation for $hiddenFlag."
+            Assert-NormalizedNotContains $hiddenCollision.Output "removal of the unused helper-created worktree was scheduled" "Hidden-index collision must refuse cleanup outright for $hiddenFlag, never schedule the detached removal host."
             Assert-Contains (Get-Content -Raw -LiteralPath $hiddenTarget) "hidden initializer collision $hiddenFlag" "Hidden bytes must survive $hiddenFlag cleanup refusal."
             Assert-True (Test-Path -LiteralPath $hiddenWorktree -PathType Container) "Hidden worktree must survive $hiddenFlag cleanup refusal."
             $hiddenRegistration = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
@@ -1468,12 +1657,9 @@ finally {
         $separateCollision = Invoke-ProcessCapture -FilePath $powerShellExecutable -Arguments @("-NoLogo", "-NoProfile", "-NonInteractive", "-File", $separateCollisionScript) -WorkingDirectory $separateWorktree
         Assert-True ($separateCollision.ExitCode -ne 0) "A separate-Git-dir post-helper branch collision should fail the initializer."
         Assert-NormalizedContains $separateCollision.Output "removal of the unused helper-created worktree was scheduled" "Separate-Git-dir collision should report cleanup scheduling."
-        for ($attempt = 0; $attempt -lt 100 -and (Test-Path -LiteralPath $separateWorktree); $attempt++) {
-            Start-Sleep -Milliseconds 100
-        }
-        Assert-True (-not (Test-Path -LiteralPath $separateWorktree)) "Separate-Git-dir late collision must remove the helper-created worktree path."
-        $separateRegistrationsAfter = Invoke-Git -WorkingDirectory $separateGitCaller -Arguments @("worktree", "list", "--porcelain")
-        Assert-True (-not $separateRegistrationsAfter.Replace('\', '/').Contains($normalizedSeparateWorktree)) "Separate-Git-dir late collision must remove the worktree registration."
+        $separateRemoval = Wait-ForScheduledWorktreeRemoval -LiteralPath $separateWorktree -RegistrationRepositoryPath $separateGitCaller
+        Assert-True $separateRemoval.Removed "Separate-Git-dir late collision must remove the helper-created worktree path (waited $($separateRemoval.ElapsedSeconds) s for the scheduled removal).`n$($separateRemoval.Registrations)"
+        Assert-True $separateRemoval.Unregistered "Separate-Git-dir late collision must remove the worktree registration for '$separateWorktree' (waited $($separateRemoval.ElapsedSeconds) s for the scheduled removal).`n$($separateRemoval.Registrations)"
         Assert-True (Test-Path -LiteralPath $separateGitDirectory -PathType Container) "Separate-Git-dir cleanup removed the repository's common Git directory."
 
         $initializerResult = Invoke-Helper -WorkingDirectory $callerPath -Arguments @("-IssueNumber", "490", "-Slug", "initializer-validation-continued")
@@ -2136,6 +2322,11 @@ finally {
     }
 
     if (Test-CaseSelected "git-add-failure") {
+        $fsmonitorCleanupProbeRoot = Join-Path $testRoot "fsmonitor-cleanup-probe"
+        New-Item -ItemType Directory -Path $fsmonitorCleanupProbeRoot | Out-Null
+        Test-FsmonitorFixtureCleanupLauncher -ProbeRoot $fsmonitorCleanupProbeRoot
+        Complete-Test "fixture-owned fsmonitor shutdown precedes removal and preserves stop failures"
+
         $timeoutAttributesPath = Join-Path $seedPath ".gitattributes"
         Set-Content -LiteralPath $timeoutAttributesPath -Value "tracked.txt filter=taskdeck-timeout-gate" -Encoding Ascii
         $null = Invoke-Git -WorkingDirectory $seedPath -Arguments @("add", ".gitattributes")
@@ -2301,6 +2492,13 @@ sleep 30
                 $hiddenTimedOutRegistrationsBefore = Invoke-Git -WorkingDirectory $callerPath -Arguments @("worktree", "list", "--porcelain")
                 [System.Environment]::SetEnvironmentVariable("TASKDECK_HIDDEN_TIMEOUT_HOOK", $scenario.Flag, "Process")
                 if ($scenario.RequiresFsmonitor) {
+                    $fsmonitorStart = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("-C", $callerPath, "fsmonitor--daemon", "start") -WorkingDirectory $callerPath
+                    Assert-Equal 0 $fsmonitorStart.ExitCode "Fsmonitor fixture daemon did not start.`n$($fsmonitorStart.Output)"
+                    # Only a proven-started daemon is stopped in the finally block; a failed start must not turn cleanup into a second, bogus failure.
+                    $fsmonitorFixtureRoot = $callerPath
+                    $fsmonitorStatus = Invoke-ProcessCapture -FilePath $gitExecutable -Arguments @("-C", $callerPath, "fsmonitor--daemon", "status") -WorkingDirectory $callerPath
+                    Assert-Equal 0 $fsmonitorStatus.ExitCode "Fsmonitor fixture daemon status failed.`n$($fsmonitorStatus.Output)"
+                    Assert-NormalizedContains $fsmonitorStatus.Output "fsmonitor-daemon is watching" "Fsmonitor fixture did not prove that its daemon owns the fixture before the scenario ran."
                     # CE_FSMONITOR_VALID bits are stripped from the index on every read while
                     # core.fsmonitor is disabled, so the scenario only exists with it enabled.
                     $null = Invoke-Git -WorkingDirectory $callerPath -Arguments @("config", "core.fsmonitor", $fsmonitorQueryHookArgument)
@@ -2420,7 +2618,13 @@ finally {
             }
         }
 
-        if (Test-Path -LiteralPath $resolvedTestRoot) {
+        if ($null -ne $fsmonitorFixtureRoot) {
+            Invoke-FsmonitorFixtureStopAndRemove `
+                -FixtureRoot $fsmonitorFixtureRoot `
+                -CleanupRoot $resolvedTestRoot `
+                -GitExecutable $gitExecutable
+        }
+        elseif (Test-Path -LiteralPath $resolvedTestRoot) {
             Get-ChildItem -LiteralPath $resolvedTestRoot -Recurse -Force -File | ForEach-Object { $_.IsReadOnly = $false }
             Remove-Item -LiteralPath $resolvedTestRoot -Recurse -Force
         }
@@ -2432,6 +2636,9 @@ finally {
 }
 
 if ($null -ne $testFailure) {
+    if ($null -ne $cleanupFailure) {
+        throw "Test failure: $($testFailure.Exception.Message)`nCleanup failure: $($cleanupFailure.Exception.Message)"
+    }
     throw $testFailure
 }
 if ($null -ne $cleanupFailure) {

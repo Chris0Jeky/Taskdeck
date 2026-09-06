@@ -1,5 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { ref } from 'vue'
+import axios from 'axios'
+import { i18n } from '../../../i18n'
 
 const { mockToastStore, mockGetErrorMessage, mockIsDemoMode } = vi.hoisted(() => ({
   mockToastStore: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
@@ -60,10 +62,110 @@ describe('boardStoreHelpers', () => {
       expect(mockToastStore.error).toHaveBeenCalledWith('Something went wrong')
     })
 
+    // #2689 round-2 finding 2. The board state carries one shared `error` ref,
+    // so a caller that later wants to clear it needs to know whether the alert
+    // on screen is still the one it raised. The return is that handle, and it
+    // is the resolved message, not the fallback it was given.
+    it('returns the message it wrote to state and toast', () => {
+      mockGetErrorMessage.mockReturnValueOnce('Board "Roadmap" already exists')
+      const helpers = createBoardHelpers(state as any)
+
+      const written = helpers.handleApiError(new Error('oops'), 'Failed to create board')
+
+      expect(written).toBe('Board "Roadmap" already exists')
+      expect(state.error.value).toBe(written)
+      expect(mockToastStore.error).toHaveBeenCalledWith(written)
+    })
+
     it('uses fallback from getErrorMessage', () => {
       const helpers = createBoardHelpers(state as any)
       helpers.handleApiError(new Error(), 'My fallback')
       expect(mockGetErrorMessage).toHaveBeenCalledWith(expect.any(Error), 'My fallback')
+    })
+
+    // #2689 item 3. Since #2685 every board read is bounded, so a 10 s timeout
+    // is a routine outcome rather than an exotic one — and `getErrorMessage`
+    // prefers `err.message`, which for a transport failure is axios' own
+    // untranslated English rendered verbatim inside a localized alert.
+    describe('transport failures', () => {
+      const TIMEOUT_COPY =
+        'The request took too long, so it was stopped. Check your connection, then try again.'
+      const CANCELLED_COPY = 'The request was stopped before it finished. Try again.'
+
+      const timeoutError = () =>
+        new axios.AxiosError('timeout of 10000ms exceeded', 'ECONNABORTED')
+
+      it('maps an axios timeout to catalog copy for both the alert and the toast', () => {
+        const helpers = createBoardHelpers(state as any)
+
+        helpers.handleApiError(timeoutError(), 'Failed to fetch boards')
+
+        expect(state.error.value).toBe(TIMEOUT_COPY)
+        expect(mockToastStore.error).toHaveBeenCalledWith(TIMEOUT_COPY)
+        expect(state.error.value).not.toContain('timeout of 10000ms exceeded')
+        // The raw-message path is not consulted at all for a transport failure.
+        expect(mockGetErrorMessage).not.toHaveBeenCalled()
+      })
+
+      it('follows the active language, so the copy is catalog-driven and not a constant', () => {
+        i18n.global.locale.value = 'it'
+        const helpers = createBoardHelpers(state as any)
+
+        helpers.handleApiError(timeoutError(), 'Failed to fetch boards')
+
+        expect(state.error.value).toBe(
+          'La richiesta ha richiesto troppo tempo ed è stata interrotta. Controlla la connessione e riprova.',
+        )
+      })
+
+      it('also maps the ETIMEDOUT code axios uses with clarifyTimeoutError', () => {
+        const helpers = createBoardHelpers(state as any)
+
+        helpers.handleApiError(
+          new axios.AxiosError('timeout of 10000ms exceeded', 'ETIMEDOUT'),
+          'Failed to fetch boards',
+        )
+
+        expect(state.error.value).toBe(TIMEOUT_COPY)
+      })
+
+      // A cancel should not reach here — both read paths return on
+      // `axios.isCancel` first — but if one ever does, silence would leave
+      // `error` null with `boards` still empty, which BoardsListView's
+      // `v-else-if` chain renders as the EMPTY state: an unconfirmed claim that
+      // the account has no boards.
+      it('maps an axios cancel to catalog copy rather than leaving the surface silent', () => {
+        const helpers = createBoardHelpers(state as any)
+
+        helpers.handleApiError(new axios.CanceledError('canceled'), 'Failed to fetch boards')
+
+        expect(state.error.value).toBe(CANCELLED_COPY)
+        expect(mockToastStore.error).toHaveBeenCalledWith(CANCELLED_COPY)
+      })
+
+      // The message arm of the timeout check is gated on the absence of a
+      // response, so a server error whose own wording mentions a timeout keeps
+      // that wording instead of being overwritten by the generic copy.
+      it('leaves a server error message alone even when it mentions a timeout', () => {
+        mockGetErrorMessage.mockReturnValueOnce('Upstream gateway timeout while saving')
+        const helpers = createBoardHelpers(state as any)
+
+        helpers.handleApiError(
+          new axios.AxiosError(
+            'Request timeout reported by the gateway',
+            'ERR_BAD_RESPONSE',
+            undefined,
+            undefined,
+            {
+              status: 504,
+              data: { message: 'Upstream gateway timeout while saving' },
+            } as never,
+          ),
+          'Failed to fetch boards',
+        )
+
+        expect(state.error.value).toBe('Upstream gateway timeout while saving')
+      })
     })
   })
 

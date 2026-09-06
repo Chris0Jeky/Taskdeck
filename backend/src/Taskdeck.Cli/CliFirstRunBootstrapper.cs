@@ -192,6 +192,12 @@ internal static class CliFirstRunBootstrapper
             var existing = ReadExisting(localConfigPath);
             if (!string.IsNullOrWhiteSpace(existing.Key))
             {
+                // Forward remediation (#2667): a key file written by a pre-#1262 build kept the
+                // directory's inherited Windows DACL (typically BUILTIN\Users read) or the
+                // umask-derived 0600-or-wider Unix mode, and this early return would leave it that
+                // way forever. Re-restrict it on every run before handing the key back; the
+                // operation is idempotent, cheap, and never touches the file's content.
+                RestrictExistingKeyFileAt(localConfigPath);
                 return existing.Key!;
             }
 
@@ -219,6 +225,11 @@ internal static class CliFirstRunBootstrapper
                 // disk, and clobbering it would make previously-encrypted connector
                 // credentials undecryptable. Use a transient key for this run; the
                 // next run will pick up the real key.
+                //
+                // The file survives this run, so it gets the same forward remediation
+                // (#2667) as the existing-key path: changing the DACL / mode does not read
+                // or rewrite the content, so it is safe on a file we could not read.
+                RestrictExistingKeyFileAt(localConfigPath);
                 Console.Error.WriteLine(
                     $"[CliFirstRun] WARNING: Could not read {localConfigPath} to load the " +
                     "connector encryption key. Using a transient in-memory key for this run.");
@@ -257,6 +268,37 @@ internal static class CliFirstRunBootstrapper
             }
 
             mutex?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Best-effort re-restriction of an already-persisted connector key file to the current user
+    /// (#2667 forward remediation, mirroring the API's
+    /// <c>FirstRunBootstrapper.RestrictExistingLocalConfigFileAt</c>). Heals installs whose key file
+    /// was written by a build older than #1262, when the file inherited the directory's permissions.
+    /// Never throws: at this pre-DI stage a failure becomes one stderr warning and the run continues
+    /// with the key it already has. Does nothing when the file is absent, and never reads, rewrites
+    /// or deletes its content.
+    /// </summary>
+    internal static void RestrictExistingKeyFileAt(string path, Action<string>? restrictFile = null)
+    {
+        if (!File.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            (restrictFile ?? RestrictedFileWriter.RestrictFileToCurrentUser)(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // RestrictFileToCurrentUser normalizes everything to IOException; UnauthorizedAccessException
+            // is caught too so an injected/OS variant cannot escape and crash startup.
+            Console.Error.WriteLine(
+                $"[CliFirstRun] WARNING: Could not restrict {path} to the current user " +
+                $"({ex.Message}). The connector encryption key file may remain readable by other " +
+                "local users until its permissions are fixed.");
         }
     }
 
@@ -365,18 +407,13 @@ internal static class CliFirstRunBootstrapper
         // observe a partially written file.
         var tempDir = string.IsNullOrEmpty(dir) ? Directory.GetCurrentDirectory() : dir;
         var tempPath = Path.Combine(tempDir, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
-        File.WriteAllText(tempPath, payload);
 
-        if (!OperatingSystem.IsWindows())
-        {
-            // The payload is a base64 256-bit connector encryption key. On a default
-            // POSIX umask (022), File.WriteAllText creates the temp file 0644
-            // (world-readable), and File.Move preserves that mode -- exposing the key
-            // to other local users. Restrict to owner read/write (0600) BEFORE the
-            // move so the final file is never world-readable. No-op on Windows, where
-            // NTFS ACL inheritance governs access.
-            File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        }
+        // The payload is a base64 256-bit connector encryption key, so the temp file is created ATOMICALLY
+        // with owner-only permissions and the key is written through that same handle (#1262). Writing it
+        // first and restricting afterwards left the key exposed for an instant: on a default POSIX umask
+        // (022) the file was briefly 0644, and on Windows nothing restricted it at all -- it inherited the
+        // directory's DACL (typically BUILTIN\Users read) and File.Move preserves what it inherited.
+        RestrictedFileWriter.WriteRestrictedFile(tempPath, payload);
 
         try
         {

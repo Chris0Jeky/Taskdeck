@@ -299,7 +299,28 @@ public sealed class ArtefactExtractionServiceTests
     }
 
     [Fact]
-    public async Task ExtractAsync_ShouldPropagateCallerCancellationWithoutRecording()
+    public async Task ExtractAsync_ShouldPropagateCallerCancellationBeforeExtractorEntryWithoutRecording()
+    {
+        ArrangeStoredArtefact("application/pdf", [1, 2, 3]);
+        var extractor = new CancellationHandshakeExtractor("application/pdf");
+        var service = CreateService(extractor);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await FluentActions
+            .Awaiting(() => service.ExtractAsync(_userId, _artefactId, cts.Token))
+            .Should()
+            .ThrowAsync<OperationCanceledException>();
+
+        extractor.CallCount.Should().Be(0);
+        _extractions.Verify(repository => repository.TryAddForUserAsync(
+            It.IsAny<ArtefactExtraction>(),
+            It.IsAny<Guid>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ShouldPropagateCallerCancellationAfterExtractorEntryWithoutRecording()
     {
         // Caller cancellation must win over the budget: the request throws and no
         // extraction-history row is written (distinct from the budget-timeout outcome).
@@ -310,30 +331,32 @@ public sealed class ArtefactExtractionServiceTests
                 _userId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(ArtefactExtractionStoreResult.Stored);
-        using var release = new ManualResetEventSlim(false);
-        using var started = new ManualResetEventSlim(false);
-        var extractor = new StubExtractor(
-            "application/pdf",
-            blockUntil: release,
-            signalStarted: started);
+        var extractor = new CancellationHandshakeExtractor("application/pdf");
         using var cts = new CancellationTokenSource();
         var settings = new ArtefactStorageSettings { ExtractionTimeoutSeconds = 30 };
         var service = CreateService(settings, extractor);
 
         var task = service.ExtractAsync(_userId, _artefactId, cts.Token);
-        started.Wait(TimeSpan.FromSeconds(5)).Should().BeTrue();
+        await extractor.Entered.WaitAsync(TimeSpan.FromSeconds(5));
         cts.Cancel();
 
-        await FluentActions
-            .Awaiting(() => task)
-            .Should()
-            .ThrowAsync<OperationCanceledException>();
-        _extractions.Verify(repository => repository.TryAddForUserAsync(
-            It.IsAny<ArtefactExtraction>(),
-            It.IsAny<Guid>(),
-            It.IsAny<CancellationToken>()), Times.Never);
-
-        release.Set(); // let the abandoned worker unwind
+        try
+        {
+            await FluentActions
+                .Awaiting(() => task.WaitAsync(TimeSpan.FromSeconds(30)))
+                .Should()
+                .ThrowAsync<OperationCanceledException>();
+            extractor.CallCount.Should().Be(1);
+            _extractions.Verify(repository => repository.TryAddForUserAsync(
+                It.IsAny<ArtefactExtraction>(),
+                It.IsAny<Guid>(),
+                It.IsAny<CancellationToken>()), Times.Never);
+        }
+        finally
+        {
+            extractor.Release(); // let the abandoned worker unwind
+            await extractor.Completed.WaitAsync(TimeSpan.FromSeconds(5));
+        }
     }
 
     [Fact]
@@ -602,6 +625,53 @@ public sealed class ArtefactExtractionServiceTests
 
             return Task.FromResult(_result);
         }
+    }
+
+    private sealed class CancellationHandshakeExtractor : IArtefactTextExtractor
+    {
+        private readonly string _mimePrefix;
+        private readonly TaskCompletionSource _entered =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _completed =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CancellationHandshakeExtractor(string mimePrefix)
+        {
+            _mimePrefix = mimePrefix;
+        }
+
+        public string ExtractorName => "CancellationHandshake";
+        public string ExtractorVersion => "1.0";
+        public long InputByteLimit => 1024 * 1024;
+        public int CallCount { get; private set; }
+        public Task Entered => _entered.Task;
+        public Task Completed => _completed.Task;
+
+        public bool CanExtract(string mimeType)
+            => mimeType.StartsWith(_mimePrefix, StringComparison.OrdinalIgnoreCase);
+
+        public async Task<ArtefactExtractionResult> ExtractAsync(
+            Stream content,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            _entered.TrySetResult();
+            try
+            {
+                // Deliberately ignore the token to model a parser that cannot be
+                // interrupted; the service must abandon the worker safely.
+                await _release.Task;
+                return new ArtefactExtractionResult("content", [], ExtractorName, ExtractorVersion);
+            }
+            finally
+            {
+                _completed.TrySetResult();
+            }
+        }
+
+        public void Release() => _release.TrySetResult();
     }
 
     /// <summary>

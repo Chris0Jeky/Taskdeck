@@ -134,7 +134,9 @@ test('keeps checkout and every bootstrap boundary fail closed before linting', a
 
   assert.match(workflow, /- name: Install Actionlint toolchain[\s\S]*?set -euo pipefail/)
   assert.match(workflow, /workflow-lint:[\s\S]*?timeout-minutes: 10/)
-  assert.match(workflow, /- name: Checkout\r?\n\s+uses: actions\/checkout@v7\r?\n\s+with:\r?\n\s+persist-credentials: false/)
+  // The checkout action is SHA-pinned (CI-11 #2335); match the pinned shape rather than a
+  // literal major tag so the contract survives Dependabot bumping the pin and its comment.
+  assert.match(workflow, /- name: Checkout\r?\n\s+uses: actions\/checkout@[0-9a-f]{40} # v\d+\.\d+\.\d+\r?\n\s+with:\r?\n\s+persist-credentials: false/)
   assert.match(workflow, /--output "\$\{archive_path\}" \\\r?\n\s+"\$\{download_url\}"/)
   assert.match(workflow, /--output "\$\{pyflakes_wheel_path\}" \\\r?\n\s+"\$\{pyflakes_download_url\}"/)
   assert.ok(workflow.includes('bash scripts/ci/verify-sha256.sh "${ACTIONLINT_ARCHIVE_SHA256}" "${archive_path}"'))

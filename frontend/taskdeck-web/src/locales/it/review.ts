@@ -42,6 +42,17 @@ export default {
     },
   },
 
+  queue: {
+    degraded: {
+      body: 'Questa coda di revisione potrebbe non essere aggiornata. Vengono mostrate le ultime proposte disponibili mentre Taskdeck riprova.',
+      recovered: 'Questa coda di revisione è di nuovo aggiornata. Vengono mostrate le proposte correnti.',
+    },
+    refused: {
+      body: 'Questa coda di revisione ha smesso di aggiornarsi. Il server sta rifiutando la richiesta di aggiornamento invece di fallire temporaneamente, quindi queste sono le ultime proposte che ha confermato. Ricarica la pagina oppure controlla il filtro bacheca nella barra degli indirizzi.',
+      recovered: 'Il server accetta di nuovo gli aggiornamenti di questa coda di revisione.',
+    },
+  },
+
   // GH-1307 -- traduzione automatica (machine-translated), in attesa di revisione madrelingua.
   batchExecute: {
     request: 'Applica {count} approvata | Applica {count} approvate',
@@ -381,6 +392,9 @@ export default {
     derivedConfidence: 'media derivata {value}',
     deterministic: 'Estrazione deterministica · nessuna confidenza del modello',
     notReported: 'Nessuna confidenza del modello dichiarata',
+    confidenceLoading: 'Lettura delle prove di confidenza per questa proposta…',
+    confidenceFailed:
+      'Non è stato possibile leggere le prove di confidenza, quindi la loro origine è sconosciuta.',
     actor: {
       assistant: 'Assistente',
       capture: 'Cattura',
@@ -396,8 +410,15 @@ export default {
   similarPast: {
     heading: 'Decisioni simili passate',
     empty: 'Nessuna decisione passata comparabile.',
+    emptyDetail: 'Qui compariranno le decisioni su proposte comparabili.',
+    loading: 'Lettura delle decisioni passate comparabili…',
+    loadingDetail: 'Le decisioni comparabili compariranno qui al termine di questa lettura.',
+    failed: 'Non è stato possibile leggere le decisioni passate comparabili.',
+    failedDetail:
+      'La lettura non è riuscita, quindi non si sa se esistano decisioni passate comparabili.',
     details: {
       show: 'Mostra decisioni simili',
+      showEmpty: 'Mostra decisioni simili (nessuna trovata)',
       hide: 'Nascondi decisioni simili',
     },
     verdict: {
@@ -447,6 +468,9 @@ export default {
     loading: 'Caricamento del diff…',
     storedBanner:
       '{status} · sola lettura — mostra l’anteprima salvata dell’invio originale.',
+    storedBannerRecorded:
+      '{status} · sola lettura — mostra le operazioni registrate della proposta.',
+    storedBannerNone: '{status} · sola lettura.',
     revised: {
       lead: 'Questa proposta è stata',
       emphasis: 'revisionata',
@@ -523,6 +547,8 @@ export default {
       eyebrow: 'Proposta richiesta',
       title: 'Questa proposta non e disponibile.',
       body: 'La proposta {id} non e piu disponibile per la revisione. Potrebbe essere stata applicata, archiviata o rimossa.',
+      malformedTitle: 'Questo collegamento non e un collegamento valido a una proposta.',
+      malformedBody: 'La pagina richiede {id}, che non e un id di proposta: non esiste nulla da aprire e riprovare non serve. Torna alla revisione e scegli una proposta dalla coda.',
       return: 'Torna alla revisione',
     },
   },
@@ -550,6 +576,7 @@ export default {
     pendingReview: 'In attesa di revisione',
     approved: 'Approvata',
     applied: 'Applicata',
+    appliedToBoard: 'Applicata alla bacheca',
     rejected: 'Rifiutata',
     failed: 'Non riuscita',
     expired: 'Scaduta',

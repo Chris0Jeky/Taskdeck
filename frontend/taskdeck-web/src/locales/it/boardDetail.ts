@@ -10,6 +10,26 @@
 export default {
   actions: {
     settings: 'Impostazioni bacheca',
+    // Presentazione delle schede della bacheca. La modalità nasconde l'estratto
+    // e la riga dei dettagli; non elimina né modifica nulla, quindi il testo
+    // nomina ciò che si smette di vedere. Il nome accessibile inizia con
+    // l'etichetta visibile (WCAG 2.5.3).
+    titlesOnly: 'Solo titoli',
+    titlesOnlyAria: 'Solo titoli: nasconde gli estratti e i dettagli delle schede',
+    // Larghezza delle colonne. L'etichetta visibile è breve perché la riga non
+    // concede altro; il nome accessibile dice che cosa si sta dimensionando. I
+    // nomi delle impostazioni concordano con "colonna": è la colonna a essere
+    // stretta o ampia. Il valore salvato resta il `value` in inglese.
+    width: 'Larghezza',
+    widthAria: 'Larghezza della colonna',
+    widthNarrow: 'Stretta',
+    widthStandard: 'Standard',
+    widthWide: 'Ampia',
+    // Spaziatura della bacheca. La modalità compatta riduce spazi e margini;
+    // non nasconde né modifica nulla, quindi il nome accessibile dice che cosa
+    // si riduce e a quale scopo, e inizia con l'etichetta visibile (WCAG 2.5.3).
+    compactDensity: 'Densità compatta',
+    compactDensityAria: 'Densità compatta: riduce le spaziature della bacheca per mostrare più schede',
   },
   card: {
     add: '+ scheda',

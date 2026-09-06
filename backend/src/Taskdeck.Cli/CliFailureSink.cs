@@ -17,7 +17,10 @@ namespace Taskdeck.Cli;
 ///
 /// The record deliberately never holds a raw stack trace or a raw <c>Exception.Message</c>: it
 /// carries <see cref="SensitiveDataRedactor.SummarizeException"/> output (redacted, bounded depth
-/// and length) and the process arguments passed through <see cref="SensitiveDataRedactor.Redact"/>.
+/// and length) and the shape of the command line, never its values: only the leading command words
+/// and the flag names survive, every other argument — an attached <c>--flag=value</c> value
+/// included — becomes <see cref="ArgumentValuePlaceholder"/>, and the result still goes through
+/// <see cref="SensitiveDataRedactor.Redact"/> (#2577).
 ///
 /// Every failure mode is fail-open: an unwritable directory, a full disk, a pre-existing file at
 /// the target path or a permission error returns false so the caller prints the existing
@@ -42,15 +45,40 @@ internal sealed class CliFailureSink
     /// <summary>Appended when a record hits <see cref="MaximumRecordBytes"/>.</summary>
     internal const string TruncationMarker = "\n[truncated: record exceeded the 8192-byte bound]\n";
 
-    /// <summary>Length, in lowercase hex characters, of a generated correlation reference.</summary>
+    /// <summary>Length, in hex characters, of a generated correlation reference.</summary>
     internal const int ReferenceLength = 12;
+
+    /// <summary>
+    /// Length, in hex characters, of the harness startup-trace correlation, the other reference
+    /// shape a caller may file a record under. Taken from <see cref="CliStartupTrace"/> rather
+    /// than repeated, so the sink cannot drift from the trace that produced the correlation.
+    /// </summary>
+    internal const int TraceCorrelationLength = CliStartupTrace.CorrelationLength;
+
+    /// <summary>
+    /// Stand-in written in place of every argv token that is not a command word or a flag name
+    /// (#2577). The sink retains the shape of the failing command, never the operator's values.
+    /// </summary>
+    internal const string ArgumentValuePlaceholder = "[value]";
+
+    /// <summary>
+    /// Depth of the CLI's command grammar: a group and a command, as in <c>cards add</c>
+    /// (see <see cref="Commands.CommandDispatcher"/>). Nothing past the second token is a command
+    /// word, so nothing past it may be retained verbatim unless it names a flag.
+    /// </summary>
+    private const int MaximumCommandWords = 2;
 
     private static readonly UTF8Encoding StrictUtf8 =
         new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly string? _diagnosticsDirectory;
+    private readonly Func<string, string, string[]> _listRecords;
 
-    private CliFailureSink(string? diagnosticsDirectory) => _diagnosticsDirectory = diagnosticsDirectory;
+    private CliFailureSink(string? diagnosticsDirectory, Func<string, string, string[]>? listRecords = null)
+    {
+        _diagnosticsDirectory = diagnosticsDirectory;
+        _listRecords = listRecords ?? Directory.GetFiles;
+    }
 
     /// <summary>The resolved records directory, or null when it could not be resolved at all.</summary>
     internal string? DiagnosticsDirectory => _diagnosticsDirectory;
@@ -59,21 +87,31 @@ internal sealed class CliFailureSink
     /// Builds a sink rooted at an explicit data directory. Used by tests and by callers that
     /// already know the directory.
     /// </summary>
-    internal static CliFailureSink ForDataDirectory(string? dataDirectory)
+    internal static CliFailureSink ForDataDirectory(string? dataDirectory) =>
+        ForDataDirectory(dataDirectory, listRecords: null);
+
+    /// <summary>
+    /// Same sink, with the retention enumeration supplied. Test seam only: it exists so a test can
+    /// make eviction fail after the record is already written and closed, which is the one path
+    /// where an exception must not turn a kept record into a reported capture failure.
+    /// </summary>
+    internal static CliFailureSink ForDataDirectory(
+        string? dataDirectory,
+        Func<string, string, string[]>? listRecords)
     {
         if (string.IsNullOrWhiteSpace(dataDirectory))
         {
-            return new CliFailureSink(diagnosticsDirectory: null);
+            return new CliFailureSink(diagnosticsDirectory: null, listRecords);
         }
 
         try
         {
-            return new CliFailureSink(Path.GetFullPath(Path.Combine(dataDirectory, DirectoryName)));
+            return new CliFailureSink(Path.GetFullPath(Path.Combine(dataDirectory, DirectoryName)), listRecords);
         }
         catch (Exception)
         {
             // An unresolvable path must never crash the failure boundary itself.
-            return new CliFailureSink(diagnosticsDirectory: null);
+            return new CliFailureSink(diagnosticsDirectory: null, listRecords);
         }
     }
 
@@ -172,7 +210,11 @@ internal sealed class CliFailureSink
     {
         ArgumentNullException.ThrowIfNull(exception);
 
-        if (_diagnosticsDirectory is null || string.IsNullOrWhiteSpace(reference))
+        // The reference is interpolated into the record's file name, so its shape is checked here
+        // rather than trusted from the callers: anything but the two shapes the CLI produces fails
+        // open, which keeps a traversal-shaped or otherwise unexpected reference from steering the
+        // write out of the diagnostics directory even if a future caller stops validating it.
+        if (_diagnosticsDirectory is null || !IsAcceptedReference(reference))
         {
             return false;
         }
@@ -180,7 +222,6 @@ internal sealed class CliFailureSink
         try
         {
             Directory.CreateDirectory(_diagnosticsDirectory);
-            EvictOldestRecords(_diagnosticsDirectory);
 
             var path = Path.Combine(_diagnosticsDirectory, BuildFileName(reference, timestamp));
 
@@ -204,9 +245,30 @@ internal sealed class CliFailureSink
                 options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
             }
 
-            using var stream = new FileStream(path, options);
-            stream.Write(payload);
-            stream.Flush();
+            using (var stream = new FileStream(path, options))
+            {
+                stream.Write(payload);
+                stream.Flush();
+            }
+
+            // Only now, with the new record closed and on disk, is it safe to trim the directory.
+            // Evicting first meant a create that then failed (a stale file at the target name, a
+            // full disk, a directory that permits delete but not create) destroyed older records
+            // and replaced none of them: net diagnostic loss instead of fail-open-with-no-change.
+            //
+            // Past this point the write has succeeded, so eviction gets its own catch: retention
+            // is best effort and must never downgrade a durable record to a reported failure, or
+            // the caller prints the "diagnostics were not captured" notice for a record that
+            // exists. The directory then keeps more than the cap until a later run trims it.
+            try
+            {
+                EvictOldestRecords(_diagnosticsDirectory, path);
+            }
+            catch (Exception)
+            {
+                // Enumeration or sorting failed; the record itself is already on disk.
+            }
+
             return true;
         }
         catch (Exception)
@@ -271,22 +333,29 @@ internal sealed class CliFailureSink
     }
 
     /// <summary>
-    /// Deletes the oldest records, by name, until writing one more stays within
+    /// Deletes the oldest records, by name, until the directory is back within
     /// <see cref="MaximumRecordCount"/>. The timestamp prefix makes ordinal name order the same as
-    /// chronological order.
+    /// chronological order. Runs after the write, so the record just written is already counted
+    /// and is skipped explicitly: a record must never evict itself.
     /// </summary>
-    private static void EvictOldestRecords(string diagnosticsDirectory)
+    private void EvictOldestRecords(string diagnosticsDirectory, string writtenPath)
     {
-        var existing = Directory.GetFiles(diagnosticsDirectory, FileNameSearchPattern);
-        if (existing.Length < MaximumRecordCount)
+        var existing = _listRecords(diagnosticsDirectory, FileNameSearchPattern);
+        var surplus = existing.Length - MaximumRecordCount;
+        if (surplus <= 0)
         {
             return;
         }
 
         Array.Sort(existing, StringComparer.Ordinal);
-        var surplus = existing.Length - MaximumRecordCount + 1;
-        for (var index = 0; index < surplus; index++)
+        for (var index = 0; index < existing.Length && surplus > 0; index++)
         {
+            if (string.Equals(existing[index], writtenPath, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            surplus--;
             try
             {
                 File.Delete(existing[index]);
@@ -297,6 +366,19 @@ internal sealed class CliFailureSink
             }
         }
     }
+
+    /// <summary>
+    /// The two reference shapes the CLI produces: the 12-character generated reference and the
+    /// 32-character harness trace correlation, both hex. Case is accepted either way, because
+    /// <see cref="CliStartupTrace.IsCorrelationId"/> does: the sink must never refuse a reference
+    /// the CLI itself printed to the operator. Hex cannot contain a directory separator, a drive
+    /// letter or a dot, so an accepted reference can only ever name a file inside the diagnostics
+    /// directory.
+    /// </summary>
+    private static bool IsAcceptedReference(string? reference) =>
+        reference is not null &&
+        reference.Length is ReferenceLength or TraceCorrelationLength &&
+        reference.All(Uri.IsHexDigit);
 
     private static string DescribeVersion()
     {
@@ -311,6 +393,20 @@ internal sealed class CliFailureSink
         }
     }
 
+    /// <summary>
+    /// Renders argv under the retention policy decided in #2577: keep the command grammar, drop
+    /// every value. A token is retained verbatim only when it starts with '-' (a flag name) or
+    /// when it is one of the leading command words. Everything else becomes
+    /// <see cref="ArgumentValuePlaceholder"/>, including the value attached to a flag: a
+    /// <c>--flag=value</c> token keeps only <c>--flag=</c>. The whole line still goes through
+    /// <see cref="SensitiveDataRedactor.Redact"/> below.
+    ///
+    /// The redactor only masks the <c>key=value</c> and <c>key: value</c> forms, so a
+    /// space-separated secret (<c>--token abc123</c>) would otherwise have been retained verbatim,
+    /// and ordinary user content such as a card title or description would have been written to
+    /// disk on failure where nothing was retained before this sink existed. The command name and
+    /// the flag names are what makes a record actionable; the values are not worth their risk.
+    /// </summary>
     private static string DescribeArguments(IReadOnlyList<string>? arguments)
     {
         if (arguments is null || arguments.Count == 0)
@@ -318,10 +414,87 @@ internal sealed class CliFailureSink
             return "(none)";
         }
 
-        var joined = string.Join(' ', arguments);
-        var redacted = SensitiveDataRedactor.Redact(joined);
+        var builder = new StringBuilder();
+        var commandWords = 0;
+        for (var index = 0; index < arguments.Count; index++)
+        {
+            if (index > 0)
+            {
+                builder.Append(' ');
+            }
+
+            var argument = arguments[index];
+            if (IsFlagName(argument))
+            {
+                // A flag name is retained, but its attached value is a value like any other: the
+                // redactor only masks the key=value forms whose key it knows, so --title=... or
+                // --description=... would otherwise reach disk verbatim.
+                var separator = argument.IndexOf('=');
+                if (separator < 0)
+                {
+                    builder.Append(argument);
+                }
+                else
+                {
+                    builder.Append(argument, 0, separator + 1).Append(ArgumentValuePlaceholder);
+                }
+
+                // Nothing after the first flag is a command word, so no later bare token may be
+                // retained on the strength of its shape alone.
+                commandWords = MaximumCommandWords;
+            }
+            else if (commandWords < MaximumCommandWords && IsCommandWord(argument))
+            {
+                builder.Append(argument);
+                commandWords++;
+            }
+            else
+            {
+                builder.Append(ArgumentValuePlaceholder);
+            }
+        }
+
+        var redacted = SensitiveDataRedactor.Redact(builder.ToString());
         return string.IsNullOrWhiteSpace(redacted) ? "(none)" : redacted;
     }
+
+    /// <summary>
+    /// A flag name is a dash-prefixed token with no whitespace, such as <c>--title</c> or
+    /// <c>-v</c>. <c>ArgParser.GetOption</c> accepts any following token as a value, so a value
+    /// that starts with a dash and contains whitespace (a card title such as "- fix login") is
+    /// a value, not a flag name, and is replaced like any other value. A single dash-prefixed
+    /// word used as a value is indistinguishable from a flag name by shape and is retained.
+    /// </summary>
+    private static bool IsFlagName(string argument)
+    {
+        // Only the name part matters: "--title=Secret plan" is a flag with an attached value,
+        // "- fix login" is a value that happens to start with a dash.
+        var separator = argument.IndexOf('=');
+        var name = separator < 0 ? argument : argument[..separator];
+        if (name.Length < 2 || name[0] != '-')
+        {
+            return false;
+        }
+
+        foreach (var character in name)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The shape every CLI command group and command has: short, lowercase, no whitespace. A
+    /// leading token that is not one (a positional value, a title, anything cased or spaced) is
+    /// replaced rather than retained.
+    /// </summary>
+    private static bool IsCommandWord(string argument) =>
+        argument.Length is > 0 and <= 32 &&
+        argument.All(character => character is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
 
     private static string? FirstNonEmpty(params string?[] candidates)
     {
