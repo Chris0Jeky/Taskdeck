@@ -86,8 +86,8 @@ function Get-FingerprintFailureDiagnostic {
         '^mode is not supported$' { 'E_MODE_UNSUPPORTED'; break }
         '^checkout path is required$|^checkout identity is malformed$|^checkout identity is uncertain$|^checkout HEAD identity is uncertain$|^checkout HEAD reference identity is uncertain$' { 'E_CHECKOUT_IDENTITY'; break }
         '^could not start git$|^git exceeded the configured deadline$|^git output exceeds the configured byte limit$|^git could not establish checkout identity$' { 'E_GIT_EXECUTION'; break }
-        '^git status record is malformed$|^git status path is malformed$|^git status path is ambiguous$|^git status path escapes the checkout$|^status artifact disappeared before it could be fingerprinted$|^status artifact changed before it could be fingerprinted$|^status artifact changed while it was fingerprinted$|^status inventory changed while it was fingerprinted:|^status artifact is not a regular file:' { 'E_STATUS_INVENTORY'; break }
-        '^status artifact count exceeds the configured limit$|^status artifact exceeds the per-file byte limit$|^status artifact total exceeds the configured limit$' { 'E_STATUS_BOUNDS'; break }
+        '^git status record is malformed$|^git rename record is malformed$|^git returned an ignored artifact despite ignored=no$|^git status path is malformed$|^git status path is ambiguous$|^git status path identity is ambiguous$|^git status path escapes the checkout$|^status artifact disappeared before it could be fingerprinted$|^status artifact changed before it could be fingerprinted$|^status artifact changed while it was fingerprinted$|^status inventory changed while it was fingerprinted:|^status artifact is not a regular file:' { 'E_STATUS_INVENTORY'; break }
+        '^status artifact count exceeds the configured limit$|^status artifact exceeds the per-file byte limit$|^status artifact total exceeds the configured limit$|^status artifact total exceeds the configured byte limit$' { 'E_STATUS_BOUNDS'; break }
         '^operating-system temp root|^linked worktree identity is uncertain$' { 'E_TEMP_ROOT_PROVENANCE'; break }
         '^state path|^state file is missing$|^state file already exists$|^state file identity is uncertain$' { 'E_STATE_PATH'; break }
         '^state file exceeds the bounded size limit$|^state payload exceeds the bounded file limit$' { 'E_STATE_BOUNDS'; break }
@@ -110,7 +110,7 @@ function Get-FingerprintFailureDiagnostic {
         'E_STATE_FORMAT' { 'Capture a fresh authenticated state wrapper.'; break }
         'E_STATE_AUTHENTICATION' { 'Capture a fresh state or provide the matching caller token.'; break }
         'E_STATE_IDENTITY' { 'Capture a fresh authenticated state with an unambiguous identity.'; break }
-        default { 'Do not trust the result; inspect the protected local diagnostics and retry.'; break }
+        default { 'Do not trust the result; the raw cause is withheld from stderr by design, so retry once with the same arguments and, if it recurs, report the reason code with the exact command line.'; break }
     }
 
     return ('Checkout fingerprint failed: {0}. {1}' -f $code, $remediation)
