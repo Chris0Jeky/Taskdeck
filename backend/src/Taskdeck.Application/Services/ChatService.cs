@@ -34,6 +34,9 @@ public class ChatService : IChatService
         "Open a board-scoped chat session to turn this into a proposal you can review.)";
     private const string BoardAccessDeniedMessage = "You do not have access to this board";
     private const string BoardNotFoundMessage = "Board not found";
+    private const string SessionNotFoundMessage = "Chat session not found";
+    private const string ArchivedBoardBindingMessage =
+        "Cannot link a chat session to an archived board. Restore the board first.";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -108,6 +111,61 @@ public class ChatService : IChatService
         {
             return Result.Failure<ChatSessionDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    public async Task<Result<ChatSessionDto>> BindBoardAsync(
+        Guid sessionId,
+        Guid userId,
+        BindChatSessionBoardDto dto,
+        CancellationToken ct = default)
+    {
+        if (dto.BoardId == Guid.Empty)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.ValidationError, "BoardId cannot be empty");
+
+        var session = await _unitOfWork.ChatSessions.GetByIdWithMessagesAsync(sessionId, ct);
+        if (session == null || session.UserId != userId)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.NotFound, SessionNotFoundMessage);
+
+        if (session.Status == ChatSessionStatus.Archived)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.InvalidOperation, "Cannot bind an archived chat session");
+
+        if (session.BoardId.HasValue && session.BoardId.Value != dto.BoardId)
+        {
+            return Result.Failure<ChatSessionDto>(
+                ErrorCodes.Conflict,
+                "This chat session is already linked to a different board. Start a new session to use another board.");
+        }
+
+        var boardAccess = await EnsureBoardWritableAsync(userId, dto.BoardId, ct);
+        if (!boardAccess.IsSuccess)
+            return Result.Failure<ChatSessionDto>(boardAccess.ErrorCode, boardAccess.ErrorMessage);
+
+        if (session.BoardId == dto.BoardId)
+            return Result.Success(MapSessionToDto(session));
+
+        var boundAt = DateTimeOffset.UtcNow;
+        if (await _unitOfWork.ChatSessions.TryBindBoardAsync(
+                sessionId,
+                userId,
+                dto.BoardId,
+                boundAt,
+                ct))
+        {
+            session.BindBoard(dto.BoardId);
+            return Result.Success(MapSessionToDto(session));
+        }
+
+        // Another request changed the binding after this request read the session. Reload the
+        // authoritative row: the same binding is idempotent; a different binding is a conflict.
+        var current = await _unitOfWork.ChatSessions.GetByIdWithMessagesAsync(sessionId, ct);
+        if (current == null || current.UserId != userId)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.NotFound, SessionNotFoundMessage);
+        if (current.BoardId == dto.BoardId)
+            return Result.Success(MapSessionToDto(current));
+
+        return Result.Failure<ChatSessionDto>(
+            ErrorCodes.Conflict,
+            "This chat session was linked to a different board. Start a new session to use another board.");
     }
 
     public async Task<Result<ChatSessionDto>> GetSessionAsync(Guid sessionId, Guid userId, CancellationToken ct = default)
@@ -1020,6 +1078,31 @@ public class ChatService : IChatService
         return permission.Value
             ? Result.Success()
             : Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage);
+    }
+
+    private async Task<Result> EnsureBoardWritableAsync(
+        Guid userId,
+        Guid boardId,
+        CancellationToken ct)
+    {
+        if (_authorizationService == null)
+            return Result.Failure(ErrorCodes.Forbidden, BoardAccessDeniedMessage);
+
+        var permission = await _authorizationService.CanWriteBoardAsync(userId, boardId);
+        if (!permission.IsSuccess || !permission.Value)
+        {
+            return permission.ErrorCode == ErrorCodes.NotFound || permission.IsSuccess
+                ? Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage)
+                : Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+        }
+
+        var board = await _unitOfWork.Boards.GetByIdAsync(boardId, ct);
+        if (board == null)
+            return Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage);
+        if (board.IsArchived)
+            return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardBindingMessage);
+
+        return Result.Success();
     }
 
     private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)

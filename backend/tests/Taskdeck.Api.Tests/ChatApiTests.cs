@@ -227,6 +227,130 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BindBoard_ShouldRequireAuthentication()
+    {
+        await ApiTestHarness.AssertUnauthorizedAsync(await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{Guid.NewGuid()}/board",
+            new BindChatSessionBoardDto(Guid.NewGuid())));
+    }
+
+    [Fact]
+    public async Task BindBoard_ShouldBindOwnedSessionAndRepeatIdempotently()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, $"chat-bind-{Guid.NewGuid():N}"[..20]);
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "chat-bind-board");
+        var created = await CreateUnboundSessionAsync(_client, "Bind existing session");
+
+        var first = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{created.Id}/board",
+            new BindChatSessionBoardDto(board.Id));
+        var second = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{created.Id}/board",
+            new BindChatSessionBoardDto(board.Id));
+
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await first.Content.ReadFromJsonAsync<ChatSessionDto>())!.BoardId.Should().Be(board.Id);
+        (await second.Content.ReadFromJsonAsync<ChatSessionDto>())!.BoardId.Should().Be(board.Id);
+
+        var reloaded = await _client.GetFromJsonAsync<ChatSessionDto>(
+            $"/api/llm/chat/sessions/{created.Id}");
+        reloaded!.BoardId.Should().Be(board.Id);
+    }
+
+    [Fact]
+    public async Task BindBoard_ShouldReturnConflictWhenReplacingExistingBinding()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, $"chat-rebind-{Guid.NewGuid():N}"[..20]);
+        var firstBoard = await ApiTestHarness.CreateBoardAsync(_client, "chat-first-board");
+        var secondBoard = await ApiTestHarness.CreateBoardAsync(_client, "chat-second-board");
+        var session = await CreateUnboundSessionAsync(_client, "Bound once");
+        (await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session.Id}/board",
+            new BindChatSessionBoardDto(firstBoard.Id))).EnsureSuccessStatusCode();
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session.Id}/board",
+            new BindChatSessionBoardDto(secondBoard.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("new session");
+    }
+
+    [Fact]
+    public async Task BindBoard_ShouldConcealMissingAndForeignSessionsWithSameNotFound()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, $"chat-bind-owner-{Guid.NewGuid():N}"[..24]);
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, $"chat-bind-other-{Guid.NewGuid():N}"[..24]);
+        var foreignSession = await CreateUnboundSessionAsync(ownerClient, "Foreign session");
+        var outsiderBoard = await ApiTestHarness.CreateBoardAsync(outsiderClient, "outsider-board");
+
+        var foreign = await outsiderClient.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{foreignSession.Id}/board",
+            new BindChatSessionBoardDto(outsiderBoard.Id));
+        var missing = await outsiderClient.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{Guid.NewGuid()}/board",
+            new BindChatSessionBoardDto(outsiderBoard.Id));
+
+        foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await foreign.Content.ReadAsStringAsync()).Should().Be(await missing.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task BindBoard_ShouldRejectArchivedAndNonWritableBoards()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, $"chat-archive-owner-{Guid.NewGuid():N}"[..27]);
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, $"chat-archive-other-{Guid.NewGuid():N}"[..27]);
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "archived-chat-board");
+        var ownerSession = await CreateUnboundSessionAsync(ownerClient, "Archived target");
+        var outsiderSession = await CreateUnboundSessionAsync(outsiderClient, "Foreign target");
+
+        var archive = await ownerClient.PutAsJsonAsync(
+            $"/api/boards/{board.Id}",
+            new UpdateBoardDto(null, null, true));
+        archive.EnsureSuccessStatusCode();
+
+        var archived = await ownerClient.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{ownerSession.Id}/board",
+            new BindChatSessionBoardDto(board.Id));
+        var inaccessible = await outsiderClient.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{outsiderSession.Id}/board",
+            new BindChatSessionBoardDto(board.Id));
+
+        archived.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        inaccessible.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task BindBoard_ConcurrentDifferentBoards_ShouldAllowOnlyOneBinding()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, $"chat-bind-race-{Guid.NewGuid():N}"[..24]);
+        var firstBoard = await ApiTestHarness.CreateBoardAsync(_client, "race-board-a");
+        var secondBoard = await ApiTestHarness.CreateBoardAsync(_client, "race-board-b");
+        var session = await CreateUnboundSessionAsync(_client, "Binding race");
+
+        var responses = await Task.WhenAll(
+            _client.PostAsJsonAsync(
+                $"/api/llm/chat/sessions/{session.Id}/board",
+                new BindChatSessionBoardDto(firstBoard.Id)),
+            _client.PostAsJsonAsync(
+                $"/api/llm/chat/sessions/{session.Id}/board",
+                new BindChatSessionBoardDto(secondBoard.Id)));
+
+        responses.Select(response => response.StatusCode)
+            .Should().BeEquivalentTo(new[] { HttpStatusCode.OK, HttpStatusCode.Conflict });
+        var reloaded = await _client.GetFromJsonAsync<ChatSessionDto>(
+            $"/api/llm/chat/sessions/{session.Id}");
+        reloaded!.BoardId.Should().NotBeNull();
+        new[] { firstBoard.Id, secondBoard.Id }.Should().Contain(reloaded.BoardId!.Value);
+    }
+
+    [Fact]
     public async Task SendMessage_ShouldReturnForbidden_ForDifferentUser()
     {
         using var ownerClient = _factory.CreateClient();
@@ -432,6 +556,15 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
 
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", payload!.Token);
         return payload.User.Id;
+    }
+
+    private static async Task<ChatSessionDto> CreateUnboundSessionAsync(HttpClient client, string title)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto(title));
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<ChatSessionDto>())!;
     }
 
     private async Task<Guid> CreateOwnedBoardWithColumnAsync(Guid ownerId)

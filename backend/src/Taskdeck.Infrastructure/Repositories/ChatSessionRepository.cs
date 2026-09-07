@@ -74,6 +74,28 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
     }
 
+    public async Task<bool> TryBindBoardAsync(
+        Guid sessionId,
+        Guid userId,
+        Guid boardId,
+        DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        var rowsUpdated = await _dbSet
+            .Where(session =>
+                session.Id == sessionId &&
+                session.UserId == userId &&
+                session.Status == ChatSessionStatus.Active &&
+                session.BoardId == null)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(session => session.BoardId, boardId)
+                    .SetProperty(session => session.UpdatedAt, updatedAt),
+                cancellationToken);
+
+        return rowsUpdated == 1;
+    }
+
     private static async Task<IReadOnlyList<ChatSession>> GetLimitedOrderedByUpdatedAtAsync(
         IQueryable<ChatSession> query,
         int limit,
