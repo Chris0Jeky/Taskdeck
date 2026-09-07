@@ -126,6 +126,13 @@ export default {
       transcriptNote:
         'Transcript captures are sent to the configured assistant for task extraction. Typed notes are not.',
       tooLong: 'This transcript is too long. Maximum length is {max} characters.',
+      transcriptFileButton: 'Upload transcript file',
+      transcriptFileInputLabel: 'Choose transcript file',
+      transcriptFileClear: 'Clear transcript file',
+      transcriptFileHint: 'Plain-text .txt files up to {max} bytes.',
+      transcriptFileTypeError: 'Choose a plain-text transcript file (.txt).',
+      transcriptFileSizeError: 'This transcript file is too large. Maximum file size is {max} bytes.',
+      transcriptFileUnreadable: 'This transcript file could not be read. Try another file.',
     },
   },
   // The Composer's own field chrome (#1871, the residual half of the #1870

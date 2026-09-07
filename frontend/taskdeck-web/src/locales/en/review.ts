@@ -659,6 +659,7 @@ export default {
     accessRevoked: {
       title: 'This review queue is no longer available to you.',
       body: 'Your access to these boards changed, so the queue was cleared and has stopped updating. Reload or pick a board you can still reach.',
+      retry: 'The server still refuses this review queue. Reload the page, or check the board filter.',
     },
     scoped: {
       title: 'No proposals in {scope}.',

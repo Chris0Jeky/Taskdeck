@@ -1329,6 +1329,32 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('shows still-refused feedback after a user retries a revoked queue (#2214 row 38)', async () => {
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review?boardId=board-revoked',
+      [],
+      [],
+      { listReadRejectsWith: { response: { status: 403 } } },
+    )
+    try {
+      expect(wrapper.find('[data-testid="paper-review-access-revoked-retry"]').exists()).toBe(false)
+
+      // Changing the board is a deliberate list-read attempt. The queue is
+      // already refused, so the second refusal needs its own durable sentence.
+      mocks.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await routerOf(wrapper).replace('/workspace/review?boardId=another-board')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const retry = wrapper.get('[data-testid="paper-review-access-revoked-retry"]')
+      expect(retry.text()).toBe(enReview.empty.accessRevoked.retry)
+      expect(mocks.errorToast).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {
     mocks.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
     const wrapper = await mountView(
