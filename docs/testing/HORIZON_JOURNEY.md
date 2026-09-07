@@ -136,12 +136,15 @@ the mock's canned output can never satisfy the triage contract.
 `ExtractTaskCandidates`, the **deterministic** extractor. You still get a proposal, so the step
 appears to pass. The difference is in the provenance, which is what to assert on:
 
-| | Live path (this run) | Mock/default path |
+| | Live path (current replay) | Mock/default path |
 | --- | --- | --- |
-| `promptVersion` | `llm-triage.v2` | `triage.v1` |
+| `promptVersion` | `llm-triage.v3` | `triage.v1` |
 | `provider` | `OpenAI` | `deterministic-extractor` |
 | `model` | `gpt-4o-mini` | `capture-triage-v1` |
 | Operation count | 6, both grammatical forms | deterministic heuristics — do **not** assume 6 |
+
+The recorded run in Step 15 predates the #2211 provenance bump and therefore shows historical
+`llm-triage.v2`; a replay from current source must expect `llm-triage.v3`.
 
 **Configuration required to replay Step 15 as recorded:**
 
@@ -513,11 +516,14 @@ Each card's `description` is the **verbatim transcript sentence**, and each oper
  "triageRunId":"9938378f-…","proposalId":"8efe8562-…","sourceSurface":"capture"}
 ```
 
+This is historical evidence from the pre-#2211 run; current replays retain the same extraction
+semantics while stamping `llm-triage.v3`.
+
 **Verdict.** **PASS — and the strongest part of the product.** Note op 2 is a genuine paraphrase, not
 a pattern match.
 
 > **This step also produced finding H-01.** The provenance above is *honest*: source tracing confirms
-> `llm-triage.v2` + `OpenAI` is only reachable after a completed, non-degraded live call (the
+> historical `llm-triage.v2` + `OpenAI` is only reachable after a completed, non-degraded live call (the
 > deterministic path stamps `deterministic-extractor` / `triage.v1`). The Chat page independently
 > reports **"Live LLM configured — OpenAI (gpt-4o-mini)"**. Yet the Review provenance panel tells the
 > user captures are handled by *"a deterministic offline extractor"*. See HORIZON_FINDINGS H-01.
@@ -983,7 +989,7 @@ this check, and it is weaker than "nothing remains":
 4. **Configure a live LLM provider** or mark Step 15 blocked — see §2.3.1. On a default checkout the
    provider is `Mock`, `ExtractChunkAsync` returns `ProviderIsMock` before extracting, and the
    deterministic extractor produces a *different* proposal that still returns `201`. Assert on
-   provenance (`llm-triage.v2` / `OpenAI`), never on the mere existence of a proposal.
+   provenance (`llm-triage.v3` / `OpenAI`), never on the mere existence of a proposal.
 5. **Seed the day-seal state.** `POST /api/today/seal`, confirm `isSealed` via `GET /api/today/seal`.
    The H-13 inert-button finding only reproduces on an already-sealed day; on a fresh account the same
    button seals successfully.
