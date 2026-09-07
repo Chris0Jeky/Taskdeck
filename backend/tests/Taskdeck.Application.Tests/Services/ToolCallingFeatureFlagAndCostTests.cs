@@ -286,6 +286,10 @@ public class ToolCallingFeatureFlagAndCostTests
         var proposalSvc = new Mock<IAutomationProposalService>();
         var policyEngine = new Mock<IAutomationPolicyEngine>();
         var notificationSvc = new Mock<INotificationService>();
+        var authorizationSvc = new Mock<IAuthorizationService>();
+        authorizationSvc
+            .Setup(s => s.CanReadBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
         notificationSvc
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(true));
@@ -297,6 +301,7 @@ public class ToolCallingFeatureFlagAndCostTests
             proposalSvc.Object,
             policyEngine.Object,
             notificationSvc.Object,
+            authorizationSvc.Object,
             toolCallingOrchestrator: orchestrator,
             toolCallingSettings: settings);
 
@@ -528,6 +533,10 @@ public class ToolCallingFeatureFlagAndCostTests
         var proposalSvc = new Mock<IAutomationProposalService>();
         var policyEngine = new Mock<IAutomationPolicyEngine>();
         var notificationSvc = new Mock<INotificationService>();
+        var authorizationSvc = new Mock<IAuthorizationService>();
+        authorizationSvc
+            .Setup(s => s.CanReadBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
         notificationSvc
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success(true));
@@ -539,6 +548,7 @@ public class ToolCallingFeatureFlagAndCostTests
             proposalSvc.Object,
             policyEngine.Object,
             notificationSvc.Object,
+            authorizationSvc.Object,
             quotaService: quotaService.Object,
             toolCallingOrchestrator: orchestrator);
 
