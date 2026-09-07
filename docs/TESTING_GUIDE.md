@@ -8,7 +8,7 @@ historical v2 schema, fixture, parsing and provenance-classifier regressions; do
 old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputContractTests`,
 `LlmCaptureTriagePromptTests`, `LlmCaptureTriageExtractorTests`, `CaptureTriageServiceTests`,
 `TranscriptTriageLlmGoldenPathIntegrationTests`, `ReviewProvenance.spec.ts`, and
-`python -m unittest scripts/ci/test_windows_desktop_archive.py`. The current packaged journey
+`Push-Location scripts/ci; python -m unittest test_windows_desktop_archive.py; Pop-Location` (PowerShell). The current packaged journey
 is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
 
 
