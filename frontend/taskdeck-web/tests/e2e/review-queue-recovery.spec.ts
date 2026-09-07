@@ -23,7 +23,7 @@ async function moveReviewScopeWithoutReload(page: Page, boardId: string) {
   }, boardId)
 }
 
-test('shows repeated refusal feedback only after a second explicit 403 and clears it on success', async ({ page }) => {
+test('shows repeated refusal feedback only after a second explicit 403 and clears it on success', async ({ page }, testInfo) => {
   test.setTimeout(60_000)
 
   const collectionPath = apiRoutePath(API_BASE_URL, 'automation/proposals')
@@ -62,6 +62,10 @@ test('shows repeated refusal feedback only after a second explicit 403 and clear
   expect(listReads).toBe(2)
   expect(responseStatuses).toEqual([403, 403])
   await expect(page.getByText(/Failed to load proposals/i)).toHaveCount(0)
+  await page.screenshot({
+    path: testInfo.outputPath('review-queue-revoked-retry.png'),
+    fullPage: true,
+  })
 
   // A successful explicit read clears both the authority panel and its retry
   // sentence. The empty queue is intentional: this proves recovery without
@@ -71,4 +75,8 @@ test('shows repeated refusal feedback only after a second explicit 403 and clear
   await expect(retryFeedback).toHaveCount(0)
   expect(listReads).toBe(3)
   expect(responseStatuses).toEqual([403, 403, 200])
+  await page.screenshot({
+    path: testInfo.outputPath('review-queue-recovered.png'),
+    fullPage: true,
+  })
 })
