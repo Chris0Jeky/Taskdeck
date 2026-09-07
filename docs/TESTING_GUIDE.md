@@ -2757,3 +2757,7 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 - `#717` — Property-based and adversarial input tests (211 tests)
 
 **All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.
+
+## Paper Wide-card regression (#2090)
+
+From `frontend/taskdeck-web`, run `npx playwright test tests/e2e/paper-responsive.spec.ts --grep "Wide Paper lanes" --project=chromium --reporter=line` against the isolated Mock test stack. It creates its own authenticated board/card, selects Wide, and compares actual rendered card width with the lane's card-content width. Focused unit coverage is in `BoardView.spec.ts`, `PaperBoardView.spec.ts`, and `CardModal.spec.ts`; standard typecheck/build and full frontend qualification still apply. Keep screenshot inspection separate from geometry assertions and report any known #2789 calendar-fixture failures explicitly.

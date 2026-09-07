@@ -1401,3 +1401,9 @@ Historical/spec detail material:
 
 Rule:
 - If archive content conflicts with active docs, active docs win.
+
+## Paper board-control candidate (2026-09-08, #2090 / PR #2793)
+
+The remaining board-control candidate scopes collapse preferences to the signed-in user, keeps the latest requested navigation while a discard confirmation is open, and focuses a newly selected card in the desktop inspector. Wide cards now fill their lane's content width: browser measurement found the old 248px card cap inside a 340px lane, and the Chromium regression compares the rendered card and card-content widths after the fix.
+
+At source head `b479064e7`, the three affected view/modal test files passed 129 tests, the Wide-card Chromium journey passed, and typecheck/build/scoped lint passed. Synthetic desktop and 390px mobile inspector evidence was visually inspected and retained outside the worktree; the mobile inspector remains a viewport-bounded modal. Full frontend qualification is not green: five date-fixture failures were observed and are independently tracked on unchanged main in #2789. Independent review, hosted checks, and complete #2090 residual acceptance remain pending. These changes reduce board maintenance and context-switching friction without changing proposal review or execution authority.
