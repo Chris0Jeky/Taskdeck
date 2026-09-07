@@ -21,6 +21,7 @@ public class ChatServiceClarificationTests
     private readonly Mock<IAutomationProposalService> _proposalServiceMock = new();
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock = new();
     private readonly Mock<INotificationService> _notificationServiceMock = new();
+    private readonly Mock<IAuthorizationService> _authorizationServiceMock = new();
     private readonly ChatService _service;
 
     public ChatServiceClarificationTests()
@@ -36,6 +37,9 @@ public class ChatServiceClarificationTests
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
 
         // Use the real MockLlmProvider to exercise clarification behavior
         _service = new ChatService(
@@ -44,7 +48,8 @@ public class ChatServiceClarificationTests
             _plannerMock.Object,
             _proposalServiceMock.Object,
             _policyEngineMock.Object,
-            _notificationServiceMock.Object);
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object);
     }
 
     [Fact]
