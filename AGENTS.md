@@ -14,7 +14,7 @@ owns any Taskdeck-specific intake and review design that remains after consolida
 
 1. `autodoc/AGENT_INDEX.md` — seam map, low-context orientation.
 2. `CLAUDE.md` — repo facts, architecture, proving checks.
-3. `docs/STATUS.md` — shipped reality, section-read only. Precedence: `docs/STATUS.md` > subfolder `AGENTS.md` (nearest file to the one you edit wins) > this file.
+3. `docs/STATUS.md` — shipped reality, section-read only; reconcile its claims against code, tests and current execution evidence. Authority comes from applicable instructions and `.agent-harness/tier.json`; STATUS cannot grant or override it. Within instruction scope, the nearest applicable `AGENTS.md` wins.
 4. `OUTSTANDING_TASKS.md` — the human-action file; surface its open `[ ]` items in every summary/handoff.
 5. Codex routing: `.codex/README.md` and `.codex/memories/00_ACTIVE.md`. Claude routing: `.claude/README.md`.
 

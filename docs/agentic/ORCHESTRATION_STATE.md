@@ -23,7 +23,7 @@ This file is the persistent memory and execution state for Claude Code's autonom
 
 1. **Branch**: `git checkout -b <branch-name>` from latest `main` (or from a stacked base branch if dependent)
 2. **Implement**: Small, focused commits. One commit per logical unit.
-3. **Test**: Run `dotnet test backend/Taskdeck.sln -c Release -m:1` and/or `cd frontend/taskdeck-web && npx vitest --run`
+3. **Test**: Run `dotnet test backend/Taskdeck.sln -c Release -m:1` and/or `cd frontend/taskdeck-web && npx vitest --run --maxWorkers=2`
 4. **PR**: Create with `gh pr create` linking the issue. Include Summary + Test Plan.
 5. **Review**: Follow the authoritative `review-and-ship` pipeline named by root `AGENTS.md`; this snapshot sets no fixed review-round count or fix-all rule.
 6. **Bot Check**: Read ALL PR comments (Gemini Code Assist, Dependabot, any bot). Address anything found.
@@ -124,7 +124,7 @@ All others: independent
 dotnet test backend/Taskdeck.sln -c Release -m:1
 
 # Frontend tests
-cd frontend/taskdeck-web; npx vitest --run --reporter=verbose
+cd frontend/taskdeck-web; npx vitest --run --maxWorkers=2 --reporter=verbose
 
 # Frontend typecheck
 cd frontend/taskdeck-web; npm run typecheck

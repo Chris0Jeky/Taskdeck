@@ -3,7 +3,7 @@
 Last Updated: 2026-09-06
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
-**Precedence** when documents disagree: `docs/STATUS.md` > `AGENTS.md` > `CLAUDE.md`.
+**Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.

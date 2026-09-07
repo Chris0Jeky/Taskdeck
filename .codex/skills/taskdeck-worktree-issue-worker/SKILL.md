@@ -64,7 +64,7 @@ Frontend:
 Set-Location frontend/taskdeck-web
 npm run typecheck; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-npx vitest --run
+npx vitest --run --maxWorkers=2
 ```
 
 UI flow changes may also need targeted Playwright and screenshots.

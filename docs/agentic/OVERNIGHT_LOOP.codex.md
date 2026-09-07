@@ -80,7 +80,7 @@ Read before editing — do not assume layout:
   `docs/REVIVAL_PLAN.md` (the active planning spine — ratified waves plus ADR-0051's bounded
   autonomous-admission lane), `docs/decisions/INDEX.md` (ADRs), and `OUTSTANDING_TASKS.md` (the maintainer's
   durable checklist — surface its open items in every summary; never auto-check an item).
-  Precedence when docs conflict: `docs/STATUS.md` > `AGENTS.md` > everything else.
+  Authority comes from applicable instructions and the declared tier; STATUS records shipped-state evidence.
 - **Verification commands** (record them, then trust them):
   - Backend: `dotnet build backend/Taskdeck.sln -c Release -m:1`;
     `dotnet test backend/Taskdeck.sln -c Release -m:1` (or a single project /

@@ -28,7 +28,7 @@ Use these skills:
 
 At the start of a high-autonomy session:
 
-1. Read `docs/STATUS.md`, `AGENTS.md`, `.codex/README.md`, `.codex/memories/00_ACTIVE.md`, `docs/IMPLEMENTATION_MASTERPLAN.md`, `docs/ISSUE_EXECUTION_GUIDE.md`, `docs/GITHUB_PROJECT_AUTOMATION.md`, and `docs/TESTING_GUIDE.md`.
+1. Start with `autodoc/AGENT_INDEX.md`, applicable instructions, `.codex/README.md` and `.codex/memories/00_ACTIVE.md`. Locate only the relevant headings/line ranges in `docs/STATUS.md`, the implementation masterplan, issue execution, GitHub automation and testing guides; do not bulk-read them. Preserve all instructions applicable to the chosen seam.
 2. Read `.agent-harness/tier.json` and any legacy `.claude/tier.json`; the strictest declaration binds.
 3. Run `powershell -File scripts/check-git-env.ps1`.
 4. Confirm branch and worktree state:
@@ -52,7 +52,7 @@ When the user says "take care of as many issues as possible":
    - GitHub MCP or `gh issue view` to confirm dependencies and status.
    - Tracker/umbrella issues are excluded by default by the helper; include them only when the task is explicitly coordination/planning.
 3. Prefer highest-priority unblocked issues.
-4. Reject issues that conflict with `docs/STATUS.md`.
+4. Reconcile candidates against current behavior, the active plan and applicable authority. A requested behavior change may intentionally differ from STATUS; that file is evidence, not an authorization grant.
 5. Split only by non-overlapping ownership.
 6. Respect the WIP model unless the user clearly authorized a batch override.
 
