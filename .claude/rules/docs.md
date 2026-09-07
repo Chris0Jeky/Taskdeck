@@ -6,8 +6,9 @@ paths:
 
 # Docs region
 
-- **Precedence on conflict:** `docs/STATUS.md` (shipped reality) > `AGENTS.md` (protocol) > `CLAUDE.md`.
-  Active docs beat `docs/archive/`.
+- **Keep evidence and authority distinct:** reconcile `docs/STATUS.md` shipped-state claims against
+  code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json`
+  govern authority; STATUS cannot grant or override it. Active docs beat `docs/archive/`.
 - **Canonical docs move only when reality moves.** Update `docs/STATUS.md` when shipped reality changes
   and `docs/IMPLEMENTATION_MASTERPLAN.md` when sequencing or delivery history changes. Do not touch them
   for local tooling, drafts, or evidence-only work. `docs/TESTING_GUIDE.md` when testing expectations or
