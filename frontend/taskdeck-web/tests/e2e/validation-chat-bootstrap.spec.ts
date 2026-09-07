@@ -81,7 +81,7 @@ test.describe('TST09 Chat Session Behavior', () => {
   test('SC-005: unbound actionable prompt links the session, continues explicitly, and reaches Review without mutating board', async ({
     page,
     request,
-  }) => {
+  }, testInfo) => {
     const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
     const boardId = await createBoardWithColumn(request, auth, seed, {
       boardNamePrefix: 'SliceC Actionable',
@@ -153,6 +153,7 @@ test.describe('TST09 Chat Session Behavior', () => {
     const proposalId = reloaded.recentMessages.find((message) => message.proposalId)?.proposalId
     expect(proposalId).toBeTruthy()
     await expect(page.locator(`#proposal-${proposalId}`)).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath('chat-to-review.png'), fullPage: true })
 
     const cardsInReviewResponse = await request.get(
       `${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`,
