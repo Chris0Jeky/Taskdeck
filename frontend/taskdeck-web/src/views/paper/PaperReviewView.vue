@@ -77,6 +77,7 @@ const {
   unavailableProposalId,
   unavailableProposalMalformed,
   queueAccessRevoked,
+  queueAccessRevokedRetry,
   queueRefreshStale,
   queueRefreshRefused,
   queueRefreshRecovered,
@@ -3021,6 +3022,16 @@ async function onClearBoardScope() {
           {{ $t('review.empty.accessRevoked.title') }}
         </h2>
         <p class="tk-lede">{{ $t('review.empty.accessRevoked.body') }}</p>
+        <p
+          v-if="queueAccessRevokedRetry"
+          class="tk-meta"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="paper-review-access-revoked-retry"
+        >
+          {{ $t('review.empty.accessRevoked.retry') }}
+        </p>
       </template>
       <template v-else-if="activeProposalSettledElsewhere">
         <div class="tk-eyebrow">{{ $t('review.empty.settledElsewhere.eyebrow') }}</div>
