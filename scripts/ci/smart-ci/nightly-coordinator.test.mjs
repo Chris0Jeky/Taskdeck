@@ -148,9 +148,11 @@ test('a frontend-only change selects the browser suites plus the backend-solutio
     'backend-solution',
     'e2e-smoke',
     'e2e-cross-browser',
+    'container-images',
     'frontend-coverage',
   ]);
   assert.ok(!receipt.selectedSuites.includes('backend-coverage'));
+  assert.ok(receipt.selectedSuites.includes('container-images'));
 });
 
 test('the weekly slot forces weekly-full even when the diff is empty', () => {
@@ -316,6 +318,13 @@ test('an invalid policy, an invalid SHA, an unparseable clock and force-full eac
   assert.equal(badClock.verdict, 'full-sweep');
   assert.ok(badClock.reasons.includes(REASONS.nowUnparseable));
   assert.equal(badClock.generatedAtUtc, '1970-01-01T00:00:00.000Z');
+
+  const ambiguousLocalClock = decideNightlyPlan(coordinatorInput({ nowUtc: '2026-09-03T03:25:00' }));
+  assert.equal(ambiguousLocalClock.verdict, 'full-sweep');
+  assert.ok(ambiguousLocalClock.reasons.includes(REASONS.nowUnparseable));
+
+  const explicitOffsetClock = decideNightlyPlan(coordinatorInput({ nowUtc: '2026-09-03T04:25:00+01:00' }));
+  assert.equal(explicitOffsetClock.generatedAtUtc, THURSDAY);
 
   const forced = decideNightlyPlan(coordinatorInput({ forceFull: true, treeSha: LAST_TREE }));
   assert.equal(forced.verdict, 'full-sweep');
