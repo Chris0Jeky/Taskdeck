@@ -57,8 +57,8 @@ public sealed class ChatServiceAuthorizationTests
             new CreateChatSessionDto("Foreign board chat", boardId));
 
         result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
-        result.ErrorMessage.Should().Be("You do not have access to this board");
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.ErrorMessage.Should().Be("Board not found");
         _chatSessionRepositoryMock.Verify(
             repository => repository.AddAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()),
             Times.Never);
@@ -68,13 +68,13 @@ public sealed class ChatServiceAuthorizationTests
     }
 
     [Fact]
-    public async Task CreateSessionAsync_ShouldPreserveAuthorizationFailure()
+    public async Task CreateSessionAsync_ShouldNormalizeMissingBoardAuthorizationFailure()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
         _authorizationServiceMock
             .Setup(service => service.CanReadBoardAsync(userId, boardId))
-            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.NotFound, "board lookup failed"));
+            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.NotFound, $"Board with ID {boardId} not found"));
 
         var result = await CreateService().CreateSessionAsync(
             userId,
@@ -82,7 +82,31 @@ public sealed class ChatServiceAuthorizationTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.NotFound);
-        result.ErrorMessage.Should().Be("board lookup failed");
+        result.ErrorMessage.Should().Be("Board not found");
+        _chatSessionRepositoryMock.Verify(
+            repository => repository.AddAsync(It.IsAny<ChatSession>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        _unitOfWorkMock.Verify(
+            unitOfWork => unitOfWork.SaveChangesAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateSessionAsync_ShouldPreserveNonNotFoundAuthorizationFailure()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        _authorizationServiceMock
+            .Setup(service => service.CanReadBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Failure<bool>(ErrorCodes.UnexpectedError, "authorization service unavailable"));
+
+        var result = await CreateService().CreateSessionAsync(
+            userId,
+            new CreateChatSessionDto("Board chat", boardId));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.UnexpectedError);
+        result.ErrorMessage.Should().Be("authorization service unavailable");
     }
 
     [Fact]
@@ -148,8 +172,8 @@ public sealed class ChatServiceAuthorizationTests
             new SendChatMessageDto("create card 'Should not run'"));
 
         result.IsSuccess.Should().BeFalse();
-        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
-        result.ErrorMessage.Should().Be("You do not have access to this board");
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        result.ErrorMessage.Should().Be("Board not found");
         session.Messages.Should().BeEmpty();
         _chatMessageRepositoryMock.Verify(
             repository => repository.AddAsync(It.IsAny<ChatMessage>(), It.IsAny<CancellationToken>()),
@@ -240,7 +264,7 @@ public sealed class ChatServiceAuthorizationTests
         events.Should().ContainSingle();
         events[0].IsComplete.Should().BeTrue();
         events[0].Token.Should().BeEmpty();
-        events[0].Error.Should().Be("You do not have access to this board");
+        events[0].Error.Should().Be("Board not found");
         _boardContextBuilderMock.Verify(
             builder => builder.BuildContextAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()),
             Times.Never);

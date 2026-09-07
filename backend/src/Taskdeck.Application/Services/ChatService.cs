@@ -33,6 +33,7 @@ public class ChatService : IChatService
         "(No board is linked to this chat session, so nothing was created or changed on any board. " +
         "Open a board-scoped chat session to turn this into a proposal you can review.)";
     private const string BoardAccessDeniedMessage = "You do not have access to this board";
+    private const string BoardNotFoundMessage = "Board not found";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -1010,11 +1011,15 @@ public class ChatService : IChatService
 
         var permission = await _authorizationService.CanReadBoardAsync(userId, boardId.Value);
         if (!permission.IsSuccess)
-            return Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+        {
+            return permission.ErrorCode == ErrorCodes.NotFound
+                ? Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage)
+                : Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+        }
 
         return permission.Value
             ? Result.Success()
-            : Result.Failure(ErrorCodes.Forbidden, BoardAccessDeniedMessage);
+            : Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage);
     }
 
     private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)

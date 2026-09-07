@@ -30,7 +30,7 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
-    public async Task CreateSession_ShouldReturnForbidden_ForAnotherUsersBoard()
+    public async Task CreateSession_ShouldReturnNotFound_ForAnotherUsersBoard()
     {
         using var ownerClient = _factory.CreateClient();
         using var outsiderClient = _factory.CreateClient();
@@ -42,9 +42,23 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
             "/api/llm/chat/sessions",
             new CreateChatSessionDto("Foreign board chat", board.Id));
 
-        await ApiTestHarness.AssertForbiddenAsync(response);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var error = await response.Content.ReadFromJsonAsync<JsonElement>();
-        error.GetProperty("message").GetString().Should().Be("You do not have access to this board");
+        error.GetProperty("message").GetString().Should().Be("Board not found");
+    }
+
+    [Fact]
+    public async Task CreateSession_ShouldReturnSameNotFoundContract_ForMissingBoard()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, "chat-missing-board");
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Missing board chat", Guid.NewGuid()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("message").GetString().Should().Be("Board not found");
     }
 
     [Fact]
