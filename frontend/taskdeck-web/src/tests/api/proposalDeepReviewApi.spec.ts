@@ -98,7 +98,7 @@ describe('proposalDeepReviewApi', () => {
     const unrecorded = { provider: null, model: null, promptVersion: null }
 
     it('fetches the server-recorded producer triple for a proposal', async () => {
-      const metadata = { provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'llm-triage.v2' }
+      const metadata = { provider: 'openai', model: 'gpt-5.6-luna', promptVersion: 'llm-triage.v3' }
       vi.mocked(http.get).mockResolvedValue({ data: metadata })
 
       const result = await proposalDeepReviewApi.getProvenanceMetadata('p-1')

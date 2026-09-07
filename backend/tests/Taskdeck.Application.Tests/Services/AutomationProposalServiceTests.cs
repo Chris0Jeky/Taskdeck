@@ -5000,8 +5000,8 @@ public class AutomationProposalServiceTests
     // ----- Producer triple stamping (#1987) -----
 
     [Theory]
-    // The live-provider case: the dispatched provider and its schema-v2 prompt contract.
-    [InlineData("openai", "llm-triage.v2")]
+    // The live-provider case: the dispatched provider and the current schema-v2-shaped prompt contract.
+    [InlineData("openai", "llm-triage.v3")]
     // The deterministic case: no model ran, and the extractor says so honestly.
     [InlineData("deterministic", "triage.v1")]
     public async Task CreateProposalAsync_ShouldStampProducerTripleFromTrustedInputs(

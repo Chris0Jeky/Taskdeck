@@ -653,6 +653,13 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
         with self.assertRaises(harness.AcceptanceFailure):
             harness.validate_phase_evidence(evidence, "create", "release-123456-789")
 
+    def test_live_capture_evidence_rejects_historical_prompt_version(self) -> None:
+        evidence = self._live_create_evidence(123)
+        evidence["liveOpenAi"]["promptVersion"] = "llm-triage.v2"
+
+        with self.assertRaises(harness.AcceptanceFailure):
+            harness.validate_phase_evidence(evidence, "create", "release-123456-789")
+
     def test_final_evidence_v7_records_both_explicit_journeys_and_mcp_stdio(self) -> None:
         final = harness.build_final_evidence(
             "taskdeck-v0.1.1-win-x64.zip",
@@ -853,7 +860,7 @@ class WindowsDesktopArchiveTests(unittest.TestCase):
                 "outcome": "passed",
                 "provider": "OpenAI",
                 "model": "gpt-5.6-luna",
-                "promptVersion": "llm-triage.v2",
+                "promptVersion": harness.EXPECTED_LIVE_PROMPT_VERSION,
                 "isMock": False,
                 "isProbed": True,
                 "verificationStatus": "verified",
