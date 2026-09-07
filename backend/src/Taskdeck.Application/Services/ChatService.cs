@@ -326,7 +326,8 @@ public class ChatService : IChatService
                 quotaEstimatedTokens = reservation.EstimatedTokens;
             }
 
-            if (LooksLikeChecklistBootstrapRequest(actionAttemptContent))
+            if (LooksLikeChecklistBootstrapRequest(actionAttemptContent)
+                && (turnRequestsAction || !StartsWithQuestion(actionAttemptContent)))
             {
                 if (!session.BoardId.HasValue)
                 {
@@ -410,7 +411,7 @@ public class ChatService : IChatService
                             if (turnRequestsAction)
                                 assistantContent = AppendNoProposalActionNotice(assistantContent);
                         }
-                        else if (turnRequestsAction)
+                        else if (turnRequestsAction || toolResult.ToolCallLog.Any(IsProposalToolCall))
                         {
                             messageType = "action-no-proposal";
                             assistantContent = AppendNoProposalActionNotice(assistantContent);
@@ -1231,6 +1232,17 @@ public class ChatService : IChatService
         return Regex.IsMatch(content, @"(?m)^\s*[-*]\s*\[\s\]\s+.+$");
     }
 
+    private static bool StartsWithQuestion(string content)
+    {
+        var firstLine = content
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .FirstOrDefault(static line => !string.IsNullOrWhiteSpace(line));
+        return firstLine?.TrimEnd().EndsWith("?", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsProposalToolCall(ToolCallLogEntry toolCall) =>
+        toolCall.ToolName.StartsWith("propose_", StringComparison.Ordinal);
+
     private async Task<Result> PublishMentionNotificationsAsync(
         ChatSession session,
         Guid senderUserId,
@@ -1410,7 +1422,12 @@ public class ChatService : IChatService
             session.Status,
             session.CreatedAt,
             session.UpdatedAt,
-            session.Messages.Select(MapMessageToDto).ToList()
+            // The UI and recovery logic consume this as a turn transcript. EF does not guarantee
+            // Include collection order, so return the causal creation order explicitly.
+            session.Messages
+                .OrderBy(message => message.CreatedAt)
+                .Select(MapMessageToDto)
+                .ToList()
         );
     }
 

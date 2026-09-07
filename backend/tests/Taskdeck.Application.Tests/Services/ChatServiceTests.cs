@@ -902,6 +902,35 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_ConversationalChecklistQuestion_DoesNotBootstrapProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Checklist question", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("Here is how I would review it.", 10, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto(
+                """
+                Can you review this checklist?
+                - [ ] Ship release
+                """),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("text");
+        _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
+    }
+
+    [Fact]
     public async Task SendMessageAsync_ShouldReturnError_WhenChecklistItemsCannotBeParsed()
     {
         var userId = Guid.NewGuid();
@@ -1797,6 +1826,73 @@ public class ChatServiceTests
                 It.IsAny<ChatCompletionRequest>(),
                 It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_FailedProposalToolWithoutClassifierIntent_PersistsNoProposalOutcome()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Failed proposal tool", boardId);
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var provider = new Mock<ILlmProvider>();
+        var callCount = 0;
+        provider
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    var arguments = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("{}");
+                    return Task.FromResult(new LlmToolCompletionResult(
+                        Content: null,
+                        TokensUsed: 20,
+                        Provider: "Mock",
+                        Model: "mock-chat",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "propose_create_card", arguments) },
+                        IsComplete: false));
+                }
+
+                return Task.FromResult(new LlmToolCompletionResult(
+                    Content: "I could not complete that request.",
+                    TokensUsed: 10,
+                    Provider: "Mock",
+                    Model: "mock-chat",
+                    ToolCalls: null,
+                    IsComplete: true));
+            });
+
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("propose_create_card");
+        executor
+            .Setup(e => e.ExecuteAsync(
+                It.IsAny<ToolExecutionContext>(),
+                It.IsAny<System.Text.Json.JsonElement>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated executor failure"));
+        var service = BuildServiceWithOrchestrator(new ToolCallingChatOrchestrator(
+            provider.Object,
+            new ToolExecutorRegistry(new[] { executor.Object }),
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object));
+
+        var result = await service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please help me understand the release workflow"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("action-no-proposal");
+        result.Value.Content.Should().Contain("No proposal was created");
+        result.Value.ProposalId.Should().BeNull();
     }
 
     [Fact]

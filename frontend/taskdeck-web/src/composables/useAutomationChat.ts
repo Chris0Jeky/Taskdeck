@@ -92,7 +92,10 @@ export function useAutomationChat() {
     for (let index = messages.length - 1; index >= 0; index--) {
       const message = messages[index]!
       if (normalizeChatRole(message.role) !== 'Assistant') continue
-      if (message.messageType !== 'action-needs-board') return null
+      const needsBoardRecovery = message.messageType === 'action-needs-board'
+        || (message.messageType === 'clarification'
+          && message.content.includes('Select a writable board below'))
+      if (!needsBoardRecovery) return null
 
       for (let userIndex = index - 1; userIndex >= 0; userIndex--) {
         const userMessage = messages[userIndex]!
@@ -227,6 +230,7 @@ export function useAutomationChat() {
       selectedSession.value = result
     } catch (e: unknown) {
       if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
+      requestedSessionId = selectedSession.value?.id ?? null
       toast.error(getErrorDisplay(e, 'Failed to load chat session').message)
     }
   }
@@ -313,10 +317,18 @@ export function useAutomationChat() {
     const sessionId = selectedSession.value.id
     try {
       sendingMessage.value = true
-      await chatApi.sendMessage(sessionId, { content })
+      const sentMessage = await chatApi.sendMessage(sessionId, { content })
       if (isDisposed) return
       if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
         messageContent.value = ''
+        const currentSession = selectedSession.value
+        selectedSession.value = {
+          ...currentSession,
+          recentMessages: [
+            ...currentSession.recentMessages.filter((message) => message.id !== sentMessage.id),
+            sentMessage,
+          ],
+        }
         await refreshSelectedSession(sessionId)
       }
     } catch (e: unknown) {
