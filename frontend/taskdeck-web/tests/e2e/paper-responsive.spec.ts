@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { createBoardWithColumn } from './support/boardHelpers'
-import { registerAndAttachSession } from './support/authSession'
+import { API_BASE_URL, registerAndAttachSession } from './support/authSession'
 import { createCaptureItem } from './support/captureFlow'
 
 async function enablePaperMode(page: Page) {
@@ -58,6 +58,47 @@ test.describe('Paper responsive shell', () => {
     await expect(page.locator('[data-paper-bottombar]')).toHaveCount(0)
     await expect(page.getByRole('heading', { name: `Paper Tablet ${seed}` })).toBeVisible()
     await expect(page.locator('[data-testid="paper-board-lanes"]')).toHaveClass(/paper-board-view__lanes--snap/)
+  })
+
+  test('Wide Paper lanes let cards use the full lane content width', async ({ page, request }) => {
+    await page.setViewportSize({ width: 1280, height: 844 })
+    await enablePaperMode(page)
+    const auth = await registerAndAttachSession(page, request, 'paper-wide-card')
+    const seed = `${Date.now()}`
+    const boardId = await createBoardWithColumn(request, auth, seed, {
+      boardNamePrefix: 'Paper Wide Card',
+      description: 'Synthetic wide-card layout regression fixture.',
+      columnNamePrefix: 'Wide Lane',
+    })
+    const boardResponse = await request.get(`${API_BASE_URL}/boards/${boardId}`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+    })
+    expect(boardResponse.ok()).toBe(true)
+    const board = await boardResponse.json() as { columns: Array<{ id: string }> }
+    const createCardResponse = await request.post(`${API_BASE_URL}/boards/${boardId}/cards`, {
+      headers: { Authorization: `Bearer ${auth.token}` },
+      data: {
+        columnId: board.columns[0]!.id,
+        title: `Wide card ${seed}`,
+        description: 'Synthetic-only layout fixture.',
+        dueDate: null,
+        labelIds: [],
+      },
+    })
+    expect(createCardResponse.ok()).toBe(true)
+
+    await page.goto(`/workspace/boards/${boardId}`)
+    await page.getByLabel('Column width').selectOption('wide')
+    const geometry = await page.locator('.paper-board-column__cards').evaluate((cards) => {
+      const card = cards.querySelector('.paper-board-card')
+      if (!(card instanceof HTMLElement)) throw new Error('Synthetic card did not render')
+      return {
+        cardsWidth: cards.getBoundingClientRect().width,
+        cardWidth: card.getBoundingClientRect().width,
+      }
+    })
+
+    expect(geometry.cardWidth).toBeCloseTo(geometry.cardsWidth, 1)
   })
 
   test('@mobile Paper Activity stays within the viewport', async ({ page, request }) => {
