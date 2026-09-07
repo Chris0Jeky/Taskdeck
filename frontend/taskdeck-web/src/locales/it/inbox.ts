@@ -188,7 +188,7 @@ export default {
       archiving: 'Archiviazione…',
       kept: 'Conservata per dopo. Chiedi all\'AI o archiviala quando vuoi.',
       archived: 'Archiviata. Non sono state create proposte né attività sulla bacheca.',
-      nothingToPropose: 'Lo smistamento non ha trovato nulla da proporre — a Review non è arrivato nulla.',
+      nothingToPropose: 'Lo smistamento non ha trovato nulla da proporre — a Review non è arrivato nulla. Modifica la cattura, poi premi Ask AI per riprovare.',
       inReview: 'Inviata a Review — decidi lì.',
       applied: 'Applicata alla bacheca. Qui non resta altro da fare.',
       rejected: 'Rifiutata. Questa cattura non arriverà a Review.',

@@ -764,12 +764,31 @@ describe('PaperTriageTable', () => {
     expect(row.get('button[data-action="accept"]').attributes('disabled')).toBeUndefined()
   })
 
+  it('lets a proposal-less Triaged row be corrected and explicitly re-triaged', async () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'Triaged' }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const row = wrapper.find('.paper-triage__row')
+
+    expect(row.get('button[data-action="accept"]').attributes('disabled')).toBeUndefined()
+    expect(row.get('button[data-action="edit"]').attributes('disabled')).toBeUndefined()
+    expect(row.get('button[data-action="keep"]').attributes('disabled')).toBeDefined()
+    expect(row.get('button[data-action="reject"]').attributes('disabled')).toBeDefined()
+    expect(row.get('[data-testid="capture-row-status"]').text()).toContain('Edit the capture')
+
+    await row.get('button[data-action="accept"]').trigger('click')
+    expect(wrapper.emitted('accept')?.[0]).toEqual(['capture-1', 'board-alpha'])
+
+    await row.get('button[data-action="edit"]').trigger('click')
+    await flushPromises()
+    expect(row.find('[data-testid="capture-edit-textarea"]').exists()).toBe(true)
+  })
+
   it('never tells a "nothing to propose" row to go decide in Review', () => {
     // A triage that completed with no proposal is a SUCCESS with nothing left
     // to decide (backend: CaptureStatusPolicy maps completed-without-proposal
-    // to Triaged). Accept and Reject are both disabled on this row and polling
-    // has stopped, so "decide there" would be a permanent instruction the user
-    // has no way to act on.
+    // to Triaged). It can be explicitly corrected and re-triaged, but there is
+    // still no Review record to decide until that next run creates one.
     const items = makeItems()
     items[0] = { ...items[0], status: 'Triaged' }
     const wrapper = mount(PaperTriageTable, { props: { items } })
@@ -1389,10 +1408,7 @@ describe('PaperTriageTable', () => {
    * not be keyed on a client-side product policy that a ruling could change,
    * and never on a status the capture is only passing through.
    */
-  // `Triaged` is a capture this list will not edit under the current gate;
-  // `Triaging` is one it is only passing through. Neither is the server saying
-  // no, so neither may cost the reader their correction.
-  it.each(['Triaged', 'Triaging'] as const)('keeps a correction whose capture comes back %s, and says why', async (status) => {
+  it('keeps a correction whose capture comes back Triaged and makes it editable again', async () => {
     const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
     const typed = await openEditorAndType(wrapper, 0, 'a correction for a capture that moved on')
 
@@ -1400,16 +1416,38 @@ describe('PaperTriageTable', () => {
     await flushPromises()
 
     const returned = makeItems()
-    returned[0] = { ...returned[0], status: status as CaptureStatusValue }
+    returned[0] = { ...returned[0], status: 'Triaged' }
+    await wrapper.setProps({ items: returned })
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).not.toContain('discarded')
+    const held = noticeFor(wrapper, 'held')
+    expect(held.text()).toContain('First excerpt')
+    expect(held.text()).toContain('Edit capture')
+
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
+  })
+
+  it('keeps a correction whose capture comes back Triaging without offering a stale edit', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction for a capture that moved on')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+
+    const returned = makeItems()
+    returned[0] = { ...returned[0], status: 'Triaging' }
     await wrapper.setProps({ items: returned })
     await flushPromises()
 
     expect(noticeKinds(wrapper)).not.toContain('discarded')
     const held = noticeFor(wrapper, 'heldUneditable')
     expect(held.text()).toContain('First excerpt')
-    expect(held.text()).toContain(status)
+    expect(held.text()).toContain('Triaging')
 
-    // And it really is still there once the capture is editable again.
     await wrapper.setProps({ items: makeItems() })
     await flushPromises()
     await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')

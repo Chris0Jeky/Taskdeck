@@ -251,7 +251,7 @@ export default {
       archiving: 'Archiving…',
       kept: 'Kept for later. Ask AI or archive it when you are ready.',
       archived: 'Archived. No proposal or board work was created.',
-      nothingToPropose: 'Triage found nothing to propose — nothing was sent to Review.',
+      nothingToPropose: 'Triage found nothing to propose — nothing was sent to Review. Edit the capture, then Ask AI to try again.',
       inReview: 'Sent to Review — decide there.',
       applied: 'Applied to the board. Nothing left to do here.',
       rejected: 'Rejected. This capture will not reach Review.',

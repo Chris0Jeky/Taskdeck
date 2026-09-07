@@ -189,7 +189,7 @@ export default {
       archiving: 'Archivando…',
       kept: 'Guardada para más tarde. Pide ayuda a la IA o archívala cuando quieras.',
       archived: 'Archivada. No se creó ninguna propuesta ni trabajo en el tablero.',
-      nothingToPropose: 'La clasificación no encontró nada que proponer — a Review no llegó nada.',
+      nothingToPropose: 'La clasificación no encontró nada que proponer — a Review no llegó nada. Edita la captura y pulsa Ask AI para intentarlo de nuevo.',
       inReview: 'Enviada a Review — decide allí.',
       applied: 'Aplicada al tablero. Aquí no queda nada por hacer.',
       rejected: 'Rechazada. Esta captura no llegará a Review.',
