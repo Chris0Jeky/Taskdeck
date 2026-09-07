@@ -9,6 +9,8 @@ Finish the work completely: verify what changed, update the right docs, and repo
 
 ## Read first
 
+Use `autodoc/AGENT_INDEX.md` to locate the changed seam; read only relevant STATUS, testing and masterplan sections, plus applicable instructions. Do not load entire historical documents.
+
 1. `docs/STATUS.md`
 2. `AGENTS.md`
 3. `docs/TESTING_GUIDE.md`

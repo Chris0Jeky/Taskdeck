@@ -9,6 +9,8 @@ Coordinate many issues without losing review quality, docs sync, or follow-up ac
 
 ## Read first
 
+Use `autodoc/AGENT_INDEX.md` to locate relevant headings/ranges in the documents below; never load the full STATUS, masterplan or testing history as startup context. Read applicable instructions and `.agent-harness/tier.json` for authority.
+
 1. `docs/STATUS.md`
 2. `AGENTS.md`
 3. `docs/IMPLEMENTATION_MASTERPLAN.md`

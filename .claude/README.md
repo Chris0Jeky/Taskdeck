@@ -41,9 +41,10 @@ On conflict: `docs/STATUS.md` for reality, `AGENTS.md` for protocol.
 ## MCP
 
 `../.mcp.json` declares the project servers: `openaiDeveloperDocs` (HTTP; authenticate via `/mcp`),
-`playwright`, and `chromeDevTools` (stdio via `npx`; DevTools is version-pinned — bump it deliberately,
+and `chromeDevTools` (stdio via `npx`; DevTools is version-pinned — bump it deliberately,
 never `@latest`). Not declared, on purpose (2026-09-02, RAM/MCP hygiene):
 
+- **Playwright MCP** — removed from the project baseline on 2026-09-07 to keep one interactive browser controller. Repository Playwright tests remain the durable regression route; select another controller only when the task needs it.
 - **Context7** — provided by the claude.ai connector (`mcp__claude_ai_Context7__*`); a project stdio copy
   started a second node process per session and per subagent.
 - **GitHub MCP** — surfaced no tools unauthenticated and every workflow here uses `gh`; re-add only if a

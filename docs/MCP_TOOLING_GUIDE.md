@@ -12,27 +12,28 @@ Operational companion:
 
 ## Quick Rules
 
-### 0) MCP-first default
-- If an MCP tool and shell/CLI can both perform the task, use MCP by default.
-- Use shell/CLI only when MCP is unavailable, failing, or does not support the required operation.
-- When falling back, note the reason briefly in the work summary.
+### 0) Select tools for the task
+- Use native `rg` and Git for local source, and the existing `gh` budget tools for repeatable hosting queries. Use MCP when its structured interface is useful for the current task.
+- Use one interactive browser controller per task. The project default is Chrome DevTools; repository Playwright regression tests use their own test runner.
+- Report actual failures and useful evidence, not a justification for every ordinary shell command.
 - For high-autonomy batches, report actual MCP/GitHub/subagent availability at session start because runtime availability can differ from `.codex/config.toml`.
 - For unresolved MCP/tool failures, classify the result with `docs/agentic/FAILURE_LEDGER.md` instead of silently switching tools.
 
 ### 0.1) Codex and Claude configuration parity
 - Codex project MCP servers live in `.codex/config.toml`.
 - Claude project MCP servers live in `.mcp.json`, with project approval and `/mcp` authentication where required.
-- Shared project baseline: `openaiDeveloperDocs`, `playwright`, `chromeDevTools`. Codex additionally declares `context7` and an authenticated `github` server in `.codex/config.toml`; Claude's `.mcp.json` omits both on purpose (2026-09-02) — Context7 arrives through the claude.ai connector and GitHub work goes through `gh`, so a project copy only added a duplicate process per session. The Docker MCP gateway is user-scope only (see "Need container/runtime deployment checks") and belongs in neither project file.
+- Shared enabled project baseline: `openaiDeveloperDocs` and `chromeDevTools` (pinned to 1.8.0 in both files). Codex additionally declares `context7` and an authenticated `github` server. Its `ripgrep` and alternative `playwright` servers are disabled by default. Claude's `.mcp.json` omits those alternatives and omits Context7/GitHub on purpose: Context7 arrives through the claude.ai connector and GitHub work uses `gh`. The Docker MCP gateway is user-scope only and belongs in neither project file.
 - Use each runtime's native mechanics: Codex configured agents/worktrees when policy allows; Claude skills/hooks/worktree sessions and MCP auth flow.
 
 ### 1) Prefer the right tool over guessing
 - OpenAI/Codex/OpenAI API questions -> `openaiDeveloperDocs` MCP
 - Third-party libraries/frameworks (.NET, ASP.NET Core, Vue, Vite, Playwright, etc.) -> `context7` MCP
-- UI flows, interaction bugs, E2E verification -> `playwright` MCP
+- UI flows and interaction bugs -> one available browser controller; project default `chromeDevTools`
+- Durable E2E verification -> repository Playwright test commands from `CLAUDE.md`
 - Browser deep-debug and runtime protocol inspection -> `chromeDevTools` MCP
 - Container/build/runtime inspection -> `docker` MCP
 - Repo-wide code search -> native `rg` (ripgrep MCP is unreliable on Windows right now)
-- Repo/PR/issue state and automation -> `github` MCP (Codex) or `gh` CLI (Claude, and the fallback for both)
+- Repo/PR/issue state and automation -> existing `gh` CLI/budget tools in both runtimes; `github` MCP is an optional Codex interface
 
 ### 2) Write actions are high risk
 GitHub MCP may have write capability in this environment. Use write actions only when the task explicitly requires them and authentication has been verified in the active runtime.
@@ -47,14 +48,19 @@ When you use MCP tools, include:
 
 ---
 
-## Current MCP Status (baseline carried forward; verify at session start)
+## Historical MCP inventory (not current connectivity evidence)
+
+The PASS values below are historical observations. For a task needing MCP, inspect `codex mcp list`
+or Claude `/mcp` and invoke one relevant read operation. Distinguish configured/enabled from connected;
+report `verified-current`, `unavailable` or `not attempted`. Do not probe unrelated services at startup.
+Inherited user settings and plugins can add tools beyond these project files.
 
 | Server | Status | Notes |
 |---|---:|---|
 | `github` | PASS | Read + write path confirmed |
 | `openaiDeveloperDocs` | PASS | `fetch_openai_doc` coverage is partial for some URLs (use search/list first) |
 | `context7` | PASS | Resolve library id -> query docs works |
-| `playwright` | PASS | End-to-end browser automation works |
+| `playwright` | OPT-IN | Disabled in Codex; absent from Claude project baseline; repository tests remain available |
 | `chromeDevTools` | PASS | Chrome DevTools protocol surface available via MCP |
 | `docker` | PASS | Docker gateway defaults to `docker,docker-docs,time,jetbrains,filesystem,SQLite` |
 | `docker-docs` | PASS | Fast Docker docs retrieval via Docker MCP gateway |
@@ -68,9 +74,12 @@ When you use MCP tools, include:
 | `dockerhub` | OPTIONAL | Enabled in Docker catalog but requires username + `HUB_PAT_TOKEN` secret |
 | `kubernetes` | OPTIONAL | Enabled in Docker catalog; requires a real kubeconfig/context to initialize |
 | `semgrep` | OPTIONAL | Enabled in Docker catalog; remote endpoint may require Semgrep auth |
-| `ripgrep` | PARTIAL/FAIL | Server reachable; Windows path ops failing; use native `rg` |
+| `ripgrep` | DISABLED | Historical Windows path failures; use native `rg` |
 
-Treat `ripgrep` MCP as unavailable until fixed.
+Revalidate an alternative before adopting it. For a Codex task needing the Playwright MCP API,
+use session overrides `-c mcp_servers.playwright.enabled=true -c mcp_servers.chromeDevTools.enabled=false`.
+In Claude, select an already available alternative through `/mcp` and disable the other controller
+for that task; do not recreate a second project-wide default. Enabling a tool is not proof it connected.
 
 Configuration note:
 - Claude `.mcp.json` mirrors the shared baseline and uses `cmd /c npx ...` for local `npx` MCP servers on native Windows.
@@ -94,20 +103,20 @@ Configuration note:
 3. If docs lookup fails, search local or GitHub code for examples.
 
 ### C) "This UI flow is broken/flaky"
-1. Use Playwright MCP to reproduce.
+1. Use the selected browser controller to reproduce with a known app build and safe seeded data.
 2. Capture screenshot/evidence.
 3. Convert repro into a deterministic Playwright test, or a smaller unit/integration test when UI is unnecessary.
 
 ### C2) "Need browser protocol/network/devtools-level evidence"
 1. Use `chromeDevTools` MCP for runtime/network/debug protocol checks.
-2. Keep Playwright MCP for deterministic user-flow reproduction.
+2. Keep durable regression coverage in the repository Playwright tests; successful interactive clicks alone are not a regression suite.
 
 ### D) "Plan/track work" / "Turn docs into issues"
-Codex: use GitHub MCP. Claude: use `gh` (`gh issue`, `gh pr`, `gh api`, `gh project`) — the same read/write rules apply:
+Both runtimes: use `gh` (`gh issue`, `gh pr`, `gh api`, `gh project`) and the existing global budget tools. Codex can select GitHub MCP when it fits the required operation. The same read/write rules apply:
 - Read: list/search issues, PRs, branches, commits
 - Write: create/update issues and PR metadata when explicitly requested
 
-For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the helper scripts under `scripts/github/`. Those scripts are deterministic `gh` fallbacks when GitHub MCP is unavailable or lacks the needed project/PR inspection shape.
+For Codex issue batches, use `docs/tooling/CODEX_AUTONOMY_RUNBOOK.md` plus the helper scripts under `scripts/github/`. Those scripts provide deterministic `gh` operations; their use does not require an MCP failure first.
 
 ### E) "Need container/runtime deployment checks"
 1. Use `docker` MCP for container/image lifecycle inspection.
@@ -190,9 +199,9 @@ Always use two steps:
 
 ---
 
-## Playwright MCP Notes
+## Interactive browser notes
 
-Standard flow:
+Use the task's selected controller (Chrome DevTools by project default):
 1. navigate
 2. assert visible state/text
 3. interact
@@ -225,7 +234,7 @@ GitHub automation:
 > Read `docs/IMPLEMENTATION_MASTERPLAN.md` and create GitHub issues for the next 5 items with labels and acceptance criteria in the body. Do not change repo settings. Link issues in a comment on the tracking issue.
 
 UI verification:
-> Reproduce the bug with Playwright MCP, capture a screenshot, then add a stable Playwright regression test. Avoid sleeps; assert conditions.
+> Reproduce the bug with the selected browser controller, capture the relevant state and screenshot, then add a stable repository Playwright regression test when appropriate. Avoid sleeps; assert conditions.
 
 ---
 
