@@ -93,6 +93,18 @@ public class ChatSessionRepository : Repository<ChatSession>, IChatSessionReposi
                     .SetProperty(session => session.UpdatedAt, updatedAt),
                 cancellationToken);
 
+        if (rowsUpdated == 0)
+        {
+            // ExecuteUpdate bypasses this context's change tracker. If another request won the
+            // compare-and-set after this context loaded the session, refresh that tracked row so
+            // the service can distinguish an idempotent same-board race from a different binding.
+            var trackedSession = _context.ChangeTracker
+                .Entries<ChatSession>()
+                .FirstOrDefault(entry => entry.Entity.Id == sessionId);
+            if (trackedSession != null)
+                await trackedSession.ReloadAsync(cancellationToken);
+        }
+
         return rowsUpdated == 1;
     }
 

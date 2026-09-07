@@ -385,6 +385,27 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task BindBoard_ConcurrentSameBoard_ShouldReturnBothRequestsAsIdempotentSuccess()
+    {
+        await ApiTestHarness.AuthenticateAsync(_client, $"chat-bind-same-{Guid.NewGuid():N}"[..24]);
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "same-race-board");
+        var session = await CreateUnboundSessionAsync(_client, "Same binding race");
+
+        var responses = await Task.WhenAll(
+            _client.PostAsJsonAsync(
+                $"/api/llm/chat/sessions/{session.Id}/board",
+                new BindChatSessionBoardDto(board.Id)),
+            _client.PostAsJsonAsync(
+                $"/api/llm/chat/sessions/{session.Id}/board",
+                new BindChatSessionBoardDto(board.Id)));
+
+        responses.Should().OnlyContain(response => response.StatusCode == HttpStatusCode.OK);
+        var payloads = await Task.WhenAll(
+            responses.Select(response => response.Content.ReadFromJsonAsync<ChatSessionDto>()));
+        payloads.Should().OnlyContain(payload => payload!.BoardId == board.Id);
+    }
+
+    [Fact]
     public async Task SendMessage_ShouldReturnForbidden_ForDifferentUser()
     {
         using var ownerClient = _factory.CreateClient();
