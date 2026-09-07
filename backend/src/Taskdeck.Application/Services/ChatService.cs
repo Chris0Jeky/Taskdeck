@@ -797,6 +797,7 @@ public class ChatService : IChatService
 
         var lastUserMessage = session.Messages.LastOrDefault(message => message.Role == ChatMessageRole.User);
         var streamRequestsAction = false;
+        var streamNeedsBoard = false;
         string? streamOutcomeSuffix = null;
         if (lastUserMessage != null)
         {
@@ -809,6 +810,7 @@ public class ChatService : IChatService
             streamRequestsAction = forceBestEffort || isActionable;
             if (streamRequestsAction)
             {
+                streamNeedsBoard = intent != "board.create" && !session.BoardId.HasValue;
                 streamOutcomeSuffix = intent == "board.create"
                     ? BoardCreateGuidance
                     : session.BoardId.HasValue
@@ -985,7 +987,7 @@ public class ChatService : IChatService
                     messageType: streamIsDegraded
                         ? "degraded"
                         : streamRequestsAction
-                            ? session.BoardId.HasValue ? "action-no-proposal" : "action-needs-board"
+                            ? streamNeedsBoard ? "action-needs-board" : "action-no-proposal"
                             : "text",
                     tokenUsage: tokensUsed,
                     degradedReason: streamIsDegraded ? streamDegradedReason : null);

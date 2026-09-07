@@ -2105,6 +2105,35 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task StreamResponseAsync_BoardCreateIntent_ShouldPersistGuidanceWithoutBoardPickerOutcome()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream board creation");
+        session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.User, "create a board for the launch"));
+        ChatMessage? persistedMessage = null;
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage msg, CancellationToken _) =>
+            {
+                persistedMessage = msg;
+                return msg;
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamEventsWithUsage());
+
+        await foreach (var _ in _service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        persistedMessage!.MessageType.Should().Be("action-no-proposal");
+        persistedMessage.Content.Should().Contain("Create the board from Boards");
+        persistedMessage.Content.Should().NotContain("Select a writable board below");
+    }
+
+    [Fact]
     public async Task StreamResponseAsync_ShouldRecordQuotaUsage_WhenQuotaServiceAvailable()
     {
         var userId = Guid.NewGuid();
