@@ -24,6 +24,6 @@ Use `docs/agentic/QUESTION_PROTOCOL.md` as the source protocol.
 
 - If automation safety is ambiguous, choose proposal-first and review-first.
 - If identity authority is ambiguous, derive from authenticated claims and reject caller-supplied authority.
-- If docs conflict, prefer `docs/STATUS.md`, then `AGENTS.md`, then closer scoped instructions.
+- Applicable instructions and `.agent-harness/tier.json` govern authority; the nearest applicable scoped instructions win within their scope. Reconcile `docs/STATUS.md` against code/tests for shipped behavior; STATUS cannot grant or override authority.
 - If verification scope is ambiguous, run the narrowest relevant checks and state gaps.
 

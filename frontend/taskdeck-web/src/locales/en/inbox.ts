@@ -126,6 +126,13 @@ export default {
       transcriptNote:
         'Transcript captures are sent to the configured assistant for task extraction. Typed notes are not.',
       tooLong: 'This transcript is too long. Maximum length is {max} characters.',
+      transcriptFileButton: 'Upload transcript file',
+      transcriptFileInputLabel: 'Choose transcript file',
+      transcriptFileClear: 'Clear transcript file',
+      transcriptFileHint: 'Plain-text .txt files up to {max} bytes.',
+      transcriptFileTypeError: 'Choose a plain-text transcript file (.txt).',
+      transcriptFileSizeError: 'This transcript file is too large. Maximum file size is {max} bytes.',
+      transcriptFileUnreadable: 'This transcript file could not be read. Try another file.',
     },
   },
   // The Composer's own field chrome (#1871, the residual half of the #1870
@@ -251,7 +258,9 @@ export default {
       archiving: 'Archiving…',
       kept: 'Kept for later. Ask AI or archive it when you are ready.',
       archived: 'Archived. No proposal or board work was created.',
-      nothingToPropose: 'Triage found nothing to propose — nothing was sent to Review.',
+      nothingToPropose: 'Triage found nothing to propose — nothing was sent to Review. Edit the capture, then Ask AI to try again.',
+      nothingToProposeTranscriptReadOnly: 'Triage found nothing to propose — nothing was sent to Review. This transcript is read-only. Capture the corrected text as a new item.',
+      nothingToProposeNotEditable: 'Triage found nothing to propose — nothing was sent to Review. This capture cannot be edited here.',
       inReview: 'Sent to Review — decide there.',
       applied: 'Applied to the board. Nothing left to do here.',
       rejected: 'Rejected. This capture will not reach Review.',
@@ -324,7 +333,7 @@ export default {
         unavailable: 'This API did not return editable metadata. A text-only save will preserve any stored due date and labels.',
       },
       blocked: {
-        notEditable: "This capture's text can't be edited. Ask AI, Keep, or Archive it as it stands.",
+        notEditable: "This capture's text can't be edited. Capture the corrected text as a new item.",
         empty: "Text can't be empty. Type something, or cancel to leave the capture as it was.",
         unchanged: 'Nothing has changed yet. Edit the text or metadata, or cancel to leave the capture as it was.',
         editorOpen: 'Another capture is open for editing. Save or cancel that edit first — switching now would drop the text typed there.',

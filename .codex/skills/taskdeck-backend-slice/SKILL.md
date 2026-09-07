@@ -9,6 +9,8 @@ Implement the smallest backend slice that fits the existing layering and contrac
 
 ## Read first
 
+Use `autodoc/AGENT_INDEX.md` to locate the touched seam; read only its relevant STATUS and testing sections, plus applicable instructions. Do not load entire historical documents.
+
 1. `docs/STATUS.md`
 2. `AGENTS.md`
 3. `docs/GOLDEN_PRINCIPLES.md`

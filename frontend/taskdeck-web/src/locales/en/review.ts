@@ -551,6 +551,7 @@ export default {
     jsonError: 'Enter valid JSON before saving.',
     reasonLabel: 'Reason for edit',
     reasonPlaceholder: 'Why are you editing this proposal?',
+    changedElsewhere: 'This proposal changed elsewhere. Your draft is still here; review it before saving.',
     cancel: 'Cancel',
     save: 'Save revision',
     badge: '{count} revision | {count} revisions',
@@ -659,6 +660,7 @@ export default {
     accessRevoked: {
       title: 'This review queue is no longer available to you.',
       body: 'Your access to these boards changed, so the queue was cleared and has stopped updating. Reload or pick a board you can still reach.',
+      retry: 'The server still refuses this review queue. Reload the page, or check the board filter.',
     },
     scoped: {
       title: 'No proposals in {scope}.',
@@ -681,7 +683,7 @@ export default {
     settledElsewhere: {
       eyebrow: 'Selected proposal',
       title: 'This proposal left the review queue.',
-      body: 'Someone else decided, withdrew, or deferred it while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
+      body: 'This proposal is no longer in the current review list. It may have been decided, withdrawn, deferred, or fallen outside the 200-item list limit. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
       return: 'Reload the queue',
     },
     // Two different truths, deliberately not sharing a sentence (#2214).

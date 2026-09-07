@@ -46,6 +46,9 @@ public class ChatServiceResilienceTests
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
     }
 
     // -----------------------------------------------------------------------

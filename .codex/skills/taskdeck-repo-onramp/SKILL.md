@@ -9,18 +9,17 @@ Establish current Taskdeck truth before editing code or docs.
 
 ## Read first
 
-1. `docs/STATUS.md`
-2. `AGENTS.md`
-3. `docs/IMPLEMENTATION_MASTERPLAN.md`
-4. `docs/GOLDEN_PRINCIPLES.md`
-5. `docs/ISSUE_EXECUTION_GUIDE.md`
-6. `docs/TESTING_GUIDE.md`
+1. `autodoc/AGENT_INDEX.md` to locate the task's seam.
+2. `AGENTS.md`, the shared repository facts and proving checks in `CLAUDE.md`, and applicable scoped instructions. Re-read `.agent-harness/tier.json` for authority.
+3. Relevant headings or line ranges in `docs/STATUS.md`; reconcile claims with code and current execution evidence. Do not read the complete historical record.
+4. `.codex/memories/00_ACTIVE.md` for lane coordination before claiming work, and `OUTSTANDING_TASKS.md` for remaining human actions. Neither grants authority.
 
 Read when relevant:
 
 - `docs/START_HERE.md` for product-facing or UX work
 - `docs/GITHUB_PROJECT_AUTOMATION.md` for issue, PR, or project-ops work
-- `CLAUDE.md` only when comparing Claude-specific workflows or migrating Claude instructions
+- Relevant sections of `docs/IMPLEMENTATION_MASTERPLAN.md` and `docs/ISSUE_EXECUTION_GUIDE.md` when selecting or sequencing work
+- Relevant invariants in `docs/GOLDEN_PRINCIPLES.md` and proving sections in `docs/TESTING_GUIDE.md` for the touched seam
 - feature-specific docs for the touched slice
 
 ## Produce a working summary

@@ -31,7 +31,7 @@ public static class LlmCaptureTriagePrompt
     /// prompt-version constant in <see cref="CaptureTriageOutputContract"/> and a matching schema
     /// file, so recorded provenance stays attributable to the prompt that actually ran.
     /// </summary>
-    public const string PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV2;
+    public const string PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV3;
 
     /// <summary>
     /// Token the reference date replaces in the prompt template. It is exactly as long as a

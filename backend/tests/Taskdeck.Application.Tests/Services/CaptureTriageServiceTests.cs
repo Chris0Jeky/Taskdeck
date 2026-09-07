@@ -441,7 +441,7 @@ public class CaptureTriageServiceTests
                 LlmCaptureTriageOutcome.Succeeded,
                 new CaptureTriageOutputV2(
                     CaptureTriageOutputContract.SchemaVersionV2,
-                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV3,
                     [new CaptureTriageTaskV2("Send report", "action", null, "2026-08-24", 0.9m, "Send report by Friday")]),
                 "OpenAI",
                 "gpt-4o-mini"));
@@ -471,7 +471,7 @@ public class CaptureTriageServiceTests
                 LlmCaptureTriageOutcome.Succeeded,
                 new CaptureTriageOutputV2(
                     CaptureTriageOutputContract.SchemaVersionV2,
-                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV3,
                     [new CaptureTriageTaskV2("Send report", "action", null, "2026-08-24", 0.9m, "Send report by Friday")]),
                 "OpenAI",
                 "gpt-4o-mini"));
@@ -1073,7 +1073,7 @@ public class CaptureTriageServiceTests
     {
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
-            CaptureTriageOutputContract.PromptVersionLlmV2,
+            CaptureTriageOutputContract.PromptVersionLlmV3,
             tasks.Select(t => new CaptureTriageTaskV2(
                 t.Title,
                 "action",
@@ -1195,7 +1195,7 @@ public class CaptureTriageServiceTests
         result.Value.OperationCount.Should().Be(2);
         result.Value.Provider.Should().Be("OpenAI");
         result.Value.Model.Should().Be("gpt-4o-mini");
-        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV3);
         createdProposal.Should().NotBeNull();
         createdProposal!.Operations.Should().HaveCount(2);
         createdProposal.Operations![0].Parameters.Should().Contain("Send the quarterly report");
@@ -1237,7 +1237,7 @@ public class CaptureTriageServiceTests
                 LlmCaptureTriageOutcome.Succeeded,
                 new CaptureTriageOutputV2(
                     CaptureTriageOutputContract.SchemaVersionV2,
-                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV3,
                     [new CaptureTriageTaskV2("Review item", "action", null, null, 0.9m, "repeated quote")]),
                 Provider: "OpenAI",
                 Model: "gpt-4o-mini",
@@ -1263,7 +1263,7 @@ public class CaptureTriageServiceTests
     }
 
     [Fact]
-    public async Task CreateProposalFromCaptureAsync_ShouldKeepV2MetadataOutOfExecutableOperationParameters()
+    public async Task CreateProposalFromCaptureAsync_ShouldKeepV3MetadataOutOfExecutableOperationParameters()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -1274,7 +1274,7 @@ public class CaptureTriageServiceTests
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
-            CaptureTriageOutputContract.PromptVersionLlmV2,
+            CaptureTriageOutputContract.PromptVersionLlmV3,
             [new CaptureTriageTaskV2(
                 "Record the launch decision",
                 "decision",
@@ -1390,7 +1390,7 @@ public class CaptureTriageServiceTests
         result.Value.OperationCount.Should().Be(0);
         result.Value.Provider.Should().Be("OpenAI");
         result.Value.Model.Should().Be("gpt-4o-mini");
-        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV3);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -1803,7 +1803,7 @@ public class CaptureTriageServiceTests
         // to the deterministic extractor, so it belongs to the same degradation class.
         var invalidOutput = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
-            CaptureTriageOutputContract.PromptVersionLlmV2,
+            CaptureTriageOutputContract.PromptVersionLlmV3,
             new List<CaptureTriageTaskV2>());
         var extractorMock = new Mock<ILlmCaptureTriageExtractor>();
         extractorMock

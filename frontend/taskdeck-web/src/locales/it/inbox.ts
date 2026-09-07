@@ -85,6 +85,13 @@ export default {
       transcriptNote:
         'Le catture di trascrizione vengono inviate all’assistente configurato per estrarre le attività. Le note scritte no.',
       tooLong: 'Questa trascrizione è troppo lunga. La lunghezza massima è di {max} caratteri.',
+      transcriptFileButton: 'Carica file trascrizione',
+      transcriptFileInputLabel: 'Scegli file trascrizione',
+      transcriptFileClear: 'Rimuovi file trascrizione',
+      transcriptFileHint: 'File di testo semplice .txt fino a {max} byte.',
+      transcriptFileTypeError: 'Scegli un file di trascrizione in testo semplice (.txt).',
+      transcriptFileSizeError: 'Questo file di trascrizione è troppo grande. Il massimo è di {max} byte.',
+      transcriptFileUnreadable: 'Non è stato possibile leggere questo file di trascrizione. Prova con un altro.',
     },
   },
   // Etichette dei campi del Composer (#1871). "Testo" per `body`: è il testo
@@ -183,12 +190,14 @@ export default {
       },
     },
     decision: {
+      nothingToProposeTranscriptReadOnly: 'Il triage non ha trovato nulla da proporre: niente è stato inviato a Review. Questa trascrizione è di sola lettura. Cattura il testo corretto come nuovo elemento.',
+      nothingToProposeNotEditable: 'Il triage non ha trovato nulla da proporre: niente è stato inviato a Review. Questa cattura non può essere modificata qui.',
       sending: 'Invio a Review…',
       keeping: 'Conservazione per dopo…',
       archiving: 'Archiviazione…',
       kept: 'Conservata per dopo. Chiedi all\'AI o archiviala quando vuoi.',
       archived: 'Archiviata. Non sono state create proposte né attività sulla bacheca.',
-      nothingToPropose: 'Lo smistamento non ha trovato nulla da proporre — a Review non è arrivato nulla.',
+      nothingToPropose: 'Lo smistamento non ha trovato nulla da proporre — a Review non è arrivato nulla. Modifica la cattura, poi premi Ask AI per riprovare.',
       inReview: 'Inviata a Review — decidi lì.',
       applied: 'Applicata alla bacheca. Qui non resta altro da fare.',
       rejected: 'Rifiutata. Questa cattura non arriverà a Review.',
@@ -251,7 +260,7 @@ export default {
         unavailable: 'Questa API non ha restituito metadati modificabili. Salvare solo il testo manterrà la scadenza e le etichette già memorizzate.',
       },
       blocked: {
-        notEditable: 'Il testo di questa cattura non è modificabile. Premi Ask AI, Keep o Archive così com\'è.',
+        notEditable: 'Il testo di questa cattura non è modificabile. Cattura il testo corretto come nuovo elemento.',
         empty: 'Il testo non può essere vuoto. Scrivi qualcosa, oppure annulla per lasciare la cattura com\'era.',
         unchanged: 'Non è ancora cambiato nulla. Modifica il testo o i metadati, oppure annulla per lasciare la cattura com\'era.',
         editorOpen: 'Un\'altra cattura è aperta in modifica. Salva o annulla quella modifica: passare ora scarterebbe il testo scritto lì.',

@@ -5,7 +5,12 @@ import { useBoardStore } from '../../../store/boardStore'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 import { TdDateField } from '../../../components/ui'
-import { MAX_TRANSCRIPT_LENGTH } from '../../../constants/capture'
+import { MAX_TRANSCRIPT_FILE_BYTES, MAX_TRANSCRIPT_LENGTH } from '../../../constants/capture'
+import {
+  readTranscriptFile,
+  TRANSCRIPT_FILE_ACCEPT,
+  type TranscriptFileReadError,
+} from '../../../utils/transcriptFile'
 import type { Board } from '../../../types/board'
 import type { CaptureSource } from '../../../types/capture'
 
@@ -14,7 +19,7 @@ import type { CaptureSource } from '../../../types/capture'
  *
  * A multi-line ledger composer sitting on a paper-card with a metadata
  * sidebar (board picker, label multi-select, optional due date). Cmd/Ctrl+Enter submits.
- * Attachments remain visibly unavailable until a persistence lane exists.
+ * General attachments remain visibly unavailable until a persistence lane exists.
  *
  * A source toggle (GH-2141) lets the same composer file a transcript without
  * leaving the Paper skin. Transcript sources are not cosmetic: the server
@@ -32,8 +37,9 @@ const props = defineProps<{
   errorId?: string | null
 }>()
 
-/** The capture sources this composer can file. Transcript FILE upload stays in the Legacy modal. */
-export type ComposerSource = Extract<CaptureSource, 'Typed' | 'TranscriptPaste'>
+/** The capture sources this composer can file. */
+export type ComposerSource = Extract<CaptureSource, 'Typed' | 'TranscriptPaste' | 'TranscriptFile'>
+type ComposerSourceMode = 'Typed' | 'Transcript'
 
 const emit = defineEmits<{
   (event: 'submit', payload: {
@@ -54,10 +60,33 @@ const labelInput = ref('')
 const labels = ref<string[]>([])
 const dueAt = ref<string>('')
 const source = ref<ComposerSource>('Typed')
+const uploadedFileName = ref<string | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const fileReading = ref(false)
+const inlineError = ref<string | null>(null)
+let fileReadGeneration = 0
 
 const bodyRef = ref<HTMLTextAreaElement | null>(null)
 
-const inputsDisabled = computed(() => !!props.submitting)
+const inputsDisabled = computed(() => !!props.submitting || fileReading.value)
+
+const sourceMode = computed<ComposerSourceMode>({
+  get: () => (source.value === 'Typed' ? 'Typed' : 'Transcript'),
+  set: (mode) => {
+    inlineError.value = null
+    if (mode === 'Typed') {
+      source.value = 'Typed'
+      // A file's source is meaningful only while its file state is present.
+      // Keep the decoded text available as a typed draft when the user changes
+      // their mind, but never leave a stale file source behind.
+      clearUploadedFile()
+      return
+    }
+    if (source.value === 'Typed') {
+      source.value = 'TranscriptPaste'
+    }
+  },
+})
 
 /**
  * Write capability comes from the server (`BoardDto.CanWrite`, #1836). Choosing
@@ -91,13 +120,14 @@ const selectedBoardIsWritable = computed(() => {
  * captures keep the server's general-text limit as the only authority.
  */
 const transcriptTooLong = computed(
-  () => source.value === 'TranscriptPaste' && body.value.trim().length > MAX_TRANSCRIPT_LENGTH,
+  () => sourceMode.value === 'Transcript' && body.value.trim().length > MAX_TRANSCRIPT_LENGTH,
 )
 
 const canSubmit = computed(
   () =>
     body.value.trim().length > 0 &&
     !props.submitting &&
+    !fileReading.value &&
     selectedBoardIsWritable.value &&
     !transcriptTooLong.value,
 )
@@ -115,6 +145,61 @@ function onBodyKeydown(event: KeyboardEvent) {
     event.preventDefault()
     submit()
   }
+}
+
+function triggerFileUpload() {
+  if (inputsDisabled.value) return
+  fileInputRef.value?.click()
+}
+
+function clearUploadedFile() {
+  fileReadGeneration += 1
+  fileReading.value = false
+  uploadedFileName.value = null
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+  }
+  if (source.value === 'TranscriptFile') {
+    source.value = 'TranscriptPaste'
+  }
+}
+
+function transcriptFileError(error: TranscriptFileReadError): string {
+  switch (error) {
+    case 'type':
+      return t('inbox.capture.source.transcriptFileTypeError')
+    case 'size':
+      return t('inbox.capture.source.transcriptFileSizeError', { max: MAX_TRANSCRIPT_FILE_BYTES.toLocaleString() })
+    case 'tooLong':
+      return t('inbox.capture.source.tooLong', { max: MAX_TRANSCRIPT_LENGTH.toLocaleString() })
+    case 'unreadable':
+      return t('inbox.capture.source.transcriptFileUnreadable')
+  }
+}
+
+async function handleFileUpload(event: Event) {
+  const target = event.target as HTMLInputElement
+  const file = target.files?.[0]
+  if (!file) return
+
+  const generation = ++fileReadGeneration
+  fileReading.value = true
+  const result = await readTranscriptFile(file)
+  if (generation !== fileReadGeneration) return
+
+  fileReading.value = false
+  if (!result.ok) {
+    target.value = ''
+    // Leave any previously loaded draft intact while making the failed
+    // replacement explicit beside the composer.
+    inlineError.value = transcriptFileError(result.error)
+    return
+  }
+
+  body.value = result.text
+  uploadedFileName.value = file.name
+  source.value = 'TranscriptFile'
+  inlineError.value = null
 }
 
 function addLabel() {
@@ -161,11 +246,18 @@ function submit() {
 }
 
 function resetDraft() {
+  fileReadGeneration += 1
+  fileReading.value = false
   body.value = ''
   labelInput.value = ''
   labels.value = []
   dueAt.value = ''
   source.value = 'Typed'
+  inlineError.value = null
+  uploadedFileName.value = null
+  if (fileInputRef.value) {
+    fileInputRef.value.value = ''
+  }
 }
 
 /**
@@ -203,7 +295,12 @@ function restoreDraft(draft: {
   // A stash written before GH-2141 carries no source. Reading it as `Typed`
   // keeps an old draft restorable and never silently upgrades it into an LLM
   // extraction the author did not ask for.
-  source.value = draft.source === 'TranscriptPaste' ? 'TranscriptPaste' : 'Typed'
+  source.value = draft.source === 'TranscriptFile'
+    ? 'TranscriptFile'
+    : draft.source === 'TranscriptPaste'
+      ? 'TranscriptPaste'
+      : 'Typed'
+  uploadedFileName.value = null
   // Tolerant like `source` above: a stash written before GH-2490 carries no
   // pending label, and reads back as an empty box rather than failing.
   labelInput.value = typeof draft.labelInput === 'string' ? draft.labelInput : ''
@@ -256,7 +353,7 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
           <legend class="tk-eyebrow">{{ t('inbox.capture.source.legend') }}</legend>
           <label class="paper-composer__source-option">
             <input
-              v-model="source"
+              v-model="sourceMode"
               type="radio"
               name="paper-composer-source"
               value="Typed"
@@ -267,22 +364,62 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
           </label>
           <label class="paper-composer__source-option">
             <input
-              v-model="source"
+              v-model="sourceMode"
               type="radio"
               name="paper-composer-source"
-              value="TranscriptPaste"
+              value="Transcript"
               data-testid="paper-composer-source-transcript"
               :disabled="inputsDisabled"
             />
             <span>{{ t('inbox.capture.source.transcript') }}</span>
           </label>
           <p
-            v-if="source === 'TranscriptPaste'"
+            v-if="sourceMode === 'Transcript'"
             class="tk-meta paper-composer__source-note"
             data-testid="paper-composer-source-note"
           >
             {{ t('inbox.capture.source.transcriptNote') }}
           </p>
+
+          <div
+            v-if="sourceMode === 'Transcript'"
+            class="paper-composer__file"
+            data-testid="paper-composer-transcript-file"
+          >
+            <button
+              type="button"
+              class="paper-composer__file-button"
+              :disabled="inputsDisabled"
+              @click="triggerFileUpload"
+            >
+              {{ t('inbox.capture.source.transcriptFileButton') }}
+            </button>
+            <input
+              ref="fileInputRef"
+              class="paper-composer__file-input"
+              type="file"
+              :accept="TRANSCRIPT_FILE_ACCEPT"
+              :aria-label="t('inbox.capture.source.transcriptFileInputLabel')"
+              :disabled="inputsDisabled"
+              @change="void handleFileUpload($event)"
+            />
+            <span v-if="uploadedFileName" class="paper-composer__file-name" data-testid="paper-composer-transcript-file-name">
+              {{ uploadedFileName }}
+              <button
+                type="button"
+                class="paper-composer__file-clear"
+                data-testid="paper-composer-transcript-file-clear"
+                :aria-label="t('inbox.capture.source.transcriptFileClear')"
+                :disabled="inputsDisabled"
+                @click="clearUploadedFile"
+              >
+                ×
+              </button>
+            </span>
+            <span v-else class="tk-meta paper-composer__file-hint">
+              {{ t('inbox.capture.source.transcriptFileHint', { max: MAX_TRANSCRIPT_FILE_BYTES.toLocaleString() }) }}
+            </span>
+          </div>
         </fieldset>
 
         <p
@@ -292,6 +429,15 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
           data-testid="paper-composer-transcript-too-long"
         >
           {{ t('inbox.capture.source.tooLong', { max: MAX_TRANSCRIPT_LENGTH.toLocaleString() }) }}
+        </p>
+
+        <p
+          v-else-if="inlineError"
+          class="tk-meta paper-composer__source-error"
+          role="alert"
+          data-testid="paper-composer-transcript-file-error"
+        >
+          {{ inlineError }}
         </p>
 
         <p class="paper-composer__drop tk-meta" data-testid="paper-composer-attachments-unavailable">
@@ -484,6 +630,53 @@ defineExpose({ focus: () => bodyRef.value?.focus(), resetDraft, snapshotDraft, r
 .paper-composer__source-error {
   margin: 0;
   color: var(--ember);
+}
+.paper-composer__file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  flex-basis: 100%;
+  padding-top: 4px;
+}
+.paper-composer__file-button,
+.paper-composer__file-clear {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper-2);
+  color: var(--ink);
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 6px 10px;
+}
+.paper-composer__file-button:disabled,
+.paper-composer__file-clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.paper-composer__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.paper-composer__file-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-deep);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.paper-composer__file-clear {
+  padding: 1px 5px;
+}
+.paper-composer__file-hint {
+  font-size: 12px;
 }
 .paper-composer__drop {
   display: flex;

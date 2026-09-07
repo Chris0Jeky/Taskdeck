@@ -181,9 +181,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         var reduced = ReduceMappedTasks(mappedTasks);
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
-            CaptureTriageOutputContract.PromptVersionLlmV2,
+            CaptureTriageOutputContract.PromptVersionLlmV3,
             reduced.Tasks);
-        var validation = CaptureTriageOutputContract.Validate(output);
+        var validation = CaptureTriageOutputContract.ValidateCurrentV3(output);
         if (!validation.IsSuccess)
         {
             return new LlmCaptureTriageExtraction(
@@ -466,10 +466,10 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
 
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
-            CaptureTriageOutputContract.PromptVersionLlmV2,
+            CaptureTriageOutputContract.PromptVersionLlmV3,
             sanitized.Tasks);
 
-        var validation = CaptureTriageOutputContract.Validate(output);
+        var validation = CaptureTriageOutputContract.ValidateCurrentV3(output);
         if (!validation.IsSuccess)
         {
             _logger?.LogWarning(
@@ -631,9 +631,9 @@ public class LlmCaptureTriageExtractor : ILlmCaptureTriageExtractor
         // retain a subset of its metadata, and truncating or normalizing a claimed verbatim quote
         // would make later evidence linkage misleading. A malformed map leg therefore makes the
         // whole extraction fall back rather than silently omitting or changing evidence.
-        var validation = CaptureTriageOutputContract.Validate(new CaptureTriageOutputV2(
+        var validation = CaptureTriageOutputContract.ValidateCurrentV3(new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
-            CaptureTriageOutputContract.PromptVersionLlmV2,
+            CaptureTriageOutputContract.PromptVersionLlmV3,
             rawTasks));
         if (!validation.IsSuccess)
         {

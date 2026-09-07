@@ -55,12 +55,17 @@ startup_timeout_sec = 20
 tool_timeout_sec = 120
 
 [mcp_servers.ripgrep]
+# Native rg is the repository search route; retain this as an explicit opt-in only.
+enabled = false
 command = "npx"
 args = ["-y", "mcp-ripgrep@latest"]
 startup_timeout_sec = 20
 tool_timeout_sec = 120
 
 [mcp_servers.playwright]
+# Chrome DevTools is the default interactive controller. Repository Playwright tests
+# remain independent; enable this alternative only for a task that needs its API.
+enabled = false
 command = "npx"
 args = ["-y", "@executeautomation/playwright-mcp-server"]
 startup_timeout_sec = 30
@@ -68,7 +73,7 @@ tool_timeout_sec = 180
 
 [mcp_servers.chromeDevTools]
 command = "npx"
-args = ["-y", "chrome-devtools-mcp@latest"]
+args = ["-y", "chrome-devtools-mcp@1.8.0"]
 startup_timeout_sec = 30
 tool_timeout_sec = 180
 

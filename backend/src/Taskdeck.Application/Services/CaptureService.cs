@@ -541,7 +541,11 @@ public class CaptureService : ICaptureService
                 $"Capture item cannot transition from {currentStatus} to {CaptureStatus.Triaging}");
         }
 
-        if (item.Status != RequestStatus.Pending && item.Status != RequestStatus.Failed)
+        // A completed capture is eligible only when its prior run produced no proposal. The
+        // derived Triaged status is exactly that outcome; ProposalCreated and Converted both
+        // retain proposal/apply provenance and must never be reopened into another proposal.
+        if ((item.Status != RequestStatus.Pending && item.Status != RequestStatus.Failed && item.Status != RequestStatus.Completed) ||
+            (item.Status == RequestStatus.Completed && currentStatus != CaptureStatus.Triaged))
         {
             return Result.Failure<CaptureTriageEnqueueResultDto>(
                 ErrorCodes.Conflict,
@@ -605,7 +609,14 @@ public class CaptureService : ICaptureService
             }
 
             item.UpdatePayload(CaptureRequestContract.SerializePayload(effectivePayload));
-            item.MarkAsProcessing();
+            if (item.Status == RequestStatus.Completed)
+            {
+                item.RequeueCompletedCaptureForTriage();
+            }
+            else
+            {
+                item.MarkAsProcessing();
+            }
             var enqueued = await _unitOfWork.LlmQueue.TryEnqueueCaptureTriageAsync(
                 item.Id,
                 expectedStatus,
@@ -1270,7 +1281,8 @@ public class CaptureService : ICaptureService
             material.CreatedAt,
             item.ProcessedAt,
             item.ErrorMessage,
-            payload.Disposition);
+            payload.Disposition,
+            CanEditSuggestion(item, status));
     }
 
     private CaptureItemDto MapToDetailDto(

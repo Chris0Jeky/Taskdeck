@@ -25,7 +25,7 @@ const rows: ProvenanceRow[] = [
  * fixtures of convenience:
  *   deterministic — `CaptureTriageService.TriageProviderName` / `TriageModelName` /
  *                   `CaptureTriageOutputContract.PromptVersionV1`
- *   live provider — what the provider that answered reported, plus `PromptVersionLlmV2`
+ *   live provider — what the provider that answered reported, plus current `PromptVersionLlmV3`
  *   mock          — `MockLlmProvider`'s health identity
  *   degraded      — a live run whose LLM leg failed: the backend KEEPS the deterministic
  *                   defaults, so the record is deterministic and the copy must say so.
@@ -43,9 +43,14 @@ const DETERMINISTIC = metadata({
 const LIVE_PROVIDER = metadata({
   provider: 'OpenAI',
   model: 'gpt-4o-mini',
+  promptVersion: 'llm-triage.v3',
+})
+const HISTORICAL_LIVE_PROVIDER = metadata({
+  provider: 'OpenAI',
+  model: 'gpt-4o-mini',
   promptVersion: 'llm-triage.v2',
 })
-const MOCK = metadata({ provider: 'Mock', model: 'mock-default', promptVersion: 'llm-triage.v2' })
+const MOCK = metadata({ provider: 'Mock', model: 'mock-default', promptVersion: 'llm-triage.v3' })
 /** Degraded live run — identical record to a plain deterministic one, by design. */
 const DEGRADED = metadata({
   provider: 'deterministic-extractor',
@@ -105,7 +110,7 @@ describe('ReviewProvenance footnote', () => {
     const metadataPanel = document.body.querySelector('.prov-drawer__meta')
     expect(metadataPanel).not.toBeNull()
     expect(metadataPanel?.textContent).toContain('OpenAI/gpt-4o-mini')
-    expect(metadataPanel?.textContent).toContain('llm-triage.v2')
+    expect(metadataPanel?.textContent).toContain('llm-triage.v3')
 
     wrapper.unmount()
   })
@@ -250,7 +255,7 @@ describe('ReviewProvenance footnote', () => {
       metadata({
         provider: 'deterministic-extractor',
         model: 'capture-triage-v1',
-        promptVersion: 'llm-triage.v2',
+        promptVersion: 'llm-triage.v3',
       }),
     ],
   ])('says nothing rather than guessing for %s', (_case, recorded) => {
@@ -275,11 +280,24 @@ describe('classifyProvenanceActor', () => {
   it.each([
     ['deterministic', DETERMINISTIC, 'deterministic'],
     ['live provider', LIVE_PROVIDER, 'provider'],
+    ['historical live provider', HISTORICAL_LIVE_PROVIDER, 'provider'],
     ['mock', MOCK, 'mock'],
     ['degraded fallback', DEGRADED, 'deterministic'],
   ])('classifies %s provenance by what the record names', (_case, recorded, kind) => {
     expect(classifyProvenanceActor(recorded).kind).toBe(kind)
   })
+
+  it.each([['historical v2', 'llm-triage.v2'], ['current v3', 'llm-triage.v3']])(
+    'fails closed for a deterministic record stamped with %s', (_case, promptVersion) => {
+      expect(
+        classifyProvenanceActor({
+          provider: 'deterministic-extractor',
+          model: 'capture-triage-v1',
+          promptVersion,
+        }).kind,
+      ).toBe('unknown')
+    },
+  )
 
   it.each([
     ['null', null],
