@@ -551,6 +551,7 @@ export default {
     jsonError: 'Enter valid JSON before saving.',
     reasonLabel: 'Reason for edit',
     reasonPlaceholder: 'Why are you editing this proposal?',
+    changedElsewhere: 'This proposal changed elsewhere. Your draft is still here; review it before saving.',
     cancel: 'Cancel',
     save: 'Save revision',
     badge: '{count} revision | {count} revisions',
@@ -682,7 +683,7 @@ export default {
     settledElsewhere: {
       eyebrow: 'Selected proposal',
       title: 'This proposal left the review queue.',
-      body: 'Someone else decided, withdrew, or deferred it while you were reviewing it. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
+      body: 'This proposal is no longer in the current review list. It may have been decided, withdrawn, deferred, or fallen outside the 200-item list limit. Nothing was decided here, and no other proposal was opened in its place. Reload the queue to check.',
       return: 'Reload the queue',
     },
     // Two different truths, deliberately not sharing a sentence (#2214).

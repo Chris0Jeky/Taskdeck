@@ -660,6 +660,7 @@ watch(
 const {
   editing: revisionEditing,
   saving: revisionSaving,
+  revisionChangedWhileEditing,
   revisionCount,
   revisionsLoaded,
   latestRevision,
@@ -1188,16 +1189,12 @@ const applyPhase = computed<ApplyPhase>(() => {
 // #1830 round 2: the confirmation dialog must not claim "0 operations will be
 // applied" for the revision-aware apply path onApply deliberately allows (zero
 // original operations + a saved revision, #1235). `revisionCount` tracks the
-// ACTIVE proposal only, so it is only passed while the proposal awaiting
-// confirmation is still the active one — otherwise the dialog is told nothing
-// (null) and falls back to copy that claims no count.
-const applyConfirmRevisionCount = computed<number | null>(() => {
-  const pending = executeConfirmProposal.value
-  if (!pending) return null
-  if (!proposalIdsEqual(activeProposal.value?.id, pending.id)) return null
-  if (!revisionsLoaded.value) return null
-  return revisionCount.value
-})
+// Capture the ACTIVE proposal's authoritative count when confirmation opens.
+// A later revision resync must not make the open dialog lose that context.
+// Capture this at confirmation open. A collaborator's revision resync makes
+// the live count briefly unknown, but must not make an already-open dialog
+// rewrite its truthful decision-time context.
+const applyConfirmRevisionCount = ref<number | null>(null)
 
 // --- Apply-flow focus restoration (GH-1942) ----------------------------
 //
@@ -1636,8 +1633,15 @@ watch(
 )
 
 watch(executeConfirmProposal, (pending, previous) => {
+  if (pending && !previous) {
+    applyConfirmRevisionCount.value =
+      proposalIdsEqual(activeProposal.value?.id, pending.id) && revisionsLoaded.value
+        ? revisionCount.value
+        : null
+  }
   // Only on close (open → closed), never on the open itself.
   if (pending !== null || !previous) return
+  applyConfirmRevisionCount.value = null
   const captured = applyReturnFocusEl
   applyReturnFocusEl = null
   // After the flush: the rail may have just re-rendered (execute lands → the
@@ -2992,6 +2996,7 @@ async function onClearBoardScope() {
         v-if="revisionEditing && !isArchivedHistory"
         :operations-payload="revisionEditorPayload ?? editablePayload"
         :saving="revisionSaving"
+        :revision-changed="revisionChangedWhileEditing"
         @save="onSaveRevision"
         @cancel="onCancelRevision"
       />
@@ -3033,7 +3038,7 @@ async function onClearBoardScope() {
           {{ $t('review.empty.accessRevoked.retry') }}
         </p>
       </template>
-      <template v-else-if="activeProposalSettledElsewhere">
+      <template v-else-if="activeProposalSettledElsewhere && !unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.settledElsewhere.eyebrow') }}</div>
         <h2 class="tk-h2" data-testid="paper-review-settled-elsewhere">
           {{ $t('review.empty.settledElsewhere.title') }}

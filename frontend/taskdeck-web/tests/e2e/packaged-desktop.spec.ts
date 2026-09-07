@@ -36,7 +36,7 @@ const phase = requiredEnv('TASKDECK_PACKAGED_JOURNEY_PHASE')
 const liveOpenAi = process.env.TASKDECK_PACKAGED_LIVE_OPENAI === '1'
 const liveOpenAiSkipReason = requiredEnv('TASKDECK_PACKAGED_LIVE_OPENAI_SKIP_REASON')
 const expectedModel = process.env.TASKDECK_PACKAGED_OPENAI_MODEL?.trim() || 'gpt-5.6-luna'
-const expectedPromptVersion = 'llm-triage.v2'
+const expectedPromptVersion = 'llm-triage.v3'
 
 const username = `packaged-${journeyId}`
 const email = `${username}@taskdeck.local`

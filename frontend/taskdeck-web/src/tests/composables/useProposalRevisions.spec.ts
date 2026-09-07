@@ -896,6 +896,26 @@ describe('useProposalRevisions', () => {
     expect(editing.value).toBe(true)
   })
 
+  it('marks an open editor when another revision arrives, until the reviewer cancels (#2215 D3aB)', async () => {
+    vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([])
+    const proposal = ref<ApiProposal | null>(makeProposal({ latestRevisionId: null }))
+    const { editing, revisionChangedWhileEditing, startEditing, cancelEditing } =
+      useProposalRevisions(proposal)
+    await vi.waitFor(() => {
+      expect(proposalRevisionsApi.getRevisions).toHaveBeenCalledTimes(1)
+    })
+
+    startEditing()
+    proposal.value = makeProposal({ latestRevisionId: 'rev-collaborator' })
+    await nextTick()
+
+    expect(editing.value).toBe(true)
+    expect(revisionChangedWhileEditing.value).toBe(true)
+
+    cancelEditing()
+    expect(revisionChangedWhileEditing.value).toBe(false)
+  })
+
   it('still fully resets when the proposal itself changes (#2215 B guard)', async () => {
     vi.mocked(proposalRevisionsApi.getRevisions).mockResolvedValue([makeRevision()])
     const proposal = ref<ApiProposal | null>(makeProposal({ id: 'p-1' }))

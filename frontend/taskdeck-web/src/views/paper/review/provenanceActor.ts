@@ -19,8 +19,9 @@
  *                      (`CaptureTriageService.TriageProviderName` / `TriageModelName`,
  *                       `CaptureTriageOutputContract.PromptVersionV1`)
  *   live LLM leg       provider/model as reported by the provider that answered
- *                      (e.g. `OpenAI` / `gpt-4o-mini`), promptVersion `llm-triage.v2`
- *                      (`CaptureTriageOutputContract.PromptVersionLlmV2`)
+ *                      (e.g. `OpenAI` / `gpt-4o-mini`), promptVersion `llm-triage.v2` (historical)
+ *                      or `llm-triage.v3` (current)
+ *                      (`CaptureTriageOutputContract.PromptVersionLlmV2` / `PromptVersionLlmV3`)
  *   mock provider      provider `Mock`, model `mock-default` (`MockLlmProvider`)
  *   undetermined       the literal `unknown`
  *                      (`CaptureTriageService.UnknownProvenanceValue`, also the fallback
@@ -70,8 +71,8 @@ const DETERMINISTIC_EXTRACTOR_PROVIDER = 'deterministic-extractor'
 const MOCK_PROVIDER = 'mock'
 /** `CaptureTriageService.UnknownProvenanceValue`. */
 const UNKNOWN_PROVENANCE = 'unknown'
-/** `CaptureTriageOutputContract.PromptVersionLlmV2` — stamped only by the LLM leg. */
-const LLM_TRIAGE_PROMPT_VERSION = 'llm-triage.v2'
+/** Historical and current LLM prompt identities, stamped only by the LLM leg. */
+const LLM_TRIAGE_PROMPT_VERSIONS = new Set(['llm-triage.v2', 'llm-triage.v3'])
 
 /** Trimmed value, or null when the field is absent, blank, or the `unknown` sentinel. */
 function meaningful(value: string | null | undefined): string | null {
@@ -104,7 +105,7 @@ export function classifyProvenanceActor(
   if (normalizedProvider === DETERMINISTIC_EXTRACTOR_PROVIDER) {
     // Deterministic provider + LLM prompt version cannot both be true of one run.
     // Refuse to assert "offline" rather than pick a side.
-    if (promptVersion !== null && promptVersion.toLowerCase() === LLM_TRIAGE_PROMPT_VERSION) {
+    if (promptVersion !== null && LLM_TRIAGE_PROMPT_VERSIONS.has(promptVersion.toLowerCase())) {
       return { kind: 'unknown' }
     }
     return { kind: 'deterministic', provider, model }
