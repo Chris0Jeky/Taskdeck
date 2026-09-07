@@ -17,7 +17,7 @@ public class LlmCaptureTriagePromptTests
     [Fact]
     public void PromptVersion_ShouldMatchContractConstant()
     {
-        LlmCaptureTriagePrompt.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        LlmCaptureTriagePrompt.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV3);
     }
 
     [Fact]
