@@ -23,6 +23,7 @@ import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 const props = defineProps<{
   operationsPayload: string
   saving?: boolean
+  revisionChanged?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -143,6 +144,16 @@ function onSave() {
       <PaperTagstamp tone="ember">{{ $t('review.revisionEditor.stamp') }}</PaperTagstamp>
     </div>
 
+    <p
+      v-if="revisionChanged"
+      class="revision-editor__notice"
+      role="status"
+      aria-live="polite"
+      data-testid="revision-changed-elsewhere"
+    >
+      {{ $t('review.revisionEditor.changedElsewhere') }}
+    </p>
+
     <div class="revision-editor__fields">
       <div v-for="field in fields" :key="field.key" class="revision-editor__field">
         <label :for="`revision-field-${field.key}`" class="revision-editor__label">{{ field.key }}</label>
@@ -202,6 +213,11 @@ function onSave() {
 }
 .revision-editor__header {
   margin-bottom: 12px;
+}
+.revision-editor__notice {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 13px;
 }
 .revision-editor__fields {
   display: flex;
