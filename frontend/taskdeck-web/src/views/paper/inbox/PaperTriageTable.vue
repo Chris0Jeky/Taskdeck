@@ -231,7 +231,7 @@ function restoredDraftFor(item: CaptureItemSummary): PaperTriageDraft | null {
  */
 function standingLineKind(item: CaptureItemSummary): DraftLineKind {
   if (editItemId.value !== null) return 'blocked'
-  return canMutate(item) ? 'held' : 'heldUneditable'
+  return canEdit(item) ? 'held' : 'heldUneditable'
 }
 
 const draftNoticeLines = computed<DraftLine[]>(() => {
@@ -479,7 +479,25 @@ const hasMutationInFlight = computed(
   () => props.actionBusyItemId !== null && props.actionBusyItemId !== undefined,
 )
 
-function canMutate(item: CaptureItemSummary): boolean {
+function isTriagedWithoutProposal(item: CaptureItemSummary): boolean {
+  return item.status === 2 || item.status === 'Triaged'
+}
+
+function canEdit(item: CaptureItemSummary): boolean {
+  if (item.canEditSuggestion === false) return false
+  // A completed, proposal-less triage may be corrected and explicitly retried
+  // under the D-13 ruling. A summary only advertises that exception when the
+  // server supplied its source-specific edit capability; an older response
+  // fails closed rather than opening an editor whose save will be refused.
+  return canMutateSelection(item.status) ||
+    (isTriagedWithoutProposal(item) && item.canEditSuggestion === true)
+}
+
+function canTriage(item: CaptureItemSummary): boolean {
+  return canMutateSelection(item.status) || isTriagedWithoutProposal(item)
+}
+
+function canSetDisposition(item: CaptureItemSummary): boolean {
   return canMutateSelection(item.status)
 }
 
@@ -520,17 +538,26 @@ function editorOpenReasonId(item: CaptureItemSummary): string {
  * own visible reason next to each of them (GH-1944): every decision on this
  * surface either replaces the draft's row or moves the editor off it.
  */
-function isActionDisabled(item: CaptureItemSummary): boolean {
+function isActionDisabled(
+  item: CaptureItemSummary,
+  action: 'triage' | 'disposition' | 'edit',
+): boolean {
+  const actionPermitted = action === 'triage'
+    ? canTriage(item)
+    : action === 'edit'
+      ? canEdit(item)
+      : canSetDisposition(item)
+
   return props.readOnly ||
     hasMutationInFlight.value ||
     props.triagePollingItemId === item.id ||
-    !canMutate(item) ||
+    !actionPermitted ||
     isEditing(item) ||
     isEditingElsewhere(item)
 }
 
 function onEdit(item: CaptureItemSummary) {
-  if (isActionDisabled(item)) return
+  if (isActionDisabled(item, 'edit')) return
   // Opening the editor cancels a board pick in progress: they compete for the
   // same row and the same decision, and leaving both open would let a stale
   // pick confirm against text that is being rewritten.
@@ -603,7 +630,7 @@ function retryBoardLoad() {
 }
 
 function onAccept(item: CaptureItemSummary) {
-  if (isActionDisabled(item)) return
+  if (isActionDisabled(item, 'triage')) return
   if (hasBoard(item)) {
     pendingAction.value = { itemId: item.id, kind: 'accept' }
     emit('accept', item.id, item.boardId)
@@ -618,7 +645,7 @@ function onAccept(item: CaptureItemSummary) {
 }
 
 function confirmBoardAndAccept(item: CaptureItemSummary) {
-  if (isActionDisabled(item)) return
+  if (isActionDisabled(item, 'triage')) return
   // Belt and braces behind the disabled button: never emit an accept with no
   // board, nor one the server would answer with a 403. Every branch that stops
   // the emit also renders its reason above the button (`boardPickBlock`).
@@ -634,13 +661,13 @@ function cancelBoardPick() {
 }
 
 function onKeep(item: CaptureItemSummary) {
-  if (isActionDisabled(item)) return
+  if (isActionDisabled(item, 'disposition')) return
   pendingAction.value = { itemId: item.id, kind: 'keep' }
   emit('keep', item.id)
 }
 
 function onReject(item: CaptureItemSummary) {
-  if (isActionDisabled(item)) return
+  if (isActionDisabled(item, 'disposition')) return
   pendingAction.value = { itemId: item.id, kind: 'reject' }
   emit('reject', item.id)
 }
@@ -692,6 +719,12 @@ function rowState(item: CaptureItemSummary): TriageRowState {
 function decisionLine(item: CaptureItemSummary): string | null {
   const state = rowState(item)
   if (state === 'undecided' || state === 'unknown') return null
+  if (state === 'nothingToPropose' && item.canEditSuggestion === false) {
+    return t('inbox.triage.decision.nothingToProposeTranscriptReadOnly')
+  }
+  if (state === 'nothingToPropose' && item.canEditSuggestion !== true) {
+    return t('inbox.triage.decision.nothingToProposeNotEditable')
+  }
   return t(`inbox.triage.decision.${state}`)
 }
 
@@ -1136,7 +1169,7 @@ function recordedOr(value: string | null | undefined): string {
             <PaperHLBtn
               label="Ask AI for proposal"
               variant="ember"
-              :disabled="isActionDisabled(item) || boardPickBlock !== null"
+              :disabled="isActionDisabled(item, 'triage') || boardPickBlock !== null"
               :aria-describedby="boardPickBlock ? boardPickReasonId(item) : undefined"
               data-action="accept-on-board"
               @click="confirmBoardAndAccept(item)"
@@ -1154,7 +1187,7 @@ function recordedOr(value: string | null | undefined): string {
           <PaperHLBtn
             label="Ask AI"
             variant="ember"
-            :disabled="isActionDisabled(item)"
+            :disabled="isActionDisabled(item, 'triage')"
             :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="accept"
             @click="onAccept(item)"
@@ -1162,7 +1195,7 @@ function recordedOr(value: string | null | undefined): string {
           <PaperHLBtn
             label="Keep"
             variant="ghost"
-            :disabled="isActionDisabled(item)"
+            :disabled="isActionDisabled(item, 'disposition')"
             :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="keep"
             @click="onKeep(item)"
@@ -1170,7 +1203,7 @@ function recordedOr(value: string | null | undefined): string {
           <PaperHLBtn
             label="Archive"
             variant="ghost"
-            :disabled="isActionDisabled(item)"
+            :disabled="isActionDisabled(item, 'disposition')"
             :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="reject"
             @click="onReject(item)"
@@ -1178,7 +1211,7 @@ function recordedOr(value: string | null | undefined): string {
           <PaperHLBtn
             :label="t('inbox.triage.edit.action')"
             variant="ghost"
-            :disabled="isActionDisabled(item)"
+            :disabled="isActionDisabled(item, 'edit')"
             :aria-describedby="isEditingElsewhere(item) ? editorOpenReasonId(item) : undefined"
             data-action="edit"
             @click="onEdit(item)"

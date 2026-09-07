@@ -46,7 +46,8 @@ public record CaptureItemSummaryDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset? ProcessedAt,
     string? ErrorMessage = null,
-    CaptureDispositionV1? Disposition = null);
+    CaptureDispositionV1? Disposition = null,
+    bool CanEditSuggestion = false);
 
 public record CaptureListFilterDto(
     CaptureStatus? Status = null,
