@@ -527,6 +527,7 @@ export default {
     accessRevoked: {
       title: 'Questa coda di revisione non è più disponibile per te.',
       body: 'Il tuo accesso a queste bacheche è cambiato, quindi la coda è stata svuotata e non si aggiorna più. Ricarica la pagina o scegli una bacheca a cui hai ancora accesso.',
+      retry: 'Il server continua a rifiutare questa coda di revisione. Ricarica la pagina oppure controlla il filtro della bacheca.',
     },
     scoped: {
       title: 'Nessuna proposta in {scope}.',
