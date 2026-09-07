@@ -484,10 +484,13 @@ function isTriagedWithoutProposal(item: CaptureItemSummary): boolean {
 }
 
 function canEdit(item: CaptureItemSummary): boolean {
+  if (item.canEditSuggestion === false) return false
   // A completed, proposal-less triage may be corrected and explicitly retried
-  // under the D-13 ruling. The server remains the final source of truth for
-  // source-specific and concurrent-state checks.
-  return canMutateSelection(item.status) || isTriagedWithoutProposal(item)
+  // under the D-13 ruling. A summary only advertises that exception when the
+  // server supplied its source-specific edit capability; an older response
+  // fails closed rather than opening an editor whose save will be refused.
+  return canMutateSelection(item.status) ||
+    (isTriagedWithoutProposal(item) && item.canEditSuggestion === true)
 }
 
 function canTriage(item: CaptureItemSummary): boolean {
@@ -716,6 +719,12 @@ function rowState(item: CaptureItemSummary): TriageRowState {
 function decisionLine(item: CaptureItemSummary): string | null {
   const state = rowState(item)
   if (state === 'undecided' || state === 'unknown') return null
+  if (state === 'nothingToPropose' && item.canEditSuggestion === false) {
+    return t('inbox.triage.decision.nothingToProposeTranscriptReadOnly')
+  }
+  if (state === 'nothingToPropose' && item.canEditSuggestion !== true) {
+    return t('inbox.triage.decision.nothingToProposeNotEditable')
+  }
   return t(`inbox.triage.decision.${state}`)
 }
 

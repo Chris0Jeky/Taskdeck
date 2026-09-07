@@ -1281,7 +1281,8 @@ public class CaptureService : ICaptureService
             material.CreatedAt,
             item.ProcessedAt,
             item.ErrorMessage,
-            payload.Disposition);
+            payload.Disposition,
+            CanEditSuggestion(item, status));
     }
 
     private CaptureItemDto MapToDetailDto(

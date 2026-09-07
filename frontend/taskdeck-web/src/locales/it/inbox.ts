@@ -183,6 +183,8 @@ export default {
       },
     },
     decision: {
+      nothingToProposeTranscriptReadOnly: 'Il triage non ha trovato nulla da proporre: niente è stato inviato a Review. Questa trascrizione è di sola lettura. Cattura il testo corretto come nuovo elemento.',
+      nothingToProposeNotEditable: 'Il triage non ha trovato nulla da proporre: niente è stato inviato a Review. Questa cattura non può essere modificata qui.',
       sending: 'Invio a Review…',
       keeping: 'Conservazione per dopo…',
       archiving: 'Archiviazione…',
@@ -251,7 +253,7 @@ export default {
         unavailable: 'Questa API non ha restituito metadati modificabili. Salvare solo il testo manterrà la scadenza e le etichette già memorizzate.',
       },
       blocked: {
-        notEditable: 'Il testo di questa cattura non è modificabile. Premi Ask AI, Keep o Archive così com\'è.',
+        notEditable: 'Il testo di questa cattura non è modificabile. Cattura il testo corretto come nuovo elemento.',
         empty: 'Il testo non può essere vuoto. Scrivi qualcosa, oppure annulla per lasciare la cattura com\'era.',
         unchanged: 'Non è ancora cambiato nulla. Modifica il testo o i metadati, oppure annulla per lasciare la cattura com\'era.',
         editorOpen: 'Un\'altra cattura è aperta in modifica. Salva o annulla quella modifica: passare ora scarterebbe il testo scritto lì.',

@@ -766,7 +766,7 @@ describe('PaperTriageTable', () => {
 
   it('lets a proposal-less Triaged row be corrected and explicitly re-triaged', async () => {
     const items = makeItems()
-    items[0] = { ...items[0], status: 'Triaged' }
+    items[0] = { ...items[0], status: 'Triaged', canEditSuggestion: true }
     const wrapper = mount(PaperTriageTable, { props: { items } })
     const row = wrapper.find('.paper-triage__row')
 
@@ -782,6 +782,20 @@ describe('PaperTriageTable', () => {
     await row.get('button[data-action="edit"]').trigger('click')
     await flushPromises()
     expect(row.find('[data-testid="capture-edit-textarea"]').exists()).toBe(true)
+  })
+
+  it('does not advertise editing a transcript-linked Triaged row', () => {
+    const items = makeItems()
+    items[0] = { ...items[0], status: 'Triaged', canEditSuggestion: false }
+    const wrapper = mount(PaperTriageTable, { props: { items } })
+    const row = wrapper.find('.paper-triage__row')
+
+    expect(row.get('button[data-action="edit"]').attributes('disabled')).toBeDefined()
+    expect(row.get('button[data-action="accept"]').attributes('disabled')).toBeUndefined()
+    expect(row.get('button[data-action="keep"]').attributes('disabled')).toBeDefined()
+    expect(row.get('button[data-action="reject"]').attributes('disabled')).toBeDefined()
+    expect(row.get('[data-testid="capture-row-status"]').text())
+      .toContain('This transcript is read-only')
   })
 
   it('never tells a "nothing to propose" row to go decide in Review', () => {
@@ -1416,7 +1430,7 @@ describe('PaperTriageTable', () => {
     await flushPromises()
 
     const returned = makeItems()
-    returned[0] = { ...returned[0], status: 'Triaged' }
+    returned[0] = { ...returned[0], status: 'Triaged', canEditSuggestion: true }
     await wrapper.setProps({ items: returned })
     await flushPromises()
 
