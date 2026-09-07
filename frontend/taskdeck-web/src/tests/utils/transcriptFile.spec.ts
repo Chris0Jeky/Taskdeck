@@ -34,10 +34,10 @@ const OriginalFileReader = globalThis.FileReader
 
 function installReader(mode: ReaderMode = 'load') {
   let reader: MockFileReader | null = null
-  class Reader extends MockFileReader {
+  class Reader {
     constructor() {
-      super(mode)
-      reader = this
+      reader = new MockFileReader(mode)
+      return reader
     }
   }
   globalThis.FileReader = Reader as unknown as typeof FileReader

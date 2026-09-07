@@ -32,9 +32,7 @@ class MockFileReader extends EventTarget {
     this.outcome = outcome
   }
 
-  readAsText() {
-    activeFileReader = this
-  }
+  readAsText() {}
 
   complete() {
     if (this.outcome === 'error') this.onerror?.()
@@ -47,9 +45,10 @@ const OriginalFileReader = globalThis.FileReader
 
 function installFileReader(outcome: FileReaderOutcome = 'load') {
   activeFileReader = null
-  class Reader extends MockFileReader {
+  class Reader {
     constructor() {
-      super(outcome)
+      activeFileReader = new MockFileReader(outcome)
+      return activeFileReader
     }
   }
   globalThis.FileReader = Reader as unknown as typeof FileReader
