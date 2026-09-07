@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import {
   formatShortcut,
   KEYBOARD_HELP_SHORTCUT,
-  LEGACY_SHORTCUT_GROUPS,
+  shortcutGroupsForSkin,
 } from '../../utils/keyboardShortcuts'
 
 /**
@@ -13,7 +15,7 @@ import {
  * source PaperShortcutsOverlay renders, filtered to the rows whose handler can
  * run in this skin. The two surfaces therefore differ in both directions: this
  * one alone carries `f`, which toggles the Legacy filter panel and is gated on
- * `!paperOn`, and it drops the four review-keymap rows, because
+ * `!paperOn`, and it drops the review-keymap rows, because
  * `useReviewKeymap` is installed by `PaperReviewView` alone. Modifier notation
  * goes through `formatShortcut` so Apple platforms see the Command glyph
  * instead of a hardcoded `Ctrl+` literal.
@@ -29,6 +31,12 @@ defineProps<{
 const emit = defineEmits<{
   close: []
 }>()
+
+const featureFlags = useFeatureFlagStore()
+const shortcutGroups = computed(() => shortcutGroupsForSkin(
+  'legacy',
+  (flag) => featureFlags.isEnabled(flag),
+))
 </script>
 
 <template>
@@ -51,7 +59,7 @@ const emit = defineEmits<{
         </div>
         <div class="td-keyboard-help__content">
           <div
-            v-for="group in LEGACY_SHORTCUT_GROUPS"
+            v-for="group in shortcutGroups"
             :key="group.title"
             class="td-keyboard-help__section"
             :data-group="group.title"

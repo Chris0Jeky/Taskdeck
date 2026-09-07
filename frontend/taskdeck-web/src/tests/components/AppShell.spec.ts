@@ -526,15 +526,23 @@ describe('AppShell workspace navigation and command palette', () => {
     expect(mockRouter.push).toHaveBeenCalledWith('/workspace/home')
   })
 
-  it('navigates to Today through the G T chord', async () => {
+  it('does not reserve G for the retired Today chord', async () => {
     mountedWrapper = mountShell()
 
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'g' }))
-    expect(mockRouter.push).not.toHaveBeenCalled()
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 't' }))
     await waitForUi()
 
-    expect(mockRouter.push).toHaveBeenCalledWith('/workspace/today')
+    expect(mockRouter.push).not.toHaveBeenCalled()
+  })
+
+  it('does not dispatch the flag-gated Review binding when automation is disabled', async () => {
+    mockFeatureFlags.isEnabled = vi.fn((flag: keyof FeatureFlags) => flag !== 'newAutomation')
+    mountedWrapper = mountShell()
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'r' }))
+    await waitForUi()
+
+    expect(mockRouter.push).not.toHaveBeenCalled()
   })
 
   it('suppresses workspace navigation while a modal owns the keyboard', async () => {

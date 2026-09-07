@@ -2245,6 +2245,35 @@ describe('PaperReviewView', () => {
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="decision-reject"]').attributes('disabled')).toBeDefined()
 
+    // The editor owns the shared decision lock, but provenance and diff are
+    // read-only inspection actions and remain available from the review page.
+    mocks.getProposalDiff.mockResolvedValueOnce('--- before\n+++ after\n+Keep evidence')
+    const provenance = new KeyboardEvent('keydown', { key: 'p', cancelable: true })
+    window.dispatchEvent(provenance)
+    await flushPromises()
+    expect(provenance.defaultPrevented).toBe(true)
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').attributes('aria-expanded'))
+      .toBe('true')
+
+    const preview = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+    window.dispatchEvent(preview)
+    await flushPromises()
+    expect(preview.defaultPrevented).toBe(true)
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('proposal-001')
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+
+    // Decision and editor-opening keys stay blocked for the full edit session.
+    const blockedEvents = ['Enter', 'Backspace', 'e', 'd'].map((key) => {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true })
+      window.dispatchEvent(event)
+      return event
+    })
+    expect(blockedEvents.every((event) => !event.defaultPrevented)).toBe(true)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.deferProposal).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
+
     await wrapper.get('[data-testid="decision-apply"]').trigger('click')
     await wrapper.get('[data-testid="decision-reject"]').trigger('click')
     await flushPromises()
