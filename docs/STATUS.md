@@ -1401,3 +1401,11 @@ Historical/spec detail material:
 
 Rule:
 - If archive content conflicts with active docs, active docs win.
+
+## Accountable Automation Chat candidate (2026-09-08, #2004 / PR #2790)
+
+The ADR-0069 runtime candidate makes actionable instructions attempt a proposal by default and removes the proposal opt-in checkbox. Unbound turns retain the instruction beside an inline board picker; linking the owned session does not resend it, and explicit continuation attempts the proposal. Binding rechecks writable board state and ownership, uses atomic compare-and-set, and refreshes a losing tracked row so concurrent same-board requests remain idempotent. Clarification allows one persisted round, then an answer or Skip attempts best effort. Persisted board-needed/no-proposal outcomes and real tool receipts distinguish drafts from applied work, including failure and stream paths. Existing-card updates use real board/card state and remain subject to Review, Approve, and Apply.
+
+At source head `7a7895964`, post-integration checks passed 118 ChatService tests, 31 API/live-stub/concurrency tests, and 83 changed frontend tests. A real SQLite two-context same-board race failed before the tracker refresh and passed after it. The natural-update API test proves a persisted PendingReview Chat proposal with the actual card ID, current-title summary, and proposed-title diff while the card remains unchanged. The Mock Chromium SC-005 journey passed, with a visually inspected Review screenshot and trace retained outside the worktree; it proves inline binding, explicit continuation, proposal visibility, and no card creation before Apply.
+
+The full backend invocation had 8,992 passes, 5 skips, and one obsolete assertion failure; the corrected complete API rerun passed 2,862 with 4 skips. This is scoped correction evidence, not one green full-solution invocation. Full frontend had 6,144 passes, 3 skips, and five date-fixture failures independently reproduced on unchanged main and tracked in #2789; the three affected files pass 102/102 under UTC. Lint, typecheck, and build passed. Independent full-stack/security review and hosted qualification remain pending. Live LLM-provider and direct browser-controller verification are not claimed. #2004 remains open until the complete acceptance is verified.

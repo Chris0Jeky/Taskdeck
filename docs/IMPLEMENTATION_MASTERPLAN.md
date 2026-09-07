@@ -2135,3 +2135,7 @@ Rule:
   packaged app exit before listening, behind a generic error)
   - Mitigation: release-harness coverage of upgrade paths with inherited configuration, plus honest
     secret-free startup diagnostics (`#1876`)
+
+## Accountable chat acceptance (2026-09-08)
+
+PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal attempts, owned-session inline binding, grounded existing-card updates, one persisted clarification round, and durable honest outcomes. This reduces the maintenance burden of discovering that a chat instruction produced only prose while preserving explicit human Review, Approve, and Apply. The natural-update API proof covers actual card identity and an unchanged board; the Mock browser journey covers same-session context recovery and Review visibility. Complete the distinct full-stack and authorization/state review lenses, resolve any confirmed blockers in one batch, and qualify the final head before closing #2004. Repair the independently reproduced test-clock failures in #2789 separately; do not weaken the local-calendar contract or infer live-provider acceptance from Mock evidence.

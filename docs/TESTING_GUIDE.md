@@ -2757,3 +2757,9 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 - `#717` — Property-based and adversarial input tests (211 tests)
 
 **All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.
+
+## Accountable Automation Chat (ADR-0069 / #2004)
+
+Backend verification uses the required `dotnet test backend/Taskdeck.sln -c Release -m:1` command. Binding API tests and `ChatSessionRepositoryConcurrencyTests` exercise ownership, same/different-board races, and the real EF tracking behavior; `SendNaturalExistingCardUpdate_ShouldPersistGroundedReviewProposalWithoutMutatingCard` proves a persisted existing-card proposal with the actual target and no pre-Apply mutation. ChatService cases exercise default intent, persisted clarification, degradation, and duplicate-receipt prevention.
+
+From `frontend/taskdeck-web`, use the standard lint/typecheck/build/Vitest gates, with no API-base override for the full unit suite. The `validation-chat-bootstrap.spec.ts` SC-005 Chromium journey runs against an isolated Mock backend and worktree-local database; it checks inline binding, no automatic resend, explicit continuation, and Review visibility without board mutation. A screenshot verifies only the visible state; API assertions and the retained trace establish persistence and network effects. A live-provider run remains separate evidence. Known local/UTC boundary fixture failures are tracked in #2789 and must be reported explicitly if encountered.
