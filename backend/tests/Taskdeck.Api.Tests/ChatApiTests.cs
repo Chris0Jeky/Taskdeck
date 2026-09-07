@@ -127,6 +127,29 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task SendActionableMessage_WithoutBoard_ShouldPersistRecoverableOutcomeAcrossReload()
+    {
+        await AuthenticateAsync("chat-needs-board");
+        var session = await CreateUnboundSessionAsync(_client, "Recoverable action");
+
+        var response = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session.Id}/messages",
+            new { content = "create card for release notes" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var outcome = await response.Content.ReadFromJsonAsync<ChatMessageDto>();
+        outcome!.MessageType.Should().Be("action-needs-board");
+        outcome.ProposalId.Should().BeNull();
+        outcome.Content.Should().Contain("Select a writable board below");
+
+        var reloaded = await _client.GetFromJsonAsync<ChatSessionDto>(
+            $"/api/llm/chat/sessions/{session.Id}");
+        reloaded!.RecentMessages.Last().Id.Should().Be(outcome.Id);
+        reloaded.RecentMessages.Last().MessageType.Should().Be("action-needs-board");
+        reloaded.RecentMessages.Last().Content.Should().Contain("nothing was created or changed on any board");
+    }
+
+    [Fact]
     public async Task GetMySessions_ShouldReturnSessions_ForAuthenticatedUser()
     {
         await AuthenticateAsync("chat-list");
