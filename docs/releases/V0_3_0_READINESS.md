@@ -114,7 +114,7 @@ Linux hosted jobs only, and Windows (x2) or macOS (x10) legs run locally (the la
 `#2328`, agent-run proving checks until then) or carry a local fallback. That sizes CI-07 `#2331` and
 the section E Windows contract: the retained full Windows suite is local-runner work, not hosted.
 
-**Clause-4 risks.** Four open intermittent reds can take `main` red without a code defect. None is
+**Clause-4 risks.** Three open intermittent reds can take `main` red without a code defect. None is
 a product defect; all four are noise in clause 4 and in the SC-4 observation window.
 **`#2489` closed** 2026-09-04 on PR `#2566` (merge `ea3e39e7d`): the notification paging test now pins
 the query shape instead of a 2 s wall-clock bound. Three shapes were seeded from that night's reds in its

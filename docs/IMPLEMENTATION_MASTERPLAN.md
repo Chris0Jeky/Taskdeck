@@ -69,8 +69,8 @@ behaviour.
 
 The milestone wave shipped the bounded Triaged-capture requeue and edit-capability slice
 (#1999, PR #2779) and the existing board-read authorization invariant in chat (#2004,
-PR #2782). Paper transcript-file input (#2727) and review-queue recovery feedback (#2214)
-remain reviewed candidates pending integration. Acceptance audits closed #1984, #2250
+PR #2782). Paper transcript-file input (#2727, PR #2781, merge `164718249`) and
+review-queue recovery feedback (#2214, PR #2780, merge `2672e746d`) are also shipped. Acceptance audits closed #1984, #2250
 and #2691 with their direct evidence recorded on the issues. The active implementation
 lanes are full ADR-0069 chat (#2004), atomic prompt v3 (#2211), Paper review stability
 (#2215), and standalone launch drafts (#2391). The wider
