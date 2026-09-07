@@ -51,8 +51,9 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
         assistant.Should().NotBeNull();
-        assistant!.MessageType.Should().Be("status");
+        assistant!.MessageType.Should().Be("action-needs-board");
         assistant.Content.Should().Contain("OpenAI stub");
+        assistant.Content.Should().Contain("nothing was created or changed on any board");
         assistant.TokenUsage.Should().Be(123);
         capturedRequest.Should().NotBeNull();
         capturedRequest!.Attribution.Should().NotBeNull();
