@@ -67,6 +67,19 @@ behaviour.
 
 ## Planning update (2026-09-07, accountable chat decision record)
 
+The milestone wave shipped the bounded Triaged-capture requeue and edit-capability slice
+(#1999, PR #2779) and the existing board-read authorization invariant in chat (#2004,
+PR #2782). Paper transcript-file input (#2727, PR #2781, merge `164718249`) and
+review-queue recovery feedback (#2214, PR #2780, merge `2672e746d`) are also shipped. Acceptance audits closed #1984, #2250
+and #2691 with their direct evidence recorded on the issues. The active implementation
+lanes are full ADR-0069 chat (#2004), atomic prompt v3 (#2211), Paper review stability
+(#2215), and standalone launch drafts (#2391). The wider
+#1999 linked-transcript correction and ADR-0069 chat implementation remain open; these
+partial slices do not complete those issues or the v0.3 release gate. Non-blocking review
+findings are recorded on their PR threads and existing issues. The full Project priority
+audit still finds 41 pre-existing items without Priority labels (tracked on #2235); the
+wave's own issue/PR priorities were synchronized without applying guessed estate-wide labels.
+
 [ADR-0069](decisions/ADR-0069-accountable-automation-chat.md) records the maintainer's
 September 4 ruling on #2004, reaffirmed September 6: one ADR first, then the complete v0.3
 implementation of default proposal attempts, inline session board binding, grounded card updates,
