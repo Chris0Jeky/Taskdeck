@@ -22,6 +22,49 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task CreateSession_ShouldRequireAuthentication()
+    {
+        await ApiTestHarness.AssertUnauthorizedAsync(await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Anonymous chat", Guid.NewGuid())));
+    }
+
+    [Fact]
+    public async Task CreateSession_ShouldReturnForbidden_ForAnotherUsersBoard()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(ownerClient, "chat-board-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "chat-board-outsider");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "chat-authz");
+
+        var response = await outsiderClient.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Foreign board chat", board.Id));
+
+        await ApiTestHarness.AssertForbiddenAsync(response);
+        var error = await response.Content.ReadFromJsonAsync<JsonElement>();
+        error.GetProperty("message").GetString().Should().Be("You do not have access to this board");
+    }
+
+    [Fact]
+    public async Task CreateSession_ShouldAllowOwnBoard()
+    {
+        var user = await ApiTestHarness.AuthenticateAsync(_client, "chat-own-board");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "chat-own-board");
+
+        var response = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Own board chat", board.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var session = await response.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+        session!.UserId.Should().Be(user.UserId);
+        session.BoardId.Should().Be(board.Id);
+    }
+
+    [Fact]
     public async Task CreateSession_And_SendActionableMessage_ShouldReturnProposalReference()
     {
         var userId = await AuthenticateAsync("chat-proposal");

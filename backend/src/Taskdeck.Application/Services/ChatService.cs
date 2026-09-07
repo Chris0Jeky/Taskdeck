@@ -32,6 +32,7 @@ public class ChatService : IChatService
     private const string NoBoardActionNotice =
         "(No board is linked to this chat session, so nothing was created or changed on any board. " +
         "Open a board-scoped chat session to turn this into a proposal you can review.)";
+    private const string BoardAccessDeniedMessage = "You do not have access to this board";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -94,6 +95,10 @@ public class ChatService : IChatService
         try
         {
             var session = new ChatSession(userId, dto.Title, dto.BoardId);
+            var boardAccess = await EnsureBoardReadableAsync(userId, session.BoardId);
+            if (!boardAccess.IsSuccess)
+                return Result.Failure<ChatSessionDto>(boardAccess.ErrorCode, boardAccess.ErrorMessage);
+
             await _unitOfWork.ChatSessions.AddAsync(session, ct);
             await _unitOfWork.SaveChangesAsync(ct);
             return Result.Success(MapSessionToDto(session));
@@ -194,6 +199,10 @@ public class ChatService : IChatService
                 return Result.Failure<ChatMessageDto>(ErrorCodes.NotFound, $"Chat session with ID {sessionId} not found");
             if (session.UserId != userId)
                 return Result.Failure<ChatMessageDto>(ErrorCodes.Forbidden, "You do not have access to this chat session");
+
+            var boardAccess = await EnsureBoardReadableAsync(userId, session.BoardId);
+            if (!boardAccess.IsSuccess)
+                return Result.Failure<ChatMessageDto>(boardAccess.ErrorCode, boardAccess.ErrorMessage);
 
             // Add user message
             var userMessage = new ChatMessage(sessionId, ChatMessageRole.User, dto.Content);
@@ -702,6 +711,13 @@ public class ChatService : IChatService
         if (session == null || session.UserId != userId)
             yield break;
 
+        var boardAccess = await EnsureBoardReadableAsync(userId, session.BoardId);
+        if (!boardAccess.IsSuccess)
+        {
+            yield return new LlmTokenEvent(string.Empty, true, Error: boardAccess.ErrorMessage);
+            yield break;
+        }
+
         // Kill switch and quota gate for streaming
         if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
         {
@@ -982,6 +998,23 @@ public class ChatService : IChatService
     {
         if (_boardContextBuilder == null || session.BoardId == null) return null;
         return await _boardContextBuilder.BuildContextAsync(session.BoardId.Value, ct);
+    }
+
+    private async Task<Result> EnsureBoardReadableAsync(Guid userId, Guid? boardId)
+    {
+        if (!boardId.HasValue)
+            return Result.Success();
+
+        if (_authorizationService == null)
+            return Result.Failure(ErrorCodes.Forbidden, BoardAccessDeniedMessage);
+
+        var permission = await _authorizationService.CanReadBoardAsync(userId, boardId.Value);
+        if (!permission.IsSuccess)
+            return Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+
+        return permission.Value
+            ? Result.Success()
+            : Result.Failure(ErrorCodes.Forbidden, BoardAccessDeniedMessage);
     }
 
     private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)
