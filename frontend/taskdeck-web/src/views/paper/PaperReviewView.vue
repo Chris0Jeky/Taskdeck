@@ -3027,6 +3027,7 @@ async function onClearBoardScope() {
           class="tk-meta"
           role="status"
           aria-live="polite"
+          aria-atomic="true"
           data-testid="paper-review-access-revoked-retry"
         >
           {{ $t('review.empty.accessRevoked.retry') }}
