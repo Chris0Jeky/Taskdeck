@@ -8,7 +8,7 @@
 
 ## MCP usage (frontend)
 - For Vue/Vite/TS questions: use Context7 docs lookups before guessing.
-- For UI regression: use Playwright MCP to reproduce and capture screenshots; prefer stable selectors and avoid sleeps.
+- For UI regression: use the selected available browser controller (Chrome DevTools by project default) to reproduce and capture screenshots. Use repository Playwright tests for durable regression coverage; prefer stable selectors and avoid sleeps.
 - For repo-wide searching: prefer native `rg`; fallback to GitHub MCP search_code.
 - CI parity: in PowerShell, run `npm run typecheck; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npx vitest --run --maxWorkers=2` for frontend changes.
 
