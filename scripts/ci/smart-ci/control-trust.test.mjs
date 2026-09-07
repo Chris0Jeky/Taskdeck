@@ -137,6 +137,15 @@ function assertNoFetchedHeadExecution(step, context) {
       `${context}: actions/checkout must omit ref so pull_request_target checks out the protected base`);
   }
 
+  // GitHub evaluates expressions before handing a run body to the shell. A
+  // comment is therefore not inert when its expression can expand to a
+  // newline: a PR-controlled multiline value would put subsequent text on its
+  // own executable line. Keep comment-only prose out of the fingerprint, but
+  // fail closed for an expression hidden in a run-block comment.
+  assert.doesNotMatch(step.run,
+    /^\s*#.*\$\{\{/m,
+    `${context}: a run-block comment must not interpolate a GitHub expression`);
+
   assert.doesNotMatch(step.run,
     /\bgit\s+(?:-[^\s]+\s+)*(?:checkout|switch|reset|restore|read-tree|worktree)\b/i,
     `${context}: a pull_request_target run step must not replace or create a worktree from fetched objects`);
@@ -202,4 +211,13 @@ test('the contract rejects execution of a fetched head object', () => {
     '            --note-out artifacts/merge-ref-note.txt\n          git show "${CONTROL_HEAD}:payload.sh" | bash',
   ));
   assert.throws(() => assertControlTrust(workflows), /must not pipe fetched head content into a shell/);
+});
+
+test('the contract rejects a GitHub expression hidden in a run-block comment', () => {
+  const workflows = checkedInWorkflows();
+  workflows.set(SUPPORTED_WORKFLOW, workflows.get(SUPPORTED_WORKFLOW).replace(
+    '            --note-out artifacts/merge-ref-note.txt',
+    '            --note-out artifacts/merge-ref-note.txt\n          # ${{ github.event.pull_request.body }}',
+  ));
+  assert.throws(() => assertControlTrust(workflows), /run-block comment must not interpolate a GitHub expression/);
 });
