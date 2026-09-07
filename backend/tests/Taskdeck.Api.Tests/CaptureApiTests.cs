@@ -290,6 +290,10 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         created.Should().NotBeNull();
         created!.CanEditSuggestion.Should().BeTrue();
 
+        var beforeLinkList = await _client.GetFromJsonAsync<List<CaptureItemSummaryDto>>("/api/capture/items");
+        beforeLinkList.Should().ContainSingle(item =>
+            item.Id == created.Id && item.CanEditSuggestion);
+
         var beforeLinkResponse = await _client.GetAsync($"/api/capture/items/{created.Id}");
         beforeLinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var beforeLinkJson = await beforeLinkResponse.Content.ReadAsStringAsync();
@@ -323,6 +327,10 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         afterLink.Should().NotBeNull();
         afterLink!.CanEditSuggestion.Should().BeFalse();
         afterLinkJson.ToLowerInvariant().Should().NotContain("transcriptid");
+
+        var afterLinkList = await _client.GetFromJsonAsync<List<CaptureItemSummaryDto>>("/api/capture/items");
+        afterLinkList.Should().ContainSingle(item =>
+            item.Id == created.Id && !item.CanEditSuggestion);
 
         var editResponse = await _client.PutAsJsonAsync(
             $"/api/capture/items/{created.Id}/suggestion",
