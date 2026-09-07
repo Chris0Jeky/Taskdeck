@@ -331,6 +331,33 @@ public class WriteToolExecutorTests
     }
 
     [Fact]
+    public async Task ProposeUpdateCard_ReadOnlyUser_ReturnsErrorWithoutProposal()
+    {
+        var card = CreateCard("Protected title");
+        SetupBoardCards(card);
+        _policyEngine
+            .Setup(p => p.ValidatePermissionsAsync(
+                _userId,
+                _boardId,
+                It.IsAny<IEnumerable<ProposalOperationDto>>(),
+                BoardAccessBar.Write,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result.Failure(ErrorCodes.Forbidden, "Board write access required"));
+        var executor = new ProposeUpdateCardExecutor(_proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var args = ParseArgs(
+            $$"""{"card_id":"{{BoardContextBuilder.FormatShortId(card.Id)}}","title":"Unauthorized title"}""");
+
+        var result = await executor.ExecuteAsync(MakeContext(), args);
+
+        JsonDocument.Parse(result).RootElement.GetProperty("error").GetString()
+            .Should().Be("Board write access required");
+        card.Title.Should().Be("Protected title");
+        _proposalService.Verify(
+            service => service.CreateProposalAsync(It.IsAny<CreateProposalDto>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task ProposeUpdateCard_WithClearDueDate_PassesExplicitClearToProposal()
     {
         CreateProposalDto? captured = null;
