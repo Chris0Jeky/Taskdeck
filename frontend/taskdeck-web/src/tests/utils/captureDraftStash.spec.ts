@@ -297,6 +297,17 @@ describe('captureDraftStash', () => {
       expect(takeCaptureDraft(USER_A)?.source).toBe('TranscriptPaste')
     })
 
+    it('round-trips the Paper transcript file source', () => {
+      stashCaptureDraft({
+        userId: USER_A,
+        variant: 'composer',
+        text: 'Ana: ship it Friday.',
+        source: 'TranscriptFile',
+      })
+
+      expect(takeCaptureDraft(USER_A)?.source).toBe('TranscriptFile')
+    })
+
     it('defaults a nib draft, which has no source, to Typed', () => {
       stashCaptureDraft({ userId: USER_A, variant: 'nib', text: 'a thought' })
 
