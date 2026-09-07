@@ -1308,9 +1308,13 @@ finally {
                 Assert-Contains $guidance "Initialize-CodexIssueWorktree.ps1" "Detached-first guidance omitted the reviewed initializer wrapper: $guidancePath"
             }
             $protocol = Get-Content -Raw -LiteralPath $worktreeProtocolPath
-            Assert-Contains $protocol 'claude -p --setting-sources project --allowedTools $handoffAllowRules --permission-mode dontAsk' "Headless guidance omitted the exact-target project-only launch and both task handoff rules."
-            Assert-True (-not $protocol.Contains('claude -p --worktree')) "Headless guidance would create a second Claude worktree instead of staying in the helper-created target."
-            Assert-Contains $protocol "Set-Location -LiteralPath '<exact helper-created worktree>'" "Headless guidance did not bind the Claude process cwd to the helper-created target."
+            Assert-NormalizedContains $protocol "Use the current runtime's native collaboration surface when available" "Worker guidance must permit the Codex-native collaboration route."
+            Assert-NormalizedContains $protocol 'codex exec -C <exact-helper-created-target>' "Codex CLI fallback must bind the exact helper-created cwd."
+            Assert-NormalizedContains $protocol "the helper's Claude launch rules do not authorize Codex" "Codex guidance must not inherit Claude-only permission rules."
+            Assert-NormalizedContains $protocol "When the coordinator deliberately selects a Claude worker, use" "Worker guidance must retain a separately selected Claude route."
+            Assert-Contains $protocol 'claude -p --setting-sources project --allowedTools $handoffAllowRules --permission-mode dontAsk' "The explicit Claude route omitted the exact-target project-only launch and both task handoff rules."
+            Assert-True (-not $protocol.Contains('claude -p --worktree')) "The explicit Claude route would create a second Claude worktree instead of staying in the helper-created target."
+            Assert-Contains $protocol "Set-Location -LiteralPath '<exact helper-created worktree>'" "The explicit Claude route did not bind the Claude process cwd to the helper-created target."
             Assert-NormalizedContains $protocol "acceptEdits does not approve arbitrary Git or PowerShell commands" "Headless guidance must not present acceptEdits as sufficient command authorization."
             Assert-NormalizedContains $protocol "Do not present the launch allowlist as the sole authorization boundary" "Headless guidance must describe the complete effective permission boundary."
             Assert-NormalizedContains $protocol "Organization-managed settings remain effective" "Headless guidance must bound residual administrator-owned trust."
