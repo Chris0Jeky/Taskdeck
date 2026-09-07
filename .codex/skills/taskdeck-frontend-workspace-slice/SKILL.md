@@ -9,6 +9,8 @@ Strengthen the shipped Taskdeck workspace without drifting into disconnected sur
 
 ## Read first
 
+Use `autodoc/AGENT_INDEX.md` to locate the touched seam; read only its relevant STATUS and testing sections, plus applicable instructions. Do not load entire historical documents.
+
 1. `docs/STATUS.md`
 2. `docs/START_HERE.md`
 3. `docs/TESTING_GUIDE.md`

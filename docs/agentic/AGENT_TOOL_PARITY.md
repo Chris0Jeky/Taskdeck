@@ -32,9 +32,9 @@ Both agents must preserve:
 | Multi-file reads | parallel shell reads where available | batched Bash reads where practical | narrow sequential reads |
 | Library/framework docs | Context7 MCP (`.codex/config.toml`) | Context7 via the claude.ai connector (not `.mcp.json`) | official docs search |
 | OpenAI/Codex/API docs | `openaiDeveloperDocs` MCP | `openaiDeveloperDocs` MCP from `.mcp.json` | official OpenAI docs only |
-| UI reproduction | Playwright MCP | Playwright MCP from `.mcp.json` | local Playwright CLI |
+| UI reproduction | selected controller; Chrome DevTools project default | selected controller; Chrome DevTools project default | repository Playwright tests or task-selected alternative |
 | Browser protocol debugging | Chrome DevTools MCP | Chrome DevTools MCP from `.mcp.json` | Playwright traces/screenshots |
-| GitHub issues/PRs | GitHub MCP or `scripts/github/*` | `gh` CLI (GitHub MCP removed from `.mcp.json` 2026-09-02) | `gh` CLI with explicit notes |
+| GitHub issues/PRs | `gh`/budget tools or GitHub MCP when useful | `gh`/budget tools | report unavailable operations and preserve existing rate-limit rules |
 | Containers/SQLite docs | Docker MCP gateway (user scope) | Docker MCP gateway (user scope) | `docker`/repo scripts |
 | High-autonomy issue work | Codex skills, configured agents/worktrees when runtime policy allows | Claude skills and worktree sessions | local coordinator flow |
 | Guardrails | global/runtime policy, `AGENTS.md`, `.codex/config.toml`, worktree guards | global/runtime policy, `.claude/settings.json`, skills, worktree guards | stop and ask for safety blockers |
@@ -42,7 +42,7 @@ Both agents must preserve:
 
 ## Codex Strengths To Use
 
-- Use `.codex/config.toml` MCP servers before shell fallbacks when a tool fits.
+- Select native repository tools or MCP according to the task; use the smallest useful interface.
 - Use native `rg` for repo search because ripgrep MCP remains unreliable on Windows.
 - Use Codex subagents only when the active runtime policy allows delegation and ownership can be split cleanly.
 - Use worktree scripts for issue workers and keep one coordinator responsible for synthesis.
@@ -64,10 +64,9 @@ Claude project MCP configuration lives in `.mcp.json`.
 Shared project baseline servers:
 
 - `openaiDeveloperDocs`
-- `playwright`
 - `chromeDevTools`
 
-Codex-only project servers (Codex has no connector): `github` (authenticated), `context7`, `ripgrep`. Claude gets
+Codex-only enabled project servers: `github` (authenticated), `context7`. Claude gets
 Context7 from the claude.ai connector and uses `gh` for GitHub.
 
 The Docker MCP gateway is not a project server: it is declared once at user scope (`MCP_DOCKER` in
@@ -76,7 +75,7 @@ Re-declaring it in `.mcp.json` or `.codex/config.toml` starts a second gateway p
 
 Known intentional difference:
 
-- Codex currently lists `ripgrep` MCP, but Taskdeck policy still prefers native `rg` on Windows.
+- Codex retains disabled `ripgrep` and `playwright` definitions for explicit task opt-in. Native `rg` is the search default; Chrome DevTools 1.8.0 is the sole enabled project browser controller in both runtimes. Repository Playwright tests are independent of MCP selection.
 - Neither runtime installs a Taskdeck-owned hook. User-, organization-, and runtime-level controls can still differ and must be inventoried separately.
 
 ## Verification
