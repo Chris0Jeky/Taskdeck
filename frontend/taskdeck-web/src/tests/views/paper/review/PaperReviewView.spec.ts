@@ -1411,6 +1411,17 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('renders an unavailable deep link ahead of the settled-elsewhere notice (#2215 D3aB)', () => {
+    const settledBranch =
+      '<template v-else-if="activeProposalSettledElsewhere && !unavailableProposalId">'
+    const unavailableBranch = '<template v-else-if="unavailableProposalId">'
+
+    expect(paperReviewSource).toContain(settledBranch)
+    expect(paperReviewSource.indexOf(unavailableBranch)).toBeGreaterThan(
+      paperReviewSource.indexOf(settledBranch),
+    )
+  })
+
   it('updates the hash when manual queue selection replaces a deep-link target', async () => {
     mocks.approveProposal.mockResolvedValueOnce(makeProposal({ id: 'proposal-first' }))
     const wrapper = await mountView(
@@ -3623,6 +3634,12 @@ describe('PaperReviewView', () => {
 
     confirmSpy.mockRestore()
     wrapper.unmount()
+  })
+
+  it('captures the revision count when Apply confirmation opens, not during a later resync (#2215 D3aB)', () => {
+    expect(paperReviewSource).toContain('const applyConfirmRevisionCount = ref<number | null>(null)')
+    expect(paperReviewSource).toContain('if (pending && !previous)')
+    expect(paperReviewSource).toContain('? revisionCount.value')
   })
 
   it('blocks Apply when the revision load fails for a zero-op proposal — unknown state never approves (#1397 round 3)', async () => {
@@ -6135,6 +6152,15 @@ describe('PaperReviewView', () => {
       expect((editor.get('[data-testid="revision-reason"]').element as HTMLInputElement).value)
         .toBe('A2 draft')
       wrapper.unmount()
+    })
+
+    it('limits a stale save to clearing its matching preview id (#2215 D3aB)', () => {
+      // The save continuation owns no B state. The public UI prevents opening B's
+      // preview while A is saving, so this source-bound regression protects the
+      // stale-continuation boundary itself rather than bypassing that lock.
+      expect(paperReviewSource).toContain(
+        'proposalIdsEqual(previewDiffProposalId.value, saveResult.proposalId)',
+      )
     })
 
     it('states on the rail why the decisions are disabled, and offers the exit there', async () => {
