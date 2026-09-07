@@ -113,6 +113,17 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         actionableAssistant.Should().NotBeNull();
         actionableAssistant!.MessageType.Should().Be("proposal-reference");
         actionableAssistant.ProposalId.Should().NotBeNull();
+
+        // The legacy compatibility flag is not an authorization gate. An explicit false
+        // from an older client must still attempt an actionable turn.
+        var legacyFalseResponse = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session.Id}/messages",
+            new SendChatMessageDto("create card \"Backend task 3\"", RequestProposal: false));
+
+        legacyFalseResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var legacyFalseAssistant = await legacyFalseResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
+        legacyFalseAssistant!.MessageType.Should().Be("proposal-reference");
+        legacyFalseAssistant.ProposalId.Should().NotBeNull();
     }
 
     [Fact]
@@ -430,8 +441,7 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
             - [ ] Setup board columns
             - [ ] Create MVP tasks
             - [ ] Add release review item
-            """,
-            RequestProposal: true);
+            """);
 
         var sendMessageResponse = await _client.PostAsJsonAsync(
             $"/api/llm/chat/sessions/{session!.Id}/messages",
@@ -535,8 +545,8 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
         sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
         assistant.Should().NotBeNull();
-        assistant!.MessageType.Should().Be("error");
-        assistant.Content.Should().Contain("board-scoped chat session");
+        assistant!.MessageType.Should().Be("action-needs-board");
+        assistant.Content.Should().Contain("Select a writable board below");
     }
 
     private async Task<Guid> AuthenticateAsync(string stem)

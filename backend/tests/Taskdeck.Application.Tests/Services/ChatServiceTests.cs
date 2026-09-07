@@ -270,8 +270,8 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("status");
-        result.Value.Content.Should().Contain("board-scoped chat session");
+        result.Value.MessageType.Should().Be("action-needs-board");
+        result.Value.Content.Should().Contain("Select a writable board below");
         // The notice must also say plainly that nothing happened, so the prose above it cannot
         // read as an applied change (#2004).
         result.Value.Content.Should().Contain("nothing was created or changed on any board");
@@ -306,10 +306,10 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("status");
+        result.Value.MessageType.Should().Be("action-needs-board");
         result.Value.Content.Should().Contain("Here is a tidier write-up.");
         result.Value.Content.Should().Contain("nothing was created or changed on any board");
-        result.Value.Content.Should().Contain("board-scoped chat session");
+        result.Value.Content.Should().Contain("Select a writable board below");
         _plannerMock.Verify(
             p => p.ParseInstructionAsync(
                 It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
@@ -341,7 +341,7 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("status");
+        result.Value.MessageType.Should().Be("action-needs-board");
         result.Value.Content.Should().Contain("nothing was created or changed on any board");
     }
 
@@ -364,6 +364,41 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("text");
         result.Value.Content.Should().Be("Assistant response");
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_BoardCreateIntent_ShouldExplainBoardsFlowWithoutGuessingExistingBoard()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Create board request");
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync(new LlmCompletionResult("I can help set that up.", 12, false, null));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("create a board for the launch"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("action-no-proposal");
+        result.Value.Content.Should().Contain("Create the board from Boards");
+        result.Value.Content.Should().Contain("No board was created or changed");
+        _plannerMock.Verify(
+            planner => planner.ParseInstructionAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()),
+            Times.Never);
     }
 
     [Fact]
@@ -397,7 +432,7 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("degraded");
         result.Value.DegradedReason.Should().Be("Live provider request failed.");
-        result.Value.Content.Should().Be("This is a degraded fallback response.");
+        result.Value.Content.Should().Be("The provider response was degraded. No proposal was created, and nothing changed.");
     }
 
     [Fact]
@@ -495,8 +530,8 @@ public class ChatServiceTests
         // No prose exists to be misread as completed work, so the textless outcome keeps its own
         // placeholder and "degraded" classification rather than being relabelled "status".
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("degraded");
-        result.Value.Content.Should().Be("The provider ended the response without returning text.");
+        result.Value.MessageType.Should().Be("action-needs-board");
+        result.Value.Content.Should().Contain("nothing was created or changed on any board");
     }
 
     [Fact]
@@ -694,7 +729,7 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("status");
+        result.Value.MessageType.Should().Be("action-no-proposal");
         result.Value.Content.Should().Contain("Could not create the requested proposal");
     }
 
@@ -862,8 +897,8 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("error");
-        result.Value.Content.Should().Contain("board-scoped chat session");
+        result.Value.MessageType.Should().Be("action-needs-board");
+        result.Value.Content.Should().Contain("writable board");
     }
 
     [Fact]
@@ -889,7 +924,7 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("error");
+        result.Value.MessageType.Should().Be("action-no-proposal");
         result.Value.Content.Should().Contain("Could not parse checklist tasks");
     }
 
@@ -917,7 +952,7 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("error");
+        result.Value.MessageType.Should().Be("action-no-proposal");
         result.Value.Content.Should().Contain("maximum item count");
         _llmProviderMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default), Times.Never);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
@@ -949,7 +984,7 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("error");
+        result.Value.MessageType.Should().Be("action-no-proposal");
         result.Value.Content.Should().Contain("No columns found in board");
         _llmProviderMock.Verify(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default), Times.Never);
         _proposalServiceMock.Verify(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default), Times.Never);
@@ -1211,7 +1246,7 @@ public class ChatServiceTests
             default);
 
         result.IsSuccess.Should().BeTrue();
-        result.Value.MessageType.Should().Be("status");
+        result.Value.MessageType.Should().Be("action-no-proposal");
         result.Value.Content.Should().Contain("Could not create the requested proposal");
         result.Value.Content.Should().Contain("Could not parse instruction");
     }
@@ -1221,7 +1256,7 @@ public class ChatServiceTests
     /// reply with no proposal attempt — the classifier misses the intent entirely.
     /// </summary>
     [Fact]
-    public async Task SendMessageAsync_NaturalLanguage_WithoutRequestProposal_NoProposalAttempt()
+    public async Task SendMessageAsync_NaturalLanguage_WithoutRequestProposal_AttemptsProposal()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -1234,7 +1269,15 @@ public class ChatServiceTests
             .Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
             .ReturnsAsync(new LlmCompletionResult(
                 "Great idea! Here's how to approach non-technical onboarding...",
-                50, false, null));  // IsActionable = false (classifier missed it)
+                50, false, null));  // The provider does not mark the reply actionable.
+        _plannerMock
+            .Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId,
+                It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(), It.IsAny<string?>()))
+            .ReturnsAsync(Result.Failure<ProposalDto>(
+                ErrorCodes.ValidationError,
+                "Could not create a grounded proposal"));
 
         var result = await _service.SendMessageAsync(
             session.Id,
@@ -1245,12 +1288,14 @@ public class ChatServiceTests
 
         result.IsSuccess.Should().BeTrue();
         // No proposal attempt — classifier didn't detect intent, RequestProposal not set
+        result.Value.MessageType.Should().Be("action-no-proposal");
+        result.Value.Content.Should().Contain("No proposal was created");
         _plannerMock.Verify(
             p => p.ParseInstructionAsync(
                 It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<Guid?>(),
                 It.IsAny<CancellationToken>(), It.IsAny<ProposalSourceType>(),
                 It.IsAny<string?>(), It.IsAny<string?>()),
-            Times.Never);
+            Times.Once);
     }
 
     /// <summary>
@@ -1675,6 +1720,86 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task SendMessageAsync_WriteToolCreatesProposal_ThenProviderFails_ShouldReuseReceiptWithoutFallback()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Tool proposal receipt", boardId);
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var orchestratorProviderMock = new Mock<ILlmProvider>();
+        var callSequence = 0;
+        orchestratorProviderMock
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                callSequence++;
+                if (callSequence == 1)
+                {
+                    var args = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("{}");
+                    return Task.FromResult(new LlmToolCompletionResult(
+                        Content: null,
+                        TokensUsed: 50,
+                        Provider: "OpenAI",
+                        Model: "gpt-4o-mini",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "propose_update_card", args) },
+                        IsComplete: false));
+                }
+
+                throw new InvalidOperationException("late provider failure");
+            });
+
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("propose_update_card");
+        executor
+            .Setup(e => e.ExecuteAsync(
+                It.IsAny<ToolExecutionContext>(),
+                It.IsAny<System.Text.Json.JsonElement>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync($"{{\"full_proposal_id\":\"{proposalId}\"}}");
+
+        var registry = new ToolExecutorRegistry(new[] { executor.Object });
+        var orchestrator = new ToolCallingChatOrchestrator(
+            orchestratorProviderMock.Object,
+            registry,
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+        var service = BuildServiceWithOrchestrator(orchestrator);
+
+        var result = await service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("update the release card title"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+        _plannerMock.Verify(
+            planner => planner.ParseInstructionAsync(
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<Guid?>(),
+                It.IsAny<CancellationToken>(),
+                It.IsAny<ProposalSourceType>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()),
+            Times.Never);
+        _llmProviderMock.Verify(
+            provider => provider.CompleteAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task SendMessageAsync_BoardScoped_DegradedNullContent_ShouldFallBackToCompleteAsync()
     {
         // Arrange: orchestrator returns degraded with null content (provider doesn't support tools)
@@ -1907,6 +2032,76 @@ public class ChatServiceTests
         persistedMessage!.Role.Should().Be(ChatMessageRole.Assistant);
         persistedMessage.Content.Should().Be("hello world");
         persistedMessage.TokenUsage.Should().Be(42);
+    }
+
+    [Theory]
+    [InlineData(false, "action-needs-board", "No board is linked")]
+    [InlineData(true, "action-no-proposal", "No proposal was created")]
+    public async Task StreamResponseAsync_ActionableTurn_ShouldStreamAndPersistNoProposalOutcome(
+        bool bindBoard,
+        string expectedMessageType,
+        string expectedNotice)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = bindBoard ? Guid.NewGuid() : (Guid?)null;
+        var session = new ChatSession(userId, "Stream action outcome", boardId);
+        session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.User, "create card for release notes"));
+        ChatMessage? persistedMessage = null;
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage msg, CancellationToken _) =>
+            {
+                persistedMessage = msg;
+                return msg;
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamEventsWithUsage());
+
+        var events = new List<LlmTokenEvent>();
+        await foreach (var token in _service.StreamResponseAsync(session.Id, userId, default))
+            events.Add(token);
+
+        events.Last().IsComplete.Should().BeTrue();
+        events.Last().Token.Should().Contain(expectedNotice);
+        persistedMessage.Should().NotBeNull();
+        persistedMessage!.MessageType.Should().Be(expectedMessageType);
+        persistedMessage.Content.Should().Contain("hello world");
+        persistedMessage.Content.Should().Contain(expectedNotice);
+    }
+
+    [Fact]
+    public async Task StreamResponseAsync_OrdinaryQuestion_ShouldRemainConversational()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Stream question");
+        session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.User, "What is a kanban board?"));
+        ChatMessage? persistedMessage = null;
+
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _chatMessageRepoMock
+            .Setup(r => r.AddAsync(It.IsAny<ChatMessage>(), default))
+            .ReturnsAsync((ChatMessage msg, CancellationToken _) =>
+            {
+                persistedMessage = msg;
+                return msg;
+            });
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns(StreamEventsWithUsage());
+
+        var content = new System.Text.StringBuilder();
+        await foreach (var token in _service.StreamResponseAsync(session.Id, userId, default))
+            content.Append(token.Token);
+
+        content.ToString().Should().Be("hello world");
+        persistedMessage!.MessageType.Should().Be("text");
     }
 
     [Fact]
