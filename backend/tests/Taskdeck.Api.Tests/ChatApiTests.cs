@@ -127,6 +127,70 @@ public class ChatApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task SendNaturalExistingCardUpdate_ShouldPersistGroundedReviewProposalWithoutMutatingCard()
+    {
+        var userId = await AuthenticateAsync("chat-ground-update");
+        var boardId = await CreateOwnedBoardWithColumnAsync(userId);
+        var column = (await GetColumnsAsync(boardId)).Should().ContainSingle().Subject;
+        const string currentTitle = "Release checklist draft";
+        const string proposedTitle = "Release checklist ready";
+        var createCardResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, column.Id, currentTitle, "Current board description", null, null));
+        createCardResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var existingCard = await createCardResponse.Content.ReadFromJsonAsync<CardDto>();
+        existingCard.Should().NotBeNull();
+
+        var createSessionResponse = await _client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Grounded update flow", boardId));
+        var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+        session.Should().NotBeNull();
+
+        var shortCardId = existingCard!.Id.ToString("N")[..8];
+        var sendMessageResponse = await _client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            new SendChatMessageDto($"Rename card {shortCardId} title to \"{proposedTitle}\""));
+
+        sendMessageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var assistant = await sendMessageResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
+        assistant!.MessageType.Should().Be("proposal-reference");
+        assistant.ProposalId.Should().NotBeNull();
+
+        var proposalResponse = await _client.GetAsync(
+            $"/api/automation/proposals/{assistant.ProposalId}");
+        proposalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposal = await proposalResponse.Content.ReadFromJsonAsync<ProposalDto>();
+        proposal!.Status.Should().Be(ProposalStatus.PendingReview);
+        proposal.SourceType.Should().Be(ProposalSourceType.Chat);
+        proposal.Summary.Should().Contain(currentTitle,
+            "the persisted Review proposal must identify the card from current board state");
+
+        var operation = proposal.Operations.Should().ContainSingle().Subject;
+        operation.ActionType.Should().Be("update");
+        operation.TargetType.Should().Be("card");
+        operation.TargetId.Should().Be(existingCard.Id.ToString());
+        using (var parameters = JsonDocument.Parse(operation.Parameters))
+        {
+            parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(existingCard.Id);
+            parameters.RootElement.GetProperty("title").GetString().Should().Be(proposedTitle);
+        }
+
+        var diffResponse = await _client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+        diffResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var diffPayload = await diffResponse.Content.ReadFromJsonAsync<JsonElement>();
+        diffPayload.GetProperty("diff").GetString().Should().Contain(proposedTitle);
+
+        var cardsResponse = await _client.GetAsync($"/api/boards/{boardId}/cards");
+        cardsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var cards = await cardsResponse.Content.ReadFromJsonAsync<List<CardDto>>();
+        cards.Should().ContainSingle(card =>
+            card.Id == existingCard.Id &&
+            card.Title == currentTitle &&
+            card.Description == "Current board description");
+    }
+
+    [Fact]
     public async Task SendActionableMessage_WithoutBoard_ShouldPersistRecoverableOutcomeAcrossReload()
     {
         await AuthenticateAsync("chat-needs-board");
