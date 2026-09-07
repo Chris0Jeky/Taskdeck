@@ -24,7 +24,7 @@ sentence that cannot inherit one of these shipped sources.
 | A workspace is local SQLite data the operator controls; back up its accompanying local configuration/keys too. | [Shipped local-first direction](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L354-L354), [README local-first ownership](../../README.md), and [upgrade guide](../../UPGRADING.md) | Operator | 2026-09-02 |
 | Captured text can become source-linked proposals; the review/apply loop is a separate, explicit user decision. | [Live-verified proposal loop](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L105-L105) | Product maintainer | 2026-09-02 |
 | Untouched v0.3 builds have no automatic usage ping, crash reporter, update check, analytics script, or background destination. Configured LLMs, connectors, webhooks, login, Sentry, and OTLP are separate, user/operator-enabled egress. | [Shipped v0.3 telemetry statement](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L55-L55) and [telemetry policy](../TELEMETRY.md) | Release maintainer | 2026-09-02 |
-| Agent-originated board changes are review-first: proposal, review, approval, then an explicit Apply confirmation. Single-proposal Apply remains a separate action; batch execution can execute every already-Approved proposal up to 500 and, for mixed or partially executable requests, returns an independent outcome for each item without whole-batch rollback. A request with no executable item may collapse to 404/403. | [Shipped batch endpoint contract](../../backend/src/Taskdeck.Api/Controllers/AutomationProposalsController.cs), [per-item receipt shape](../../backend/src/Taskdeck.Application/DTOs/AutomationProposalDtos.cs), [D-4(a) ruling](../STATUS.md#L848), and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Product maintainer | 2026-09-07 |
+| Agent-originated board changes are review-first: proposal, review, approval, then an explicit Apply confirmation. Single-proposal Apply remains a separate action. The API can execute a selected batch of already-Approved proposals, up to 500, and returns an independent outcome for each item without whole-batch rollback; a request with no executable item may collapse to 404/403. The current Paper batch control deliberately offers only the reviewer's own, live, non-deferred, exact-Low, create-card-only approved proposals; other approved proposals retain individual Apply. | [Shipped batch endpoint contract](../../backend/src/Taskdeck.Api/Controllers/AutomationProposalsController.cs), [Paper eligibility boundary](../../frontend/taskdeck-web/src/composables/useBatchExecuteProposals.ts), [per-item receipt shape](../../backend/src/Taskdeck.Application/DTOs/AutomationProposalDtos.cs), [D-4(a) ruling](../STATUS.md#L848), and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Product maintainer | 2026-09-07 |
 | Encrypted backup/restore and connector verification exist for the supported Docker deployment. The recovery objectives are objectives, not measured guarantees. | [Shipped recovery receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L39-L39), [PR #2360](https://github.com/Chris0Jeky/Taskdeck/pull/2360), [PR #2361](https://github.com/Chris0Jeky/Taskdeck/pull/2361), and [disaster-recovery runbook](../ops/DISASTER_RECOVERY_RUNBOOK.md) | Recovery operator | 2026-09-02 |
 | Windows ZIP checksums are published; the current ZIP is unsigned. | [Shipped ZIP/checksum receipt](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L31-L35), [published-artifact journey](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L121-L121), and [Windows quick start](../releases/WINDOWS_QUICK_START.md) | Release maintainer | 2026-09-02 |
 | The core is GPL-3.0-only; earlier MIT releases retain the grants already made. | [Shipped licensing record](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L281-L281), [licensing follow-up](https://github.com/Chris0Jeky/Taskdeck/blob/dcd258af262a0b7179b58ac3fb36f744f92255da/docs/STATUS.md#L366-L366), [licensing policy](../../LICENSING.md), [GPL text](../../LICENSE), and [ADR-0050](../decisions/ADR-0050-gplv3-copyleft-core.md) | Maintainer/legal owner | 2026-09-02 |
@@ -65,6 +65,17 @@ development repository, and do not invent a tag-specific release or asset URL.
 Before posting, the maintainer must make the mirror anonymous and then complete
 the signed-out link and ZIP/checksum checks below.
 
+### Mirror policy reachability gate
+
+Do not post any external draft until the public mirror exposes a signed-out
+telemetry-destination table and its security policy's private-disclosure route
+has been tested end to end. The proposed CI-16 mirror allowlist does not include
+`docs/TELEMETRY.md`, and the current `SECURITY.md` points its only active
+reporting route at `Chris0Jeky/Taskdeck/security/advisories/new`, which becomes
+private after cutover; its email fallback is explicitly inactive. `#2439` owns
+the mirror implementation needed to export or otherwise provide those public
+paths. This is a publication gate, not evidence that the launch is ready.
+
 ## Listener and network-binding boundary
 
 Untouched packaged defaults are loopback-only; that statement does not survive
@@ -102,17 +113,19 @@ has the exact boundary.
 Taskdeck sends nothing home in its untouched v0.3 configuration: no usage
 ping, crash reporter, update check, or analytics. If you configure an LLM,
 connector, webhook, Sentry, OTLP, or external login, those integrations can
-send the data needed for the thing you chose to run; the full destination table
-is in the [telemetry policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/docs/TELEMETRY.md).
+send the data needed for the thing you chose to run. Do not post this draft
+until the mirror exposes and the maintainer has signed-out verified the public
+telemetry-destination table.
 
 The safety model is simple: AI/MCP board changes become proposals. You inspect
 them in Review, approve them, and then Apply is a separate confirmation. A
-proposal is not a board mutation. Single-proposal Apply remains explicit; the
-separate batch Apply path can execute every already-Approved proposal, up to
-500 in one request, with an independent `Applied`, `Skipped`, or `Failed`
-outcome for each item and no whole-batch rollback. Mixed or partially executable
-requests keep those per-item outcomes; a request with no executable item may
-collapse to 404/403.
+proposal is not a board mutation. Single-proposal Apply remains explicit. The
+API can execute a selected batch of already-Approved proposals, up to 500 in
+one request, with an independent `Applied`, `Skipped`, or `Failed` outcome for
+each item and no whole-batch rollback. In the current Paper UI, batch Apply is
+deliberately limited to the reviewer's own live, non-deferred, exact-Low,
+create-card-only approved proposals; other approved proposals use individual
+Apply. A request with no executable item may collapse to 404/403.
 
 The Windows artifact is currently unsigned, so SmartScreen may say “Windows
 protected your PC.” Only continue after downloading from the official release
@@ -126,7 +139,9 @@ instance. Questions and ordinary, non-security bugs should use the support
 route linked from the [approved public mirror](https://github.com/Chris0Jeky/taskdeck-release)
 once it is live. Suspected vulnerabilities must not be opened as a public
 issue, discussion, or PR; use the [public security policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/SECURITY.md)
-until coordinated disclosure.
+until coordinated disclosure. Do not post until that policy's private
+disclosure route has been signed-out tested end to end; its email fallback is
+not active.
 
 ### Show HN
 
@@ -141,7 +156,9 @@ It runs locally from a Windows ZIP or the supported Docker Compose baseline.
 Use the [approved public release page](https://github.com/Chris0Jeky/taskdeck-release/releases)
 and [README Compose setup](https://github.com/Chris0Jeky/taskdeck-release/blob/main/README.md#2-docker).
 The default build sends no background telemetry; configured providers and
-connectors are opt-in egress, described in [the telemetry policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/docs/TELEMETRY.md).
+connectors are opt-in egress. Do not post this draft until the mirror exposes
+and the maintainer has signed-out verified the public telemetry-destination
+table.
 Workspace data is SQLite data the operator owns; the [upgrade guide](https://github.com/Chris0Jeky/taskdeck-release/blob/main/UPGRADING.md)
 covers the backup boundary.
 
@@ -152,25 +169,33 @@ the [approved public mirror](https://github.com/Chris0Jeky/taskdeck-release) for
 questions and ordinary, non-security bugs once it is live. Suspected
 vulnerabilities must not be opened as a public issue, discussion, or PR; use the
 [public security policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/SECURITY.md)
-until coordinated disclosure.
+until coordinated disclosure. Do not post until that policy's private
+disclosure route has been signed-out tested end to end; its email fallback is
+not active.
 
 **Known limits:** This downloadable, self-hosted release has no audio ingestion
 or speaker diarization, artefact extraction is not wired to a request path, and
 MFA TOTP seeds remain unencrypted at rest in its single-node SQLite data. There
-is no hosted instance. Single-proposal Apply remains explicit; a separate
-batch Apply can execute every already-Approved proposal, up to 500, and reports
-`Applied`, `Skipped`, or `Failed` independently for each item; a request with no
-executable item may collapse to 404/403.
+is no hosted instance. Single-proposal Apply remains explicit. The API can
+execute a selected batch of already-Approved proposals, up to 500, and reports
+`Applied`, `Skipped`, or `Failed` independently for each item; the current
+Paper UI deliberately limits batch Apply to the reviewer's own live,
+non-deferred, exact-Low, create-card-only approved proposals. Other approved
+proposals use individual Apply; a request with no executable item may collapse
+to 404/403.
 
 **First comment:**
 
 The important caveat up front: this is downloadable/self-hosted software, not
 a hosted product. It does not yet ingest audio or diarize speakers, artefact
 extraction is not wired to a request path, and MFA TOTP seeds remain unencrypted
-at rest in the single-node SQLite data. Single-proposal Apply remains explicit;
-a separate batch Apply can execute every already-Approved proposal, up to 500,
+at rest in the single-node SQLite data. Single-proposal Apply remains explicit.
+The API can execute a selected batch of already-Approved proposals, up to 500,
 and returns `Applied`, `Skipped`, or `Failed` for each item without rolling back
-successful neighbours; a request with no executable item may collapse to 404/403.
+successful neighbours. The current Paper UI deliberately limits batch Apply to
+the reviewer's own live, non-deferred, exact-Low, create-card-only approved
+proposals; other approved proposals use individual Apply. A request with no
+executable item may collapse to 404/403.
 Use the [approved public release page](https://github.com/Chris0Jeky/taskdeck-release/releases)
 and [public security policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/SECURITY.md);
 there is no hosted instance and the public support route is available only after
@@ -199,9 +224,9 @@ covers backups.
 
 Privacy is a default, not a slogan: an untouched v0.3 build has no usage ping,
 crash reporter, update check, or analytics script. A configured LLM, connector,
-webhook, external login, Sentry, or OTLP endpoint can of course communicate
-with the service the operator chose; read the exact [telemetry destination
-table](https://github.com/Chris0Jeky/taskdeck-release/blob/main/docs/TELEMETRY.md) before enabling one.
+webhook, external login, Sentry, or OTLP endpoint can communicate with the
+service the operator chose. Do not post this draft until the mirror exposes and
+the maintainer has signed-out verified the public telemetry-destination table.
 
 The project is candid about its beta limits. The Windows ZIP is unsigned,
 there is no hosted instance, and several product boundaries remain open. If
@@ -210,15 +235,20 @@ verify the checksum, and use the support route linked from the [approved public
 mirror](https://github.com/Chris0Jeky/taskdeck-release) for ordinary,
 non-security problems once it is live. Suspected vulnerabilities must not be
 opened as a public issue, discussion, or PR; use the [public security policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/SECURITY.md)
-until coordinated disclosure.
+until coordinated disclosure. Do not post until that policy's private
+disclosure route has been signed-out tested end to end; its email fallback is
+not active.
 
 **Known limits:** This downloadable, self-hosted release has no audio ingestion
 or speaker diarization, artefact extraction is not wired to a request path, and
 MFA TOTP seeds remain unencrypted at rest in the single-node SQLite data. There
 is no hosted instance. Single-proposal Apply remains explicit; a separate
-batch Apply can execute every already-Approved proposal, up to 500, and reports
-`Applied`, `Skipped`, or `Failed` independently for each item; a request with no
-executable item may collapse to 404/403.
+batch Apply can execute a selected set of already-Approved proposals, up to
+500, and reports `Applied`, `Skipped`, or `Failed` independently for each item.
+The current Paper UI deliberately limits batch Apply to the reviewer's own live,
+non-deferred, exact-Low, create-card-only approved proposals. Other approved
+proposals use individual Apply; a request with no executable item may collapse
+to 404/403.
 
 ### awesome-selfhosted — do not submit yet
 
@@ -242,9 +272,12 @@ downloadable, self-hosted software with no hosted instance. It uses single-node
 SQLite data that the operator controls; MFA TOTP seeds remain unencrypted at
 rest. The release does not ingest audio or diarize speakers, and artefact
 extraction is not wired to a request path. Single-proposal Apply remains
-explicit; a separate batch Apply can execute every already-Approved proposal,
+explicit. The API can execute a selected batch of already-Approved proposals,
 up to 500, with an independent `Applied`, `Skipped`, or `Failed` outcome for
-each item; a request with no executable item may collapse to 404/403. Use the
+each item. The current Paper UI deliberately limits batch Apply to the
+reviewer's own live, non-deferred, exact-Low, create-card-only approved
+proposals. Other approved proposals use individual Apply; a request with no
+executable item may collapse to 404/403. Use the
 [approved public source and release mirror](https://github.com/Chris0Jeky/taskdeck-release)
 and its [public security policy](https://github.com/Chris0Jeky/taskdeck-release/blob/main/SECURITY.md)
 after the publication gate has passed.
@@ -286,10 +319,13 @@ policy summary, not legal advice.
 - MFA TOTP seeds remain unencrypted at rest in SQLite until
   [#1653](https://github.com/Chris0Jeky/Taskdeck/issues/1653); protect the data
   file accordingly.
-- Apply remains an explicit action for one proposal. The separate batch Apply
-  path accepts every already-Approved proposal, up to 500 per request, and
-  returns `Applied`, `Skipped`, or `Failed` independently for each item; there
-  is no whole-batch rollback.
+- Apply remains an explicit action for one proposal. The API's separate batch
+  Apply path accepts a selected set of already-Approved proposals, up to 500
+  per request, and returns `Applied`, `Skipped`, or `Failed` independently for
+  each item; there is no whole-batch rollback. The current Paper UI deliberately
+  limits batch Apply to the reviewer's own live, non-deferred, exact-Low,
+  create-card-only approved proposals. Other approved proposals use individual
+  Apply.
 - There is no hosted instance. Do not turn the v0.4 direction into a current
   availability claim.
 
@@ -327,8 +363,10 @@ policy summary, not legal advice.
 > Windows ZIP is currently unsigned; verify the official SHA-256 before you run
 > it. Known limits include no audio ingestion/diarization, unwired artefact
 > extraction, unencrypted TOTP seeds at rest, and explicit single/batch Apply.
-> Batch Apply is bounded at 500 already-Approved proposals and reports an
-> independent result for each item. Please
+> The API batch is bounded at 500 selected already-Approved proposals and
+> reports an independent result for each item. The current Paper UI limits it
+> to the reviewer's own live, non-deferred, exact-Low, create-card-only approved
+> proposals. Please
 > report reproducible non-security bugs with redacted steps; never post
 > secrets, keys, or private workspace data. Suspected vulnerabilities must not
 > be posted as a public issue, discussion, or PR; use the private
@@ -356,6 +394,10 @@ which is still unavailable at this verification point.
 - [ ] Confirm the unsigned/SmartScreen wording against the actual release
       artifact; never claim signing or universal SmartScreen behaviour.
 - [ ] Re-check the telemetry destination table and every issue-linked gap.
+- [ ] Confirm the public mirror exposes the telemetry-destination table and
+      that the private disclosure link in its security policy works end to end
+      while signed out. Do not publish if either path fails; `#2439` owns any
+      mirror export or reporting-route implementation needed to make them work.
 - [ ] Re-check whether Discussions are enabled; change the question channel
       only with direct repository evidence.
 - [ ] Re-check awesome-selfhosted's live contribution criteria and project
