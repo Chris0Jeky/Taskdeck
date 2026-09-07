@@ -3025,6 +3025,8 @@ async function onClearBoardScope() {
         :revision-changed="revisionChangedWhileEditing"
         @save="onSaveRevision"
         @cancel="onCancelRevision"
+        @toggle-provenance="onToggleProvenance"
+        @preview-diff="onPreviewDiff"
       />
     </div>
     <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
