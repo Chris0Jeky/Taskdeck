@@ -1401,3 +1401,9 @@ Historical/spec detail material:
 
 Rule:
 - If archive content conflicts with active docs, active docs win.
+
+## CI10-2 observation candidate (2026-09-08, PR #2791)
+
+The nightly integration candidate adds a parallel observation job. It derives a baseline only from authenticated successful CI Nightly and Nightly Quality Signals runs at the same main head, checks the complete expected job set and latest attempts, binds the bounded JSON plan artifact to the run and Git tree, and verifies ancestry and changed files. Missing or inconsistent evidence selects a full sweep. Both schedules and all twelve deep suites remain unconditional; this does not enable selective execution.
+
+At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.

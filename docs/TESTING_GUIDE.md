@@ -2757,3 +2757,9 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 - `#717` — Property-based and adversarial input tests (211 tests)
 
 **All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.
+
+## Nightly baseline observation contract (#2334, CI10-2)
+
+From the repository root, `node --test scripts/ci/smart-ci/*.test.mjs` exercises the deterministic coordinator and authenticated-baseline fixtures. `node scripts/ci/smart-ci/action-pins.mjs --check` checks workflow pinning. These are additive local checks: CI-control changes require the hosted run at the exact PR head.
+
+Fixtures cover successful same-head CI Nightly/Nightly Quality pairs, missing or unsuccessful jobs, latest-attempt and workflow identity mismatches, bounded pagination/artifact handling, and head/tree/diff consistency. They do not prove a real Actions artifact download or a quiet-night/week result. The observer job records the intended plan while the existing deep jobs continue unconditionally; a plan artifact alone is never evidence of completed qualification.

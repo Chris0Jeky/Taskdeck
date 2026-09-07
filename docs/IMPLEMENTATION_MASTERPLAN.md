@@ -2135,3 +2135,7 @@ Rule:
   packaged app exit before listening, behind a generic error)
   - Mitigation: release-harness coverage of upgrade paths with inherited configuration, plus honest
     secret-free startup diagnostics (`#1876`)
+
+## CI10-2 remaining acceptance (2026-09-08)
+
+PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
