@@ -1100,6 +1100,120 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task EnqueueTriageAsync_ShouldRequeueCompletedTriagedCapture()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload", boardId);
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+        var completedUpdatedAt = item.UpdatedAt;
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Status.Should().Be(CaptureStatus.Triaging);
+        result.Value.AlreadyTriaging.Should().BeFalse();
+        item.Status.Should().Be(RequestStatus.Processing);
+        item.ProcessedAt.Should().BeNull();
+        item.ErrorMessage.Should().BeNull();
+        _llmQueueRepositoryMock.Verify(r => r.TryEnqueueCaptureTriageAsync(
+            item.Id,
+            RequestStatus.Completed,
+            completedUpdatedAt,
+            It.IsAny<string>(),
+            boardId,
+            default), Times.Once);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldRejectCompletedCaptureWithAnExistingProposal()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                CaptureRequestContract.WithProvenance(
+                    new CapturePayloadV1(
+                        CaptureRequestContract.CurrentSchemaVersion,
+                        CaptureSource.Typed,
+                        "capture payload"),
+                    captureItemId: Guid.NewGuid(),
+                    triageRunId: Guid.NewGuid(),
+                    proposalId: Guid.NewGuid())),
+            boardId);
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain(CaptureStatus.ProposalCreated.ToString());
+        item.Status.Should().Be(RequestStatus.Completed);
+        _llmQueueRepositoryMock.Verify(r => r.TryEnqueueCaptureTriageAsync(
+            It.IsAny<Guid>(),
+            It.IsAny<RequestStatus>(),
+            It.IsAny<DateTimeOffset>(),
+            It.IsAny<string>(),
+            It.IsAny<Guid>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnqueueTriageAsync_ShouldRejectStaleCompletedTriagedCaptureWithoutASecondEnqueue()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1, "capture payload", boardId);
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+        var completedUpdatedAt = item.UpdatedAt;
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _authorizationServiceMock
+            .Setup(s => s.CanWriteBoardAsync(userId, boardId))
+            .ReturnsAsync(Result.Success(true));
+        _llmQueueRepositoryMock
+            .Setup(r => r.TryEnqueueCaptureTriageAsync(
+                item.Id,
+                RequestStatus.Completed,
+                completedUpdatedAt,
+                It.IsAny<string>(),
+                boardId,
+                default))
+            .ReturnsAsync(false);
+
+        var result = await _service.EnqueueTriageAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        result.ErrorMessage.Should().Contain("changed while triage was being requested");
+        _llmQueueRepositoryMock.Verify(r => r.TryEnqueueCaptureTriageAsync(
+            item.Id,
+            RequestStatus.Completed,
+            completedUpdatedAt,
+            It.IsAny<string>(),
+            boardId,
+            default), Times.Once);
+    }
+
+    [Fact]
     public async Task EnqueueTriageAsync_ShouldReturnForbidden_WhenAlreadyLinkedBoardIsReadOnly()
     {
         // #1794: the read-only injection vector is reachable without a triage body — capture WITH a
@@ -1589,6 +1703,32 @@ public class CaptureServiceTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.RawText.Should().Be("edited text");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldUpdateCompletedTriagedCaptureWithoutChangingItsQueueState()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.Typed, "nothing actionable yet")));
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto("- [ ] Turn the corrected capture into a proposal"));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.Status.Should().Be(CaptureStatus.Triaged);
+        result.Value.RawText.Should().Be("- [ ] Turn the corrected capture into a proposal");
+        item.Status.Should().Be(RequestStatus.Completed);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 

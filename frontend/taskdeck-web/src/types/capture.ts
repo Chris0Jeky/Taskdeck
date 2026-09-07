@@ -64,6 +64,8 @@ export interface CaptureItemSummary {
   errorMessage?: string | null
   /** Latest server-stamped routing choice. Absent on records created before M1. */
   disposition?: CaptureDispositionReceipt | null
+  /** Server-computed edit capability. Absent while an older API rolls out and fails closed. */
+  canEditSuggestion?: boolean
 }
 
 export interface CaptureProvenance {
@@ -89,8 +91,6 @@ export interface CaptureItem extends CaptureItemSummary {
   retryCount: number
   errorMessage?: string | null
   provenance?: CaptureProvenance | null
-  /** Optional while older API instances roll out; absent is conservatively not editable. */
-  canEditSuggestion?: boolean
   /** Optional while older API instances roll out; absent metadata must never be cleared implicitly. */
   metadata?: CaptureSuggestionMetadata | null
 }

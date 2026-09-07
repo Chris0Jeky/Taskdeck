@@ -217,6 +217,7 @@ public class CaptureController : AuthenticatedControllerBase
     /// <response code="401">Authentication required.</response>
     /// <response code="403">The caller lacks write access to the target board (#1794), or the capture belongs to another user.</response>
     /// <response code="404">Capture item not found.</response>
+    /// <response code="409">The capture changed concurrently or already has a proposal/apply outcome.</response>
     /// <response code="429">Rate limit exceeded.</response>
     [HttpPost("{id:guid}/triage")]
     [EnableRateLimiting(RateLimitingPolicyNames.CaptureWritePerUser)]
@@ -225,6 +226,7 @@ public class CaptureController : AuthenticatedControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> EnqueueTriage(
         Guid id,

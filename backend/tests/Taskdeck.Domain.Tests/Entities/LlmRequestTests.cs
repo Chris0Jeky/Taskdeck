@@ -105,6 +105,33 @@ public class LlmRequestTests
     }
 
     [Fact]
+    public void RequeueCompletedCaptureForTriage_ShouldRestoreProcessingWithoutChargingRetry()
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "capture", "payload");
+        request.MarkAsProcessing();
+        request.MarkAsCompleted("A degraded run found no proposal");
+
+        request.RequeueCompletedCaptureForTriage();
+
+        request.Status.Should().Be(RequestStatus.Processing);
+        request.ProcessedAt.Should().BeNull();
+        request.ErrorMessage.Should().BeNull();
+        request.RetryCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void RequeueCompletedCaptureForTriage_ShouldRejectNonCompletedRequests()
+    {
+        var request = new LlmRequest(Guid.NewGuid(), "capture", "payload");
+
+        var act = () => request.RequeueCompletedCaptureForTriage();
+
+        act.Should().Throw<DomainException>()
+            .WithMessage("Can only requeue completed requests for capture triage")
+            .Where(e => e.ErrorCode == ErrorCodes.ValidationError);
+    }
+
+    [Fact]
     public void ResetForRetry_ShouldSetRequestBackToPending()
     {
         // Arrange
