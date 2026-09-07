@@ -6,12 +6,11 @@ This `.codex/` layer is the Codex-facing control plane for Taskdeck. It routes a
 
 ## Start Here
 
-1. Read [docs/STATUS.md](../docs/STATUS.md).
-2. Read [AGENTS.md](../AGENTS.md).
-3. Read [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
-4. Read [docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md).
-5. Read [autodoc/AGENT_INDEX.md](../autodoc/AGENT_INDEX.md) for fast seam orientation.
-6. Pick the matching repo skill from [skills/README.md](./skills/README.md).
+1. Use [autodoc/AGENT_INDEX.md](../autodoc/AGENT_INDEX.md) to locate the task's seam.
+2. Read [AGENTS.md](../AGENTS.md), its shared facts in [CLAUDE.md](../CLAUDE.md), and the nearest applicable scoped instructions.
+3. Check the active gates in [memories/00_ACTIVE.md](./memories/00_ACTIVE.md).
+4. Read relevant headings or ranges in [docs/STATUS.md](../docs/STATUS.md). Consult [docs/IMPLEMENTATION_MASTERPLAN.md](../docs/IMPLEMENTATION_MASTERPLAN.md) when roadmap sequencing matters; do not load complete historical records by default.
+5. Pick the matching repo skill from [skills/README.md](./skills/README.md).
 
 ## Current Routing
 
