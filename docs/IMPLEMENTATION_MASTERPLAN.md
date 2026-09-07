@@ -67,9 +67,13 @@ behaviour.
 
 ## Planning update (2026-09-07, accountable chat decision record)
 
-The milestone wave implements the Paper transcript-file entry point (#2727), a bounded
-Triaged-capture requeue and edit-capability slice (#1999), review-queue recovery feedback
-(#2214), and the existing board-read authorization invariant in chat (#2004). The wider
+The milestone wave shipped the bounded Triaged-capture requeue and edit-capability slice
+(#1999, PR #2779) and the existing board-read authorization invariant in chat (#2004,
+PR #2782). Paper transcript-file input (#2727) and review-queue recovery feedback (#2214)
+remain reviewed candidates pending integration. Acceptance audits closed #1984, #2250
+and #2691 with their direct evidence recorded on the issues. The active implementation
+lanes are full ADR-0069 chat (#2004), atomic prompt v3 (#2211), Paper review stability
+(#2215), and standalone launch drafts (#2391). The wider
 #1999 linked-transcript correction and ADR-0069 chat implementation remain open; these
 partial slices do not complete those issues or the v0.3 release gate. Non-blocking review
 findings are recorded on their PR threads and existing issues. The full Project priority
