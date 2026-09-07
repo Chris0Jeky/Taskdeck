@@ -65,6 +65,15 @@ behaviour.
 
 ## Dated delivery and governance updates (newest first)
 
+## Planning update (2026-09-07, transcript prompt v3)
+
+#2211 moves current generation, frontend provenance recognition and packaged acceptance to
+`llm-triage.v3` atomically. The schema-v2-shaped historical v2 contract remains available for
+stored output; deterministic provenance is unchanged. This attributes #2206's reference-date
+semantics correctly without changing the task envelope or bypassing review. Current release
+qualification must exercise v3; old published ZIP evidence remains an honest v2 record.
+
+
 ## Planning update (2026-09-07, accountable chat decision record)
 
 [ADR-0069](decisions/ADR-0069-accountable-automation-chat.md) records the maintainer's

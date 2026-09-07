@@ -2,6 +2,16 @@
 
 This is the active testing guide for Taskdeck.
 
+Current transcript prompt contract (#2211): new LLM generation and current Windows packaged
+live acceptance require `llm-triage.v3` with the existing schema-v2 JSON shape. Keep the
+historical v2 schema, fixture, parsing and provenance-classifier regressions; do not rewrite
+old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputContractTests`,
+`LlmCaptureTriagePromptTests`, `LlmCaptureTriageExtractorTests`, `CaptureTriageServiceTests`,
+`TranscriptTriageLlmGoldenPathIntegrationTests`, `ReviewProvenance.spec.ts`, and
+`python -m unittest scripts/ci/test_windows_desktop_archive.py`. The current packaged journey
+is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
+
+
 Last Updated: 2026-09-05
 Companion Active Docs:
 - `docs/STATUS.md`
@@ -343,7 +353,7 @@ Earlier candidate checkpoints that built up this final proof are retained below:
   preserving fail-closed behavior before signaling or on PID mismatch.
 - PR `#1922` makes local `-LiveOpenAI` acceptance mandatory rather than accepting a missing-key skip,
   and replaces the old chat-only proof with Transcript capture -> Inbox triage -> proposal review ->
-  apply -> restart. The gate requires exact `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2`
+  apply -> restart. At that historical head the gate required exact `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2`
   attribution before approval. PR `#1924` removes current and retired provider credential aliases
   case-insensitively from the Playwright child environment and fails closed if a recognized name or
   synthetic value survives.
