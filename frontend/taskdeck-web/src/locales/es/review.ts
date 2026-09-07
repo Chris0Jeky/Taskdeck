@@ -524,6 +524,7 @@ export default {
     accessRevoked: {
       title: 'Esta cola de revisión ya no está disponible para ti.',
       body: 'Tu acceso a estos tableros cambió, así que la cola se vació y dejó de actualizarse. Vuelve a cargar la página o elige un tablero al que todavía tengas acceso.',
+      retry: 'El servidor sigue rechazando esta cola de revisión. Recarga la página o revisa el filtro del tablero.',
     },
     scoped: {
       title: 'No hay propuestas en {scope}.',
