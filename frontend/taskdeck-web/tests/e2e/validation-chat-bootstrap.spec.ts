@@ -10,6 +10,15 @@ interface ChatSessionListDto {
   title: string
 }
 
+interface ChatSessionDto extends ChatSessionListDto {
+  boardId: string | null
+  recentMessages: Array<{
+    id: string
+    messageType: string
+    proposalId: string | null
+  }>
+}
+
 // --- Tests ---
 
 let auth: AuthResult
@@ -69,7 +78,7 @@ test.describe('TST09 Chat Session Behavior', () => {
     expect(count).toBe(0)
   })
 
-  test('SC-005: actionable prompt with proposal generation creates proposal without mutating board', async ({
+  test('SC-005: unbound actionable prompt links the session, continues explicitly, and reaches Review without mutating board', async ({
     page,
     request,
   }) => {
@@ -84,16 +93,44 @@ test.describe('TST09 Chat Session Behavior', () => {
 
     await page.goto('/workspace/automations/chat')
     await page.getByPlaceholder('Session title').fill(`Actionable ${seed}`)
-    await page.getByPlaceholder('Board context (optional)').fill(boardId)
     await page.getByRole('button', { name: 'Create Session' }).click()
 
+    const sessionId = await page.locator('.paper-chat__meta').getAttribute('data-session-id')
+    if (!sessionId) throw new Error('Expected selected chat session id')
+
     await page.getByPlaceholder('Describe an automation instruction...').fill(`create card "${uniqueCardTitle}"`)
-    const requestProposalCheckbox = page.getByRole('checkbox', { name: 'Request proposal generation' })
-    await requestProposalCheckbox.check()
+    await expect(page.getByRole('checkbox', { name: 'Request proposal generation' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Send Message' }).click()
 
-    // Wait for assistant response
-    await expect(page.getByText('Assistant').first()).toBeVisible()
+    const recoveryTurn = page.locator('[data-message-type="action-needs-board"]').last()
+    await expect(recoveryTurn).toBeVisible()
+    await expect(recoveryTurn.getByText('Board needed before a proposal can be created')).toBeVisible()
+
+    const beforeBindingResponse = await request.get(
+      `${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    await assertOk(beforeBindingResponse, 'get unbound chat outcome')
+    const beforeBinding = (await beforeBindingResponse.json()) as ChatSessionDto
+    expect(beforeBinding.boardId).toBeNull()
+    const messageCountBeforeBinding = beforeBinding.recentMessages.length
+
+    await recoveryTurn.getByRole('button', { name: 'Link board' }).click()
+    await expect(recoveryTurn.getByText(/Linked to SliceC Actionable/)).toBeVisible()
+
+    const boundResponse = await request.get(
+      `${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    await assertOk(boundResponse, 'get linked chat session')
+    const bound = (await boundResponse.json()) as ChatSessionDto
+    expect(bound.boardId).toBe(boardId)
+    expect(bound.recentMessages).toHaveLength(messageCountBeforeBinding)
+
+    await recoveryTurn.getByRole('button', { name: 'Continue retained instruction' }).click()
+    const proposalTurn = page.locator('[data-message-type="proposal-reference"]').last()
+    await expect(proposalTurn).toBeVisible()
+    await expect(proposalTurn.getByRole('button', { name: 'Open in Review' })).toBeVisible()
 
     // Verify board state unchanged (GP-06 compliance)
     const cardsResponse = await request.get(
@@ -103,6 +140,27 @@ test.describe('TST09 Chat Session Behavior', () => {
     await assertOk(cardsResponse, 'list cards after proposal')
     const cards = (await cardsResponse.json()) as Array<{ title: string }>
     expect(cards.some((c) => c.title === uniqueCardTitle)).toBeFalsy()
+
+    await proposalTurn.getByRole('button', { name: 'Open in Review' }).click()
+    await expect(page).toHaveURL(/\/workspace\/review/)
+    await expect(page.getByRole('heading', { name: 'Review', exact: true })).toBeVisible()
+
+    const reloadedResponse = await request.get(
+      `${API_BASE_URL}/llm/chat/sessions/${encodeURIComponent(sessionId)}`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    const reloaded = (await reloadedResponse.json()) as ChatSessionDto
+    const proposalId = reloaded.recentMessages.find((message) => message.proposalId)?.proposalId
+    expect(proposalId).toBeTruthy()
+    await expect(page.locator(`#proposal-${proposalId}`)).toBeVisible()
+
+    const cardsInReviewResponse = await request.get(
+      `${API_BASE_URL}/boards/${encodeURIComponent(boardId)}/cards`,
+      { headers: { Authorization: `Bearer ${auth.token}` } },
+    )
+    await assertOk(cardsInReviewResponse, 'list cards in Review before Apply')
+    const cardsInReview = (await cardsInReviewResponse.json()) as Array<{ title: string }>
+    expect(cardsInReview.some((card) => card.title === uniqueCardTitle)).toBeFalsy()
   })
 
   test('SC-038: LLM health banner displays correct state for mock provider', async ({ page }) => {

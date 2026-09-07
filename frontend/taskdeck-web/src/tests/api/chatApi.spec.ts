@@ -33,6 +33,16 @@ describe('chatApi', () => {
     })
   })
 
+  it('binds an existing session to a board', async () => {
+    vi.mocked(http.post).mockResolvedValue({ data: { id: 'session-1', boardId: 'board-1' } })
+
+    await chatApi.bindBoard('session/1', { boardId: 'board-1' })
+
+    expect(http.post).toHaveBeenCalledWith('/llm/chat/sessions/session%2F1/board', {
+      boardId: 'board-1',
+    })
+  })
+
   it('loads provider health', async () => {
     const healthPayload = {
       isAvailable: true,

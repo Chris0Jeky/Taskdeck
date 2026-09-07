@@ -17,8 +17,15 @@ const chatApiMocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   createSession: vi.fn(),
   sendMessage: vi.fn(),
+  bindBoard: vi.fn(),
   getHealth: vi.fn().mockResolvedValue({ status: 'healthy' }),
 }))
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((innerResolve) => { resolve = innerResolve })
+  return { promise, resolve }
+}
 
 const boardsApiMocks = vi.hoisted(() => ({
   getBoards: vi.fn().mockResolvedValue([]),
@@ -67,6 +74,7 @@ describe('useAutomationChat', () => {
     chatApiMocks.getSession.mockResolvedValue(undefined)
     chatApiMocks.createSession.mockResolvedValue(undefined)
     chatApiMocks.sendMessage.mockResolvedValue(undefined)
+    chatApiMocks.bindBoard.mockResolvedValue(undefined)
     chatApiMocks.getHealth.mockResolvedValue({ status: 'healthy' })
     boardsApiMocks.getBoards.mockResolvedValue([])
   })
@@ -81,7 +89,6 @@ describe('useAutomationChat', () => {
       })
       expect(chat.selectedSession.value).toBeNull()
       expect(chat.messageContent.value).toBe('')
-      expect(chat.requestProposal.value).toBe(false)
     })
 
     it('loads sessions and provider health on mount', async () => {
@@ -253,14 +260,111 @@ describe('useAutomationChat', () => {
   })
 
   describe('applyHintSuggestion', () => {
-    it('sets message content and enables requestProposal', async () => {
+    it('sets message content for the default action path', async () => {
       const { useAutomationChat } = await loadComposable()
       const chat = useAutomationChat()
 
       chat.applyHintSuggestion('Move card X to Done')
 
       expect(chat.messageContent.value).toBe('Move card X to Done')
-      expect(chat.requestProposal.value).toBe(true)
+    })
+  })
+
+  describe('board recovery', () => {
+    const pendingMessages = [
+      { id: 'u1', content: 'create card for release notes', role: 0, messageType: 'text', createdAt: '2026-05-16T10:00:00Z' },
+      { id: 'a1', content: 'No board linked', role: 1, messageType: 'action-needs-board', createdAt: '2026-05-16T10:01:00Z' },
+    ]
+
+    it('links the existing session and waits for explicit continuation', async () => {
+      const unbound = { id: 's1', title: 'Test', boardId: null, recentMessages: pendingMessages }
+      const bound = { ...unbound, boardId: 'b1' }
+      chatApiMocks.getMySessions.mockResolvedValue([unbound])
+      chatApiMocks.getSession.mockResolvedValue(unbound)
+      chatApiMocks.bindBoard.mockResolvedValue(bound)
+      boardsApiMocks.getBoards.mockResolvedValue([
+        { id: 'b1', name: 'Release Board', description: null, isArchived: false, canWrite: true },
+      ])
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.pendingBoardRecovery.value?.messageId).toBe('a1'))
+
+      await chat.bindBoardToPendingTurn('a1', 'b1')
+
+      expect(chatApiMocks.bindBoard).toHaveBeenCalledWith('s1', { boardId: 'b1' })
+      expect(chat.selectedSession.value?.boardId).toBe('b1')
+      expect(chat.boardBindingReceipt.value).toBe('Release Board')
+      expect(chatApiMocks.sendMessage).not.toHaveBeenCalled()
+
+      await chat.continuePendingInstruction('a1')
+
+      expect(chatApiMocks.sendMessage).toHaveBeenCalledTimes(1)
+      expect(chatApiMocks.sendMessage).toHaveBeenCalledWith('s1', {
+        content: 'create card for release notes',
+      })
+    })
+
+    it('excludes archived and explicitly read-only boards from binding choices', async () => {
+      boardsApiMocks.getBoards.mockResolvedValue([
+        { id: 'archived', name: 'Archived', description: null, isArchived: true, canWrite: true },
+        { id: 'viewer', name: 'Viewer', description: null, isArchived: false, canWrite: false },
+      ])
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(boardsApiMocks.getBoards).toHaveBeenCalled())
+
+      expect(chat.eligibleBoards.value).toEqual([])
+    })
+
+    it('does not apply a late binding response to another selected session', async () => {
+      const first = { id: 's1', title: 'First', boardId: null, recentMessages: pendingMessages }
+      const second = { id: 's2', title: 'Second', boardId: null, recentMessages: [] }
+      const deferred = createDeferred<{ id: string; title: string; boardId: string; recentMessages: typeof pendingMessages }>()
+      chatApiMocks.getMySessions.mockResolvedValue([first, second])
+      chatApiMocks.getSession.mockImplementation(async (id: string) => id === 's1' ? first : second)
+      chatApiMocks.bindBoard.mockReturnValue(deferred.promise)
+      boardsApiMocks.getBoards.mockResolvedValue([
+        { id: 'b1', name: 'Release Board', description: null, isArchived: false, canWrite: true },
+      ])
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.pendingBoardRecovery.value?.messageId).toBe('a1'))
+
+      const pendingBind = chat.bindBoardToPendingTurn('a1', 'b1')
+      await chat.loadSession('s2')
+      deferred.resolve({ ...first, boardId: 'b1' })
+      await pendingBind
+
+      expect(chat.selectedSession.value?.id).toBe('s2')
+      expect(chat.selectedSession.value?.boardId).toBeNull()
+      expect(chatApiMocks.sendMessage).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('session response races', () => {
+    it('does not switch back when a send response completes after another session is selected', async () => {
+      const first = { id: 's1', title: 'First', boardId: null, recentMessages: [] }
+      const second = { id: 's2', title: 'Second', boardId: null, recentMessages: [] }
+      const deferred = createDeferred<void>()
+      chatApiMocks.getMySessions.mockResolvedValue([first, second])
+      chatApiMocks.getSession.mockImplementation(async (id: string) => id === 's1' ? first : second)
+      chatApiMocks.sendMessage.mockReturnValue(deferred.promise)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.selectedSession.value?.id).toBe('s1'))
+
+      chat.messageContent.value = 'create card for release notes'
+      const pendingSend = chat.handleSendMessage()
+      await chat.loadSession('s2')
+      deferred.resolve()
+      await pendingSend
+
+      expect(chat.selectedSession.value?.id).toBe('s2')
+      expect(chatApiMocks.getSession).toHaveBeenCalledTimes(2)
     })
   })
 

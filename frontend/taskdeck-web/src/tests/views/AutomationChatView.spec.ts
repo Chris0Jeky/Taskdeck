@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   getHealth: vi.fn(),
   sendMessage: vi.fn(),
+  bindBoard: vi.fn(),
   createSession: vi.fn(),
   getBoards: vi.fn(),
   successToast: vi.fn(),
@@ -44,6 +45,7 @@ vi.mock('../../api/chatApi', () => ({
     getSession: mocks.getSession,
     getHealth: mocks.getHealth,
     sendMessage: mocks.sendMessage,
+    bindBoard: mocks.bindBoard,
     createSession: mocks.createSession,
   },
 }))
@@ -198,6 +200,7 @@ describe('AutomationChatView', () => {
     ])
     mocks.createSession.mockResolvedValue({ id: 'session-created' })
     mocks.sendMessage.mockResolvedValue(undefined)
+    mocks.bindBoard.mockResolvedValue(undefined)
   })
 
   it('opens linked proposals in Review instead of approving them inline', async () => {
