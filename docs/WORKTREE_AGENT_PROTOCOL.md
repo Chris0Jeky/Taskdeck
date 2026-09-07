@@ -302,11 +302,16 @@ worker, and `issue-to-pr` skills point here instead of restating it.
    block. Never resolve bare `powershell` through PATH, translate only the branch command, or substitute a
    PATH-first batch shim. The generic `powershell -File scripts/worktree_guard.ps1` /
    `source scripts/worktree_guard.sh` is for worktrees the helper did not create.
-5. **Headless authorization** adds both exact additive full-command PowerShell rules the helper prints
-   (guard plus initializer), every applicable pinned argument, no wildcard, as two `--allowedTools` argv
-   values — never a generic relative handoff rule. Start `claude -p` in the exact helper-created target
-   without `--worktree`, and accept project trust interactively first. For an untrusted launch pass every
-   allow through CLI argv; unsupported clients use an interactive coordinator launch.
+5. **Runtime selection and authorization.** Use the current runtime's native collaboration surface when
+   available, binding the exact helper-created target cwd, detached base, planned branch, owned paths, and
+   complete printed handoff block. An independent Codex CLI launch uses `codex exec -C
+   <exact-helper-created-target>` with the reviewed task supplied through stdin; the helper's Claude
+   launch rules do not authorize Codex. When the coordinator deliberately selects a Claude worker, use
+   the explicit Claude launch procedure below: start `claude -p` in the exact target without `--worktree`,
+   pass the exact additive PowerShell rules through `--allowedTools`, and accept project trust
+   interactively first. For an untrusted Claude launch pass every allow through CLI argv; unsupported
+   clients use an interactive coordinator launch.
+
 6. **PowerShell-tool posture.** The project does not enable the unsandboxed Windows PowerShell tool or
    grant generic PowerShell access; two narrow manual failure-ledger utility rules remain in committed
    settings. When the trusted host enables the tool for a handoff, review those two rules together with the
