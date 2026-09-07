@@ -85,6 +85,13 @@ export default {
       transcriptNote:
         'Le catture di trascrizione vengono inviate all’assistente configurato per estrarre le attività. Le note scritte no.',
       tooLong: 'Questa trascrizione è troppo lunga. La lunghezza massima è di {max} caratteri.',
+      transcriptFileButton: 'Carica file trascrizione',
+      transcriptFileInputLabel: 'Scegli file trascrizione',
+      transcriptFileClear: 'Rimuovi file trascrizione',
+      transcriptFileHint: 'File di testo semplice .txt fino a {max} byte.',
+      transcriptFileTypeError: 'Scegli un file di trascrizione in testo semplice (.txt).',
+      transcriptFileSizeError: 'Questo file di trascrizione è troppo grande. Il massimo è di {max} byte.',
+      transcriptFileUnreadable: 'Non è stato possibile leggere questo file di trascrizione. Prova con un altro.',
     },
   },
   // Etichette dei campi del Composer (#1871). "Testo" per `body`: è il testo

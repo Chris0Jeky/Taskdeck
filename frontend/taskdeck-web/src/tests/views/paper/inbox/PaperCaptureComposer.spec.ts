@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import PaperCaptureComposer from '../../../../views/paper/inbox/PaperCaptureComposer.vue'
 import { i18n, type SupportedLocale } from '../../../../i18n'
+import { MAX_TRANSCRIPT_FILE_BYTES } from '../../../../constants/capture'
 
 type MockBoard = { id: string; name: string; canWrite?: boolean }
 
@@ -16,6 +17,56 @@ const mockBoardStore = reactive({
   fetchBoards: vi.fn<() => Promise<void>>(),
 })
 
+type FileReaderOutcome = 'load' | 'error'
+
+class MockFileReader extends EventTarget {
+  result: string | ArrayBuffer | null = null
+  onload: (() => void) | null = null
+  onerror: (() => void) | null = null
+  onabort: (() => void) | null = null
+
+  private readonly outcome: FileReaderOutcome
+
+  constructor(outcome: FileReaderOutcome = 'load') {
+    super()
+    this.outcome = outcome
+  }
+
+  readAsText() {
+    activeFileReader = this
+  }
+
+  complete() {
+    if (this.outcome === 'error') this.onerror?.()
+    else this.onload?.()
+  }
+}
+
+let activeFileReader: MockFileReader | null = null
+const OriginalFileReader = globalThis.FileReader
+
+function installFileReader(outcome: FileReaderOutcome = 'load') {
+  activeFileReader = null
+  class Reader extends MockFileReader {
+    constructor() {
+      super(outcome)
+    }
+  }
+  globalThis.FileReader = Reader as unknown as typeof FileReader
+}
+
+function setInputFile(wrapper: ReturnType<typeof mount>, value: File) {
+  const input = wrapper.get('input[type="file"]')
+  Object.defineProperty(input.element, 'files', { value: [value], configurable: true })
+  return input
+}
+
+async function waitForUi() {
+  await Promise.resolve()
+  await nextTick()
+  await Promise.resolve()
+}
+
 vi.mock('../../../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
 }))
@@ -25,6 +76,11 @@ describe('PaperCaptureComposer', () => {
     vi.clearAllMocks()
     mockBoardStore.boards = defaultBoards()
     mockBoardStore.fetchBoards.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    globalThis.FileReader = OriginalFileReader
+    activeFileReader = null
   })
 
   it('emits submit on Cmd+Enter with body, board, labels, dueAt', async () => {
@@ -619,6 +675,7 @@ describe('PaperCaptureComposer', () => {
         .element as HTMLInputElement
       expect(typed.checked).toBe(true)
       expect(wrapper.find('[data-testid="paper-composer-source-note"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="paper-composer-transcript-file"]').exists()).toBe(false)
     })
 
     it('emits source TranscriptPaste once the transcript option is chosen', async () => {
@@ -707,6 +764,110 @@ describe('PaperCaptureComposer', () => {
       expect(snapshot.source).toBe('Typed')
       expect(snapshot.labels).toEqual([])
       expect((labelInput.element as HTMLInputElement).value).toBe('')
+    })
+
+    it('renders the Paper transcript file control beside the paste path', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.get('[data-testid="paper-composer-source-transcript"]').setValue()
+
+      const fileInput = wrapper.get('input[type="file"]')
+      expect(fileInput.attributes('accept')).toBe('.txt,text/plain')
+      expect(fileInput.attributes('aria-label')).toBe('Choose transcript file')
+      expect(wrapper.get('[data-testid="paper-composer-transcript-file"]').text())
+        .toContain('Plain-text .txt files up to 600,003 bytes.')
+    })
+
+    it('loads a transcript file, marks it as TranscriptFile, and emits that source', async () => {
+      installFileReader()
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.get('[data-testid="paper-composer-source-transcript"]').setValue()
+
+      const input = setInputFile(
+        wrapper,
+        new File(['ignored until FileReader completes'], 'meeting.txt', { type: 'text/plain' }),
+      )
+      await input.trigger('change')
+      expect(activeFileReader).not.toBeNull()
+      activeFileReader!.result = 'Ana: ship it Friday. Bo: I will cut the branch.'
+      activeFileReader!.complete()
+      await waitForUi()
+
+      expect(wrapper.get('[data-testid="paper-composer-transcript-file-name"]').text())
+        .toContain('meeting.txt')
+      expect((wrapper.get('textarea').element as HTMLTextAreaElement).value)
+        .toBe('Ana: ship it Friday. Bo: I will cut the branch.')
+      expect(wrapper.vm.snapshotDraft().source).toBe('TranscriptFile')
+
+      await wrapper.get('textarea').trigger('keydown', { key: 'Enter', metaKey: true })
+      const payload = wrapper.emitted('submit')?.[0]?.[0] as { source: string }
+      expect(payload.source).toBe('TranscriptFile')
+    })
+
+    it('clears the file source while keeping its text available for the paste path', async () => {
+      installFileReader()
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.get('[data-testid="paper-composer-source-transcript"]').setValue()
+      const input = setInputFile(wrapper, new File(['file text'], 'meeting.txt', { type: 'text/plain' }))
+      await input.trigger('change')
+      activeFileReader!.result = 'file text'
+      activeFileReader!.complete()
+      await waitForUi()
+
+      await wrapper.get('[data-testid="paper-composer-transcript-file-clear"]').trigger('click')
+      expect(wrapper.find('[data-testid="paper-composer-transcript-file-name"]').exists()).toBe(false)
+      expect(wrapper.vm.snapshotDraft().source).toBe('TranscriptPaste')
+      expect((wrapper.get('textarea').element as HTMLTextAreaElement).value).toBe('file text')
+    })
+
+    it('surfaces an unsupported file type beside the Paper draft', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.get('[data-testid="paper-composer-source-transcript"]').setValue()
+      await setInputFile(wrapper, new File(['pdf'], 'meeting.pdf', { type: 'application/pdf' })).trigger('change')
+      await nextTick()
+
+      expect(wrapper.get('[data-testid="paper-composer-transcript-file-error"]').text())
+        .toContain('Choose a plain-text transcript file')
+    })
+
+    it('surfaces an oversized file before it reaches the capture endpoint', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.get('[data-testid="paper-composer-source-transcript"]').setValue()
+      const oversized = new File(
+        [new Uint8Array(MAX_TRANSCRIPT_FILE_BYTES + 1)],
+        'meeting.txt',
+        { type: 'text/plain' },
+      )
+      await setInputFile(wrapper, oversized).trigger('change')
+      await nextTick()
+
+      expect(wrapper.get('[data-testid="paper-composer-transcript-file-error"]').text())
+        .toContain('Maximum file size is 600,003 bytes')
+      expect(wrapper.emitted('submit')).toBeUndefined()
+    })
+
+    it('surfaces an unreadable transcript file', async () => {
+      installFileReader('error')
+      const wrapper = mount(PaperCaptureComposer)
+      await wrapper.get('[data-testid="paper-composer-source-transcript"]').setValue()
+      await setInputFile(wrapper, new File(['meeting'], 'meeting.txt', { type: 'text/plain' })).trigger('change')
+      activeFileReader!.complete()
+      await waitForUi()
+
+      expect(wrapper.get('[data-testid="paper-composer-transcript-file-error"]').text())
+        .toContain('could not be read')
+      expect(wrapper.emitted('submit')).toBeUndefined()
+    })
+
+    it('preserves TranscriptFile source through a composer draft restore', async () => {
+      const wrapper = mount(PaperCaptureComposer)
+      wrapper.vm.restoreDraft({
+        text: 'restored transcript file text',
+        source: 'TranscriptFile',
+      })
+      await nextTick()
+
+      expect(wrapper.vm.snapshotDraft().source).toBe('TranscriptFile')
+      expect(wrapper.find('[data-testid="paper-composer-transcript-file-name"]').exists()).toBe(false)
     })
   })
 })

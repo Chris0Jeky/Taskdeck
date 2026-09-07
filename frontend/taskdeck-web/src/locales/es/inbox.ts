@@ -87,6 +87,13 @@ export default {
       transcriptNote:
         'Las capturas de transcripción se envían al asistente configurado para extraer tareas. Las notas escritas no.',
       tooLong: 'Esta transcripción es demasiado larga. La longitud máxima es de {max} caracteres.',
+      transcriptFileButton: 'Subir archivo de transcripción',
+      transcriptFileInputLabel: 'Elegir archivo de transcripción',
+      transcriptFileClear: 'Borrar archivo de transcripción',
+      transcriptFileHint: 'Archivos de texto plano .txt de hasta {max} bytes.',
+      transcriptFileTypeError: 'Elige un archivo de transcripción de texto plano (.txt).',
+      transcriptFileSizeError: 'Este archivo de transcripción es demasiado grande. El máximo es de {max} bytes.',
+      transcriptFileUnreadable: 'No se pudo leer este archivo de transcripción. Prueba con otro.',
     },
   },
   // Etiquetas de los campos del Composer (#1871). "Texto" para `body`: es el
