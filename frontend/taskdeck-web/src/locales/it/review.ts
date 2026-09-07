@@ -449,6 +449,7 @@ export default {
     jsonError: 'Inserisci un JSON valido prima di salvare.',
     reasonLabel: 'Motivo della modifica',
     reasonPlaceholder: 'Perché stai modificando questa proposta?',
+    changedElsewhere: 'Questa proposta è cambiata altrove. La tua bozza è ancora qui; ricontrollala prima di salvarla.',
     cancel: 'Annulla',
     save: 'Salva revisione',
     badge: '{count} revisione | {count} revisioni',
@@ -541,7 +542,7 @@ export default {
     settledElsewhere: {
       eyebrow: 'Proposta selezionata',
       title: 'Questa proposta ha lasciato la coda di revisione.',
-      body: 'Qualcun altro l ha decisa, ritirata o rinviata mentre la stavi rivedendo. Qui non e stato deciso niente e non e stata aperta nessuna altra proposta al suo posto. Ricarica la coda per verificare.',
+      body: 'Questa proposta non è più nell elenco di revisione corrente. Potrebbe essere stata decisa, ritirata, rinviata o trovarsi oltre il limite di 200 elementi. Qui non è stata presa alcuna decisione e non è stata aperta nessun altra proposta al suo posto. Ricarica la coda per verificare.',
       return: 'Ricarica la coda',
     },
     unavailable: {
