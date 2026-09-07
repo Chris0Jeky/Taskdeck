@@ -18,7 +18,7 @@ evidence report is its acceptance bar before real execution is enabled). The rep
 ## Orient (do NOT bulk-read the big docs)
 
 1. `autodoc/AGENT_INDEX.md` — the seam map. Start here, find your region, jump to entry points.
-2. `docs/STATUS.md` — shipped reality, **section-read only**. Precedence: STATUS > AGENTS.md > this file.
+2. `docs/STATUS.md` — shipped reality, **section-read only**; reconcile its claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; STATUS cannot grant or override it.
 3. `OUTSTANDING_TASKS.md` — the human-action file (global law 5). Surface open `[ ]` items in every summary.
    `.codex/memories/00_ACTIVE.md` §Lane coordination — read it before claiming an issue: lane split, claim
    and release markers, control-plane PR parking, stacked-PR order. It is not auto-loaded for Claude.

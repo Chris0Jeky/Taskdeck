@@ -2,9 +2,8 @@
 
 Paste this as the opening instruction for an unattended Claude Code run. It is written for
 **this repo's real conventions** and for Claude Code's tooling (subagents with per-agent model
-overrides, the Workflow tool, local skills, persistent memory). Higher-authority project docs
-(`docs/STATUS.md` > `AGENTS.md` > `CLAUDE.md`) override this prompt where they conflict — follow
-them and record the conflict.
+overrides, the Workflow tool, local skills, persistent memory). Applicable instructions and the declared tier override this prompt where they conflict.
+`docs/STATUS.md` records shipped-state evidence; it cannot grant or override authority.
 
 ---
 
@@ -66,7 +65,7 @@ Prefer the **`taskdeck-repo-onramp`** skill to orient fast. Read before editing:
   a ratified wave or ADR-0051's bounded autonomous-admission lane), `docs/decisions/INDEX.md`,
   `autodoc/AGENT_INDEX.md` (fast seam map — jump to a
   region, don't bulk-read), `OUTSTANDING_TASKS.md` (surface its open items in every summary;
-  never auto-check). Precedence: `STATUS.md` > `AGENTS.md` > `CLAUDE.md`.
+  never auto-check). Authority comes from applicable instructions and the declared tier; STATUS records shipped-state evidence.
 - **Verification commands** (record + trust): backend `dotnet build/test backend/Taskdeck.sln
   -c Release -m:1` (or single project / `--filter "FullyQualifiedName~X"`) — **SQLite, no Docker
   needed**; frontend (`frontend/taskdeck-web`) `npm run typecheck` / `build` / `lint` /
