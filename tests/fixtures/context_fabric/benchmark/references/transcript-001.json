@@ -1,0 +1,7 @@
+{
+  "fixtureId": "transcript-001",
+  "candidates": [
+    {"kind": "Action", "key": "action:label-transcript"},
+    {"kind": "Question", "key": "question:keep-speaker-anchors"}
+  ]
+}
