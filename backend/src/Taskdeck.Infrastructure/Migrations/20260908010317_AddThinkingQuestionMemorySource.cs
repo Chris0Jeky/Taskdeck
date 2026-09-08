@@ -50,6 +50,15 @@ namespace Taskdeck.Infrastructure.Migrations
                 name: "IX_WorkspaceMemories_UserId_SourceCardId_SourceLayerId_SourceQuestionHash",
                 table: "WorkspaceMemories");
 
+            if (migrationBuilder.ActiveProvider == "Microsoft.EntityFrameworkCore.Sqlite")
+            {
+                migrationBuilder.Sql("ALTER TABLE \"WorkspaceMemories\" DROP COLUMN \"SourceCardId\";");
+                migrationBuilder.Sql("ALTER TABLE \"WorkspaceMemories\" DROP COLUMN \"SourceDeckRevision\";");
+                migrationBuilder.Sql("ALTER TABLE \"WorkspaceMemories\" DROP COLUMN \"SourceLayerId\";");
+                migrationBuilder.Sql("ALTER TABLE \"WorkspaceMemories\" DROP COLUMN \"SourceQuestionHash\";");
+                return;
+            }
+
             migrationBuilder.DropColumn(
                 name: "SourceCardId",
                 table: "WorkspaceMemories");
