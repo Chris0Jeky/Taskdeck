@@ -1,4 +1,5 @@
 using Taskdeck.Domain.Enums;
+using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Interfaces;
 
@@ -33,7 +34,30 @@ public sealed record RepresentationDescriptor(
     RepresentationQualityState QualityState,
     Guid? SupersededByRepresentationId,
     IReadOnlyList<string> Warnings,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt)
+{
+    /// <summary>
+    /// Projects a validated header and optional forward edge without rewriting the row's original
+    /// quality. Superseded is effective read state; warnings and payload identity remain unchanged.
+    /// The store must validate persisted edge uniqueness, endpoints and cycle freedom transactionally.
+    /// </summary>
+    public static RepresentationDescriptor FromRepresentation(
+        Representation representation, RepresentationSupersession? supersession = null)
+    {
+        ArgumentNullException.ThrowIfNull(representation);
+        if (supersession is not null && supersession.RepresentationId != representation.Id)
+            throw new ArgumentException("Supersession must belong to the projected representation", nameof(supersession));
+
+        return new RepresentationDescriptor(
+            representation.Id, representation.CaptureId, representation.UserId, representation.Kind,
+            representation.ParentSourceAssetId, representation.ParentRepresentationId,
+            representation.ProcessingRunId, representation.ProcessorId, representation.ProcessorVersion,
+            representation.ProcessorModel, representation.ConfigurationHash, representation.SchemaVersion,
+            representation.ContentHash, representation.Language,
+            supersession is null ? representation.QualityState : RepresentationQualityState.Superseded,
+            supersession?.SupersededByRepresentationId, representation.Warnings, representation.CreatedAt);
+    }
+}
 
 /// <summary>
 /// Read façade over representations (CF-06 <c>#2260</c>). <b>Draft, not fixed:</b> the shape is
