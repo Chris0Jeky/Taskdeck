@@ -4,6 +4,9 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface IWorkspaceInsightRepository
 {
+    Task<IReadOnlyList<WorkspaceMemory>> MemoriesByUserAsync(Guid userId, int limit, int offset, CancellationToken ct);
+    Task<IReadOnlyList<QuietInsight>> InsightsByUserAsync(Guid userId, int limit, int offset, CancellationToken ct);
+    Task<(int Memories, int Revisions, int Insights)> DeleteByUserAsync(Guid userId, CancellationToken ct);
     Task<List<QuietInsight>> InsightsAsync(Guid userId, Guid boardId, CancellationToken ct);
     Task<QuietInsight?> InsightAsync(Guid userId, Guid id, CancellationToken ct);
     Task<List<WorkspaceMemory>> MemoriesAsync(Guid userId, Guid boardId, CancellationToken ct);
