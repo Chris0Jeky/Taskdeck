@@ -30,12 +30,14 @@ public class AccountDeletionService : IAccountDeletionService
     private readonly ILogger<AccountDeletionService>? _logger;
     private readonly ISourceArtefactRepository _artefacts;
     private readonly ITranscriptRepository _transcripts;
+    private readonly IWorkspaceInsightRepository _workspaceInsights;
 
     public AccountDeletionService(
         IUnitOfWork unitOfWork,
         IHistoryService historyService,
         ISourceArtefactRepository artefacts,
         ITranscriptRepository transcripts,
+        IWorkspaceInsightRepository workspaceInsights,
         IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null,
         ICaptureStore? captureStore = null)
@@ -46,6 +48,7 @@ public class AccountDeletionService : IAccountDeletionService
         _logger = logger;
         _artefacts = artefacts;
         _transcripts = transcripts;
+        _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
     }
 
@@ -136,6 +139,7 @@ public class AccountDeletionService : IAccountDeletionService
             // Transcript evidence links are database-owned by their Transcript FK, so this
             // set-based delete cascades without a racy string-source-ID scan.
             var transcriptsDeleted = await _transcripts.DeleteByUserIdAsync(userId, cancellationToken);
+            var privateWorkspaceDeleted = await _workspaceInsights.DeleteByUserAsync(userId, cancellationToken);
 
             // 4. Anonymize chat sessions — delete messages and sessions
             var chatSessions = await _unitOfWork.ChatSessions.GetByUserIdAsync(userId, limit: 100000, cancellationToken: cancellationToken);
@@ -221,7 +225,10 @@ public class AccountDeletionService : IAccountDeletionService
                 PreferencesDeleted: preferencesDeleted,
                 ArtefactsDeleted: artefactsDeleted,
                 TranscriptsDeleted: transcriptsDeleted,
-                DurableCapturesDeleted: durableCapturesDeleted));
+                DurableCapturesDeleted: durableCapturesDeleted,
+                WorkspaceMemoriesDeleted: privateWorkspaceDeleted.Memories,
+                WorkspaceMemoryRevisionsDeleted: privateWorkspaceDeleted.Revisions,
+                QuietInsightsDeleted: privateWorkspaceDeleted.Insights));
         }
         catch (Exception ex)
         {
