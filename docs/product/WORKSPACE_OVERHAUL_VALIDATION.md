@@ -37,8 +37,17 @@ Conventional controller syntax fixes the incompatibility without changing the ar
 the complete architecture suite then passed 28 tests with its one declared skip.
 
 Browser implementation work additionally corrected a select's accessible name and excluded a
-decorative arrow from the thinking-link name. Later exact-head results and hosted CI status are
-recorded on the integration PR. Historical source-prototype test counts are not used as evidence.
+decorative arrow from the thinking-link name. The later full frontend run passed 6,215 tests with
+three declared skips. Review fixes protect unsaved Memory drafts, reject Thinking writes when a
+board is archived (including a concurrent archive), and include private workspace records in both
+account export formats and transactional account erasure. Relational tests exercise surviving shared
+boards and prove other users' private records remain isolated. Browser proof also confirms that an
+unsaved Home capture remains protected after switching back to Classic.
+
+Later exact-head results and hosted CI status are recorded on
+[the integration PR](https://github.com/Chris0Jeky/Taskdeck/pull/2807). Historical source-prototype test
+counts are not used as evidence. Further implementation is tracked in
+[#2808](https://github.com/Chris0Jeky/Taskdeck/issues/2808).
 
 ## Remaining sequence
 

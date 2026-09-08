@@ -23,7 +23,10 @@ Normal startup migrations apply the additive schema. Back up the stopped SQLite 
 upgrading. A database backup includes all new records. Current board JSON export/import includes
 shared Thinking Decks; older imports remain valid. Private answers are deliberately excluded from
 shared board exports. Memory's explicit JSON download includes active and archived private entries,
-originals and history, but is not an import format or an atomic backup. See the
+originals and history, but is not an import format or an atomic backup. Both account export formats
+also include private memory, revision history and quiet insights, including archived records.
+Account deletion explicitly erases these private records even when their shared board survives;
+other users' private records and shared thinking remain intact. See the
 [overhaul delivery ledger](docs/product/WORKSPACE_OVERHAUL.md) for exact coverage.
 
 Experience, presentation and theme selections are local browser preferences. Classic remains the

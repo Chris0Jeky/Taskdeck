@@ -54,7 +54,7 @@ explicit approve action followed by a separate apply action and the existing con
 | Thinking Deck | Ordered note/question/options/steps/thread layers, revision checks, stack/path, preserved alternatives, board JSON portability | Implemented; Path is a connected vertical reading view. Steps remain thinking checklists; they do not create cards or change status |
 | Quiet insights | Explicit analysis of blocked cards and unknown/needs-review private memory; durable dismiss/snooze/mute state and revalidation | Implemented structural rules only; no semantic/model inference, automatic scans or interruption |
 | Questions and memory | Saved shared questions can have private answers; source snapshots, statements/assumptions/unknowns, corrections and archive/restore | Implemented. Thinking is board-shared; answers, memory and insights are private to the user. Original answer/evidence and correction history survive; archive excludes the active memory list |
-| Memory portability | Explicit JSON download of the user's active and archived records, including original text/evidence/history | Implemented; two authenticated reads, not an atomic backup or import format. Shared board exports never include private answers |
+| Memory portability and account privacy | Private JSON download plus both account export formats include originals, evidence, source references and history; account deletion erases private memories, revisions and insights | Implemented for active and archived records. The board-scoped download uses two authenticated reads, not an atomic backup or import format. Shared board exports never include private answers; collaborators' records survive account deletion |
 | Companion | Existing accountable chat embedded in Companion Home and contextual links to existing chat/review | Implemented entry point; no new model provider or memory retrieval integration. Unified's board-side contextual companion remains next |
 | Comparison | User-initiated session-only ratings and notes with JSON download | Implemented; records selected experience/detail/theme. No telemetry, random assignment or statistical A/B claim |
 | In-place proposal overlays | Existing authoritative diff rendered at affected board objects | Next; preserve effective proposal revision, subset-selection semantics and explicit apply gate |
@@ -63,7 +63,8 @@ explicit approve action followed by a separate apply action and the existing con
 | Model-generated observations and recall | Bounded candidate producer and authorized knowledge retrieval | Later; requires grounding, fresh evidence, usefulness corpus, privacy and budget proof |
 | Optional nudges | Opt-in attention policy after usefulness is established | Later; requires non-intrusion evaluation, focus/input suppression and shared user budgets |
 
-Implementation above is the integrated branch behavior. [Validation and remaining delivery work](WORKSPACE_OVERHAUL_VALIDATION.md)
+Implementation above is the integrated branch behavior. [Follow-up delivery tracker #2808](https://github.com/Chris0Jeky/Taskdeck/issues/2808)
+owns the remaining prototype capabilities. [Validation and remaining delivery work](WORKSPACE_OVERHAUL_VALIDATION.md)
 records direct proving commands and limits; source screenshots are not
 validation of the integrated application. The broader voice, model and attention work is not made
 complete by introducing its UI vocabulary.
