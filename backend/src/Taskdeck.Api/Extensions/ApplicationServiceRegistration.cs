@@ -28,6 +28,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
         services.AddScoped<CardCommentService>();
+        services.AddScoped<ThinkingDeckService>();
         services.AddScoped<LabelService>();
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<AuthenticationService>();

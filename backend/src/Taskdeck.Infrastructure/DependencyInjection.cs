@@ -50,6 +50,7 @@ public static class DependencyInjection
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
         services.AddScoped<ICardRepository, CardRepository>();
+        services.AddScoped<IThinkingDeckRepository, ThinkingDeckRepository>();
         services.AddScoped<ICardCommentRepository, CardCommentRepository>();
         services.AddScoped<ILabelRepository, LabelRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
