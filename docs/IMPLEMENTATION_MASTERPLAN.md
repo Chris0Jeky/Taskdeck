@@ -65,6 +65,20 @@ behaviour.
 
 ## Dated delivery and governance updates (newest first)
 
+## Workspace overhaul (2026-09-08, maintainer-authorized #2800)
+
+The supplied Studio, Companion and Unified chats/prototypes are reconciled in the
+[complete resource/feature map](product/WORKSPACE_OVERHAUL.md). The integrated first delivery adds
+switchable experiences/themes, board disclosure modes, saved Thinking Decks, private question
+answers and memory, explicit structural insights and local comparison notes. Classic and the
+existing review-first apply boundary remain available. [ADR-0070](decisions/ADR-0070-switchable-workspace-experiences.md)
+records the delegated product decision; this does not change release gates or external settings.
+
+The [validation/follow-through ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) orders the remaining
+work: transaction-safe linked steps, contextual companion/proposal overlays, Studio continuity,
+Context Fabric source/audio integration, evidence-grounded intelligence/attention, then broader
+comparison. These remain separate from the delivered structural and private-memory behavior.
+
 ## Planning update (2026-09-07, transcript prompt v3)
 
 #2211 moves current generation, frontend provenance recognition and packaged acceptance to

@@ -12,7 +12,7 @@ const note = ref('')
 const saved = ref(false)
 const versions = [
   { id: 'classic', name: 'Classic', headline: 'The familiar workspace.', detail: 'The existing Taskdeck home and navigation. A useful baseline for every comparison.', glyph: '▦' },
-  { id: 'studio', name: 'Studio', headline: 'Pick up where you left off.', detail: 'An airy daily desk, project spaces and a place for loose thoughts. Assistance stays beside the work.', glyph: '◒' },
+  { id: 'studio', name: 'Studio', headline: 'A place to make progress.', detail: 'An airy daily desk, project spaces and a place for loose thoughts. Assistance stays beside the work.', glyph: '◒' },
   { id: 'companion', name: 'Companion', headline: 'Think through the work together.', detail: 'Real contextual conversations and inspectable proposals, with projects and memory close by.', glyph: '✧' },
   { id: 'unified', name: 'Unified', headline: 'One workspace. Your pace.', detail: 'A familiar sidebar, adjustable detail, Thinking Decks, quiet insights and maintainable memory.', glyph: '▱' },
 ] as const

@@ -35,7 +35,7 @@ Three independent preferences avoid turning prototypes into incompatible product
 | Preference | Values | Effect |
 | --- | --- | --- |
 | Experience | Classic, Studio, Companion, Unified | Entry point, navigation treatment and emphasis |
-| Detail | Zen, Studio, Control | Amount of visible structure and spacing |
+| Detail | Zen, Studio, Control | Shell spacing, optional card detail disclosure, and compact operational cards; Classic preserves existing board settings |
 | Theme | Existing Paper/Legacy choices plus Grove and Grove Night | Prototype-inspired colors over the shared token system |
 
 The overloaded name Studio is retained from the source, but experience and detail have separate
@@ -48,23 +48,40 @@ explicit approve action followed by a separate apply action and the existing con
 
 ## Feature ledger
 
-| Capability | Implementation target | Evidence required |
+| Capability | Integrated behavior | Status and limits |
 | --- | --- | --- |
-| Switchable experiences and prototype themes | Persistent preferences, shared shell and real workspace entry points | Switch with an open card and unsaved text; reload preferences; keyboard/mobile layouts |
-| Thinking Deck | Ordered, typed card layers with revision checks; stack/path views; preserve alternatives | Save/reload, stale-write 409, permissions, presentation continuity, linked child integrity |
-| Quiet insights | User-requested structural checks on authorized current work; one durable queue | Deduplication, cause resolution, dismissal/snooze persistence, source links, honest empty/error states |
-| Questions and memory | Explicit answers, statements/assumptions/unknowns, corrections and archive/restore | Original history retained, private scope, no task mutation on answer, archived retrieval exclusion |
-| Companion | Existing accountable chat and capture/review services with contextual navigation | Real sessions and proposals; no demo claims about execution |
-| Comparison | User-initiated local experience trials with optional notes | No telemetry or automatic assignment; recorded versions and exportable observations |
-| In-place proposal overlays | Later integration of the existing authoritative diff into board presentation | Same effective revision as Review; partial selection represented as a real revision |
-| Audio answers | Context Fabric original/representation pipeline | Physical microphone, storage, transcription failure/retry and consent proof |
-| Model-generated observations | Bounded candidate producer after structural queue is proven useful | Grounding, authorized retrieval, stale-output rejection, usefulness corpus and budget |
-| Optional nudges | Later opt-in attention policy | Non-intrusion evaluation, focus/input suppression and shared user budgets |
+| Switchable experiences and prototype themes | Persistent preferences, one mounted route, four Home/navigation treatments, Grove/Grove Night | Implemented; Classic remains default. Board Zen disclosure and Control density preserve blocked/due/trust information |
+| Thinking Deck | Ordered note/question/options/steps/thread layers, revision checks, stack/path, preserved alternatives, board JSON portability | Implemented; Path is a connected vertical reading view. Steps remain thinking checklists; they do not create cards or change status |
+| Quiet insights | Explicit analysis of blocked cards and unknown/needs-review private memory; durable dismiss/snooze/mute state and revalidation | Implemented structural rules only; no semantic/model inference, automatic scans or interruption |
+| Questions and memory | Saved shared questions can have private answers; source snapshots, statements/assumptions/unknowns, corrections and archive/restore | Implemented. Thinking is board-shared; answers, memory and insights are private to the user. Original answer/evidence and correction history survive; archive excludes the active memory list |
+| Memory portability | Explicit JSON download of the user's active and archived records, including original text/evidence/history | Implemented; two authenticated reads, not an atomic backup or import format. Shared board exports never include private answers |
+| Companion | Existing accountable chat embedded in Companion Home and contextual links to existing chat/review | Implemented entry point; no new model provider or memory retrieval integration. Unified's board-side contextual companion remains next |
+| Comparison | User-initiated session-only ratings and notes with JSON download | Implemented; records selected experience/detail/theme. No telemetry, random assignment or statistical A/B claim |
+| In-place proposal overlays | Existing authoritative diff rendered at affected board objects | Next; preserve effective proposal revision, subset-selection semantics and explicit apply gate |
+| Linked steps, connections and continuity | Guarded child-card promotion, live dependency links, chosen daily plan and last-worked continuation | Next; preserve transactional card writer, WIP, audit and realtime consistency. Current agenda is derived from existing Today data, not last-worked tracking |
+| Audio answers and unified source evidence | Context Fabric original/representation pipeline and typed source anchors | Later; new memory currently preserves evidence directly, not as Capture/SourceAsset records. No microphone/transcription integration added here |
+| Model-generated observations and recall | Bounded candidate producer and authorized knowledge retrieval | Later; requires grounding, fresh evidence, usefulness corpus, privacy and budget proof |
+| Optional nudges | Opt-in attention policy after usefulness is established | Later; requires non-intrusion evaluation, focus/input suppression and shared user budgets |
 
-This ledger distinguishes the delivery target from verified completion. Exact implemented behavior,
-test commands and remaining gaps are recorded with the integration PR; source screenshots are not
+Implementation above is the integrated branch behavior. [Validation and remaining delivery work](WORKSPACE_OVERHAUL_VALIDATION.md)
+records direct proving commands and limits; source screenshots are not
 validation of the integrated application. The broader voice, model and attention work is not made
 complete by introducing its UI vocabulary.
+
+## Try the integrated experience
+
+The shell's **Experience** and **Presentation** selectors remain reachable while working. Appearance
+settings also expose the selectors and **Grove / Grove Night**. Experience changes preserve the current
+route and open card. Home changes retain an unsaved capture or composed Companion reply.
+
+Open a card, then **Open thinking deck**. Save a question layer before choosing **Your private answer**.
+That answer is separate from the shared question. Mark uncertain context **Unknown** or **Needs review**,
+then use **Quiet insights → Analyze now** for that board. **Memory** supports correction, original history,
+archive/restore and a private JSON download. **Experiences** offers the manual comparison protocol.
+
+The three additive database migrations create thinking/insight/memory tables and question-source columns.
+Follow [UPGRADING.md](../../UPGRADING.md) when updating an existing instance. The integration's automated
+browser proof uses an isolated synthetic database; it does not migrate a maintainer's working database.
 
 ## Comparison protocol
 

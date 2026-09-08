@@ -1,12 +1,18 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-07
+Last Updated: 2026-09-08
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.
+
+Workspace overhaul (#2800, integrated implementation; no release or working-database migration claimed):
+
+- Four switchable experiences and Zen/Studio/Control presentation share existing work and retain Classic as the default. Grove/Grove Night extend the existing theme tokens. Zen card disclosure preserves due/blocked/trust information; Control adds compact operational cards.
+- Thinking Decks persist ordered typed layers with revision conflicts and board JSON portability. Saved questions can have private answers with immutable source evidence; answers never appear in shared decks or board exports. Private Memory supports correction history, archive/restore and an explicit JSON download. Quiet insights currently scan recorded blockers and unknown/needs-review memories on request, with durable suppression and source revalidation.
+- Five integrated Chromium journeys exercise capture/review/explicit apply across experiences, draft continuity, stale thinking saves, private question answers, memory history/export, board disclosure, and desktop/phone layouts. Automated accessibility checks cover the new Home and card surfaces. The [resource/feature map](product/WORKSPACE_OVERHAUL.md) and [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) preserve exact scope and remaining source, linked-step, contextual companion, model/audio and attention work. No statistical A/B, microphone, new model intelligence, deployment or owner acceptance is claimed.
 
 Transcript prompt identity (#2211, current implementation):
 

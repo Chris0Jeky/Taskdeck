@@ -4,6 +4,7 @@ import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
 import { listBoardCards, waitForCardWithTitle, waitForProposalCreated } from './support/captureFlow'
 import { expectApplyConfirmDialog } from './support/applyConfirm'
+import AxeBuilder from '@axe-core/playwright'
 
 async function setup(page: Page, request: APIRequestContext, scope: string) {
   const auth = await registerAndAttachSession(page, request, `overhaul-${scope}`)
@@ -78,6 +79,18 @@ test('keeps Home capture and saved thinking across all experience combinations',
   await page.reload()
   await expect(title).toHaveValue('Keep the original possibility')
   await expect(page.getByLabel('options item 2', { exact: true })).toHaveValue('Keep the current approach')
+
+  await page.getByRole('button', { name: '+ question', exact: true }).click()
+  await page.getByLabel('Layer 3 title', { exact: true }).fill('Which version helps me continue?')
+  await page.getByRole('button', { name: 'Save thinking', exact: true }).click()
+  await expect(page.getByText('Thinking saved', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Your private answer', exact: true }).click()
+  await page.getByLabel('Private answer', { exact: true }).fill('My private preference needs a real trial.')
+  await page.getByLabel('Private answer status', { exact: true }).selectOption('unknown')
+  await page.getByRole('button', { name: 'Keep answer privately', exact: true }).click()
+  await expect(page.getByText('Kept in your private memory', { exact: true })).toBeVisible()
+  const sharedDeck = await request.get(`${API_BASE_URL}/boards/${boardId}/cards/${card.id}/thinking`, { headers })
+  expect(await sharedDeck.text()).not.toContain('My private preference')
 
   // A concurrent server save must not erase the local draft or silently win.
   const endpoint = `${API_BASE_URL}/boards/${boardId}/cards/${card.id}/thinking`
@@ -172,13 +185,24 @@ test('answers an insight privately and preserves memory corrections and archive 
   const rows = await saved.json() as { revision: number; originalText: string; history: unknown[] }[]
   expect(rows[0]!.revision).toBe(4)
   expect(rows[0]!.history.length).toBeGreaterThanOrEqual(3)
+  const exported = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download memory JSON', exact: true }).click()
+  expect((await exported).suggestedFilename()).toContain(boardId)
   expect(await listBoardCards(request, auth, boardId)).toEqual(before)
 })
 
 test('makes comparison and Grove themes usable on desktop and narrow screens', async ({ page, request }) => {
+  test.setTimeout(75_000)
   const { boardId } = await setup(page, request, 'responsive')
   await page.goto('/workspace/experiences')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await page.getByLabel('How easy was it to continue your work?').selectOption('4')
+  await page.getByLabel('What helped, or got in the way?').fill('I could find my next step and preserve the alternatives.')
+  await page.getByRole('button', { name: 'Record observation', exact: true }).click()
+  await expect(page.getByText('Observation recorded.', { exact: true })).toBeVisible()
+  const observations = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Export observations', exact: true }).click()
+  expect((await observations).suggestedFilename()).toBe('taskdeck-workspace-comparison.json')
   for (const width of [1440, 768, 375]) {
     await page.setViewportSize({ width, height: 900 })
     for (const experience of ['classic', 'studio', 'companion', 'unified']) {
@@ -199,9 +223,35 @@ test('makes comparison and Grove themes usable on desktop and narrow screens', a
   await page.goto('/workspace/settings/appearance')
   await page.locator('[data-mode="grove-night"]').click()
   await expect(page.locator('body')).toHaveClass(/grove-night/)
-  await page.getByLabel('Workspace experience', { exact: true }).selectOption('studio')
+  await page.locator('.td-experience-bar').getByLabel('Workspace experience', { exact: true }).selectOption('studio')
   // Use client navigation: init script intentionally seeds Grove for new documents.
-  await page.getByRole('link', { name: 'Home', exact: true }).filter({ visible: true }).first().click()
+  await page.getByRole('navigation', { name: 'Studio navigation' }).getByRole('button', { name: 'Home', exact: true }).click()
   await expect(page.locator('.overhaul-home')).toBeVisible()
   await page.screenshot({ path: '../../artifacts/overhaul/grove-night-mobile.png', fullPage: true })
+  const accessibility = await new AxeBuilder({ page }).include('.overhaul-home').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
+  expect(accessibility.violations).toEqual([])
+})
+
+test('changes board disclosure without losing an open card or hiding blocked work', async ({ page, request }) => {
+  const { auth, boardId } = await setup(page, request, 'board')
+  const card = await seedCard(request, auth, boardId, true)
+  await page.goto(`/workspace/boards/${boardId}`)
+  const tile = page.locator('.paper-board-card').filter({ hasText: card.title })
+  await expect(tile).toBeVisible()
+  await page.getByLabel('Workspace presentation', { exact: true }).selectOption('zen')
+  await expect(tile).toHaveAttribute('data-presentation', 'zen')
+  await expect(tile).toContainText('Waiting for a decision')
+  await tile.locator('.paper-board-card__disclosure').click()
+  await expect(tile).toContainText('Explore the possibilities')
+  await page.screenshot({ path: '../../artifacts/overhaul/zen-board.png', fullPage: true })
+  await page.getByLabel('Workspace presentation', { exact: true }).selectOption('control')
+  await expect(tile).toHaveAttribute('data-presentation', 'control')
+  await page.screenshot({ path: '../../artifacts/overhaul/control-board.png', fullPage: true })
+  const accessibility = await new AxeBuilder({ page }).include('.paper-board-card').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
+  expect(accessibility.violations).toEqual([])
+  await page.getByRole('button', { name: `Card ${card.title}`, exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Open thinking deck', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Open thinking deck', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/cards/${card.id}/thinking$`))
+  await expect(page.getByRole('heading', { level: 2, name: 'Thinking deck', exact: true })).toBeVisible()
 })
