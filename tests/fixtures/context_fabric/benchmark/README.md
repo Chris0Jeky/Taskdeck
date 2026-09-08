@@ -3,7 +3,8 @@
 This is the first useful CF-24A (#2319) corpus slice. It is deliberately small and synthetic:
 Nine text/transcript examples cover `Action`, `Decision`, `Question`, `Risk`, `Fact`, and
 `Reference`, plus a no-candidate control and a hostile-injection transcript. The source files are
-licensed as `synthetic`; no external, private, audio, image, or PDF material is checked in.
+covered by the repository's existing [LICENSE](../../../../LICENSE); `synthetic` describes their
+origin, not a separate licence. No external, private, audio, image, or PDF material is checked in.
 
 Each record in `fixtures.json` is validated against
 [`evaluation_fixture.schema.json`](../../../../scripts/context_fabric/evaluation_fixture.schema.json).
