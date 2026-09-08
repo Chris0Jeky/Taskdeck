@@ -3,6 +3,11 @@ import type { AxiosResponse } from 'axios'
 import http from '../../api/http'
 import { apiRootFrom, resolveApiRoot, versionApi } from '../../api/versionApi'
 
+// The shared setup keeps transitive Paper-shell mounts offline. This file is
+// the explicit transport contract and therefore opts back into the real API
+// module while retaining its mocked HTTP client.
+vi.unmock('../../api/versionApi')
+
 // The repo's `.env` pins `VITE_API_BASE_URL=http://localhost:5000/api`, and Vite
 // inlines it into this build, so the request the suite must see is fully
 // determined. Asserting the literal — rather than re-deriving it with the
