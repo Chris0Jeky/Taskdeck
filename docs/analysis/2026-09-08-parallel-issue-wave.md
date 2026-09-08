@@ -32,7 +32,7 @@ maintainer review is a separate failure of authority, not a failed test.
 | #2260 | CF06-1 immutable representation header, supersession edge and descriptor | `9fd6a69e257db7e91fbe40064767293e43901a86`; 21 Domain and 1 Application targeted checks, then full backend 8,995 passed / 5 existing skips; PR #2809 |
 | #2257 | CF03-1 immutable processing policy and canonical digest | `ad02598a038bb0a969c66919db66a91ba2f59907`; 12 focused tests and full backend exit 0; final per-project totals not captured; PR #2811 |
 | #2319 | Initial synthetic text corpus and per-kind scorer | `6c9bec284b1feaade2cd49ce3bf9219c0b1d4320`; 21 Python tests, nine sources / 934 bytes, documentation checks |
-| #2241 | HTTP SSE first-delta, framing and buffered-compatibility tests | `c80a06411a235ee6ac33a39eb9b344fc877ce99d`; exact gate results tracked on its PR |
+| #2241 | HTTP SSE first-delta, framing and buffered-compatibility tests | `d0ba6c9d9bf49d6c80f948aa560a26c0cba766f4`; 2 focused tests, then full backend 8,975 passed / 5 existing skips; PR #2812 |
 | #2775 | Isolate unit tests from the version-health HTTP request | `21e1ef2e4f0d3527e0790359b9b981411e818672`; focused checks/lint, typecheck/build, then 381 files / 6,153 tests passed / 3 skipped; PR #2810 |
 | #2777 | Align frontend adapter/import/search and explicit PowerShell cwd instructions | `b42ce41e54aa8bb43533ce0834644664e01d2ee4`; doc links, docs/GitHub operations governance, diff, PowerShell parse and path checks |
 
@@ -84,6 +84,22 @@ The already-completed independent source reviews were retained without duplicati
   (`2c3eaa3b114635634cc98ac2d0eab3fc5925dcd8`) passed independent review and hosted
   checks at these heads, but their maintainer control-plane review remains open.
 
+Open implementation PRs at wrap-up are #2809 (representation), #2810 (unit health
+isolation), #2811 (policy snapshot) and #2812 (SSE tests). Required hosted jobs
+were still running at the final REST checkpoint; #2812 was newly published.
+No completed milestone or merge-ready claim is made from those partial CI results.
+The two connector P2s on #2811 are replied to and tracked on #2257: persist the
+canonical payload alongside its digest in CF03-2, and reject final-newline tokens
+with absolute regex anchors. The latter was reproduced directly; no current runtime
+dispatch or cost enforcement is wired to this contract. These are non-blocking
+follow-ups, not an extra repair round.
+
+External PR #2807 remains owned by its overhaul thread and is excluded from this
+wave's delivery count. Its model snapshot must retain #2805's repair column when
+integrating the three overhaul migrations; the ordering and both documentation
+records were called out on that PR. Its separate HIGH review fixes remain with
+that author thread.
+
 ## Authority correction and human actions
 
 The coordinator merged #2772 without the maintainer's own review. This was an
@@ -109,6 +125,26 @@ The primary checkout's unrelated `backend/.claude/` files and pre-existing workt
 were preserved. The local coordinator ledger records exact execution receipts,
 scoped project writes, evidence locations and cleanup results. Raw test outputs
 and operational logs are kept outside Git.
+
+The curated local bundle is
+`C:\Users\Public\codex-shell-home\taskdeck-wave-20260908`: copied test logs and
+receipts, literal ignored-file inventories, normal worktree-removal records, and
+the coordinator ledger. Source heads are pushed; only this wave's disposable
+worktrees are removed. The CI monitor stopped at the maintainer's wrap-up request,
+and the final SSE test process completed before handoff. Unrelated shared compiler,
+application and external-overhaul processes were left alone.
+
+The SSE test head changed during local proving: a missing HTTP JSON import and a
+payload-casing assumption needed two test-only commits. The final head above,
+rather than the earlier reviewed `c80a06411`, owns the executed evidence. A narrow
+Luna check supplements the original Terra review for those corrections.
+
+Forty previously missing issue Priority assignments were reconciled and verified
+against Project values; 38 Project values changed and status fields were preserved.
+The full-project audit did not produce a clean result: an earlier apply refused a
+changed live plan before writes, and the final read-only run hit an API quota error.
+Follow-up PR/comment reads used REST. The scoped 40-item verification is not a
+complete-project audit; #2235 retains that remaining check.
 
 Refresh exact heads, bases, checks and unresolved threads before resuming a parked
 PR. Preserve the spent review budgets. Continue the remaining acceptance on parent
