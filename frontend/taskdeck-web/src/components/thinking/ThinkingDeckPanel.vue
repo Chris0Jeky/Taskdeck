@@ -84,7 +84,7 @@ function reload() { confirmReload.value = false; void load() }
           <ThinkingQuestionAnswer v-if="layer.kind === 'question'" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :revision="revision" :source-ready="!dirty && !saving" @dirty-change="privateDrafts[layer.id] = $event" />
         </li>
       </ol>
-      <fieldset :disabled="!canWrite" aria-label="Add shared thinking layers">
+      <fieldset :disabled="!canWrite" aria-label="Shared thinking layer controls">
       <div class="add-layers" role="group" aria-label="Add thinking layer"><button v-for="kind in kinds" :key="kind" type="button" :disabled="layers.length >= 40" @click="add(kind)">+ {{ kind }}</button></div>
       </fieldset>
       <footer class="deck-footer">
