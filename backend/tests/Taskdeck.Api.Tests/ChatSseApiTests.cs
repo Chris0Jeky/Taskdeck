@@ -53,8 +53,8 @@ public sealed class ChatSseApiTests : IClassFixture<TestWebApplicationFactory>
 
             var delta = await ReadEventAsync(reader);
             delta.EventType.Should().Be("message.delta");
-            delta.Payload.GetProperty("token").GetString().Should().Be("first");
-            delta.Payload.GetProperty("isComplete").GetBoolean().Should().BeFalse();
+            delta.Payload.Token.Should().Be("first");
+            delta.Payload.IsComplete.Should().BeFalse();
             provider.TerminalEventProduced.Task.IsCompleted.Should().BeFalse(
                 "the provider is held after the first token, so completion must not be observable yet");
 
@@ -62,8 +62,8 @@ public sealed class ChatSseApiTests : IClassFixture<TestWebApplicationFactory>
 
             var complete = await ReadEventAsync(reader);
             complete.EventType.Should().Be("message.complete");
-            complete.Payload.GetProperty("token").GetString().Should().Be(" complete");
-            complete.Payload.GetProperty("isComplete").GetBoolean().Should().BeTrue();
+            complete.Payload.Token.Should().Be(" complete");
+            complete.Payload.IsComplete.Should().BeTrue();
             await provider.TerminalEventProduced.Task.WaitAsync(ReadDeadline);
         }
         finally
@@ -108,10 +108,10 @@ public sealed class ChatSseApiTests : IClassFixture<TestWebApplicationFactory>
         }
 
         events.Select(e => e.EventType).Should().Equal("message.delta", "message.complete");
-        events[0].Payload.GetProperty("token").GetString().Should().Be("buffered");
-        events[0].Payload.GetProperty("isComplete").GetBoolean().Should().BeFalse();
-        events[1].Payload.GetProperty("token").GetString().Should().Be(" response");
-        events[1].Payload.GetProperty("isComplete").GetBoolean().Should().BeTrue();
+        events[0].Payload.Token.Should().Be("buffered");
+        events[0].Payload.IsComplete.Should().BeFalse();
+        events[1].Payload.Token.Should().Be(" response");
+        events[1].Payload.IsComplete.Should().BeTrue();
     }
 
     private WebApplicationFactory<Program> CreateFactory(ILlmProvider provider) =>
@@ -160,10 +160,10 @@ public sealed class ChatSseApiTests : IClassFixture<TestWebApplicationFactory>
             ParsePayload(dataLine["data: ".Length..]));
     }
 
-    private static JsonElement ParsePayload(string data) =>
-        JsonSerializer.Deserialize<JsonElement>(data);
+    private static LlmTokenEvent ParsePayload(string data) =>
+        JsonSerializer.Deserialize<LlmTokenEvent>(data)!;
 
-    private sealed record SseEvent(string EventType, JsonElement Payload);
+    private sealed record SseEvent(string EventType, LlmTokenEvent Payload);
 
     private abstract class OpenAiCompatibleProviderStub : ILlmProvider
     {
