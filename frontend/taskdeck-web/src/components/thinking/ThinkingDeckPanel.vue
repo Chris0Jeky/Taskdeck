@@ -79,7 +79,7 @@ function reload() { confirmReload.value = false; void load() }
           <p v-if="layer.kind === 'steps'" class="hint">These are thinking steps. Checking one does not change the task’s board status.</p>
         </li>
       </ol>
-      <div class="add-layers" aria-label="Add thinking layer"><button v-for="kind in kinds" :key="kind" type="button" :disabled="layers.length >= 40" @click="add(kind)">+ {{ kind }}</button></div>
+      <div class="add-layers" role="group" aria-label="Add thinking layer"><button v-for="kind in kinds" :key="kind" type="button" :disabled="layers.length >= 40" @click="add(kind)">+ {{ kind }}</button></div>
       </fieldset>
       <footer class="deck-footer">
         <span role="status">{{ dirty ? 'Unsaved thinking' : revision ? 'Thinking saved' : 'No layers yet' }}</span>

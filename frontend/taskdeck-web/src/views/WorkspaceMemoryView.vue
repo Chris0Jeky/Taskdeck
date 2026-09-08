@@ -4,6 +4,8 @@ import { RouterLink, useRoute } from 'vue-router'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { TdSkeleton } from '../components/ui'
 import { useBoardStore } from '../store/boardStore'
+import TdDialog from '../components/ui/TdDialog.vue'
+import { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspaceNavigation'
 import { workspaceInsightsApi } from '../api/workspaceInsights'
 import type { Board } from '../types/board'
 import type { Memory, MemoryStatus } from '../types/workspaceInsights'
@@ -83,6 +85,12 @@ async function loadBoards() {
     await boardStore.fetchBoards()
     boards.value = boardStore.boards.filter((board) => !board.isArchived)
     const requested = queryBoardId()
+    if (requested && !boards.value.some(board => board.id === requested)) {
+      selectedBoardId.value = ''
+      memories.value = []
+      boardError.value = 'This board is not available. Open an accessible board to inspect its memory.'
+      return
+    }
     selectedBoardId.value = boards.value.some((board) => board.id === requested)
       ? requested!
       : boards.value[0]?.id ?? ''
@@ -117,6 +125,8 @@ async function loadMemories() {
     if (generation === memoryRequestGeneration) loading.value = false
   }
 }
+
+const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => showEditor.value && (Boolean(formTitle.value.trim() || formText.value.trim()) || saving.value))
 
 function openCreate() {
   editingId.value = null
@@ -216,6 +226,10 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
   if (!initialized.value) return
   if (nextBoard !== previousBoard || nextArchived !== previousArchived) void loadMemories()
 })
+watch(queryBoardId, () => {
+  closeEditor()
+  if (initialized.value) void loadBoards()
+})
 </script>
 
 <template>
@@ -250,7 +264,7 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
     </section>
 
     <p class="paper-memory__trust-note">
-      Memories are private to your workspace. Editing or archiving one never changes board cards, columns, or statuses.
+      Memories are private to you and linked to this board. Editing or archiving one never changes board cards, columns, or statuses.
     </p>
 
     <section v-if="showEditor" class="paper-memory__panel paper-memory__editor" aria-labelledby="memory-editor-title">
@@ -264,15 +278,15 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
       <form @submit.prevent="saveMemory">
         <label class="paper-memory__form-field" for="memory-title">
           <span class="paper-memory__label">Title</span>
-          <input id="memory-title" v-model="formTitle" type="text" maxlength="240" placeholder="A useful piece of context" />
+          <input id="memory-title" v-model="formTitle" :disabled="saving" type="text" maxlength="240" placeholder="A useful piece of context" />
         </label>
         <label class="paper-memory__form-field" for="memory-text">
           <span class="paper-memory__label">Memory</span>
-          <textarea id="memory-text" v-model="formText" rows="5" maxlength="8000" placeholder="Write the context you want to keep…" />
+          <textarea id="memory-text" v-model="formText" :disabled="saving" rows="5" maxlength="8000" placeholder="Write the context you want to keep…" />
         </label>
         <label class="paper-memory__form-field" for="memory-status">
           <span class="paper-memory__label">Status</span>
-          <select id="memory-status" v-model="formStatus">
+          <select id="memory-status" v-model="formStatus" aria-label="Status" :disabled="saving">
             <option value="statement">Statement</option>
             <option value="assumption">Assumption</option>
             <option value="unknown">Unknown</option>
@@ -373,6 +387,7 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
         <p v-if="memoryErrors[memory.id]" class="paper-memory__error" role="alert">{{ memoryErrors[memory.id] }}</p>
       </article>
     </section>
+    <TdDialog :open="leaveRequested" title="Leave unsaved memory?" description="Save your memory before leaving, or discard the current draft." @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" :disabled="saving" @click="decide(true)">Discard memory draft and leave</button></template></TdDialog>
   </main>
 </template>
 

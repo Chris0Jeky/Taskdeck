@@ -12,6 +12,20 @@ changes.
 
 ---
 
+## Unreleased workspace overhaul
+
+**BREAKING: none.** The overhaul adds `ThinkingDecks`, `QuietInsights` and `WorkspaceMemories`
+tables. Existing boards, cards, captures and proposals retain their identities. Thinking material
+is attached to a card and is removed when that card is deleted. Insights and memory remain private
+to their author and require access to an active board. Memory archive retains correction history.
+
+Normal startup migrations apply the additive schema. Back up the stopped SQLite workspace before
+upgrading. A database backup includes all new records; do not assume an older version's board JSON
+export includes every new data type. The overhaul delivery ledger records portability coverage.
+
+Experience, presentation and theme selections are local browser preferences. Classic remains the
+default. Choosing another experience never changes authorization or the approve/apply boundary.
+
 ## Backup the database and packaged identity
 
 Everything Taskdeck stores — boards, cards, captures, proposals, audit history, API keys — lives

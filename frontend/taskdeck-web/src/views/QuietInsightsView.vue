@@ -5,6 +5,8 @@ import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import { TdSkeleton } from '../components/ui'
 import { workspaceInsightsApi } from '../api/workspaceInsights'
 import { useBoardStore } from '../store/boardStore'
+import TdDialog from '../components/ui/TdDialog.vue'
+import { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspaceNavigation'
 import type { Board } from '../types/board'
 import type {
   Insight,
@@ -32,6 +34,7 @@ const answeringInsightId = ref<string | null>(null)
 const answerText = ref('')
 const answerStatus = ref<MemoryStatus>('statement')
 const answerError = ref<string | null>(null)
+const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => Boolean(answeringInsightId.value && answerText.value.trim()) || busyInsightIds.value.size > 0)
 
 const selectedBoard = computed(() => boards.value.find((board) => board.id === selectedBoardId.value) ?? null)
 
@@ -98,6 +101,12 @@ async function loadBoards() {
     await boardStore.fetchBoards()
     boards.value = boardStore.boards.filter((board) => !board.isArchived)
     const requested = queryBoardId()
+    if (requested && !boards.value.some(board => board.id === requested)) {
+      selectedBoardId.value = ''
+      insights.value = []
+      boardError.value = 'This board is not available. Open an accessible board to inspect its insights.'
+      return
+    }
     selectedBoardId.value = boards.value.some((board) => board.id === requested)
       ? requested!
       : boards.value[0]?.id ?? ''
@@ -134,7 +143,7 @@ async function loadInsights() {
 }
 
 async function analyzeBoard() {
-  if (!selectedBoardId.value || analyzing.value) return
+  if (!selectedBoardId.value || analyzing.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
   const boardId = selectedBoardId.value
   const generation = ++insightsRequestGeneration
   analyzing.value = true
@@ -154,7 +163,7 @@ async function analyzeBoard() {
 }
 
 async function applyAction(insight: Insight, action: InsightAction) {
-  if (isBusy(insight.id)) return
+  if (isBusy(insight.id) || answeringInsightId.value) return
   const boardId = selectedBoardId.value
   setBusy(insight.id, true)
   cardErrors.value = { ...cardErrors.value, [insight.id]: '' }
@@ -173,6 +182,7 @@ async function applyAction(insight: Insight, action: InsightAction) {
 }
 
 function openAnswer(insight: Insight) {
+  if (answeringInsightId.value || busyInsightIds.value.size > 0) return
   answeringInsightId.value = insight.id
   answerText.value = ''
   answerStatus.value = 'statement'
@@ -225,6 +235,11 @@ onMounted(async () => {
 watch(selectedBoardId, (next, previous) => {
   if (initialized.value && next !== previous) void loadInsights()
 })
+watch(queryBoardId, () => {
+  closeAnswer()
+  answerNotice.value = null
+  if (initialized.value) void loadBoards()
+})
 </script>
 
 <template>
@@ -255,7 +270,7 @@ watch(selectedBoardId, (next, previous) => {
       <PaperHLBtn
         data-action="analyze-insights"
         variant="ember"
-        :disabled="!selectedBoardId || analyzing || loading"
+        :disabled="!selectedBoardId || analyzing || loading || Boolean(answeringInsightId) || busyInsightIds.size > 0"
         @click="analyzeBoard"
       >
         {{ analyzing ? 'Analyzing…' : 'Analyze now' }}
@@ -308,7 +323,7 @@ watch(selectedBoardId, (next, previous) => {
     <section v-else class="paper-insights__grid" aria-label="Quiet insights">
       <article v-for="insight in insights" :key="insight.id" class="paper-insights__card" :class="`paper-insights__card--${insight.state}`">
         <div class="paper-insights__card-topline">
-          <span class="paper-insights__rule">{{ insight.rule }}</span>
+          <span class="paper-insights__rule">{{ insight.rule === 'blocked-next-step' ? 'A way forward' : 'Working knowledge' }}</span>
           <span class="paper-insights__status">{{ statusLabel(insight.state) }}</span>
         </div>
         <h2>{{ insight.title }}</h2>
@@ -334,7 +349,7 @@ watch(selectedBoardId, (next, previous) => {
             :key="action"
             :data-action="`${action}-insight`"
             variant="ghost"
-            :disabled="isBusy(insight.id)"
+            :disabled="isBusy(insight.id) || Boolean(answeringInsightId)"
             @click="applyAction(insight, action)"
           >
             {{ actionLabel(action) }}
@@ -343,7 +358,7 @@ watch(selectedBoardId, (next, previous) => {
             v-if="insight.state === 'available'"
             data-action="answer-insight"
             variant="primary"
-            :disabled="isBusy(insight.id)"
+            :disabled="isBusy(insight.id) || Boolean(answeringInsightId) || busyInsightIds.size > 0"
             @click="openAnswer(insight)"
           >
             Answer privately
@@ -352,23 +367,24 @@ watch(selectedBoardId, (next, previous) => {
         <p v-if="cardErrors[insight.id]" class="paper-insights__card-error" role="alert">{{ cardErrors[insight.id] }}</p>
         <form v-if="answeringInsightId === insight.id" class="paper-insights__answer" @submit.prevent="answerInsight(insight)">
           <label :for="`answer-${insight.id}`" class="paper-insights__label">Your private answer</label>
-          <textarea :id="`answer-${insight.id}`" v-model="answerText" rows="3" placeholder="Write what you know, suspect, or want to revisit…" />
+          <textarea :id="`answer-${insight.id}`" v-model="answerText" rows="3" maxlength="8000" :disabled="isBusy(insight.id)" placeholder="Write what you know, suspect, or want to revisit…" />
           <div class="paper-insights__answer-row">
-            <label :for="`answer-status-${insight.id}`" class="paper-insights__label">Confidence</label>
-            <select :id="`answer-status-${insight.id}`" v-model="answerStatus">
+            <label :for="`answer-status-${insight.id}`" class="paper-insights__label">Knowledge status</label>
+            <select :id="`answer-status-${insight.id}`" v-model="answerStatus" :disabled="isBusy(insight.id)">
               <option value="statement">Statement</option>
               <option value="assumption">Assumption</option>
               <option value="unknown">Unknown</option>
               <option value="needsReview">Needs review</option>
             </select>
             <PaperHLBtn type="submit" variant="ember" :disabled="!answerText.trim() || isBusy(insight.id)">Save memory</PaperHLBtn>
-            <PaperHLBtn type="button" variant="ghost" @click="closeAnswer">Cancel</PaperHLBtn>
+            <PaperHLBtn type="button" variant="ghost" :disabled="isBusy(insight.id)" @click="closeAnswer">Cancel</PaperHLBtn>
           </div>
           <p class="paper-insights__answer-note">This saves a private memory only; it does not change the board.</p>
           <p v-if="answerError" class="paper-insights__card-error" role="alert">{{ answerError }}</p>
         </form>
       </article>
     </section>
+    <TdDialog :open="leaveRequested" title="Leave this answer?" description="Your answer has not been saved. Keep editing or discard the draft before leaving." @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" :disabled="busyInsightIds.size > 0" @click="decide(true)">Discard answer and leave</button></template></TdDialog>
   </main>
 </template>
 

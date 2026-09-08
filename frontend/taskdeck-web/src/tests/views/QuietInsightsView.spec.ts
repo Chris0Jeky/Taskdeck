@@ -21,6 +21,8 @@ const boardStore = reactive(mocks.boardStore)
 const api = mocks.api
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
   useRoute: () => mocks.route,
   RouterLink: {
     props: ['to'],
@@ -83,6 +85,23 @@ function mountView() {
 }
 
 describe('QuietInsightsView', () => {
+  it('does not replace an unavailable linked board with a different board', async () => {
+    mocks.route.query = { boardId: 'unavailable' }
+    const wrapper = mountView()
+    await settle()
+    expect(wrapper.text()).toContain('This board is not available')
+    expect(api.getInsights).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('keeps the question evidence fixed while an answer is being composed', async () => {
+    const wrapper = mountView()
+    await settle()
+    await wrapper.get('[data-action="answer-insight"]').trigger('click')
+    await wrapper.get('textarea').setValue('A useful next step')
+    expect(wrapper.get('[data-action="analyze-insights"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-action="dismiss-insight"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     routeMock.query = {}

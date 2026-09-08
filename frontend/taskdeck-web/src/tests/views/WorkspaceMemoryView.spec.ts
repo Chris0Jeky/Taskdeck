@@ -21,6 +21,8 @@ const boardStore = reactive(mocks.boardStore)
 const api = mocks.api
 
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
+  onBeforeRouteUpdate: vi.fn(),
   useRoute: () => mocks.route,
   RouterLink: {
     props: ['to'],
