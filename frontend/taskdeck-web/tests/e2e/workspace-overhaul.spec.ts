@@ -43,6 +43,11 @@ test('keeps Home capture and saved thinking across all experience combinations',
   await page.goto('/workspace/home')
   const thought = page.getByLabel('LEAVE A THOUGHT HERE')
   await thought.fill('A question worth keeping exactly as written.')
+  await page.getByLabel('Workspace experience', { exact: true }).selectOption('classic')
+  await page.locator('[data-paper-sidebar] a[href="/workspace/today"]').first().click()
+  await expect(page.getByRole('dialog', { name: 'Leave this thought?' })).toBeVisible()
+  await page.getByRole('button', { name: 'Keep editing', exact: true }).click()
+  await expect(page).toHaveURL(/\/workspace\/home$/)
   for (const experience of ['classic', 'companion', 'unified', 'studio']) {
     await page.getByLabel('Workspace experience', { exact: true }).selectOption(experience)
   }
