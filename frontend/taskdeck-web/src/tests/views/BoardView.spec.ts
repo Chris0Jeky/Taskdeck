@@ -424,7 +424,7 @@ describe('BoardView', () => {
     const card = makeCard('card-1', 'column-1')
     mockBoardStore.currentBoardCards = [card]
     window.localStorage.setItem(
-      'td.paper.board-collapsed-columns.v1',
+      'td.paper.board-collapsed-columns.v2:user-abc',
       JSON.stringify(['column-2']),
     )
 

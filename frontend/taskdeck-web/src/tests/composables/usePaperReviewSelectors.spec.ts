@@ -214,7 +214,7 @@ describe('usePaperReviewSelectors', () => {
       captureDetail({
         provider: 'OpenAI',
         model: 'gpt-4o-mini',
-        promptVersion: 'llm-triage.v2',
+        promptVersion: 'llm-triage.v3',
       }),
     )
 
@@ -226,7 +226,7 @@ describe('usePaperReviewSelectors', () => {
       expect(selectors.provenanceMetadata.value).toEqual({
         provider: 'OpenAI',
         model: 'gpt-4o-mini',
-        promptVersion: 'llm-triage.v2',
+        promptVersion: 'llm-triage.v3',
         confidence: 0.83,
         latencyMs: null,
       })
@@ -251,7 +251,7 @@ describe('usePaperReviewSelectors', () => {
         proposalId: 'another-proposal',
         provider: 'OpenAI',
         model: 'gpt-4o-mini',
-        promptVersion: 'llm-triage.v2',
+        promptVersion: 'llm-triage.v3',
       }),
     )
     proposal.value = makeProposal({
@@ -936,7 +936,7 @@ describe('usePaperReviewSelectors', () => {
           proposalId: 'proposal-a',
           provider: 'OpenAI',
           model: 'gpt-4o-mini',
-          promptVersion: 'llm-triage.v2',
+          promptVersion: 'llm-triage.v3',
         }, { id: 'capture-a' }),
       )
     const proposal = ref<ApiProposal | null>(makeProposal({
@@ -1021,7 +1021,7 @@ describe('usePaperReviewSelectors', () => {
       captureDetail({
         provider: 'OpenAI',
         model: 'gpt-4o-mini',
-        promptVersion: 'llm-triage.v2',
+        promptVersion: 'llm-triage.v3',
       }),
     )
 
@@ -1241,7 +1241,7 @@ describe('usePaperReviewSelectors', () => {
           proposalId: 'p-2',
           provider: 'OpenAI',
           model: 'gpt-4o-mini',
-          promptVersion: 'llm-triage.v2',
+          promptVersion: 'llm-triage.v3',
         },
         { id: 'capture-2' },
       ),
@@ -1334,7 +1334,7 @@ describe('usePaperReviewSelectors', () => {
     resolveCapture!(captureDetail({
       provider: 'OpenAI',
       model: 'gpt-4o-mini',
-      promptVersion: 'llm-triage.v2',
+      promptVersion: 'llm-triage.v3',
     }))
     await nextTick()
     await nextTick()
@@ -1416,7 +1416,7 @@ describe('usePaperReviewSelectors', () => {
       vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockResolvedValue({
         provider: 'openai',
         model: 'gpt-5.6-luna',
-        promptVersion: 'llm-triage.v2',
+        promptVersion: 'llm-triage.v3',
       })
 
       const selectors = usePaperReviewSelectors(
@@ -1427,7 +1427,7 @@ describe('usePaperReviewSelectors', () => {
         expect(selectors.provenanceMetadata.value).toEqual({
           provider: 'openai',
           model: 'gpt-5.6-luna',
-          promptVersion: 'llm-triage.v2',
+          promptVersion: 'llm-triage.v3',
           confidence: 0.5,
           latencyMs: null,
         })
@@ -1441,7 +1441,7 @@ describe('usePaperReviewSelectors', () => {
       vi.mocked(proposalDeepReviewApi.getProvenanceMetadata).mockResolvedValue({
         provider: 'openai',
         model: 'gpt-5.6-luna',
-        promptVersion: 'llm-triage.v2',
+        promptVersion: 'llm-triage.v3',
       })
       vi.mocked(captureApi.getItem).mockResolvedValue(
         captureDetail({
@@ -1459,7 +1459,7 @@ describe('usePaperReviewSelectors', () => {
         expect(selectors.provenanceMetadata.value?.provider).toBe('openai')
       })
       expect(selectors.provenanceMetadata.value?.model).toBe('gpt-5.6-luna')
-      expect(selectors.provenanceMetadata.value?.promptVersion).toBe('llm-triage.v2')
+      expect(selectors.provenanceMetadata.value?.promptVersion).toBe('llm-triage.v3')
     })
 
     it('falls back to capture detail only when the proposal recorded no producer', async () => {

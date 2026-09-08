@@ -65,7 +65,29 @@ behaviour.
 
 ## Dated delivery and governance updates (newest first)
 
+## Planning update (2026-09-07, transcript prompt v3)
+
+#2211 moves current generation, frontend provenance recognition and packaged acceptance to
+`llm-triage.v3` atomically. The schema-v2-shaped historical v2 contract remains available for
+stored output; deterministic provenance is unchanged. This attributes #2206's reference-date
+semantics correctly without changing the task envelope or bypassing review. Current release
+qualification must exercise v3; old published ZIP evidence remains an honest v2 record.
+
+
 ## Planning update (2026-09-07, accountable chat decision record)
+
+The milestone wave shipped the bounded Triaged-capture requeue and edit-capability slice
+(#1999, PR #2779) and the existing board-read authorization invariant in chat (#2004,
+PR #2782). Paper transcript-file input (#2727, PR #2781, merge `164718249`) and
+review-queue recovery feedback (#2214, PR #2780, merge `2672e746d`) are also shipped. Acceptance audits closed #1984, #2250
+and #2691 with their direct evidence recorded on the issues. The active implementation
+lanes are full ADR-0069 chat (#2004), atomic prompt v3 (#2211), Paper review stability
+(#2215), and standalone launch drafts (#2391). The wider
+#1999 linked-transcript correction and ADR-0069 chat implementation remain open; these
+partial slices do not complete those issues or the v0.3 release gate. Non-blocking review
+findings are recorded on their PR threads and existing issues. The full Project priority
+audit still finds 41 pre-existing items without Priority labels (tracked on #2235); the
+wave's own issue/PR priorities were synchronized without applying guessed estate-wide labels.
 
 [ADR-0069](decisions/ADR-0069-accountable-automation-chat.md) records the maintainer's
 September 4 ruling on #2004, reaffirmed September 6: one ADR first, then the complete v0.3
@@ -2113,3 +2135,7 @@ Rule:
   packaged app exit before listening, behind a generic error)
   - Mitigation: release-harness coverage of upgrade paths with inherited configuration, plus honest
     secret-free startup diagnostics (`#1876`)
+
+## Board controls residual acceptance (2026-09-08)
+
+PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.

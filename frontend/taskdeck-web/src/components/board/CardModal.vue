@@ -101,6 +101,18 @@ watch(
   { immediate: true },
 )
 
+// A desktop inspector stays mounted while another card is selected. Move focus
+// to the new editor's close control so keyboard users arrive at the newly
+// selected card instead of remaining in a control whose contents just changed.
+watch(
+  () => props.card.id,
+  async (cardId, previousCardId) => {
+    if (!props.isOpen || cardId === previousCardId) return
+    await nextTick()
+    focusInitialControl()
+  },
+)
+
 onUnmounted(() => {
   if (props.isOpen) {
     restoreFocus()

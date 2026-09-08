@@ -115,7 +115,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         // Provenance names the REAL provider/model from the completion result, not the extractor.
         triaged.Provenance.Provider.Should().Be(StubProviderName);
         triaged.Provenance.Model.Should().Be(StubModelName);
-        triaged.Provenance.PromptVersion.Should().Be("llm-triage.v2");
+        triaged.Provenance.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV3);
         var proposalId = triaged.Provenance.ProposalId!.Value;
 
         // The worker persists the canonical transcript and queue linkage before invoking the
@@ -189,7 +189,7 @@ public class TranscriptTriageLlmGoldenPathIntegrationTests : IClassFixture<TestW
         converted.Provenance.ConvertedAt.Should().NotBeNull();
         converted.Provenance.Provider.Should().Be(StubProviderName);
         converted.Provenance.Model.Should().Be(StubModelName);
-        converted.Provenance.PromptVersion.Should().Be("llm-triage.v2");
+        converted.Provenance.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV3);
 
         // Exactly one LLM call for the whole pipeline (no retries, no re-extraction on conversion).
         providerStub.CompletionCallCount.Should().Be(1);

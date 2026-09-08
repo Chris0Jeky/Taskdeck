@@ -2369,7 +2369,7 @@ describe('PaperReviewView', () => {
       label: 'live provider capture triage',
       provider: 'OpenAI',
       model: 'gpt-4o-mini',
-      promptVersion: 'llm-triage.v2',
+      promptVersion: 'llm-triage.v3',
       confidence: {
         overall: 0.84,
         components: [],
@@ -2455,7 +2455,7 @@ describe('PaperReviewView', () => {
     mocks.getProvenanceMetadata.mockResolvedValue({
       provider: 'OpenAI',
       model: 'gpt-5.6-luna',
-      promptVersion: 'llm-triage.v2',
+      promptVersion: 'llm-triage.v3',
     })
     // Stated locally rather than inherited from the shared `beforeEach`, so the `84%` assertion
     // below names its own source: a model-reported breakdown. A deterministic source would make
@@ -2506,7 +2506,7 @@ describe('PaperReviewView', () => {
     expect(metadataText).toContain('Model')
     expect(metadataText).toContain('OpenAI/gpt-5.6-luna')
     expect(metadataText).toContain('Prompt version')
-    expect(metadataText).toContain('llm-triage.v2')
+    expect(metadataText).toContain('llm-triage.v3')
     expect(metadataText).toContain('Confidence')
     expect(metadataText).toContain('84%')
 
@@ -2539,7 +2539,7 @@ describe('PaperReviewView', () => {
           proposalId,
           provider: 'OpenAI',
           model: 'gpt-4o-mini',
-          promptVersion: 'llm-triage.v2',
+          promptVersion: 'llm-triage.v3',
         },
       )
     })

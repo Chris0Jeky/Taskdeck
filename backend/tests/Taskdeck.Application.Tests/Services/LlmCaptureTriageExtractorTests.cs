@@ -89,7 +89,7 @@ public class LlmCaptureTriageExtractorTests
         return content.First(character => !char.IsWhiteSpace(character)).ToString();
     }
 
-    private static string V2Completion(params (string Title, string EvidenceQuote)[] tasks)
+    private static string V2ShapeCompletion(params (string Title, string EvidenceQuote)[] tasks)
     {
         return JsonSerializer.Serialize(new
         {
@@ -118,7 +118,7 @@ public class LlmCaptureTriageExtractorTests
         result.Provider.Should().Be("OpenAI");
         result.Model.Should().Be("gpt-4o-mini");
         result.Output.Should().NotBeNull();
-        result.Output!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV2);
+        result.Output!.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV3);
         result.Output.Version.Should().Be(CaptureTriageOutputContract.SchemaVersionV2);
         result.Output.Tasks.Should().ContainSingle()
             .Which.Title.Should().Be("Send the report");
@@ -162,7 +162,7 @@ public class LlmCaptureTriageExtractorTests
     public async Task ExtractAsync_DuplicateTitleWithDifferentRangesHasNoStructuredSpan()
     {
         const string transcript = "Alpha quote.\nBeta quote.";
-        SetupCompletion(V2Completion(
+        SetupCompletion(V2ShapeCompletion(
             ("Review item", "Alpha quote."),
             ("review item", "Beta quote.")));
         var result = await BuildExtractor().ExtractAsync(
@@ -247,7 +247,7 @@ public class LlmCaptureTriageExtractorTests
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
-        SetupCompletionForRequest(request => V2Completion(("Send the launch notes", ExactQuoteFromRequest(request))));
+        SetupCompletionForRequest(request => V2ShapeCompletion(("Send the launch notes", ExactQuoteFromRequest(request))));
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: I will send the launch notes after this meeting.",
             8));
@@ -273,7 +273,7 @@ public class LlmCaptureTriageExtractorTests
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
-        SetupCompletionForRequest(request => V2Completion(("Send the launch notes", ExactQuoteFromRequest(request))));
+        SetupCompletionForRequest(request => V2ShapeCompletion(("Send the launch notes", ExactQuoteFromRequest(request))));
         var transcript = string.Join("\n\n", Enumerable.Repeat(
             "Alice: I will send the launch notes after this meeting.",
             8));
@@ -344,7 +344,7 @@ public class LlmCaptureTriageExtractorTests
     {
         _settings.MaxInputTokensPerChunk = 64;
         _settings.ChunkOverlapTokens = 16;
-        SetupCompletionForRequest(request => V2Completion(("Discard me", ExactQuoteFromRequest(request))));
+        SetupCompletionForRequest(request => V2ShapeCompletion(("Discard me", ExactQuoteFromRequest(request))));
         _quotaMock
             .SetupSequence(quota => quota.ReserveAsync(
                 _userId,
@@ -377,10 +377,10 @@ public class LlmCaptureTriageExtractorTests
             .Setup(provider => provider.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) => new LlmCompletionResult(
                 call++ == 0
-                    ? V2Completion(Enumerable.Range(0, CaptureTriageOutputContract.MaxTasks)
+                    ? V2ShapeCompletion(Enumerable.Range(0, CaptureTriageOutputContract.MaxTasks)
                         .Select(index => ($"Early task {index}", ExactQuoteFromRequest(request)))
                         .ToArray())
-                    : V2Completion(("Later follow-up", ExactQuoteFromRequest(request))),
+                    : V2ShapeCompletion(("Later follow-up", ExactQuoteFromRequest(request))),
                 100,
                 IsActionable: false,
                 Provider: "OpenAI",
@@ -438,7 +438,7 @@ public class LlmCaptureTriageExtractorTests
                 if (call++ == 0)
                 {
                     return new LlmCompletionResult(
-                        V2Completion(("Discard me", ExactQuoteFromRequest(request))),
+                        V2ShapeCompletion(("Discard me", ExactQuoteFromRequest(request))),
                         100,
                         IsActionable: false,
                         Provider: "OpenAI",

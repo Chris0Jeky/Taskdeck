@@ -99,6 +99,57 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
+    public void ParseAndValidateV3_ShouldPass_ForLlmGoldenFixture()
+    {
+        var json = ReadFixture("valid.llm-v3.json");
+
+        var result = CaptureTriageOutputContract.ParseAndValidateV3(json);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Version.Should().Be(CaptureTriageOutputContract.SchemaVersionV2);
+        result.Value.PromptVersion.Should().Be(CaptureTriageOutputContract.PromptVersionLlmV3);
+        result.Value.Tasks.Should().HaveCount(2);
+        result.Value.Tasks[0].Type.Should().Be("action");
+        result.Value.Tasks[0].AssigneeHint.Should().Be("Alice");
+        result.Value.Tasks[0].DueDateHint.Should().Be("2026-08-07");
+        result.Value.Tasks[0].EvidenceQuote.Should().Contain("revised budget");
+    }
+
+    [Fact]
+    public void ValidateCurrentV3_ShouldRejectHistoricalV2PromptVersion()
+    {
+        var output = BuildHistoricalV2OutputWithDueDateHint("2026-09-05") with
+        {
+            PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV2
+        };
+
+        var result = CaptureTriageOutputContract.ValidateCurrentV3(output);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionLlmV3);
+    }
+
+    [Theory]
+    [InlineData(CaptureTriageOutputContract.PromptVersionLlmV2)]
+    [InlineData(CaptureTriageOutputContract.PromptVersionLlmV3)]
+    public void Serialize_ShouldRetainHistoricalAndCurrentPromptIdentity(string promptVersion)
+    {
+        var output = BuildHistoricalV2OutputWithDueDateHint("2026-09-05") with
+        {
+            PromptVersion = promptVersion
+        };
+
+        var json = CaptureTriageOutputContract.Serialize(output);
+
+        json.Should().Contain($"\"promptVersion\":\"{promptVersion}\"");
+        var parsed = promptVersion == CaptureTriageOutputContract.PromptVersionLlmV2
+            ? CaptureTriageOutputContract.ParseAndValidateV2(json)
+            : CaptureTriageOutputContract.ParseAndValidateV3(json);
+        parsed.IsSuccess.Should().BeTrue();
+        parsed.Value.PromptVersion.Should().Be(promptVersion);
+    }
+
+    [Fact]
     public void ParseAndValidateV2_ShouldRejectMissingRequiredMetadata()
     {
         const string json = """
@@ -125,7 +176,7 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
-    public void ValidateV2_ShouldRejectInvalidMetadataWithoutNormalizingIt()
+    public void ValidateHistoricalV2_ShouldRejectInvalidMetadataWithoutNormalizingIt()
     {
         var validTask = new CaptureTriageTaskV2(
             "Follow up with QA",
@@ -147,7 +198,7 @@ public class CaptureTriageOutputContractTests
 
         foreach (var invalidTask in invalidTasks)
         {
-            var result = CaptureTriageOutputContract.Validate(new CaptureTriageOutputV2(
+            var result = CaptureTriageOutputContract.ValidateHistoricalV2(new CaptureTriageOutputV2(
                 CaptureTriageOutputContract.SchemaVersionV2,
                 CaptureTriageOutputContract.PromptVersionLlmV2,
                 [invalidTask]));
@@ -157,14 +208,14 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
-    public void ValidateV2_ShouldRejectV1PromptVersion()
+    public void ValidateHistoricalV2_ShouldRejectV1PromptVersion()
     {
         var output = new CaptureTriageOutputV2(
             CaptureTriageOutputContract.SchemaVersionV2,
             CaptureTriageOutputContract.PromptVersionLlmV1,
             [new CaptureTriageTaskV2("Follow up with QA", "action", null, null, 0.9m, "I will follow up with QA")]);
 
-        var result = CaptureTriageOutputContract.Validate(output);
+        var result = CaptureTriageOutputContract.ValidateHistoricalV2(output);
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain(CaptureTriageOutputContract.PromptVersionLlmV2);
@@ -329,10 +380,13 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
-    public void ValidateV2_ShouldRejectImplausibleDueDate_WhenAReferenceDateIsSupplied()
+    public void ValidateCurrentV3_ShouldRejectImplausibleDueDate_WhenAReferenceDateIsSupplied()
     {
-        var result = CaptureTriageOutputContract.Validate(
-            BuildOutputWithDueDateHint("2023-09-01"),
+        var result = CaptureTriageOutputContract.ValidateCurrentV3(
+            BuildHistoricalV2OutputWithDueDateHint("2023-09-01") with
+            {
+                PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV3
+            },
             ReferenceDate);
 
         result.IsSuccess.Should().BeFalse();
@@ -341,10 +395,13 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
-    public void ValidateV2_ShouldAcceptPlausibleDueDate_WhenAReferenceDateIsSupplied()
+    public void ValidateCurrentV3_ShouldAcceptPlausibleDueDate_WhenAReferenceDateIsSupplied()
     {
-        var result = CaptureTriageOutputContract.Validate(
-            BuildOutputWithDueDateHint("2026-09-05"),
+        var result = CaptureTriageOutputContract.ValidateCurrentV3(
+            BuildHistoricalV2OutputWithDueDateHint("2026-09-05") with
+            {
+                PromptVersion = CaptureTriageOutputContract.PromptVersionLlmV3
+            },
             ReferenceDate);
 
         result.IsSuccess.Should().BeTrue();
@@ -352,17 +409,17 @@ public class CaptureTriageOutputContractTests
     }
 
     [Fact]
-    public void ValidateV2_ShouldStayFormatOnly_WhenNoReferenceDateIsSupplied()
+    public void ValidateHistoricalV2_ShouldStayFormatOnly_WhenNoReferenceDateIsSupplied()
     {
         // The reference date is optional so stored payloads and callers that hold no capture day
         // keep the contract they were written against; the live path drops an implausible hint
         // earlier, at parse time.
-        var result = CaptureTriageOutputContract.Validate(BuildOutputWithDueDateHint("2023-09-01"));
+        var result = CaptureTriageOutputContract.ValidateHistoricalV2(BuildHistoricalV2OutputWithDueDateHint("2023-09-01"));
 
         result.IsSuccess.Should().BeTrue();
     }
 
-    private static CaptureTriageOutputV2 BuildOutputWithDueDateHint(string dueDateHint) =>
+    private static CaptureTriageOutputV2 BuildHistoricalV2OutputWithDueDateHint(string dueDateHint) =>
         new(CaptureTriageOutputContract.SchemaVersionV2,
             CaptureTriageOutputContract.PromptVersionLlmV2,
             [
@@ -423,6 +480,25 @@ public class CaptureTriageOutputContractTests
         File.Exists(schemaPath).Should().BeTrue();
         var schema = File.ReadAllText(schemaPath);
         schema.Should().Contain("\"const\": \"llm-triage.v2\"");
+        schema.Should().Contain("\"evidenceQuote\"");
+        schema.Should().Contain("\"additionalProperties\": false");
+        schema.Should().Contain("\"required\"");
+    }
+
+    [Fact]
+    public void LlmV3TriageSchemaFile_ShouldDeclareRequiredMetadataAndStrictness()
+    {
+        var schemaPath = Path.Combine(
+            FindRepositoryRoot(),
+            "backend",
+            "src",
+            "Taskdeck.Application",
+            "Schemas",
+            "capture-triage-output.llm-v3.schema.json");
+
+        File.Exists(schemaPath).Should().BeTrue();
+        var schema = File.ReadAllText(schemaPath);
+        schema.Should().Contain("\"const\": \"llm-triage.v3\"");
         schema.Should().Contain("\"evidenceQuote\"");
         schema.Should().Contain("\"additionalProperties\": false");
         schema.Should().Contain("\"required\"");
