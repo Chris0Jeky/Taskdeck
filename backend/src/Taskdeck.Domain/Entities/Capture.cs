@@ -485,11 +485,17 @@ public sealed class Capture : Entity
     /// </summary>
     public void RecordLegacyReconciliation(DateTimeOffset legacyUpdatedAt)
     {
+        LegacyReconciliationVersion = CurrentLegacyReconciliationVersion;
         if (legacyUpdatedAt > UpdatedAt)
         {
             UpdatedAt = legacyUpdatedAt;
         }
     }
+
+    // Version zero includes pre-repair rows whose Keep/Archive timestamp can mask stale text.
+    // Only successful admission or reconciliation earns the current version.
+    public const int CurrentLegacyReconciliationVersion = 1;
+    public int LegacyReconciliationVersion { get; private set; }
 
     public void Retitle(string? userTitle)
     {
