@@ -524,6 +524,23 @@ describe('CardModal', () => {
     )
   })
 
+  it('focuses the replacement inspector when a different card is selected', async () => {
+    const wrapper = mount(CardModal, {
+      attachTo: document.body,
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+    })
+    await flushPromises()
+
+    const commentInput = wrapper.get('#new-card-comment').element as HTMLTextAreaElement
+    commentInput.focus()
+    expect(document.activeElement).toBe(commentInput)
+
+    await wrapper.setProps({ card: { ...card, id: 'card-2', title: 'Second Card' } })
+    await flushPromises()
+
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="Close card editor"]').element)
+  })
+
   it('should emit updated event after successful save', async () => {
     const wrapper = mount(CardModal, {
       props: {
