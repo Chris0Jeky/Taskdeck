@@ -302,6 +302,10 @@ export function useReviewProposals() {
   // permission failure into a fresh false negative, which is the exact class
   // #2194 exists to remove.
   const queueAccessRevoked = ref(false)
+  // Board access is not a global verdict. Keep the board whose list request
+  // received the 403 so a later request for another board never renders that
+  // earlier refusal as though it described the new scope (#2214).
+  const queueAccessRevokedScope = ref<string | null | undefined>(undefined)
   // Raised only when a user-triggered list read is refused again while the
   // revoked panel is already up. Background reads and the first refusal keep
   // the durable authority panel as the only report for that fact.
@@ -639,6 +643,10 @@ export function useReviewProposals() {
     return `${boardScope}:${isArchivedHistory.value ? 'archived' : 'live'}`
   }
 
+  function queueAccessScopeOf(boardId: string | null | undefined): string | null {
+    return boardId ? boardId.toLowerCase() : null
+  }
+
   /**
    * The scope a queue read has actually LANDED for, or `undefined` while no read
    * has landed at all.
@@ -873,6 +881,7 @@ export function useReviewProposals() {
     if (signal?.aborted) return 'aborted'
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
+    const requestedAccessScope = queueAccessScopeOf(activeBoardFilter.value || undefined)
     let outcome: ProposalLoadOutcome = 'landed'
 
     try {
@@ -885,6 +894,18 @@ export function useReviewProposals() {
       // late answer describes the board it queried, never whichever board is on
       // screen when it lands (#2599 item 1).
       const requestedScope = queueScopeOf(filters.boardId)
+      if (
+        queueAccessRevoked.value &&
+        queueAccessRevokedScope.value !== requestedAccessScope
+      ) {
+        // The new scope has not answered yet, so retain its ordinary loading
+        // and error semantics. It must not inherit another board's access
+        // refusal while that request is pending or if it fails transiently.
+        queueAccessRevoked.value = false
+        queueAccessRevokedRetry.value = false
+        queueAccessRevokedScope.value = undefined
+        resumeQueueRefreshAfterPermissionRecovery()
+      }
       // The second argument is forwarded ONLY when a caller supplied options,
       // so every existing call site keeps its exact single-argument shape.
       const loadedProposals = options
@@ -915,6 +936,7 @@ export function useReviewProposals() {
       const accessWasRevoked = queueAccessRevoked.value
       queueAccessRevoked.value = false
       queueAccessRevokedRetry.value = false
+      queueAccessRevokedScope.value = undefined
       if (accessWasRevoked) resumeQueueRefreshAfterPermissionRecovery()
     } catch (e: unknown) {
       if (requestId !== latestProposalLoadRequestId) return 'superseded'
@@ -945,7 +967,7 @@ export function useReviewProposals() {
       // that calls `loadProposals` still gets its failure signal and its
       // 'failed' outcome.
       if (isForbiddenError(e)) {
-        recordQueueAccessRevoked(userInitiated)
+        recordQueueAccessRevoked(requestedAccessScope, userInitiated)
       } else {
         toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
       }
@@ -1046,9 +1068,10 @@ export function useReviewProposals() {
    * three statements would be how the two legs drift into telling a reviewer
    * two different stories about one revocation.
    */
-  function recordQueueAccessRevoked(userInitiated = false) {
+  function recordQueueAccessRevoked(scope: string | null, userInitiated = false) {
     const accessWasAlreadyRevoked = queueAccessRevoked.value
     queueAccessRevoked.value = true
+    queueAccessRevokedScope.value = scope
     if (accessWasAlreadyRevoked && userInitiated) queueAccessRevokedRetry.value = true
     proposals.value = []
     // What is rendered is no longer any read's answer, so no read has landed
@@ -1433,7 +1456,7 @@ export function useReviewProposals() {
         // Board access was revoked. Stop polling rather than hammering an
         // endpoint that will keep refusing, drop rows the server no longer
         // authorises, and let the surface say so.
-        recordQueueAccessRevoked()
+        recordQueueAccessRevoked(queueAccessScopeOf(requestedBoardId))
         return
       }
       // A read for a board the reviewer has already left, or one superseded by
