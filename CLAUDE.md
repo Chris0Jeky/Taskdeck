@@ -22,7 +22,8 @@ evidence report is its acceptance bar before real execution is enabled). The rep
 3. `OUTSTANDING_TASKS.md` — the human-action file (global law 5). Surface open `[ ]` items in every summary.
    `.codex/memories/00_ACTIVE.md` §Lane coordination — read it before claiming an issue: lane split, claim
    and release markers, control-plane PR parking, stacked-PR order. It is not auto-loaded for Claude.
-4. Region rules auto-load by path: `backend/CLAUDE.md`, `frontend/taskdeck-web/CLAUDE.md`,
+4. Region rules auto-load by path: `backend/CLAUDE.md`, `frontend/CLAUDE.md` (imports the shared
+   `frontend/AGENTS.md`), `frontend/taskdeck-web/CLAUDE.md`,
    `scripts/agent_hooks/CLAUDE.md`, `.claude/rules/ci-control.md` (`.github/**`, `ci/**`, `scripts/ci/**`),
    `.claude/rules/docs.md` (`docs/**`, root `*.md`). Workflow skills: `.claude/skills/README.md` — local
    skills beat plugins; they trigger by description.
@@ -37,7 +38,8 @@ evidence report is its acceptance bar before real execution is enabled). The rep
   paths, and it has refused heredocs whose body contained backticks ("dynamic redirect target cannot be
   inspected") — write literal commands, `Write` multi-line edits to a scratchpad script and run it, and pass
   PR bodies with `--body-file`.
-- `AGENTS.md` is Codex-facing and is **not** auto-loaded by Claude; read it only for Codex coordination.
+- Root `AGENTS.md` is Codex-facing and is **not** auto-loaded by Claude; read it for Codex
+  coordination. The scoped `frontend/AGENTS.md` is imported by `frontend/CLAUDE.md` for both runtimes.
 - Permission rules are prefix rules: `Bash(gh:*)`, never `Bash(gh :*)` — `:*` is a wildcard only at the end.
 
 ## Proving checks (narrowest command per seam)
