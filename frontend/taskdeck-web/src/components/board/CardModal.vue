@@ -61,6 +61,21 @@ function focusInitialControl() {
   initialControl.focus()
 }
 
+function shouldPreserveFocusDuringPresentationTransition() {
+  const dialog = dialogRef.value
+  if (!dialog) return true
+
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement) {
+    if (dialog.contains(activeElement)) return true
+    if (activeElement.closest('[role="dialog"]')) return true
+  }
+
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+  ).some((candidate) => candidate !== dialog && !dialog.contains(candidate))
+}
+
 function handleKeydown(event: KeyboardEvent) {
   if (isInspector.value || event.key !== 'Tab' || !dialogRef.value) return
 
@@ -109,6 +124,16 @@ watch(
   async (cardId, previousCardId) => {
     if (!props.isOpen || cardId === previousCardId) return
     await nextTick()
+    focusInitialControl()
+  },
+)
+
+watch(
+  isInspector,
+  async (inspector, wasInspector) => {
+    if (!props.isOpen || inspector || !wasInspector) return
+    await nextTick()
+    if (!props.isOpen || isInspector.value || shouldPreserveFocusDuringPresentationTransition()) return
     focusInitialControl()
   },
 )
