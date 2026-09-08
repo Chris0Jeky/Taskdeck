@@ -1,12 +1,17 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-08
+Last Updated: 2026-09-09
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.
+
+September 8-9 PR closeout (#2235):
+
+- CF06-1's immutable representation header, supplied-lineage validation, forward supersession edge and typed descriptor are merged through PR #2809 (`f935ebcbc`). Original quality, warnings and legacy payload IDs are retained; the store remains unregistered and adds no persistence mapping or runtime writer. The refreshed head passed 21 Domain and one Application test plus required hosted CI. #2260 remains open for the transactional store and broader acceptance; ordinary headers accepting a null processing-run identity is a tracked P2 contract gap, not a proven runtime authorization boundary.
+- PR #2813's earlier delivery record is merged and its post-merge CI passed. The separately repaired Review feedback and SQLite rollback PRs are not yet shipped. Exact source heads, review dispositions and remaining hosted gates are in the [batch closeout](analysis/2026-09-09-codex-pr-closeout.md). Human decisions in `OUTSTANDING_TASKS.md` remain open.
 
 September 8 parallel delivery wave (merged work; #2235):
 
