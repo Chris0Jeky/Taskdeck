@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260908003651_AddWorkspaceInsightsAndMemory")]
+    partial class AddWorkspaceInsightsAndMemory
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
@@ -2472,27 +2475,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("SourceAssetTextPayloads", (string)null);
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ThinkingDeck", b =>
-                {
-                    b.Property<Guid>("CardId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LayersJson")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Revision")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("SchemaVersion")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("CardId");
-
-                    b.ToTable("ThinkingDecks", (string)null);
-                });
-
             modelBuilder.Entity("Taskdeck.Domain.Entities.TomorrowNote", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3240,15 +3222,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.HasOne("Taskdeck.Domain.Entities.SourceAsset", null)
                         .WithOne("TextPayload")
                         .HasForeignKey("Taskdeck.Domain.Entities.SourceAssetTextPayload", "SourceAssetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ThinkingDeck", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.Card", null)
-                        .WithOne()
-                        .HasForeignKey("Taskdeck.Domain.Entities.ThinkingDeck", "CardId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });
