@@ -11,8 +11,8 @@ multi_agent = true
 # Each thread starts its own MCP stack. 10 threads x this stack measured ~21 gateway
 # processes in one session (agent-harness#87) — keep the cap inside the right-sized
 # fan-out range (<=3-5; <=8-12 only for a genuine sweep).
-max_threads = 4
-max_depth = 2
+max_threads = 10
+max_depth = 3
 job_max_runtime_seconds = 8000
 
 [agents.issue_worker]
