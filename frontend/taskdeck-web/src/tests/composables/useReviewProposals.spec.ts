@@ -1154,6 +1154,26 @@ describe('useReviewProposals', () => {
       expect(rp.queueAccessRevokedRetry.value).toBe(false)
     })
 
+    it('keeps repeated refusal feedback when the second explicit read changes scope', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await rp.loadProposals()
+
+      // Clearing board A's authority claim before the board B read must not
+      // erase the fact that this is the second explicit refusal.
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
+    })
+
     it('does not raise the retry disclosure for a non-user list read', async () => {
       mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
       const rp = useReviewProposals()

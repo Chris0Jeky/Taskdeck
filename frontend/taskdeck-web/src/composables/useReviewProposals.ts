@@ -882,6 +882,13 @@ export function useReviewProposals() {
     reviewLoadPerf.start()
     const requestId = ++latestProposalLoadRequestId
     const requestedAccessScope = queueAccessScopeOf(activeBoardFilter.value || undefined)
+    // A scope change clears the previous board's authority claim before the
+    // new request starts, but an explicit 403 for that request is still a
+    // repeated refusal from the reviewer's perspective. Carry only this
+    // request-local fact into the 403 handler; a 500/other failure never calls
+    // `recordQueueAccessRevoked`, so it cannot carry the old board into view.
+    const hadRevokedPreviousScope =
+      queueAccessRevoked.value && queueAccessRevokedScope.value !== requestedAccessScope
     let outcome: ProposalLoadOutcome = 'landed'
 
     try {
@@ -967,7 +974,7 @@ export function useReviewProposals() {
       // that calls `loadProposals` still gets its failure signal and its
       // 'failed' outcome.
       if (isForbiddenError(e)) {
-        recordQueueAccessRevoked(requestedAccessScope, userInitiated)
+        recordQueueAccessRevoked(requestedAccessScope, userInitiated, hadRevokedPreviousScope)
       } else {
         toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
       }
@@ -1068,11 +1075,17 @@ export function useReviewProposals() {
    * three statements would be how the two legs drift into telling a reviewer
    * two different stories about one revocation.
    */
-  function recordQueueAccessRevoked(scope: string | null, userInitiated = false) {
+  function recordQueueAccessRevoked(
+    scope: string | null,
+    userInitiated = false,
+    hadRevokedPreviousScope = false,
+  ) {
     const accessWasAlreadyRevoked = queueAccessRevoked.value
     queueAccessRevoked.value = true
     queueAccessRevokedScope.value = scope
-    if (accessWasAlreadyRevoked && userInitiated) queueAccessRevokedRetry.value = true
+    if ((accessWasAlreadyRevoked || hadRevokedPreviousScope) && userInitiated) {
+      queueAccessRevokedRetry.value = true
+    }
     proposals.value = []
     // What is rendered is no longer any read's answer, so no read has landed
     // for this scope any more (#2599 item 1). The revoked panel has its own
