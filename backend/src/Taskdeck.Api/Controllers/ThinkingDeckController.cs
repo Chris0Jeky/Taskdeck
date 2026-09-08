@@ -10,7 +10,7 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/boards/{boardId}/cards/{cardId}/thinking")]
-public sealed class ThinkingDeckController : AuthenticatedControllerBase
+public class ThinkingDeckController : AuthenticatedControllerBase
 {
     private readonly ThinkingDeckService service;
     public ThinkingDeckController(ThinkingDeckService service, IUserContext userContext) : base(userContext)
