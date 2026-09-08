@@ -31,6 +31,10 @@ const formText = ref('')
 const formStatus = ref<MemoryStatus>('statement')
 const formError = ref<string | null>(null)
 const saving = ref(false)
+const discardRequested = ref(false)
+const editorBaseline = ref('')
+const formSnapshot = () => JSON.stringify([formTitle.value, formText.value, formStatus.value])
+const editorDirty = computed(() => showEditor.value && formSnapshot() !== editorBaseline.value)
 const busyMemoryIds = ref(new Set<string>())
 const memoryErrors = ref<Record<string, string>>({})
 
@@ -127,7 +131,7 @@ async function loadMemories() {
   }
 }
 
-const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => showEditor.value && (Boolean(formTitle.value.trim() || formText.value.trim()) || saving.value))
+const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => editorDirty.value || saving.value)
 
 function openCreate() {
   editingId.value = null
@@ -135,6 +139,7 @@ function openCreate() {
   formText.value = ''
   formStatus.value = 'statement'
   formError.value = null
+  editorBaseline.value = formSnapshot()
   showEditor.value = true
 }
 
@@ -144,13 +149,21 @@ function openEdit(memory: Memory) {
   formText.value = memory.text
   formStatus.value = memory.status
   formError.value = null
+  editorBaseline.value = formSnapshot()
   showEditor.value = true
 }
 
 function closeEditor() {
+  discardRequested.value = false
   showEditor.value = false
   editingId.value = null
   formError.value = null
+}
+
+function requestCloseEditor() {
+  if (saving.value) return
+  if (editorDirty.value) discardRequested.value = true
+  else closeEditor()
 }
 
 async function saveMemory() {
@@ -275,7 +288,7 @@ watch(queryBoardId, () => {
           <p class="paper-memory__eyebrow">{{ editingId ? 'Revision' : 'New entry' }}</p>
           <h2 id="memory-editor-title">{{ editorHeading }}</h2>
         </div>
-        <PaperHLBtn variant="ghost" :disabled="saving" @click="closeEditor">Close</PaperHLBtn>
+        <PaperHLBtn variant="ghost" :disabled="saving" @click="requestCloseEditor">Close</PaperHLBtn>
       </div>
       <form @submit.prevent="saveMemory">
         <label class="paper-memory__form-field" for="memory-title">
@@ -299,7 +312,7 @@ watch(queryBoardId, () => {
           <PaperHLBtn type="submit" variant="ember" :disabled="saving || !formTitle.trim() || !formText.trim()">
             {{ saving ? 'Saving…' : editingId ? 'Save correction' : 'Save memory' }}
           </PaperHLBtn>
-          <PaperHLBtn type="button" variant="ghost" :disabled="saving" @click="closeEditor">Cancel</PaperHLBtn>
+          <PaperHLBtn type="button" variant="ghost" :disabled="saving" @click="requestCloseEditor">Cancel</PaperHLBtn>
           <span class="paper-memory__form-note">Private context only; the board stays unchanged.</span>
         </div>
         <p v-if="formError" class="paper-memory__error" role="alert">{{ formError }}</p>
@@ -390,6 +403,7 @@ watch(queryBoardId, () => {
       </article>
     </section>
     <TdDialog :open="leaveRequested" title="Leave unsaved memory?" description="Save your memory before leaving, or discard the current draft." @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" :disabled="saving" @click="decide(true)">Discard memory draft and leave</button></template></TdDialog>
+    <TdDialog :open="discardRequested" title="Discard memory draft?" description="Your changes have not been saved. Keep editing or explicitly discard this draft." @close="discardRequested = false"><template #footer><button type="button" @click="discardRequested = false">Keep editing</button><button type="button" :disabled="saving" @click="closeEditor">Discard draft</button></template></TdDialog>
   </main>
 </template>
 

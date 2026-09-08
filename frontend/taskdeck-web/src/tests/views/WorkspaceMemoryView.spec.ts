@@ -75,6 +75,34 @@ async function settle() {
 }
 
 describe('WorkspaceMemoryView', () => {
+  it.each(['Close', 'Cancel'])('keeps a new private draft until %s is explicitly confirmed', async (action) => {
+    const wrapper = mount(WorkspaceMemoryView, { global: { stubs: { Teleport: true } } })
+    await settle()
+    const button = (name: string) => wrapper.findAll('button').find(item => item.text() === name)!
+    await wrapper.get('[data-action="new-memory"]').trigger('click')
+    await wrapper.get('#memory-title').setValue('An unfinished thought')
+    await wrapper.get('#memory-text').setValue('Keep these exact words until I decide.')
+    await button(action).trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard memory draft?')
+    await button('Keep editing').trigger('click')
+    expect((wrapper.get('#memory-text').element as HTMLTextAreaElement).value).toBe('Keep these exact words until I decide.')
+    await button(action).trigger('click')
+    await button('Discard draft').trigger('click')
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(api.createMemory).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('closes an unchanged existing memory without a discard prompt', async () => {
+    const wrapper = mount(WorkspaceMemoryView, { global: { stubs: { Teleport: true } } })
+    await settle()
+    await wrapper.get('[data-action="edit-memory"]').trigger('click')
+    await wrapper.findAll('button').find(item => item.text() === 'Close')!.trigger('click')
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(wrapper.find('form').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     routeMock.query = {}
