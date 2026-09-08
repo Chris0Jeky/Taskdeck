@@ -1,0 +1,6 @@
+{
+  "fixtureId": "text-action-001",
+  "candidates": [
+    {"kind": "Action", "key": "action:prepare-local-demo-archive"}
+  ]
+}

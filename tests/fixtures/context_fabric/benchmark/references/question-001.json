@@ -1,0 +1,6 @@
+{
+  "fixtureId": "text-question-001",
+  "candidates": [
+    {"kind": "Question", "key": "question:preserve-source-anchors"}
+  ]
+}
