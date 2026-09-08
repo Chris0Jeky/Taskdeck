@@ -13,6 +13,8 @@ public class WorkspaceMemoryConfiguration : IEntityTypeConfiguration<WorkspaceMe
         b.Property(x => x.OriginalText).HasMaxLength(8000); b.Property(x => x.Status).HasMaxLength(30);
         b.Property(x => x.Revision).IsConcurrencyToken();
         b.HasIndex(x => new { x.UserId, x.BoardId });
+        b.Property(x => x.SourceQuestionHash).HasMaxLength(64);
+        b.HasIndex(x => new { x.UserId, x.SourceCardId, x.SourceLayerId, x.SourceQuestionHash }).IsUnique();
         b.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne<Board>().WithMany().HasForeignKey(x => x.BoardId).OnDelete(DeleteBehavior.Cascade);
         b.HasMany(x => x.History).WithOne().HasForeignKey(x => x.MemoryId).OnDelete(DeleteBehavior.Cascade);

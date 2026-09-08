@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, toRef, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
+import ThinkingQuestionAnswer from './ThinkingQuestionAnswer.vue'
 import { useThinkingDeck } from '../../composables/useThinkingDeck'
 import type { ThinkingKind, ThinkingLayer } from '../../types/thinking'
 
@@ -11,7 +12,9 @@ const view = ref<'stack' | 'path'>('stack')
 const confirmReload = ref(false)
 const pendingRemoval = ref<string | null>(null)
 const kinds: ThinkingKind[] = ['note', 'question', 'options', 'steps', 'thread']
-watch(dirty, value => emit('dirty-change', value), { immediate: true })
+const privateDrafts = ref<Record<string, boolean>>({})
+const anyDirty = computed(() => dirty.value || layers.value.some(layer => privateDrafts.value[layer.id]))
+watch(anyDirty, value => emit('dirty-change', value), { immediate: true })
 function addItem(layer: ThinkingLayer) {
   if (layer.items.length < 50) layer.items.push({ id: crypto.randomUUID(), text: 'New item', completed: false })
 }
@@ -46,9 +49,9 @@ function reload() { confirmReload.value = false; void load() }
     <template v-if="ready">
       <p v-if="!canWrite" role="status" class="intro">Read-only · You can explore these thoughts. Editing needs board write access.</p>
       <p v-if="!layers.length" class="empty">This task can stay simple. Start a layer when you need space to work something out.</p>
-      <fieldset :disabled="!canWrite" aria-label="Thinking layers">
       <ol class="layers" :class="`layers--${view}`">
         <li v-for="(layer, index) in layers" :key="layer.id" class="layer">
+          <fieldset :disabled="!canWrite" :aria-label="`Shared thinking layer ${index + 1}`">
           <div class="layer-top"><span class="layer-kind">{{ index + 1 }} · {{ layer.kind }}</span>
             <div class="layer-tools">
               <button type="button" :disabled="index === 0" :aria-label="`Move layer ${index + 1} up`" @click="move(index, -1)">↑</button>
@@ -77,8 +80,11 @@ function reload() { confirmReload.value = false; void load() }
           </div>
           <p v-if="layer.kind === 'options'" class="hint">Choosing keeps every alternative.</p>
           <p v-if="layer.kind === 'steps'" class="hint">These are thinking steps. Checking one does not change the task’s board status.</p>
+          </fieldset>
+          <ThinkingQuestionAnswer v-if="layer.kind === 'question'" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :revision="revision" :source-ready="!dirty && !saving" @dirty-change="privateDrafts[layer.id] = $event" />
         </li>
       </ol>
+      <fieldset :disabled="!canWrite" aria-label="Add shared thinking layers">
       <div class="add-layers" role="group" aria-label="Add thinking layer"><button v-for="kind in kinds" :key="kind" type="button" :disabled="layers.length >= 40" @click="add(kind)">+ {{ kind }}</button></div>
       </fieldset>
       <footer class="deck-footer">

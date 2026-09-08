@@ -85,7 +85,7 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
     {
         if (!await CanRead(userId, boardId, ct)) return Missing<List<WorkspaceMemoryDto>>();
         var memories = await repository.MemoriesAsync(userId, boardId, ct);
-        return Result.Success(memories.Where(x => x.Archived == archived).OrderByDescending(x => x.UpdatedAt).Select(Map).ToList());
+        return Result.Success(memories.Where(x => x.Archived == archived).OrderByDescending(x => x.UpdatedAt).Select(MapMemory).ToList());
     }
 
     public async Task<Result<WorkspaceMemoryDto>> CreateAsync(Guid userId, CreateWorkspaceMemoryDto dto, CancellationToken ct)
@@ -95,7 +95,7 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
         {
             var memory = new WorkspaceMemory(userId, dto.BoardId, dto.Title, dto.Text, dto.Status);
             repository.Add(memory);
-            return await repository.SaveAsync(ct) ? Result.Success(Map(memory)) : Conflict<WorkspaceMemoryDto>();
+            return await repository.SaveAsync(ct) ? Result.Success(MapMemory(memory)) : Conflict<WorkspaceMemoryDto>();
         }
         catch (DomainException ex) { return Result.Failure<WorkspaceMemoryDto>(ex.ErrorCode, ex.Message); }
     }
@@ -122,7 +122,7 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
             }
             if (dto.Status == "statement") item.Resolve(DateTimeOffset.UtcNow);
             else item.Act("snooze", DateTimeOffset.UtcNow);
-            return await repository.SaveAsync(ct) ? Result.Success(Map(memory)) : Conflict<WorkspaceMemoryDto>();
+            return await repository.SaveAsync(ct) ? Result.Success(MapMemory(memory)) : Conflict<WorkspaceMemoryDto>();
         }
         catch (DomainException ex) { return Result.Failure<WorkspaceMemoryDto>(ex.ErrorCode, ex.Message); }
     }
@@ -137,12 +137,13 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
             if (dto != null) memory.Revise(dto.Title, dto.Text, dto.Status);
             else memory.SetArchived(archive!.Archived);
             await Revalidate(userId, memory.BoardId, false, ct);
-            return await repository.SaveAsync(ct) ? Result.Success(Map(memory)) : Conflict<WorkspaceMemoryDto>();
+            return await repository.SaveAsync(ct) ? Result.Success(MapMemory(memory)) : Conflict<WorkspaceMemoryDto>();
         }
         catch (DomainException ex) { return Result.Failure<WorkspaceMemoryDto>(ex.ErrorCode, ex.Message); }
     }
 
     private static QuietInsightDto Map(QuietInsight x) => new(x.Id, x.BoardId, x.CardId, x.MemoryId, x.Rule, x.Title, x.Detail, x.State, x.Evidence, x.CheckedAt, x.SnoozeUntil);
-    private static WorkspaceMemoryDto Map(WorkspaceMemory x) => new(x.Id, x.BoardId, x.Title, x.Text, x.OriginalText, x.Status, x.Archived, x.Revision, x.CreatedAt,
-        x.History.OrderByDescending(h => h.Revision).Select(h => new WorkspaceMemoryRevisionDto(h.Title, h.Text, h.Status, h.Revision, h.Archived, h.CreatedAt)).ToList(), x.OriginalEvidence);
+    internal static WorkspaceMemoryDto MapMemory(WorkspaceMemory x) => new(x.Id, x.BoardId, x.Title, x.Text, x.OriginalText, x.Status, x.Archived, x.Revision, x.CreatedAt,
+        x.History.OrderByDescending(h => h.Revision).Select(h => new WorkspaceMemoryRevisionDto(h.Title, h.Text, h.Status, h.Revision, h.Archived, h.CreatedAt)).ToList(), x.OriginalEvidence,
+        x.SourceCardId.HasValue && x.SourceLayerId.HasValue && x.SourceDeckRevision.HasValue ? new ThinkingAnswerSourceDto(x.SourceCardId.Value, x.SourceLayerId.Value, x.SourceDeckRevision.Value) : null);
 }

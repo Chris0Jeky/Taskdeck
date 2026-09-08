@@ -9,4 +9,6 @@ public interface IThinkingDeckRepository
     Task<IReadOnlyList<ThinkingDeck>> GetByCardIdsAsync(IReadOnlyCollection<Guid> cardIds, CancellationToken cancellationToken);
     // Stage alongside the new card; the existing board-import unit of work commits both atomically.
     void AddForImport(ThinkingDeck deck);
+    // Include a source revision assertion in the next shared-context save without changing content.
+    void GuardRevision(ThinkingDeck deck);
 }

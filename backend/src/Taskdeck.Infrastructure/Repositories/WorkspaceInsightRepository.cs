@@ -7,6 +7,8 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public class WorkspaceInsightRepository(TaskdeckDbContext db) : IWorkspaceInsightRepository
 {
+    public Task<WorkspaceMemory?> ThinkingAnswerAsync(Guid userId, Guid cardId, Guid layerId, string questionHash, CancellationToken ct) =>
+        db.Set<WorkspaceMemory>().Include(x => x.History).SingleOrDefaultAsync(x => x.UserId == userId && x.SourceCardId == cardId && x.SourceLayerId == layerId && x.SourceQuestionHash == questionHash, ct);
     public Task<List<QuietInsight>> InsightsAsync(Guid userId, Guid boardId, CancellationToken ct) => db.Set<QuietInsight>().Where(x => x.UserId == userId && x.BoardId == boardId).ToListAsync(ct);
     public Task<QuietInsight?> InsightAsync(Guid userId, Guid id, CancellationToken ct) => db.Set<QuietInsight>().SingleOrDefaultAsync(x => x.UserId == userId && x.Id == id, ct);
     public Task<List<WorkspaceMemory>> MemoriesAsync(Guid userId, Guid boardId, CancellationToken ct) => db.Set<WorkspaceMemory>().Include(x => x.History).Where(x => x.UserId == userId && x.BoardId == boardId).ToListAsync(ct);

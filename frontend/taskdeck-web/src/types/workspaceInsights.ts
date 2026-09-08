@@ -34,6 +34,7 @@ export interface MemoryHistoryEntry {
 }
 
 export interface Memory {
+  thinkingSource?: { cardId: string; layerId: string; deckRevision: number } | null
   id: string
   boardId: string
   title: string

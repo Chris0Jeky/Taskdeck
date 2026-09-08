@@ -10,6 +10,10 @@ public class WorkspaceMemory : Entity
     public Guid BoardId { get; private set; }
     public Guid? InsightId { get; private set; }
     public string? OriginalEvidence { get; private set; }
+    public Guid? SourceCardId { get; private set; }
+    public Guid? SourceLayerId { get; private set; }
+    public long? SourceDeckRevision { get; private set; }
+    public string? SourceQuestionHash { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public string Text { get; private set; } = string.Empty;
     public string OriginalText { get; private set; } = string.Empty;
@@ -29,6 +33,12 @@ public class WorkspaceMemory : Entity
     {
         Validate(title, text, status);
         RememberRevision(); Title = title; Text = text; Status = status; Revision++; Touch();
+    }
+    public void AttachThinkingSource(Guid cardId, Guid layerId, long deckRevision, string questionHash)
+    {
+        if (SourceCardId.HasValue || cardId == Guid.Empty || layerId == Guid.Empty || deckRevision < 1 || questionHash.Length != 64)
+            throw new DomainException(ErrorCodes.ValidationError, "Invalid thinking question source.");
+        SourceCardId = cardId; SourceLayerId = layerId; SourceDeckRevision = deckRevision; SourceQuestionHash = questionHash;
     }
     public void SetArchived(bool archived)
     {

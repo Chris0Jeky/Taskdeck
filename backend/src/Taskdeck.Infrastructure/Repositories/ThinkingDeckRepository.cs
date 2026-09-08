@@ -17,6 +17,12 @@ public sealed class ThinkingDeckRepository(TaskdeckDbContext context) : IThinkin
     }
 
     public void AddForImport(ThinkingDeck deck) => context.Set<ThinkingDeck>().Add(deck);
+    public void GuardRevision(ThinkingDeck deck)
+    {
+        var entry = context.Attach(deck);
+        entry.Property(x => x.Revision).IsModified = true;
+        entry.Property(x => x.Revision).OriginalValue = deck.Revision;
+    }
 
     public Task<ThinkingDeck?> GetAsync(Guid cardId, CancellationToken cancellationToken) =>
         context.Set<ThinkingDeck>().AsNoTracking().SingleOrDefaultAsync(deck => deck.CardId == cardId, cancellationToken);
