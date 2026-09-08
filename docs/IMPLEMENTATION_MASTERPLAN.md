@@ -2136,6 +2136,10 @@ Rule:
   - Mitigation: release-harness coverage of upgrade paths with inherited configuration, plus honest
     secret-free startup diagnostics (`#1876`)
 
+## Board controls residual acceptance (2026-09-08)
+
+PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.
+
 ## CI10-2 remaining acceptance (2026-09-08)
 
 PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.

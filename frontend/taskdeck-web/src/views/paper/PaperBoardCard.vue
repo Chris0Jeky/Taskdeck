@@ -246,7 +246,6 @@ function onDragHandleMouseDown() {
   position: relative;
   display: block;
   width: 100%;
-  max-width: 248px;
   background: var(--paper-card);
   border: 1px solid var(--line);
   border-radius: var(--r-2);

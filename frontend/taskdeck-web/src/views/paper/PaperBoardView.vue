@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
+import { useSessionStore } from '../../store/sessionStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
 import { useViewportMode } from '../../composables/useViewportMode'
 import PaperBoardColumn from './PaperBoardColumn.vue'
@@ -78,6 +79,7 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
+const session = useSessionStore()
 const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
@@ -100,7 +102,7 @@ type BoardDensity = 'comfortable' | 'compact'
 const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
 const BOARD_COLUMN_WIDTH_KEY = 'td.paper.board-column-width.v1'
-const BOARD_COLLAPSED_COLUMNS_KEY = 'td.paper.board-collapsed-columns.v1'
+const BOARD_COLLAPSED_COLUMNS_KEY = 'td.paper.board-collapsed-columns.v2'
 /*
  * Card detail is a *presentation* preference, not a card prop: `titles` hides
  * the excerpt and the meta row through the board's own scoped rules while every
@@ -187,6 +189,28 @@ function parseCollapsedColumnIds(value: string | null): Set<string> {
   }
 }
 
+/**
+ * Collapsing a lane is an individual workspace preference. The old v1 key was
+ * shared by every account using the browser profile, so it is deliberately not
+ * migrated into whichever account happens to load the board first. Until an
+ * authenticated identity is available the preference remains session-local.
+ */
+function collapsedColumnsStorageKey(userId: string | null | undefined): string | null {
+  const normalizedUserId = userId?.trim()
+  return normalizedUserId ? `${BOARD_COLLAPSED_COLUMNS_KEY}:${normalizedUserId}` : null
+}
+
+function readCollapsedColumnIds(userId: string | null | undefined): Set<string> {
+  const storageKey = collapsedColumnsStorageKey(userId)
+  if (!storageKey) return new Set()
+
+  try {
+    return parseCollapsedColumnIds(window.localStorage.getItem(storageKey))
+  } catch {
+    return new Set()
+  }
+}
+
 onMounted(() => {
   try {
     density.value = window.localStorage.getItem(BOARD_DENSITY_KEY) === 'compact'
@@ -211,15 +235,16 @@ onMounted(() => {
   } catch {
     cardDetail.value = DEFAULT_BOARD_CARD_DETAIL
   }
-  try {
-    persistedCollapsedColumnIds.value = parseCollapsedColumnIds(
-      window.localStorage.getItem(BOARD_COLLAPSED_COLUMNS_KEY),
-    )
-  } catch {
-    persistedCollapsedColumnIds.value = new Set()
-  }
+  persistedCollapsedColumnIds.value = readCollapsedColumnIds(session.userId)
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
+
+watch(
+  () => session.userId,
+  (userId) => {
+    persistedCollapsedColumnIds.value = readCollapsedColumnIds(userId)
+  },
+)
 
 function toggleDensity() {
   density.value = density.value === 'compact' ? 'comfortable' : 'compact'
@@ -280,11 +305,11 @@ function toggleColumnCollapse(column: Column) {
   }
   persistedCollapsedColumnIds.value = next
 
+  const storageKey = collapsedColumnsStorageKey(session.userId)
+  if (!storageKey) return
+
   try {
-    window.localStorage.setItem(
-      BOARD_COLLAPSED_COLUMNS_KEY,
-      JSON.stringify([...next].sort()),
-    )
+    window.localStorage.setItem(storageKey, JSON.stringify([...next].sort()))
   } catch {
     // Local fallback only. The collapse remains active for this mounted board.
   }
@@ -476,7 +501,16 @@ function confirmPendingDiscard() {
 
 function guardDirtyNavigation(): boolean | Promise<boolean> {
   if (!selectedCard.value || !cardEditorDirty.value) return true
-  if (discardDialogOpen.value) return false
+
+  // Router navigation can be requested again while the discard confirmation is
+  // open (for example, a second board link before the first choice). The first
+  // request is no longer the user's intent, so settle it and let the newest
+  // request own the single confirmation rather than leaving a stale route
+  // promise behind the dialog.
+  pendingNavigation.value?.resolve(false)
+  pendingNavigation.value = null
+  pendingCard.value = null
+
   return new Promise<boolean>((resolve) => {
     pendingNavigation.value = { resolve }
   })
