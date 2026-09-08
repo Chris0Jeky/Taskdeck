@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -106,6 +107,68 @@ public sealed class ThinkingDeckApiTests(TestWebApplicationFactory factory) : IC
         var (board, card) = await Setup(client);
         var layers = new[] { new ThinkingLayer(Guid.NewGuid(), kind, "Bad selection", "", [], Guid.NewGuid()) };
         (await client.PutAsJsonAsync(Url(board.Id, card.Id), new SaveThinkingDeckDto(0, layers))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task BoardJsonRoundTripPreservesThinkingOnNewCards_WithoutWritingSource()
+    {
+        using var owner = factory.CreateClient();
+        using var importer = factory.CreateClient();
+        var (board, card) = await Setup(owner);
+        await ApiTestHarness.AuthenticateAsync(importer, "thinking-importer");
+        var option = new ThinkingItem(Guid.NewGuid(), "Chosen route");
+        ThinkingLayer[] layers = [new(Guid.NewGuid(), "options", "Routes", "Keep context", [option, new(Guid.NewGuid(), "Alternative")], option.Id)];
+        (await owner.PutAsJsonAsync(Url(board.Id, card.Id), new SaveThinkingDeckDto(0, layers))).StatusCode.Should().Be(HttpStatusCode.OK);
+        await ApiTestHarness.AssertForbiddenAsync(await importer.GetAsync($"/api/export/boards/{board.Id}/json"));
+        var exported = await owner.GetFromJsonAsync<ExportBoardDto>($"/api/export/boards/{board.Id}/json");
+        exported!.ThinkingDecks.Should().HaveCount(1);
+        exported.ThinkingDecks![0].CardId.Should().Be(card.Id);
+        var importedResponse = await importer.PostAsJsonAsync("/api/import/boards/json", exported);
+        importedResponse.StatusCode.Should().Be(HttpStatusCode.OK, await importedResponse.Content.ReadAsStringAsync());
+        var imported = (await importedResponse.Content.ReadFromJsonAsync<ImportResultDto>())!;
+        imported.BoardId.Should().NotBe(board.Id);
+        var importedCards = await importer.GetFromJsonAsync<List<CardDto>>($"/api/boards/{imported.BoardId}/cards");
+        importedCards.Should().HaveCount(1);
+        var importedCard = importedCards![0];
+        importedCard.Id.Should().NotBe(card.Id);
+        var deck = await importer.GetFromJsonAsync<ThinkingDeckDto>(Url(imported.BoardId!.Value, importedCard.Id));
+        deck!.Revision.Should().Be(1);
+        deck.Layers.Should().BeEquivalentTo(layers, options => options.WithStrictOrdering());
+        (await importer.PutAsJsonAsync(Url(imported.BoardId.Value, importedCard.Id), new SaveThinkingDeckDto(1, []))).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await owner.GetFromJsonAsync<ThinkingDeckDto>(Url(board.Id, card.Id)))!.Layers.Should().BeEquivalentTo(layers);
+    }
+
+    [Fact]
+    public async Task ImportRejectsForeignThinkingReferencesAndUnsupportedSchema_WithoutPartialBoard()
+    {
+        using var client = factory.CreateClient();
+        var (board, card) = await Setup(client);
+        var exported = (await client.GetFromJsonAsync<ExportBoardDto>($"/api/export/boards/{board.Id}"))!;
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var before = await db.Boards.CountAsync();
+        var foreignReference = exported with { ThinkingDecks = [new(Guid.NewGuid(), new(1, []))] };
+        (await client.PostAsJsonAsync("/api/import/boards/json", foreignReference)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var unsupportedSchema = exported with { ThinkingDecks = [new(card.Id, new(99, []))] };
+        (await client.PostAsJsonAsync("/api/import/boards/json", unsupportedSchema)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var invalidLayer = exported with { ThinkingDecks = [new(card.Id, new(1, [new(Guid.NewGuid(), "unknown", "", "", [])]))] };
+        (await client.PostAsJsonAsync("/api/import/boards/json", invalidLayer)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await db.Boards.CountAsync()).Should().Be(before);
+        (await client.GetFromJsonAsync<ThinkingDeckDto>(Url(board.Id, card.Id)))!.Revision.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task LegacyBoardExportWithoutThinkingStillImports()
+    {
+        using var client = factory.CreateClient();
+        var (board, _) = await Setup(client);
+        var exported = JsonNode.Parse(await client.GetStringAsync($"/api/export/boards/{board.Id}/json"))!.AsObject();
+        exported.Remove("thinkingDecks");
+        var response = await client.PostAsJsonAsync("/api/import/boards/json", exported);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var imported = (await response.Content.ReadFromJsonAsync<ImportResultDto>())!;
+        var cards = (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{imported.BoardId}/cards"))!;
+        (await client.GetFromJsonAsync<ThinkingDeckDto>(Url(imported.BoardId!.Value, cards[0].Id)))!.Layers.Should().BeEmpty();
     }
 
     private async Task<(BoardDto, CardDto)> Setup(HttpClient client)

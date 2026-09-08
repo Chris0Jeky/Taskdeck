@@ -8,6 +8,16 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public sealed class ThinkingDeckRepository(TaskdeckDbContext context) : IThinkingDeckRepository
 {
+    public async Task<IReadOnlyList<ThinkingDeck>> GetByCardIdsAsync(IReadOnlyCollection<Guid> cardIds, CancellationToken cancellationToken)
+    {
+        var result = new List<ThinkingDeck>();
+        foreach (var batch in cardIds.Distinct().Chunk(500))
+            result.AddRange(await context.Set<ThinkingDeck>().AsNoTracking().Where(deck => batch.Contains(deck.CardId)).ToListAsync(cancellationToken));
+        return result;
+    }
+
+    public void AddForImport(ThinkingDeck deck) => context.Set<ThinkingDeck>().Add(deck);
+
     public Task<ThinkingDeck?> GetAsync(Guid cardId, CancellationToken cancellationToken) =>
         context.Set<ThinkingDeck>().AsNoTracking().SingleOrDefaultAsync(deck => deck.CardId == cardId, cancellationToken);
 
