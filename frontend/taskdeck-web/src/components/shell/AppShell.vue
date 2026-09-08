@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
+import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
 import { useBoardStore } from '../../store/boardStore'
@@ -12,6 +13,7 @@ import { useViewportMode } from '../../composables/useViewportMode'
 import { provideShellKeyboardHelp } from '../../composables/useShellKeyboardHelp'
 import {
   APP_SHELL_SHORTCUT_BINDINGS,
+  shortcutBindingIsAvailable,
   strokeMatches,
   type AppShellShortcutAction,
   type AppShellShortcutBinding,
@@ -44,6 +46,7 @@ type SidebarRef = {
 
 const router = useRouter()
 const session = useSessionStore()
+const featureFlags = useFeatureFlagStore()
 const workspace = useWorkspaceStore()
 const capture = useCaptureStore()
 const board = useBoardStore()
@@ -241,6 +244,10 @@ const CHORD_TIMEOUT_MS = 1_000
 let pendingChord: AppShellShortcutBinding | null = null
 let chordTimer: ReturnType<typeof window.setTimeout> | null = null
 
+function shortcutIsAvailable(binding: AppShellShortcutBinding): boolean {
+  return shortcutBindingIsAvailable(binding, (flag) => featureFlags.isEnabled(flag))
+}
+
 function clearPendingChord() {
   pendingChord = null
   if (chordTimer !== null) {
@@ -385,6 +392,7 @@ function handleKeydown(event: KeyboardEvent) {
       !textEntryTarget &&
       nextStroke &&
       strokeMatches(event, nextStroke) &&
+      shortcutIsAvailable(chord) &&
       keyboardOwningSurfaces().length === 0
     ) {
       consumeShortcut(event)
@@ -396,6 +404,7 @@ function handleKeydown(event: KeyboardEvent) {
   const direct = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
     binding.sequence.length === 1 &&
     strokeMatches(event, binding.sequence[0]!) &&
+    shortcutIsAvailable(binding) &&
     (!textEntryTarget || binding.allowInTextEntry === true) &&
     shellSurfaceOwnsAction(keyboardOwningSurfaces(), binding.action),
   )
@@ -413,7 +422,9 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   const chord = APP_SHELL_SHORTCUT_BINDINGS.find((binding) =>
-    binding.sequence.length > 1 && strokeMatches(event, binding.sequence[0]!),
+    binding.sequence.length > 1 &&
+    shortcutIsAvailable(binding) &&
+    strokeMatches(event, binding.sequence[0]!),
   )
   if (chord) {
     consumeShortcut(event)

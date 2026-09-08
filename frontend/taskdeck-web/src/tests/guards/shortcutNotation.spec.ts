@@ -15,17 +15,21 @@ const RELEASE_LANE_QUARANTINE: readonly string[] = []
 
 const HARDCODED_MODIFIER = /⌘|Ctrl\/Cmd|Ctrl\+/g
 
+const ADDITIONAL_HARDCODED_MODIFIER = /(?:Ctrl|Control)\s*\+/g
+
 function hardcodedModifierLines(source: string): string[] {
   return source.split('\n')
     .filter((line) => {
       HARDCODED_MODIFIER.lastIndex = 0
-      return HARDCODED_MODIFIER.test(line)
+      ADDITIONAL_HARDCODED_MODIFIER.lastIndex = 0
+      return HARDCODED_MODIFIER.test(line) || ADDITIONAL_HARDCODED_MODIFIER.test(line)
     })
     .map((line) => line.trim())
 }
 
 /**
- * A bare `Ctrl+` literal is only a user-visible lie where it is RENDERED, so
+ * A bare `Ctrl+`, spaced `Ctrl +`, or `Control+` literal is only a user-visible
+ * lie where it is RENDERED, so
  * the widened detector runs over the `<template>` block of a `.vue` file with HTML
  * comments stripped. Prose in script comments may still say "Ctrl+K" when it
  * is describing the Windows binding; that is not a display defect.
@@ -41,11 +45,14 @@ function renderedModifierLines(path: string, source: string): string[] {
 }
 
 describe('shortcut modifier notation', () => {
-  it('scans live source with a detector that catches both forbidden forms', () => {
+  it('scans live source with a detector that catches modifier notation variants', () => {
     expect(Object.keys(SOURCES).length).toBeGreaterThan(100)
     expect(hardcodedModifierLines('<kbd>⌘K</kbd>')).toHaveLength(1)
     expect(hardcodedModifierLines('Press Ctrl/Cmd+Enter')).toHaveLength(1)
     expect(hardcodedModifierLines('<kbd>Ctrl+K</kbd>')).toHaveLength(1)
+    expect(hardcodedModifierLines('Press Ctrl + Enter')).toHaveLength(1)
+    expect(hardcodedModifierLines('<kbd>Control+K</kbd>')).toHaveLength(1)
+    expect(hardcodedModifierLines('Press Control + K')).toHaveLength(1)
     // A rendered `.vue` keycap is an offender; the same literal in a script
     // comment or an HTML comment is not.
     expect(renderedModifierLines(
