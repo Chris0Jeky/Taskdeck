@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
+import WorkspaceMemoryExport from '../components/workspace/WorkspaceMemoryExport.vue'
 import { TdSkeleton } from '../components/ui'
 import { useBoardStore } from '../store/boardStore'
 import TdDialog from '../components/ui/TdDialog.vue'
@@ -263,6 +264,7 @@ watch(queryBoardId, () => {
       </PaperHLBtn>
     </section>
 
+    <WorkspaceMemoryExport :board-id="selectedBoardId" :disabled="boardLoading || saving" />
     <p class="paper-memory__trust-note">
       Memories are private to you and linked to this board. Editing or archiving one never changes board cards, columns, or statuses.
     </p>
