@@ -1,12 +1,21 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-07
+Last Updated: 2026-09-08
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.
+
+September 8 parallel delivery wave (merged work; #2235):
+
+- Historical Capture text divergence masked by later Keep/Archive timestamps is repaired by PR #2805 (#2418). The additive `LegacyReconciliationVersion` column defaults old rows to zero, bounded SQL pages revisit them once, and successful reconciliation appends immutable superseding assets before stamping the current version. The distinct v2 completion marker ignores historical v1 success. Archived mismatches remain outstanding and readable through safe queue fallback while healthy rows progress; list/detail guards do not rely on timestamps alone for unresolved version-zero rows. The full backend gate passed 8,977 tests with five existing skips, followed by clean independent review and hosted CI. No existing private database or large-database timing was exercised. This supersedes the timestamp-only repair description in the original CF-01 record below.
+- Shared frontend instructions now name the actual Claude adapter/import, runtime-specific search fallback and explicit PowerShell working directory (PR #2806, #2777). Documentation, syntax/path checks, independent review and required hosted checks passed; no runtime behavior or authority changed.
+- CF-24A's first benchmark slice is available (PR #2804, #2319): nine synthetic text sources totaling 934 bytes, explicit origin/license/hash/reference metadata, a 16 KiB source-byte budget, and deterministic per-kind precision/recall/F1 scoring from supplied predictions. Twenty-one Python tests and the required hosted checks passed. The command does not run a processor; audio/image/PDF quality, latency, WER and cost are unmeasured. Schema-validation and persisted processor-identity limitations remain tracked on #2319, alongside the larger corpus acceptance. This establishes fixture/scoring tooling, not a release-quality result.
+- Capture polling preserves the server's `canEditSuggestion` decision (PR #2796), reducing interrupted editing while keeping the server authoritative. Paper read-only keyboard behavior and dialog focus are corrected (PRs #2788 and #2799); the wider #1968, #1999 and #2090 acceptance remains open. The Processing-state capture API regression now disables its background triage worker and proves the persisted state before asserting rejection (PR #2801, #2798).
+- These four slices each passed independent Terra review and their required hosted checks at the merged head. Local focused evidence is scoped to each PR; it is not a new full-suite count for current `main` or a packaged/live-provider acceptance claim.
+- Sentry.AspNetCore 6.10.0 and Testcontainers.PostgreSql 4.15.0 landed in PR #2772 with green hosted CI and independent review. **Authority correction:** the coordinator missed the maintainer-own-review requirement for `backend/Directory.Packages.props`, a declared CI control path. The merge is disclosed on #2772 and #2337; no retrospective approval is inferred. New npm/Vitest and CI-control PRs remain subject to that review under [OUTSTANDING_TASKS.md](../OUTSTANDING_TASKS.md).
 
 Transcript prompt identity (#2211, current implementation):
 
