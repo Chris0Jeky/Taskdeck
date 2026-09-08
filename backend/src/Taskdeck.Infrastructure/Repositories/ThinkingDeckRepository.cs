@@ -37,8 +37,10 @@ public sealed class ThinkingDeckRepository(TaskdeckDbContext context) : IThinkin
             entry.Property(value => value.Revision).OriginalValue = expectedRevision;
         }
         try { await context.SaveChangesAsync(cancellationToken); return true; }
-        catch (DbUpdateConcurrencyException) { entry.State = EntityState.Detached; return false; }
+        // The failed atomic save includes the board's pending dependent-write guard.
+        // Discard it too so a later save cannot reuse stale tracked state.
+        catch (DbUpdateConcurrencyException) { context.ChangeTracker.Clear(); return false; }
         catch (DbUpdateException ex) when (expectedRevision == 0 && ex.InnerException is SqliteException { SqliteExtendedErrorCode: 1555 or 2067 })
-        { entry.State = EntityState.Detached; return false; }
+        { context.ChangeTracker.Clear(); return false; }
     }
 }

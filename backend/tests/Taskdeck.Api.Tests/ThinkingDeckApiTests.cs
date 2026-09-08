@@ -4,8 +4,11 @@ using System.Text.Json.Nodes;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -16,6 +19,84 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class ThinkingDeckApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    [Fact]
+    public async Task ArchivedBoardThinkingIsReadOnlyForOwnerAndEditor()
+    {
+        using var owner = factory.CreateClient();
+        using var editor = factory.CreateClient();
+        var (board, card) = await Setup(owner);
+        var editorUser = await ApiTestHarness.AuthenticateAsync(editor, "thinking-archive-editor");
+        (await owner.PostAsJsonAsync($"/api/boards/{board.Id}/access", new GrantAccessDto(board.Id, editorUser.UserId, UserRole.Editor))).EnsureSuccessStatusCode();
+        var url = Url(board.Id, card.Id);
+        ThinkingLayer[] original = [new(Guid.NewGuid(), "note", "Retain this", "Original material", [])];
+        (await owner.PutAsJsonAsync(url, new SaveThinkingDeckDto(0, original))).EnsureSuccessStatusCode();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            (await db.Boards.FindAsync(board.Id))!.Archive();
+            await db.SaveChangesAsync();
+        }
+        foreach (var client in new[] { owner, editor })
+        {
+            var read = (await client.GetFromJsonAsync<ThinkingDeckDto>(url))!;
+            read.CanWrite.Should().BeFalse();
+            var rejected = await client.PutAsJsonAsync(url, new SaveThinkingDeckDto(1, []));
+            rejected.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            (await rejected.Content.ReadAsStringAsync()).Should().Contain("InvalidOperation");
+            var retained = (await client.GetFromJsonAsync<ThinkingDeckDto>(url))!;
+            retained.Revision.Should().Be(1);
+            retained.Layers.Should().BeEquivalentTo(original);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ArchiveBetweenCheckAndSaveRejectsThinkingAtomically(bool existingDeck)
+    {
+        using var client = factory.CreateClient();
+        var (board, card) = await Setup(client);
+        ThinkingLayer[] original = [new(Guid.NewGuid(), "note", "Original", "Keep", [])];
+        if (existingDeck)
+            (await client.PutAsJsonAsync(Url(board.Id, card.Id), new SaveThinkingDeckDto(0, original))).EnsureSuccessStatusCode();
+        using var writingScope = factory.Services.CreateScope();
+        var db = writingScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var boardBefore = (await db.Boards.FindAsync(board.Id))!;
+        var marker = boardBefore.CardMutationMarker;
+        var realDecks = new ThinkingDeckRepository(db);
+        var interleavedDecks = new Mock<IThinkingDeckRepository>();
+        interleavedDecks.Setup(x => x.GetAsync(card.Id, It.IsAny<CancellationToken>()))
+            .Returns((Guid id, CancellationToken ct) => realDecks.GetAsync(id, ct));
+        interleavedDecks.Setup(x => x.SaveAsync(It.IsAny<ThinkingDeck>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .Returns(async (ThinkingDeck deck, long revision, CancellationToken ct) =>
+            {
+                using var archivingScope = factory.Services.CreateScope();
+                var archivingDb = archivingScope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+                (await archivingDb.Boards.FindAsync(board.Id))!.Archive();
+                await archivingDb.SaveChangesAsync(ct);
+                return await realDecks.SaveAsync(deck, revision, ct);
+            });
+        var service = new ThinkingDeckService(writingScope.ServiceProvider.GetRequiredService<ICardRepository>(), interleavedDecks.Object,
+            writingScope.ServiceProvider.GetRequiredService<IAuthorizationService>(), writingScope.ServiceProvider.GetRequiredService<IBoardRepository>());
+        var result = await service.SaveAsync(boardBefore.OwnerId!.Value, board.Id, card.Id,
+            new SaveThinkingDeckDto(existingDeck ? 1 : 0, []), default);
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be("Conflict");
+        db.ChangeTracker.Entries().Should().BeEmpty("failed dependent writes must not leave pending changes for a later save");
+        using var verification = factory.Services.CreateScope();
+        var verifyDb = verification.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var archived = (await verifyDb.Boards.FindAsync(board.Id))!;
+        archived.IsArchived.Should().BeTrue();
+        archived.CardMutationMarker.Should().Be(marker);
+        var persisted = await verifyDb.Set<ThinkingDeck>().FindAsync(card.Id);
+        if (existingDeck)
+        {
+            persisted!.Revision.Should().Be(1);
+            persisted.ReadLayers().Should().BeEquivalentTo(original);
+        }
+        else persisted.Should().BeNull();
+    }
+
     [Fact]
     public async Task EndpointsRequireAuthentication()
     {
