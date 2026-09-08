@@ -10,8 +10,11 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/boards/{boardId}/cards/{cardId}/thinking")]
-public sealed class ThinkingDeckController(ThinkingDeckService service, IUserContext userContext) : AuthenticatedControllerBase(userContext)
+public sealed class ThinkingDeckController : AuthenticatedControllerBase
 {
+    private readonly ThinkingDeckService service;
+    public ThinkingDeckController(ThinkingDeckService service, IUserContext userContext) : base(userContext)
+    { this.service = service; }
     [HttpGet]
     public async Task<IActionResult> Get(Guid boardId, Guid cardId, CancellationToken cancellationToken)
     {
