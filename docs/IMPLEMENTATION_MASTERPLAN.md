@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-07
+Last Updated: 2026-09-08
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -64,6 +64,37 @@ behaviour.
 **De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB *production* support (the production runtime is SQLite-only forever; the PostgreSQL Testcontainers compatibility lane in CI — `Taskdeck.Integration.Tests` / `reusable-container-integration.yml` — remains as a legacy regression guard, not a product direction), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/platform ADRs **0014, 0020, 0023, 0026–0028** are retained as historical records of parked tracks, not active plans. Three ADRs in the 0023–0029 range decide behaviour that is **still live** in the single-instance app — only their multi-instance/enterprise premise is parked: **ADR-0024** (the `ICacheService` cache-aside abstraction, in-memory by default), **ADR-0025** (the `AddTaskdeckSignalR` Redis-backplane wiring, config-gated and dormant in the single-instance default), and **ADR-0029** (optional TOTP MFA + OIDC/OAuth). Likewise the single-self-contained-executable packaging path in `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md` stays the active personal run path; only its installer / cross-platform-distribution / GTM framing is parked. **ADR-0004** (shared-schema multi-tenancy) also stays **live** for its cross-user-isolation behaviour — enforced today by per-`UserId` and board-access predicates rather than a `TenantId` column (no `TenantId` symbol exists in `backend/src`, `backend/tests`, or the frontend), with the `403`/`404` existence policy enforced in the running app (consistent with GP-02 Claims-First Identity and GP-03 Stable Error Contracts); only its multi-organization / hosted-SaaS expansion premise (including any `TenantId`-keyed shared-schema tenancy) is parked — agents must neither park the live cross-user isolation security model nor resurrect multi-org tenancy work. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
 
 ## Dated delivery and governance updates (newest first)
+
+## Delivery update (2026-09-08, parallel implementation and asynchronous review)
+
+The maintainer authorized concurrent issue delivery, including v0.4/v0.5 foundations,
+with separate Terra review threads. Seven scoped implementation lanes were admitted;
+the coordinator retained canonical documentation, project state, and merge judgment.
+Capture edit-capability polling, Paper read-only keyboard behavior, inspector/dialog
+focus, and the Processing-state API test isolation have landed through PRs #2796,
+#2788, #2799 and #2801. Parent issues with broader acceptance remain open.
+
+CF-24A's first synthetic text corpus and deterministic per-kind scorer landed in
+PR #2804 (21 Python tests plus hosted CI). #2319 remains open for schema-validation
+and processor-attribution follow-through, expanded media, and measured processor
+quality/latency/cost. The initial command executes no processor.
+
+PR #2805 completes #2418's resumable repair for historical Capture divergence
+masked by later disposition timestamps. Version-zero backlog selection, immutable
+asset append and a distinct v2 completion marker preserve truthful pending reads;
+archived mismatches remain outstanding while healthy rows advance. PR #2806 also
+completes #2777's shared frontend instruction parity corrections.
+
+The representation and processing-policy lanes implement their first contract slices;
+runtime persistence, processing queues and runners remain separate acceptance. The
+benchmark lane starts with synthetic text and explicit unavailable metrics. These
+boundaries prevent foundation code from being mistaken for a completed v0.4/v0.5
+processing product.
+
+Control-path dependency PRs require the maintainer's own review under ADR-0066,
+including frontend package manifests/locks and backend Directory.Packages.props.
+The coordinator missed this requirement on merged PR #2772 and disclosed it on that
+PR and #2337. Green CI and independent review do not supply the missing review.
 
 ## Planning update (2026-09-07, transcript prompt v3)
 
