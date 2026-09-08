@@ -10,7 +10,7 @@ Strengthen the shipped Taskdeck workspace without drifting into disconnected sur
 
 ## Read first
 
-Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load. (`frontend/taskdeck-web/CLAUDE.md` is the region rule.)
+Orient via `autodoc/AGENT_INDEX.md` (the seam map); root `CLAUDE.md` and region rules auto-load. `frontend/CLAUDE.md` imports the shared `frontend/AGENTS.md`; `frontend/taskdeck-web/CLAUDE.md` supplies the web application region rules.
 
 Read as needed:
 

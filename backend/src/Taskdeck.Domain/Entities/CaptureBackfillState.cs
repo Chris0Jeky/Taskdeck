@@ -25,9 +25,11 @@ public sealed class CaptureBackfillState : Entity
     /// never a host or a process: one row per backfill key, shared by the web API, both MCP hosts
     /// and the CLI.
     /// </summary>
-    public static readonly Guid LegacyQueueBackfillId = new("2f5c9d41-7f0e-4a63-9d8a-1c6b4f2a9e55");
+    public static readonly Guid LegacyQueueBackfillId = new("a2495e10-0858-4da2-a517-a5dbb3102fe7");
 
-    public const string LegacyQueueBackfillKey = "capture.legacy-queue.v1";
+    // The v1 marker remains historical: it did not inspect timestamp-masked divergence. Only a
+    // drained versioned backlog earns v2 completion and arms the upgraded database's read switch.
+    public const string LegacyQueueBackfillKey = "capture.legacy-queue.v2";
     public const int MaxKeyLength = 100;
     public const int MaxNoteLength = 500;
 

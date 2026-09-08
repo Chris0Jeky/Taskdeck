@@ -73,8 +73,9 @@ public sealed class CaptureServiceReadSwitchTests
             boardId: null);
     }
 
-    private Capture DurableFor(LlmRequest request, string text, CaptureSource source = CaptureSource.Typed) =>
-        Capture.FromQueueRequest(
+    private Capture DurableFor(LlmRequest request, string text, CaptureSource source = CaptureSource.Typed)
+    {
+        var capture = Capture.FromQueueRequest(
             request.Id,
             _userId,
             source,
@@ -83,13 +84,17 @@ public sealed class CaptureServiceReadSwitchTests
             userTitle: null,
             capturedAtServer: request.CreatedAt,
             sourceText: text);
+        capture.RecordLegacyReconciliation(request.UpdatedAt);
+        return capture;
+    }
 
     private CaptureListMaterial MaterialFor(
         LlmRequest request,
         string text,
         CaptureSource source = CaptureSource.Typed,
         DateTimeOffset? updatedAt = null) =>
-        new(request.Id, source, request.CreatedAt, updatedAt ?? DateTimeOffset.UtcNow.AddMinutes(5), text);
+        new(request.Id, source, request.CreatedAt, updatedAt ?? DateTimeOffset.UtcNow.AddMinutes(5), text,
+            Capture.CurrentLegacyReconciliationVersion);
 
     private void SetupListMaterial(params CaptureListMaterial[] material) =>
         _captureStore
@@ -194,6 +199,32 @@ public sealed class CaptureServiceReadSwitchTests
         throughStore.Value.Should().BeEquivalentTo(
             throughQueue.Value,
             "the Inbox is byte-identical across the read switch");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PendingRepair_ShouldServeQueueTextInListAndDetailDespiteNewerDurableTimestamp(bool archived)
+    {
+        var row = QueueRow("corrected draft");
+        var durable = DurableFor(row, "old draft");
+        if (archived) durable.Archive();
+        else durable.Keep();
+        typeof(Capture).GetProperty(nameof(Capture.LegacyReconciliationVersion))!.SetValue(durable, 0);
+        durable.UpdatedAt.Should().BeOnOrAfter(row.UpdatedAt);
+        SetupList(row);
+        SetupListMaterial(new CaptureListMaterial(row.Id, durable.LegacySourceSnapshot,
+            durable.CapturedAtServer, durable.UpdatedAt, durable.CurrentText, 0));
+        _queue.Setup(repository => repository.GetByIdAsync(row.Id, It.IsAny<CancellationToken>())).ReturnsAsync(row);
+        _captureStore.Setup(store => store.GetByIdForUserAsync(row.Id, _userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(durable);
+
+        // Exercise the per-row guard even if a completed marker already armed this service.
+        var service = CreateService();
+        var list = await service.ListAsync(_userId, new CaptureListFilterDto());
+        var detail = await service.GetByIdAsync(_userId, row.Id);
+        list.Value.Should().ContainSingle().Which.TextExcerpt.Should().Be("corrected draft");
+        detail.Value!.RawText.Should().Be("corrected draft");
     }
 
     // ------------------------------------------------------------- divergence guard
