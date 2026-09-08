@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionStore } from '../../store/sessionStore'
 import { useWorkspaceStore } from '../../store/workspaceStore'
 import { useCaptureStore } from '../../store/captureStore'
 import { useBoardStore } from '../../store/boardStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
+import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
+import WorkspaceExperienceSwitcher from '../workspace/WorkspaceExperienceSwitcher.vue'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useViewportMode } from '../../composables/useViewportMode'
@@ -43,11 +45,14 @@ type SidebarRef = {
 }
 
 const router = useRouter()
+const route = useRoute()
 const session = useSessionStore()
 const workspace = useWorkspaceStore()
 const capture = useCaptureStore()
 const board = useBoardStore()
 const paperTheme = usePaperThemeStore()
+const layout = useWorkspaceLayoutStore()
+const experienceTitles = { classic: 'Your workspace', studio: 'A little space to think.', companion: 'Your work, in good company.', unified: 'Everything, in its place.' }
 const { mode: viewportMode } = useViewportMode()
 
 const { pendingCount: captureQueuePending, syncing: captureQueueSyncing } = useCaptureQueueSync()
@@ -503,6 +508,8 @@ onUnmounted(() => {
 <template>
   <div
     class="td-shell"
+    :data-experience="layout.experience"
+    :data-presentation="layout.presentation"
     :class="{
       'td-shell--paper': paperTheme.isOn,
       'td-shell--paper-phone': isPaperPhone,
@@ -559,6 +566,25 @@ onUnmounted(() => {
         @logout="handleLogout"
       />
       <ShellTopbar v-else @open-command-palette="openCommandPalette" />
+
+      <div class="td-experience-bar">
+        <div v-if="layout.experience !== 'classic'" class="td-experience-bar__identity">
+          <span class="td-experience-bar__eyebrow">Taskdeck / {{ layout.experience }}</span>
+          <span class="td-experience-bar__title">{{ experienceTitles[layout.experience] }}</span>
+        </div>
+        <WorkspaceExperienceSwitcher compact />
+        <button v-if="layout.experience !== 'classic'" type="button" class="td-experience-capture" @click="openCaptureModal">+ Capture</button>
+        <button v-if="layout.experience === 'studio'" type="button" class="td-experience-signout" @click="handleLogout">Sign out</button>
+      </div>
+      <nav v-if="layout.experience === 'studio'" class="td-studio-navigation" aria-label="Studio navigation">
+        <button v-for="item in (sidebarRef?.availableNavItems ?? []).slice(0, 6)" :key="item.path" type="button" :aria-current="route.path === item.path ? 'page' : undefined" @click="router.push(item.path)">{{ item.label }}</button>
+        <button type="button" @click="openCommandPalette">All destinations <span aria-hidden="true">↗</span></button>
+      </nav>
+      <div v-if="layout.experience === 'companion' && layout.presentation !== 'zen'" class="td-companion-context">
+        <span class="td-companion-context__mark" aria-hidden="true">◌</span>
+        <p><strong>Keep the thread.</strong> Capture a thought, review the proposed change, and carry it onto a board.</p>
+        <button type="button" @click="openCommandPalette">Find your next step <span aria-hidden="true">→</span></button>
+      </div>
 
       <main id="td-main-content" class="td-content" tabindex="-1">
         <!--
@@ -734,5 +760,43 @@ onUnmounted(() => {
   padding-bottom: calc(
     var(--td-space-4) + 56px + var(--paper-safe-bottom, env(safe-area-inset-bottom, 0px))
   );
+}
+</style>
+
+<style scoped>
+.td-experience-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 20px; padding: 10px 28px; border-bottom: 1px solid var(--td-border-default); background: var(--td-surface-container-low); }
+.td-experience-bar__identity { display: flex; flex-direction: column; gap: 6px; margin-right: auto; }
+.td-experience-bar__eyebrow { text-transform: uppercase; letter-spacing: .15em; font: 10px var(--mono, monospace); color: var(--td-text-secondary); }
+.td-experience-bar__title { font: 500 27px var(--serif, Georgia, serif); letter-spacing: -.04em; color: var(--td-text-primary); }
+.td-experience-capture { min-height: 38px; padding: 8px 18px; border: 1px solid transparent; border-radius: 9px; background: var(--td-color-ember); color: var(--td-on-ember, #fff); font-weight: 600; }
+.td-experience-signout { min-height: 36px; padding: 8px; background: transparent; border: 0; color: var(--td-text-secondary); font-size: 12px; cursor: pointer; }
+.td-experience-signout:focus-visible, .td-experience-capture:focus-visible, .td-studio-navigation button:focus-visible, .td-companion-context button:focus-visible { outline: 2px solid var(--td-color-ember); outline-offset: 3px; }
+.td-studio-navigation { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 32px; border-bottom: 1px solid var(--td-border-default); }
+.td-studio-navigation button { padding: 9px 14px; border: 0; border-radius: 8px; background: transparent; color: var(--td-text-primary); font-size: 13px; cursor: pointer; }
+.td-studio-navigation button:hover { background: var(--td-surface-container-high); }
+.td-studio-navigation button[aria-current="page"] { background: var(--td-surface-container-high); color: var(--td-color-ember); box-shadow: inset 0 -2px var(--td-color-ember); }
+.td-companion-context { display: flex; align-items: center; gap: 16px; margin: 20px 28px 0; padding: 14px 20px; border: 1px solid var(--td-border-default); border-radius: 14px; background: var(--td-surface-container-low); color: var(--td-text-secondary); font-size: 13px; }
+.td-companion-context__mark { font: 36px var(--serif, serif); color: var(--td-color-ember); }
+.td-companion-context p { flex: 1; margin: 0; line-height: 1.6; }
+.td-companion-context strong { display: block; color: var(--td-text-primary); }
+.td-companion-context button { background: transparent; color: var(--td-text-primary); border: 0; font-size: 12px; cursor: pointer; }
+.td-shell[data-experience="studio"] .td-experience-bar { padding-block: 28px; }
+.td-shell[data-experience="companion"] .td-content { padding-top: 24px; }
+.td-shell[data-experience="unified"] .td-experience-bar { border-left: 3px solid var(--td-color-ember); }
+.td-shell[data-presentation="zen"] .td-content { padding: 40px clamp(16px, 4vw, 72px); }
+.td-shell[data-presentation="control"] .td-content { padding: 16px; }
+.td-shell[data-presentation="zen"] .td-experience-bar__eyebrow { display: none; }
+@media (min-width: 1024px) {
+  .td-shell[data-experience="studio"] :deep(.paper-sidebar), .td-shell[data-experience="studio"] :deep(.td-sidebar) { display: none; }
+  .td-shell[data-experience="studio"] :deep(.paper-topbar) { display: none; }
+}
+@media (max-width: 720px) {
+  .td-experience-bar { padding: 12px 16px; gap: 12px; justify-content: flex-start; }
+  .td-experience-bar__identity { width: 100%; }
+  .td-experience-bar__title { font-size: 23px; }
+  .td-studio-navigation { padding: 8px; gap: 2px; }
+  .td-companion-context { margin: 12px 12px 0; padding: 12px; flex-wrap: wrap; }
+  .td-shell[data-presentation="zen"] .td-content { padding: 20px 16px 80px; }
+  .td-shell[data-presentation="control"] .td-content { padding-bottom: 80px; }
 }
 </style>
