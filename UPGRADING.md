@@ -134,6 +134,17 @@ the mirrored rows go with the tables. Downgrading past `ReconcileContextFabricSc
 three state axes back into the single legacy `Lifecycle` column, which is lossy — irrelevant while the
 tables are empty, but a reason to export before downgrading if you ever turned the setting on.
 
+- **BREAKING: none — repair historical capture text divergence (#2418).** Migration
+  `20260908005202_AddCaptureLegacyReconciliationVersion` adds one integer column defaulting to zero.
+  The startup backfill checks existing queue-backed captures in bounded batches, including text
+  mismatches hidden by a later Keep/Archive timestamp. Successful repairs append superseding source
+  assets and retain the original text. Each successful row earns a repair version, so subsequent
+  starts do not reload its payload for this upgrade. The new `capture.legacy-queue.v2` completion
+  marker cannot inherit the older marker's success. An archived mismatch remains outstanding,
+  while healthy rows behind it progress; Inbox reads retain the queue text until repair is complete.
+  Disabling `ContextFabric:BackfillCaptures` defers the repair and keeps the upgraded read switch
+  on queue data. No board changes or review approvals are made by this repair.
+
 - **BREAKING: none — proposal provenance records the producer triple.** Migration
   `20260904030926_AddProposalProvenanceProducerTriple` adds two nullable columns, `Provider` and
   `PromptVersion`, to `ProposalProvenances`. Both are `ALTER TABLE ADD COLUMN` statements with no
