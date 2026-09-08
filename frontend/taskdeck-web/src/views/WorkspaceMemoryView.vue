@@ -244,7 +244,7 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
         <span>Show archived</span>
       </label>
       <span v-if="selectedBoard" class="paper-memory__selected-board">{{ selectedBoard.name }}</span>
-      <PaperHLBtn data-action="new-memory" variant="ember" :disabled="!selectedBoardId" @click="openCreate">
+      <PaperHLBtn data-action="new-memory" variant="ember" :disabled="!selectedBoardId || showEditor || saving" @click="openCreate">
         Add memory
       </PaperHLBtn>
     </section>
@@ -259,7 +259,7 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
           <p class="paper-memory__eyebrow">{{ editingId ? 'Revision' : 'New entry' }}</p>
           <h2 id="memory-editor-title">{{ editorHeading }}</h2>
         </div>
-        <PaperHLBtn variant="ghost" @click="closeEditor">Close</PaperHLBtn>
+        <PaperHLBtn variant="ghost" :disabled="saving" @click="closeEditor">Close</PaperHLBtn>
       </div>
       <form @submit.prevent="saveMemory">
         <label class="paper-memory__form-field" for="memory-title">
@@ -283,7 +283,7 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
           <PaperHLBtn type="submit" variant="ember" :disabled="saving || !formTitle.trim() || !formText.trim()">
             {{ saving ? 'Saving…' : editingId ? 'Save correction' : 'Save memory' }}
           </PaperHLBtn>
-          <PaperHLBtn type="button" variant="ghost" @click="closeEditor">Cancel</PaperHLBtn>
+          <PaperHLBtn type="button" variant="ghost" :disabled="saving" @click="closeEditor">Cancel</PaperHLBtn>
           <span class="paper-memory__form-note">Private context only; the board stays unchanged.</span>
         </div>
         <p v-if="formError" class="paper-memory__error" role="alert">{{ formError }}</p>
@@ -326,7 +326,7 @@ watch([selectedBoardId, showArchived], ([nextBoard, nextArchived], [previousBoar
       <span class="paper-memory__state-icon" aria-hidden="true">✦</span>
       <h2>{{ showArchived ? 'No archived memory' : 'No memory yet' }}</h2>
       <p>{{ showArchived ? 'Archived entries for this board will appear here.' : 'Save the context you want to carry forward, then refine it as you learn.' }}</p>
-      <PaperHLBtn v-if="!showArchived" variant="primary" @click="openCreate">Add the first memory</PaperHLBtn>
+      <PaperHLBtn v-if="!showArchived" variant="primary" :disabled="showEditor || saving" @click="openCreate">Add the first memory</PaperHLBtn>
     </section>
 
     <section v-else class="paper-memory__list" aria-label="Workspace memory entries">
