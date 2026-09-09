@@ -1,4 +1,5 @@
 import { workspaceInsightsApi } from '../api/workspaceInsights'
+import type { MemorySourceDetail } from '../types/workspaceInsights'
 
 /** Private, user-requested export. The two authenticated reads are not an atomic snapshot. */
 export async function collectWorkspaceMemoryExport(boardId: string, sessionIsCurrent: () => boolean) {
@@ -19,14 +20,28 @@ export async function collectWorkspaceMemoryExport(boardId: string, sessionIsCur
     const previous = memories.get(record.id)
     if (!previous || record.revision >= previous.revision) memories.set(record.id, record)
   }
+  const nativeCaptures: MemorySourceDetail[] = []
+  for (const memory of memories.values()) {
+    if (!memory.sources) continue
+    if (!sessionIsCurrent()) throw new Error('Your session changed. Start the export again after signing in.')
+    const sources = await workspaceInsightsApi.getMemorySources(memory.id)
+    if (!sessionIsCurrent()) throw new Error('Your session changed. Start the export again after signing in.')
+    const expected = [memory.sources.answerAssetId, memory.sources.evidenceAssetId,
+      ...memory.history.map(entry => entry.answerSourceAssetId)].filter(Boolean)
+    if (sources.id !== memory.sources.captureId || sources.boardId !== boardId
+      || expected.some(id => !sources.capture.sourceAssets.some(asset => asset.id === id)))
+      throw new Error('The originals did not match this memory. Reload and export again.')
+    nativeCaptures.push(sources)
+  }
   return JSON.stringify({
     format: 'taskdeck-private-board-memory',
-    version: 1,
+    version: nativeCaptures.length ? 2 : 1,
     boardId,
     exportedAt: new Date().toISOString(),
     scope: 'Current signed-in user; selected board; active and archived memories',
-    notice: 'Contains private text and evidence. Two authenticated reads; not an atomic snapshot or a Taskdeck import format. Unsaved drafts are excluded.',
+    notice: 'Contains private text, evidence and preserved originals. Authenticated reads; not an atomic snapshot or a Taskdeck import format. Unsaved drafts are excluded.',
     memories: [...memories.values()],
+    nativeCaptures,
   }, null, 2)
 }
 

@@ -2246,3 +2246,15 @@ keeping source choice and board mutation explicit. SourceAsset/audio integration
 overlays, expanded grounded observations/attention and cross-release comparison remain in the overhaul
 validation ledger. Full delivery scope is still tracked by #2808.
 
+## Private memory originals (#2808, 2026-09-09)
+
+The native source continuation connects saved question evidence and private answers to Context Fabric.
+Corrections append immutable superseding assets in the same transaction as memory revision checks.
+The originals viewer and private JSON download make the source history inspectable across experiences,
+reducing repeated context entry while keeping retrieval explicit and shared board state unchanged.
+Account export includes originals independently of board lifetime; account erasure removes them.
+Existing memories acquire sources on their next explicit write. Bulk historical admission, audio and
+representations, typed source selection, grounded observations and optional attention remain separate
+work in #2808. This implementation does not claim restoration/import, live-model quality or completion
+of the entire overhaul.
+

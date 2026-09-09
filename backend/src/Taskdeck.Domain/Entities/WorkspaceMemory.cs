@@ -14,6 +14,9 @@ public class WorkspaceMemory : Entity
     public Guid? SourceLayerId { get; private set; }
     public long? SourceDeckRevision { get; private set; }
     public string? SourceQuestionHash { get; private set; }
+    public Guid? SourceCaptureId { get; private set; }
+    public Guid? AnswerSourceAssetId { get; private set; }
+    public Guid? EvidenceSourceAssetId { get; private set; }
     public string Title { get; private set; } = string.Empty;
     public string Text { get; private set; } = string.Empty;
     public string OriginalText { get; private set; } = string.Empty;
@@ -45,7 +48,14 @@ public class WorkspaceMemory : Entity
         if (Archived == archived) return;
         RememberRevision(); Archived = archived; Revision++; Touch();
     }
-    private void RememberRevision() => History.Add(new WorkspaceMemoryRevision(Id, Title, Text, Status, Revision, Archived));
+    public void RecordSources(Guid captureId, Guid answerAssetId, Guid? evidenceAssetId)
+    {
+        if (captureId == Guid.Empty || answerAssetId == Guid.Empty || evidenceAssetId == Guid.Empty
+            || (SourceCaptureId.HasValue && SourceCaptureId != captureId))
+            throw new DomainException(ErrorCodes.ValidationError, "Invalid private memory sources.");
+        SourceCaptureId = captureId; AnswerSourceAssetId = answerAssetId; EvidenceSourceAssetId = evidenceAssetId;
+    }
+    private void RememberRevision() => History.Add(new WorkspaceMemoryRevision(Id, Title, Text, Status, Revision, Archived, AnswerSourceAssetId));
     public static void Validate(string title, string text, string status)
     {
         if (string.IsNullOrWhiteSpace(title) || title.Length > 240 || string.IsNullOrWhiteSpace(text) || text.Length > 8000)
@@ -63,7 +73,14 @@ public class WorkspaceMemoryRevision : Entity
     public string Status { get; private set; } = string.Empty;
     public int Revision { get; private set; }
     public bool Archived { get; private set; }
+    public Guid? AnswerSourceAssetId { get; private set; }
     private WorkspaceMemoryRevision() { }
-    public WorkspaceMemoryRevision(Guid memoryId, string title, string text, string status, int revision, bool archived)
-    { MemoryId = memoryId; Title = title; Text = text; Status = status; Revision = revision; Archived = archived; }
+    public WorkspaceMemoryRevision(Guid memoryId, string title, string text, string status, int revision, bool archived, Guid? answerSourceAssetId = null)
+    { MemoryId = memoryId; Title = title; Text = text; Status = status; Revision = revision; Archived = archived; AnswerSourceAssetId = answerSourceAssetId; }
+    public void RecordAnswerSource(Guid assetId)
+    {
+        if (assetId == Guid.Empty || AnswerSourceAssetId.HasValue)
+            throw new DomainException(ErrorCodes.ValidationError, "Invalid historical answer source.");
+        AnswerSourceAssetId = assetId;
+    }
 }
