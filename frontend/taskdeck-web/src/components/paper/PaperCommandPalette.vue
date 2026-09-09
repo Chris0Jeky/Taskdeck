@@ -165,7 +165,7 @@ function handleClose() {
 }
 
 function isFocusableElement(element: HTMLElement | null): element is HTMLElement {
-  if (!element?.isConnected || !element.matches(focusableSelector)) return false
+  if (!element?.isConnected || !element.matches(`${focusableSelector}, [tabindex="-1"]:not(:disabled)`)) return false
   if (element.closest('[hidden], [aria-hidden="true"], [inert]')) return false
   return true
 }
