@@ -14,6 +14,12 @@ changes.
 
 ## Unreleased workspace overhaul
 
+The contextual companion adds two nullable columns to `ChatMessages` for explicit source selections
+and source receipts. Old messages remain readable. Selected private-memory text is resolved for the
+model only after actor, board, archive and revision checks; it is not appended to the stored user
+instruction. Model answers can remain in the private conversation after their sources change.
+Existing approval and explicit Apply behavior is unchanged. **BREAKING: none.**
+
 **BREAKING: none.** Additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
 and correction-history tables, then private question-source columns. A further additive migration
 adds private personal-plan JSON and revision columns to UserPreferences with empty defaults. Plan dates

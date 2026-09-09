@@ -2228,3 +2228,14 @@ PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal a
 ## CI10-2 remaining acceptance (2026-09-08)
 
 PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
+
+## Contextual companion continuation (#2808, 2026-09-09)
+
+Card thinking and Focus now embed existing board-scoped conversations with explicit card, shared-thinking
+and private-memory source selection. The server returns per-turn source receipts and rejects changed
+replay sources. An authoritative read-only proposal preview couples its diff to the effective revision;
+Review retains the approval and Apply flow. This reduces navigation and repeated context entry while
+keeping source choice and board mutation explicit. SourceAsset/audio integration, affected-board-object
+overlays, expanded grounded observations/attention and cross-release comparison remain in the overhaul
+validation ledger. Full delivery scope is still tracked by #2808.
+
