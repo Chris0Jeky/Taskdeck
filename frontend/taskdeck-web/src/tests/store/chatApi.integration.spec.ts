@@ -158,7 +158,7 @@ describe('chatApi — integration (mocked HTTP)', () => {
       expect(result.recentMessages).toHaveLength(2)
       expect(result.recentMessages[0].role).toBe('User')
       expect(result.recentMessages[1].role).toBe('Assistant')
-      expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session-1')
+      expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session-1', undefined)
     })
 
     it('URL-encodes special characters in the session ID', async () => {
@@ -166,7 +166,7 @@ describe('chatApi — integration (mocked HTTP)', () => {
 
       await chatApi.getSession('session/special')
 
-      expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session%2Fspecial')
+      expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session%2Fspecial', undefined)
     })
 
     it('propagates 404 when session does not exist', async () => {
