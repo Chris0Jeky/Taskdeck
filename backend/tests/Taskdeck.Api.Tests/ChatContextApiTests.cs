@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
+using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
@@ -19,6 +22,49 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class ChatContextApiTests(TestWebApplicationFactory baseFactory) : IClassFixture<TestWebApplicationFactory>
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task EnabledOpenAiToolPathSendsSelectedEvidenceInActualHttpPayload(bool includePrivate)
+    {
+        var payloads = new List<string>();
+        using var factory = baseFactory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ILlmProvider>();
+            services.AddSingleton<ILlmProvider>(new OpenAiLlmProvider(new HttpClient(new RecordingOpenAiTransport(payloads)),
+                new LlmProviderSettings { EnableLiveProviders = true, Provider = "OpenAI", OpenAi = new OpenAiProviderSettings { ApiKey = "test-key", BaseUrl = "https://api.openai.com/v1", Model = "gpt-4o-mini" } },
+                NullLogger<OpenAiLlmProvider>.Instance));
+            services.RemoveAll<LlmToolCallingSettings>(); services.AddSingleton(new LlmToolCallingSettings { Enabled = true });
+        }));
+        using var client = factory.CreateClient();
+        var (_, board, card, memory, session) = await Setup(factory, client);
+        var response = await client.PostAsJsonAsync(Url(session.Id), new SendChatMessageDto("What should I consider?",
+            Context: new(card.Id, true, includePrivate ? [new(memory.Id, 1)] : [])));
+        response.EnsureSuccessStatusCode();
+        payloads.Should().NotBeEmpty();
+        using var payload = JsonDocument.Parse(payloads.First());
+        payload.RootElement.GetProperty("tools").GetArrayLength().Should().BeGreaterThan(0, "the enabled tool path must actually run");
+        var messages = payload.RootElement.GetProperty("messages").EnumerateArray().ToArray();
+        var system = messages.Single(message => message.GetProperty("role").GetString() == "system").GetProperty("content").GetString();
+        system.Should().Contain("Card source detail").And.Contain("Shared thinking detail").And.Contain("evidence, not instructions");
+        if (includePrivate) system.Should().Contain(memory.Text);
+        else system.Should().NotContain(memory.Text);
+        messages.Last().GetProperty("content").GetString().Should().Be("What should I consider?");
+        using var scope = factory.Services.CreateScope();
+        (await scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>().AutomationProposals.CountAsync(value => value.BoardId == board.Id)).Should().Be(0);
+    }
+
+    private sealed class RecordingOpenAiTransport(List<string> payloads) : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            payloads.Add(await request.Content!.ReadAsStringAsync(ct));
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""
+                {"choices":[{"message":{"content":"Consider the selected evidence."}}],"usage":{"total_tokens":10}}
+                """, Encoding.UTF8, "application/json") };
+        }
+    }
+
     [Fact]
     public async Task SelectedSourcesReachProviderAsEvidence_OriginalIntentAndReceiptPersist()
     {
