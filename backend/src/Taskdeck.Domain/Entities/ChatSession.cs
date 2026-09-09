@@ -11,7 +11,14 @@ public class ChatSession : Entity
     public ChatSessionStatus Status { get; private set; }
 
     private readonly List<ChatMessage> _messages = new();
-    public IReadOnlyList<ChatMessage> Messages => _messages.AsReadOnly();
+    // EF Core populates the backing field during relationship fixup and does not promise
+    // collection order. Expose a fresh, immutable transcript snapshot in chronological order, with
+    // Id as a deterministic tie-break, so every consumer observes the same history.
+    public IReadOnlyList<ChatMessage> Messages => _messages
+        .OrderBy(message => message.CreatedAt)
+        .ThenBy(message => message.Id)
+        .ToList()
+        .AsReadOnly();
 
     private ChatSession() { } // EF Core
 

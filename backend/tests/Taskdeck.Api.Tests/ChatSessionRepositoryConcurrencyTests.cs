@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Taskdeck.Api.Tests.Support;
+using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
 using Taskdeck.Infrastructure.Repositories;
@@ -69,6 +70,64 @@ public sealed class ChatSessionRepositoryConcurrencyTests : IDisposable
             boardId,
             "the CAS loser must not resolve an idempotent same-board race from its stale tracked entity");
     }
+
+    [Fact]
+    public async Task GetByIdWithMessagesAsync_ShouldKeepTrackedNavigationChronological_AfterDescendingFixup()
+    {
+        var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlite(TestSqlite.ConnectionString(_dbPath))
+            .Options;
+
+        var userId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        await using (var seedDb = new TaskdeckDbContext(options))
+        {
+            await seedDb.Database.MigrateAsync();
+            var user = new User(
+                $"chat-order-{Guid.NewGuid():N}"[..20],
+                $"chat-order-{Guid.NewGuid():N}@example.com",
+                "hash");
+            var session = new ChatSession(user.Id, "Ordered history");
+            typeof(Entity).GetProperty(nameof(Entity.Id))!.SetValue(session, sessionId);
+            var oldest = new ChatMessage(session.Id, ChatMessageRole.User, "Original instruction");
+            var clarification = new ChatMessage(
+                session.Id,
+                ChatMessageRole.Assistant,
+                "What should I call it?",
+                "clarification");
+            var answer = new ChatMessage(session.Id, ChatMessageRole.User, "Ship notes");
+            var baseTime = DateTimeOffset.UtcNow.AddMinutes(-3);
+            SetCreatedAt(oldest, baseTime);
+            SetCreatedAt(clarification, baseTime.AddMinutes(1));
+            SetCreatedAt(answer, baseTime.AddMinutes(2));
+            session.AddMessage(oldest);
+            session.AddMessage(clarification);
+            session.AddMessage(answer);
+            seedDb.AddRange(user, session);
+            await seedDb.SaveChangesAsync();
+            userId = user.Id;
+        }
+
+        await using var db = new TaskdeckDbContext(options);
+        var trackedSession = await db.ChatSessions.FindAsync(sessionId);
+        trackedSession.Should().NotBeNull();
+        trackedSession!.UserId.Should().Be(userId);
+
+        // SQLite cannot translate DateTimeOffset ordering. Use the persisted column directly to
+        // reproduce descending materialization and let EF relationship fixup populate the tracked
+        // session navigation in that order.
+        await db.ChatMessages
+            .FromSqlInterpolated($"SELECT * FROM ChatMessages WHERE SessionId = {sessionId} ORDER BY CreatedAt DESC")
+            .LoadAsync();
+
+        trackedSession.Messages.Select(message => message.Content).Should().Equal(
+            "Original instruction",
+            "What should I call it?",
+            "Ship notes");
+    }
+
+    private static void SetCreatedAt(Entity entity, DateTimeOffset timestamp)
+        => typeof(Entity).GetProperty(nameof(Entity.CreatedAt))!.SetValue(entity, timestamp);
 
     public void Dispose()
     {
