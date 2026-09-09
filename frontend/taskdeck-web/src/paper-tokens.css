@@ -65,41 +65,11 @@
   --sans:   'Inter', -apple-system, system-ui, sans-serif;
   --mono:   'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  /* --- Scale --- */
-  --t-xs:  10.5px;
-  --t-sm:  12px;
-  --t-md:  13.5px;
-  --t-bd:  15px;
-  --t-lg:  18px;
-  --t-h3:  22px;
-  --t-h2:  32px;
-  --t-h1:  44px;
-  --t-display: 64px;
-
-  /* --- Spacing & radius --- */
-  --r-0: 0px;
-  --r-1: 2px;
-  --r-2: 4px;
-  --r-3: 6px;
-  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
-  --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 56px;
-
   /* --- Shadows --- */
   --shadow-card:   0 1px 0 var(--line), 0 .5px 0 #1a18140d;
   --shadow-lift:   0 .5px 0 #1a18140f, 0 6px 14px -8px #1a181430, 0 1.5px 0 var(--line);
   --shadow-stamp:  0 2px 0 var(--line);
   --shadow-press:  inset 0 1px 0 #1a181410;
-
-  /* --- Motion --- */
-  --ease-paper: cubic-bezier(.2, .65, .25, 1);
-  --ease-press: cubic-bezier(.4, 0, .15, 1);
-  --d-quick: 140ms;
-  --d-base:  240ms;
-  --d-press: 320ms;
-  --d-amb:   880ms;
-
-  /* --- Narrow scaling (PAPER-11 hook) --- */
-  --paper-scale: 1;
 
   color-scheme: light;
 }
@@ -143,6 +113,39 @@
   --shadow-press: inset 0 1px 0 #00000040;
 
   color-scheme: dark;
+}
+
+/* Scale, spacing, radius and motion stay the same in both Paper themes. */
+.paper, .paper-night {
+  /* --- Scale --- */
+  --t-xs:  10.5px;
+  --t-sm:  12px;
+  --t-md:  13.5px;
+  --t-bd:  15px;
+  --t-lg:  18px;
+  --t-h3:  22px;
+  --t-h2:  32px;
+  --t-h1:  44px;
+  --t-display: 64px;
+
+  /* --- Spacing & radius --- */
+  --r-0: 0px;
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 6px;
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 56px;
+
+  /* --- Motion --- */
+  --ease-paper: cubic-bezier(.2, .65, .25, 1);
+  --ease-press: cubic-bezier(.4, 0, .15, 1);
+  --d-quick: 140ms;
+  --d-base:  240ms;
+  --d-press: 320ms;
+  --d-amb:   880ms;
+
+  /* --- Narrow scaling (PAPER-11 hook) --- */
+  --paper-scale: 1;
 }
 
 /* =========================================================

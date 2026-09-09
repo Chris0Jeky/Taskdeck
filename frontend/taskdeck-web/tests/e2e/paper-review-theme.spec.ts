@@ -41,5 +41,28 @@ for (const mode of ['paper', 'paper-night'] as const) {
     expect(colors.shell.every(Boolean)).toBe(true)
     expect(colors.content).toEqual(colors.shell)
     expect(colors.background).toBe(colors.expectedBackground)
+
+    const structure = await review.evaluate((element) => {
+      const heading = element.querySelector<HTMLElement>('.tk-h1')
+      const button = element.querySelector<HTMLElement>('[data-testid="decision-apply"]')
+      if (!heading || !button) {
+        throw new Error('Expected the populated Review heading and apply control to render.')
+      }
+
+      const headingStyle = getComputedStyle(heading)
+      const buttonStyle = getComputedStyle(button)
+      return {
+        headingFontSize: headingStyle.fontSize,
+        buttonFontSize: buttonStyle.fontSize,
+        buttonRadius: buttonStyle.borderTopLeftRadius,
+        transitionDuration: buttonStyle.transitionDuration.split(',')[0].trim(),
+      }
+    })
+    expect(structure).toEqual({
+      headingFontSize: '44px',
+      buttonFontSize: '12px',
+      buttonRadius: '4px',
+      transitionDuration: '0.14s',
+    })
   })
 }
