@@ -1,5 +1,5 @@
 export type ThinkingKind = 'note' | 'question' | 'options' | 'steps' | 'thread'
-export interface ThinkingItem { id: string; text: string; completed: boolean }
+export interface ThinkingItem { id: string; text: string; completed: boolean; linkedCardId?: string | null }
 export interface ThinkingLayer {
   id: string
   kind: ThinkingKind

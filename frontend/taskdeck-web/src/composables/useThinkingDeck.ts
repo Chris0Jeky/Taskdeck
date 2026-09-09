@@ -1,6 +1,6 @@
 import { computed, ref, watch, type Ref } from 'vue'
 import { thinkingApi } from '../api/thinkingApi'
-import type { ThinkingKind, ThinkingLayer } from '../types/thinking'
+import type { ThinkingDeck, ThinkingKind, ThinkingLayer } from '../types/thinking'
 
 export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
   const layers = ref<ThinkingLayer[]>([])
@@ -62,6 +62,11 @@ export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
     if (layers.value.length >= 40) return
     layers.value.push({ id: crypto.randomUUID(), kind, title: '', body: '', items: [], selectedOptionId: null })
   }
+  function acceptPromotion(deck: ThinkingDeck) {
+    layers.value = deck.layers
+    revision.value = deck.revision
+    baseline.value = JSON.stringify(deck.layers)
+  }
   function move(index: number, offset: number) {
     const target = index + offset
     if (target < 0 || target >= layers.value.length) return
@@ -69,5 +74,5 @@ export function useThinkingDeck(boardId: Ref<string>, cardId: Ref<string>) {
     if (layer) layers.value.splice(target, 0, layer)
   }
   watch([boardId, cardId], () => { layers.value = []; baseline.value = '[]'; void load() }, { immediate: true })
-  return { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, save, add, move }
+  return { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, save, add, move, acceptPromotion }
 }
