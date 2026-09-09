@@ -10,7 +10,7 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Application.Services;
 
 public sealed class ThinkingAnswerService(IUnitOfWork unitOfWork, IThinkingDeckRepository decks,
-    IWorkspaceInsightRepository memories, IAuthorizationService authorization)
+    IWorkspaceInsightRepository memories, IAuthorizationService authorization, ICaptureStore captureStore)
 {
     public async Task<Result<WorkspaceMemoryDto?>> GetAsync(Guid userId, Guid boardId, Guid cardId, Guid layerId, CancellationToken ct)
     {
@@ -38,6 +38,7 @@ public sealed class ThinkingAnswerService(IUnitOfWork unitOfWork, IThinkingDeckR
             var memory = new WorkspaceMemory(userId, boardId, string.IsNullOrWhiteSpace(layer.Title) ? "Thinking question" : layer.Title,
                 dto.Text, dto.Status, originalEvidence: evidence);
             memory.AttachThinkingSource(cardId, layerId, deck.Revision, hash);
+            await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
             memories.Add(memory);
             decks.GuardRevision(deck);
             return await memories.SaveAsync(ct) ? Result.Success(WorkspaceInsightService.MapMemory(memory)) : Conflict();

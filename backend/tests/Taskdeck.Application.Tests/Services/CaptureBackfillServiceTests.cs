@@ -500,6 +500,10 @@ public sealed class CaptureBackfillServiceTests
         public Task<int> CountByUserAsync(Guid userId, CancellationToken cancellationToken = default)
             => Task.FromResult(_captures.Values.Count(capture => capture.UserId == userId));
 
+        public Task<IReadOnlyList<Capture>> NativeByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<Capture>>(_captures.Values.Where(capture => capture.UserId == userId && capture.LegacyRequestId == null)
+                .OrderBy(capture => capture.Id).Skip(offset).Take(limit).ToList());
+
         public Task<int> DeleteByUserAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             var removed = _captures.Values.Where(capture => capture.UserId == userId).Select(c => c.Id).ToList();

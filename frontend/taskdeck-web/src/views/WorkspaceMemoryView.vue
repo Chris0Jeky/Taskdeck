@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import WorkspaceMemoryExport from '../components/workspace/WorkspaceMemoryExport.vue'
+import WorkspaceMemorySources from '../components/workspace/WorkspaceMemorySources.vue'
 import { TdSkeleton } from '../components/ui'
 import { useBoardStore } from '../store/boardStore'
 import TdDialog from '../components/ui/TdDialog.vue'
@@ -394,6 +395,7 @@ watch(queryBoardId, () => {
             </li>
           </ol>
         </details>
+        <WorkspaceMemorySources :memory="memory" />
         <div class="paper-memory__actions">
           <PaperHLBtn data-action="edit-memory" variant="ghost" :disabled="isBusy(memory.id) || showEditor || saving" @click="openEdit(memory)">Correct</PaperHLBtn>
           <PaperHLBtn data-action="toggle-memory-archive" variant="ghost" :disabled="isBusy(memory.id) || showEditor || saving" @click="toggleArchived(memory)">

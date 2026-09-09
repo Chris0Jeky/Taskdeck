@@ -42,6 +42,10 @@ Contextual companion continuation (#2808, implementation branch):
 - Card thinking and Focus can open a board-scoped companion with explicit card, shared thinking and private-memory selections. The server rechecks access, archive state and saved memory versions before dispatch; streaming also rejects a changed source receipt. User intent remains separate from bounded source material.
 - Read-only proposal previews return the diff and effective revision together, preserve approved pins, and expire on the client. Review remains the approval and explicit Apply surface. SourceAsset/audio integration, affected-object overlays and model usefulness are still open. Direct proof is in the [overhaul validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md).
 
+Private memory source continuation (#2808, implementation branch):
+- New private answers preserve original question evidence and answer text as native Context Fabric source assets, with immutable supersession on correction. The source and memory write share a transaction; a stale question or competing correction rolls both back. Existing saved history is admitted on the next explicit memory write.
+- The private originals viewer and version-2 memory download expose the retained text and source links across all experiences. Both account export formats include native originals even after board deletion; account erasure removes them. Archiving excludes active context without erasing sources. Audio, source representations, explicit SourceAsset selection and bulk historical admission remain open.
+
 Transcript prompt identity (#2211, current implementation):
 
 - Current LLM transcript extraction records `llm-triage.v3`, including successful empty extraction, so the capture-reference-date semantics introduced by #2206 have their own provenance identity. The JSON shape remains schema v2; deterministic extraction keeps its existing identity. Historical `llm-triage.v2` payloads, schema and recorded provenance remain readable. The frontend classifier and current packaged acceptance checks move with the producer. This changes attribution, not review-first approval or Apply behavior.
