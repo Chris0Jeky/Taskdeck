@@ -16,6 +16,31 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class PrivateMemorySourceApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SourceViewRechecksMembershipAndBoardArchiveWhileOwnerPortabilityRemainsAvailable(bool archiveBoard)
+    {
+        using var owner = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(owner, "source-board-owner");
+        var board = await ApiTestHarness.CreateBoardAsync(owner);
+        using var viewer = factory.CreateClient();
+        var person = await ApiTestHarness.AuthenticateAsync(viewer, "source-viewer");
+        (await owner.PostAsJsonAsync($"/api/boards/{board.Id}/access", new GrantAccessDto(board.Id, person.UserId, Taskdeck.Domain.Enums.UserRole.Viewer))).EnsureSuccessStatusCode();
+        var response = await viewer.PostAsJsonAsync("/api/workspace-memory", new CreateWorkspaceMemoryDto(board.Id, "Private", "My original answer", "unknown"));
+        response.EnsureSuccessStatusCode();
+        var memory = (await response.Content.ReadFromJsonAsync<WorkspaceMemoryDto>())!;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            if (archiveBoard) { (await db.Boards.FindAsync(board.Id))!.Archive(); await db.SaveChangesAsync(); }
+            else await db.BoardAccesses.Where(x => x.BoardId == board.Id && x.UserId == person.UserId).ExecuteDeleteAsync();
+        }
+        (await viewer.GetAsync($"/api/workspace-memory/{memory.Id}/sources")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var export = (await viewer.GetFromJsonAsync<UserDataExportDto>("/api/account/export"))!;
+        export.Data.NativeCaptures!.Single().Id.Should().Be(memory.Sources!.CaptureId);
+    }
+
     [Fact]
     public async Task OriginalAndCorrectionsSurviveBoardDeletionInBothPrivateExportsAndAccountErasureDeletesThem()
     {
