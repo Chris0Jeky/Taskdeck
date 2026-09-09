@@ -35,6 +35,7 @@ export function useAutomationChat() {
   let requestedSessionId: string | null = null
   let localMessageSequence = 0
   const localMessagesBySession = new Map<string, ChatMessage[]>()
+  const sessionWriteGenerations = new Map<string, number>()
   const chatHealth = ref<ChatProviderHealth | null>(null)
   const chatHealthLoadError = ref<string | null>(null)
 
@@ -272,6 +273,7 @@ export function useAutomationChat() {
       const result = await chatApi.getSession(sessionId)
       if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
       localMessagesBySession.delete(sessionId)
+      sessionWriteGenerations.set(sessionId, (sessionWriteGenerations.get(sessionId) ?? 0) + 1)
       selectedSession.value = result
     } catch (e: unknown) {
       if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
@@ -285,6 +287,7 @@ export function useAutomationChat() {
       const result = await chatApi.getSession(sessionId)
       if (isDisposed || requestedSessionId !== sessionId || selectedSession.value?.id !== sessionId) return
       localMessagesBySession.delete(sessionId)
+      sessionWriteGenerations.set(sessionId, (sessionWriteGenerations.get(sessionId) ?? 0) + 1)
       selectedSession.value = result
       const sessionIndex = sessions.value.findIndex((session) => session.id === sessionId)
       if (sessionIndex >= 0) sessions.value.splice(sessionIndex, 1, result)
@@ -369,6 +372,7 @@ export function useAutomationChat() {
         messageContent.value = ''
         const currentSession = selectedSession.value
         const localUserMessage = createLocalUserMessage(sessionId, content, sentMessage.createdAt)
+        sessionWriteGenerations.set(sessionId, (sessionWriteGenerations.get(sessionId) ?? 0) + 1)
         const retainedLocalMessages = retainLocalMessages(sessionId, [localUserMessage, sentMessage])
         selectedSession.value = {
           ...currentSession,
@@ -406,6 +410,10 @@ export function useAutomationChat() {
 
     const sessionId = session.id
     const bindingGeneration = ++boardBindingGeneration
+    const writeGenerationAtBindingStart = sessionWriteGenerations.get(sessionId) ?? 0
+    const localMessageIdsAtBindingStart = new Set(
+      (localMessagesBySession.get(sessionId) ?? []).map((message) => message.id),
+    )
     bindingBoard.value = true
     bindingMessageId.value = messageId
     boardBindingError.value = null
@@ -413,13 +421,38 @@ export function useAutomationChat() {
       const bound = await chatApi.bindBoard(sessionId, { boardId })
       if (isDisposed) return
 
-      const sessionIndex = sessions.value.findIndex((item) => item.id === sessionId)
-      if (sessionIndex >= 0) sessions.value.splice(sessionIndex, 1, bound)
-
-      if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
-        selectedSession.value = bound
+      let effectiveBound = bound
+      if (
+        requestedSessionId === sessionId
+        && selectedSession.value?.id === sessionId
+        && bindingGeneration === boardBindingGeneration
+      ) {
+        const currentSession = selectedSession.value
+        const writeGeneration = sessionWriteGenerations.get(sessionId) ?? 0
+        if (writeGeneration === writeGenerationAtBindingStart) {
+          localMessagesBySession.delete(sessionId)
+          selectedSession.value = bound
+        } else {
+          const newerLocalMessages = (localMessagesBySession.get(sessionId) ?? [])
+            .filter((message) => !localMessageIdsAtBindingStart.has(message.id))
+          const currentMessages = currentSession.recentMessages
+            .filter((message) => !localMessageIdsAtBindingStart.has(message.id))
+          effectiveBound = {
+            ...currentSession,
+            boardId: bound.boardId,
+            recentMessages: mergeLocalMessages(
+              mergeLocalMessages(bound.recentMessages, currentMessages),
+              newerLocalMessages,
+            ),
+          }
+          localMessagesBySession.set(sessionId, newerLocalMessages)
+          selectedSession.value = effectiveBound
+        }
         boardBindingReceipt.value = boardNameById.value.get(boardId) ?? 'the selected board'
       }
+
+      const sessionIndex = sessions.value.findIndex((item) => item.id === sessionId)
+      if (sessionIndex >= 0) sessions.value.splice(sessionIndex, 1, effectiveBound)
     } catch (e: unknown) {
       if (isDisposed || requestedSessionId !== sessionId || selectedSession.value?.id !== sessionId) return
       boardBindingError.value = getErrorDisplay(e, 'Failed to link board').message
@@ -524,6 +557,7 @@ export function useAutomationChat() {
   onScopeDispose(() => {
     isDisposed = true
     localMessagesBySession.clear()
+    sessionWriteGenerations.clear()
     stopWatch()
   })
 
