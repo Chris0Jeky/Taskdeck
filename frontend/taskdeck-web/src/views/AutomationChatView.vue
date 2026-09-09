@@ -15,15 +15,20 @@ const {
   loadingHealth,
   creatingSession,
   sendingMessage,
+  bindingBoard,
+  bindingMessageId,
+  boardBindingError,
+  boardBindingReceipt,
   chatHealth,
   chatHealthLoadError,
   newSessionTitle,
   newSessionBoardId,
   messageContent,
-  requestProposal,
   boardOptions,
+  eligibleBoards,
   sortedMessages,
   lastMessageIsClarification,
+  pendingBoardRecovery,
   selectedSessionBoardName,
   pendingSessionBoardContextLabel,
   queryBoardId,
@@ -32,6 +37,8 @@ const {
   handleCreateSession,
   handleSendMessage,
   handleSkipClarification,
+  bindBoardToPendingTurn,
+  continuePendingInstruction,
   loadBoardOptions,
   loadSession,
   loadProviderHealth,
@@ -105,17 +112,27 @@ const {
           <ChatMessageList
             :messages="sortedMessages"
             :sending-message="sendingMessage"
+            :eligible-boards="eligibleBoards"
+            :loading-boards="loadingBoards"
+            :selected-session-board-id="selectedSession.boardId"
+            :selected-session-board-name="selectedSessionBoardName"
+            :pending-board-message-id="pendingBoardRecovery?.messageId ?? null"
+            :binding-board="bindingBoard"
+            :binding-message-id="bindingMessageId"
+            :board-binding-error="boardBindingError"
+            :board-binding-receipt="boardBindingReceipt"
             @apply-hint-suggestion="applyHintSuggestion"
             @open-proposal-review="openProposalReview"
+            @bind-board="bindBoardToPendingTurn"
+            @continue-instruction="continuePendingInstruction"
+            @open-boards="openRoute('/workspace/boards')"
           />
 
           <ChatComposeBar
             :message-content="messageContent"
-            :request-proposal="requestProposal"
             :sending-message="sendingMessage"
             :last-message-is-clarification="lastMessageIsClarification"
             @update:message-content="messageContent = $event"
-            @update:request-proposal="requestProposal = $event"
             @send-message="handleSendMessage"
             @skip-clarification="handleSkipClarification"
           />

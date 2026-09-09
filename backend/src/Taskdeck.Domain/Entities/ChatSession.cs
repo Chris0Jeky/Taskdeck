@@ -44,6 +44,23 @@ public class ChatSession : Entity
         Touch();
     }
 
+    public void BindBoard(Guid boardId)
+    {
+        if (boardId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "BoardId cannot be empty");
+        if (Status == ChatSessionStatus.Archived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Cannot bind an archived chat session");
+        if (BoardId == boardId)
+            return;
+        if (BoardId.HasValue)
+            throw new DomainException(
+                ErrorCodes.Conflict,
+                "This chat session is already linked to a different board. Start a new session to use another board.");
+
+        BoardId = boardId;
+        Touch();
+    }
+
     public void Archive()
     {
         if (Status == ChatSessionStatus.Archived)
