@@ -8,6 +8,7 @@ import { normalizeChatRole, extractParseHint } from '../../utils/chat'
 import type { ParsedHintMessage } from '../../utils/chat'
 import ChatParseHintCard from './ChatParseHintCard.vue'
 import ChatToolCallDetails from './ChatToolCallDetails.vue'
+import ChatProposalPreview from './ChatProposalPreview.vue'
 
 const props = defineProps<{
   messages: ChatMessage[]
@@ -209,6 +210,17 @@ function bindSelectedBoard(messageId: string) {
         ></div>
         <div v-else class="td-message-content">{{ message.content }}</div>
       </template>
+      <details v-if="message.contextSources?.length" class="td-context-receipt">
+        <summary>Sources included in this turn ({{ message.contextSources.length }})</summary>
+        <ul>
+          <li v-for="source in message.contextSources" :key="`${source.kind}:${source.id}`">
+            {{ source.title }} — {{ source.kind === 'private-memory' ? 'Private memory' : source.kind === 'thinking' ? 'Shared thinking' : 'Card' }}
+            <span v-if="source.kind !== 'card' && source.revision !== null"> · version {{ source.revision }}</span>
+            <span v-if="source.truncated"> · excerpt</span>
+          </li>
+        </ul>
+        <p>These sources were checked when this message was sent. Answers can remain in this private conversation after a source changes.</p>
+      </details>
       <div v-if="message.proposalId && message.messageType === 'proposal-reference'" class="td-message-proposal">
         <span>Proposal: {{ message.proposalId }}</span>
         <button
@@ -224,6 +236,11 @@ function bindSelectedBoard(messageId: string) {
         :message-id="message.id"
         :expanded="expandedToolMetaIds.has(message.id)"
         @toggle="toggleToolMeta"
+      />
+      <ChatProposalPreview
+        v-if="message.proposalId && message.messageType === 'proposal-reference'"
+        :proposal-id="message.proposalId"
+        :board-id="selectedSessionBoardId"
       />
       <section
         v-if="message.id === pendingBoardMessageId"

@@ -80,6 +80,27 @@ describe('useAutomationChat', () => {
   })
 
   describe('initial state', () => {
+    it('keeps an embedded companion on its board and includes only explicit context', async () => {
+      const current = { id: 's1', title: 'Card companion', boardId: 'b1', recentMessages: [] }
+      chatApiMocks.getMySessions.mockResolvedValue([{ ...current, id: 'foreign', boardId: 'b2' }, current])
+      chatApiMocks.getSession.mockResolvedValue(current)
+      chatApiMocks.sendMessage.mockResolvedValue({ id: 'answer', sessionId: 's1', role: 'Assistant', content: 'Answer', messageType: 'text', createdAt: '2026-09-09T12:00:00Z' })
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat({ boardId: () => 'b1' })
+      await vi.waitFor(() => expect(chat.selectedSession.value?.id).toBe('s1'))
+      expect(chat.sessions.value.map(session => session.id)).toEqual(['s1'])
+      chat.messageContent.value = 'Consider this card'
+      chat.contextSelection.value = { cardId: 'c1', includeThinking: true, memories: [{ id: 'm1', revision: 3 }] }
+      await chat.handleSendMessage()
+      expect(chatApiMocks.sendMessage).toHaveBeenCalledWith('s1', {
+        content: 'Consider this card', context: { cardId: 'c1', includeThinking: true, memories: [{ id: 'm1', revision: 3 }] },
+      })
+      chatApiMocks.getSession.mockResolvedValue({ ...current, id: 'foreign', boardId: 'b2' })
+      await chat.loadSession('foreign')
+      expect(chat.selectedSession.value?.id).toBe('s1')
+      expect(toastMocks.error).toHaveBeenCalled()
+    })
+
     it('starts with empty sessions and no selected session', async () => {
       const { useAutomationChat } = await loadComposable()
       const chat = useAutomationChat()

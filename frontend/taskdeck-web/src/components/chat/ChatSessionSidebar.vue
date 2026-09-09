@@ -14,6 +14,7 @@ defineProps<{
   boardOptions: InputAssistOption[]
   queryBoardId: string
   pendingSessionBoardContextLabel: string
+  fixedBoard?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -52,6 +53,7 @@ const emit = defineEmits<{
         @input="emit('update:newSessionTitle', ($event.target as HTMLInputElement).value)"
       />
       <InputAssistField
+        v-if="!fixedBoard"
         :model-value="newSessionBoardId"
         :options="boardOptions"
         aria-label="Board context"
