@@ -140,3 +140,25 @@ Concurrent updates reject stale revisions. After an unconfirmed save, refresh be
 lost response cannot silently overwrite another session. Account export includes plan references and
 last focus in both formats; shared board exports exclude them. Account deletion erases the preference
 row. An additive migration introduces the plan JSON and revision columns with empty defaults.
+
+## Native originals for private memory
+
+New private answers and memories preserve original evidence and exact answer text as Context Fabric
+source assets. Corrections supersede an answer asset without rewriting it or the original evidence.
+Each memory revision names its answer asset. Title/status/archive-only changes reuse the same text
+asset. Existing memory history is admitted on the next explicit write from its saved text; admission
+timestamps describe source creation, while memory history retains the original revision dates.
+
+The authenticated `GET /api/workspace-memory/{id}/sources` route requires both memory ownership and
+current active-board access. Source IDs are server assigned. No queue job or automatic model retrieval
+is created. Question revision and memory concurrency failures roll back source writes as well.
+
+Preserved originals are available on request beside memory history in every experience. The board's
+private memory download includes native assets and supersession links when present (format version 2);
+it is archival JSON, not an import/restore format. Both account exports include owner-scoped native
+captures, including originals whose board was deleted. Board deletion removes memory, not the retained
+originals. Account deletion erases native captures and their assets. Archiving only excludes active
+memory context; the viewer states this retention rule explicitly. Shared board exports omit originals.
+
+Bulk historical admission, audio/transcription representations, retry handling and explicit typed
+source selection remain in [the continuation tracker](https://github.com/Chris0Jeky/Taskdeck/issues/2808).

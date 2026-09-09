@@ -51,9 +51,9 @@ counts are not used as evidence. Further implementation is tracked in
 
 ## Remaining sequence
 
-1. **Dependency delivery qualification.** Linked-step promotion is merged in PR #2837. Explicit
-   dependency edges, cycle/CAS/deletion/archive guards and portable ID remapping are implemented in
-   PR #2844; complete its hosted qualification and merge. Do not reimplement those edges.
+1. **Dependency delivery is merged.** Linked-step promotion landed in PR #2837; explicit dependency
+   edges, cycle/CAS/deletion/archive guards and portable ID remapping landed in PR #2844 after hosted
+   qualification. Continue broader source and representation work without reimplementing those edges.
 2. **Contextual companion follow-through.** Card thinking/Focus now embeds board-scoped conversations,
    explicit selected card/shared-thinking/private-memory context and effective-revision previews.
    Continue with typed SourceAsset selection and previews mapped onto affected board objects; retain
@@ -61,9 +61,10 @@ counts are not used as evidence. Further implementation is tracked in
 3. **Studio continuity and planning.** Implemented personal plan, last-worked continuation, Focus and
    Make room without changing due dates. List/Board/Horizon represent chosen work over the same cards.
    Direct product verification is recorded below; subjective experience preference remains a human choice.
-4. **Shared source infrastructure.** Connect question originals and audio representations to Context
-   Fabric, with supersession/history and retention/deletion/export coverage. Keep board-shared thinking
-   and user-private answers separate throughout those pipelines.
+4. **Shared source infrastructure.** The private-memory source continuation implements native question
+   evidence and answer originals, corrections, retention/deletion and exports. Finish bulk historical
+   admission, typed source selection, audio representations and retry/failure handling. Keep shared
+   thinking and user-private answers separate throughout those pipelines.
 5. **Expanded intelligence and optional attention.** Build a usefulness corpus for new structural and
    model-generated observations, then prove freshness, permissions, deduplication, budget and dismissal.
    Optional nudges require a separate opt-in suppression policy; current insights never interrupt.
@@ -98,6 +99,26 @@ excerpt status; generated answers remain in owned chat history after a source ch
 question originals are not yet promoted into Context Fabric by this delivery.
 Existing owner decisions remain in [OUTSTANDING_TASKS.md](../../OUTSTANDING_TASKS.md); no publisher,
 signing, private-instance, release/runner or subjective palette/dogfooding item is inferred complete.
+
+## Private memory source continuation (2026-09-09)
+
+`PrivateMemorySourceApiTests` and extended `ThinkingAnswerApiTests` exercise immutable question/answer
+originals, exact history references, correction supersession, admission of existing saved history,
+owner isolation, competing-save rollback and stale-question rollback. Buffered and streaming account
+exports preserve originals after board deletion; account erasure removes source assets. Saving memory
+does not enqueue an LLM request. The initial focused API set passed 30 tests.
+
+The new originals viewer and export tests passed with the surrounding memory surface (26 frontend
+tests). The real browser journey creates and corrects memory, reads exact preserved whitespace,
+downloads and inspects source JSON, archives/restores and switches through all four experiences.
+It passed at 375px with no horizontal overflow and no serious/critical axe findings in the new panel.
+The first test attempt inspected sources before correction completed; the final test waits for the
+saved revision. This was a test synchronization correction, not a source-storage failure.
+
+The first full backend invocation found a capture-store test double missing the added native-export
+method. After updating that double, the entire Application suite passed 4,258 tests. Other full-suite
+results and hosted qualification belong to the delivery PR; this entry does not imply they passed.
+Typecheck passed; scoped lint has no errors and retains the existing memory-view length warning.
 
 ## Personal planning continuation (2026-09-09)
 

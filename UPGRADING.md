@@ -14,6 +14,17 @@ changes.
 
 ## Unreleased workspace overhaul
 
+Private memory sources add four nullable reference columns across `WorkspaceMemories` and its
+history. New answers and corrections stage native Context Fabric captures in the same transaction;
+older memories preserve their saved history and acquire sources on their next explicit write.
+There is no automatic processing job. **BREAKING: none.** Account exports add `nativeCaptures`;
+private board-memory downloads include source assets in version 2 when sources exist. These
+downloads remain archival JSON, not an account or board restore format.
+
+Archiving memory excludes it from active context but retains originals. Deleting its board removes
+the memory and shared context while retaining the owner's native originals for account export.
+Account deletion erases those captures and assets. This retention rule is shown beside originals.
+
 The contextual companion adds two nullable columns to `ChatMessages` for explicit source selections
 and source receipts. Old messages remain readable. Selected private-memory text is resolved for the
 model only after actor, board, archive and revision checks; it is not appended to the stored user
