@@ -729,7 +729,7 @@ export function buildRecallReport(rawObservations, policy, options) {
   for (const indexes of groupIndexes.values()) {
     const rows = indexes.map((index) => observations[index]);
     const groupErrors = [];
-    for (const field of ['mergedAt', 'finalHeadSha', 'headBranch', 'headRepository', 'baseSha', 'mergeBaseSha', 'baseBranch', 'baseRepository', 'mergeCommitSha', 'mergeTreeSha']) {
+    for (const field of ['mergedAt', 'finalHeadSha', 'headBranch', 'headRepository', 'baseSha', 'baseBranch', 'baseRepository', 'mergeCommitSha', 'mergeTreeSha']) {
       if (new Set(rows.map((row) => row[field])).size !== 1) groupErrors.push(`pr-${field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-mismatch`);
     }
     if (!rows.some((row) => row.usable && row.headSha === row.finalHeadSha && row.requiredConclusion === 'success')) {

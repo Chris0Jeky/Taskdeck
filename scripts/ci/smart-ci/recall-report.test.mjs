@@ -486,28 +486,40 @@ test('plan, landed merge, PR and temporal bindings fail closed on mismatch', () 
   assert(normaliseObservation(outsideWindow, policy, window).errors.includes('merged-at-outside-window'));
 });
 
-test('one PR cannot combine attempts from different observed merge first parents', () => {
+test('a valid older-head failure keeps recall evidence after the base moves for the final head', () => {
   const prNumber = 389;
   const finalHeadSha = shaFor(900389);
   const earlierBase = shaFor(800389);
+  const finalBase = shaFor(800390);
   const earlier = observation(prNumber, {
     headSha: shaFor(900388),
     finalHeadSha,
+    baseSha: finalBase,
     planBaseSha: earlierBase,
     mergeBaseSha: earlierBase,
     requiredRunId: 700389,
     runAttempt: 1,
+    failedCheckName: 'Docs Governance / Docs Governance',
   });
   const final = observation(prNumber, {
     headSha: finalHeadSha,
     finalHeadSha,
+    baseSha: finalBase,
+    planBaseSha: finalBase,
+    mergeBaseSha: finalBase,
     requiredRunId: 700390,
     runAttempt: 1,
   });
+  assert.equal(normaliseObservation(earlier, policy, window).usable, true);
+  assert.equal(normaliseObservation(final, policy, window).usable, true);
   const report = buildRecallReport([earlier, final], policy, window);
   assert.equal(report.observationCount, 1);
-  assert.equal(report.unusableObservationCount, 1);
-  assert(report.pullRequests[0].errors.includes('pr-merge-base-sha-mismatch'));
+  assert.equal(report.revisionObservationCount, 2);
+  assert.equal(report.unusableObservationCount, 0);
+  assert.equal(report.failedLaneCount, 1);
+  assert.equal(report.missedFailureCount, 0);
+  assert.equal(report.pullRequests[0].usable, true);
+  assert.equal(report.pullRequests[0].revisionCount, 2);
 });
 
 test('recall validates an accepted moved-base plan against its observed first parent', () => {
