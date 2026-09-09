@@ -23,6 +23,8 @@ test('frontend fingerprint is repeatable and changes with source, public assets 
   assert.match(baseline, /^sha256:[a-f0-9]{64}$/)
   assert.equal(fingerprintFrontend(root, 'production', { VITE_API_BASE_URL: '/api' }), baseline)
   assert.notEqual(fingerprintFrontend(root, 'production', { VITE_API_BASE_URL: '/other-api' }), baseline)
+  assert.notEqual(fingerprintFrontend(root, 'production', { VITE_API_BASE_URL: '/api' }, { base: '/Taskdeck/' }), baseline)
+  assert.notEqual(fingerprintFrontend(root, 'production', { VITE_API_BASE_URL: '/api' }, { minify: false }), baseline)
   writeFileSync(join(root, 'src/main.ts'), 'changed content')
   const changedSource = fingerprintFrontend(root, 'production', { VITE_API_BASE_URL: '/api' })
   assert.notEqual(changedSource, baseline)

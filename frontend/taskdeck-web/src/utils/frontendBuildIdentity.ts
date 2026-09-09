@@ -1,3 +1,2 @@
-/** Stamped from frontend inputs at production build time; development has no fixed identity. */
-declare const __TASKDECK_FRONTEND_BUILD__: string | null
-export const frontendBuildIdentity: string | null = typeof __TASKDECK_FRONTEND_BUILD__ === 'undefined' ? null : __TASKDECK_FRONTEND_BUILD__
+/** The build plugin replaces this module after Vite resolves its final configuration. */
+export const frontendBuildIdentity: string | null = null
