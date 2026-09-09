@@ -77,6 +77,7 @@ const {
   unavailableProposalId,
   unavailableProposalMalformed,
   queueAccessRevoked,
+  queueAccessRevokedRetry,
   queueRefreshStale,
   queueRefreshRefused,
   queueRefreshRecovered,
@@ -659,6 +660,7 @@ watch(
 const {
   editing: revisionEditing,
   saving: revisionSaving,
+  revisionChangedWhileEditing,
   revisionCount,
   revisionsLoaded,
   latestRevision,
@@ -1137,6 +1139,24 @@ const busy = computed(
     applyGuardBusy.value,
 )
 
+// Revision editing owns the decision lock, but it must not make the two
+// read-only review keys look dead. Keep the exception narrow: another action,
+// confirmation dialog, or apply preflight still silences every review key.
+const readonlyReviewKeymapEnabled = computed(
+  () =>
+    (revisionEditing.value || revisionSaving.value) &&
+    proposalActionBusyId.value === null &&
+    !bulkDismissBusy.value &&
+    !batchApproveBusy.value &&
+    !batchConfirmationOpen.value &&
+    !batchExecuteBusy.value &&
+    !batchExecuteOpen.value &&
+    !applyGuardBusy.value &&
+    !revisionReviewRefreshBusy.value &&
+    executeConfirmProposal.value === null &&
+    rejectPromptProposal.value === null,
+)
+
 /**
  * GH-1964 — which half of the revision lock the rail should explain.
  *
@@ -1187,16 +1207,12 @@ const applyPhase = computed<ApplyPhase>(() => {
 // #1830 round 2: the confirmation dialog must not claim "0 operations will be
 // applied" for the revision-aware apply path onApply deliberately allows (zero
 // original operations + a saved revision, #1235). `revisionCount` tracks the
-// ACTIVE proposal only, so it is only passed while the proposal awaiting
-// confirmation is still the active one — otherwise the dialog is told nothing
-// (null) and falls back to copy that claims no count.
-const applyConfirmRevisionCount = computed<number | null>(() => {
-  const pending = executeConfirmProposal.value
-  if (!pending) return null
-  if (!proposalIdsEqual(activeProposal.value?.id, pending.id)) return null
-  if (!revisionsLoaded.value) return null
-  return revisionCount.value
-})
+// Capture the ACTIVE proposal's authoritative count when confirmation opens.
+// A later revision resync must not make the open dialog lose that context.
+// Capture this at confirmation open. A collaborator's revision resync makes
+// the live count briefly unknown, but must not make an already-open dialog
+// rewrite its truthful decision-time context.
+const applyConfirmRevisionCount = ref<number | null>(null)
 
 // --- Apply-flow focus restoration (GH-1942) ----------------------------
 //
@@ -1635,8 +1651,15 @@ watch(
 )
 
 watch(executeConfirmProposal, (pending, previous) => {
+  if (pending && !previous) {
+    applyConfirmRevisionCount.value =
+      proposalIdsEqual(activeProposal.value?.id, pending.id) && revisionsLoaded.value
+        ? revisionCount.value
+        : null
+  }
   // Only on close (open → closed), never on the open itself.
   if (pending !== null || !previous) return
+  applyConfirmRevisionCount.value = null
   const captured = applyReturnFocusEl
   applyReturnFocusEl = null
   // After the flush: the rail may have just re-rendered (execute lands → the
@@ -2478,13 +2501,21 @@ useReviewKeymap(
     // dialog the same standing: ⌫ behind it would re-open the gate it IS.
     enabled: () =>
       !isArchivedHistory.value &&
-      !busy.value &&
+      (!busy.value || readonlyReviewKeymapEnabled.value) &&
       activeProposal.value !== null &&
       (activeAppliedProposal.value === null || activeDismissable.value) &&
       executeConfirmProposal.value === null &&
       rejectPromptProposal.value === null &&
       (activeDecisionReceipt.value === null || activeDecisionReceipt.value === 'approved'),
     isActionEnabled: (action) => {
+      // P and Space inspect the current review record without changing its
+      // decision state, so they remain available while Request edit owns the
+      // shared lock. Enter/Backspace/E/D stay blocked for the whole editor
+      // lifetime, including its save round trips.
+      if (readonlyReviewKeymapEnabled.value) {
+        return action === 'onToggleProvenance' || action === 'onPreviewDiff'
+      }
+      if (busy.value) return false
       // An applied record is read-only: the only live key is ⌫, whose #1161
       // dual-purpose branch files the record away — the affordance the filing
       // rail still advertises for the reviewer's own applied proposal.
@@ -2991,8 +3022,11 @@ async function onClearBoardScope() {
         v-if="revisionEditing && !isArchivedHistory"
         :operations-payload="revisionEditorPayload ?? editablePayload"
         :saving="revisionSaving"
+        :revision-changed="revisionChangedWhileEditing"
         @save="onSaveRevision"
         @cancel="onCancelRevision"
+        @toggle-provenance="onToggleProvenance"
+        @preview-diff="onPreviewDiff"
       />
     </div>
     <!-- `tabindex="-1"` makes this a programmatic focus target and nothing
@@ -3021,8 +3055,18 @@ async function onClearBoardScope() {
           {{ $t('review.empty.accessRevoked.title') }}
         </h2>
         <p class="tk-lede">{{ $t('review.empty.accessRevoked.body') }}</p>
+        <p
+          v-if="queueAccessRevokedRetry"
+          class="tk-meta"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          data-testid="paper-review-access-revoked-retry"
+        >
+          {{ $t('review.empty.accessRevoked.retry') }}
+        </p>
       </template>
-      <template v-else-if="activeProposalSettledElsewhere">
+      <template v-else-if="activeProposalSettledElsewhere && !unavailableProposalId">
         <div class="tk-eyebrow">{{ $t('review.empty.settledElsewhere.eyebrow') }}</div>
         <h2 class="tk-h2" data-testid="paper-review-settled-elsewhere">
           {{ $t('review.empty.settledElsewhere.title') }}

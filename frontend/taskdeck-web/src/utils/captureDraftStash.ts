@@ -66,9 +66,10 @@ export type CaptureDraftVariant = 'nib' | 'composer'
  * so an old or sourceless stash is restored as a plain note and never as an
  * assistant-extracted transcript the author did not choose.
  */
-export type CaptureDraftSource = 'Typed' | 'TranscriptPaste'
+export type CaptureDraftSource = 'Typed' | 'TranscriptPaste' | 'TranscriptFile'
 
 function readSource(value: unknown): CaptureDraftSource {
+  if (value === 'TranscriptFile') return 'TranscriptFile'
   return value === 'TranscriptPaste' ? 'TranscriptPaste' : 'Typed'
 }
 

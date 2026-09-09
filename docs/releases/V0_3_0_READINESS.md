@@ -114,7 +114,7 @@ Linux hosted jobs only, and Windows (x2) or macOS (x10) legs run locally (the la
 `#2328`, agent-run proving checks until then) or carry a local fallback. That sizes CI-07 `#2331` and
 the section E Windows contract: the retained full Windows suite is local-runner work, not hosted.
 
-**Clause-4 risks.** Four open intermittent reds can take `main` red without a code defect. None is
+**Clause-4 risks.** Three open intermittent reds can take `main` red without a code defect. None is
 a product defect; all four are noise in clause 4 and in the SC-4 observation window.
 **`#2489` closed** 2026-09-04 on PR `#2566` (merge `ea3e39e7d`): the notification paging test now pins
 the query shape instead of a 2 s wall-clock bound. Three shapes were seeded from that night's reds in its
@@ -125,7 +125,7 @@ connection` case reds ubuntu Frontend Unit (seen on the alpha lane's docs-only P
 **`#2561`** is the Windows launcher one: dev-up `Stop-LoadedStack` retains PID state when
 the pre-kill identity probe reads Unknown, a 3 s assertion failure, not the `#2378` timeout class (seen
 once, PR `#2542` run `33850321779`).
-**`#2691`** is the Windows backend one: `ArtefactExtractionServiceTests.ExtractAsync_ShouldPropagateCallerCancellationWithoutRecording` failed after 5 s on `Backend Unit (windows-latest)` for PR `#2627`, a one-file frontend change (run `33941869440`); it passed on one rerun and had no tracked issue until 2026-09-05.
+**`#2691`** closed on 2026-09-07 after PR #2716 replaced the cancellation timing race with an extractor-entry handshake. The current regression is `ArtefactExtractionServiceTests.ExtractAsync_ShouldPropagateCallerCancellationAfterExtractorEntryWithoutRecording`. Four later required Windows Backend Unit jobs passed (runs `34162770894`, `34162836227`, `34162817370`, and `34163031267`); the issue records the exact heads and jobs. This bounded observation supersedes the earlier rerun-only checkpoint from run `33941869440`.
 **`#2378`** (Priority I) is the Windows Frontend Unit launcher timeout. PR `#2427` (merge `7d8deef12`) removed that leg from the required E2E prerequisites, so its timeout can no longer leave `E2E Smoke` skipped; the launcher timeout itself is still open. It fired at least five more times on 2026-09-05 (PR `#2575` twice, PR `#2616`, PR `#2619`, and `main` itself at `1e234a011`; `spawnSync powershell.exe ETIMEDOUT` at about 20 s on four different cases, on diffs that could not have caused it), each recorded on the issue and, on PRs, re-proven with one rerun, never more. During the D-12 sweep the same afternoon it fired twice more: PR `#2654` (run `33948799223`, the launcher-suite step cancelled at the 25 minute job ceiling) and PR `#2626` (run `33969725867`, the launcher-suite step failing at 7 minutes), both re-proven green on one rerun.
 The earlier pair named here is closed: **`#2425`** (Windows worktree helper scenario 28, the forced
 5s timeout landing in the checkout phase) closed 2026-09-04 on PR `#2447` (merge `550f195ce`), and

@@ -76,6 +76,25 @@ public class LlmRequest : Entity
     }
 
     /// <summary>
+    /// Starts an explicit second capture-triage attempt after a completed run
+    /// found nothing to propose. This is deliberately narrower than
+    /// <see cref="MarkAsProcessing"/>: only the capture service may select a
+    /// completed row that is still a terminal, proposal-less capture.
+    /// </summary>
+    public void RequeueCompletedCaptureForTriage()
+    {
+        if (Status != RequestStatus.Completed)
+            throw new DomainException(
+                ErrorCodes.ValidationError,
+                "Can only requeue completed requests for capture triage");
+
+        Status = RequestStatus.Processing;
+        ErrorMessage = null;
+        ProcessedAt = null;
+        Touch();
+    }
+
+    /// <summary>
     /// Completes the request, optionally recording a non-fatal degradation notice (#2192).
     /// </summary>
     /// <param name="degradedNotice">

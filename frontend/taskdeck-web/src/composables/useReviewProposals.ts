@@ -302,6 +302,10 @@ export function useReviewProposals() {
   // permission failure into a fresh false negative, which is the exact class
   // #2194 exists to remove.
   const queueAccessRevoked = ref(false)
+  // Raised only when a user-triggered list read is refused again while the
+  // revoked panel is already up. Background reads and the first refusal keep
+  // the durable authority panel as the only report for that fact.
+  const queueAccessRevokedRetry = ref(false)
   // Unlike `queueAccessRevoked`, this is not an authority result. It means the
   // last queue we could render is still shown while background reads retry.
   const queueRefreshStale = ref(false)
@@ -594,7 +598,12 @@ export function useReviewProposals() {
       .filter(
         (proposal) =>
           normalizeProposalStatus(proposal.status) === 'PendingReview' &&
-          !isProposalExpired(proposal),
+          !isProposalExpired(proposal) &&
+          // A deferred hash target remains visible so its deep link can render
+          // it, but it is not awaiting review and must not change the
+          // announcement identity when the reviewer navigates between such
+          // targets.
+          !isProposalDeferred(proposal),
       )
       .map((proposal) => proposal.id),
   )
@@ -858,6 +867,7 @@ export function useReviewProposals() {
 
   async function loadProposalsWithOutcome(
     options?: ProposalLoadOptions,
+    userInitiated = false,
   ): Promise<ProposalLoadOutcome> {
     const signal = options?.signal
     if (signal?.aborted) return 'aborted'
@@ -904,6 +914,7 @@ export function useReviewProposals() {
       // An explicit load that succeeded is proof access is back.
       const accessWasRevoked = queueAccessRevoked.value
       queueAccessRevoked.value = false
+      queueAccessRevokedRetry.value = false
       if (accessWasRevoked) resumeQueueRefreshAfterPermissionRecovery()
     } catch (e: unknown) {
       if (requestId !== latestProposalLoadRequestId) return 'superseded'
@@ -934,7 +945,7 @@ export function useReviewProposals() {
       // that calls `loadProposals` still gets its failure signal and its
       // 'failed' outcome.
       if (isForbiddenError(e)) {
-        recordQueueAccessRevoked()
+        recordQueueAccessRevoked(userInitiated)
       } else {
         toast.error(getErrorDisplay(e, t('review.toast.loadProposalsFailed')).message)
       }
@@ -960,7 +971,7 @@ export function useReviewProposals() {
   }
 
   async function loadProposals(): Promise<void> {
-    await loadProposalsWithOutcome()
+    await loadProposalsWithOutcome(undefined, true)
   }
 
   // --- Background queue refresh (#2194) ---------------------------------
@@ -1035,8 +1046,10 @@ export function useReviewProposals() {
    * three statements would be how the two legs drift into telling a reviewer
    * two different stories about one revocation.
    */
-  function recordQueueAccessRevoked() {
+  function recordQueueAccessRevoked(userInitiated = false) {
+    const accessWasAlreadyRevoked = queueAccessRevoked.value
     queueAccessRevoked.value = true
+    if (accessWasAlreadyRevoked && userInitiated) queueAccessRevokedRetry.value = true
     proposals.value = []
     // What is rendered is no longer any read's answer, so no read has landed
     // for this scope any more (#2599 item 1). The revoked panel has its own
@@ -1660,6 +1673,7 @@ export function useReviewProposals() {
     unavailableProposalId,
     unavailableProposalMalformed,
     queueAccessRevoked,
+    queueAccessRevokedRetry,
     queueRefreshStale,
     queueRefreshRefused,
     queueRefreshRecovered,

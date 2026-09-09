@@ -21,6 +21,7 @@ public class ChatServiceBoardContextTests
     private readonly Mock<IAutomationProposalService> _proposalServiceMock = new();
     private readonly Mock<IAutomationPolicyEngine> _policyEngineMock = new();
     private readonly Mock<INotificationService> _notificationServiceMock = new();
+    private readonly Mock<IAuthorizationService> _authorizationServiceMock = new();
     private readonly Mock<IBoardContextBuilder> _boardContextBuilderMock = new();
 
     private readonly ChatService _service;
@@ -41,6 +42,9 @@ public class ChatServiceBoardContextTests
         _notificationServiceMock
             .Setup(s => s.PublishAsync(It.IsAny<CreateNotificationRequestDto>(), default))
             .ReturnsAsync(Result.Success(true));
+        _authorizationServiceMock
+            .Setup(s => s.CanReadBoardAsync(It.IsAny<Guid>(), It.IsAny<Guid>()))
+            .ReturnsAsync(Result.Success(true));
 
         _service = new ChatService(
             _unitOfWorkMock.Object,
@@ -49,6 +53,7 @@ public class ChatServiceBoardContextTests
             _proposalServiceMock.Object,
             _policyEngineMock.Object,
             _notificationServiceMock.Object,
+            _authorizationServiceMock.Object,
             boardContextBuilder: _boardContextBuilderMock.Object);
     }
 
@@ -145,7 +150,8 @@ public class ChatServiceBoardContextTests
             _plannerMock.Object,
             _proposalServiceMock.Object,
             _policyEngineMock.Object,
-            _notificationServiceMock.Object);
+            _notificationServiceMock.Object,
+            _authorizationServiceMock.Object);
 
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();

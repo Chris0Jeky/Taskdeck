@@ -7,6 +7,8 @@
  * - Applied proposal visibility in Paper's recently-applied ledger
  */
 
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
@@ -282,7 +284,7 @@ test('review view should display multiple pending proposals for the same board',
 test('saved revision decision lock consumes the first Apply until authoritative reads settle', async ({
   page,
   request,
-}) => {
+}, testInfo) => {
   test.setTimeout(90_000)
 
   const seed = `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`
@@ -311,6 +313,8 @@ test('saved revision decision lock consumes the first Apply until authoritative 
   let holdAuthoritativeReads = false
   let approveRequests = 0
   let executeRequests = 0
+  let rejectRequests = 0
+  let deferRequests = 0
   let signalQueueHeld!: () => void
   let releaseQueue!: () => void
   let signalSelectorsHeld!: () => void
@@ -326,6 +330,8 @@ test('saved revision decision lock consumes the first Apply until authoritative 
     const path = new URL(outgoing.url()).pathname
     if (path === `${proposalPath}/approve`) approveRequests += 1
     if (path === `${proposalPath}/execute`) executeRequests += 1
+    if (path === `${proposalPath}/reject`) rejectRequests += 1
+    if (path === `${proposalPath}/defer`) deferRequests += 1
   })
 
   await page.route('**/api/automation/proposals**', async (route) => {
@@ -374,6 +380,116 @@ test('saved revision decision lock consumes the first Apply until authoritative 
 
   await page.getByTestId('decision-edit').click()
   const operationsField = page.getByTestId('revision-field-operations')
+  await expect(operationsField).toBeVisible()
+
+  // Preserve the actual desktop/mobile action-row geometry as a runtime proof.
+  // These are measurements, rather than layout assertions: #1968 owns the
+  // already-tracked narrow-label overflow question separately.
+  const actionRow = page.locator('.revision-editor__actions')
+  const reviewSurface = page.getByTestId('paper-review-main')
+  const shortcutProofDirectory = process.env.TASKDECK_SHORTCUT_PROOF_DIR
+  async function focusReviewSurface() {
+    await reviewSurface.evaluate((element) => {
+      element.setAttribute('tabindex', '-1')
+      ;(element as HTMLElement).focus()
+    })
+    await expect(reviewSurface).toBeFocused()
+  }
+  async function captureActionRow(label: string, width: number) {
+    await page.setViewportSize({ width, height: 844 })
+    await expect(actionRow).toBeVisible()
+    const geometry = await actionRow.evaluate((row) => {
+      const rowBox = row.getBoundingClientRect()
+      const save = row.querySelector<HTMLElement>('[data-testid="revision-save"]')
+      const saveBox = save?.getBoundingClientRect()
+      return {
+        viewportWidth: window.innerWidth,
+        rowClientWidth: row.clientWidth,
+        rowScrollWidth: row.scrollWidth,
+        rowX: rowBox.x,
+        rowWidth: rowBox.width,
+        saveRight: saveBox ? saveBox.x + saveBox.width : null,
+      }
+    })
+    console.log(`revision action row ${label}: ${JSON.stringify(geometry)}`)
+    await testInfo.attach(`revision-action-row-${label}.json`, {
+      body: JSON.stringify(geometry),
+      contentType: 'application/json',
+    })
+    await testInfo.attach(`revision-action-row-${label}.png`, {
+      body: await actionRow.screenshot(),
+      contentType: 'image/png',
+    })
+    if (shortcutProofDirectory) {
+      await mkdir(shortcutProofDirectory, { recursive: true })
+      await writeFile(join(shortcutProofDirectory, `revision-action-row-${label}.json`), JSON.stringify(geometry))
+      await actionRow.screenshot({ path: join(shortcutProofDirectory, `revision-action-row-${label}.png`) })
+    }
+  }
+  await captureActionRow('desktop', 1280)
+  await captureActionRow('mobile', 390)
+  await page.setViewportSize({ width: 1280, height: 844 })
+
+  for (const testId of ['decision-reject', 'decision-edit', 'decision-defer', 'decision-apply']) {
+    await expect(page.getByTestId(testId)).toBeDisabled()
+  }
+
+  // Native editor fields retain P and Space as text. The read-only page keys
+  // only act after focus has left the editor.
+  const revisionReason = page.getByTestId('revision-reason')
+  await revisionReason.fill('draft')
+  await revisionReason.press('p')
+  await revisionReason.press('Space')
+  await expect(revisionReason).toHaveValue('draftp ')
+  await expect(page.getByTestId('paper-review-provenance-disclosure')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('paper-review-diff')).toHaveCount(0)
+
+  // P and Space are still available from the review surface under the revision
+  // lock, and the editor's native inspect controls are reachable from its last
+  // field by Tab and invoke the same handlers.
+  await focusReviewSurface()
+  await page.keyboard.press('p')
+  await expect(page.getByTestId('paper-review-provenance-disclosure')).toHaveAttribute('aria-expanded', 'true')
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('paper-review-diff')).toBeVisible()
+
+  await revisionReason.focus()
+  await page.keyboard.press('Tab')
+  const inspectProvenance = page.getByTestId('revision-inspect-provenance')
+  await expect(inspectProvenance).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('paper-review-provenance-disclosure')).toHaveAttribute('aria-expanded', 'false')
+  await page.keyboard.press('Tab')
+  const inspectDiff = page.getByTestId('revision-inspect-diff')
+  await expect(inspectDiff).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(page.getByTestId('paper-review-diff')).toHaveCount(0)
+
+  // No decision key can escape the revision lock.
+  await focusReviewSurface()
+  for (const key of ['Enter', 'Backspace', 'e', 'd']) await page.keyboard.press(key)
+  expect(approveRequests).toBe(0)
+  expect(executeRequests).toBe(0)
+  expect(rejectRequests).toBe(0)
+  expect(deferRequests).toBe(0)
+  await expect(page.getByTestId('revision-editor')).toBeVisible()
+
+  // A decision confirmation owns every review key, including the two
+  // read-only keys. Cancel it before continuing the saved-revision barrier.
+  await page.getByTestId('revision-cancel').click()
+  await expect(page.getByTestId('revision-editor')).toHaveCount(0)
+  await page.getByTestId('decision-reject').click()
+  await expect(page.getByTestId('reject-dialog')).toBeVisible()
+  await focusReviewSurface()
+  await page.keyboard.press('p')
+  await page.keyboard.press('Space')
+  await expect(page.getByTestId('paper-review-provenance-disclosure')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('paper-review-diff')).toHaveCount(0)
+  await expect(page.getByTestId('reject-dialog')).toBeVisible()
+  await page.getByTestId('reject-dialog-cancel').click()
+  await expect(page.getByTestId('reject-dialog')).toHaveCount(0)
+
+  await page.getByTestId('decision-edit').click()
   await expect(operationsField).toBeVisible()
   const revisedOperations = JSON.parse(await operationsField.inputValue()) as Array<{
     idempotencyKey: string

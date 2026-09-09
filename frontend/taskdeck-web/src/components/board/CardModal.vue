@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
 import { useVisualViewport } from '../../composables/useVisualViewport'
@@ -31,6 +32,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const router = useRouter()
+const pendingThinkingPath = ref<string | null>(null)
 
 const dialogRef = ref<HTMLElement | null>(null)
 const showDiscardConfirm = ref(false)
@@ -59,6 +62,21 @@ function focusInitialControl() {
   const firstFocusable = dialog.querySelector<HTMLElement>(focusableSelector)
   const initialControl = closeButton ?? firstFocusable ?? dialog
   initialControl.focus()
+}
+
+function shouldPreserveFocusDuringPresentationTransition() {
+  const dialog = dialogRef.value
+  if (!dialog) return true
+
+  const activeElement = document.activeElement
+  if (activeElement instanceof HTMLElement) {
+    if (dialog.contains(activeElement)) return true
+    if (activeElement.closest('[role="dialog"]')) return true
+  }
+
+  return Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+  ).some((candidate) => candidate !== dialog && !dialog.contains(candidate))
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -101,6 +119,28 @@ watch(
   { immediate: true },
 )
 
+// A desktop inspector stays mounted while another card is selected. Move focus
+// to the new editor's close control so keyboard users arrive at the newly
+// selected card instead of remaining in a control whose contents just changed.
+watch(
+  () => props.card.id,
+  async (cardId, previousCardId) => {
+    if (!props.isOpen || cardId === previousCardId) return
+    await nextTick()
+    focusInitialControl()
+  },
+)
+
+watch(
+  isInspector,
+  async (inspector, wasInspector) => {
+    if (!props.isOpen || inspector || !wasInspector) return
+    await nextTick()
+    if (!props.isOpen || isInspector.value || shouldPreserveFocusDuringPresentationTransition()) return
+    focusInitialControl()
+  },
+)
+
 onUnmounted(() => {
   if (props.isOpen) {
     restoreFocus()
@@ -108,8 +148,26 @@ onUnmounted(() => {
 })
 
 function closeWithoutPrompt() {
+  const destination = pendingThinkingPath.value
+  pendingThinkingPath.value = null
   showDiscardConfirm.value = false
   emit('close')
+  if (destination) void router.push(destination)
+}
+
+function openThinkingDeck() {
+  const destination = `/workspace/boards/${props.card.boardId}/cards/${props.card.id}/thinking`
+  if (hasUnsavedChanges.value) {
+    pendingThinkingPath.value = destination
+    showDiscardConfirm.value = true
+    return
+  }
+  void router.push(destination)
+}
+
+function keepEditing() {
+  pendingThinkingPath.value = null
+  showDiscardConfirm.value = false
 }
 
 const {
@@ -224,6 +282,7 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
+        <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
         <div class="space-y-4">
           <CardModalForm
@@ -286,14 +345,14 @@ useEscapeToClose(
     :open="showDiscardConfirm"
     title="Discard card changes?"
     description="This card has unsaved changes. Discard them and close the editor?"
-    @close="showDiscardConfirm = false"
+    @close="keepEditing"
   >
     <template #footer>
       <button
         type="button"
         class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
         data-testid="card-discard-cancel"
-        @click="showDiscardConfirm = false"
+        @click="keepEditing"
       >
         Keep editing
       </button>

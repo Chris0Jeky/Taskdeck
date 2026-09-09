@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ShellKeyboardHelp from '../../components/shell/ShellKeyboardHelp.vue'
+import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import {
   LEGACY_SHORTCUT_GROUPS,
   PAPER_SHORTCUT_BINDINGS,
@@ -59,13 +60,22 @@ describe('ShellKeyboardHelp', () => {
     wrapper.unmount()
   })
 
+  it('hides the Review binding when its feature flag is disabled', () => {
+    const featureFlags = useFeatureFlagStore()
+    featureFlags.flags.newAutomation = false
+    const wrapper = mountHelp(true)
+
+    expect(renderedRows().map((row) => row.id)).not.toContain('workspace-review')
+    wrapper.unmount()
+  })
+
   it('drops the review-keymap rows that only the Paper review surface implements', () => {
     const wrapper = mountHelp(true)
     const renderedIds = renderedRows().map((row) => row.id)
 
     // `useReviewKeymap` is installed by PaperReviewView alone; LegacyReviewView
     // has one element-scoped @keydown doing ArrowDown/ArrowUp. This map used to
-    // advertise all four anyway (#2007 AC1).
+    // advertise all six anyway (#2007 AC1).
     const reviewKeymapIds = PAPER_SHORTCUT_BINDINGS
       .filter((binding) => binding.handlerOwner === 'review-keymap')
       .map((binding) => binding.id)
@@ -74,7 +84,9 @@ describe('ShellKeyboardHelp', () => {
       'review-apply',
       'review-reject',
       'review-request-edit',
+      'review-defer',
       'review-provenance',
+      'review-preview-diff',
     ])
     for (const id of reviewKeymapIds) {
       expect(renderedIds).not.toContain(id)

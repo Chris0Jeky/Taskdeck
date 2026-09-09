@@ -2,13 +2,39 @@
 
 This is the active testing guide for Taskdeck.
 
-Last Updated: 2026-09-05
+Current transcript prompt contract (#2211): new LLM generation and current Windows packaged
+live acceptance require `llm-triage.v3` with the existing schema-v2 JSON shape. Keep the
+historical v2 schema, fixture, parsing and provenance-classifier regressions; do not rewrite
+old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputContractTests`,
+`LlmCaptureTriagePromptTests`, `LlmCaptureTriageExtractorTests`, `CaptureTriageServiceTests`,
+`TranscriptTriageLlmGoldenPathIntegrationTests`, `ReviewProvenance.spec.ts`, and
+`Push-Location scripts/ci; python -m unittest test_windows_desktop_archive.py; Pop-Location` (PowerShell). The current packaged journey
+is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
+
+
+Last Updated: 2026-09-08
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Context Fabric benchmark corpus (#2319)
+
+The first CF-24A slice validates nine synthetic text/transcript fixtures and scores supplied
+candidate predictions by kind. From the repository root:
+
+```powershell
+py -3 -B -m unittest discover -s scripts/context_fabric -p "test_*.py"
+py -3 -B scripts/context_fabric/benchmark_fixtures.py tests/fixtures/context_fabric/benchmark/fixtures.json
+```
+
+The validator checks exact source hashes, licence/reference metadata, hostile-injection markers
+and a 16 KiB source-byte budget. Without predictions, metrics are explicitly unavailable. See the
+[corpus README](../tests/fixtures/context_fabric/benchmark/README.md) for the optional scoring
+command and deliberately imperfect example predictions. This command does not execute a processor;
+audio, image, PDF, latency, memory, cost and processor-quality measurements remain follow-on work.
 
 ## 2026-09-02 v0.3 post-RC integration wave
 
@@ -343,7 +369,7 @@ Earlier candidate checkpoints that built up this final proof are retained below:
   preserving fail-closed behavior before signaling or on PID mismatch.
 - PR `#1922` makes local `-LiveOpenAI` acceptance mandatory rather than accepting a missing-key skip,
   and replaces the old chat-only proof with Transcript capture -> Inbox triage -> proposal review ->
-  apply -> restart. The gate requires exact `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2`
+  apply -> restart. At that historical head the gate required exact `OpenAI` / `gpt-5.6-luna` / `llm-triage.v2`
   attribution before approval. PR `#1924` removes current and retired provider credential aliases
   case-insensitively from the Playwright child environment and fails closed if a recognized name or
   synthetic value survives.
@@ -2747,3 +2773,7 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 - `#717` — Property-based and adversarial input tests (211 tests)
 
 **All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.
+
+## Paper Wide-card regression (#2090)
+
+From `frontend/taskdeck-web`, run `npx playwright test tests/e2e/paper-responsive.spec.ts --grep "Wide Paper lanes" --project=chromium --reporter=line` against the isolated Mock test stack. It creates its own authenticated board/card, selects Wide, and compares actual rendered card width with the lane's card-content width. Focused unit coverage is in `BoardView.spec.ts`, `PaperBoardView.spec.ts`, and `CardModal.spec.ts`; standard typecheck/build and full frontend qualification still apply. Keep screenshot inspection separate from geometry assertions and report any known #2789 calendar-fixture failures explicitly.

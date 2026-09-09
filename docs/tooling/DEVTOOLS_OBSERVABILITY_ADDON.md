@@ -13,13 +13,14 @@ This doc is designed to be referenced from `AGENTS.md` (short pointer) and used 
 
 ## 1) When to use what (Playwright vs DevTools vs Logs)
 
-### Use Playwright MCP when you need:
+### Use repository Playwright tests when you need:
 - deterministic reproduction of a user flow
 - a regression test (smoke/E2E)
 - screenshots/videos from a controlled run
 - stable DOM assertions
 
-### Use Chrome DevTools (CDP / DevTools MCP) when you need:
+### Use the selected interactive controller (project default: Chrome DevTools MCP) when you need:
+- interactive user-flow reproduction, DOM inspection and screenshots
 - console errors and stack traces
 - network request inspection (headers, payloads, status)
 - performance profiling (long tasks, layout thrash, CPU/memory)
@@ -43,7 +44,7 @@ Before touching code, record:
 - environment (OS, browser, build, branch)
 - stop condition (what result counts as fixed)
 
-### Step 1 - Reproduce with Playwright first
+### Step 1 - Reproduce with the selected browser controller
 - Navigate to the failing screen/flow.
 - Capture screenshot on failure.
 - Extract visible text and key DOM state.

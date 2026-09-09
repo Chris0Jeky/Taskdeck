@@ -71,6 +71,31 @@ describe('paperThemeStore', () => {
     document.body.classList.remove('paper', 'paper-night')
   })
 
+  it('applies Grove through the Paper substrate and keeps its family on night toggle', () => {
+    const store = usePaperThemeStore()
+    store.setMode('grove')
+    expect(document.body.classList.contains('paper')).toBe(true)
+    expect(document.body.classList.contains('grove')).toBe(true)
+    store.toggleNight()
+    expect(store.mode).toBe('grove-night')
+    expect(document.body.classList.contains('paper-night')).toBe(true)
+    expect(document.body.classList.contains('grove-night')).toBe(true)
+    expect(document.body.classList.contains('grove')).toBe(false)
+    store.toggleNight()
+    expect(store.mode).toBe('grove')
+    store.disable()
+    expect(document.body.classList.contains('grove')).toBe(false)
+  })
+
+  it('restores a saved Grove palette without changing its substrate', () => {
+    window.localStorage.setItem(STORAGE_KEY, 'grove-night')
+    const store = usePaperThemeStore()
+    store.apply()
+    expect(store.mode).toBe('grove-night')
+    expect(store.activeClass).toBe('paper-night')
+    expect(store.isOn).toBe(true)
+  })
+
   it('defaults to paper when nothing stored (Paper is canonical — ADR-0038)', () => {
     const store = usePaperThemeStore()
     expect(store.mode).toBe('paper')

@@ -1329,6 +1329,32 @@ describe('PaperReviewView', () => {
     wrapper.unmount()
   })
 
+  it('shows still-refused feedback after a user retries a revoked queue (#2214 row 38)', async () => {
+    const wrapper = await mountView(
+      [makeProposal({ id: 'proposal-first' })],
+      '/workspace/review?boardId=board-revoked',
+      [],
+      [],
+      { listReadRejectsWith: { response: { status: 403 } } },
+    )
+    try {
+      expect(wrapper.find('[data-testid="paper-review-access-revoked-retry"]').exists()).toBe(false)
+
+      // Changing the board is a deliberate list-read attempt. The queue is
+      // already refused, so the second refusal needs its own durable sentence.
+      mocks.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await routerOf(wrapper).replace('/workspace/review?boardId=another-board')
+      await flushPromises()
+      await wrapper.vm.$nextTick()
+
+      const retry = wrapper.get('[data-testid="paper-review-access-revoked-retry"]')
+      expect(retry.text()).toBe(enReview.empty.accessRevoked.retry)
+      expect(mocks.errorToast).not.toHaveBeenCalled()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('gives the explicit deep-link path one outcome per status class (#2214)', async () => {
     mocks.getProposal.mockRejectedValueOnce({ response: { status: 403 } })
     const wrapper = await mountView(
@@ -1383,6 +1409,17 @@ describe('PaperReviewView', () => {
     expect(empty.text()).toContain(enReview.empty.unavailable.title)
     expect(empty.text()).not.toContain(enReview.empty.unavailable.malformedTitle)
     wrapper.unmount()
+  })
+
+  it('renders an unavailable deep link ahead of the settled-elsewhere notice (#2215 D3aB)', () => {
+    const settledBranch =
+      '<template v-else-if="activeProposalSettledElsewhere && !unavailableProposalId">'
+    const unavailableBranch = '<template v-else-if="unavailableProposalId">'
+
+    expect(paperReviewSource).toContain(settledBranch)
+    expect(paperReviewSource.indexOf(unavailableBranch)).toBeGreaterThan(
+      paperReviewSource.indexOf(settledBranch),
+    )
   })
 
   it('updates the hash when manual queue selection replaces a deep-link target', async () => {
@@ -2199,14 +2236,86 @@ describe('PaperReviewView', () => {
     expect(value.map((operation: { sequence: number }) => operation.sequence)).toEqual([1, 2])
   })
 
-  it('disables apply and reject while a revision edit is open', async () => {
-    const wrapper = await mountView([makeProposal()])
+  it('keeps inspection keys available without letting an editor session decide', async () => {
+    const wrapper = await mountView([makeProposal()], '/workspace/review', [], [], { attachTo: true })
 
     await wrapper.find('[data-testid="decision-edit"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.get('[data-testid="decision-apply"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="decision-reject"]').attributes('disabled')).toBeDefined()
+
+    // A real editor field owns the typing keys. The two read-only page shortcuts
+    // must not steal P or Space while the reviewer is changing a revision.
+    const editorField = wrapper.get('[data-testid="revision-field-operations"]')
+    const typingProvenance = new KeyboardEvent('keydown', {
+      key: 'p', bubbles: true, cancelable: true,
+    })
+    editorField.element.dispatchEvent(typingProvenance)
+    const typingPreview = new KeyboardEvent('keydown', {
+      key: ' ', bubbles: true, cancelable: true,
+    })
+    editorField.element.dispatchEvent(typingPreview)
+    await flushPromises()
+    expect(typingProvenance.defaultPrevented).toBe(false)
+    expect(typingPreview.defaultPrevented).toBe(false)
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').attributes('aria-expanded'))
+      .toBe('false')
+    expect(mocks.getProposalDiff).not.toHaveBeenCalled()
+
+    // Once the keystroke originates from the review page instead of the
+    // editor, provenance and diff remain available under the decision lock.
+    mocks.getProposalDiff.mockResolvedValueOnce('--- before\n+++ after\n+Keep evidence')
+    const provenance = new KeyboardEvent('keydown', {
+      key: 'p', bubbles: true, cancelable: true,
+    })
+    document.body.dispatchEvent(provenance)
+    await flushPromises()
+    expect(provenance.defaultPrevented).toBe(true)
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').attributes('aria-expanded'))
+      .toBe('true')
+
+    const preview = new KeyboardEvent('keydown', {
+      key: ' ', bubbles: true, cancelable: true,
+    })
+    document.body.dispatchEvent(preview)
+    await flushPromises()
+    expect(preview.defaultPrevented).toBe(true)
+    expect(mocks.getProposalDiff).toHaveBeenCalledWith('proposal-001')
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(true)
+
+    // The editor exposes native inspection controls in the tab order, so a
+    // keyboard user does not need to move focus out of a text field to inspect
+    // provenance or the diff. They call the same read-only handlers and cannot
+    // create a decision.
+    const inspectProvenance = wrapper.get('[data-testid="revision-inspect-provenance"]')
+    expect(inspectProvenance.element.tagName).toBe('BUTTON')
+    const provenanceButton = inspectProvenance.element as HTMLButtonElement
+    provenanceButton.focus()
+    expect(document.activeElement).toBe(provenanceButton)
+    await inspectProvenance.trigger('click')
+    expect(wrapper.get('[data-testid="paper-review-provenance-disclosure"]').attributes('aria-expanded'))
+      .toBe('false')
+
+    const inspectDiff = wrapper.get('[data-testid="revision-inspect-diff"]')
+    expect(inspectDiff.element.tagName).toBe('BUTTON')
+    const diffButton = inspectDiff.element as HTMLButtonElement
+    diffButton.focus()
+    expect(document.activeElement).toBe(diffButton)
+    await inspectDiff.trigger('click')
+    expect(wrapper.find('[data-testid="paper-review-diff-pre"]').exists()).toBe(false)
+
+    // Decision and editor-opening keys stay blocked for the full edit session.
+    const blockedEvents = ['Enter', 'Backspace', 'e', 'd'].map((key) => {
+      const event = new KeyboardEvent('keydown', { key, cancelable: true })
+      window.dispatchEvent(event)
+      return event
+    })
+    expect(blockedEvents.every((event) => !event.defaultPrevented)).toBe(true)
+    expect(mocks.approveProposal).not.toHaveBeenCalled()
+    expect(mocks.rejectProposal).not.toHaveBeenCalled()
+    expect(mocks.deferProposal).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="revision-editor"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="decision-apply"]').trigger('click')
     await wrapper.get('[data-testid="decision-reject"]').trigger('click')
@@ -2260,7 +2369,7 @@ describe('PaperReviewView', () => {
       label: 'live provider capture triage',
       provider: 'OpenAI',
       model: 'gpt-4o-mini',
-      promptVersion: 'llm-triage.v2',
+      promptVersion: 'llm-triage.v3',
       confidence: {
         overall: 0.84,
         components: [],
@@ -2346,7 +2455,7 @@ describe('PaperReviewView', () => {
     mocks.getProvenanceMetadata.mockResolvedValue({
       provider: 'OpenAI',
       model: 'gpt-5.6-luna',
-      promptVersion: 'llm-triage.v2',
+      promptVersion: 'llm-triage.v3',
     })
     // Stated locally rather than inherited from the shared `beforeEach`, so the `84%` assertion
     // below names its own source: a model-reported breakdown. A deterministic source would make
@@ -2397,7 +2506,7 @@ describe('PaperReviewView', () => {
     expect(metadataText).toContain('Model')
     expect(metadataText).toContain('OpenAI/gpt-5.6-luna')
     expect(metadataText).toContain('Prompt version')
-    expect(metadataText).toContain('llm-triage.v2')
+    expect(metadataText).toContain('llm-triage.v3')
     expect(metadataText).toContain('Confidence')
     expect(metadataText).toContain('84%')
 
@@ -2430,7 +2539,7 @@ describe('PaperReviewView', () => {
           proposalId,
           provider: 'OpenAI',
           model: 'gpt-4o-mini',
-          promptVersion: 'llm-triage.v2',
+          promptVersion: 'llm-triage.v3',
         },
       )
     })
@@ -3597,6 +3706,12 @@ describe('PaperReviewView', () => {
 
     confirmSpy.mockRestore()
     wrapper.unmount()
+  })
+
+  it('captures the revision count when Apply confirmation opens, not during a later resync (#2215 D3aB)', () => {
+    expect(paperReviewSource).toContain('const applyConfirmRevisionCount = ref<number | null>(null)')
+    expect(paperReviewSource).toContain('if (pending && !previous)')
+    expect(paperReviewSource).toContain('? revisionCount.value')
   })
 
   it('blocks Apply when the revision load fails for a zero-op proposal — unknown state never approves (#1397 round 3)', async () => {
@@ -5119,6 +5234,17 @@ describe('PaperReviewView', () => {
       window.dispatchEvent(backspace)
       await flushPromises()
       expect(backspace.defaultPrevented).toBe(false)
+
+      // Read-only P/Space remain an editor-lock exception only. A confirmation
+      // dialog still owns every review key, including non-mutating inspection.
+      const provenance = new KeyboardEvent('keydown', { key: 'p', cancelable: true })
+      window.dispatchEvent(provenance)
+      const preview = new KeyboardEvent('keydown', { key: ' ', cancelable: true })
+      window.dispatchEvent(preview)
+      await flushPromises()
+      expect(provenance.defaultPrevented).toBe(false)
+      expect(preview.defaultPrevented).toBe(false)
+      expect(mocks.getProposalDiff).not.toHaveBeenCalled()
       expect(mocks.infoToast).not.toHaveBeenCalled()
       expect(mocks.rejectProposal).not.toHaveBeenCalled()
 
@@ -6109,6 +6235,15 @@ describe('PaperReviewView', () => {
       expect((editor.get('[data-testid="revision-reason"]').element as HTMLInputElement).value)
         .toBe('A2 draft')
       wrapper.unmount()
+    })
+
+    it('limits a stale save to clearing its matching preview id (#2215 D3aB)', () => {
+      // The save continuation owns no B state. The public UI prevents opening B's
+      // preview while A is saving, so this source-bound regression protects the
+      // stale-continuation boundary itself rather than bypassing that lock.
+      expect(paperReviewSource).toContain(
+        'proposalIdsEqual(previewDiffProposalId.value, saveResult.proposalId)',
+      )
     })
 
     it('states on the rail why the decisions are disabled, and offers the exit there', async () => {

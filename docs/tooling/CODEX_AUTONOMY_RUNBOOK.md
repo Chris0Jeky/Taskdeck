@@ -192,10 +192,10 @@ handoff-artifact dirtiness in that expected detached worktree before a plain, ne
 unexpected dirt fails closed. The creation-time target-byte
 check does not authenticate a same-user replacement after the handoff was emitted; an external
 hash-pinned launcher is still required to close that residual. The helper also prints matching
-task-scoped guard and initializer PowerShell allow rules; add both when the launch surface requires
+task-scoped guard and initializer PowerShell allow rules for Claude workers; add both when that launch surface requires
 them rather than committing generic relative rules. It emits the rules in directly pasteable
-PowerShell single-quoted here-string variables and an ordered array; pass that array as two
-`--allowedTools` argv values. Branch names must also be Windows-path compatible: the helper
+PowerShell single-quoted here-string variables and an ordered array; a Claude launch passes that array as two
+`--allowedTools` argv values. Codex workers use their native runtime permissions instead. Branch names must also be Windows-path compatible: the helper
 rejects invalid/reserved components, overlong directory or `.lock` names, and existing
 ancestor/descendant branch namespaces before mutation even when Git's platform-neutral syntax or
 exact lookup accepts them. Each rule matches one complete emitted command and all applicable pinned
@@ -213,7 +213,25 @@ if (-not $handoffSucceeded -or $handoffExitCode -ne 0) { if ($null -ne $handoffE
 The guard is the first worktree command and the initializer is bounded after its successful result.
 Any guard, exact-worktree, detached-base, or switch failure stops the block. This handoff is PowerShell-only and invokes the initializer in the already-running host;
 Bash workers must launch a reviewed absolute PowerShell application in the worktree and run the
-whole printed block. For headless Claude workers, launch `claude -p` from that exact target; do not
+whole printed block.
+
+### Choose the worker runtime
+
+For Codex, use the current runtime's native collaboration surface when available. Bind the exact
+helper-created target cwd, expected detached base, planned branch, owned paths and complete printed
+handoff block in the worker task. The first execution in that worktree runs the block with the
+explicit target working directory; do not assume that a subagent inherits the intended cwd.
+
+When an independent Codex CLI process is deliberately selected, verify the installed client's help
+and launch `codex exec -C <exact-helper-created-target>` with the reviewed task supplied through stdin.
+Retain its effective sandbox, approval and trust controls. The helper's Claude launch-rule array
+does not grant Codex permissions. If the client cannot execute the exact block under its current
+permissions, preserve the worktree and report the unsupported step; do not change runtimes or
+weaken controls implicitly. Source discovery and a role description do not prove a worker launched.
+
+### Claude worker launch
+
+When the coordinator deliberately selects a Claude worker, launch `claude -p` from that exact target; do not
 add `--worktree`, which creates a second `.claude/worktrees/...` checkout. Follow the reviewed
 effective-permission posture in `docs/WORKTREE_AGENT_PROTOCOL.md`: exclude user/local file sources,
 review committed permission configuration and explicit rules together, account for built-in

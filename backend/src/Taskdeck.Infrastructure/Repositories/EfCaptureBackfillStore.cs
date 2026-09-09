@@ -25,8 +25,9 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
     }
 
     /// <summary>
-    /// Capture-shaped queue rows that are missing a capture OR have been written since their capture
-    /// last was. The second half is what makes this a reconcile pass: an aggregate whose queue row
+    /// Capture-shaped queue rows missing an owner-matched capture, awaiting the versioned repair,
+    /// or written since their capture last was. Version zero catches historical Keep/Archive writes
+    /// that masked divergent text with a newer aggregate timestamp. An aggregate whose queue row
     /// moved on (an edit while dual-write was off, a durable write that failed and was swallowed)
     /// would otherwise stay stale forever and the read switch would serve it.
     /// </summary>
@@ -37,7 +38,9 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
             // captures — which nest under the same prefix — are backfilled too.
             .Where(request => EF.Functions.Like(request.RequestType, CaptureRequestTypeLike))
             .Where(request => !_context.Captures.Any(capture =>
-                capture.Id == request.Id && capture.UpdatedAt >= request.UpdatedAt));
+                capture.Id == request.Id && capture.UserId == request.UserId &&
+                capture.LegacyReconciliationVersion >= Capture.CurrentLegacyReconciliationVersion &&
+                capture.UpdatedAt >= request.UpdatedAt));
 
     public async Task<IReadOnlyList<LlmRequest>> GetLegacyCaptureBacklogAsync(
         int batchSize,
@@ -57,8 +60,8 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
             // SQLite cannot translate ORDER BY on a DateTimeOffset column from LINQ, so the ordering
             // and the bound live in raw SQL - the same treatment LlmQueueRepository.GetCapturesByUserAsync
             // gives the Inbox listing. The NOT EXISTS clause is the divergence join: a row leaves the
-            // backlog only once a capture exists for it AND that capture is at least as fresh as the
-            // queue row. Oldest first, so the backlog drains in intake order.
+            // backlog only once its owner-matched capture earned the repair version AND is at least
+            // as fresh as the queue row. Oldest first, so the backlog drains in intake order.
             // Rows this run has already failed on are excluded by SQLite before LIMIT, so a poisoned
             // head cannot consume the whole batch and no more than batchSize payloads are materialized.
             // json_each carries every id in one collection parameter rather than one parameter per id,
@@ -72,6 +75,8 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
                   AND NOT EXISTS (
                         SELECT 1 FROM Captures
                         WHERE Captures.Id = LlmRequests.Id
+                          AND Captures.UserId = LlmRequests.UserId
+                          AND Captures.LegacyReconciliationVersion >= {Capture.CurrentLegacyReconciliationVersion}
                           AND Captures.UpdatedAt >= LlmRequests.UpdatedAt)
                   AND Id NOT IN (SELECT value FROM json_each({excludedJson}))
                 ORDER BY CreatedAt, Id
@@ -114,6 +119,8 @@ public sealed class EfCaptureBackfillStore : ICaptureBackfillStore
                       AND NOT EXISTS (
                             SELECT 1 FROM Captures
                             WHERE Captures.Id = LlmRequests.Id
+                              AND Captures.UserId = LlmRequests.UserId
+                              AND Captures.LegacyReconciliationVersion >= {Capture.CurrentLegacyReconciliationVersion}
                               AND Captures.UpdatedAt >= LlmRequests.UpdatedAt)
                     """)
                 .ToListAsync(cancellationToken);

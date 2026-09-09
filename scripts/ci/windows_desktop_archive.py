@@ -68,6 +68,7 @@ SAFE_ROOT_PREFIX = "taskdeck-desktop-acceptance-"
 PHASE_EVIDENCE_SCHEMA_VERSION = 3
 FINAL_EVIDENCE_SCHEMA_VERSION = 7
 MAX_PROBE_LATENCY_MS = 300_000
+EXPECTED_LIVE_PROMPT_VERSION = "llm-triage.v3"
 MCP_PROTOCOL_VERSION = "2025-11-25"
 MCP_INITIALIZE_ID = 1
 MCP_STDIO_TIMEOUT_SECONDS = 120
@@ -1113,7 +1114,7 @@ def _validate_live_evidence(live: dict[str, Any], phase: str) -> None:
     if (
         live["provider"] != "OpenAI"
         or live["model"] != "gpt-5.6-luna"
-        or live["promptVersion"] != "llm-triage.v2"
+        or live["promptVersion"] != EXPECTED_LIVE_PROMPT_VERSION
         or live["isMock"] is not False
         or live["isProbed"] is not True
         or live["verificationStatus"] != "verified"

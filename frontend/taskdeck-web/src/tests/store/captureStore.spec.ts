@@ -1003,6 +1003,52 @@ describe('captureStore', () => {
   })
 
   describe('pollTriageCompletion', () => {
+    it('keeps the server edit capability exact when polling syncs detail into the list summary', async () => {
+      vi.useFakeTimers()
+      try {
+        const store = useCaptureStore()
+        const createdAt = new Date().toISOString()
+        const capabilities: Array<boolean | undefined> = [true, false, undefined]
+        let callCount = 0
+
+        vi.mocked(captureApi.getItem).mockImplementation(async () => {
+          const canEditSuggestion = capabilities[callCount++]
+          return {
+            id: 'poll-capability',
+            userId: 'u1',
+            boardId: 'b1',
+            status: 'Triaging',
+            source: 'Typed' as const,
+            textExcerpt: 'excerpt',
+            rawText: 'full text',
+            createdAt,
+            processedAt: null,
+            retryCount: 0,
+            ...(canEditSuggestion === undefined ? {} : { canEditSuggestion }),
+          }
+        })
+
+        const stop = store.pollTriageCompletion('poll-capability')
+
+        await vi.advanceTimersByTimeAsync(2_000)
+        expect(store.items.find((item) => item.id === 'poll-capability')?.canEditSuggestion).toBe(true)
+
+        await vi.advanceTimersByTimeAsync(2_000)
+        // A server false must clear an earlier true capability.
+        expect(store.items.find((item) => item.id === 'poll-capability')?.canEditSuggestion).toBe(false)
+
+        await vi.advanceTimersByTimeAsync(2_000)
+        // An omitted server field remains absent and cannot grant edit rights.
+        const summary = store.items.find((item) => item.id === 'poll-capability')
+        expect(summary?.canEditSuggestion).toBeUndefined()
+        expect(summary).not.toHaveProperty('canEditSuggestion')
+
+        stop()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('polls until terminal status and updates cached detail', async () => {
       vi.useFakeTimers()
       const store = useCaptureStore()

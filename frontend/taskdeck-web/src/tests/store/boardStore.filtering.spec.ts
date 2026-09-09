@@ -1,7 +1,22 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { afterEach, describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useBoardStore } from '../../store/boardStore'
 import type { Card } from '../../types/board'
+import { addCalendarDays, calendarDateKeyToMidnightUtc, localCalendarDateKey } from '../../utils/dueDates'
+
+const FIXED_NOW = '2026-09-07T23:30:00.000Z'
+
+function freezeDate() {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(FIXED_NOW))
+}
+
+function dueDateFor(daysFromToday: number): string {
+  const dueDateKey = addCalendarDays(localCalendarDateKey(), daysFromToday)
+  const dueDate = dueDateKey ? calendarDateKeyToMidnightUtc(dueDateKey) : null
+  if (!dueDate) throw new Error(`Unable to build test due date for offset ${daysFromToday}`)
+  return dueDate
+}
 
 // Mock the API modules
 vi.mock('../../api/boardsApi', () => ({
@@ -44,6 +59,11 @@ vi.mock('../../api/labelsApi', () => ({
 }))
 
 describe('boardStore - Filtering', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
   })
@@ -187,17 +207,16 @@ describe('boardStore - Filtering', () => {
   })
 
   describe('Due Date Filter', () => {
-    it('should filter overdue cards', () => {
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
+    beforeEach(freezeDate)
 
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
+    it('should filter overdue cards', () => {
+      const yesterday = dueDateFor(-1)
+      const tomorrow = dueDateFor(1)
 
       const store = useBoardStore()
       store.currentBoardCards = [
-        createMockCard({ id: '1', dueDate: yesterday.toISOString() }),
-        createMockCard({ id: '2', dueDate: tomorrow.toISOString() }),
+        createMockCard({ id: '1', dueDate: yesterday }),
+        createMockCard({ id: '2', dueDate: tomorrow }),
         createMockCard({ id: '3', dueDate: null }),
       ]
 
@@ -209,14 +228,13 @@ describe('boardStore - Filtering', () => {
     })
 
     it('should filter cards due today', () => {
-      const today = new Date()
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
+      const today = dueDateFor(0)
+      const tomorrow = dueDateFor(1)
 
       const store = useBoardStore()
       store.currentBoardCards = [
-        createMockCard({ id: '1', dueDate: today.toISOString() }),
-        createMockCard({ id: '2', dueDate: tomorrow.toISOString() }),
+        createMockCard({ id: '1', dueDate: today }),
+        createMockCard({ id: '2', dueDate: tomorrow }),
       ]
 
       store.updateFilters({ ...store.filters, dueDateFilter: 'due-today' })
@@ -227,16 +245,13 @@ describe('boardStore - Filtering', () => {
     })
 
     it('should filter cards due this week', () => {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-
-      const nextMonth = new Date()
-      nextMonth.setMonth(nextMonth.getMonth() + 1)
+      const tomorrow = dueDateFor(1)
+      const nextMonth = dueDateFor(30)
 
       const store = useBoardStore()
       store.currentBoardCards = [
-        createMockCard({ id: '1', dueDate: tomorrow.toISOString() }),
-        createMockCard({ id: '2', dueDate: nextMonth.toISOString() }),
+        createMockCard({ id: '1', dueDate: tomorrow }),
+        createMockCard({ id: '2', dueDate: nextMonth }),
       ]
 
       store.updateFilters({ ...store.filters, dueDateFilter: 'due-week' })
@@ -247,13 +262,12 @@ describe('boardStore - Filtering', () => {
     })
 
     it('should filter cards with no due date', () => {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
+      const tomorrow = dueDateFor(1)
 
       const store = useBoardStore()
       store.currentBoardCards = [
         createMockCard({ id: '1', dueDate: null }),
-        createMockCard({ id: '2', dueDate: tomorrow.toISOString() }),
+        createMockCard({ id: '2', dueDate: tomorrow }),
       ]
 
       store.updateFilters({ ...store.filters, dueDateFilter: 'no-date' })
@@ -295,28 +309,30 @@ describe('boardStore - Filtering', () => {
   })
 
   describe('Combined Filters', () => {
+    beforeEach(freezeDate)
+
     it('should apply multiple filters simultaneously', () => {
-      const today = new Date()
+      const today = dueDateFor(0)
 
       const store = useBoardStore()
       store.currentBoardCards = [
         createMockCard({
           id: '1',
           title: 'Bug Fix',
-          dueDate: today.toISOString(),
+          dueDate: today,
           isBlocked: true,
           labels: [{ id: 'label-1', boardId: 'board-1', name: 'Bug', colorHex: '#ff0000', createdAt: '', updatedAt: '' }]
         }),
         createMockCard({
           id: '2',
           title: 'Bug Fix',
-          dueDate: today.toISOString(),
+          dueDate: today,
           isBlocked: false,
         }),
         createMockCard({
           id: '3',
           title: 'Feature',
-          dueDate: today.toISOString(),
+          dueDate: today,
           isBlocked: true,
         }),
       ]

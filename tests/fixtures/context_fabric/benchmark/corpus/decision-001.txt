@@ -1,0 +1,1 @@
+Decision: keep semantic processing local for this benchmark so source bytes never leave the test workspace.

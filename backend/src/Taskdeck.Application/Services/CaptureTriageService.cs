@@ -274,7 +274,7 @@ public class CaptureTriageService : ICaptureTriageService
                 cancellationToken);
             if (extraction.Succeeded && extraction.Output is not null)
             {
-                var outputValidation = CaptureTriageOutputContract.Validate(extraction.Output);
+                var outputValidation = CaptureTriageOutputContract.ValidateCurrentV3(extraction.Output);
                 if (outputValidation.IsSuccess)
                 {
                     // Schema-v2's evidence quote remains visible in the proposed card description.
@@ -327,7 +327,7 @@ public class CaptureTriageService : ICaptureTriageService
                     Guid.NewGuid(),
                     ProposalId: null,
                     OperationCount: 0,
-                    CaptureTriageOutputContract.PromptVersionLlmV2,
+                    CaptureTriageOutputContract.PromptVersionLlmV3,
                     CaptureRequestContract.SanitizeProvenanceMetadata(
                         extraction.Provider, CaptureRequestContract.MaxProviderLength),
                     CaptureRequestContract.SanitizeProvenanceMetadata(

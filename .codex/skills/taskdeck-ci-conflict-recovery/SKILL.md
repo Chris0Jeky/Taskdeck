@@ -9,6 +9,8 @@ Recover PRs by identifying the failing lane, fixing the root cause, and reportin
 
 ## Read first
 
+Use `autodoc/AGENT_INDEX.md` to locate the affected seam; read only relevant STATUS and testing sections, plus applicable instructions. Do not load entire historical documents.
+
 1. `docs/STATUS.md`
 2. `AGENTS.md`
 3. `docs/TESTING_GUIDE.md`

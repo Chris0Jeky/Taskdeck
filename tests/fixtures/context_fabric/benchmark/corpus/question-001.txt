@@ -1,0 +1,1 @@
+Question: should the importer preserve source anchors when it finds a candidate in a transcript?

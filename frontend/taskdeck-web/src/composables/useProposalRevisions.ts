@@ -68,6 +68,9 @@ export function useProposalRevisions(
 
   const editing = ref(false)
   const saving = ref(false)
+  // A collaborator can save while this reviewer is composing. Keep the draft
+  // intact, but make that changed authority visible before it is submitted.
+  const revisionChangedWhileEditing = ref(false)
   const revisionCount = ref(0)
   const latestRevision = ref<ProposalRevision | null>(null)
   // False until the revision list for the active proposal has been authoritatively
@@ -313,6 +316,7 @@ export function useProposalRevisions(
         // clearing `editing` here would close a composer mid-sentence over a
         // change that happened elsewhere.
         loadGeneration += 1
+        if (editing.value) revisionChangedWhileEditing.value = true
         // The count is no longer authoritative until this load answers, and the
         // load can FAIL — its catch zeroes `revisionCount` and nulls
         // `latestRevision`. Leaving `revisionsLoaded` true would publish that
@@ -332,6 +336,7 @@ export function useProposalRevisions(
       saveGeneration += 1
       editing.value = false
       saving.value = false
+      revisionChangedWhileEditing.value = false
       revisionCount.value = 0
       latestRevision.value = null
       revisionsLoaded.value = false
@@ -344,11 +349,13 @@ export function useProposalRevisions(
 
   function startEditing() {
     if (!activeProposal.value) return
+    revisionChangedWhileEditing.value = false
     editing.value = true
   }
 
   function cancelEditing() {
     editing.value = false
+    revisionChangedWhileEditing.value = false
   }
 
   async function saveRevision(payload: CreateRevisionPayload): Promise<SaveRevisionResult | null> {
@@ -388,6 +395,7 @@ export function useProposalRevisions(
         void loadRevisionState(proposalId)
       }
       editing.value = false
+      revisionChangedWhileEditing.value = false
       toast.success('Revision saved')
       return { proposalId, outcome: 'persisted', current: true }
     } catch (e: unknown) {
@@ -423,6 +431,7 @@ export function useProposalRevisions(
   return {
     editing,
     saving,
+    revisionChangedWhileEditing,
     revisionCount,
     revisionsLoaded,
     latestRevision,

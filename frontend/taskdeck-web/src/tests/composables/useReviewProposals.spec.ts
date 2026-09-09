@@ -1114,6 +1114,39 @@ describe('useReviewProposals', () => {
       expect(mockToast.error).not.toHaveBeenCalled()
     })
 
+    it('reports a second user refusal without a toast, then clears it on recovery', async () => {
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+
+      // The first refused list read has one durable owner: the access panel.
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevokedRetry.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([makeProposal({ id: 'recovered' })])
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+    })
+
+    it('does not raise the retry disclosure for a non-user list read', async () => {
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await expect(rp.loadProposalsWithOutcome()).resolves.toBe('failed')
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+    })
+
     it('does not let a later hash change mark a pin unavailable under the revoked panel', async () => {
       // The route-hash watcher had no `queueAccessRevoked` guard, while the
       // explicit load's own `openProposalFromHash` call site has had one since
@@ -1134,6 +1167,24 @@ describe('useReviewProposals', () => {
       expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
       expect(rp.unavailableProposalId.value).toBeNull()
       expect(rp.unavailableProposalMalformed.value).toBe(false)
+    })
+
+    it('resolves a hash entered while revoked after a successful list read', async () => {
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      mockRoute.hash = '#proposal-p-recovered'
+      await watcherForCurrentSourceValue('#proposal-p-recovered')[1]()
+      expect(mockAutomationApi.getProposal).not.toHaveBeenCalled()
+
+      mockAutomationApi.getProposals.mockResolvedValueOnce([])
+      mockAutomationApi.getProposal.mockResolvedValueOnce(makeProposal({ id: 'p-recovered' }))
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(mockAutomationApi.getProposal).toHaveBeenCalledWith('p-recovered')
+      expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['p-recovered'])
     })
   })
 
@@ -1210,6 +1261,45 @@ describe('useReviewProposals', () => {
         }),
       ] as any
       expect(rp.queueAnnouncementKey.value).toBe(identity)
+    })
+
+    it('ignores deferred hash-only rows while retaining a real count-neutral replacement', () => {
+      const rp = useReviewProposals()
+      rp.nowMs.value = new Date('2026-02-01T00:00:00Z').getTime()
+      const deferredA = {
+        ...makeProposal({ id: 'p-deferred-a' }),
+        deferredUntil: '2026-02-02T00:00:00Z',
+      }
+      const deferredB = {
+        ...makeProposal({ id: 'p-deferred-b' }),
+        deferredUntil: '2026-02-02T00:00:00Z',
+      }
+      const pendingA = makeProposal({ id: 'p-pending-a' })
+      mockRoute.hash = '#proposal-p-deferred-a'
+      rp.proposals.value = [deferredA, deferredB, pendingA] as any
+
+      expect(rp.visibleProposals.value.map((proposal: any) => proposal.id)).toEqual([
+        'p-deferred-a',
+        'p-pending-a',
+      ])
+      expect(rp.awaitingProposalIds.value).toEqual(['p-pending-a'])
+      const identity = rp.queueAnnouncementKey.value
+
+      // The visible hash carve-out moves between deferred rows, but the
+      // awaiting queue has not changed and must not announce that navigation.
+      mockRoute.hash = '#proposal-p-deferred-b'
+      expect(rp.visibleProposals.value.map((proposal: any) => proposal.id)).toEqual([
+        'p-deferred-b',
+        'p-pending-a',
+      ])
+      expect(rp.awaitingProposalIds.value).toEqual(['p-pending-a'])
+      expect(rp.queueAnnouncementKey.value).toBe(identity)
+
+      // A real pending replacement with the same count still changes the
+      // identity and keeps the count-neutral announcement signal.
+      rp.proposals.value = [deferredB, makeProposal({ id: 'p-pending-b' })] as any
+      expect(rp.awaitingProposalIds.value).toEqual(['p-pending-b'])
+      expect(rp.queueAnnouncementKey.value).not.toBe(identity)
     })
   })
 

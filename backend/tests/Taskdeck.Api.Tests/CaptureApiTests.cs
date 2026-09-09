@@ -290,6 +290,10 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         created.Should().NotBeNull();
         created!.CanEditSuggestion.Should().BeTrue();
 
+        var beforeLinkList = await _client.GetFromJsonAsync<List<CaptureItemSummaryDto>>("/api/capture/items");
+        beforeLinkList.Should().ContainSingle(item =>
+            item.Id == created.Id && item.CanEditSuggestion);
+
         var beforeLinkResponse = await _client.GetAsync($"/api/capture/items/{created.Id}");
         beforeLinkResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         var beforeLinkJson = await beforeLinkResponse.Content.ReadAsStringAsync();
@@ -323,6 +327,10 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         afterLink.Should().NotBeNull();
         afterLink!.CanEditSuggestion.Should().BeFalse();
         afterLinkJson.ToLowerInvariant().Should().NotContain("transcriptid");
+
+        var afterLinkList = await _client.GetFromJsonAsync<List<CaptureItemSummaryDto>>("/api/capture/items");
+        afterLinkList.Should().ContainSingle(item =>
+            item.Id == created.Id && !item.CanEditSuggestion);
 
         var editResponse = await _client.PutAsJsonAsync(
             $"/api/capture/items/{created.Id}/suggestion",
@@ -994,19 +1002,29 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     [Fact]
     public async Task UpdateSuggestion_ShouldReturnConflict_WhenItemIsTriaging()
     {
-        await AuthenticateAsAsync("capture-edit-conflict");
-        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-edit-conflict-board");
+        await using var factory = new HostedWorkerDisabledTestWebApplicationFactory();
+        using var client = factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(client, "capture-edit-conflict");
+        var board = await ApiTestHarness.CreateBoardAsync(client, "capture-edit-conflict-board");
 
-        var createResponse = await _client.PostAsJsonAsync(
+        var createResponse = await client.PostAsJsonAsync(
             "/api/capture/items",
             new CreateCaptureItemDto(board.Id, "triaging edit payload"));
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
 
-        var triageResponse = await _client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
+        var triageResponse = await client.PostAsync($"/api/capture/items/{created!.Id}/triage", null);
         triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        var response = await _client.PutAsJsonAsync(
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var processingRequest = await db.LlmRequests.SingleAsync(request => request.Id == created.Id);
+            processingRequest.Status.Should().Be(RequestStatus.Processing);
+        }
+
+        var response = await client.PutAsJsonAsync(
             $"/api/capture/items/{created.Id}/suggestion",
             new UpdateCaptureSuggestionDto("edited while triaging"));
 

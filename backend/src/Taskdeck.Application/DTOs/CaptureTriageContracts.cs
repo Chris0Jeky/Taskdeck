@@ -53,10 +53,19 @@ public static class CaptureTriageOutputContract
     public const string PromptVersionLlmV1 = "llm-triage.v1";
 
     /// <summary>
-    /// Prompt version for schema-v2 LLM transcript triage. The deterministic extractor remains on
-    /// <see cref="PromptVersionV1"/> so its output never claims model-only metadata.
+    /// Historical prompt version for schema-v2 LLM transcript triage. Stored v2 outputs remain
+    /// readable after the current prompt moved to <see cref="PromptVersionLlmV3"/>. The
+    /// deterministic extractor remains on <see cref="PromptVersionV1"/> so its output never claims
+    /// model-only metadata.
     /// </summary>
     public const string PromptVersionLlmV2 = "llm-triage.v2";
+
+    /// <summary>
+    /// Current prompt version for schema-v2 LLM transcript triage. The JSON shape remains the
+    /// schema-v2 shape, but the prompt's capture-date derivation semantics changed under #2206, so
+    /// new runs must carry a distinct provenance identity from historical v2 runs.
+    /// </summary>
+    public const string PromptVersionLlmV3 = "llm-triage.v3";
 
     public const int MaxTasks = 20;
     public const int MaxTaskTitleLength = 180;
@@ -127,6 +136,40 @@ public static class CaptureTriageOutputContract
         return Validate(output);
     }
 
+    /// <summary>
+    /// Parses the current schema-v2-shaped LLM output stamped with prompt version v3.
+    /// </summary>
+    public static Result<CaptureTriageOutputV2> ParseAndValidateV3(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Result.Failure<CaptureTriageOutputV2>(
+                ErrorCodes.ValidationError,
+                "Capture triage output cannot be empty");
+        }
+
+        CaptureTriageOutputV2? output;
+        try
+        {
+            output = JsonSerializer.Deserialize<CaptureTriageOutputV2>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return Result.Failure<CaptureTriageOutputV2>(
+                ErrorCodes.ValidationError,
+                "Capture triage output JSON is invalid");
+        }
+
+        if (output is null)
+        {
+            return Result.Failure<CaptureTriageOutputV2>(
+                ErrorCodes.ValidationError,
+                "Capture triage output JSON is invalid");
+        }
+
+        return ValidateCurrentV3(output);
+    }
+
     public static Result<CaptureTriageOutputV2> ParseAndValidateV2(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -155,7 +198,7 @@ public static class CaptureTriageOutputContract
                 "Capture triage output JSON is invalid");
         }
 
-        return Validate(output);
+        return ValidateHistoricalV2(output);
     }
 
     public static Result<CaptureTriageOutputV1> Validate(CaptureTriageOutputV1 output)
@@ -232,15 +275,36 @@ public static class CaptureTriageOutputContract
     }
 
     /// <summary>
-    /// Validates a schema-v2 output. When <paramref name="referenceDate"/> is supplied, a due-date
-    /// hint outside the plausibility window around it is rejected as well as format-checked
-    /// (#2193). It stays optional so callers that hold no capture day keep the format-only
-    /// contract they had; the live extraction path drops such a hint earlier, in
-    /// <c>LlmCaptureTriagePrompt.TryParseTasks</c>, so one bad date never costs the whole run.
+    /// Validates the current schema-v2-shaped output. New generation is v3-only because the live
+    /// callers do not consume stored historical outputs; use <see cref="ValidateHistoricalV2"/>
+    /// when inspecting a stored v2 payload.
     /// </summary>
     public static Result<CaptureTriageOutputV2> Validate(
         CaptureTriageOutputV2 output,
         DateOnly? referenceDate = null)
+        => ValidateCurrentV3(output, referenceDate);
+
+    /// <summary>
+    /// Validates the current schema-v2-shaped output with the v3 prompt identity.
+    /// </summary>
+    public static Result<CaptureTriageOutputV2> ValidateCurrentV3(
+        CaptureTriageOutputV2 output,
+        DateOnly? referenceDate = null)
+        => ValidateSchemaV2(output, PromptVersionLlmV3, referenceDate);
+
+    /// <summary>
+    /// Validates a historical schema-v2 output without treating it as current generation.
+    /// Historical v2 rows remain readable after the prompt provenance bump.
+    /// </summary>
+    public static Result<CaptureTriageOutputV2> ValidateHistoricalV2(
+        CaptureTriageOutputV2 output,
+        DateOnly? referenceDate = null)
+        => ValidateSchemaV2(output, PromptVersionLlmV2, referenceDate);
+
+    private static Result<CaptureTriageOutputV2> ValidateSchemaV2(
+        CaptureTriageOutputV2 output,
+        string expectedPromptVersion,
+        DateOnly? referenceDate)
     {
         if (output.Version != SchemaVersionV2)
         {
@@ -249,11 +313,11 @@ public static class CaptureTriageOutputContract
                 $"Capture triage output version must be {SchemaVersionV2}");
         }
 
-        if (!string.Equals(output.PromptVersion, PromptVersionLlmV2, StringComparison.Ordinal))
+        if (!string.Equals(output.PromptVersion, expectedPromptVersion, StringComparison.Ordinal))
         {
             return Result.Failure<CaptureTriageOutputV2>(
                 ErrorCodes.ValidationError,
-                $"Capture triage prompt version must be '{PromptVersionLlmV2}'");
+                $"Capture triage prompt version must be '{expectedPromptVersion}'");
         }
 
         if (output.Tasks is null || output.Tasks.Count == 0)
@@ -451,7 +515,9 @@ public static class CaptureTriageOutputContract
 
     public static string Serialize(CaptureTriageOutputV2 output)
     {
-        var validation = Validate(output);
+        var validation = string.Equals(output.PromptVersion, PromptVersionLlmV2, StringComparison.Ordinal)
+            ? ValidateHistoricalV2(output)
+            : Validate(output);
         if (!validation.IsSuccess)
         {
             throw new DomainException(validation.ErrorCode, validation.ErrorMessage ?? "Invalid triage output");

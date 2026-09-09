@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-03
+Last Updated: 2026-09-08
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -64,6 +64,82 @@ behaviour.
 **De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB *production* support (the production runtime is SQLite-only forever; the PostgreSQL Testcontainers compatibility lane in CI — `Taskdeck.Integration.Tests` / `reusable-container-integration.yml` — remains as a legacy regression guard, not a product direction), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/platform ADRs **0014, 0020, 0023, 0026–0028** are retained as historical records of parked tracks, not active plans. Three ADRs in the 0023–0029 range decide behaviour that is **still live** in the single-instance app — only their multi-instance/enterprise premise is parked: **ADR-0024** (the `ICacheService` cache-aside abstraction, in-memory by default), **ADR-0025** (the `AddTaskdeckSignalR` Redis-backplane wiring, config-gated and dormant in the single-instance default), and **ADR-0029** (optional TOTP MFA + OIDC/OAuth). Likewise the single-self-contained-executable packaging path in `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md` stays the active personal run path; only its installer / cross-platform-distribution / GTM framing is parked. **ADR-0004** (shared-schema multi-tenancy) also stays **live** for its cross-user-isolation behaviour — enforced today by per-`UserId` and board-access predicates rather than a `TenantId` column (no `TenantId` symbol exists in `backend/src`, `backend/tests`, or the frontend), with the `403`/`404` existence policy enforced in the running app (consistent with GP-02 Claims-First Identity and GP-03 Stable Error Contracts); only its multi-organization / hosted-SaaS expansion premise (including any `TenantId`-keyed shared-schema tenancy) is parked — agents must neither park the live cross-user isolation security model nor resurrect multi-org tenancy work. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
 
 ## Dated delivery and governance updates (newest first)
+
+## Delivery update (2026-09-08, parallel implementation and asynchronous review)
+
+The maintainer authorized concurrent issue delivery, including v0.4/v0.5 foundations,
+with separate Terra review threads. Seven scoped implementation lanes were admitted;
+the coordinator retained canonical documentation, project state, and merge judgment.
+Capture edit-capability polling, Paper read-only keyboard behavior, inspector/dialog
+focus, and the Processing-state API test isolation have landed through PRs #2796,
+#2788, #2799 and #2801. Parent issues with broader acceptance remain open.
+
+CF-24A's first synthetic text corpus and deterministic per-kind scorer landed in
+PR #2804 (21 Python tests plus hosted CI). #2319 remains open for schema-validation
+and processor-attribution follow-through, expanded media, and measured processor
+quality/latency/cost. The initial command executes no processor.
+
+PR #2805 completes #2418's resumable repair for historical Capture divergence
+masked by later disposition timestamps. Version-zero backlog selection, immutable
+asset append and a distinct v2 completion marker preserve truthful pending reads;
+archived mismatches remain outstanding while healthy rows advance. PR #2806 also
+completes #2777's shared frontend instruction parity corrections.
+
+The representation and processing-policy lanes implement their first contract slices;
+runtime persistence, processing queues and runners remain separate acceptance. The
+benchmark lane starts with synthetic text and explicit unavailable metrics. These
+boundaries prevent foundation code from being mistaken for a completed v0.4/v0.5
+processing product.
+
+Control-path dependency PRs require the maintainer's own review under ADR-0066,
+including frontend package manifests/locks and backend Directory.Packages.props.
+The coordinator missed this requirement on merged PR #2772 and disclosed it on that
+PR and #2337. Green CI and independent review do not supply the missing review.
+
+## Workspace overhaul (2026-09-08, maintainer-authorized #2800)
+
+The supplied Studio, Companion and Unified chats/prototypes are reconciled in the
+[complete resource/feature map](product/WORKSPACE_OVERHAUL.md). The integrated first delivery adds
+switchable experiences/themes, board disclosure modes, saved Thinking Decks, private question
+answers and memory, explicit structural insights and local comparison notes. Classic and the
+existing review-first apply boundary remain available. [ADR-0070](decisions/ADR-0070-switchable-workspace-experiences.md)
+records the delegated product decision; this does not change release gates or external settings.
+
+The [validation/follow-through ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) orders the remaining
+work: transaction-safe linked steps, contextual companion/proposal overlays, Studio continuity,
+Context Fabric source/audio integration, evidence-grounded intelligence/attention, then broader
+comparison. These remain separate from the delivered structural and private-memory behavior.
+
+## Planning update (2026-09-07, transcript prompt v3)
+
+#2211 moves current generation, frontend provenance recognition and packaged acceptance to
+`llm-triage.v3` atomically. The schema-v2-shaped historical v2 contract remains available for
+stored output; deterministic provenance is unchanged. This attributes #2206's reference-date
+semantics correctly without changing the task envelope or bypassing review. Current release
+qualification must exercise v3; old published ZIP evidence remains an honest v2 record.
+
+
+## Planning update (2026-09-07, accountable chat decision record)
+
+The milestone wave shipped the bounded Triaged-capture requeue and edit-capability slice
+(#1999, PR #2779) and the existing board-read authorization invariant in chat (#2004,
+PR #2782). Paper transcript-file input (#2727, PR #2781, merge `164718249`) and
+review-queue recovery feedback (#2214, PR #2780, merge `2672e746d`) are also shipped. Acceptance audits closed #1984, #2250
+and #2691 with their direct evidence recorded on the issues. The active implementation
+lanes are full ADR-0069 chat (#2004), atomic prompt v3 (#2211), Paper review stability
+(#2215), and standalone launch drafts (#2391). The wider
+#1999 linked-transcript correction and ADR-0069 chat implementation remain open; these
+partial slices do not complete those issues or the v0.3 release gate. Non-blocking review
+findings are recorded on their PR threads and existing issues. The full Project priority
+audit still finds 41 pre-existing items without Priority labels (tracked on #2235); the
+wave's own issue/PR priorities were synchronized without applying guessed estate-wide labels.
+
+[ADR-0069](decisions/ADR-0069-accountable-automation-chat.md) records the maintainer's
+September 4 ruling on #2004, reaffirmed September 6: one ADR first, then the complete v0.3
+implementation of default proposal attempts, inline session board binding, grounded card updates,
+one clarification round and honest ordinary/streaming outcomes. Natural-language board resolution
+stays with CF-09 #2263 in v0.5. #2004 remains open for implementation and its acceptance tests;
+this decision record does not change shipped chat behavior or satisfy the release gate.
 
 > These are the delivery, governance, and correction records, newest first. They were hoisted below
 > Purpose/Direction on 2026-08-23 so the file opens with intent rather than with 30 blocks of history;
@@ -2104,3 +2180,7 @@ Rule:
   packaged app exit before listening, behind a generic error)
   - Mitigation: release-harness coverage of upgrade paths with inherited configuration, plus honest
     secret-free startup diagnostics (`#1876`)
+
+## Board controls residual acceptance (2026-09-08)
+
+PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.

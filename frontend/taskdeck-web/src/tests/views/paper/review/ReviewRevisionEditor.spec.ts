@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 
-function mountEditor(operationsPayload: string) {
+function mountEditor(operationsPayload: string, revisionChanged = false) {
   return mount(ReviewRevisionEditor, {
     props: {
       operationsPayload,
       saving: false,
+      revisionChanged,
     },
   })
 }
@@ -53,5 +54,33 @@ describe('ReviewRevisionEditor', () => {
     await wrapper.get('[data-testid="revision-save"]').trigger('click')
 
     expect(wrapper.emitted('save')).toBeUndefined()
+  })
+
+  it('keeps provenance and diff inspection reachable from the editor actions', async () => {
+    const wrapper = mountEditor('{"title":"Original"}')
+    const provenance = wrapper.get('[data-testid="revision-inspect-provenance"]')
+    const diff = wrapper.get('[data-testid="revision-inspect-diff"]')
+
+    expect(provenance.element.tagName).toBe('BUTTON')
+    expect(diff.element.tagName).toBe('BUTTON')
+    await provenance.trigger('click')
+    await diff.trigger('click')
+
+    expect(wrapper.emitted('toggle-provenance')).toHaveLength(1)
+    expect(wrapper.emitted('preview-diff')).toHaveLength(1)
+  })
+
+  it('announces a collaborator revision without replacing the typed draft (#2215 D3aB)', async () => {
+    const wrapper = mountEditor('{"title":"Original"}')
+    await wrapper.get('[data-testid="revision-field-title"]').setValue('Reviewer draft')
+    await wrapper.setProps({ revisionChanged: true })
+
+    expect(wrapper.get('[data-testid="revision-changed-elsewhere"]').text()).toContain(
+      'changed elsewhere',
+    )
+    expect(wrapper.get('[data-testid="revision-field-title"]').element).toHaveProperty(
+      'value',
+      'Reviewer draft',
+    )
   })
 })

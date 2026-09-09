@@ -171,7 +171,8 @@ public class CaptureService : ICaptureService
     }
 
     private static CaptureListMaterial ToListMaterial(Capture capture) =>
-        new(capture.Id, capture.LegacySourceSnapshot, capture.CapturedAtServer, capture.UpdatedAt, capture.CurrentText);
+        new(capture.Id, capture.LegacySourceSnapshot, capture.CapturedAtServer, capture.UpdatedAt,
+            capture.CurrentText, capture.LegacyReconciliationVersion);
 
     public async Task<Result<CaptureItemDto>> CreateAsync(
         Guid userId,
@@ -541,7 +542,11 @@ public class CaptureService : ICaptureService
                 $"Capture item cannot transition from {currentStatus} to {CaptureStatus.Triaging}");
         }
 
-        if (item.Status != RequestStatus.Pending && item.Status != RequestStatus.Failed)
+        // A completed capture is eligible only when its prior run produced no proposal. The
+        // derived Triaged status is exactly that outcome; ProposalCreated and Converted both
+        // retain proposal/apply provenance and must never be reopened into another proposal.
+        if ((item.Status != RequestStatus.Pending && item.Status != RequestStatus.Failed && item.Status != RequestStatus.Completed) ||
+            (item.Status == RequestStatus.Completed && currentStatus != CaptureStatus.Triaged))
         {
             return Result.Failure<CaptureTriageEnqueueResultDto>(
                 ErrorCodes.Conflict,
@@ -605,7 +610,14 @@ public class CaptureService : ICaptureService
             }
 
             item.UpdatePayload(CaptureRequestContract.SerializePayload(effectivePayload));
-            item.MarkAsProcessing();
+            if (item.Status == RequestStatus.Completed)
+            {
+                item.RequeueCompletedCaptureForTriage();
+            }
+            else
+            {
+                item.MarkAsProcessing();
+            }
             var enqueued = await _unitOfWork.LlmQueue.TryEnqueueCaptureTriageAsync(
                 item.Id,
                 expectedStatus,
@@ -1230,13 +1242,12 @@ public class CaptureService : ICaptureService
         }
 
         // Divergence guard. The aggregate is authoritative only while it still agrees with the row
-        // it was admitted from. If the texts differ AND the queue row has been written since the
-        // capture last was, the queue row is the newer writer and serving the aggregate would show
-        // stale material -- which is exactly what happens for the window in which dual-write is off,
-        // or after a durable write that failed and was swallowed. Prefer the newer writer and say so;
-        // the reconcile pass repairs the aggregate on the next start.
+        // it was admitted from. Before the versioned upgrade check, a later Keep/Archive timestamp
+        // can mask stale text, so disagreement must prefer the queue regardless of timestamp.
+        // After that check, the ordinary newer-queue guard still covers dual-write-off windows.
         if (!string.Equals(durable.CurrentText, payload.Text, StringComparison.Ordinal) &&
-            item.UpdatedAt > durable.UpdatedAt)
+            (durable.LegacyReconciliationVersion < Capture.CurrentLegacyReconciliationVersion ||
+             item.UpdatedAt > durable.UpdatedAt))
         {
             _logger?.LogWarning(
                 "Context Fabric: capture {CaptureId} has diverged from its queue row (queue updated {QueueUpdatedAt}, " +
@@ -1270,7 +1281,8 @@ public class CaptureService : ICaptureService
             material.CreatedAt,
             item.ProcessedAt,
             item.ErrorMessage,
-            payload.Disposition);
+            payload.Disposition,
+            CanEditSuggestion(item, status));
     }
 
     private CaptureItemDto MapToDetailDto(

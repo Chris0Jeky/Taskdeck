@@ -448,6 +448,7 @@ export default {
     jsonError: 'Escribe un JSON válido antes de guardar.',
     reasonLabel: 'Motivo del cambio',
     reasonPlaceholder: '¿Por qué estás editando esta propuesta?',
+    changedElsewhere: 'Esta propuesta cambió en otro lugar. Tu borrador sigue aquí; revísalo antes de guardarlo.',
     cancel: 'Cancelar',
     save: 'Guardar revisión',
     badge: '{count} revisión | {count} revisiones',
@@ -524,6 +525,7 @@ export default {
     accessRevoked: {
       title: 'Esta cola de revisión ya no está disponible para ti.',
       body: 'Tu acceso a estos tableros cambió, así que la cola se vació y dejó de actualizarse. Vuelve a cargar la página o elige un tablero al que todavía tengas acceso.',
+      retry: 'El servidor sigue rechazando esta cola de revisión. Recarga la página o revisa el filtro del tablero.',
     },
     scoped: {
       title: 'No hay propuestas en {scope}.',
@@ -537,7 +539,7 @@ export default {
     settledElsewhere: {
       eyebrow: 'Propuesta seleccionada',
       title: 'Esta propuesta salio de la cola de revision.',
-      body: 'Otra persona la decidio, la retiro o la aplazo mientras la revisabas. Aqui no se decidio nada y no se abrio ninguna otra propuesta en su lugar. Vuelve a cargar la cola para comprobarlo.',
+      body: 'Esta propuesta ya no está en la lista de revisión actual. Puede haberse decidido, retirado, aplazado o estar fuera del límite de 200 elementos. Aquí no se decidió nada y no se abrió ninguna otra propuesta en su lugar. Vuelve a cargar la cola para comprobarlo.',
       return: 'Recargar la cola',
     },
     unavailable: {

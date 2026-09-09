@@ -1,5 +1,8 @@
+import type { FeatureFlags } from '../types/feature-flags'
+
 export type ShortcutGroupTitle = 'Navigate' | 'Capture & Review' | 'Boards'
 export type ShortcutHandlerOwner = 'app-shell' | 'review-keymap' | 'board-keymap'
+export type ShortcutFlag = keyof FeatureFlags
 
 /**
  * The two shipped skins. Each renders exactly one help surface:
@@ -32,10 +35,12 @@ type ShortcutBindingBase = Readonly<{
    * skin. A row names skins when its handler is reachable in only some of
    * them, which is true in both directions today: `f` runs only when Paper is
    * off, because the Legacy filter panel is the control it toggles, and the
-   * four review-keymap rows run only when Paper is on, because
+   * six review-keymap rows run only when Paper is on, because
    * `useReviewKeymap` is installed by `PaperReviewView` alone.
    */
   skins?: readonly ShortcutSkin[]
+  /** Feature flag required before the binding can be used or advertised. */
+  flag?: ShortcutFlag
 }>
 
 export type AppShellShortcutBinding = ShortcutBindingBase & Readonly<{
@@ -74,6 +79,7 @@ const KEY_LABELS: Readonly<Record<string, string>> = {
   arrowup: 'Up',
   backspace: 'Backspace',
   enter: 'Enter',
+  space: 'Space',
 }
 
 function runtimeNavigator(): NavigatorHints | null {
@@ -299,6 +305,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerOwner: 'app-shell',
     sequence: [{ key: 'r' }],
     action: { type: 'navigate', path: '/workspace/review' },
+    flag: 'newAutomation',
   },
   {
     id: 'command-palette',
@@ -312,15 +319,6 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     allowInTextEntry: true,
   },
   {
-    id: 'workspace-today-chord',
-    descriptor: 'g t',
-    label: 'Go to Today',
-    group: 'Navigate',
-    handlerOwner: 'app-shell',
-    sequence: [{ key: 'g' }, { key: 't' }],
-    action: { type: 'navigate', path: '/workspace/today' },
-  },
-  {
     id: 'quick-capture',
     descriptor: 'mod+shift+c',
     label: 'Quick capture',
@@ -332,9 +330,9 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
   },
   // The review keymap is installed by `PaperReviewView.vue` alone.
   // `LegacyReviewView.vue` has one element-scoped `@keydown` handling only
-  // ArrowDown/ArrowUp, so the Legacy `?` map used to advertise four keys that
-  // no Legacy runtime implements (#2007 AC1, and the 2026-08-29 MEDIUM on
-  // #1968). All four are scoped to Paper.
+  // ArrowDown/ArrowUp, so the Legacy `?` map must not advertise any of these
+  // review-keymap rows (#2007 AC1, and the 2026-08-29 MEDIUM on #1968). All
+  // six are scoped to Paper.
   {
     id: 'review-apply',
     descriptor: '\u23ce',
@@ -363,6 +361,15 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     skins: ['paper'],
   },
   {
+    id: 'review-defer',
+    descriptor: 'd',
+    label: 'Defer 1 hour',
+    group: 'Capture & Review',
+    handlerOwner: 'review-keymap',
+    handlerEvidence: "if (k === 'd')",
+    skins: ['paper'],
+  },
+  {
     id: 'review-provenance',
     descriptor: 'p',
     label: 'Provenance pane',
@@ -370,6 +377,16 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     group: 'Capture & Review',
     handlerOwner: 'review-keymap',
     handlerEvidence: "if (k === 'p')",
+    skins: ['paper'],
+  },
+  {
+    id: 'review-preview-diff',
+    descriptor: 'space',
+    label: 'Preview diff',
+    note: 'during review',
+    group: 'Capture & Review',
+    handlerOwner: 'review-keymap',
+    handlerEvidence: "case ' ':",
     skins: ['paper'],
   },
   {
@@ -486,11 +503,23 @@ export function bindingAppliesToSkin(binding: ShortcutBinding, skin: ShortcutSki
   return (binding.skins ?? ALL_SKINS).includes(skin)
 }
 
-export function shortcutGroupsForSkin(skin: ShortcutSkin) {
+export function shortcutBindingIsAvailable(
+  binding: ShortcutBinding,
+  isFlagEnabled: (flag: ShortcutFlag) => boolean = () => true,
+): boolean {
+  return binding.flag === undefined || isFlagEnabled(binding.flag)
+}
+
+export function shortcutGroupsForSkin(
+  skin: ShortcutSkin,
+  isFlagEnabled: (flag: ShortcutFlag) => boolean = () => true,
+) {
   return GROUP_ORDER.map((title) => ({
     title,
     rows: PAPER_SHORTCUT_BINDINGS.filter(
-      (binding) => binding.group === title && bindingAppliesToSkin(binding, skin),
+      (binding) => binding.group === title &&
+        bindingAppliesToSkin(binding, skin) &&
+        shortcutBindingIsAvailable(binding, isFlagEnabled),
     ),
   }))
 }

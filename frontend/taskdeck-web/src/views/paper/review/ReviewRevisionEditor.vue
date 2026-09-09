@@ -23,11 +23,14 @@ import PaperTagstamp from '../../../components/paper/PaperTagstamp.vue'
 const props = defineProps<{
   operationsPayload: string
   saving?: boolean
+  revisionChanged?: boolean
 }>()
 
 const emit = defineEmits<{
   (event: 'save', payload: { revisedPayload: string; reason: string }): void
   (event: 'cancel'): void
+  (event: 'toggle-provenance'): void
+  (event: 'preview-diff'): void
 }>()
 
 interface EditableField {
@@ -143,6 +146,16 @@ function onSave() {
       <PaperTagstamp tone="ember">{{ $t('review.revisionEditor.stamp') }}</PaperTagstamp>
     </div>
 
+    <p
+      v-if="revisionChanged"
+      class="revision-editor__notice"
+      role="status"
+      aria-live="polite"
+      data-testid="revision-changed-elsewhere"
+    >
+      {{ $t('review.revisionEditor.changedElsewhere') }}
+    </p>
+
     <div class="revision-editor__fields">
       <div v-for="field in fields" :key="field.key" class="revision-editor__field">
         <label :for="`revision-field-${field.key}`" class="revision-editor__label">{{ field.key }}</label>
@@ -178,6 +191,21 @@ function onSave() {
     </div>
 
     <div class="revision-editor__actions">
+      <!-- P and Space stay ordinary text while an editor field has focus. These
+           native buttons keep the same read-only inspection actions reachable
+           by keyboard without weakening that typing guard. -->
+      <div class="revision-editor__inspect-actions">
+        <PaperHLBtn
+          :label="$t('review.keyHints.provenance')"
+          data-testid="revision-inspect-provenance"
+          @click="emit('toggle-provenance')"
+        />
+        <PaperHLBtn
+          :label="$t('review.keyHints.preview')"
+          data-testid="revision-inspect-diff"
+          @click="emit('preview-diff')"
+        />
+      </div>
       <PaperHLBtn
         :label="$t('review.revisionEditor.cancel')"
         :disabled="saving"
@@ -202,6 +230,11 @@ function onSave() {
 }
 .revision-editor__header {
   margin-bottom: 12px;
+}
+.revision-editor__notice {
+  margin: 0 0 12px;
+  color: var(--text-2);
+  font-size: 13px;
 }
 .revision-editor__fields {
   display: flex;
@@ -254,5 +287,10 @@ function onSave() {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+.revision-editor__inspect-actions {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
 }
 </style>

@@ -87,6 +87,13 @@ export default {
       transcriptNote:
         'Las capturas de transcripción se envían al asistente configurado para extraer tareas. Las notas escritas no.',
       tooLong: 'Esta transcripción es demasiado larga. La longitud máxima es de {max} caracteres.',
+      transcriptFileButton: 'Subir archivo de transcripción',
+      transcriptFileInputLabel: 'Elegir archivo de transcripción',
+      transcriptFileClear: 'Borrar archivo de transcripción',
+      transcriptFileHint: 'Archivos de texto plano .txt de hasta {max} bytes.',
+      transcriptFileTypeError: 'Elige un archivo de transcripción de texto plano (.txt).',
+      transcriptFileSizeError: 'Este archivo de transcripción es demasiado grande. El máximo es de {max} bytes.',
+      transcriptFileUnreadable: 'No se pudo leer este archivo de transcripción. Prueba con otro.',
     },
   },
   // Etiquetas de los campos del Composer (#1871). "Texto" para `body`: es el
@@ -189,11 +196,13 @@ export default {
       archiving: 'Archivando…',
       kept: 'Guardada para más tarde. Pide ayuda a la IA o archívala cuando quieras.',
       archived: 'Archivada. No se creó ninguna propuesta ni trabajo en el tablero.',
-      nothingToPropose: 'La clasificación no encontró nada que proponer — a Review no llegó nada.',
+      nothingToPropose: 'La clasificación no encontró nada que proponer — a Review no llegó nada. Edita la captura y pulsa Ask AI para intentarlo de nuevo.',
       inReview: 'Enviada a Review — decide allí.',
       applied: 'Aplicada al tablero. Aquí no queda nada por hacer.',
       rejected: 'Rechazada. Esta captura no llegará a Review.',
       failed: 'El análisis falló, así que nada llegó a Review. Corrige el problema y vuelve a pedir ayuda a la IA.',
+      nothingToProposeTranscriptReadOnly: 'La clasificación no encontró nada que proponer — a Review no llegó nada. Esta transcripción es de solo lectura. Captura el texto corregido como un elemento nuevo.',
+      nothingToProposeNotEditable: 'La clasificación no encontró nada que proponer — a Review no llegó nada. Esta captura no se puede editar aquí.',
     },
     tag: {
       state: 'Estado: {label}. Dónde está ahora mismo esta captura.',
@@ -252,7 +261,7 @@ export default {
         unavailable: 'Esta API no devolvió metadatos editables. Guardar solo el texto conservará la fecha límite y las etiquetas almacenadas.',
       },
       blocked: {
-        notEditable: 'El texto de esta captura no se puede editar. Pulsa Ask AI, Keep o Archive tal como está.',
+        notEditable: 'El texto de esta captura no se puede editar. Captura el texto corregido como un elemento nuevo.',
         empty: 'El texto no puede estar vacío. Escribe algo, o cancela para dejar la captura como estaba.',
         unchanged: 'Todavía no ha cambiado nada. Edita el texto o los metadatos, o cancela para dejar la captura como estaba.',
         editorOpen: 'Otra captura está abierta para editar. Guarda o cancela esa edición: cambiar ahora descartaría el texto escrito allí.',

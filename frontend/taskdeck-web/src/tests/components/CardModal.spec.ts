@@ -310,6 +310,107 @@ describe('CardModal', () => {
     opener.remove()
   })
 
+  it('moves focus into the modal when an open inspector becomes modal and restores the opener on close', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    opener.textContent = 'Open card'
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const outsideControl = document.createElement('button')
+    outsideControl.type = 'button'
+    outsideControl.textContent = 'Board control'
+    document.body.appendChild(outsideControl)
+
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+        presentation: 'inspector',
+      },
+      attachTo: document.body,
+    })
+
+    try {
+      await nextTick()
+      outsideControl.focus()
+      expect(document.activeElement).toBe(outsideControl)
+
+      await wrapper.setProps({ presentation: 'modal' })
+      await nextTick()
+      expect(document.activeElement).toBe(
+        wrapper.find('[aria-label="Close card editor"]').element,
+      )
+
+      await wrapper.setProps({ isOpen: false })
+      await nextTick()
+      expect(document.activeElement).toBe(opener)
+    } finally {
+      wrapper.unmount()
+      opener.remove()
+      outsideControl.remove()
+    }
+  })
+
+  it('preserves focus inside the editor when an open inspector becomes modal', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+        presentation: 'inspector',
+      },
+      attachTo: document.body,
+    })
+
+    try {
+      await nextTick()
+      const titleInput = wrapper.get('#card-title').element as HTMLInputElement
+      titleInput.focus()
+
+      await wrapper.setProps({ presentation: 'modal' })
+      await nextTick()
+      expect(document.activeElement).toBe(titleInput)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('does not steal focus from a nested dialog during an inspector to modal transition', async () => {
+    const wrapper = mount(CardModal, {
+      props: {
+        card,
+        isOpen: true,
+        labels,
+        presentation: 'inspector',
+      },
+      attachTo: document.body,
+    })
+
+    try {
+      await nextTick()
+      const deleteButton = wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('Delete Card'))
+      expect(deleteButton).toBeDefined()
+      await deleteButton!.trigger('click')
+      await nextTick()
+
+      const nestedDialog = document.body.querySelector<HTMLElement>('.td-dialog')
+      expect(nestedDialog).not.toBeNull()
+      const nestedControl = nestedDialog?.querySelector<HTMLButtonElement>('button')
+      expect(nestedControl).not.toBeNull()
+      nestedControl!.focus()
+
+      await wrapper.setProps({ presentation: 'modal' })
+      await nextTick()
+      expect(document.activeElement).toBe(nestedControl)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('should keep Tab and Shift+Tab inside the dialog focus cycle', async () => {
     const wrapper = mount(CardModal, {
       props: {
@@ -522,6 +623,23 @@ describe('CardModal', () => {
       'card-2',
       expect.objectContaining({ expectedUpdatedAt: secondCard.updatedAt }),
     )
+  })
+
+  it('focuses the replacement inspector when a different card is selected', async () => {
+    const wrapper = mount(CardModal, {
+      attachTo: document.body,
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+    })
+    await flushPromises()
+
+    const commentInput = wrapper.get('#new-card-comment').element as HTMLTextAreaElement
+    commentInput.focus()
+    expect(document.activeElement).toBe(commentInput)
+
+    await wrapper.setProps({ card: { ...card, id: 'card-2', title: 'Second Card' } })
+    await flushPromises()
+
+    expect(document.activeElement).toBe(wrapper.get('[aria-label="Close card editor"]').element)
   })
 
   it('should emit updated event after successful save', async () => {

@@ -43,6 +43,12 @@ public class AutomationProposalService : IAutomationProposalService
     private readonly IProposalProvenanceRepository? _provenanceRepository;
     private readonly IAutomationPolicyEngine _policyEngine;
     private readonly ILogger<AutomationProposalService>? _logger;
+
+    // This transition state belongs only to this AutomationProposalService instance. The service
+    // is registered as scoped in the HTTP and MCP hosts, so it suppresses duplicate messages only
+    // within one scope. The production expiry sweep's operator-reporting lane is
+    // ProposalHousekeepingWorker, whose hosted instance keeps its own long-lived state; this
+    // service method currently has no production caller.
     private int _lastSkippedArchivedBoardCount;
 
     public AutomationProposalService(
