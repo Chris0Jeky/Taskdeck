@@ -205,13 +205,24 @@ test('makes comparison and Grove themes usable on desktop and narrow screens', a
   const { boardId } = await setup(page, request, 'responsive')
   await page.goto('/workspace/experiences')
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Record observation', exact: true })).toBeDisabled()
+  await page.getByLabel('What scenario did you try?').selectOption('resume-thinking')
+  await page.getByLabel('What happened?').selectOption('completed')
   await page.getByLabel('How easy was it to continue your work?').selectOption('4')
   await page.getByLabel('What helped, or got in the way?').fill('I could find my next step and preserve the alternatives.')
   await page.getByRole('button', { name: 'Record observation', exact: true }).click()
   await expect(page.getByText('Observation recorded.', { exact: true })).toBeVisible()
   const observations = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export observations', exact: true }).click()
-  expect((await observations).suggestedFilename()).toBe('taskdeck-workspace-comparison.json')
+  const comparisonDownload = await observations
+  expect(comparisonDownload.suggestedFilename()).toBe('taskdeck-workspace-comparison.json')
+  const comparisonStream = await comparisonDownload.createReadStream()
+  let comparisonText = ''
+  for await (const chunk of comparisonStream!) comparisonText += chunk.toString()
+  const comparison = JSON.parse(comparisonText)
+  expect(comparison.version).toBe(2)
+  expect(comparison.trials[0]).toMatchObject({ scenario: 'resume-thinking', completionOutcome: 'completed', ease: 4 })
+  expect(comparison.trials[0]).toHaveProperty('build')
   for (const width of [1440, 768, 375]) {
     await page.setViewportSize({ width, height: 900 })
     for (const experience of ['classic', 'studio', 'companion', 'unified']) {
@@ -263,4 +274,51 @@ test('changes board disclosure without losing an open card or hiding blocked wor
   await page.getByRole('button', { name: 'Open thinking deck', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/cards/${card.id}/thinking$`))
   await expect(page.getByRole('heading', { level: 2, name: 'Thinking deck', exact: true })).toBeVisible()
+})
+
+
+test('saved thinking steps create one real card and retain live links across experiences', async ({ page, request }) => {
+  const { auth, boardId, headers } = await setup(page, request, 'linked-step')
+  const parent = await seedCard(request, auth, boardId)
+  const thinkingUrl = `${API_BASE_URL}/boards/${boardId}/cards/${parent.id}/thinking`
+  await page.goto(`/workspace/boards/${boardId}/cards/${parent.id}/thinking`)
+  await page.getByRole('button', { name: '+ steps', exact: true }).click()
+  await page.getByRole('button', { name: '+ Add step', exact: true }).click()
+  await page.getByLabel('steps item 1', { exact: true }).fill('Deliver a linked first step')
+  await expect(page.getByRole('button', { name: 'Create card from step…' })).toBeDisabled()
+  await page.getByRole('button', { name: 'Save thinking', exact: true }).click()
+  await expect(page.getByText('Thinking saved', { exact: true })).toBeVisible()
+  const before = await (await request.get(thinkingUrl, { headers })).json()
+  await page.getByRole('button', { name: 'Create card from step…' }).click()
+  await expect(page.getByRole('button', { name: 'Create linked card', exact: true })).toBeDisabled()
+  const board = await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()
+  await page.getByLabel('Destination column', { exact: true }).selectOption(board.columns[0].id)
+  await page.getByRole('button', { name: 'Create linked card', exact: true }).click()
+  await expect(page.getByRole('link', { name: 'Deliver a linked first step', exact: true })).toBeVisible()
+  const deck = await (await request.get(thinkingUrl, { headers })).json()
+  const childId = deck.layers[0].items[0].linkedCardId
+  await assertOk(await request.post(`${thinkingUrl}/steps/${before.layers[0].id}/${before.layers[0].items[0].id}/card`, {
+    headers, data: { expectedRevision: before.revision, columnId: board.columns[0].id, title: 'Deliver a linked first step' },
+  }), 'retry promotion')
+  expect((await listBoardCards(request, auth, boardId)).length).toBe(2)
+  await assertOk(await request.patch(`${API_BASE_URL}/boards/${boardId}/cards/${childId}`, {
+    headers, data: { isBlocked: true, blockReason: 'A real dependency' },
+  }), 'block linked card')
+  await page.getByRole('button', { name: 'Refresh card status' }).click()
+  await expect(page.locator('.step-card')).toContainText('Blocked')
+  for (const experience of ['classic', 'companion', 'unified', 'studio']) {
+    await page.getByLabel('Workspace experience', { exact: true }).selectOption(experience)
+    await expect(page.getByRole('link', { name: 'Deliver a linked first step', exact: true })).toBeVisible()
+  }
+  await page.screenshot({ path: '../../artifacts/overhaul/linked-thinking-desktop.png', fullPage: true })
+  await page.setViewportSize({ width: 375, height: 812 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true)
+  const a11y = await new AxeBuilder({ page }).include('.thinking-deck').withTags(['wcag2a', 'wcag2aa']).analyze()
+  expect(a11y.violations).toEqual([])
+  await page.screenshot({ path: '../../artifacts/overhaul/linked-thinking-mobile.png', fullPage: true })
+  await page.getByRole('button', { name: 'Remove layer 1', exact: true }).click()
+  await page.getByRole('button', { name: 'Remove layer', exact: true }).click()
+  await page.getByRole('button', { name: 'Save thinking', exact: true }).click()
+  await expect(page.getByText('Thinking saved', { exact: true })).toBeVisible()
+  expect((await listBoardCards(request, auth, boardId)).length).toBe(2)
 })

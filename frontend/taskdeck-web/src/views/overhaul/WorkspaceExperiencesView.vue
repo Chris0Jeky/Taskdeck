@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import {
@@ -14,7 +14,8 @@ import { useProductVersion } from '../../composables/useProductVersion'
 const layout = useWorkspaceLayoutStore()
 const theme = usePaperThemeStore()
 const experiment = useWorkspaceExperimentStore()
-const productVersion = useProductVersion()
+const { version, displayVersion, ensureLoaded } = useProductVersion()
+onMounted(() => { void ensureLoaded() })
 const scenario = ref<WorkspaceScenario | null>(null)
 const completionOutcome = ref<WorkspaceCompletionOutcome | null>(null)
 const ease = ref<number | null>(null)
@@ -27,17 +28,16 @@ const versions = [
   { id: 'unified', name: 'Unified', headline: 'One workspace. Your pace.', detail: 'A familiar sidebar, adjustable detail, Thinking Decks, quiet insights and maintainable memory.', glyph: '▱' },
 ] as const
 
-async function record() {
+function record() {
   if (!scenario.value || !completionOutcome.value) {
     saved.value = false
     return
   }
-  await productVersion.ensureLoaded()
   saved.value = experiment.record({
     experience: layout.experience,
     presentation: layout.presentation,
     theme: theme.mode,
-    build: productVersion.version.value,
+    build: version.value,
     scenario: scenario.value,
     completionOutcome: completionOutcome.value,
     ease: ease.value,
@@ -73,14 +73,14 @@ function download() {
     <p><RouterLink to="/workspace/home">Open your workspace ↗</RouterLink> · <RouterLink to="/workspace/settings/appearance">Choose a theme and detail level</RouterLink></p>
     <section class="experience-lab__protocol"><h2>Same task, different perspective.</h2><ol><li>Capture a rough thought and follow it through Review to a board.</li><li>Open a card’s Thinking Deck and leave a thread for next time.</li><li>Check quiet insights and answer a useful question in Memory.</li><li>Switch experience. See what becomes easier to find or harder to understand.</li></ol><p>These are personal comparison notes. They are not a statistical A/B result. Nothing is assigned automatically or sent as telemetry.</p></section>
     <form class="experience-lab__notes" @submit.prevent="record">
-      <h2>Keep an observation</h2><p>Recording {{ layout.experience }} / {{ layout.presentation }} / {{ theme.mode }} · build {{ productVersion.displayVersion || 'unavailable' }}. Notes stay in this session; export them before reloading or signing out.</p>
+      <h2>Keep an observation</h2><p>Recording {{ layout.experience }} / {{ layout.presentation }} / {{ theme.mode }} · backend version {{ displayVersion || 'unavailable' }}. Notes stay in this session; export them before reloading or signing out.</p>
       <label for="experience-scenario">What scenario did you try?</label><select id="experience-scenario" v-model="scenario" required><option :value="null" disabled>Select a scenario</option><option v-for="item in WORKSPACE_COMPARISON_SCENARIOS" :key="item.id" :value="item.id">{{ item.label }}</option></select>
       <label for="experience-outcome">What happened?</label><select id="experience-outcome" v-model="completionOutcome" required><option :value="null" disabled>Select an outcome</option><option v-for="item in WORKSPACE_COMPLETION_OUTCOMES" :key="item.id" :value="item.id">{{ item.label }}</option></select>
       <label for="experience-ease">How easy was it to continue your work? (optional)</label><select id="experience-ease" v-model="ease"><option :value="null">Leave unrated</option><option :value="1">1 — Difficult</option><option :value="2">2 — Some friction</option><option :value="3">3 — Reasonable</option><option :value="4">4 — Easy</option><option :value="5">5 — Effortless</option></select>
       <label for="experience-note">What helped, or got in the way?</label><textarea id="experience-note" v-model="note" rows="3" maxlength="2000" />
       <button type="submit" :disabled="!scenario || !completionOutcome">Record observation</button><span v-if="saved" role="status">Observation recorded.</span>
     </form>
-    <section v-if="experiment.trials.length" class="experience-lab__results"><h2>Your observations</h2><ul><li v-for="(trial, index) in experiment.trials" :key="index"><strong>{{ trial.experience }} · {{ trial.completionOutcome }}</strong><span>{{ trial.scenario }} · {{ trial.ease === null ? 'Ease not rated' : `${trial.ease}/5` }} · {{ trial.build || 'Build unavailable' }}</span><p>{{ trial.note || 'No note added.' }}</p></li></ul><button type="button" @click="download">Export observations</button><button type="button" @click="experiment.clear">Clear observations</button></section>
+    <section v-if="experiment.trials.length" class="experience-lab__results"><h2>Your observations</h2><ul><li v-for="(trial, index) in experiment.trials" :key="index"><strong>{{ trial.experience }} · {{ WORKSPACE_COMPLETION_OUTCOMES.find(item => item.id === trial.completionOutcome)?.label }}</strong><span>{{ WORKSPACE_COMPARISON_SCENARIOS.find(item => item.id === trial.scenario)?.label }} · {{ trial.ease === null ? 'Ease not rated' : `${trial.ease}/5` }} · {{ trial.build || 'Build unavailable' }}</span><p>{{ trial.note || 'No note added.' }}</p></li></ul><button type="button" @click="download">Export observations</button><button type="button" @click="experiment.clear">Clear observations</button></section>
   </div>
 </template>
 
