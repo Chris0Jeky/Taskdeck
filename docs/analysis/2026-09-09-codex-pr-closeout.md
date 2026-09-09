@@ -9,7 +9,7 @@ Last Updated: 2026-09-09
 
 ## Combined integration candidate
 
-PR #2807 merged at `7ac99a7ac` after required run `34288600727` passed. The remaining heads below include that base and are combined, with their commit ancestry preserved, in integration PR #2815. The integration includes all ten product and delegated control candidates. Independent product, final receipt-fix, dependency-union and CI-interaction reviews are clear; its final hosted run remains required. Earlier runs do not qualify the combination.
+PR #2807 merged at `7ac99a7ac` after required run `34288600727` passed. The remaining heads below include that base and are combined, with their commit ancestry preserved, in integration PR #2815. The integration includes all thirteen product and delegated control candidates. Independent product, final receipt-fix, dependency-union and CI-interaction reviews are clear; its final hosted run remains required. Earlier runs do not qualify the combination.
 
 | PR | Current head | Direct evidence before the final base refresh |
 | --- | --- | --- |
@@ -34,3 +34,9 @@ The five active implementation PRs and #2214 were directly verified as Project `
 The original OneDrive main and its two unpublished commits were preserved. Its worktree reparse/fingerprint constraints were respected by using an ordinary clone at `C:/Taskdeck-wave/repo`. The original dirty overhaul checkout was untouched. All helper-created worktrees from these two passes were removed normally after source/upstream and ignored-output inventories; all owned test servers stopped. Only generated dependencies/build outputs and the fresh synthetic E2E database were discarded.
 
 Local review diffs, test receipts, cleanup inventories and current PR snapshots remain at `C:/Taskdeck-wave/evidence`. The coordinator retains source branches and an external handoff there. The read-only inventory wrapper used its supported Windows PowerShell 5 runtime; no wrapper/fingerprint guard or global policy was weakened. Git identity was copied from the original checkout to clone-local configuration only.
+
+## Parallel-lane candidates included at the final cutoff
+
+PRs #2816 (`98aa1c9`, unavailable Review return focus), #2817 (`ea91e8c`, palette focus return), and #2818 (`25b6fbd`, previously ruled batch Apply scope/privacy) arrived during qualification and are included with exact source ancestry and blobs preserved. Their source reviews are recorded on each PR; #2818 has distinct consent and authorization reviews. Fresh Terra integration review is clear. Combined focused frontend coverage passes 226 tests under the merged dependencies; Golden Principles, docs links and governance pass.
+
+Their MEDIUM findings remain tracked on #2215 (delayed focus handoff), #2090 (programmatic-only palette opener), and #1307 (Development sandbox single/batch concealment consistency and controller-comment drift). ADR-0068 deliberately retains read-side sandbox grants; strict write authorization is unchanged. The integration does not claim personal dogfooding, a release, or full completion of those parent issues. These three form the final incoming-PR cutoff for this qualification batch.
