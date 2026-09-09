@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
@@ -101,6 +101,7 @@ const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
 const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
 const cardEditorDirty = ref(false)
+const routeDiscarding = ref(false)
 type BoardDensity = 'comfortable' | 'compact'
 const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
@@ -341,6 +342,7 @@ const activeSelectedCardId = computed(() => props.selectedCardId ?? selectedCard
 watch(boardId, () => {
   selectedCard.value = null
   pendingCard.value = null
+  routeDiscarding.value = false
   cardEditorDirty.value = false
   // Switching boards must not carry a half-typed card draft, an open column
   // dialog, or an error banner across to a board they do not belong to.
@@ -438,6 +440,8 @@ function onLaneDragStart(column: Column, event: DragEvent) {
 }
 
 function openCard(card: Card) {
+  routeDiscarding.value = false
+
   if (selectedCard.value?.id === card.id) return
   if (selectedCard.value && cardEditorDirty.value) {
     pendingCard.value = card
@@ -447,6 +451,7 @@ function openCard(card: Card) {
 }
 
 function closeCard() {
+  routeDiscarding.value = false
   pendingNavigation.value?.resolve(false)
   pendingNavigation.value = null
   selectedCard.value = null
@@ -470,6 +475,7 @@ function closeCard() {
  * other two exits from this dialog use.
  */
 function handleCardUpdated() {
+  routeDiscarding.value = false
   const navigation = pendingNavigation.value
   pendingNavigation.value = null
   cardEditorDirty.value = false
@@ -481,12 +487,13 @@ function handleCardEditorDirtyChange(dirty: boolean) {
 }
 
 function cancelPendingDiscard() {
+  routeDiscarding.value = false
   pendingCard.value = null
   pendingNavigation.value?.resolve(false)
   pendingNavigation.value = null
 }
 
-function confirmPendingDiscard() {
+async function confirmPendingDiscard() {
   const cardToOpen = pendingCard.value
   const navigation = pendingNavigation.value
   pendingCard.value = null
@@ -497,6 +504,8 @@ function confirmPendingDiscard() {
     return
   }
   if (navigation) {
+    routeDiscarding.value = true
+    await nextTick()
     selectedCard.value = null
     navigation.resolve(true)
   }
@@ -1127,6 +1136,8 @@ async function addStarterColumns() {
           :is-open="Boolean(selectedCard)"
           :labels="boardStore.currentBoardLabels"
           :presentation="cardPresentation"
+          :suppress-discard-prompt="discardDialogOpen"
+          :skip-focus-restore="routeDiscarding"
           @close="closeCard"
           @updated="handleCardUpdated"
           @dirty-change="handleCardEditorDirtyChange"

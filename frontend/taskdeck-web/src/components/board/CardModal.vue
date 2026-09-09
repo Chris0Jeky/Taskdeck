@@ -21,8 +21,12 @@ const props = withDefaults(defineProps<{
   isOpen: boolean
   labels: Label[]
   presentation?: 'modal' | 'inspector'
+  suppressDiscardPrompt?: boolean
+  skipFocusRestore?: boolean
 }>(), {
   presentation: 'modal',
+  suppressDiscardPrompt: false,
+  skipFocusRestore: false,
 })
 
 const emit = defineEmits<{
@@ -113,7 +117,11 @@ watch(
       await nextTick()
       focusInitialControl()
     } else if (wasOpen) {
-      restoreFocus()
+      if (props.skipFocusRestore) {
+        previouslyFocusedElement = null
+      } else {
+        restoreFocus()
+      }
     }
   },
   { immediate: true },
@@ -142,7 +150,7 @@ watch(
 )
 
 onUnmounted(() => {
-  if (props.isOpen) {
+  if (props.isOpen && !props.skipFocusRestore) {
     restoreFocus()
   }
 })
@@ -234,7 +242,16 @@ watch(hasUnsavedChanges, (dirty) => {
   emit('dirty-change', dirty)
 }, { immediate: true })
 
+watch(() => props.suppressDiscardPrompt, (suppress) => {
+  if (!suppress) return
+
+  pendingThinkingPath.value = null
+  showDiscardConfirm.value = false
+}, { immediate: true })
+
 function handleClose() {
+  if (props.suppressDiscardPrompt) return
+
   if (hasUnsavedChanges.value) {
     showDiscardConfirm.value = true
     return
@@ -245,6 +262,7 @@ function handleClose() {
 useEscapeToClose(
   () =>
     props.isOpen &&
+    !props.suppressDiscardPrompt &&
     !showDiscardConfirm.value &&
     !showDeleteConfirm.value &&
     !showCommentDeleteConfirm.value,
