@@ -477,7 +477,12 @@ function dismissSettledElsewhereNotice() {
 
 watch(
   hashProposalId,
-  (id) => {
+  (id, previousId) => {
+    // A new deep-link lookup, including leaving the hash, supersedes the
+    // background-poll notice. Otherwise a missing/malformed pin can replace
+    // the notice visually, then reveal that stale notice again when Return
+    // clears the hash (#2215).
+    if (id !== previousId) activeProposalSettledElsewhere.value = null
     if (!id) return
     const target = proposals.value.find(
       (proposal) =>
@@ -491,6 +496,17 @@ watch(
   },
   { immediate: true },
 )
+
+const unavailableReturnRef = ref<HTMLButtonElement | null>(null)
+
+// The unavailable panel replaces the decision column after an async lookup.
+// Give keyboard and assistive-technology users a stable recovery control as
+// soon as that panel lands instead of leaving focus on the document body.
+watch(unavailableProposalId, (id) => {
+  if (!id) return
+  activeProposalSettledElsewhere.value = null
+  void nextTick(() => unavailableReturnRef.value?.focus?.())
+})
 
 const selectors = usePaperReviewSelectors(activeProposal)
 
@@ -2647,6 +2663,9 @@ const emptyColRef = ref<HTMLElement | null>(null)
  */
 async function returnToReview() {
   if (!unavailableProposalId.value) return
+  // The route watcher also clears this when the hash is removed, but clear it
+  // before the await so a stale poll notice cannot flash during navigation.
+  activeProposalSettledElsewhere.value = null
   await clearProposalDeepLink(unavailableProposalId.value)
   // After the DOM has settled on whichever of the two replaces the panel.
   await nextTick()
@@ -3098,6 +3117,7 @@ async function onClearBoardScope() {
           {{ unavailableProposalMalformed ? $t('review.empty.unavailable.malformedBody', { id: unavailableProposalId }) : $t('review.empty.unavailable.body', { id: unavailableProposalId }) }}
         </p>
         <button
+          ref="unavailableReturnRef"
           type="button"
           class="paper-review-deep__clear-scope"
           data-testid="paper-review-unavailable-return"

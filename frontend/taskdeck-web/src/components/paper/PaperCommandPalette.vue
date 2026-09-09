@@ -42,6 +42,10 @@ const inputEl = ref<HTMLInputElement | null>(null)
 const query = ref('')
 const selectedIndex = ref(0)
 const listboxId = 'paper-command-palette-listbox'
+const focusableSelector =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]'
+let previouslyFocusedElement: HTMLElement | null = null
+let focusLifecycle = 0
 
 type PaperPaletteItem =
   | { type: 'command'; data: CommandItem }
@@ -160,6 +164,52 @@ function handleClose() {
   emit('close')
 }
 
+function isFocusableElement(element: HTMLElement | null): element is HTMLElement {
+  if (!element?.isConnected || !element.matches(focusableSelector)) return false
+  if (element.closest('[hidden], [aria-hidden="true"], [inert]')) return false
+  return true
+}
+
+function isExternalActiveElement(element: Element | null): element is HTMLElement {
+  return element instanceof HTMLElement && element.isConnected && element !== document.body && element !== document.documentElement
+}
+
+function findModalFocusFallback(): HTMLElement | null {
+  const dialogs = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'),
+  ).filter((dialog) => {
+    if (!dialog.isConnected || dialog.closest('[hidden], [aria-hidden="true"], [inert]')) return false
+    return dialog !== inputEl.value?.closest('[role="dialog"]')
+  })
+
+  const activeModal = dialogs.at(-1)
+  if (!activeModal) return null
+
+  return (
+    activeModal.querySelector<HTMLElement>('[aria-label="Close card editor"]') ??
+    activeModal.querySelector<HTMLElement>(focusableSelector) ??
+    (isFocusableElement(activeModal) ? activeModal : null)
+  )
+}
+
+async function restoreFocusAfterClose(operation: number) {
+  await nextTick()
+  if (operation !== focusLifecycle || props.visible) return
+
+  // A navigation or action may have deliberately focused its destination while
+  // the palette was closing. Preserve that focus instead of yanking it back.
+  if (isExternalActiveElement(document.activeElement)) return
+
+  const opener = previouslyFocusedElement
+  previouslyFocusedElement = null
+  if (isFocusableElement(opener)) {
+    opener.focus()
+    return
+  }
+
+  findModalFocusFallback()?.focus()
+}
+
 const activeItemId = computed(() =>
   orderedItems.value.length > 0 ? `paper-palette-row-${selectedIndex.value}` : undefined,
 )
@@ -204,15 +254,23 @@ watch(query, (value) => {
 watch(
   () => props.visible,
   async (open) => {
+    const operation = ++focusLifecycle
     if (!open) {
       query.value = ''
       selectedIndex.value = 0
       resetSearch()
+      void restoreFocusAfterClose(operation)
       return
     }
+
+    previouslyFocusedElement = isFocusableElement(document.activeElement as HTMLElement | null)
+      ? (document.activeElement as HTMLElement)
+      : null
     await nextTick()
+    if (operation !== focusLifecycle || !props.visible) return
     inputEl.value?.focus()
   },
+  { immediate: true },
 )
 
 watch(orderedItems, (items) => {

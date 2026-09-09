@@ -111,6 +111,98 @@ describe('PaperCommandPalette', () => {
     expect(backdrop()).toBeNull()
   })
 
+  it('returns focus to the connected opener when it closes', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    opener.textContent = 'Open palette'
+    document.body.append(opener)
+    opener.focus()
+
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: false, items },
+      attachTo: document.body,
+    })
+    await wrapper.setProps({ visible: true })
+    await nextTick()
+    expect(document.activeElement).toBe(backdrop()?.querySelector('input'))
+
+    await wrapper.setProps({ visible: false })
+    await nextTick()
+
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('does not steal deliberate destination focus when navigation closes it', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    const destination = document.createElement('button')
+    destination.type = 'button'
+    destination.textContent = 'Destination'
+    document.body.append(opener, destination)
+    opener.focus()
+
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: false, items },
+      attachTo: document.body,
+    })
+    await wrapper.setProps({ visible: true })
+    await nextTick()
+
+    destination.focus()
+    await wrapper.setProps({ visible: false })
+    await nextTick()
+
+    expect(document.activeElement).toBe(destination)
+  })
+
+  it('falls back inside an active modal when the opener is detached before close', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    document.body.append(opener)
+    opener.focus()
+
+    const modal = document.createElement('div')
+    modal.setAttribute('role', 'dialog')
+    modal.setAttribute('aria-modal', 'true')
+    const modalControl = document.createElement('button')
+    modalControl.type = 'button'
+    modalControl.setAttribute('aria-label', 'Close card editor')
+    modal.append(modalControl)
+    document.body.append(modal)
+
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: false, items },
+      attachTo: document.body,
+    })
+    await wrapper.setProps({ visible: true })
+    await nextTick()
+    opener.remove()
+
+    await wrapper.setProps({ visible: false })
+    await nextTick()
+
+    expect(document.activeElement).toBe(modalControl)
+  })
+
+  it('does not let a stale close restore focus after a fast reopen', async () => {
+    const opener = document.createElement('button')
+    opener.type = 'button'
+    document.body.append(opener)
+    opener.focus()
+
+    wrapper = mount(PaperCommandPalette, {
+      props: { visible: false, items },
+      attachTo: document.body,
+    })
+    await wrapper.setProps({ visible: true })
+    await nextTick()
+    await wrapper.setProps({ visible: false })
+    await wrapper.setProps({ visible: true })
+    await nextTick()
+
+    expect(document.activeElement).toBe(backdrop()?.querySelector('input'))
+  })
+
   it('filters items locally based on the input query', async () => {
     wrapper = mount(PaperCommandPalette, {
       props: { visible: true, items },

@@ -76,18 +76,19 @@ function harness(
   options: { emptiesQueueOnRefresh?: boolean; scope?: string } = {},
 ) {
   const rows = ref<Proposal[]>(proposals)
+  const currentUserId = ref<string | null>('u-1')
   const scope = ref(options.scope ?? JSON.stringify({ boardId: null, history: 'live' }))
   const loadProposals = vi.fn(async () => {
     if (options.emptiesQueueOnRefresh) rows.value = []
   })
   const composable = useBatchExecuteProposals(
     rows,
-    ref<string | null>('u-1'),
+    currentUserId,
     ref(NOW),
     loadProposals,
     scope,
   )
-  return { rows, scope, loadProposals, ...composable }
+  return { rows, scope, currentUserId, loadProposals, ...composable }
 }
 
 function receipt(results: BatchExecuteProposalsResult['results']): BatchExecuteProposalsResult {
@@ -99,13 +100,15 @@ beforeEach(() => {
 })
 
 describe('isBatchExecuteEligible', () => {
-  it('admits only the reviewer own, live, exactly-Approved proposal with operations', () => {
+  it('admits live, exactly-Approved proposals', () => {
     expect(isBatchExecuteEligible(makeProposal(), 'u-1', NOW)).toBe(true)
     expect(isBatchExecuteEligible(makeProposal({ status: 1 }), 'u-1', NOW)).toBe(true)
   })
 
-  it('refuses another reviewer proposal', () => {
-    expect(isBatchExecuteEligible(makeProposal({ requestedByUserId: 'u-2' }), 'u-1', NOW)).toBe(false)
+  it('admits board proposals by another author but preserves boardless ownership and authentication', () => {
+    expect(isBatchExecuteEligible(makeProposal({ requestedByUserId: 'u-2' }), 'u-1', NOW)).toBe(true)
+    expect(isBatchExecuteEligible(makeProposal({ boardId: null, requestedByUserId: 'u-2' }), 'u-1', NOW)).toBe(false)
+    expect(isBatchExecuteEligible(makeProposal({ boardId: null }), 'u-1', NOW)).toBe(true)
     expect(isBatchExecuteEligible(makeProposal(), null, NOW)).toBe(false)
   })
 
@@ -118,13 +121,13 @@ describe('isBatchExecuteEligible', () => {
     expect(isBatchExecuteEligible(makeProposal({ status: 99 as never }), 'u-1', NOW)).toBe(false)
   })
 
-  it('refuses expired, deferred, and zero-operation proposals', () => {
+  it('refuses expired and deferred proposals', () => {
     expect(isBatchExecuteEligible(makeProposal({ isExpired: true }), 'u-1', NOW)).toBe(false)
     expect(isBatchExecuteEligible(
       makeProposal({ expiresAt: new Date(NOW - 1000).toISOString() }), 'u-1', NOW)).toBe(false)
     expect(isBatchExecuteEligible(
       makeProposal({ deferredUntil: new Date(NOW + 60_000).toISOString() }), 'u-1', NOW)).toBe(false)
-    expect(isBatchExecuteEligible(makeProposal({ operations: [] }), 'u-1', NOW)).toBe(false)
+    expect(isBatchExecuteEligible(makeProposal({ operations: [] }), 'u-1', NOW)).toBe(true)
   })
 
   it('admits a proposal whose defer window has already elapsed', () => {
@@ -134,6 +137,40 @@ describe('isBatchExecuteEligible', () => {
 })
 
 describe('useBatchExecuteProposals', () => {
+  it('requires fresh confirmation after the reviewer changes even when shared proposals stay eligible', async () => {
+    const h = harness([makeProposal()])
+    h.requestConfirmation()
+    h.currentUserId.value = 'u-2'
+    expect(h.executableCount.value).toBe(1)
+    expect(h.confirmationOpen.value).toBe(false)
+    await h.confirmExecute()
+    expect(automationApi.executeProposals).not.toHaveBeenCalled()
+    h.requestConfirmation()
+    expect(h.confirmationOpen.value).toBe(true)
+  })
+
+  it('confirms a shared high-risk batch explicitly and retains per-item refusals', async () => {
+    const h = harness([
+      makeProposal({ id: 'shared', requestedByUserId: 'u-2', riskLevel: 'High', approvedRevisionId: 'rev-shared' }),
+      makeProposal({ id: 'archive', riskLevel: 'Critical', operations: [{ ...makeProposal().operations[0], actionType: 'archive' }] }),
+    ])
+    vi.mocked(automationApi.executeProposals).mockResolvedValue(receipt([
+      { proposalId: 'shared', outcome: 'Failed', errorCode: 'Forbidden', errorMessage: 'No write access', appliedOperations: 0 },
+      { proposalId: 'archive', outcome: 'Applied', errorCode: null, errorMessage: null, appliedOperations: 1 },
+    ]))
+    h.requestConfirmation()
+    expect(h.confirmationCount.value).toBe(2)
+    expect(automationApi.executeProposals).not.toHaveBeenCalled()
+    await h.confirmExecute()
+    expect(automationApi.executeProposals).toHaveBeenCalledWith([
+      expect.objectContaining({ proposalId: 'shared', approvedRevisionId: 'rev-shared' }),
+      expect.objectContaining({ proposalId: 'archive' }),
+    ])
+    expect(h.receipts.value.map(row => row.outcome)).toEqual(['Failed', 'Applied'])
+    expect(h.receipts.value[0]?.errorCode).toBe('Forbidden')
+    expect(h.confirmationOpen.value).toBe(true)
+  })
+
   it('counts only eligible proposals and never posts without an explicit confirmation', async () => {
     const h = harness([
       makeProposal({ id: 'p-1' }),
@@ -141,7 +178,7 @@ describe('useBatchExecuteProposals', () => {
       makeProposal({ id: 'p-3', requestedByUserId: 'u-2' }),
     ])
 
-    expect(h.executableCount.value).toBe(1)
+    expect(h.executableCount.value).toBe(2)
 
     await h.confirmExecute()
     expect(automationApi.executeProposals).not.toHaveBeenCalled()
@@ -457,28 +494,28 @@ describe('useBatchExecuteProposals receipts survive the post-apply refresh', () 
   })
 })
 
-describe('isBatchExecuteEligible matches its batch-approve sibling', () => {
-  it('refuses anything above Low risk', () => {
+describe('D-4 batch execute is broader than batch approve', () => {
+  it('admits approved proposals independently of risk classification', () => {
     for (const riskLevel of ['Medium', 'High', 'Critical'] as const) {
-      expect(isBatchExecuteEligible(makeProposal({ riskLevel }), 'u-1', NOW)).toBe(false)
+      expect(isBatchExecuteEligible(makeProposal({ riskLevel }), 'u-1', NOW)).toBe(true)
     }
-    // Fail closed on an unrecognised risk value, exactly as batch approve does.
-    expect(isBatchExecuteEligible(makeProposal({ riskLevel: 'Unknown' as never }), 'u-1', NOW)).toBe(false)
+    // Risk is not an execution permission; the approved status and server policy remain authoritative.
+    expect(isBatchExecuteEligible(makeProposal({ riskLevel: 'Unknown' as never }), 'u-1', NOW)).toBe(true)
     expect(isBatchExecuteEligible(makeProposal({ riskLevel: 0 }), 'u-1', NOW)).toBe(true)
   })
 
-  it('refuses any operation that is not a card creation', () => {
+  it('admits approved operations beyond card creation', () => {
     const archive = makeProposal({
       operations: [{ ...makeProposal().operations[0], actionType: 'archive' }],
     })
     const moveTarget = makeProposal({
       operations: [{ ...makeProposal().operations[0], targetType: 'board' }],
     })
-    expect(isBatchExecuteEligible(archive, 'u-1', NOW)).toBe(false)
-    expect(isBatchExecuteEligible(moveTarget, 'u-1', NOW)).toBe(false)
+    expect(isBatchExecuteEligible(archive, 'u-1', NOW)).toBe(true)
+    expect(isBatchExecuteEligible(moveTarget, 'u-1', NOW)).toBe(true)
   })
 
-  it('refuses a proposal carrying more than five operations', () => {
+  it('admits a proposal carrying more than five approved operations', () => {
     const base = makeProposal().operations[0]
     const five = makeProposal({
       operations: Array.from({ length: 5 }, (_, i) => ({ ...base, id: `op-${i}`, sequence: i })),
@@ -487,11 +524,10 @@ describe('isBatchExecuteEligible matches its batch-approve sibling', () => {
       operations: Array.from({ length: 6 }, (_, i) => ({ ...base, id: `op-${i}`, sequence: i })),
     })
     expect(isBatchExecuteEligible(five, 'u-1', NOW)).toBe(true)
-    expect(isBatchExecuteEligible(six, 'u-1', NOW)).toBe(false)
+    expect(isBatchExecuteEligible(six, 'u-1', NOW)).toBe(true)
   })
 
-  it('admits exactly what batch approve admits, once status is set aside', () => {
-    // The drift guard. Everything below differs only in status, so both predicates must agree.
+  it('keeps batch approve restricted when batch execute widens', () => {
     const shared = { riskLevel: 'Low' as const, requestedByUserId: 'u-1' }
     const approvable = makeProposal({ ...shared, status: 'PendingReview' })
     const executable = makeProposal({ ...shared, status: 'Approved' })
@@ -501,13 +537,12 @@ describe('isBatchExecuteEligible matches its batch-approve sibling', () => {
     for (const overrides of [
       { riskLevel: 'High' as const },
       { operations: [{ ...makeProposal().operations[0], actionType: 'archive' }] },
-      { isExpired: true },
       { requestedByUserId: 'someone-else' },
     ]) {
       expect(isBatchApproveEligible(
         makeProposal({ ...shared, status: 'PendingReview', ...overrides }), 'u-1', NOW)).toBe(false)
       expect(isBatchExecuteEligible(
-        makeProposal({ ...shared, status: 'Approved', ...overrides }), 'u-1', NOW)).toBe(false)
+        makeProposal({ ...shared, status: 'Approved', ...overrides }), 'u-1', NOW)).toBe(true)
     }
   })
 })

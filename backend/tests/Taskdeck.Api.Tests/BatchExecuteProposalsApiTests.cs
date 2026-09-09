@@ -782,19 +782,49 @@ public class BatchExecuteProposalsApiTests : IClassFixture<HostedWorkerDisabledT
             .FirstAsync();
     }
 
+    [Fact]
+    public async Task ExecuteProposals_WritableSharedBoard_AppliesAnotherAuthorsApprovedHighRiskProposal()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var editorClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "batch-shared-high-owner");
+        var editor = await ApiTestHarness.AuthenticateAsync(editorClient, "batch-shared-high-editor");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(ownerClient, "batch-shared-high-board");
+        var grant = await ownerClient.PostAsJsonAsync($"/api/boards/{boardId}/access",
+            new GrantAccessDto(boardId, editor.UserId, UserRole.Editor));
+        grant.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pending = await CreatePendingProposalAsync(ownerClient, owner.UserId, boardId,
+            "Shared approved high-risk card", riskLevel: RiskLevel.High);
+        var approvedResponse = await ownerClient.PostAsync($"/api/automation/proposals/{pending.Id}/approve", null);
+        approvedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var approved = (await approvedResponse.Content.ReadFromJsonAsync<ProposalDto>())!;
+
+        var receipt = await PostBatchAsync(editorClient, HttpStatusCode.OK, Select(approved));
+
+        receipt.Results.Should().ContainSingle().Which.Outcome.Should().Be(BatchExecuteOutcome.Applied);
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.Cards.CountAsync(card => card.BoardId == boardId && card.Title == "Shared approved high-risk card"))
+            .Should().Be(1);
+        var persisted = await db.AutomationProposals.SingleAsync(proposal => proposal.Id == approved.Id);
+        persisted.Status.Should().Be(ProposalStatus.Applied);
+        persisted.RequestedByUserId.Should().Be(owner.UserId);
+    }
+
     private async Task<ProposalDto> CreatePendingProposalAsync(
         HttpClient client,
         Guid userId,
         Guid boardId,
         string title,
-        IServiceProvider? services = null)
+        IServiceProvider? services = null,
+        RiskLevel riskLevel = RiskLevel.Low)
     {
         var columnId = await GetColumnIdAsync(services ?? _factory.Services, boardId);
         var createRequest = new CreateProposalDto(
             ProposalSourceType.Queue,
             userId,
             $"Batch execute {title}",
-            RiskLevel.Low,
+            riskLevel,
             Guid.NewGuid().ToString(),
             boardId,
             Operations: new List<CreateProposalOperationDto>

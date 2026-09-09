@@ -10,8 +10,6 @@ import type {
 import { getErrorDisplay } from './useErrorMapper'
 import { proposalIdsEqual } from '../utils/proposalIdentity'
 import {
-  isBoundedCreateCardOnly,
-  isExactLowRisk,
   isLiveAndNotDeferred,
   isOwnBatchProposal,
 } from './batchProposalEligibility'
@@ -35,38 +33,22 @@ function isExactApproved(status: Proposal['status']): boolean {
 }
 
 /**
- * Paper's fail-closed batch-execute boundary, and deliberately much narrower than what single Apply
- * accepts.
- *
- * It admits exactly the class of work its sibling batch approve admits - the SHARED gates in
- * `batchProposalEligibility`: the reviewer's own proposal, exactly Low risk, live and not deferred,
- * and a bounded set of card creations only. #1307 AC3 scopes both halves to "eligible low-risk,
- * create-card-only proposals", and without the risk and operation-shape gates a single click on
- * *Apply approved* would reach approved High/Critical archive or bulk-move proposals - the exact
- * decisions a bulk action is unsuited to make. The zero-operation case falls out of the same gate:
- * offering a proposal with nothing to apply would manufacture a receipt for a write that never
- * existed (#1423 precedent).
- *
- * The one axis that differs from approve is the status, which is the whole point of this surface:
- * exactly Approved, never a normalized guess - an unknown wire status is not read as Approved.
- *
- * Widening this - bulk-applying higher-risk or non-create proposals - is a product decision for the
- * maintainer, not an implementation detail; it is flagged on #1307 rather than assumed here.
+ * D-4(a), #1307 (2026-09-06): batch Apply accepts live Approved proposals regardless of
+ * risk, operation kind/count, or author on a shared board. Batch approve remains narrower.
+ * Approval is still a separate human decision; unknown statuses are never treated as Approved.
  *
  * Eligibility is presentation-only: the server repeats board access, status, policy, and the
  * approved-revision pin authoritatively for every item, and it does NOT impose this narrowing, so
- * single Apply is unaffected.
+ * board-less proposals still require ownership, just as single Apply does.
  */
 export function isBatchExecuteEligible(
   proposal: Proposal,
   currentUserId: string | null,
   nowMs: number,
 ): boolean {
-  if (!isOwnBatchProposal(proposal, currentUserId)) return false
-  if (!isExactApproved(proposal.status) || !isExactLowRisk(proposal.riskLevel)) return false
-  if (!isLiveAndNotDeferred(proposal, nowMs)) return false
-
-  return isBoundedCreateCardOnly(proposal.operations)
+  if (!currentUserId) return false
+  if (!proposal.boardId && !isOwnBatchProposal(proposal, currentUserId)) return false
+  return isExactApproved(proposal.status) && isLiveAndNotDeferred(proposal, nowMs)
 }
 
 /**
@@ -91,6 +73,7 @@ export function useBatchExecuteProposals(
   const receipts = ref<BatchExecuteReceiptRow[]>([])
   const capturedSelections = ref<CapturedBatchExecuteSelection[]>([])
   const capturedScopeKey = ref<string | null>(null)
+  const capturedUserId = ref<string | null>(null)
 
   const eligible = computed<Proposal[]>(() =>
     proposals.value.filter((proposal) =>
@@ -112,6 +95,7 @@ export function useBatchExecuteProposals(
   function clearCapture() {
     capturedSelections.value = []
     capturedScopeKey.value = null
+    capturedUserId.value = null
   }
 
   function captureCurrentSelection(): CapturedBatchExecuteSelection[] {
@@ -129,6 +113,8 @@ export function useBatchExecuteProposals(
   function confirmationStillCurrent(): boolean {
     if (capturedSelections.value.length === 0) return false
     if (capturedScopeKey.value !== reviewScopeKey.value) return false
+    // Shared-board eligibility can survive an account switch; consent cannot.
+    if (!proposalIdsEqual(capturedUserId.value, currentUserId.value)) return false
 
     const remaining = captureCurrentSelection()
     if (remaining.length !== capturedSelections.value.length) return false
@@ -158,6 +144,7 @@ export function useBatchExecuteProposals(
     clearReceipts()
     capturedSelections.value = captureCurrentSelection()
     capturedScopeKey.value = reviewScopeKey.value
+    capturedUserId.value = currentUserId.value
     confirmationOpen.value = true
   }
 
