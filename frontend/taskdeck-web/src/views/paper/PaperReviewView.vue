@@ -2717,7 +2717,7 @@ async function onClearBoardScope() {
 <template>
   <div
     ref="reviewViewRef"
-    class="paper paper-review-deep"
+    class="paper-review-deep"
     data-testid="paper-review-view"
     :data-history-mode="isArchivedHistory ? 'archived' : undefined"
   >
