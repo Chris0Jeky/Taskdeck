@@ -399,6 +399,43 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
             replacement.CreatedFromCaptureId.Should().Be(created.Id);
             replacement.UserId.Should().Be(created.UserId);
         }
+
+        // The correction remains proposal-less and explicitly re-enters triage only when the
+        // reader asks for it. This exercises the real API enqueue and hosted transcript worker,
+        // which must consume the replacement transcript rather than the immutable original.
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-linked-correction-board");
+        var columnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Inbox", null, null));
+        columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var triageResponse = await _client.PostAsJsonAsync(
+            $"/api/capture/items/{created.Id}/triage",
+            new { boardId = board.Id });
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var finalItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.ProposalCreated);
+        finalItem.RawText.Should().Be("corrected queue text\nwith offsets");
+        finalItem.Provenance.Should().NotBeNull();
+        finalItem.Provenance!.ProposalId.Should().NotBeNull();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created.Id);
+            request.TranscriptId.Should().NotBeNull();
+            request.TranscriptId.Should().NotBe(originalTranscriptId);
+
+            var replacement = await db.Transcripts.SingleAsync(
+                transcript => transcript.Id == request.TranscriptId);
+            replacement.Text.Should().Be("corrected queue text\nwith offsets");
+            replacement.SegmentsJson.Should().Be("[]");
+
+            var proposal = await db.AutomationProposals.SingleAsync(
+                value => value.Id == finalItem.Provenance!.ProposalId);
+            proposal.SourceReferenceId.Should().Be(created.Id.ToString());
+            proposal.BoardId.Should().Be(board.Id);
+        }
     }
 
     [Fact]
