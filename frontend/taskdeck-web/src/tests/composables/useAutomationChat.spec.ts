@@ -445,6 +445,45 @@ describe('useAutomationChat', () => {
       expect(chat.selectedSession.value?.boardId).toBeNull()
       expect(chatApiMocks.sendMessage).not.toHaveBeenCalled()
     })
+
+    it('preserves a concurrent send when a delayed bind returns a stale transcript', async () => {
+      const session = { id: 's1', title: 'Test', boardId: null, recentMessages: pendingMessages }
+      const bound = { ...session, boardId: 'b1', recentMessages: pendingMessages }
+      const concurrentReply = {
+        id: 'a2', sessionId: 's1', role: 1, messageType: 'action-needs-board',
+        proposalId: null, tokenUsage: 12, content: 'No board linked for the concurrent instruction',
+        createdAt: '2026-05-16T10:03:00Z',
+      }
+      const delayedBind = createDeferred<typeof bound>()
+      chatApiMocks.getMySessions.mockResolvedValue([session])
+      chatApiMocks.getSession
+        .mockResolvedValueOnce(session)
+        .mockRejectedValueOnce(new Error('refresh failed'))
+      chatApiMocks.bindBoard.mockReturnValue(delayedBind.promise)
+      chatApiMocks.sendMessage.mockResolvedValue(concurrentReply)
+      boardsApiMocks.getBoards.mockResolvedValue([
+        { id: 'b1', name: 'Release Board', description: null, isArchived: false, canWrite: true },
+      ])
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.pendingBoardRecovery.value?.messageId).toBe('a1'))
+
+      const pendingBind = chat.bindBoardToPendingTurn('a1', 'b1')
+      chat.messageContent.value = 'concurrent instruction'
+      await chat.handleSendMessage()
+
+      delayedBind.resolve(bound)
+      await pendingBind
+
+      expect(chat.selectedSession.value?.boardId).toBe('b1')
+      expect(chat.selectedSession.value?.recentMessages.map((message) => message.content)).toEqual([
+        'create card for release notes',
+        'No board linked',
+        'concurrent instruction',
+        'No board linked for the concurrent instruction',
+      ])
+    })
   })
 
   describe('session response races', () => {
