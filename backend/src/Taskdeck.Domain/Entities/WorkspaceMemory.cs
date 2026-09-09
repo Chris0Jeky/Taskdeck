@@ -55,6 +55,12 @@ public class WorkspaceMemory : Entity
             throw new DomainException(ErrorCodes.ValidationError, "Invalid private memory sources.");
         SourceCaptureId = captureId; AnswerSourceAssetId = answerAssetId; EvidenceSourceAssetId = evidenceAssetId;
     }
+    public void BeginSourcePreservation()
+    {
+        if (SourceCaptureId.HasValue) return;
+        // Admission changes the source identity used by context receipts, even when text is unchanged.
+        RememberRevision(); Revision++; Touch();
+    }
     private void RememberRevision() => History.Add(new WorkspaceMemoryRevision(Id, Title, Text, Status, Revision, Archived, AnswerSourceAssetId));
     public static void Validate(string title, string text, string status)
     {
