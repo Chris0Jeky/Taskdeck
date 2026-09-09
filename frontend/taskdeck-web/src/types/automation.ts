@@ -17,6 +17,18 @@ export interface ProposalOperation {
   expectedVersion: string | null
 }
 
+export interface ProposalPreview {
+  proposalId: string
+  boardId: string | null
+  status: ProposalStatusValue
+  effectiveRevisionId: string | null
+  effectiveRevisionNumber: number | null
+  proposalUpdatedAt: string
+  expiresAt: string
+  checkedAt: string
+  diff: string
+}
+
 export interface ProposalAffectedEntity {
   entityType: string
   entityId: string | null

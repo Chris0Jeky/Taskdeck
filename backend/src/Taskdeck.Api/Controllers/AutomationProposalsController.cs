@@ -687,6 +687,17 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(new { diff = result.Value }) : result.ToErrorActionResult();
     }
 
+    [HttpGet("{id}/preview")]
+    public async Task<IActionResult> GetProposalPreview(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
+            return errorResult!;
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: false, cancellationToken);
+        if (auth.ErrorResult is not null) return auth.ErrorResult;
+        var result = await _proposalService.GetProposalPreviewAsync(id, cancellationToken);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     /// <summary>
     /// Gets the provenance rows for a proposal, describing the sources read,
     /// excluded, or inferred during proposal generation.
