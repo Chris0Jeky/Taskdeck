@@ -9,8 +9,11 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/boards/{boardId}/dependencies")]
-public sealed class BoardDependenciesController(BoardDependencyService service, IUserContext userContext) : AuthenticatedControllerBase(userContext)
+public class BoardDependenciesController : AuthenticatedControllerBase
 {
+    private readonly BoardDependencyService service;
+    public BoardDependenciesController(BoardDependencyService service, IUserContext userContext) : base(userContext)
+    { this.service = service; }
     [HttpGet]
     public async Task<IActionResult> Get(Guid boardId, CancellationToken ct)
     {
