@@ -5,12 +5,25 @@ import { useWorkspacePlanStore } from '../../store/workspacePlanStore'
 import { workspacePlanApi, type WorkspacePlan } from '../../api/workspacePlanApi'
 
 const session = reactive({ userId: 'first' as string | null })
+const demo = vi.hoisted(() => ({ enabled: false }))
+vi.mock('../../utils/demoMode', () => ({ get isDemoMode() { return demo.enabled } }))
 vi.mock('../../store/sessionStore', () => ({ useSessionStore: () => session }))
 vi.mock('../../api/workspacePlanApi', () => ({ workspacePlanApi: { get: vi.fn(), save: vi.fn(), focus: vi.fn() } }))
 const initial: WorkspacePlan = { revision: 3, entries: [], lastWorked: null }
 
 describe('private personal plan', () => {
-  beforeEach(() => { vi.resetAllMocks(); setActivePinia(createPinia()); session.userId = 'first'; localStorage.clear() })
+  beforeEach(() => { vi.resetAllMocks(); setActivePinia(createPinia()); session.userId = 'first'; demo.enabled = false; localStorage.clear() })
+  it('does not read or write a server plan in a backend-less demo build', async () => {
+    demo.enabled = true
+    const store = useWorkspacePlanStore()
+    await store.load()
+    expect(store.available).toBe(false)
+    expect(await store.save([])).toBe(false)
+    expect(await store.focus('board', 'card')).toBe(false)
+    expect(workspacePlanApi.get).not.toHaveBeenCalled()
+    expect(workspacePlanApi.save).not.toHaveBeenCalled()
+    expect(workspacePlanApi.focus).not.toHaveBeenCalled()
+  })
   it('uses the saved revision and strips displayed metadata from a write', async () => {
     vi.mocked(workspacePlanApi.get).mockResolvedValue(initial)
     vi.mocked(workspacePlanApi.save).mockResolvedValue({ ...initial, revision: 4 })

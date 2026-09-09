@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { isDemoMode } from '../../utils/demoMode'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useProductVersion } from '../../composables/useProductVersion'
 import { useViewportMode } from '../../composables/useViewportMode'
@@ -134,6 +135,7 @@ const activeWorkspaceMode = computed<WorkspaceMode>(() =>
   isWorkspaceMode(workspace.mode) ? workspace.mode : 'guided')
 
 function isAvailable(item: PaperNavItem): boolean {
+  if (item.id === 'plan' && isDemoMode) return false
   if (!item.flag) return true
   if (activeWorkspaceMode.value === 'workbench' && item.workbenchBypassesFlag) return true
   return featureFlags.isEnabled(item.flag)

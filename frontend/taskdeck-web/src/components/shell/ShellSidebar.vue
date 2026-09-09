@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { isDemoMode } from '../../utils/demoMode'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { orderGuidedAdvancedDestinations } from '../guidedAdvancedNavigation'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
@@ -356,6 +357,7 @@ const activeWorkspaceMode = computed<WorkspaceMode>(() =>
     : 'guided')
 
 function isFeatureAvailable(item: NavItem): boolean {
+  if (item.id === 'plan' && isDemoMode) return false
   if (!item.flag) return true
   if (activeWorkspaceMode.value === 'workbench' && item.workbenchBypassesFlag) return true
   return featureFlags.isEnabled(item.flag)

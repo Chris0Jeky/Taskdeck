@@ -13,7 +13,7 @@ onMounted(() => { void plan.load() })
 </script>
 
 <template>
-  <section class="plan-resume" aria-label="Personal continuity">
+  <section v-if="plan.available" class="plan-resume" aria-label="Personal continuity">
     <p v-if="plan.loading" role="status">Finding your last focus…</p>
     <div v-else-if="plan.error" role="alert">{{ plan.error }} <button type="button" @click="plan.load">Retry personal plan</button></div>
     <template v-else-if="plan.plan?.lastWorked?.available">

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { isDemoMode } from '../utils/demoMode'
 import { workspacePlanApi, type PlanReference, type WorkspacePlan } from '../api/workspacePlanApi'
 import { getErrorDisplay } from '../composables/useErrorMapper'
 import { useSessionStore } from './sessionStore'
@@ -7,6 +8,7 @@ import { useSessionStore } from './sessionStore'
 /** Private server state; never persist card content in browser storage. */
 export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
   const session = useSessionStore()
+  const available = computed(() => !isDemoMode && !session.isDemo)
   const plan = ref<WorkspacePlan | null>(null)
   const loading = ref(false)
   const saving = ref(false)
@@ -22,7 +24,7 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
   }, { flush: 'sync' })
 
   async function load() {
-    if (!session.userId || saving.value) return
+    if (!available.value || !session.userId || saving.value) return
     const current = ++generation
     loading.value = true
     ready.value = false
@@ -40,7 +42,7 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
   }
 
   async function mutate(action: (revision: number) => Promise<WorkspacePlan>) {
-    if (!session.userId || !ready.value || !plan.value || loading.value || saving.value) return false
+    if (!available.value || !session.userId || !ready.value || !plan.value || loading.value || saving.value) return false
     const current = ++generation
     saving.value = true
     error.value = null
@@ -66,5 +68,5 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
   function focus(boardId: string, cardId: string) {
     return mutate(revision => workspacePlanApi.focus(revision, boardId, cardId))
   }
-  return { plan, loading, saving, ready, error, load, save, focus }
+  return { available, plan, loading, saving, ready, error, load, save, focus }
 })

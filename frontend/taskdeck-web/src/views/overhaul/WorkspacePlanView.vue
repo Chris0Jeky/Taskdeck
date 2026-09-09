@@ -56,12 +56,14 @@ async function focus(card: PlanCard) {
 }
 function dueDate(value: string) { return new Date(value).toLocaleDateString() }
 async function retryChoices() { await loadBoards(); if (!pickerError.value && boardId.value) await loadCards() }
-onMounted(() => { void store.load(); void loadBoards() })
+onMounted(() => { if (store.available) { void store.load(); void loadBoards() } })
 </script>
 
 <template>
   <div class="personal-plan">
     <header><p class="personal-plan__eyebrow">A LITTLE ROOM FOR TODAY</p><h1>Your personal plan</h1><p>Choose work you want to spend time on. This private plan keeps your choices separate from the board’s due dates.</p></header>
+    <p v-if="!store.available" role="status">Personal planning needs a connected Taskdeck workspace. This preview has no backend. <RouterLink to="/workspace/boards">Explore the demo boards</RouterLink>.</p>
+    <template v-else>
     <div v-if="store.error" role="alert"><p>{{ store.error }}</p><button type="button" :disabled="store.loading || store.saving" @click="store.load">Refresh personal plan</button></div>
     <p v-if="store.loading" role="status">Loading your plan…</p>
     <section v-if="store.plan?.lastWorked" class="personal-plan__resume" aria-label="Last worked on">
@@ -101,6 +103,7 @@ onMounted(() => { void store.load(); void loadBoards() })
         </article>
       </section>
     </div>
+    </template>
   </div>
 </template>
 
