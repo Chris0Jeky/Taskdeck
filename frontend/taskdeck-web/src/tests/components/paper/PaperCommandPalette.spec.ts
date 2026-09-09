@@ -111,9 +111,9 @@ describe('PaperCommandPalette', () => {
     expect(backdrop()).toBeNull()
   })
 
-  it('returns focus to the connected opener when it closes', async () => {
-    const opener = document.createElement('button')
-    opener.type = 'button'
+  it.each(['button', 'div'] as const)('returns focus to the connected %s opener when it closes', async (tagName) => {
+    const opener = document.createElement(tagName)
+    if (tagName === 'div') opener.tabIndex = -1
     opener.textContent = 'Open palette'
     document.body.append(opener)
     opener.focus()
