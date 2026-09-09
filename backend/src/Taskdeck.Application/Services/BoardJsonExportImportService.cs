@@ -12,6 +12,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
     private readonly IThinkingDeckRepository? _thinkingDecks;
+    private readonly IBoardDependencyRepository? _dependencies;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -22,11 +23,13 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
     public BoardJsonExportImportService(
         IUnitOfWork unitOfWork,
         DevelopmentSandboxSettings? sandboxSettings = null,
-        IThinkingDeckRepository? thinkingDecks = null)
+        IThinkingDeckRepository? thinkingDecks = null,
+        IBoardDependencyRepository? dependencies = null)
     {
         _unitOfWork = unitOfWork;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
         _thinkingDecks = thinkingDecks;
+        _dependencies = dependencies;
     }
 
     public async Task<Result<ExportBoardDto>> ExportBoardAsync(Guid boardId, Guid userId)
@@ -106,7 +109,9 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 accessDtos,
                 DateTimeOffset.UtcNow,
                 requestingUser.Username,
-                thinkingDecks);
+                thinkingDecks,
+                _dependencies is null ? null : (await _dependencies.GetAsync(boardId, CancellationToken.None))?
+                    .ReadEdges().Where(edge => exportedIds.Contains(edge.CardId) && exportedIds.Contains(edge.DependsOnCardId)).ToArray());
 
             return Result.Success(exportDto);
         }
@@ -122,7 +127,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
         if (!exportResult.IsSuccess)
             return Result.Failure<string>(exportResult.ErrorCode, exportResult.ErrorMessage);
 
-        var json = JsonSerializer.Serialize(exportResult.Value, JsonOptions);
+        var json = JsonSerializer.Serialize(ToPortablePayload(exportResult.Value), JsonOptions);
         return Result.Success(json);
     }
 
@@ -231,7 +236,23 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 cardsImported++;
             }
 
-            await _unitOfWork.SaveChangesAsync();
+                if (dto.Dependencies is { Count: > 0 })
+                {
+                    if (_dependencies is null)
+                        throw new DomainException(ErrorCodes.InvalidOperation, "Dependency import is not available in this host.");
+                    var graph = new BoardDependencies(board.Id);
+                    var remapped = new List<CardDependency>();
+                    foreach (var edge in dto.Dependencies)
+                    {
+                        if (edge is null || !cardIds.TryGetValue(edge.CardId, out var from) || !cardIds.TryGetValue(edge.DependsOnCardId, out var to))
+                            throw new DomainException(ErrorCodes.ValidationError, "Dependencies must reference cards inside this import.");
+                        remapped.Add(new CardDependency(from, to));
+                    }
+                    graph.Replace(remapped);
+                    _dependencies.AddForImport(graph);
+                }
+
+                await _unitOfWork.SaveChangesAsync();
             await _unitOfWork.CommitTransactionAsync();
 
             var result = new ImportResultDto(
@@ -289,6 +310,17 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
     internal static ImportBoardDto? TryDeserializeImportDto(string json)
     {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("format", out _))
+            {
+                var envelope = JsonSerializer.Deserialize<BoardExportEnvelope>(json, JsonOptions);
+                return envelope is { Format: "taskdeck-board", Version: 2, Payload: not null }
+                    ? ConvertExportToImportDto(envelope.Payload) : null;
+            }
+        }
+        catch (JsonException) { return null; }
         ImportBoardDto? importDto = null;
         try
         {
@@ -392,8 +424,12 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             exportDto.Board.Description,
             columns,
             cards,
-            labels);
+            labels,
+            exportDto.Dependencies);
     }
+
+    public static object ToPortablePayload(ExportBoardDto dto) => dto.Dependencies is { Count: > 0 }
+        ? new BoardExportEnvelope("taskdeck-board", 2, dto) : dto;
 
     private static BoardDto MapToBoardDto(Board board)
     {
