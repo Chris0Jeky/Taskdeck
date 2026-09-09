@@ -25,6 +25,13 @@ This is the active execution guide for sequencing past, current, and the revival
 `docs/STATUS.md` is authoritative for current shipped reality; this document tracks delivery history, planned work, roadmap sequencing, and strategic intentions.
 Update this file at the end of each meaningful delivery cycle or when new work is seeded.
 
+The #2808 dependency continuation implements explicit same-board prerequisites after linked thinking
+promotion, preserving separate concepts and card status. Its vertical includes bounded DAG validation,
+shared read/write scope, deletion/archive concurrency, actor audit, portable remapping and responsive
+Thinking Deck controls. Personal planning remains the parallel #2842 delivery. Contextual companion,
+in-place proposal overlays, source/audio evidence, grounded observations and attention evaluation remain
+open in the [overhaul ledger](product/WORKSPACE_OVERHAUL.md); no umbrella completion is inferred.
+
 ## Direction (2026-07-10, maintainer-decided): revival — free open beta → commercial horizon
 
 **The 2026-06-13 archive pivot is superseded (ADR-0044).** After the maintainer's successful WhisperX + cheap-LLM prototype and a two-track code + market analysis (`docs/analysis/2026-07-10_revival_assessment.md`), Taskdeck is being revived and shipped as a **free, wide-open beta** — for adoption, feedback, and exposure — while the maintainer develops the commercial side. Positioning: **the local-first, review-first action-item engine** (transcripts/notes in from any source, evidence-linked proposals out, applied to your board only on your approval), with the write-gated MCP server as the developer-facing second act. ADR-0044 Decision 3 was superseded by ADR-0050 on 2026-08-12: copies already received under MIT retain those grants, while the current core is GPL-3.0-only.
