@@ -58,8 +58,9 @@ explicit approve action followed by a separate apply action and the existing con
 | Companion | Existing accountable chat embedded in Companion Home and contextual links to existing chat/review | Implemented entry point; no new model provider or memory retrieval integration. Unified's board-side contextual companion remains next |
 | Comparison | User-initiated session-only scenarios, explicit completion outcomes, optional ease ratings and notes with JSON download | Implemented; version-2 export records selected experience/detail/theme and backend-reported product version (null if unavailable). No telemetry, random assignment or statistical A/B claim |
 | In-place proposal overlays | Existing authoritative diff rendered at affected board objects | Next; preserve effective proposal revision, subset-selection semantics and explicit apply gate |
+| Personal continuity | Chosen plan, last-worked focus, List/Board/Horizon over planned cards | Implemented privately with revision checks. Home resume uses explicit focus and shows chosen threads; the separate agenda remains derived from Today. Requires a connected backend; backend-less demo builds hide these entry points |
 | Linked steps | Explicit title/destination, atomic child-card/link/audit creation, repeat-safe requests, refreshed real card status and portable links | Implemented; shares the guarded card writer and board concurrency token. Removing thinking never deletes linked cards. Separate dependency edges are still next |
-| Connections and continuity | Dependency links, chosen daily plan and last-worked continuation | Next. Current agenda is derived from existing Today data, not last-worked tracking |
+| Dependencies | Explicit prerequisite links between real cards | Next; no inference from linked thinking steps |
 | Audio answers and unified source evidence | Context Fabric original/representation pipeline and typed source anchors | Later; new memory currently preserves evidence directly, not as Capture/SourceAsset records. No microphone/transcription integration added here |
 | Model-generated observations and recall | Bounded candidate producer and authorized knowledge retrieval | Later; requires grounding, fresh evidence, usefulness corpus, privacy and budget proof |
 | Optional nudges | Opt-in attention policy after usefulness is established | Later; requires non-intrusion evaluation, focus/input suppression and shared user budgets |
@@ -94,7 +95,7 @@ Linked material uses thinking schema version 2, so older importers reject it ins
 discarding relationships. Ordinary decks retain version 1; the current importer accepts both.
 This adds no database migration and no dependency edge or automatic proposal execution.
 
-The three additive database migrations create thinking/insight/memory tables and question-source columns.
+Additive database migrations create thinking/insight/memory tables, question-source columns and personal-plan preference columns.
 Follow [UPGRADING.md](../../UPGRADING.md) when updating an existing instance. The integration's automated
 browser proof uses an isolated synthetic database; it does not migrate a maintainer's working database.
 
@@ -117,3 +118,25 @@ hypotheses. Archive is not erasure. A human statement is not independently verif
 Existing human decisions remain in [OUTSTANDING_TASKS.md](../../OUTSTANDING_TASKS.md): publisher
 and signing, private-instance execution, release/runner settings, and the remaining subjective
 night-palette and dogfooding choices. This overhaul does not infer any of those complete.
+
+## Personal plan and continuity
+
+Open **Personal plan** from navigation or Home. Choose any readable active project and card, select
+**Plan for**, then **Add to plan**. The plan persists privately across reloads and experiences.
+It holds at most 40 cards. **List** preserves your chosen order, **Board** groups by current project
+and column, and **Horizon** groups by your chosen plan date. These are representations of your plan;
+the actual board and calendar remain available for broader work.
+
+**Focus** records the card and server time, then opens its Thinking Deck with surrounding navigation hidden. A saved thread layer holds a note
+for next time; the normal draft/leave guard remains in place. Home and the plan offer
+**Resume focus**. This is the last card you explicitly focused, not a guess based on views, due dates,
+board activity or a collaborator's edits. **Plan tomorrow** changes only its personal plan date;
+**Make room** removes it from the plan without deleting, completing or rescheduling the card.
+Removing a plan entry retains its last-focus receipt. Unavailable cards show no title or board metadata
+and remain removable. Refresh rechecks permissions and live card state; no background attention or
+automatic board mutation is added.
+
+Concurrent updates reject stale revisions. After an unconfirmed save, refresh before retrying so a
+lost response cannot silently overwrite another session. Account export includes plan references and
+last focus in both formats; shared board exports exclude them. Account deletion erases the preference
+row. An additive migration introduces the plan JSON and revision columns with empty defaults.

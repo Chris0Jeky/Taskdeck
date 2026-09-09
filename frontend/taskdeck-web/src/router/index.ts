@@ -39,6 +39,7 @@ const NotificationPreferencesView = () => import('../views/NotificationPreferenc
 const AppearanceSettingsView = () => import('../views/AppearanceSettingsView.vue')
 const InboxView = () => import('../views/InboxView.vue')
 const HomeView = () => import('../views/HomeView.vue')
+const WorkspacePlanView = () => import('../views/overhaul/WorkspacePlanView.vue')
 const WorkspaceExperiencesView = () => import('../views/overhaul/WorkspaceExperiencesView.vue')
 const ThinkingWorkspaceView = () => import('../views/overhaul/ThinkingWorkspaceView.vue')
 const QuietInsightsView = () => import('../views/QuietInsightsView.vue')
@@ -109,6 +110,12 @@ const router = createRouter({
     },
 
     // Workspace routes
+    {
+      path: '/workspace/plan',
+      name: 'workspace-plan',
+      component: WorkspacePlanView,
+      meta: { requiresShell: true, breadcrumb: 'Personal plan' },
+    },
     {
       path: '/workspace/experiences',
       name: 'workspace-experiences',
