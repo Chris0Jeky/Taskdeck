@@ -26,6 +26,7 @@ export interface Insight {
 }
 
 export interface MemoryHistoryEntry {
+  answerSourceAssetId?: string | null
   text: string
   title: string
   status: MemoryStatus
@@ -34,6 +35,7 @@ export interface MemoryHistoryEntry {
 }
 
 export interface Memory {
+  sources?: { captureId: string; answerAssetId: string; evidenceAssetId: string | null } | null
   thinkingSource?: { cardId: string; layerId: string; deckRevision: number } | null
   id: string
   boardId: string
@@ -46,6 +48,22 @@ export interface Memory {
   revision: number
   createdAt: string
   history: MemoryHistoryEntry[]
+}
+
+export interface MemorySourceDetail {
+  id: string
+  boardId: string | null
+  capture: {
+    sourceAssets: Array<{
+      id: string
+      ordinal: number
+      originalName: string | null
+      contentHash: string
+      text: string | null
+      supersedesAssetId: string | null
+      supersededByAssetId: string | null
+    }>
+  }
 }
 
 export interface AnalyzeInsightsRequest {
