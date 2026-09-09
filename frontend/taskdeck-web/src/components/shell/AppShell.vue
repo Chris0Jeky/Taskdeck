@@ -55,6 +55,7 @@ const capture = useCaptureStore()
 const board = useBoardStore()
 const paperTheme = usePaperThemeStore()
 const layout = useWorkspaceLayoutStore()
+const focusedThinking = computed(() => route.name === 'workspace-thinking' && route.query.focus === '1')
 const experienceTitles = { classic: 'Your workspace', studio: 'A little space to think.', companion: 'Your work, in good company.', unified: 'Everything, in its place.' }
 const { mode: viewportMode } = useViewportMode()
 
@@ -524,6 +525,7 @@ onUnmounted(() => {
     :class="{
       'td-shell--paper': paperTheme.isOn,
       'td-shell--paper-phone': isPaperPhone,
+      'td-shell--focus': focusedThinking,
     }"
   >
     <PaperSidebar
@@ -772,6 +774,21 @@ onUnmounted(() => {
     var(--td-space-4) + 56px + var(--paper-safe-bottom, env(safe-area-inset-bottom, 0px))
   );
 }
+</style>
+
+<style scoped>
+/* Keep the route and its draft mounted while clearing the surrounding navigation. */
+.td-shell--focus :deep(.paper-sidebar),
+.td-shell--focus :deep(.paper-bottombar),
+.td-shell--focus :deep(.paper-topbar),
+.td-shell--focus :deep(.td-sidebar),
+.td-shell--focus :deep(.td-sidebar-overlay),
+.td-shell--focus :deep(.td-topbar),
+.td-shell--focus .td-mobile-topbar,
+.td-shell--focus .td-experience-bar,
+.td-shell--focus .td-studio-navigation,
+.td-shell--focus .td-companion-context { display: none; }
+.td-shell--focus .td-content { padding: clamp(16px, 4vw, 48px); }
 </style>
 
 <style scoped>

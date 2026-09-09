@@ -4,6 +4,7 @@ import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
 import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import { useOverhaulHome } from '../../composables/useOverhaulHome'
 import { useUnsavedWorkspaceNavigation } from '../../composables/useUnsavedWorkspaceNavigation'
+import PersonalPlanResume from '../../components/workspace/PersonalPlanResume.vue'
 import TdDialog from '../../components/ui/TdDialog.vue'
 
 const AutomationChatView = defineAsyncComponent(() => import('../AutomationChatView.vue'))
@@ -55,6 +56,8 @@ const firstBoard = computed(() => boards.value[0])
       <AutomationChatView />
     </section>
     <p v-if="layout.experience === 'companion' && !chatAvailable" class="overhaul-home__notice">Chat is unavailable with the current workspace settings. Your projects, capture and memory remain available below.</p>
+
+    <PersonalPlanResume />
 
     <div class="overhaul-home__desk">
       <section class="overhaul-home__continuity">

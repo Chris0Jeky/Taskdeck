@@ -12,6 +12,7 @@ import type { BoardDetail, Card } from '../../types/board'
 const route = useRoute()
 const boardId = computed(() => String(route.params.boardId ?? ''))
 const cardId = computed(() => String(route.params.cardId ?? ''))
+const focused = computed(() => route.query.focus === '1')
 const board = ref<BoardDetail | null>(null)
 const card = ref<Card | null>(null)
 const dirty = ref(false)
@@ -49,11 +50,13 @@ onUnmounted(() => { generation++ })
 
 <template>
   <div class="thinking-workspace">
-    <nav aria-label="Card context"><RouterLink :to="`/workspace/boards/${boardId}`">← {{ board?.name || 'Back to board' }}</RouterLink><RouterLink :to="{ path: '/workspace/insights', query: { boardId } }">Quiet insights</RouterLink><RouterLink :to="{ path: '/workspace/memory', query: { boardId } }">Memory</RouterLink></nav>
+    <nav aria-label="Card context"><RouterLink :to="`/workspace/boards/${boardId}`">← {{ board?.name || 'Back to board' }}</RouterLink><RouterLink v-if="!focused" :to="{ path: '/workspace/insights', query: { boardId } }">Quiet insights</RouterLink><RouterLink v-if="!focused" :to="{ path: '/workspace/memory', query: { boardId } }">Memory</RouterLink></nav>
     <p v-if="loading" role="status">Opening your thinking space…</p>
     <section v-else-if="error" role="alert"><p>{{ error }}</p><button type="button" @click="load">Try again</button></section>
     <template v-else-if="card">
-      <header><p class="thinking-workspace__eyebrow">ROOM TO THINK · {{ board?.name }}</p><h1>{{ card.title }}</h1><p>Keep possibilities, questions and next steps close to the work. A simple card can stay simple.</p></header>
+      <p v-if="route.query.focus === '1'" role="status">FOCUS · One thread at a time. <RouterLink to="/workspace/plan">Return to your plan</RouterLink></p>
+      <p v-if="focused">Before you leave, add a <strong>thread</strong> below for next time. Save it with the card’s thinking so it is here when you return.</p>
+      <header><p class="thinking-workspace__eyebrow">ROOM TO THINK · {{ board?.name }}</p><h1>{{ card.title }}</h1><RouterLink to="/workspace/plan">Choose work for your personal plan</RouterLink><p>Keep possibilities, questions and next steps close to the work. A simple card can stay simple.</p></header>
       <ThinkingDeckPanel :key="card.id" :board-id="boardId" :card-id="cardId" @dirty-change="dirty = $event" />
     </template>
     <TdDialog :open="leaveRequested" title="Leave unsaved thinking?" description="Your thinking deck has unsaved changes. Save it before leaving, or discard this draft." @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" @click="decide(true)">Discard draft and leave</button></template></TdDialog>

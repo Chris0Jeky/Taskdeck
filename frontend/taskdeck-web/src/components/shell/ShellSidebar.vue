@@ -138,6 +138,7 @@ const navCatalog: NavItem[] = [
     id: 'insights', label: 'Quiet insights', icon: '✧', path: '/workspace/insights', flag: null, primaryModes: ['guided', 'workbench', 'agent'], keywords: 'insights questions observations suggestions',
   },
   { id: 'memory', label: 'Memory', icon: 'M', path: '/workspace/memory', flag: null, primaryModes: ['guided', 'workbench', 'agent'], keywords: 'memory knowledge questions assumptions' },
+  { id: 'plan', label: 'Personal plan', icon: 'P', path: '/workspace/plan', flag: null, primaryModes: ['guided', 'workbench', 'agent'], keywords: 'plan personal focus resume horizon' },
   { id: 'experiences', label: 'Experiences', icon: '◒', path: '/workspace/experiences', flag: null, primaryModes: ['guided', 'workbench', 'agent'], keywords: 'experiences layouts themes studio companion unified compare' },
   {
     id: 'agents',
