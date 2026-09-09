@@ -29,6 +29,7 @@ public sealed class ThinkingStepApiTests(TestWebApplicationFactory factory) : IC
         var deck = (await first.Content.ReadFromJsonAsync<ThinkingDeckDto>())!;
         var childId = deck.Layers[0].Items[0].LinkedCardId!.Value;
         deck.Revision.Should().Be(2);
+        deck.SchemaVersion.Should().Be(2);
         var retry = await client.PostAsJsonAsync(Url(board.Id, parent.Id, layer.Id, item.Id), request);
         retry.EnsureSuccessStatusCode();
         (await retry.Content.ReadFromJsonAsync<ThinkingDeckDto>())!.Layers[0].Items[0].LinkedCardId.Should().Be(childId);
@@ -44,6 +45,11 @@ public sealed class ThinkingStepApiTests(TestWebApplicationFactory factory) : IC
             audit.Changes.Should().Contain(parent.Id.ToString());
         }
         var exported = await client.GetFromJsonAsync<ExportBoardDto>($"/api/export/boards/{board.Id}/json");
+        exported!.ThinkingDecks![0].Material.SchemaVersion.Should().Be(2);
+        // A payload must not claim compatibility with the old reader that ignores links.
+        var mislabeled = exported with { ThinkingDecks = exported.ThinkingDecks.Select(value =>
+            value with { Material = value.Material with { SchemaVersion = 1 } }).ToList() };
+        (await client.PostAsJsonAsync("/api/import/boards/json", mislabeled)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         var importedResponse = await client.PostAsJsonAsync("/api/import/boards/json", exported);
         importedResponse.EnsureSuccessStatusCode();
         var imported = (await importedResponse.Content.ReadFromJsonAsync<ImportResultDto>())!;
@@ -52,7 +58,9 @@ public sealed class ThinkingStepApiTests(TestWebApplicationFactory factory) : IC
         var copiedChild = copies.Single(card => card.Title == "Do the first step");
         var copiedDeck = (await client.GetFromJsonAsync<ThinkingDeckDto>(DeckUrl(imported.BoardId!.Value, copiedParent.Id)))!;
         copiedDeck.Layers[0].Items[0].LinkedCardId.Should().Be(copiedChild.Id).And.NotBe(childId);
+        copiedDeck.SchemaVersion.Should().Be(2);
         (await client.PutAsJsonAsync(DeckUrl(board.Id, parent.Id), new SaveThinkingDeckDto(2, []))).EnsureSuccessStatusCode();
+        (await client.GetFromJsonAsync<ThinkingDeckDto>(DeckUrl(board.Id, parent.Id)))!.SchemaVersion.Should().Be(1);
         (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!.Should().HaveCount(2);
     }
 
@@ -134,7 +142,7 @@ public sealed class ThinkingStepApiTests(TestWebApplicationFactory factory) : IC
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var before = await db.Boards.CountAsync();
-        var invalid = exported with { ThinkingDecks = [new(parent.Id, new(1,
+        var invalid = exported with { ThinkingDecks = [new(parent.Id, new(2,
             [layer with { Items = [item with { LinkedCardId = Guid.NewGuid() }] }]))] };
         (await client.PostAsJsonAsync("/api/import/boards/json", invalid)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await db.Boards.CountAsync()).Should().Be(before);

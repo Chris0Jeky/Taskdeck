@@ -210,13 +210,15 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 {
                     if (_thinkingDecks is null)
                         throw new DomainException(ErrorCodes.ValidationError, "This host cannot import thinking material.");
-                    if (importCard.Thinking.SchemaVersion != 1)
+                    if (importCard.Thinking.SchemaVersion is not (1 or 2))
                         throw new DomainException(ErrorCodes.ValidationError, "Unsupported thinking material schema version.");
                     var deck = new ThinkingDeck(card.Id);
                     // Validate source IDs before remapping; links never point into the source board.
                     var material = importCard.Thinking.Layers;
                     var sourceDeck = new ThinkingDeck(importCard.SourceId ?? card.Id);
                     sourceDeck.Replace(material);
+                    if (sourceDeck.SchemaVersion > importCard.Thinking.SchemaVersion)
+                        throw new DomainException(ErrorCodes.ValidationError, "Linked thinking cards require material schema version 2.");
                     deck.Replace(material.Select(layer => layer with
                     {
                         Items = layer.Items.Select(item => item.LinkedCardId.HasValue

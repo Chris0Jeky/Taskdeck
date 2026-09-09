@@ -90,6 +90,8 @@ column and blocker state; a checklist tick is never used to infer completion of 
 Removing a step/layer keeps its cards. A deleted card shows as unavailable and is not recreated by
 retrying the old promotion. Board JSON import remaps links to the newly imported cards; links to
 already-deleted cards become unlinked thinking items in the export, leaving source tombstones intact.
+Linked material uses thinking schema version 2, so older importers reject it instead of silently
+discarding relationships. Ordinary decks retain version 1; the current importer accepts both.
 This adds no database migration and no dependency edge or automatic proposal execution.
 
 The three additive database migrations create thinking/insight/memory tables and question-source columns.

@@ -89,7 +89,10 @@ phone width and automated accessibility. Exact execution results belong to the c
 
 New links are server introduced only; general deck saves cannot inject a foreign card reference.
 Import accepts optional source card IDs only to remap relationships within the imported payload.
-Source IDs never become the IDs of newly created cards. This uses existing JSON thinking storage,
+Source IDs never become the IDs of newly created cards. Linked material advertises schema version 2
+to prevent silent link loss in older readers. API tests cover version-2 round trips, reject linked
+material mislabeled as version 1, and verify ordinary decks still use version 1.
+This uses existing JSON thinking storage,
 with no migration. It does not introduce a dependency graph, private-memory retrieval or autonomy.
 
 

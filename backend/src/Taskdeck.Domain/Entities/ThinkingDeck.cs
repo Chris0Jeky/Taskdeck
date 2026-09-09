@@ -49,6 +49,9 @@ public sealed class ThinkingDeck
         if (json.Length > 100000)
             throw new DomainException(ErrorCodes.ValidationError, "Thinking deck exceeds 100,000 characters.");
         LayersJson = json;
+        // Older schema-1 readers ignore unknown item fields. Advertise links explicitly
+        // so their import validation refuses the material instead of silently losing links.
+        SchemaVersion = layers.Any(layer => layer.Items.Any(item => item.LinkedCardId.HasValue)) ? 2 : 1;
         Revision++;
     }
 }
