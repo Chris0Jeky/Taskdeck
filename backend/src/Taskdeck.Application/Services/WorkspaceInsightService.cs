@@ -6,7 +6,7 @@ using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Application.Services;
 
-public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUnitOfWork unitOfWork, IAuthorizationService authorization)
+public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUnitOfWork unitOfWork, IAuthorizationService authorization, ICaptureStore captureStore)
 {
     private static Result<T> Missing<T>() => Result.Failure<T>(ErrorCodes.NotFound, "This workspace record is unavailable.");
     private static Result<T> Conflict<T>() => Result.Failure<T>(ErrorCodes.Conflict, "The workspace changed. Reload and try again.");
@@ -94,10 +94,21 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
         try
         {
             var memory = new WorkspaceMemory(userId, dto.BoardId, dto.Title, dto.Text, dto.Status);
+            await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
             repository.Add(memory);
             return await repository.SaveAsync(ct) ? Result.Success(MapMemory(memory)) : Conflict<WorkspaceMemoryDto>();
         }
         catch (DomainException ex) { return Result.Failure<WorkspaceMemoryDto>(ex.ErrorCode, ex.Message); }
+    }
+
+    public async Task<Result<UserDataExportNativeCaptureDto>> SourcesAsync(Guid userId, Guid id, CancellationToken ct)
+    {
+        var memory = await repository.MemoryAsync(userId, id, ct);
+        if (memory == null || !await CanRead(userId, memory.BoardId, ct) || memory.SourceCaptureId is not { } captureId)
+            return Missing<UserDataExportNativeCaptureDto>();
+        var capture = await captureStore.GetByIdForUserAsync(captureId, userId, ct);
+        return capture == null ? Missing<UserDataExportNativeCaptureDto>()
+            : Result.Success(new UserDataExportNativeCaptureDto(capture.Id, capture.ContextBoardId, DataExportService.MapDurableCapture(capture)!));
     }
 
     public async Task<Result<WorkspaceMemoryDto>> AnswerAsync(Guid userId, Guid id, AnswerInsightDto dto, CancellationToken ct)
@@ -120,6 +131,7 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
                 memory = new WorkspaceMemory(userId, item.BoardId, item.Title, dto.Text, dto.Status, item.Id, item.Evidence);
                 repository.Add(memory);
             }
+            await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
             if (dto.Status == "statement") item.Resolve(DateTimeOffset.UtcNow);
             else item.Act("snooze", DateTimeOffset.UtcNow);
             return await repository.SaveAsync(ct) ? Result.Success(MapMemory(memory)) : Conflict<WorkspaceMemoryDto>();
@@ -134,8 +146,12 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
         if (memory.Revision != (dto?.Revision ?? archive?.Revision)) return Conflict<WorkspaceMemoryDto>();
         try
         {
+            var priorRevision = memory.Revision;
             if (dto != null) memory.Revise(dto.Title, dto.Text, dto.Status);
             else memory.SetArchived(archive!.Archived);
+            // A no-op archive does not advance CAS, so it must not attach competing native captures.
+            if (memory.Revision != priorRevision)
+                await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
             await Revalidate(userId, memory.BoardId, false, ct);
             return await repository.SaveAsync(ct) ? Result.Success(MapMemory(memory)) : Conflict<WorkspaceMemoryDto>();
         }
@@ -144,6 +160,7 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
 
     private static QuietInsightDto Map(QuietInsight x) => new(x.Id, x.BoardId, x.CardId, x.MemoryId, x.Rule, x.Title, x.Detail, x.State, x.Evidence, x.CheckedAt, x.SnoozeUntil);
     internal static WorkspaceMemoryDto MapMemory(WorkspaceMemory x) => new(x.Id, x.BoardId, x.Title, x.Text, x.OriginalText, x.Status, x.Archived, x.Revision, x.CreatedAt,
-        x.History.OrderByDescending(h => h.Revision).Select(h => new WorkspaceMemoryRevisionDto(h.Title, h.Text, h.Status, h.Revision, h.Archived, h.CreatedAt)).ToList(), x.OriginalEvidence,
-        x.SourceCardId.HasValue && x.SourceLayerId.HasValue && x.SourceDeckRevision.HasValue ? new ThinkingAnswerSourceDto(x.SourceCardId.Value, x.SourceLayerId.Value, x.SourceDeckRevision.Value) : null);
+        x.History.OrderByDescending(h => h.Revision).Select(h => new WorkspaceMemoryRevisionDto(h.Title, h.Text, h.Status, h.Revision, h.Archived, h.CreatedAt, h.AnswerSourceAssetId)).ToList(), x.OriginalEvidence,
+        x.SourceCardId.HasValue && x.SourceLayerId.HasValue && x.SourceDeckRevision.HasValue ? new ThinkingAnswerSourceDto(x.SourceCardId.Value, x.SourceLayerId.Value, x.SourceDeckRevision.Value) : null,
+        x.SourceCaptureId.HasValue && x.AnswerSourceAssetId.HasValue ? new WorkspaceMemorySourcesDto(x.SourceCaptureId.Value, x.AnswerSourceAssetId.Value, x.EvidenceSourceAssetId) : null);
 }

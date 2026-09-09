@@ -30,17 +30,21 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportArtefactDto>? Artefacts = null,
     IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null,
     IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
-    IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null);
+    IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
+    IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null);
+
+public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
 
 public record UserDataExportWorkspaceMemoryDto(
     Guid Id, Guid BoardId, Guid? InsightId, Guid? SourceCardId, Guid? SourceLayerId,
     long? SourceDeckRevision, string? SourceQuestionHash, string Title, string Text,
     string OriginalText, string? OriginalEvidence, string Status, bool Archived, int Revision,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<UserDataExportWorkspaceMemoryRevisionDto> History);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<UserDataExportWorkspaceMemoryRevisionDto> History,
+    Guid? SourceCaptureId = null, Guid? AnswerSourceAssetId = null, Guid? EvidenceSourceAssetId = null);
 
 public record UserDataExportWorkspaceMemoryRevisionDto(
     Guid Id, Guid MemoryId, string Title, string Text, string Status, bool Archived, int Revision,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, Guid? AnswerSourceAssetId = null);
 
 public record UserDataExportQuietInsightDto(
     Guid Id, Guid BoardId, Guid? CardId, Guid? MemoryId, string Rule, string TargetKey,

@@ -96,7 +96,7 @@ public class DataExportService : IDataExportService
     private static UserDataExportCaptureSourceDto MapLegacyCaptureSource(CapturePayloadV1 payload) =>
         new(payload.Source.ToString(), payload.Text, payload.TitleHint, payload.ExternalRef);
 
-    private static UserDataExportDurableCaptureDto? MapDurableCapture(Domain.Entities.Capture? capture)
+    internal static UserDataExportDurableCaptureDto? MapDurableCapture(Domain.Entities.Capture? capture)
     {
         if (capture is null)
         {
@@ -378,6 +378,16 @@ public class DataExportService : IDataExportService
                 exportInsights.Add(MapQuietInsight(insight));
             }
 
+            var nativeCaptures = new List<UserDataExportNativeCaptureDto>();
+            long nativeBytes = 0;
+            await foreach (var capture in StreamNativeCapturesAsync(userId, cancellationToken))
+            {
+                var bytes = JsonSerializer.SerializeToUtf8Bytes(capture, PortabilityJsonOptions).LongLength;
+                nativeBytes += bytes;
+                if (nativeCaptures.Count >= 10_000 || nativeBytes > 25 * 1024 * 1024)
+                    return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "Too many native originals to buffer; use the streaming export endpoint.");
+                nativeCaptures.Add(capture);
+            }
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -391,7 +401,8 @@ public class DataExportService : IDataExportService
                 exportArtefacts,
                 exportTranscripts,
                 exportMemories,
-                exportInsights);
+                exportInsights,
+                nativeCaptures);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -638,6 +649,13 @@ public class DataExportService : IDataExportService
                 writer.WriteNull("notificationPreferences");
             }
 
+            writer.WriteStartArray("nativeCaptures");
+            await foreach (var capture in StreamNativeCapturesAsync(userId, cancellationToken))
+            {
+                writer.WriteRawValue(JsonSerializer.SerializeToUtf8Bytes(capture, PortabilityJsonOptions));
+                await writer.FlushAsync(cancellationToken);
+            }
+            writer.WriteEndArray();
             writer.WriteStartArray("workspaceMemories");
             await foreach (var memory in StreamWorkspaceMemoriesAsync(userId, cancellationToken))
             {
@@ -1162,7 +1180,25 @@ public class DataExportService : IDataExportService
         memory.SourceDeckRevision, memory.SourceQuestionHash, memory.Title, memory.Text, memory.OriginalText,
         memory.OriginalEvidence, memory.Status, memory.Archived, memory.Revision, memory.CreatedAt, memory.UpdatedAt,
         memory.History.OrderBy(x => x.Revision).Select(x => new UserDataExportWorkspaceMemoryRevisionDto(
-            x.Id, x.MemoryId, x.Title, x.Text, x.Status, x.Archived, x.Revision, x.CreatedAt, x.UpdatedAt)).ToList());
+            x.Id, x.MemoryId, x.Title, x.Text, x.Status, x.Archived, x.Revision, x.CreatedAt, x.UpdatedAt, x.AnswerSourceAssetId)).ToList(),
+        memory.SourceCaptureId, memory.AnswerSourceAssetId, memory.EvidenceSourceAssetId);
+
+    private async IAsyncEnumerable<UserDataExportNativeCaptureDto> StreamNativeCapturesAsync(
+        Guid userId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        if (_captureStore is null) yield break;
+        const int pageSize = 100;
+        for (var offset = 0; ; offset += pageSize)
+        {
+            var page = await _captureStore.NativeByUserAsync(userId, pageSize, offset, ct);
+            foreach (var capture in page)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return new(capture.Id, capture.ContextBoardId, MapDurableCapture(capture)!);
+            }
+            if (page.Count < pageSize) yield break;
+        }
+    }
 
     private static UserDataExportQuietInsightDto MapQuietInsight(Domain.Entities.QuietInsight insight) => new(
         insight.Id, insight.BoardId, insight.CardId, insight.MemoryId, insight.Rule, insight.TargetKey,

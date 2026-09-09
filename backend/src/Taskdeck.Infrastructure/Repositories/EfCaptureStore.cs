@@ -28,6 +28,13 @@ public sealed class EfCaptureStore : ICaptureStore
         await _context.Captures.AddAsync(capture, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Capture>> NativeByUserAsync(Guid userId, int limit, int offset, CancellationToken cancellationToken = default)
+        => await _context.Captures.AsNoTracking()
+            .Where(capture => capture.UserId == userId && capture.LegacyRequestId == null)
+            .OrderBy(capture => capture.Id).Skip(offset).Take(Math.Clamp(limit, 1, 100))
+            .Include(capture => capture.SourceAssets).ThenInclude(asset => asset.TextPayload)
+            .ToListAsync(cancellationToken);
+
     public Task<Capture?> GetByIdForUserAsync(Guid id, Guid userId, CancellationToken cancellationToken = default)
         => _context.Captures
             .AsNoTracking()

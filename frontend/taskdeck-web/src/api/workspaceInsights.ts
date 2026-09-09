@@ -7,6 +7,7 @@ import type {
   Insight,
   InsightAction,
   Memory,
+  MemorySourceDetail,
   UpdateMemoryRequest,
 } from '../types/workspaceInsights'
 
@@ -52,6 +53,11 @@ export const workspaceInsightsApi = {
 
   async createMemory(request: CreateMemoryRequest): Promise<Memory> {
     const { data } = await http.post<Memory>('/workspace-memory', request)
+    return data
+  },
+
+  async getMemorySources(id: string): Promise<MemorySourceDetail> {
+    const { data } = await http.get<MemorySourceDetail>(`/workspace-memory/${encodeURIComponent(id)}/sources`)
     return data
   },
 
