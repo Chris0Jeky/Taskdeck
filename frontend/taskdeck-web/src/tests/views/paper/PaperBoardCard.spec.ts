@@ -36,6 +36,39 @@ describe('PaperBoardCard', () => {
     vi.useRealTimers()
   })
 
+  it('discloses secondary Zen details without hiding blocked, overdue, or proposal status', async () => {
+    const card = makeCard({ isBlocked: true, blockReason: 'Waiting for access', dueDate: '2020-01-01' })
+    const wrapper = mount(PaperBoardCard, { attachTo: document.body, props: { card, presentation: 'zen', tone: 'proposed' } })
+    expect(wrapper.get('.paper-board-card__excerpt').isVisible()).toBe(false)
+    expect(wrapper.get('.paper-board-card__serial').isVisible()).toBe(false)
+    expect(wrapper.get('.paper-board-card__label').isVisible()).toBe(false)
+    expect(wrapper.get('.paper-board-card__blocked').text()).toContain('Waiting for access')
+    expect(wrapper.get('.paper-board-card__due-date').isVisible()).toBe(true)
+    expect(wrapper.get('.paper-board-card__tagstamp').text()).toBe('PROPOSED')
+    const opener = wrapper.get('[data-action="open-card"]').element
+    const disclosure = wrapper.get('.paper-board-card__disclosure')
+    expect(disclosure.attributes('aria-expanded')).toBe('false')
+    await disclosure.trigger('click')
+    expect(disclosure.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('.paper-board-card__excerpt').isVisible()).toBe(true)
+    expect(wrapper.get('.paper-board-card__label').isVisible()).toBe(true)
+    expect(wrapper.emitted('click')).toBeUndefined()
+    await wrapper.setProps({ presentation: 'control' })
+    expect(wrapper.get('.paper-board-card__operation-note').text()).toBe('1 label · Needs unblocking')
+    expect(wrapper.get('[data-action="open-card"]').element).toBe(opener)
+    await wrapper.setProps({ presentation: 'zen' })
+    expect(wrapper.get('.paper-board-card__disclosure').attributes('aria-expanded')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('retains unchanged default card content without presentation-only controls', () => {
+    const wrapper = mount(PaperBoardCard, { props: { card: makeCard() } })
+    expect(wrapper.attributes('data-presentation')).toBe('classic')
+    expect(wrapper.get('.paper-board-card__excerpt').isVisible()).toBe(true)
+    expect(wrapper.find('.paper-board-card__disclosure').exists()).toBe(false)
+    expect(wrapper.find('.paper-board-card__operation-note').exists()).toBe(false)
+  })
+
   it('renders the index variant by default with serial, title, and description', () => {
     const wrapper = mount(PaperBoardCard, { props: { card: makeCard() } })
     expect(wrapper.attributes('data-variant')).toBe('index')

@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import AppearanceSettingsView from '../../views/AppearanceSettingsView.vue'
 import appearanceSource from '../../views/AppearanceSettingsView.vue?raw'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
+import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
 
 const STORAGE_KEY = 'td.paper.mode.v2'
 
@@ -24,14 +25,28 @@ describe('AppearanceSettingsView', () => {
     document.body.classList.remove('paper', 'paper-night')
   })
 
-  it('renders all four theme options', () => {
+  it('switches experience and presentation independently of the selected theme', async () => {
+    const wrapper = mount(AppearanceSettingsView)
+    await wrapper.get('select[aria-label="Workspace experience"]').setValue('companion')
+    await wrapper.get('select[aria-label="Workspace presentation"]').setValue('zen')
+    expect(useWorkspaceLayoutStore().$state).toEqual({ experience: 'companion', presentation: 'zen' })
+    expect(usePaperThemeStore().mode).toBe('paper')
+    await segmentByMode(wrapper, 'grove-night').trigger('click')
+    expect(useWorkspaceLayoutStore().experience).toBe('companion')
+    expect(document.body.classList.contains('grove-night')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('renders all six theme options', () => {
     const wrapper = mount(AppearanceSettingsView)
     // Scoped to `[data-mode]`, not the bare segment class: the page now carries
     // a second segmented control (Language, #1770) built from the same class,
     // and an unscoped selector would count those too. `data-mode` is the theme
     // control's own hook, so this still asserts exactly four THEME options.
     const labels = wrapper.findAll('.paper-appearance__segment[data-mode]').map((b) => b.text())
-    expect(labels).toHaveLength(4)
+    expect(labels).toHaveLength(6)
+    expect(labels).toContain('Grove')
+    expect(labels).toContain('Grove Night')
     expect(labels.some((l) => l.includes('Off (Legacy / Obsidian)'))).toBe(true)
     expect(labels.some((l) => l.includes('Paper (Light)'))).toBe(true)
     expect(labels.some((l) => l.includes('Paper Night (Dark)'))).toBe(true)
