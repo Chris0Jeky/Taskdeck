@@ -20,6 +20,13 @@ model only after actor, board, archive and revision checks; it is not appended t
 instruction. Model answers can remain in the private conversation after their sources change.
 Existing approval and explicit Apply behavior is unchanged. **BREAKING: none.**
 
+An additional additive migration creates `BoardDependencies`. Explicit prerequisite links are
+shared with the board and never change card status or deadlines. Deleted-card links are omitted
+from reads and exports; deleting the board removes its graph. JSON exports containing dependencies
+use the `taskdeck-board` version-2 envelope. Current importers remap both ends to newly created cards;
+older importers reject that envelope instead of silently dropping relationships. Boards without
+dependencies retain the existing JSON shape, and existing JSON imports remain supported.
+
 **BREAKING: none.** Additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
 and correction-history tables, then private question-source columns. A further additive migration
 adds private personal-plan JSON and revision columns to UserPreferences with empty defaults. Plan dates

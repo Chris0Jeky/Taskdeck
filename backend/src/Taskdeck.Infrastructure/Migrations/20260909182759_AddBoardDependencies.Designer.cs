@@ -11,10 +11,9 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    [Migration("20260909190324_AddChatContextSelection")]
-    partial class AddChatContextSelection
+    [Migration("20260909182759_AddBoardDependencies")]
+    partial class AddBoardDependencies
     {
-        /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
@@ -973,12 +972,6 @@ namespace Taskdeck.Infrastructure.Migrations
 
                     b.Property<string>("Content")
                         .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ContextSelectionJson")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ContextSourcesJson")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("CreatedAt")
