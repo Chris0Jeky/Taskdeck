@@ -1136,7 +1136,15 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
-    public async Task ExecuteProposal_ShouldReturnForbidden_WhenCallerCannotWriteProposalBoard()
+    public async Task ExecuteProposal_ShouldReturnUnauthorized_WhenNotAuthenticated()
+    {
+        using var anonymousClient = _factory.CreateClient();
+        var response = await anonymousClient.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/execute", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldConcealUnreadableBoardLikeMissingProposal()
     {
         var ownerClient = _factory.CreateClient();
         var outsiderClient = _factory.CreateClient();
@@ -1153,7 +1161,52 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         executeRequest.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
         var response = await outsiderClient.SendAsync(executeRequest);
 
-        await ApiTestHarness.AssertForbiddenAsync(response);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var missingResponse = await outsiderClient.PostAsync($"/api/automation/proposals/{Guid.NewGuid()}/execute", null);
+        missingResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var hidden = await response.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        var missing = await missingResponse.Content.ReadFromJsonAsync<ApiErrorResponse>();
+        hidden!.ErrorCode.Should().Be(missing!.ErrorCode);
+        hidden.Message.Should().Be(missing.Message);
+        var stillApproved = await ownerClient.GetFromJsonAsync<ProposalDto>($"/api/automation/proposals/{proposal.Id}");
+        stillApproved!.Status.Should().Be(ProposalStatus.Approved);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldKeepForbidden_ForReadableBoardWithoutWriteAccess()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var viewerClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "single-exec-read-owner");
+        var viewer = await ApiTestHarness.AuthenticateAsync(viewerClient, "single-exec-read-viewer");
+        var board = await ApiTestHarness.CreateBoardAsync(ownerClient, "single-exec-read-board");
+        var grant = await ownerClient.PostAsJsonAsync($"/api/boards/{board.Id}/access", new GrantAccessDto(board.Id, viewer.UserId, UserRole.Viewer));
+        grant.StatusCode.Should().Be(HttpStatusCode.OK);
+        var proposal = await CreateTestProposalAsync(ownerClient, owner.UserId, board.Id, RiskLevel.Low);
+        (await ownerClient.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+        request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        await ApiTestHarness.AssertForbiddenAsync(await viewerClient.SendAsync(request));
+        var stillApproved = await ownerClient.GetFromJsonAsync<ProposalDto>($"/api/automation/proposals/{proposal.Id}");
+        stillApproved!.Status.Should().Be(ProposalStatus.Approved);
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldConcealAnotherUsersBoardlessProposal()
+    {
+        using var ownerClient = _factory.CreateClient();
+        using var outsiderClient = _factory.CreateClient();
+        var owner = await ApiTestHarness.AuthenticateAsync(ownerClient, "single-exec-private-owner");
+        await ApiTestHarness.AuthenticateAsync(outsiderClient, "single-exec-private-outsider");
+        var created = await ownerClient.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
+            ProposalSourceType.Chat, owner.UserId, "Private proposal", RiskLevel.Low, Guid.NewGuid().ToString()));
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var proposal = (await created.Content.ReadFromJsonAsync<ProposalDto>())!;
+        var response = await outsiderClient.PostAsync($"/api/automation/proposals/{proposal.Id}/execute", null);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var error = (await response.Content.ReadFromJsonAsync<ApiErrorResponse>())!;
+        error.ErrorCode.Should().Be("NotFound");
+        error.Message.Should().Be("Proposal not found");
     }
 
     [Fact]
