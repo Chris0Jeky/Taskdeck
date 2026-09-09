@@ -307,7 +307,14 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
         operations: [{ ...makeProposal().operations[0], actionType: 'create', targetType: 'card' }],
       })
       const wrapper = await mountView([proposal], [proposal], '/workspace/review')
+      let announcementObserver: MutationObserver | undefined
       try {
+        const announcement = wrapper.get('[data-testid="paper-review-unavailable-announcement"]')
+        expect(announcement.attributes('role')).toBe('status')
+        expect(announcement.attributes('aria-live')).toBe('polite')
+        expect(announcement.attributes('aria-atomic')).toBe('true')
+        expect(announcement.text()).toBe('')
+        const announced: string[] = []
         await routerOf(wrapper).push('/workspace/review#proposal-proposal-missing')
         await flushPromises()
         expect(mocks.getProposal).toHaveBeenCalledWith('proposal-missing')
@@ -322,6 +329,17 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
         }
         focused.focus()
         expect(document.activeElement).toBe(focused)
+        const statusNode = target === 'batch dialog'
+          ? document.body.querySelector<HTMLElement>('[data-testid="batch-approve-announcement"]')!
+          : announcement.element as HTMLElement
+        expect(statusNode).not.toBeNull()
+        expect(statusNode.textContent?.trim()).toBe('')
+        if (target === 'batch dialog') expect(statusNode.closest('[role="dialog"]')).not.toBeNull()
+        announcementObserver = new MutationObserver(() => {
+          const text = statusNode.textContent?.trim()
+          if (text) announced.push(text)
+        })
+        announcementObserver.observe(statusNode, { childList: true, characterData: true, subtree: true })
 
         rejectLookup({ response: { status: 404 } })
         await flushPromises()
@@ -330,7 +348,25 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
         expect(wrapper.find('[data-testid="paper-review-unavailable-return"]').exists()).toBe(true)
         expect(focused.isConnected).toBe(true)
         expect(document.activeElement).toBe(focused)
+        const announcedText = statusNode.textContent?.trim()
+        expect(announcedText).toContain('proposal-missing')
+        expect(announced).toEqual([announcedText])
+        if (target === 'batch dialog') expect(announcement.text()).toBe('')
+        vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
+        await flushPromises()
+        expect(announced).toEqual([announcedText])
+
+        if (target === 'batch dialog') {
+          document.body.querySelector<HTMLButtonElement>('[data-testid="batch-approve-cancel"]')!.click()
+          await flushPromises()
+          expect(announcement.text()).toBe('')
+        }
+        await wrapper.get('[data-testid="paper-review-unavailable-return"]').trigger('click')
+        await flushPromises()
+        expect(announcement.text()).toBe('')
+        expect(wrapper.get('[data-testid="paper-review-unavailable-announcement"]').element).toBe(announcement.element)
       } finally {
+        announcementObserver?.disconnect()
         wrapper.unmount()
       }
     },

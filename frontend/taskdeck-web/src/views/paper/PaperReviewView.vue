@@ -498,11 +498,17 @@ watch(
 )
 
 const unavailableReturnRef = ref<HTMLButtonElement | null>(null)
+const unavailableAnnouncementInBatchDialog = ref(false)
+const unavailableAnnouncement = computed(() => unavailableProposalId.value && !queueAccessRevoked.value
+  ? `${t(unavailableProposalMalformed.value ? 'review.empty.unavailable.malformedBody' : 'review.empty.unavailable.body', { id: unavailableProposalId.value })} ${t('review.empty.unavailable.return')}`
+  : '')
 
 // The unavailable panel replaces the decision column after an async lookup.
 // Recover focus when its old control disappears, but preserve a queue control
 // or dialog the reviewer focused while the lookup was pending.
 watch(unavailableProposalId, (id) => {
+  // Keep one announcement owner for this result, even after the dialog closes.
+  unavailableAnnouncementInBatchDialog.value = Boolean(id && batchConfirmationOpen.value)
   if (!id) return
   const previousFocus = document.activeElement
   activeProposalSettledElsewhere.value = null
@@ -2797,6 +2803,15 @@ async function onClearBoardScope() {
       data-testid="paper-review-queue-refused"
     >{{ queueRefreshRefused && !queueAccessRevoked ? $t('review.queue.refused.body') : '' }}</p>
 
+    <!-- Keep the status node mounted before a delayed lookup settles. -->
+    <p
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-testid="paper-review-unavailable-announcement"
+    >{{ unavailableAnnouncementInBatchDialog ? '' : unavailableAnnouncement }}</p>
+
     <ReviewQueueRail
       ref="queueRailRef"
       :items="queueItems"
@@ -3212,6 +3227,7 @@ async function onClearBoardScope() {
       :open="batchConfirmationOpen"
       :count="batchSelectedCount"
       :busy="batchApproveBusy"
+      :announcement="unavailableAnnouncementInBatchDialog && batchConfirmationOpen ? unavailableAnnouncement : ''"
       @confirm="confirmBatchApproval"
       @cancel="cancelBatchApproval"
     />
