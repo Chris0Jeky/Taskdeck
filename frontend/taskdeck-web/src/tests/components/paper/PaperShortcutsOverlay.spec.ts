@@ -8,8 +8,10 @@ import reviewKeymapSource from '../../../composables/useReviewKeymap.ts?raw'
 import boardViewSource from '../../../views/BoardView.vue?raw'
 import {
   APP_SHELL_SHORTCUT_BINDINGS,
+  bindingAppliesToSkin,
   formatShortcut,
   KEYBOARD_HELP_SHORTCUT,
+  PAPER_SHORTCUT_BINDINGS,
   PAPER_SHORTCUT_GROUPS,
   SHORTCUT_HANDLER_CONTRACTS,
   strokeMatches,
@@ -195,6 +197,40 @@ describe('PaperShortcutsOverlay', () => {
     ).map((row) => row.dataset.shortcutId)
 
     expect(displayedIds).not.toContain('workspace-review')
+  })
+
+  it('hides and restores every Paper review-keymap row with the automation flag', () => {
+    const featureFlags = useFeatureFlagStore()
+    const reviewKeymapIds = PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.handlerOwner === 'review-keymap')
+      .map((binding) => binding.id)
+    const nonReviewIds = PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.group !== undefined
+        && binding.handlerOwner !== 'review-keymap'
+        && bindingAppliesToSkin(binding, 'paper')
+        && binding.flag === undefined)
+      .map((binding) => binding.id)
+
+    expect(reviewKeymapIds).toHaveLength(6)
+    expect(PAPER_SHORTCUT_BINDINGS
+      .filter((binding) => binding.handlerOwner === 'review-keymap')
+      .every((binding) => binding.flag === 'newAutomation')).toBe(true)
+
+    featureFlags.flags.newAutomation = false
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const disabledIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+    expect(disabledIds).not.toEqual(expect.arrayContaining(reviewKeymapIds))
+    expect(disabledIds).toEqual(expect.arrayContaining(nonReviewIds))
+    wrapper.unmount()
+
+    featureFlags.flags.newAutomation = true
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+    const enabledIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+    expect(enabledIds).toEqual(expect.arrayContaining(reviewKeymapIds))
   })
 
   it('does not advertise an undo shortcut that the product does not implement', () => {

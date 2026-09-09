@@ -196,12 +196,12 @@ function onSave() {
            by keyboard without weakening that typing guard. -->
       <div class="revision-editor__inspect-actions">
         <PaperHLBtn
-          :label="$t('review.keyHints.provenance')"
+          :label="$t('review.keys.provenance')"
           data-testid="revision-inspect-provenance"
           @click="emit('toggle-provenance')"
         />
         <PaperHLBtn
-          :label="$t('review.keyHints.preview')"
+          :label="$t('review.keys.preview')"
           data-testid="revision-inspect-diff"
           @click="emit('preview-diff')"
         />
