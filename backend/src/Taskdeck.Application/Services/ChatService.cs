@@ -31,9 +31,17 @@ public class ChatService : IChatService
     // notifications, so an unqualified "nothing was created" would be literally false.
     private const string NoBoardActionNotice =
         "(No board is linked to this chat session, so nothing was created or changed on any board. " +
-        "Open a board-scoped chat session to turn this into a proposal you can review.)";
+        "Select a writable board below to keep this instruction and turn it into a proposal you can review.)";
+    private const string NoProposalActionNotice =
+        "(No proposal was created from this attempt, so nothing changed on the board.)";
+    private const string BoardCreateGuidance =
+        "Chat cannot create a board in this flow. Create the board from Boards, then link this session " +
+        "to that writable board and continue the instruction. No board was created or changed.";
     private const string BoardAccessDeniedMessage = "You do not have access to this board";
     private const string BoardNotFoundMessage = "Board not found";
+    private const string SessionNotFoundMessage = "Chat session not found";
+    private const string ArchivedBoardBindingMessage =
+        "Cannot link a chat session to an archived board. Restore the board first.";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
     private static readonly string[] PromptInjectionDenylist =
     {
@@ -108,6 +116,61 @@ public class ChatService : IChatService
         {
             return Result.Failure<ChatSessionDto>(ex.ErrorCode, ex.Message);
         }
+    }
+
+    public async Task<Result<ChatSessionDto>> BindBoardAsync(
+        Guid sessionId,
+        Guid userId,
+        BindChatSessionBoardDto dto,
+        CancellationToken ct = default)
+    {
+        if (dto.BoardId == Guid.Empty)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.ValidationError, "BoardId cannot be empty");
+
+        var session = await _unitOfWork.ChatSessions.GetByIdWithMessagesAsync(sessionId, ct);
+        if (session == null || session.UserId != userId)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.NotFound, SessionNotFoundMessage);
+
+        if (session.Status == ChatSessionStatus.Archived)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.InvalidOperation, "Cannot bind an archived chat session");
+
+        if (session.BoardId.HasValue && session.BoardId.Value != dto.BoardId)
+        {
+            return Result.Failure<ChatSessionDto>(
+                ErrorCodes.Conflict,
+                "This chat session is already linked to a different board. Start a new session to use another board.");
+        }
+
+        var boardAccess = await EnsureBoardWritableAsync(userId, dto.BoardId, ct);
+        if (!boardAccess.IsSuccess)
+            return Result.Failure<ChatSessionDto>(boardAccess.ErrorCode, boardAccess.ErrorMessage);
+
+        if (session.BoardId == dto.BoardId)
+            return Result.Success(MapSessionToDto(session));
+
+        var boundAt = DateTimeOffset.UtcNow;
+        if (await _unitOfWork.ChatSessions.TryBindBoardAsync(
+                sessionId,
+                userId,
+                dto.BoardId,
+                boundAt,
+                ct))
+        {
+            session.BindBoard(dto.BoardId);
+            return Result.Success(MapSessionToDto(session));
+        }
+
+        // Another request changed the binding after this request read the session. Reload the
+        // authoritative row: the same binding is idempotent; a different binding is a conflict.
+        var current = await _unitOfWork.ChatSessions.GetByIdWithMessagesAsync(sessionId, ct);
+        if (current == null || current.UserId != userId)
+            return Result.Failure<ChatSessionDto>(ErrorCodes.NotFound, SessionNotFoundMessage);
+        if (current.BoardId == dto.BoardId)
+            return Result.Success(MapSessionToDto(current));
+
+        return Result.Failure<ChatSessionDto>(
+            ErrorCodes.Conflict,
+            "This chat session was linked to a different board. Start a new session to use another board.");
     }
 
     public async Task<Result<ChatSessionDto>> GetSessionAsync(Guid sessionId, Guid userId, CancellationToken ct = default)
@@ -210,6 +273,21 @@ public class ChatService : IChatService
             session.AddMessage(userMessage);
             await _unitOfWork.ChatMessages.AddAsync(userMessage, ct);
 
+            // The persisted message history is the clarification ledger. Once one assistant
+            // clarification has a user answer, reloads still force a best-effort attempt using the
+            // original intent and that answer instead of resetting the budget.
+            var clarificationRounds = ClarificationDetector.CountClarificationRounds(session.Messages.ToList());
+            var hasPendingClarification = HasPendingClarification(session.Messages);
+            var isSkipRequest = hasPendingClarification && ClarificationDetector.IsSkipRequest(dto.Content);
+            var forceBestEffort = isSkipRequest || ClarificationDetector.ShouldForceBestEffort(session.Messages.ToList());
+            var actionAttemptContent = BuildActionAttemptContent(session.Messages, dto.Content, forceBestEffort);
+            var (classifiedActionable, classifiedIntent) =
+                LlmIntentClassifier.Classify(actionAttemptContent, _logger);
+            var turnRequestsAction = dto.RequestProposal || forceBestEffort || classifiedActionable;
+            var clarificationPrompt = ClarificationDetector.BuildClarificationSystemPrompt(
+                clarificationRounds,
+                forceBestEffort);
+
             var mentionResult = await PublishMentionNotificationsAsync(session, userId, dto.Content, userMessage.Id, ct);
             if (!mentionResult.IsSuccess)
                 return Result.Failure<ChatMessageDto>(mentionResult.ErrorCode, mentionResult.ErrorMessage);
@@ -248,17 +326,18 @@ public class ChatService : IChatService
                 quotaEstimatedTokens = reservation.EstimatedTokens;
             }
 
-            if (dto.RequestProposal && LooksLikeChecklistBootstrapRequest(dto.Content))
+            if (LooksLikeChecklistBootstrapRequest(actionAttemptContent)
+                && (turnRequestsAction || !StartsWithQuestion(actionAttemptContent)))
             {
                 if (!session.BoardId.HasValue)
                 {
-                    messageType = "error";
-                    assistantContent = "Checklist bootstrap requires a board-scoped chat session. Create a session with BoardId and retry.";
+                    messageType = "action-needs-board";
+                    assistantContent = $"Checklist bootstrap needs a writable board.\n\n{NoBoardActionNotice}";
                 }
                 else
                 {
                     var bootstrapResult = await CreateChecklistBootstrapProposalAsync(
-                        dto.Content,
+                        actionAttemptContent,
                         userId,
                         session.BoardId.Value,
                         ct);
@@ -271,8 +350,8 @@ public class ChatService : IChatService
                     }
                     else
                     {
-                        messageType = "error";
-                        assistantContent = $"I could not create a checklist bootstrap proposal: {bootstrapResult.ErrorMessage}";
+                        messageType = "action-no-proposal";
+                        assistantContent = $"I could not create a checklist bootstrap proposal: {bootstrapResult.ErrorMessage}\n\n{NoProposalActionNotice}";
                     }
                 }
             }
@@ -293,14 +372,19 @@ public class ChatService : IChatService
                     var toolCompletionRequest = new ChatCompletionRequest(
                         toolChatMessages,
                         Attribution: BuildAttribution(session, userId),
-                        SystemPrompt: ToolCallingSystemPrompt.Prompt);
+                        SystemPrompt: ToolCallingSystemPrompt.Prompt + clarificationPrompt);
                     quotaDispatchContext = toolCompletionRequest.DispatchContext;
 
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
                         toolCompletionRequest, session.BoardId.Value, userId, ct);
 
                     var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
-                    var toolCallingUsable = !toolResult.IsDegraded || toolResult.Content != null;
+                    // A write tool may have durably created a proposal before a later provider
+                    // round fails. Its receipt is authoritative even when the closing prose is
+                    // missing; falling back here could create a duplicate proposal (#2004).
+                    var toolCallingUsable = !toolResult.IsDegraded
+                        || toolResult.Content != null
+                        || toolResult.ProposalId.HasValue;
 
                     if (toolCallsActuallyMade && toolCallingUsable)
                     {
@@ -312,19 +396,25 @@ public class ChatService : IChatService
                         toolCallMetadataJson = ToolCallingChatOrchestrator.BuildToolCallMetadataJson(
                             toolResult.ToolCallLog, toolResult.Rounds, toolResult.TokensUsed);
 
-                        if (toolResult.IsDegraded)
-                        {
-                            messageType = "degraded";
-                        }
-
                         // Detect proposal creation from the orchestrator result.
                         // The orchestrator extracts proposal IDs from the full
                         // (un-truncated) tool results, avoiding the truncation
                         // issue in log summaries.
-                        if (messageType == "text" && toolResult.ProposalId.HasValue)
+                        if (toolResult.ProposalId.HasValue)
                         {
                             messageType = "proposal-reference";
                             proposalId = toolResult.ProposalId.Value;
+                        }
+                        else if (toolResult.IsDegraded)
+                        {
+                            messageType = "degraded";
+                            if (turnRequestsAction)
+                                assistantContent = AppendNoProposalActionNotice(assistantContent);
+                        }
+                        else if (turnRequestsAction || toolResult.ToolCallLog.Any(IsProposalToolCall))
+                        {
+                            messageType = "action-no-proposal";
+                            assistantContent = AppendNoProposalActionNotice(assistantContent);
                         }
 
                         // Finalize the quota reservation with the actual token count
@@ -356,13 +446,11 @@ public class ChatService : IChatService
                         // that proposal creation is still triggered for actionable
                         // messages (e.g. "create card X"). This is the same
                         // classifier all providers use as a fallback.
-                        var (classifiedActionable, classifiedIntent) =
-                            LlmIntentClassifier.Classify(dto.Content, _logger);
                         List<string>? classifiedInstructions = null;
                         if (classifiedActionable)
                         {
                             var extracted = NaturalLanguageInstructionExtractor.Extract(
-                                dto.Content, classifiedIntent);
+                                actionAttemptContent, classifiedIntent);
                             if (extracted.Count > 0)
                                 classifiedInstructions = extracted;
                         }
@@ -400,11 +488,6 @@ public class ChatService : IChatService
                 // reusing the no-tool response from the orchestrator).
                 if (!usedToolCalling)
                 {
-                    // Determine clarification state from message history.
-                    var clarificationRounds = ClarificationDetector.CountClarificationRounds(session.Messages.ToList());
-                    var isSkipRequest = ClarificationDetector.IsSkipRequest(dto.Content);
-                    var forceBestEffort = isSkipRequest || ClarificationDetector.ShouldForceBestEffort(session.Messages.ToList());
-
                     LlmCompletionResult llmResult;
 
                     if (reusableNoToolResponse != null)
@@ -422,10 +505,6 @@ public class ChatService : IChatService
 
                         // Build board context for board-scoped sessions
                         var boardContext = await BuildBoardContextForSessionAsync(session, ct);
-
-                        // Append clarification guidance to system prompt
-                        var clarificationPrompt = ClarificationDetector.BuildClarificationSystemPrompt(
-                            clarificationRounds, forceBestEffort);
 
                         var completionRequest = new ChatCompletionRequest(
                             chatMessages,
@@ -472,9 +551,10 @@ public class ChatService : IChatService
                     // (either via the IsClarificationRequest flag from the provider, or
                     // detected heuristically), set the message type to "clarification"
                     // instead of attempting proposal creation.
-                    var isClarification = llmResult.IsClarificationRequest
-                        || (!forceBestEffort && !llmResult.IsActionable
-                            && ClarificationDetector.IsClarificationResponse(llmResult.Content));
+                    var isClarification = !forceBestEffort &&
+                        (llmResult.IsClarificationRequest
+                         || (!llmResult.IsActionable
+                             && ClarificationDetector.IsClarificationResponse(llmResult.Content)));
 
                     if (isClarification && messageType != "degraded")
                     {
@@ -499,13 +579,17 @@ public class ChatService : IChatService
                     }
                     else
                     {
-                        var hasProposalIntent = llmResult.IsActionable
-                            || (dto.RequestProposal && session.BoardId.HasValue);
+                        var hasProposalIntent = llmResult.IsActionable || turnRequestsAction;
                         var shouldAttemptProposal = !llmResult.IsDegraded && hasProposalIntent;
 
                         if (llmResult.IsDegraded && hasProposalIntent)
                         {
                             assistantContent = "The provider response was degraded. No proposal was created, and nothing changed.";
+                        }
+                        else if (hasProposalIntent && classifiedIntent == "board.create")
+                        {
+                            assistantContent = $"{llmResult.Content}\n\n{BoardCreateGuidance}";
+                            messageType = "action-no-proposal";
                         }
                         else if (shouldAttemptProposal)
                         {
@@ -513,15 +597,15 @@ public class ChatService : IChatService
                             {
                                 // Surface a hint so the user knows why no proposal was created
                                 assistantContent = AppendNoBoardActionNotice(llmResult.Content);
-                                messageType = "status";
+                                messageType = "action-needs-board";
                             }
                             else
                             {
                                 // Determine which instructions to parse: prefer LLM-extracted
                                 // instructions over the raw user message (static classifier fallback).
-                                var instructionsToParse = llmResult.Instructions is { Count: > 0 }
-                                    ? llmResult.Instructions
-                                    : new List<string> { dto.Content };
+                                var instructionsToParse = ResolveInstructionsToParse(
+                                    llmResult,
+                                    actionAttemptContent);
 
                                 // Use batch parsing for multiple instructions to create a single
                                 // atomic proposal. For single instructions, use the original
@@ -561,18 +645,18 @@ public class ChatService : IChatService
                                         var hintContext = llmResult.IsActionable
                                             ? "I detected a task request but could not parse it into a proposal."
                                             : "Could not create the requested proposal.";
-                                        assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{proposalResult.ErrorMessage}";
+                                        assistantContent = $"{llmResult.Content}\n\n{hintContext}\n{proposalResult.ErrorMessage}\n\n{NoProposalActionNotice}";
                                         messageType = "parse-hint";
                                     }
                                     else if (llmResult.IsActionable)
                                     {
-                                        assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})";
-                                        messageType = "status";
+                                        assistantContent = $"{llmResult.Content}\n\n(I detected a task request but could not parse it into a proposal: {proposalResult.ErrorMessage})\n\n{NoProposalActionNotice}";
+                                        messageType = "action-no-proposal";
                                     }
                                     else
                                     {
-                                        assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})";
-                                        messageType = "status";
+                                        assistantContent = $"{llmResult.Content}\n\n(Could not create the requested proposal: {proposalResult.ErrorMessage})\n\n{NoProposalActionNotice}";
+                                        messageType = "action-no-proposal";
                                     }
                                 }
                             }
@@ -580,7 +664,7 @@ public class ChatService : IChatService
                         else if (!session.BoardId.HasValue
                                  && messageType != "degraded"
                                  && !string.IsNullOrWhiteSpace(llmResult.Content)
-                                 && TurnRequestsAction(dto.Content, dto.RequestProposal, forceBestEffort, _logger))
+                                 && turnRequestsAction)
                         {
                             // The provider answered in prose without flagging its own response
                             // actionable, but the turn did ask for an action: an explicit proposal
@@ -593,7 +677,7 @@ public class ChatService : IChatService
                             // a textless turn keeps falling through to the empty-content
                             // placeholder below — there is no prose there to be misread.
                             assistantContent = AppendNoBoardActionNotice(llmResult.Content);
-                            messageType = "status";
+                            messageType = "action-needs-board";
                         }
                     }
                 }
@@ -712,6 +796,30 @@ public class ChatService : IChatService
         if (session == null || session.UserId != userId)
             yield break;
 
+        var lastUserMessage = session.Messages.LastOrDefault(message => message.Role == ChatMessageRole.User);
+        var streamRequestsAction = false;
+        var streamNeedsBoard = false;
+        string? streamOutcomeSuffix = null;
+        if (lastUserMessage != null)
+        {
+            var forceBestEffort = ClarificationDetector.ShouldForceBestEffort(session.Messages.ToList());
+            var actionAttemptContent = BuildActionAttemptContent(
+                session.Messages,
+                lastUserMessage.Content,
+                forceBestEffort);
+            var (isActionable, intent) = LlmIntentClassifier.Classify(actionAttemptContent, _logger);
+            streamRequestsAction = forceBestEffort || isActionable;
+            if (streamRequestsAction)
+            {
+                streamNeedsBoard = intent != "board.create" && !session.BoardId.HasValue;
+                streamOutcomeSuffix = intent == "board.create"
+                    ? BoardCreateGuidance
+                    : session.BoardId.HasValue
+                        ? NoProposalActionNotice
+                        : NoBoardActionNotice;
+            }
+        }
+
         var boardAccess = await EnsureBoardReadableAsync(userId, session.BoardId);
         if (!boardAccess.IsSuccess)
         {
@@ -756,6 +864,7 @@ public class ChatService : IChatService
         string? streamDegradedReason = null;
         var persistEmptyTerminalOutcome = false;
         var terminalHadError = false;
+        var terminalEventSeen = false;
         // True once the provider has delivered at least one non-error event: the LLM call was made and
         // tokens flowed, so the reservation is billable even if the final usage event never arrives.
         var providerStreamed = false;
@@ -796,7 +905,10 @@ public class ChatService : IChatService
                 if (token.Model != null)
                     model = token.Model;
                 if (token.IsComplete)
+                {
                     tokensUsed = token.TokensUsed;
+                    terminalEventSeen = true;
+                }
 
                 var tokenBytes = Encoding.UTF8.GetByteCount(token.Token);
                 if (tokenBytes > MaxStreamedAssistantBytes - streamedContentBytes)
@@ -806,7 +918,7 @@ public class ChatService : IChatService
                     terminalHadError = true;
                     persistEmptyTerminalOutcome = true;
                     yield return new LlmTokenEvent(
-                        string.Empty,
+                        streamOutcomeSuffix == null ? string.Empty : $"\n\n{streamOutcomeSuffix}",
                         true,
                         Error: streamDegradedReason,
                         TokensUsed: tokensUsed,
@@ -819,8 +931,12 @@ public class ChatService : IChatService
                     break;
                 }
 
+                var deliveredToken = token.Token;
+                if (token.IsComplete && streamOutcomeSuffix != null)
+                    deliveredToken = AppendOutcomeSuffix(deliveredToken, streamOutcomeSuffix);
+
                 streamedContentBytes += tokenBytes;
-                contentBuilder.Append(token.Token);
+                contentBuilder.Append(deliveredToken);
                 if (token.IsDegraded)
                 {
                     streamIsDegraded = true;
@@ -837,7 +953,21 @@ public class ChatService : IChatService
                         persistEmptyTerminalOutcome = true;
                 }
 
-                yield return token;
+                yield return deliveredToken == token.Token
+                    ? token
+                    : token with { Token = deliveredToken };
+            }
+
+            if (streamOutcomeSuffix != null && !terminalEventSeen)
+            {
+                var suffixToken = $"\n\n{streamOutcomeSuffix}";
+                contentBuilder.Append(suffixToken);
+                yield return new LlmTokenEvent(
+                    suffixToken,
+                    true,
+                    TokensUsed: tokensUsed,
+                    Provider: provider,
+                    Model: model);
             }
 
             // Persist the streamed assistant message with token usage so the streaming
@@ -847,13 +977,19 @@ public class ChatService : IChatService
                 streamedContent = terminalHadError
                     ? StreamErrorPlaceholder
                     : EmptyAssistantContentPlaceholder;
+            if (streamOutcomeSuffix != null && !streamedContent.Contains(streamOutcomeSuffix, StringComparison.Ordinal))
+                streamedContent = AppendOutcomeSuffix(streamedContent, streamOutcomeSuffix);
             if (!string.IsNullOrEmpty(streamedContent))
             {
                 var assistantMessage = new ChatMessage(
                     sessionId,
                     ChatMessageRole.Assistant,
                     streamedContent,
-                    messageType: streamIsDegraded ? "degraded" : "text",
+                    messageType: streamIsDegraded
+                        ? "degraded"
+                        : streamRequestsAction
+                            ? streamNeedsBoard ? "action-needs-board" : "action-no-proposal"
+                            : "text",
                     tokenUsage: tokensUsed,
                     degradedReason: streamIsDegraded ? streamDegradedReason : null);
                 session.AddMessage(assistantMessage);
@@ -968,25 +1104,56 @@ public class ChatService : IChatService
         $"{content}\n\n{NoBoardActionNotice}";
 
     /// <summary>
-    /// True when the turn asks the assistant to act, independently of whether the provider flagged
-    /// its own response actionable (#2004). This decides only whether an unbound session owes the
-    /// user the no-board notice — it never creates or attempts a proposal, so a false positive
-    /// costs one honest sentence, while a false negative is the silent-prose failure this guards.
+    /// Appends the server-derived outcome after provider prose so reloads retain the fact that an
+    /// actionable attempt produced no proposal (#2004).
     /// </summary>
-    private static bool TurnRequestsAction(
-        string userContent,
-        bool requestProposal,
-        bool forceBestEffort,
-        ILogger<ChatService>? logger)
+    private static string AppendNoProposalActionNotice(string content)
     {
-        // The user ticked "Request proposal generation", or told a clarification round to proceed.
-        if (requestProposal || forceBestEffort)
-            return true;
+        if (string.IsNullOrWhiteSpace(content))
+            return NoProposalActionNotice;
+        return $"{content}\n\n{NoProposalActionNotice}";
+    }
 
-        // Otherwise fall back to the same local classifier the no-tool reuse path uses, run over
-        // the user's own message rather than the model's reply.
-        var (userIntentIsActionable, _) = LlmIntentClassifier.Classify(userContent, logger);
-        return userIntentIsActionable;
+    private static string AppendOutcomeSuffix(string content, string suffix)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return suffix;
+        return $"{content}\n\n{suffix}";
+    }
+
+    private static bool HasPendingClarification(IReadOnlyList<ChatMessage> messages)
+    {
+        return messages.Count >= 2
+            && messages[^1].Role == ChatMessageRole.User
+            && messages[^2].Role == ChatMessageRole.Assistant
+            && messages[^2].MessageType == "clarification";
+    }
+
+    private static string BuildActionAttemptContent(
+        IReadOnlyList<ChatMessage> messages,
+        string currentAnswer,
+        bool forceBestEffort)
+    {
+        if (!forceBestEffort || !HasPendingClarification(messages))
+            return currentAnswer;
+
+        for (var index = messages.Count - 3; index >= 0; index--)
+        {
+            if (messages[index].Role == ChatMessageRole.User)
+                return $"{messages[index].Content}\n\nClarification answer: {currentAnswer}";
+        }
+
+        return currentAnswer;
+    }
+
+    private static IReadOnlyList<string> ResolveInstructionsToParse(
+        LlmCompletionResult llmResult,
+        string actionAttemptContent)
+    {
+        if (llmResult.Instructions is { Count: > 0 })
+            return llmResult.Instructions;
+
+        return new[] { actionAttemptContent };
     }
 
     private static bool ContainsBlockedPromptPattern(string content)
@@ -1022,6 +1189,31 @@ public class ChatService : IChatService
             : Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage);
     }
 
+    private async Task<Result> EnsureBoardWritableAsync(
+        Guid userId,
+        Guid boardId,
+        CancellationToken ct)
+    {
+        if (_authorizationService == null)
+            return Result.Failure(ErrorCodes.Forbidden, BoardAccessDeniedMessage);
+
+        var permission = await _authorizationService.CanWriteBoardAsync(userId, boardId);
+        if (!permission.IsSuccess || !permission.Value)
+        {
+            return permission.ErrorCode == ErrorCodes.NotFound || permission.IsSuccess
+                ? Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage)
+                : Result.Failure(permission.ErrorCode, permission.ErrorMessage);
+        }
+
+        var board = await _unitOfWork.Boards.GetByIdAsync(boardId, ct);
+        if (board == null)
+            return Result.Failure(ErrorCodes.NotFound, BoardNotFoundMessage);
+        if (board.IsArchived)
+            return Result.Failure(ErrorCodes.InvalidOperation, ArchivedBoardBindingMessage);
+
+        return Result.Success();
+    }
+
     private static LlmRequestAttribution BuildAttribution(ChatSession session, Guid userId)
     {
         return new LlmRequestAttribution(
@@ -1039,6 +1231,17 @@ public class ChatService : IChatService
 
         return Regex.IsMatch(content, @"(?m)^\s*[-*]\s*\[\s\]\s+.+$");
     }
+
+    private static bool StartsWithQuestion(string content)
+    {
+        var firstLine = content
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            .FirstOrDefault(static line => !string.IsNullOrWhiteSpace(line));
+        return firstLine?.TrimEnd().EndsWith("?", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsProposalToolCall(ToolCallLogEntry toolCall) =>
+        toolCall.ToolName.StartsWith("propose_", StringComparison.Ordinal);
 
     private async Task<Result> PublishMentionNotificationsAsync(
         ChatSession session,
@@ -1219,7 +1422,12 @@ public class ChatService : IChatService
             session.Status,
             session.CreatedAt,
             session.UpdatedAt,
-            session.Messages.Select(MapMessageToDto).ToList()
+            // The UI and recovery logic consume this as a turn transcript. EF does not guarantee
+            // Include collection order, so return the causal creation order explicitly.
+            session.Messages
+                .OrderBy(message => message.CreatedAt)
+                .Select(MapMessageToDto)
+                .ToList()
         );
     }
 

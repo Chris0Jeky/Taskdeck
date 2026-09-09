@@ -46,6 +46,10 @@ public record CreateChatSessionDto(
     Guid? BoardId = null
 );
 
+public record BindChatSessionBoardDto(
+    Guid BoardId
+);
+
 public record SendChatMessageDto(
     string Content,
     bool RequestProposal = false

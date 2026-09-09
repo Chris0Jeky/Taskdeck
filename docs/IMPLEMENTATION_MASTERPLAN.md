@@ -2184,3 +2184,7 @@ Rule:
 ## Board controls residual acceptance (2026-09-08)
 
 PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.
+
+## Accountable chat acceptance (2026-09-08)
+
+PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal attempts, owned-session inline binding, grounded existing-card updates, one persisted clarification round, and durable honest outcomes. This reduces the maintenance burden of discovering that a chat instruction produced only prose while preserving explicit human Review, Approve, and Apply. The natural-update API proof covers actual card identity and an unchanged board; the Mock browser journey covers same-session context recovery and Review visibility. Complete the distinct full-stack and authorization/state review lenses, resolve any confirmed blockers in one batch, and qualify the final head before closing #2004. Repair the independently reproduced test-clock failures in #2789 separately; do not weaken the local-calendar contract or infer live-provider acceptance from Mock evidence.

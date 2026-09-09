@@ -24,7 +24,14 @@ export function useAutomationChat() {
   const loadingHealth = ref(false)
   const creatingSession = ref(false)
   const sendingMessage = ref(false)
+  const bindingBoard = ref(false)
+  const bindingMessageId = ref<string | null>(null)
+  const boardBindingError = ref<string | null>(null)
+  const boardBindingReceipt = ref<string | null>(null)
   let boardOptionsRequest: Promise<boolean> | null = null
+  let sessionSelectionGeneration = 0
+  let boardBindingGeneration = 0
+  let requestedSessionId: string | null = null
   const chatHealth = ref<ChatProviderHealth | null>(null)
   const chatHealthLoadError = ref<string | null>(null)
 
@@ -37,7 +44,10 @@ export function useAutomationChat() {
   const newSessionBoardId = ref('')
   const selectedNewSessionBoardId = ref<string | null>(null)
   const messageContent = ref('')
-  const requestProposal = ref(false)
+
+  const eligibleBoards = computed(() => availableBoards.value.filter((board) => (
+    !board.isArchived && board.canWrite !== false
+  )))
 
   const boardOptions = computed(() =>
     buildInputAssistOptions(
@@ -75,6 +85,30 @@ export function useAutomationChat() {
     if (msgs.length === 0) return false
     const last = msgs[msgs.length - 1]
     return last.messageType === 'clarification' && normalizeChatRole(last.role) === 'Assistant'
+  })
+
+  const pendingBoardRecovery = computed(() => {
+    const messages = sortedMessages.value
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index]!
+      if (normalizeChatRole(message.role) !== 'Assistant') continue
+      const needsBoardRecovery = message.messageType === 'action-needs-board'
+        || (message.messageType === 'clarification'
+          && message.content.includes('Select a writable board below'))
+      if (!needsBoardRecovery) return null
+
+      for (let userIndex = index - 1; userIndex >= 0; userIndex--) {
+        const userMessage = messages[userIndex]!
+        if (normalizeChatRole(userMessage.role) === 'User') {
+          return {
+            messageId: message.id,
+            instruction: userMessage.content,
+          }
+        }
+      }
+      return null
+    }
+    return null
   })
 
   const selectedSessionBoardName = computed(() => {
@@ -186,12 +220,30 @@ export function useAutomationChat() {
   }
 
   async function loadSession(sessionId: string) {
+    requestedSessionId = sessionId
+    const selectionGeneration = ++sessionSelectionGeneration
+    boardBindingError.value = null
+    boardBindingReceipt.value = null
     try {
       const result = await chatApi.getSession(sessionId)
-      if (isDisposed) return
+      if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
       selectedSession.value = result
     } catch (e: unknown) {
-      if (isDisposed) return
+      if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
+      requestedSessionId = selectedSession.value?.id ?? null
+      toast.error(getErrorDisplay(e, 'Failed to load chat session').message)
+    }
+  }
+
+  async function refreshSelectedSession(sessionId: string) {
+    try {
+      const result = await chatApi.getSession(sessionId)
+      if (isDisposed || requestedSessionId !== sessionId || selectedSession.value?.id !== sessionId) return
+      selectedSession.value = result
+      const sessionIndex = sessions.value.findIndex((session) => session.id === sessionId)
+      if (sessionIndex >= 0) sessions.value.splice(sessionIndex, 1, result)
+    } catch (e: unknown) {
+      if (isDisposed || requestedSessionId !== sessionId) return
       toast.error(getErrorDisplay(e, 'Failed to load chat session').message)
     }
   }
@@ -260,17 +312,25 @@ export function useAutomationChat() {
       return
     }
 
+    if (sendingMessage.value) return
+
+    const sessionId = selectedSession.value.id
     try {
       sendingMessage.value = true
-      const sessionId = selectedSession.value.id
-      await chatApi.sendMessage(sessionId, {
-        content,
-        requestProposal: requestProposal.value,
-      })
+      const sentMessage = await chatApi.sendMessage(sessionId, { content })
       if (isDisposed) return
-      messageContent.value = ''
-      requestProposal.value = false
-      await loadSession(sessionId)
+      if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
+        messageContent.value = ''
+        const currentSession = selectedSession.value
+        selectedSession.value = {
+          ...currentSession,
+          recentMessages: [
+            ...currentSession.recentMessages.filter((message) => message.id !== sentMessage.id),
+            sentMessage,
+          ],
+        }
+        await refreshSelectedSession(sessionId)
+      }
     } catch (e: unknown) {
       if (isDisposed) return
       toast.error(getErrorDisplay(e, 'Failed to send message').message)
@@ -288,6 +348,49 @@ export function useAutomationChat() {
 
   async function handleSkipClarification() {
     await sendMessageToSession('Just do your best')
+  }
+
+  async function bindBoardToPendingTurn(messageId: string, boardId: string) {
+    const session = selectedSession.value
+    const pending = pendingBoardRecovery.value
+    if (!session || !pending || pending.messageId !== messageId || session.boardId) return
+    if (!eligibleBoards.value.some((board) => board.id === boardId)) {
+      boardBindingError.value = 'Choose an active board you can edit.'
+      return
+    }
+
+    const sessionId = session.id
+    const bindingGeneration = ++boardBindingGeneration
+    bindingBoard.value = true
+    bindingMessageId.value = messageId
+    boardBindingError.value = null
+    try {
+      const bound = await chatApi.bindBoard(sessionId, { boardId })
+      if (isDisposed) return
+
+      const sessionIndex = sessions.value.findIndex((item) => item.id === sessionId)
+      if (sessionIndex >= 0) sessions.value.splice(sessionIndex, 1, bound)
+
+      if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
+        selectedSession.value = bound
+        boardBindingReceipt.value = boardNameById.value.get(boardId) ?? 'the selected board'
+      }
+    } catch (e: unknown) {
+      if (isDisposed || requestedSessionId !== sessionId || selectedSession.value?.id !== sessionId) return
+      boardBindingError.value = getErrorDisplay(e, 'Failed to link board').message
+    } finally {
+      if (!isDisposed && bindingGeneration === boardBindingGeneration) {
+        bindingBoard.value = false
+        bindingMessageId.value = null
+      }
+    }
+  }
+
+  async function continuePendingInstruction(messageId: string) {
+    const pending = pendingBoardRecovery.value
+    const session = selectedSession.value
+    if (!pending || pending.messageId !== messageId || !session?.boardId) return
+    await sendMessageToSession(pending.instruction)
   }
 
   async function loadBoardOptions(): Promise<boolean> {
@@ -342,7 +445,6 @@ export function useAutomationChat() {
 
   function applyHintSuggestion(example: string) {
     messageContent.value = example
-    requestProposal.value = true
   }
 
   function openReviewRoute() {
@@ -386,17 +488,22 @@ export function useAutomationChat() {
     loadingHealth,
     creatingSession,
     sendingMessage,
+    bindingBoard,
+    bindingMessageId,
+    boardBindingError,
+    boardBindingReceipt,
     chatHealth,
     chatHealthLoadError,
     newSessionTitle,
     newSessionBoardId,
     messageContent,
-    requestProposal,
 
     // Computed
     boardOptions,
+    eligibleBoards,
     sortedMessages,
     lastMessageIsClarification,
+    pendingBoardRecovery,
     selectedSessionBoardName,
     pendingSessionBoardContextLabel,
     queryBoardId,
@@ -407,6 +514,8 @@ export function useAutomationChat() {
     handleCreateSession,
     handleSendMessage,
     handleSkipClarification,
+    bindBoardToPendingTurn,
+    continuePendingInstruction,
     loadBoardOptions,
     loadSession,
     loadProviderHealth,

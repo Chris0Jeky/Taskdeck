@@ -2,7 +2,7 @@ export type ChatSessionStatus = 'Active' | 'Archived'
 export type ChatSessionStatusValue = ChatSessionStatus | number
 export type ChatRole = 'User' | 'Assistant' | 'System'
 export type ChatRoleValue = ChatRole | number
-export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status' | 'degraded' | 'parse-hint' | 'clarification'
+export type ChatMessageType = 'text' | 'proposal-reference' | 'error' | 'status' | 'degraded' | 'parse-hint' | 'clarification' | 'action-needs-board' | 'action-no-proposal'
 
 export interface ParseHintPayload {
   supportedPatterns: string[]
@@ -73,4 +73,8 @@ export interface CreateChatSessionRequest {
 export interface SendChatMessageRequest {
   content: string
   requestProposal?: boolean
+}
+
+export interface BindChatSessionBoardRequest {
+  boardId: string
 }

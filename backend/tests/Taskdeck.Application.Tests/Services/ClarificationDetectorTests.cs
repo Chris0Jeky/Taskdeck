@@ -133,7 +133,7 @@ public class ClarificationDetectorTests
     // ── ShouldForceBestEffort ───────────────────────────────────────
 
     [Fact]
-    public void ShouldForceBestEffort_ShouldReturnFalse_WhenUnderMaxRounds()
+    public void ShouldForceBestEffort_ShouldReturnTrue_AfterOneClarificationRound()
     {
         var sessionId = Guid.NewGuid();
         var messages = new List<ChatMessage>
@@ -142,7 +142,7 @@ public class ClarificationDetectorTests
             new(sessionId, ChatMessageRole.Assistant, "How many tasks?", "clarification"),
             new(sessionId, ChatMessageRole.User, "3 tasks please")
         };
-        ClarificationDetector.ShouldForceBestEffort(messages).Should().BeFalse();
+        ClarificationDetector.ShouldForceBestEffort(messages).Should().BeTrue();
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public class ClarificationDetectorTests
     {
         var prompt = ClarificationDetector.BuildClarificationSystemPrompt(0, false);
         prompt.Should().Contain("ask clarifying questions");
-        prompt.Should().Contain("0 of 2");
+        prompt.Should().Contain("0 of 1");
     }
 
     [Fact]
@@ -181,8 +181,8 @@ public class ClarificationDetectorTests
     // ── MaxClarificationRounds constant ─────────────────────────────
 
     [Fact]
-    public void MaxClarificationRounds_ShouldBe2()
+    public void MaxClarificationRounds_ShouldBe1()
     {
-        ClarificationDetector.MaxClarificationRounds.Should().Be(2);
+        ClarificationDetector.MaxClarificationRounds.Should().Be(1);
     }
 }
