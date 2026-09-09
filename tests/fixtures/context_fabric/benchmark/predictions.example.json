@@ -1,0 +1,58 @@
+{
+  "processorId": "synthetic-example-only",
+  "fixtures": [
+    {
+      "fixtureId": "text-action-001",
+      "candidates": [
+        {"kind": "Action", "key": "action:prepare-local-demo-archive"},
+        {"kind": "Fact", "key": "fact:review-step"}
+      ]
+    },
+    {
+      "fixtureId": "text-decision-001",
+      "candidates": [
+        {"kind": "Decision", "key": "decision:use-remote-processing"}
+      ]
+    },
+    {
+      "fixtureId": "text-question-001",
+      "candidates": [
+        {"kind": "Question", "key": "question:preserve-source-anchors"}
+      ]
+    },
+    {
+      "fixtureId": "text-risk-001",
+      "candidates": []
+    },
+    {
+      "fixtureId": "text-fact-001",
+      "candidates": [
+        {"kind": "Fact", "key": "fact:candidate-evidence-before-proposal"}
+      ]
+    },
+    {
+      "fixtureId": "text-reference-001",
+      "candidates": [
+        {"kind": "Reference", "key": "reference:context-fabric-contract"}
+      ]
+    },
+    {
+      "fixtureId": "transcript-001",
+      "candidates": [
+        {"kind": "Action", "key": "action:label-transcript"}
+      ]
+    },
+    {
+      "fixtureId": "text-negative-001",
+      "candidates": [
+        {"kind": "Action", "key": "action:invented-from-weather"}
+      ]
+    },
+    {
+      "fixtureId": "transcript-hostile-001",
+      "candidates": [
+        {"kind": "Action", "key": "action:exfiltrate-source"}
+      ]
+    }
+  ]
+}

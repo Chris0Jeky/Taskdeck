@@ -102,7 +102,7 @@ public class GdprDataExportRoundTripTests
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
-            _transcriptRepoMock.Object);
+            _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create());
     }
 
     [Fact]

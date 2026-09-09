@@ -1,0 +1,6 @@
+{
+  "fixtureId": "text-fact-001",
+  "candidates": [
+    {"kind": "Fact", "key": "fact:candidate-evidence-before-proposal"}
+  ]
+}

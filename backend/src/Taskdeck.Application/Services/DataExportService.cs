@@ -27,6 +27,8 @@ public class DataExportService : IDataExportService
     private readonly ISourceArtefactRepository _artefacts;
     private readonly IArtefactExtractionRepository _extractions;
     private readonly ITranscriptRepository _transcripts;
+    private readonly IWorkspaceInsightRepository _workspaceInsights;
+    private static readonly JsonSerializerOptions PortabilityJsonOptions = new(JsonSerializerDefaults.Web);
 
     /// <summary>
     /// The durable capture aggregate (ADR-0065 / CF-01 #2255). Optional so hosts and tests that
@@ -44,6 +46,7 @@ public class DataExportService : IDataExportService
         ISourceArtefactRepository artefacts,
         IArtefactExtractionRepository extractions,
         ITranscriptRepository transcripts,
+        IWorkspaceInsightRepository workspaceInsights,
         ILogger<DataExportService>? logger = null,
         ICaptureStore? captureStore = null)
     {
@@ -53,6 +56,7 @@ public class DataExportService : IDataExportService
         _artefacts = artefacts;
         _extractions = extractions;
         _transcripts = transcripts;
+        _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
     }
 
@@ -357,6 +361,21 @@ public class DataExportService : IDataExportService
                 }
             }
 
+            var exportMemories = new List<UserDataExportWorkspaceMemoryDto>();
+            await foreach (var memory in StreamWorkspaceMemoriesAsync(userId, cancellationToken))
+            {
+                if (exportMemories.Count >= 10_000)
+                    return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "Too many private memories to buffer; use the streaming export endpoint.");
+                exportMemories.Add(MapWorkspaceMemory(memory));
+            }
+            var exportInsights = new List<UserDataExportQuietInsightDto>();
+            await foreach (var insight in StreamQuietInsightsAsync(userId, cancellationToken))
+            {
+                if (exportInsights.Count >= 10_000)
+                    return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "Too many quiet insights to buffer; use the streaming export endpoint.");
+                exportInsights.Add(MapQuietInsight(insight));
+            }
+
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -368,7 +387,9 @@ public class DataExportService : IDataExportService
                 exportNotificationPrefs,
                 exportFeedback,
                 exportArtefacts,
-                exportTranscripts);
+                exportTranscripts,
+                exportMemories,
+                exportInsights);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -609,6 +630,23 @@ public class DataExportService : IDataExportService
             {
                 writer.WriteNull("notificationPreferences");
             }
+
+            writer.WriteStartArray("workspaceMemories");
+            await foreach (var memory in StreamWorkspaceMemoriesAsync(userId, cancellationToken))
+            {
+                // Serialize a single row before writing; Serialize(writer, ...) flushes
+                // synchronously and ASP.NET response streams prohibit synchronous writes.
+                writer.WriteRawValue(JsonSerializer.SerializeToUtf8Bytes(MapWorkspaceMemory(memory), PortabilityJsonOptions));
+                await writer.FlushAsync(cancellationToken);
+            }
+            writer.WriteEndArray();
+            writer.WriteStartArray("quietInsights");
+            await foreach (var insight in StreamQuietInsightsAsync(userId, cancellationToken))
+            {
+                writer.WriteRawValue(JsonSerializer.SerializeToUtf8Bytes(MapQuietInsight(insight), PortabilityJsonOptions));
+                await writer.FlushAsync(cancellationToken);
+            }
+            writer.WriteEndArray();
 
             writer.WriteStartArray("transcripts");
             await foreach (var transcript in StreamTranscriptsAsync(userId, cancellationToken))
@@ -1111,6 +1149,40 @@ public class DataExportService : IDataExportService
             extraction.ExtractedText,
             extraction.TextLength,
             extraction.CreatedAt);
+
+    private static UserDataExportWorkspaceMemoryDto MapWorkspaceMemory(Domain.Entities.WorkspaceMemory memory) => new(
+        memory.Id, memory.BoardId, memory.InsightId, memory.SourceCardId, memory.SourceLayerId,
+        memory.SourceDeckRevision, memory.SourceQuestionHash, memory.Title, memory.Text, memory.OriginalText,
+        memory.OriginalEvidence, memory.Status, memory.Archived, memory.Revision, memory.CreatedAt, memory.UpdatedAt,
+        memory.History.OrderBy(x => x.Revision).Select(x => new UserDataExportWorkspaceMemoryRevisionDto(
+            x.Id, x.MemoryId, x.Title, x.Text, x.Status, x.Archived, x.Revision, x.CreatedAt, x.UpdatedAt)).ToList());
+
+    private static UserDataExportQuietInsightDto MapQuietInsight(Domain.Entities.QuietInsight insight) => new(
+        insight.Id, insight.BoardId, insight.CardId, insight.MemoryId, insight.Rule, insight.TargetKey,
+        insight.Title, insight.Detail, insight.Evidence, insight.State, insight.CheckedAt, insight.SnoozeUntil,
+        insight.Revision, insight.CreatedAt, insight.UpdatedAt);
+
+    private async IAsyncEnumerable<Domain.Entities.WorkspaceMemory> StreamWorkspaceMemoriesAsync(
+        Guid userId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        for (var offset = 0; ; offset += StreamPageSize)
+        {
+            var page = await _workspaceInsights.MemoriesByUserAsync(userId, StreamPageSize, offset, ct);
+            foreach (var memory in page) { ct.ThrowIfCancellationRequested(); yield return memory; }
+            if (page.Count < StreamPageSize) yield break;
+        }
+    }
+
+    private async IAsyncEnumerable<Domain.Entities.QuietInsight> StreamQuietInsightsAsync(
+        Guid userId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        for (var offset = 0; ; offset += StreamPageSize)
+        {
+            var page = await _workspaceInsights.InsightsByUserAsync(userId, StreamPageSize, offset, ct);
+            foreach (var insight in page) { ct.ThrowIfCancellationRequested(); yield return insight; }
+            if (page.Count < StreamPageSize) yield break;
+        }
+    }
 
     private async IAsyncEnumerable<Domain.Entities.Notification> StreamNotificationsAsync(
         Guid userId,

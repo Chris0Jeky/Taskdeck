@@ -21,6 +21,7 @@ function toSummary(item: CaptureItem): CaptureItemSummary {
     processedAt: item.processedAt,
     errorMessage: item.errorMessage ?? null,
     disposition: item.disposition ?? null,
+    ...(item.canEditSuggestion === undefined ? {} : { canEditSuggestion: item.canEditSuggestion }),
   }
 }
 

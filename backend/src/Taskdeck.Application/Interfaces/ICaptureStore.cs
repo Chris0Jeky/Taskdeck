@@ -14,7 +14,8 @@ public sealed record CaptureListMaterial(
     CaptureSource LegacySourceSnapshot,
     DateTimeOffset CapturedAtServer,
     DateTimeOffset UpdatedAt,
-    string? CurrentText);
+    string? CurrentText,
+    int LegacyReconciliationVersion = 0);
 
 /// <summary>
 /// The persistence façade for the durable <see cref="Capture"/> aggregate (ADR-0065 §Decision 1;

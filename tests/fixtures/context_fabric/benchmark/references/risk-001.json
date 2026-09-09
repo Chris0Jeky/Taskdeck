@@ -1,0 +1,6 @@
+{
+  "fixtureId": "text-risk-001",
+  "candidates": [
+    {"kind": "Risk", "key": "risk:oversized-upload-quota"}
+  ]
+}

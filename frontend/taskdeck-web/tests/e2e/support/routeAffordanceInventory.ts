@@ -744,6 +744,10 @@ export const ROUTE_AFFORDANCE_INVENTORY: RouteEntry[] = [
  * decision recorded here.
  */
 export const EXCLUDED_WORKSPACE_ROUTES: ExcludedRoute[] = [
+  { routeName: 'workspace-experiences', reason: 'Covered by tests/e2e/workspace-overhaul.spec.ts: manual comparison and shared layout switching.' },
+  { routeName: 'workspace-insights', reason: 'Covered by tests/e2e/workspace-overhaul.spec.ts: analyze, answer and verify board remains unchanged.' },
+  { routeName: 'workspace-memory', reason: 'Covered by tests/e2e/workspace-overhaul.spec.ts: private answer, correction history, archive and restore.' },
+  { routeName: 'workspace-thinking', reason: 'Covered by tests/e2e/workspace-overhaul.spec.ts: typed layers, conflict retention and shared mounted state.' },
   {
     routeName: 'workspace-settings-profile',
     reason: 'Off the capture-to-board loop: profile settings write account state, not board or proposal state.',

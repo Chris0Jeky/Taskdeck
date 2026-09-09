@@ -1,0 +1,6 @@
+{
+  "fixtureId": "text-reference-001",
+  "candidates": [
+    {"kind": "Reference", "key": "reference:context-fabric-contract"}
+  ]
+}

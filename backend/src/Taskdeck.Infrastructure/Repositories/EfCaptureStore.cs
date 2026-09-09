@@ -97,7 +97,8 @@ public sealed class EfCaptureStore : ICaptureStore
                 capture.Id,
                 capture.LegacySourceSnapshot,
                 capture.CapturedAtServer,
-                capture.UpdatedAt
+                capture.UpdatedAt,
+                capture.LegacyReconciliationVersion
             })
             .ToListAsync(cancellationToken);
 
@@ -133,7 +134,8 @@ public sealed class EfCaptureStore : ICaptureStore
                 header.LegacySourceSnapshot,
                 header.CapturedAtServer,
                 header.UpdatedAt,
-                textByCapture.TryGetValue(header.Id, out var text) ? text : null))
+                textByCapture.TryGetValue(header.Id, out var text) ? text : null,
+                header.LegacyReconciliationVersion))
             .ToList();
     }
 

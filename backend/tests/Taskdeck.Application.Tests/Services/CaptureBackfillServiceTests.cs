@@ -267,6 +267,40 @@ public sealed class CaptureBackfillServiceTests
         _backfillStore.SavedState.MigratedCount.Should().Be(1, "and the healthy row is only brought in once");
     }
 
+    [Fact]
+    public async Task RunAsync_ShouldRepairTimestampMaskedLegacyTextAndStepOverArchivedMismatch()
+    {
+        var archivedRow = SeedLegacyRow(text: "archived original");
+        var healthyRow = SeedLegacyRow(text: "healthy original");
+        foreach (var row in new[] { archivedRow, healthyRow })
+        {
+            var capture = CaptureIntakeService.BuildCapture(row,
+                CaptureRequestContract.ParseStoredPayload(row.Payload), _userId, null);
+            typeof(Capture).GetProperty(nameof(Capture.LegacyReconciliationVersion))!.SetValue(capture, 0);
+            await _captureStore.AddAsync(capture);
+            EditQueuePayloadOnly(row, "corrected text");
+            if (row == archivedRow) capture.Archive();
+            else capture.Keep();
+            capture.UpdatedAt.Should().BeOnOrAfter(row.UpdatedAt);
+        }
+
+        var result = await CreateService().RunAsync(batchSize: 1);
+
+        result.Reconciled.Should().Be(1);
+        result.Skipped.Should().Be(1);
+        result.Remaining.Should().Be(1);
+        result.Complete.Should().BeFalse();
+        _backfillStore.SavedState!.IsComplete.Should().BeFalse();
+        var healthy = _captureStore.All.Single(capture => capture.Id == healthyRow.Id);
+        healthy.CurrentText.Should().Be("corrected text");
+        healthy.SourceAssets.Should().HaveCount(2);
+        healthy.SourceAssets[0].TextPayload!.Text.Should().Be("healthy original");
+        healthy.SourceAssets[1].SupersedesAssetId.Should().Be(healthy.SourceAssets[0].Id);
+        var retry = await CreateService().RunAsync(batchSize: 1);
+        retry.Reconciled.Should().Be(0);
+        retry.Skipped.Should().Be(1);
+    }
+
     // ---------------------------------------------------------------- HIGH-1: divergence
     [Fact]
     public async Task RunAsync_ShouldReconcileACaptureWhoseQueueRowWasEditedWhileDualWriteWasOff()
@@ -512,7 +546,9 @@ public sealed class CaptureBackfillServiceTests
             _rows.Where(row =>
             {
                 var capture = _captures.All.FirstOrDefault(c => c.Id == row.Id);
-                return capture is null || capture.UpdatedAt < row.UpdatedAt;
+                return capture is null ||
+                    capture.LegacyReconciliationVersion < Capture.CurrentLegacyReconciliationVersion ||
+                    capture.UpdatedAt < row.UpdatedAt;
             });
 
         public Task<IReadOnlyList<LlmRequest>> GetLegacyCaptureBacklogAsync(

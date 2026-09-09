@@ -1,0 +1,6 @@
+{
+  "fixtureId": "text-decision-001",
+  "candidates": [
+    {"kind": "Decision", "key": "decision:keep-local-processing"}
+  ]
+}

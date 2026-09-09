@@ -92,7 +92,7 @@ public sealed class CaptureIntakeService
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(payload);
 
-        return Capture.FromQueueRequest(
+        var capture = Capture.FromQueueRequest(
             request.Id,
             userId,
             payload.Source,
@@ -111,6 +111,8 @@ public sealed class CaptureIntakeService
             processingSummary: legacyState?.ProcessingSummary,
             actionState: legacyState?.ActionState,
             userDisposition: legacyState?.Disposition);
+        capture.RecordLegacyReconciliation(request.UpdatedAt);
+        return capture;
     }
 
     /// <summary>

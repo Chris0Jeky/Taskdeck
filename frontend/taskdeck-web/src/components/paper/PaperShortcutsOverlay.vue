@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { useFeatureFlagStore } from '../../store/featureFlagStore'
 import {
   formatShortcut,
   KEYBOARD_HELP_SHORTCUT,
-  PAPER_SHORTCUT_GROUPS,
+  shortcutGroupsForSkin,
 } from '../../utils/keyboardShortcuts'
 import PaperKbd from './PaperKbd.vue'
 
@@ -25,6 +26,12 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
 }>()
+
+const featureFlags = useFeatureFlagStore()
+const shortcutGroups = computed(() => shortcutGroupsForSkin(
+  'paper',
+  (flag) => featureFlags.isEnabled(flag),
+))
 
 function handleGlobalKeydown(event: KeyboardEvent) {
   // Escape always closes when open, even from inside the overlay.
@@ -79,7 +86,7 @@ function onBackdropClick() {
 
         <div class="paper-shortcuts-overlay__grid">
           <section
-            v-for="group in PAPER_SHORTCUT_GROUPS"
+            v-for="group in shortcutGroups"
             :key="group.title"
             class="paper-shortcuts-overlay__group"
             :data-group="group.title"

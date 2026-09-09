@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { reactive } from 'vue'
 import AppShell from '../../components/shell/AppShell.vue'
 // Read through Vite's `?raw` loader rather than node:fs — this project deliberately excludes
@@ -133,6 +134,8 @@ describe('AppShell — paper variant routing', () => {
   let wrapper: ReturnType<typeof mountShell> | null = null
 
   beforeEach(() => {
+    window.localStorage.removeItem('td.workspace.layout.v1')
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     mockPaperTheme.mode = 'off'
     mockPaperTheme.isOn = false
