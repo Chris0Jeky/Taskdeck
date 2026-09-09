@@ -148,5 +148,6 @@ embedded. Development has no fixed frontend identity and records null. This fing
 build inputs, not a signed release or an external deployment's contents.
 
 Proving seams: workspaceExperimentStore.spec.ts, WorkspaceComparisonFiles.spec.ts and
-`node --test build/frontendIdentity.test.mjs`; the extended comparison/Grove browser journey exports,
+`node --test build/frontendIdentity.node-check.mjs`; the extended comparison/Grove browser journey exports,
 reloads, imports, skips duplicates and checks all four experiences at desktop/tablet/375px widths.
+
