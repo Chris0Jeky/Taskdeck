@@ -88,9 +88,14 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                     a.GrantedAt))
                 .ToList();
 
+            var exportedIds = cards.Select(card => card.Id).ToHashSet();
             var thinkingDecks = _thinkingDecks is null ? null :
                 (await _thinkingDecks.GetByCardIdsAsync(cards.Select(card => card.Id).ToArray(), default))
-                    .Select(deck => new ExportThinkingDeckDto(deck.CardId, new ThinkingMaterialDto(deck.SchemaVersion, deck.ReadLayers())))
+                    .Select(deck => new ExportThinkingDeckDto(deck.CardId, new ThinkingMaterialDto(deck.SchemaVersion, deck.ReadLayers().Select(layer => layer with
+                    {
+                        Items = layer.Items.Select(item => item.LinkedCardId.HasValue && !exportedIds.Contains(item.LinkedCardId.Value)
+                            ? item with { LinkedCardId = null } : item).ToArray()
+                    }).ToArray())))
                     .ToList();
 
             var exportDto = new ExportBoardDto(
@@ -133,7 +138,11 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
             var labels = dto.Labels ?? Enumerable.Empty<ImportLabelDto>();
             var columns = dto.Columns ?? Enumerable.Empty<ImportColumnDto>();
-            var cards = dto.Cards ?? Enumerable.Empty<ImportCardDto>();
+            var cards = (dto.Cards ?? Enumerable.Empty<ImportCardDto>()).ToList();
+            var cardIds = new Dictionary<Guid, Guid>();
+            foreach (var source in cards.Where(card => card.SourceId.HasValue))
+                if (source.SourceId == Guid.Empty || !cardIds.TryAdd(source.SourceId!.Value, Guid.NewGuid()))
+                    throw new DomainException(ErrorCodes.ValidationError, "Invalid or duplicate source card ID.");
 
             var board = new Board(dto.Name, dto.Description, userId);
             await _unitOfWork.Boards.AddAsync(board);
@@ -169,7 +178,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 if (!columnsByName.TryGetValue(importCard.ColumnName, out var column))
                     throw new DomainException(ErrorCodes.ValidationError, $"Column '{importCard.ColumnName}' referenced by card '{importCard.Title}' was not found");
 
-                var card = new Card(board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
+                var card = new Card(importCard.SourceId.HasValue ? cardIds[importCard.SourceId.Value] : Guid.NewGuid(),
+                    board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
                 var uniqueCardLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var labelName in importCard.Labels ?? Enumerable.Empty<string>())
@@ -200,10 +210,22 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 {
                     if (_thinkingDecks is null)
                         throw new DomainException(ErrorCodes.ValidationError, "This host cannot import thinking material.");
-                    if (importCard.Thinking.SchemaVersion != 1)
+                    if (importCard.Thinking.SchemaVersion is not (1 or 2))
                         throw new DomainException(ErrorCodes.ValidationError, "Unsupported thinking material schema version.");
                     var deck = new ThinkingDeck(card.Id);
-                    deck.Replace(importCard.Thinking.Layers);
+                    // Validate source IDs before remapping; links never point into the source board.
+                    var material = importCard.Thinking.Layers;
+                    var sourceDeck = new ThinkingDeck(importCard.SourceId ?? card.Id);
+                    sourceDeck.Replace(material);
+                    if (sourceDeck.SchemaVersion > importCard.Thinking.SchemaVersion)
+                        throw new DomainException(ErrorCodes.ValidationError, "Linked thinking cards require material schema version 2.");
+                    deck.Replace(material.Select(layer => layer with
+                    {
+                        Items = layer.Items.Select(item => item.LinkedCardId.HasValue
+                            ? item with { LinkedCardId = cardIds.TryGetValue(item.LinkedCardId.Value, out var linkedId) ? linkedId
+                                : throw new DomainException(ErrorCodes.ValidationError, "Thinking link references a card outside this import.") }
+                            : item).ToArray()
+                    }).ToArray());
                     _thinkingDecks.AddForImport(deck);
                 }
                 cardsImported++;
@@ -362,7 +384,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 card.Position,
                 card.DueDate,
                 labelNames,
-                thinkingByCard.GetValueOrDefault(card.Id)));
+                thinkingByCard.GetValueOrDefault(card.Id), card.Id));
         }
 
         return new ImportBoardDto(

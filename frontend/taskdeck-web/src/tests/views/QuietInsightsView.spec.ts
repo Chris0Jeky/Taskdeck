@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import QuietInsightsView from '../../views/QuietInsightsView.vue'
 import type { Board } from '../../types/board'
 import type { Insight, Memory } from '../../types/workspaceInsights'
+
+enableAutoUnmount(afterEach)
 
 const mocks = vi.hoisted(() => ({
   route: { query: {} as Record<string, string> },
@@ -23,7 +25,7 @@ const api = mocks.api
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
   onBeforeRouteUpdate: vi.fn(),
-  useRoute: () => mocks.route,
+  useRoute: () => routeMock,
   RouterLink: {
     props: ['to'],
     template: '<a :href="typeof to === \'string\' ? to : \'#\'"><slot /></a>',
@@ -31,7 +33,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('../../store/boardStore', () => ({
-  useBoardStore: () => mocks.boardStore,
+  useBoardStore: () => boardStore,
 }))
 
 vi.mock('../../api/workspaceInsights', () => ({
@@ -103,7 +105,7 @@ describe('QuietInsightsView', () => {
     wrapper.unmount()
   })
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     routeMock.query = {}
     boardStore.boards = [board]
     boardStore.fetchBoards.mockResolvedValue(undefined)
@@ -111,6 +113,41 @@ describe('QuietInsightsView', () => {
     api.analyzeBoard.mockResolvedValue([insight])
     api.updateInsight.mockResolvedValue({ ...insight, state: 'dismissed' })
     api.answerInsight.mockResolvedValue(memory)
+  })
+
+  it('prevents overlapping actions during analysis and settles after a board change', async () => {
+    let finish!: (value: Insight[]) => void
+    api.analyzeBoard.mockReturnValue(new Promise<Insight[]>(resolve => { finish = resolve }))
+    const wrapper = mountView()
+    await settle()
+    await wrapper.get('[data-action="analyze-insights"]').trigger('click')
+    expect(wrapper.get('[data-action="dismiss-insight"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-action="answer-insight"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-action="dismiss-insight"]').trigger('click')
+    expect(api.updateInsight).not.toHaveBeenCalled()
+    boardStore.boards = [board, { ...board, id: 'board-2' }]
+    routeMock.query = { boardId: 'board-2' }
+    await settle()
+    finish([insight])
+    await settle()
+    expect(wrapper.get('[data-action="analyze-insights"]').attributes('disabled')).toBeUndefined()
+    expect(api.getInsights).toHaveBeenLastCalledWith('board-2')
+    wrapper.unmount()
+  })
+
+  it('retries board discovery after a linked-board transition fails', async () => {
+    const wrapper = mountView()
+    await settle()
+    boardStore.boards = [board, { ...board, id: 'board-2' }]
+    boardStore.fetchBoards.mockRejectedValueOnce(new Error('Board discovery unavailable'))
+    routeMock.query = { boardId: 'board-2' }
+    await settle()
+    expect(wrapper.find('[role="alert"]').text()).toContain('Board discovery unavailable')
+    await wrapper.find('[role="alert"] button').trigger('click')
+    await settle()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(api.getInsights).toHaveBeenLastCalledWith('board-2')
+    wrapper.unmount()
   })
 
   it('loads the selected board and shows structural evidence', async () => {

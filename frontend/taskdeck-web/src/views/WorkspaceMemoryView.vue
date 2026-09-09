@@ -134,6 +134,7 @@ async function loadMemories() {
 const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => editorDirty.value || saving.value)
 
 function openCreate() {
+  if (loading.value || boardLoading.value || boardError.value) return
   editingId.value = null
   formTitle.value = ''
   formText.value = ''
@@ -169,7 +170,7 @@ function requestCloseEditor() {
 async function saveMemory() {
   const title = formTitle.value.trim()
   const text = formText.value.trim()
-  if (!selectedBoardId.value || !title || !text || saving.value) return
+  if (!selectedBoardId.value || loading.value || boardLoading.value || boardError.value || !title || !text || saving.value) return
 
   saving.value = true
   formError.value = null
@@ -226,8 +227,8 @@ async function toggleArchived(memory: Memory) {
 }
 
 function retry() {
-  if (selectedBoardId.value) void loadMemories()
-  else void loadBoards()
+  if (boardError.value || !selectedBoardId.value) void loadBoards()
+  else void loadMemories()
 }
 
 onMounted(async () => {
@@ -272,7 +273,7 @@ watch(queryBoardId, () => {
         <span>Show archived</span>
       </label>
       <span v-if="selectedBoard" class="paper-memory__selected-board">{{ selectedBoard.name }}</span>
-      <PaperHLBtn data-action="new-memory" variant="ember" :disabled="!selectedBoardId || showEditor || saving" @click="openCreate">
+      <PaperHLBtn data-action="new-memory" variant="ember" :disabled="!selectedBoardId || loading || boardLoading || Boolean(boardError) || showEditor || saving" @click="openCreate">
         Add memory
       </PaperHLBtn>
     </section>

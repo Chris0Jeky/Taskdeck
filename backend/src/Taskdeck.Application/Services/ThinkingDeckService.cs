@@ -23,7 +23,13 @@ public sealed class ThinkingDeckService(ICardRepository cards, IThinkingDeckRepo
         var deck = await decks.GetAsync(cardId, ct) ?? new ThinkingDeck(cardId);
         if (dto.ExpectedRevision != deck.Revision)
             return Conflict();
-        try { deck.Replace(dto.Layers); }
+        // Only promotion may introduce a card link. Removing a thought never removes its card.
+        var saved = deck.ReadLayers();
+        if (dto.Layers is not null && dto.Layers.Where(layer => layer?.Items is not null).Any(layer =>
+            layer.Items.Any(item => item?.LinkedCardId is not null &&
+                saved.FirstOrDefault(old => old.Id == layer.Id)?.Items.FirstOrDefault(old => old.Id == item.Id)?.LinkedCardId != item.LinkedCardId)))
+            return Result.Failure<ThinkingDeckDto>(ErrorCodes.ValidationError, "Create linked cards through the saved step action.");
+        try { deck.Replace(dto.Layers!); }
         catch (DomainException ex) { return Result.Failure<ThinkingDeckDto>(ex.ErrorCode, ex.Message); }
         // Join the board's concurrency-token guard to the same save as the deck.
         // An archive committed after CheckAsync must reject both initial inserts and updates.

@@ -143,7 +143,7 @@ async function loadInsights() {
 }
 
 async function analyzeBoard() {
-  if (!selectedBoardId.value || analyzing.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
+  if (!selectedBoardId.value || loading.value || analyzing.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
   const boardId = selectedBoardId.value
   const generation = ++insightsRequestGeneration
   analyzing.value = true
@@ -158,12 +158,13 @@ async function analyzeBoard() {
       error.value = errorMessage(value, 'Unable to analyze this board.')
     }
   } finally {
-    if (generation === insightsRequestGeneration) analyzing.value = false
+    // Only one analysis can run; a route/read generation change must still settle it.
+    analyzing.value = false
   }
 }
 
 async function applyAction(insight: Insight, action: InsightAction) {
-  if (isBusy(insight.id) || answeringInsightId.value) return
+  if (analyzing.value || loading.value || isBusy(insight.id) || answeringInsightId.value) return
   const boardId = selectedBoardId.value
   setBusy(insight.id, true)
   cardErrors.value = { ...cardErrors.value, [insight.id]: '' }
@@ -182,7 +183,7 @@ async function applyAction(insight: Insight, action: InsightAction) {
 }
 
 function openAnswer(insight: Insight) {
-  if (answeringInsightId.value || busyInsightIds.value.size > 0) return
+  if (analyzing.value || loading.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
   answeringInsightId.value = insight.id
   answerText.value = ''
   answerStatus.value = 'statement'
@@ -222,8 +223,8 @@ async function answerInsight(insight: Insight) {
 }
 
 function retry() {
-  if (selectedBoardId.value) void loadInsights()
-  else void loadBoards()
+  if (boardError.value || !selectedBoardId.value) void loadBoards()
+  else void loadInsights()
 }
 
 onMounted(async () => {
@@ -349,7 +350,7 @@ watch(queryBoardId, () => {
             :key="action"
             :data-action="`${action}-insight`"
             variant="ghost"
-            :disabled="isBusy(insight.id) || Boolean(answeringInsightId)"
+            :disabled="analyzing || loading || isBusy(insight.id) || Boolean(answeringInsightId)"
             @click="applyAction(insight, action)"
           >
             {{ actionLabel(action) }}
@@ -358,7 +359,7 @@ watch(queryBoardId, () => {
             v-if="insight.state === 'available'"
             data-action="answer-insight"
             variant="primary"
-            :disabled="isBusy(insight.id) || Boolean(answeringInsightId) || busyInsightIds.size > 0"
+            :disabled="analyzing || loading || isBusy(insight.id) || Boolean(answeringInsightId) || busyInsightIds.size > 0"
             @click="openAnswer(insight)"
           >
             Answer privately
