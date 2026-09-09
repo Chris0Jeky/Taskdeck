@@ -155,6 +155,22 @@ public interface ILlmQueueRepository : IRepository<LlmRequest>
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically replaces the canonical transcript link and corrected payload for an owned,
+    /// completed transcript capture. The expected status, update stamp, transcript id, and
+    /// payload form the compare-and-swap guard so a concurrent re-triage cannot be overwritten.
+    /// </summary>
+    Task<bool> TryCorrectLinkedTranscriptCaptureAsync(
+        Guid requestId,
+        RequestStatus expectedStatus,
+        DateTimeOffset expectedUpdatedAt,
+        Guid expectedTranscriptId,
+        string expectedPayload,
+        Guid replacementTranscriptId,
+        string replacementPayload,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
+
+    /// <summary>
     /// Atomically claims a Processing transcript-capture request (request type
     /// <c>inbox.capture.transcript.*</c>) for the transcript worker lane using optimistic
     /// concurrency: stamps UpdatedAt only if the row still has the expected UpdatedAt. Mutually

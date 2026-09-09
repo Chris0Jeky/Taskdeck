@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick, reactive } from 'vue'
 import PaperTriageTable from '../../../../views/paper/inbox/PaperTriageTable.vue'
+import PaperTriageRowEdit from '../../../../views/paper/inbox/PaperTriageRowEdit.vue'
 import type { CaptureItemSummary, CaptureStatusValue } from '../../../../types/capture'
 import { i18n, type SupportedLocale } from '../../../../i18n'
 
@@ -784,7 +785,7 @@ describe('PaperTriageTable', () => {
     expect(row.find('[data-testid="capture-edit-textarea"]').exists()).toBe(true)
   })
 
-  it('does not advertise editing a transcript-linked Triaged row', () => {
+  it('fails closed when the server denies editing a transcript-linked Triaged row', () => {
     const items = makeItems()
     items[0] = { ...items[0], status: 'Triaged', canEditSuggestion: false }
     const wrapper = mount(PaperTriageTable, { props: { items } })
@@ -1043,6 +1044,53 @@ describe('PaperTriageTable', () => {
     expect(row.find('button[data-action="accept"]').attributes('disabled')).toBeUndefined()
   })
 
+  it('cancels a loading editor, keeps row controls usable, and returns focus to Edit', async () => {
+    let resolveDetail!: (detail: unknown) => void
+    mockCaptureStore.fetchDetail.mockImplementationOnce(
+      () => new Promise<unknown>((resolve) => { resolveDetail = resolve }),
+    )
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems() },
+      attachTo: document.body,
+    })
+
+    const editButton = wrapper.findAll('button[data-action="edit"]')[0]
+    await editButton.trigger('click')
+    await flushPromises()
+
+    const cancelButton = wrapper.get('button[data-action="edit-cancel"]')
+    expect(wrapper.find('[data-testid="capture-edit-loading"]').exists()).toBe(true)
+    ;(cancelButton.element as HTMLButtonElement).focus()
+    await cancelButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+    expect(editButton.attributes('disabled')).toBeUndefined()
+    expect(document.activeElement).toBe(editButton.element)
+
+    resolveDetail({})
+    await flushPromises()
+    expect(wrapper.find('[data-testid="capture-edit"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not steal focus from a persistent row control when the editor closes', async () => {
+    const wrapper = mount(PaperTriageTable, {
+      props: { items: makeItems() },
+      attachTo: document.body,
+    })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+
+    const persistentControl = wrapper.findAll('.paper-triage__open')[0]
+    ;(persistentControl.element as HTMLButtonElement).focus()
+    wrapper.findComponent(PaperTriageRowEdit).vm.$emit('close')
+    await nextTick()
+
+    expect(document.activeElement).toBe(persistentControl.element)
+    wrapper.unmount()
+  })
+
   it('does not narrate an open editor as a decision', async () => {
     // The row is still undecided while its text is being corrected — claiming
     // "Sending to Review…" here is the GH-1944 lie in a new place.
@@ -1280,6 +1328,49 @@ describe('PaperTriageTable', () => {
     // measured against what the capture says NOW, not what it said before.
     expect(mockCaptureStore.fetchDetail).toHaveBeenCalledTimes(2)
     expect(mockCaptureStore.updateSuggestion).not.toHaveBeenCalled()
+  })
+
+  it('keeps a held correction when loading Cancel closes the returning editor', async () => {
+    const wrapper = mount(PaperTriageTable, { props: { items: makeItems() } })
+    const typed = await openEditorAndType(wrapper, 0, 'a correction behind a deferred read')
+
+    await wrapper.setProps({ items: makeItems().slice(1) })
+    await flushPromises()
+    await wrapper.setProps({ items: makeItems() })
+    await flushPromises()
+
+    let resolveDetail!: (detail: unknown) => void
+    mockCaptureStore.fetchDetail.mockImplementationOnce(
+      () => new Promise<unknown>((resolve) => { resolveDetail = resolve }),
+    )
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="capture-edit-loading"] button[data-action="edit-cancel"]')
+      .trigger('click')
+    await flushPromises()
+
+    expect(noticeKinds(wrapper)).toContain('held')
+    resolveDetail({})
+    await flushPromises()
+
+    mockCaptureStore.fetchDetail.mockResolvedValueOnce({
+      id: 'capture-1',
+      userId: 'user-1',
+      boardId: 'board-alpha',
+      status: 'New',
+      source: 'Typed',
+      textExcerpt: 'First excerpt',
+      rawText: 'First excerpt in full',
+      createdAt: new Date('2026-04-25T09:42:00Z').toISOString(),
+      processedAt: null,
+      retryCount: 0,
+      provenance: null,
+      canEditSuggestion: true,
+    })
+    await wrapper.findAll('button[data-action="edit"]')[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="capture-edit-textarea"]').element.value)
+      .toBe(typed)
   })
 
   it('holds the correction while another editor is open, and says that is why', async () => {

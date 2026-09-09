@@ -54,6 +54,52 @@ describe('PaperTriageRowEdit', () => {
 
   // ── the editable path ──────────────────────────────────────────────────────
 
+  it('offers Cancel while the detail is loading and ignores a late response', async () => {
+    let resolveDetail!: (detail: CaptureItem) => void
+    mockCaptureStore.fetchDetail.mockImplementation(
+      () => new Promise<CaptureItem>((resolve) => { resolveDetail = resolve }),
+    )
+
+    const wrapper = mount(PaperTriageRowEdit, { props: { itemId: 'capture-1' } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="capture-edit-loading"]').exists()).toBe(true)
+    expect(wrapper.get('button[data-action="edit-cancel"]').text()).toContain('Cancel')
+
+    const options = mockCaptureStore.fetchDetail.mock.calls[0][1] as {
+      requestOptions?: { signal?: AbortSignal }
+      shouldCache?: () => boolean
+    }
+    await wrapper.get('button[data-action="edit-cancel"]').trigger('click')
+
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(options.requestOptions?.signal?.aborted).toBe(true)
+    expect(options.shouldCache?.()).toBe(false)
+
+    resolveDetail(makeDetail())
+    await flushPromises()
+
+    expect(wrapper.attributes('data-edit-state')).toBe('loading')
+    expect(wrapper.find('[data-testid="capture-edit-textarea"]').exists()).toBe(false)
+  })
+
+  it('does not reopen the load error after loading Cancel', async () => {
+    let rejectDetail!: (reason?: unknown) => void
+    mockCaptureStore.fetchDetail.mockImplementation(
+      () => new Promise<CaptureItem>((_resolve, reject) => { rejectDetail = reject }),
+    )
+
+    const wrapper = mount(PaperTriageRowEdit, { props: { itemId: 'capture-1' } })
+    await flushPromises()
+    await wrapper.get('button[data-action="edit-cancel"]').trigger('click')
+
+    rejectDetail(new Error('late network failure'))
+    await flushPromises()
+
+    expect(wrapper.attributes('data-edit-state')).toBe('loading')
+    expect(wrapper.find('[data-testid="capture-edit-load-error"]').exists()).toBe(false)
+  })
+
   it('loads the untruncated text rather than offering the row excerpt', async () => {
     const wrapper = await mountEditor()
 
