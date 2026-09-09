@@ -101,6 +101,33 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
         catch (DomainException ex) { return Result.Failure<WorkspaceMemoryDto>(ex.ErrorCode, ex.Message); }
     }
 
+    public async Task<Result<List<WorkspaceMemoryDto>>> PreserveSourcesAsync(Guid userId, PreserveMemorySourcesDto dto, CancellationToken ct)
+    {
+        if (dto.Memories is not { Count: >= 1 and <= 50 } || dto.Memories.Any(x => x == null || x.Id == Guid.Empty || x.Revision < 1)
+            || dto.Memories.Select(x => x.Id).Distinct().Count() != dto.Memories.Count)
+            return Result.Failure<List<WorkspaceMemoryDto>>(ErrorCodes.ValidationError, "Choose 1 to 50 distinct saved memories with their current revisions.");
+        if (!await CanRead(userId, dto.BoardId, ct)) return Missing<List<WorkspaceMemoryDto>>();
+        var memories = new List<WorkspaceMemory>();
+        // Validate the complete selection before staging any sources. One Save makes admission atomic.
+        foreach (var selected in dto.Memories)
+        {
+            var memory = await repository.MemoryAsync(userId, selected.Id, ct);
+            if (memory == null || memory.BoardId != dto.BoardId) return Missing<List<WorkspaceMemoryDto>>();
+            if (memory.Revision != selected.Revision) return Conflict<List<WorkspaceMemoryDto>>();
+            memories.Add(memory);
+        }
+        try
+        {
+            foreach (var memory in memories.Where(x => !x.SourceCaptureId.HasValue))
+            {
+                memory.BeginSourcePreservation();
+                await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
+            }
+            return await repository.SaveAsync(ct) ? Result.Success(memories.Select(MapMemory).ToList()) : Conflict<List<WorkspaceMemoryDto>>();
+        }
+        catch (DomainException ex) { return Result.Failure<List<WorkspaceMemoryDto>>(ex.ErrorCode, ex.Message); }
+    }
+
     public async Task<Result<UserDataExportNativeCaptureDto>> SourcesAsync(Guid userId, Guid id, CancellationToken ct)
     {
         var memory = await repository.MemoryAsync(userId, id, ct);
