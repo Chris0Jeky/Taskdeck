@@ -4,7 +4,7 @@ import { createCaptureItem } from './support/captureFlow'
 
 test('Paper triage edit can cancel a held detail read without reopening', async ({ page, request }) => {
   test.setTimeout(60_000)
-  const auth = await registerAndAttachSession(page, request, 'capture-edit-loading-cancel')
+  const auth = await registerAndAttachSession(page, request, 'edit-load')
   const captureText = `loading-cancel-${Date.now()}`
   const capture = await createCaptureItem(request, auth, null, captureText)
 
