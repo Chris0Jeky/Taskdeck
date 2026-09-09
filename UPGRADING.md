@@ -12,6 +12,26 @@ changes.
 
 ---
 
+## Unreleased workspace overhaul
+
+**BREAKING: none.** Three additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
+and correction-history tables, then private question-source columns. Existing boards, cards, captures and proposals retain their identities. Thinking material
+is attached to a card and is removed when that card is deleted. Insights and memory remain private
+to their author and require access to an active board. Memory archive retains correction history.
+
+Normal startup migrations apply the additive schema. Back up the stopped SQLite workspace before
+upgrading. A database backup includes all new records. Current board JSON export/import includes
+shared Thinking Decks; older imports remain valid. Private answers are deliberately excluded from
+shared board exports. Memory's explicit JSON download includes active and archived private entries,
+originals and history, but is not an import format or an atomic backup. Both account export formats
+also include private memory, revision history and quiet insights, including archived records.
+Account deletion explicitly erases these private records even when their shared board survives;
+other users' private records and shared thinking remain intact. See the
+[overhaul delivery ledger](docs/product/WORKSPACE_OVERHAUL.md) for exact coverage.
+
+Experience, presentation and theme selections are local browser preferences. Classic remains the
+default. Choosing another experience never changes authorization or the approve/apply boundary.
+
 ## Backup the database and packaged identity
 
 Everything Taskdeck stores — boards, cards, captures, proposals, audit history, API keys — lives

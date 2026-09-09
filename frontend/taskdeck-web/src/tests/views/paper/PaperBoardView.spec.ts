@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { useWorkspaceLayoutStore } from '../../../store/workspaceLayoutStore'
 import { nextTick, reactive, ref } from 'vue'
 import { i18n } from '../../../i18n'
 import PaperBoardView from '../../../views/paper/PaperBoardView.vue'
@@ -162,6 +164,8 @@ function makeDragEvent(type: string): DragEvent {
 
 describe('PaperBoardView', () => {
   beforeEach(() => {
+    window.localStorage.removeItem('td.workspace.layout.v1')
+    setActivePinia(createPinia())
     routerMock.push.mockClear()
     mockBoardStore.fetchBoard.mockClear()
     mockBoardStore.moveCard.mockClear()
@@ -186,6 +190,31 @@ describe('PaperBoardView', () => {
 
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it('changes presentation without replacing cards or an open editor, preserving WIP warnings', async () => {
+    const wrapper = mountView()
+    const layout = useWorkspaceLayoutStore()
+    const cardElement = wrapper.get('[data-card-id="card-1"]').element
+    await wrapper.get('[data-card-id="card-1"] [data-action="open-card"]').trigger('click')
+    const editor = wrapper.getComponent({ name: 'CardModal' }).vm
+    layout.setPresentation('zen')
+    await nextTick()
+    expect(wrapper.attributes('data-presentation')).toBe('classic')
+    layout.setExperience('unified')
+    for (const presentation of ['zen', 'control', 'studio'] as const) {
+      layout.setPresentation(presentation)
+      await nextTick()
+      expect(wrapper.attributes('data-presentation')).toBe(presentation)
+      expect(wrapper.get('[data-card-id="card-1"]').element).toBe(cardElement)
+      expect(wrapper.getComponent({ name: 'CardModal' }).vm).toBe(editor)
+      expect(wrapper.get('[data-testid="paper-column-wip-warning"]').isVisible()).toBe(true)
+      expect(wrapper.get('[data-card-id="card-1"] [data-action="open-card"]').isVisible()).toBe(true)
+    }
+    layout.setExperience('classic')
+    await nextTick()
+    expect(wrapper.attributes('data-presentation')).toBe('classic')
+    expect(wrapper.find('[data-testid="paper-board-card-detail-toggle"]').exists()).toBe(true)
   })
 
   it('renders all four columns from the stubbed boardStore', () => {

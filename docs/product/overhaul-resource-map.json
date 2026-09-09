@@ -1,0 +1,134 @@
+{
+  "sourceRoot": "filesAndResources/taskdeck-overhaul",
+  "mappedOn": "2026-09-08",
+  "fileCount": 20,
+  "files": [
+    {
+      "path": "alternative-studio/04-focus.png",
+      "bytes": 85255,
+      "sha256": "0f44d5593cbcb016f63c3bc91661bf31945cfe4663ee57486758d5a2f9575c77",
+      "purpose": "Focus room reference: single task, continuity thread, sources"
+    },
+    {
+      "path": "alternative-studio/07-after-hours.png",
+      "bytes": 174454,
+      "sha256": "65bb7340bed19add4f398e2642405dc7e9c29b0c7359d1357c656a24be081dac",
+      "purpose": "Studio dark theme reference"
+    },
+    {
+      "path": "alternative-studio/chat_context.txt",
+      "bytes": 7719,
+      "sha256": "29d0bf874ad8af8065f58825f59fe93ca031df6957e62cad2e50f33566d4dffc",
+      "purpose": "Full Studio prompt and response: workspace-first continuity"
+    },
+    {
+      "path": "alternative-studio/taskdeck-studio.html",
+      "bytes": 201601,
+      "sha256": "93af5b48cf398ea7534db5ab2a66960128c67da42b1513b69fd2b411fb19daad",
+      "purpose": "Stateful standalone Studio prototype; simulated intelligence"
+    },
+    {
+      "path": "companion/02-review.png",
+      "bytes": 183446,
+      "sha256": "2cbb7dfbe67514dafc8dbce7a42ec3e3a60ce9ab95fb47053f05561ba0817bfc",
+      "purpose": "Companion review and source preview reference"
+    },
+    {
+      "path": "companion/06-night-workspace.png",
+      "bytes": 182146,
+      "sha256": "2c8897b1c59bd108c3ab5eb955d80c7c8a8da2a64186b23cc15e82a29caace8a",
+      "purpose": "Companion dark theme reference"
+    },
+    {
+      "path": "companion/chat_context.txt",
+      "bytes": 5000,
+      "sha256": "362b4cd615f37546008c687cf6d0f19c2f3e4c6648ad91de510fab3caed56d02",
+      "purpose": "Full Companion prompt and response: conversational front door"
+    },
+    {
+      "path": "companion/taskdeck-companion.html",
+      "bytes": 212786,
+      "sha256": "fc5cf41bc98ad85a5d9ca90b5f29fa88d5ee18851be8503918e7a56dadd3bbcf",
+      "purpose": "Stateful standalone Companion prototype; simulated intelligence"
+    },
+    {
+      "path": "unified-complete-overhaul/02-zen.png",
+      "bytes": 141623,
+      "sha256": "90fcbab0e9109271e2586d24f47e56d077a6d03949c79bb6f4e66bf9dab71502",
+      "purpose": "Unified low-detail Zen presentation"
+    },
+    {
+      "path": "unified-complete-overhaul/03-control.png",
+      "bytes": 149597,
+      "sha256": "213072d8539463de4e1e043c8997d53857846aa2ac57045ee22c216161928dff",
+      "purpose": "Unified dense Control presentation"
+    },
+    {
+      "path": "unified-complete-overhaul/05-unfold-the-path.png",
+      "bytes": 222526,
+      "sha256": "7e13714ebc041096889cef7a57cbb5aae1d268046515234520e384f38d346576",
+      "purpose": "Thinking Deck path and alternatives reference"
+    },
+    {
+      "path": "unified-complete-overhaul/06-quiet-insights.png",
+      "bytes": 167979,
+      "sha256": "91e066a027e8b5f740f8fb21d4edef1014d07a2bb20d5ecd92c38aefd509ff17",
+      "purpose": "Quiet insight queue reference"
+    },
+    {
+      "path": "unified-complete-overhaul/07-companion.png",
+      "bytes": 191251,
+      "sha256": "751163d3ba29e0b75e2d296d1f6b49ba2c130085c340e9ce409b7782e5dfecca",
+      "purpose": "Contextual companion reference"
+    },
+    {
+      "path": "unified-complete-overhaul/09-after-hours.png",
+      "bytes": 168372,
+      "sha256": "2c6bf00245009f347cdb4832394eaf18d305c64bd2a45a273a4f063b52ba4d1c",
+      "purpose": "Unified dark theme reference"
+    },
+    {
+      "path": "unified-complete-overhaul/chat_context.txt",
+      "bytes": 11957,
+      "sha256": "b490e390dad754558c8adb10670f45142b5a57ff77d802b624b185c92ade5f4a",
+      "purpose": "Full Unified prompt and response: shared workspace and feature expansion"
+    },
+    {
+      "path": "unified-complete-overhaul/INSIGHTS_AND_MEMORY.md",
+      "bytes": 14755,
+      "sha256": "047fe1da15202fec4551b7732d93c64f5c629c3b5a8107c5bd4306c318bea799",
+      "purpose": "Proposed insight, attention, evidence, knowledge and voice contracts"
+    },
+    {
+      "path": "unified-complete-overhaul/INTEGRATION_HANDOFF.md",
+      "bytes": 9497,
+      "sha256": "dd6a9834c5d41f1bfefe2038a5a499d9d641d5b230487fe42ed6aa9faab0989c",
+      "purpose": "Production integration sequence and explicit gaps"
+    },
+    {
+      "path": "unified-complete-overhaul/screenshot_from_context.png",
+      "bytes": 32126,
+      "sha256": "b002b17686654c93016572ab349f585b134b9113f106104316b5533c32b03865",
+      "purpose": "Original stacked-card inspiration supplied during prototyping"
+    },
+    {
+      "path": "unified-complete-overhaul/taskdeck-unified.html",
+      "bytes": 172430,
+      "sha256": "8f1efc43309e82fe24d15d770039938271bfdb3246bbd99769620351972071b4",
+      "purpose": "Stateful standalone Unified prototype; fixture-based structural insight rules"
+    },
+    {
+      "path": "unified-complete-overhaul/VALIDATION.md",
+      "bytes": 4088,
+      "sha256": "5289166627f5e9e313e4313fb9a9672b6eee49a827efbf77ce9d4af658186eb7",
+      "purpose": "Historical validation claims and unverified physical-device/storage paths"
+    }
+  ],
+  "missingReferencedArtifacts": [
+    "Source ZIP downloads",
+    "Standalone source modules",
+    "Build scripts",
+    "Test scripts",
+    "Raw test results"
+  ]
+}
