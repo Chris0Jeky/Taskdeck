@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, ref, watch } from 'vue'
 import { useSessionStore } from './sessionStore'
 import { frontendBuildIdentity } from '../utils/frontendBuildIdentity'
+import { comparisonChecksum, comparisonId } from '../utils/comparisonIdentity'
 
 export interface WorkspaceTrial {
   id: string
@@ -61,7 +62,7 @@ export const useWorkspaceExperimentStore = defineStore('workspaceExperiment', ()
         !['zen', 'studio', 'control'].includes(trial.presentation)) return false
     const build = typeof trial.build === 'string' && trial.build.trim() ? trial.build.trim().slice(0, 256) : null
     if (typeof trial.theme !== 'string' || !trial.theme || trial.theme.length > 64 || typeof trial.note !== 'string') return false
-    trials.value.push({ ...trial, id: crypto.randomUUID(), frontendBuild: frontendBuildIdentity, build, ease, note: trial.note.slice(0, 2000), recordedAt: new Date().toISOString() })
+    trials.value.push({ ...trial, id: comparisonId(), frontendBuild: frontendBuildIdentity, build, ease, note: trial.note.slice(0, 2000), recordedAt: new Date().toISOString() })
     return true
   }
 
@@ -84,8 +85,7 @@ export const useWorkspaceExperimentStore = defineStore('workspaceExperiment', ()
     for (const item of data.trials) {
       const value = validateImportedTrial(item, data.version as number)
       if (data.version === 2) {
-        const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)))
-        value.id = `legacy-${Array.from(new Uint8Array(bytes), x => x.toString(16).padStart(2, '0')).join('')}`
+        value.id = `legacy-${await comparisonChecksum(JSON.stringify(value))}`
       }
       incoming.push(value)
     }
