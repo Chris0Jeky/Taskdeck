@@ -294,7 +294,9 @@ public class DataExportService : IDataExportService
             var exportPreferences = preferences is not null
                 ? new UserDataExportPreferencesDto(
                     preferences.WorkspaceMode.ToString(),
-                    preferences.CreatedAt)
+                    preferences.CreatedAt,
+                    preferences.ReadPersonalPlan(),
+                    preferences.PersonalPlanRevision)
                 : null;
 
             var exportNotificationPrefs = notificationPrefs is not null
@@ -608,6 +610,11 @@ public class DataExportService : IDataExportService
                 writer.WriteStartObject("preferences");
                 writer.WriteString("workspaceMode", preferences.WorkspaceMode.ToString());
                 writer.WriteString("createdAt", preferences.CreatedAt);
+                writer.WritePropertyName("personalPlan");
+                // Serialize the bounded plan away from the response stream: Serialize(writer)
+                // flushes synchronously, which ASP.NET rejects on this streaming endpoint.
+                JsonSerializer.SerializeToElement(preferences.ReadPersonalPlan(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }).WriteTo(writer);
+                writer.WriteNumber("personalPlanRevision", preferences.PersonalPlanRevision);
                 writer.WriteEndObject();
             }
             else

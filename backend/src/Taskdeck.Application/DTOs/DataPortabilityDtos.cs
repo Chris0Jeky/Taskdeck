@@ -192,7 +192,9 @@ public record UserDataExportAuditEntryDto(
 
 public record UserDataExportPreferencesDto(
     string WorkspaceMode,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    Taskdeck.Domain.Entities.PersonalPlan? PersonalPlan = null,
+    long PersonalPlanRevision = 0);
 
 public record UserDataExportNotificationPreferencesDto(
     bool InAppChannelEnabled,
