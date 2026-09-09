@@ -19,8 +19,8 @@ import { baseParse, ElementTypes, NodeTypes, parserOptions } from '@vue/compiler
  * WHAT THIS DOES NOT MECHANIZE. The dogfooding pass that produced GH-1932 and
  * GH-1934 found dead affordances of several other shapes; this guard does not
  * cover them, and passing it is not evidence that they are gone:
- *  - HTML-entity or control-character obfuscation of a scheme
- *    (`href="java&#115;cript:..."`) is not decoded, so it is not detected.
+ *  - Control characters inside a scheme are not normalized. Static href HTML
+ *    entities are decoded once by Vue's parser; bound expressions remain raw.
  *  - Runtime-assembled hrefs and dynamic event names are out of reach: this
  *    guard reads SFC source, not Vue's rendered event table.
  *  - Button action hidden behind a runtime-bound `:type` is not inferred.
@@ -337,7 +337,8 @@ function markupOnly(source: string): string {
 
 /** True when any href on `tag` is the bare `#` placeholder, statically or inside a bound expression. */
 function hasPlaceholderHref(tag: string): boolean {
-  for (const [, binding, , value] of tag.matchAll(HREF_ATTR)) {
+  for (const [, binding, quote, rawValue] of tag.matchAll(HREF_ATTR)) {
+    let value = rawValue
     // A bound href's value is a JS expression: a bare `#` literal anywhere in
     // it is the placeholder, however it is reached (`dead ?? '#'`).
     if (binding) {
@@ -349,6 +350,14 @@ function hasPlaceholderHref(tag: string): boolean {
       if (EMPTY_STRING_LITERAL.test(value)) return true
       if (JAVASCRIPT_SCHEME_LITERAL.test(value)) return true
       continue
+    }
+    // Use the same attribute decoding as Vue, preserving the source delimiter.
+    // Parsing the isolated attribute also avoids interpreting decoded text as
+    // markup or recursively decoding a literal entity such as &amp;#115;.
+    const element = baseParse(`<a href=${quote}${rawValue}${quote}></a>`, parserOptions).children[0]
+    if (element?.type === NodeTypes.ELEMENT) {
+      const href = element.props[0]
+      if (href?.type === NodeTypes.ATTRIBUTE && href.value) value = href.value.content
     }
     // A static href's value IS the URL. `#` alone is the placeholder;
     // `#section-id` is a real in-page target and must survive.
@@ -778,6 +787,24 @@ describe('dead affordances', () => {
     expect(findDeadAnchors(`<template><a :href='dead ?? "#"'>Dead</a></template>`)).toHaveLength(1)
     // A multi-line tag is still one tag.
     expect(findDeadAnchors('<template>\n<a\n  href="#"\n  class="x"\n>Dead</a>\n</template>')).toHaveLength(1)
+  })
+
+  it('detects entity-encoded static placeholder hrefs without decoding twice', () => {
+    for (const href of [
+      'java&#115;cript:void(0)',
+      'java&#x73;cript:void(0)',
+      'javascript&colon;void(0)',
+      '&#35;',
+    ]) {
+      const source = `<template><a href="${href}">Open details</a></template>`
+      expect(findDeadAnchors(source), href).toHaveLength(1)
+    }
+    for (const href of ['/search?q=a&amp;b=c', '&#35;details', 'java&amp;#115;cript:void(0)']) {
+      expect(findDeadAnchors(`<template><a href="${href}">Navigate</a></template>`), href).toEqual([])
+    }
+    expect(
+      findDeadAnchors('<template><a href="&#35;" @click.prevent="open">Open</a></template>'),
+    ).toEqual([])
   })
 
   it('detects empty and javascript: placeholder hrefs', () => {
