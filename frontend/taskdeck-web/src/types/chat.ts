@@ -36,6 +36,22 @@ export interface ChatMessage {
   createdAt: string
   degradedReason?: string | null
   toolCallMetadataJson?: string | null
+  context?: ChatContextSelection | null
+  contextSources?: ChatContextSource[] | null
+}
+
+export interface ChatContextSelection {
+  cardId: string | null
+  includeThinking: boolean
+  memories: { id: string; revision: number }[]
+}
+
+export interface ChatContextSource {
+  kind: 'card' | 'thinking' | 'private-memory'
+  id: string
+  title: string
+  revision: number | null
+  truncated: boolean
 }
 
 export interface ChatSession {
@@ -73,6 +89,7 @@ export interface CreateChatSessionRequest {
 export interface SendChatMessageRequest {
   content: string
   requestProposal?: boolean
+  context?: ChatContextSelection
 }
 
 export interface BindChatSessionBoardRequest {

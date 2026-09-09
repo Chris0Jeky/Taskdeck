@@ -3,7 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
-import type { ChatMessage, ChatProviderHealth, ChatSession } from '../types/chat'
+import type { ChatContextSelection, ChatMessage, ChatProviderHealth, ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
 import { normalizeChatRole } from '../utils/chat'
 import { getErrorDisplay } from './useErrorMapper'
@@ -11,7 +11,7 @@ import { buildInputAssistOptions } from '../utils/inputAssist'
 import type { InputAssistOption } from '../utils/inputAssist'
 import { normalizeBoardIdQueryParam } from '../utils/navigation'
 
-export function useAutomationChat() {
+export function useAutomationChat(options: { boardId?: () => string | undefined } = {}) {
   const router = useRouter()
   const route = useRoute()
   const toast = useToastStore()
@@ -48,6 +48,10 @@ export function useAutomationChat() {
   const newSessionBoardId = ref('')
   const selectedNewSessionBoardId = ref<string | null>(null)
   const messageContent = ref('')
+  const contextSelection = ref<ChatContextSelection | null>(null)
+  watch([() => selectedSession.value?.id, () => selectedSession.value?.boardId], () => {
+    contextSelection.value = null
+  }, { flush: 'sync' })
 
   const eligibleBoards = computed(() => availableBoards.value.filter((board) => (
     !board.isArchived && board.canWrite !== false
@@ -136,7 +140,7 @@ export function useAutomationChat() {
     return boardNameById.value.get(queryBoardId.value) ?? queryBoardId.value
   })
 
-  const queryBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
+  const queryBoardId = computed(() => normalizeBoardIdQueryParam(options.boardId?.() ?? route.query.boardId))
 
   function createLocalUserMessage(sessionId: string, content: string, assistantCreatedAt: string): ChatMessage {
     const assistantTimestamp = Date.parse(assistantCreatedAt)
@@ -252,7 +256,7 @@ export function useAutomationChat() {
       loadingSessions.value = true
       const result = await chatApi.getMySessions()
       if (isDisposed) return
-      sessions.value = result
+      sessions.value = options.boardId?.() ? result.filter(session => session.boardId === options.boardId!()) : result
       if (!selectedSession.value && sessions.value.length > 0) {
         await loadSession(sessions.value[0]!.id)
       }
@@ -272,6 +276,7 @@ export function useAutomationChat() {
     try {
       const result = await chatApi.getSession(sessionId)
       if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
+      if (options.boardId?.() && result.boardId !== options.boardId()) throw new Error('This conversation belongs to a different board.')
       localMessagesBySession.delete(sessionId)
       sessionWriteGenerations.set(sessionId, (sessionWriteGenerations.get(sessionId) ?? 0) + 1)
       selectedSession.value = result
@@ -288,6 +293,7 @@ export function useAutomationChat() {
       // failed reconciliation must not hold continuation behind read retries.
       const result = await chatApi.getSession(sessionId, { skipRetry: true })
       if (isDisposed || requestedSessionId !== sessionId || selectedSession.value?.id !== sessionId) return
+      if (options.boardId?.() && result.boardId !== options.boardId()) throw new Error('This conversation belongs to a different board.')
       localMessagesBySession.delete(sessionId)
       sessionWriteGenerations.set(sessionId, (sessionWriteGenerations.get(sessionId) ?? 0) + 1)
       selectedSession.value = result
@@ -330,7 +336,7 @@ export function useAutomationChat() {
 
     if (isDisposed) return
 
-    const normalizedBoardId = normalizeSelectedBoardId(newSessionBoardId.value)
+    const normalizedBoardId = options.boardId?.() ?? normalizeSelectedBoardId(newSessionBoardId.value)
     if (newSessionBoardId.value.trim() && !normalizedBoardId) {
       toast.error('Choose a board from the list or leave board context blank.')
       return
@@ -368,7 +374,8 @@ export function useAutomationChat() {
     const sessionId = selectedSession.value.id
     try {
       sendingMessage.value = true
-      const sentMessage = await chatApi.sendMessage(sessionId, { content })
+      const context = contextSelection.value
+      const sentMessage = await chatApi.sendMessage(sessionId, { content, ...(context ? { context } : {}) })
       if (isDisposed) return
       if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
         messageContent.value = ''
@@ -582,6 +589,7 @@ export function useAutomationChat() {
     newSessionTitle,
     newSessionBoardId,
     messageContent,
+    contextSelection,
 
     // Computed
     boardOptions,

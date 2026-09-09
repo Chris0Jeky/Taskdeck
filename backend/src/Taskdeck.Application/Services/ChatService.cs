@@ -66,6 +66,7 @@ public class ChatService : IChatService
     private readonly LlmToolCallingSettings _toolCallingSettings;
     private readonly ILogger<ChatService>? _logger;
     private readonly RetiredLlmProviderConfigurationNotice? _retiredProviderNotice;
+    private readonly ChatContextResolver? _contextResolver;
 
     public ChatService(
         IUnitOfWork unitOfWork,
@@ -81,7 +82,8 @@ public class ChatService : IChatService
         ToolCallingChatOrchestrator? toolCallingOrchestrator = null,
         LlmToolCallingSettings? toolCallingSettings = null,
         ILogger<ChatService>? logger = null,
-        RetiredLlmProviderConfigurationNotice? retiredProviderNotice = null)
+        RetiredLlmProviderConfigurationNotice? retiredProviderNotice = null,
+        ChatContextResolver? contextResolver = null)
     {
         _unitOfWork = unitOfWork;
         _llmProvider = llmProvider;
@@ -97,6 +99,7 @@ public class ChatService : IChatService
         _toolCallingSettings = toolCallingSettings ?? new LlmToolCallingSettings();
         _logger = logger;
         _retiredProviderNotice = retiredProviderNotice;
+        _contextResolver = contextResolver;
     }
 
     public async Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default)
@@ -268,8 +271,14 @@ public class ChatService : IChatService
             if (!boardAccess.IsSuccess)
                 return Result.Failure<ChatMessageDto>(boardAccess.ErrorCode, boardAccess.ErrorMessage);
 
-            // Add user message
+            var context = await ResolveContextAsync(userId, session.BoardId, dto.Context, ct);
+            if (!context.IsSuccess)
+                return Result.Failure<ChatMessageDto>(context.ErrorCode, context.ErrorMessage);
+
+            // Add user message. Source text stays out of user intent/history; the receipt
+            // retains selected IDs and source revisions so replay must re-authorize them.
             var userMessage = new ChatMessage(sessionId, ChatMessageRole.User, dto.Content);
+            if (dto.Context is not null) userMessage.SetContextSelection(dto.Context, context.Value!.Sources);
             session.AddMessage(userMessage);
             await _unitOfWork.ChatMessages.AddAsync(userMessage, ct);
 
@@ -374,6 +383,7 @@ public class ChatService : IChatService
                     var toolCompletionRequest = new ChatCompletionRequest(
                         toolChatMessages,
                         Attribution: BuildAttribution(session, userId),
+                        BoardContext: context.Value?.Prompt,
                         SystemPrompt: ToolCallingSystemPrompt.Prompt + clarificationPrompt);
                     quotaDispatchContext = toolCompletionRequest.DispatchContext;
 
@@ -523,7 +533,7 @@ public class ChatService : IChatService
                         var completionRequest = new ChatCompletionRequest(
                             chatMessages,
                             Attribution: BuildAttribution(session, userId),
-                            BoardContext: boardContext,
+                            BoardContext: CombineContext(boardContext, context.Value?.Prompt),
                             SystemPrompt: clarificationPrompt);
                         quotaDispatchContext = completionRequest.DispatchContext;
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
@@ -873,6 +883,19 @@ public class ChatService : IChatService
             yield break;
         }
 
+        var context = await ResolveContextAsync(userId, session.BoardId, lastUserMessage?.ReadContextSelection(), ct);
+        if (!context.IsSuccess)
+        {
+            yield return new LlmTokenEvent(string.Empty, true, Error: context.ErrorMessage);
+            yield break;
+        }
+
+        if (context.Value is not null && !context.Value.Sources.SequenceEqual(lastUserMessage!.ReadContextSources() ?? []))
+        {
+            yield return new LlmTokenEvent(string.Empty, true, Error: "Selected sources changed since this turn. Review the current sources and send a new message.");
+            yield break;
+        }
+
         // Kill switch and quota gate for streaming
         if (_killSwitchService != null && await _killSwitchService.IsKilledAsync(Domain.Enums.LlmSurface.Chat, userId, ct))
         {
@@ -933,7 +956,7 @@ public class ChatService : IChatService
             var request = new ChatCompletionRequest(
                 chatMessages,
                 Attribution: BuildAttribution(session, userId),
-                BoardContext: boardContext);
+                BoardContext: CombineContext(boardContext, context.Value?.Prompt));
             quotaDispatchContext = request.DispatchContext;
 
             await foreach (var token in _llmProvider.StreamAsync(request, ct))
@@ -1211,6 +1234,16 @@ public class ChatService : IChatService
         var normalized = content.ToLowerInvariant();
         return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
     }
+
+    private async Task<Result<ResolvedChatContext?>> ResolveContextAsync(Guid userId, Guid? boardId, ChatContextSelection? selection, CancellationToken ct)
+    {
+        if (selection is null) return Result.Success<ResolvedChatContext?>(null);
+        if (_contextResolver is null) return Result.Failure<ResolvedChatContext?>(ErrorCodes.InvalidOperation, "Context selection is unavailable in this host.");
+        var result = await _contextResolver.ResolveAsync(userId, boardId, selection, ct);
+        return result.IsSuccess ? Result.Success<ResolvedChatContext?>(result.Value) : Result.Failure<ResolvedChatContext?>(result.ErrorCode, result.ErrorMessage);
+    }
+
+    private static string? CombineContext(string? board, string? selected) => selected is null ? board : $"{board}\n\n{selected}";
 
     private async Task<string?> BuildBoardContextForSessionAsync(ChatSession session, CancellationToken ct)
     {
@@ -1510,7 +1543,9 @@ public class ChatService : IChatService
             message.TokenUsage,
             message.CreatedAt,
             message.DegradedReason,
-            message.ToolCallMetadataJson
+            message.ToolCallMetadataJson,
+            message.ReadContextSelection(),
+            message.ReadContextSources()
         );
     }
 }

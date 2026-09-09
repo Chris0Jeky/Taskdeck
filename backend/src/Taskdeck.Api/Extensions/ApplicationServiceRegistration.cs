@@ -31,6 +31,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ThinkingDeckService>();
         services.AddScoped<BoardDependencyService>();
         services.AddScoped<WorkspacePlanService>();
+        services.AddScoped<ChatContextResolver>();
         services.AddScoped<ThinkingStepService>();
         services.AddScoped<ThinkingAnswerService>();
         services.AddScoped<LabelService>();

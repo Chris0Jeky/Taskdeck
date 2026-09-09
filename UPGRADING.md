@@ -14,6 +14,12 @@ changes.
 
 ## Unreleased workspace overhaul
 
+The contextual companion adds two nullable columns to `ChatMessages` for explicit source selections
+and source receipts. Old messages remain readable. Selected private-memory text is resolved for the
+model only after actor, board, archive and revision checks; it is not appended to the stored user
+instruction. Model answers can remain in the private conversation after their sources change.
+Existing approval and explicit Apply behavior is unchanged. **BREAKING: none.**
+
 An additional additive migration creates `BoardDependencies`. Explicit prerequisite links are
 shared with the board and never change card status or deadlines. Deleted-card links are omitted
 from reads and exports; deleting the board removes its graph. JSON exports containing dependencies
