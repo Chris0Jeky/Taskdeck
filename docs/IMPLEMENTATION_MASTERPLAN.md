@@ -1,6 +1,8 @@
 # Taskdeck Implementation Masterplan
 
 Last Updated: 2026-09-09
+
+Comparison compatibility continuation (#2808): finish the retained-comparison LAN API and build-attribution follow-through with portable ID/hash paths and resolved Vite build options. Cross-platform checksum vectors, secure-API-unavailable store/browser checks and distinct default/Pages-base production bundles provide the proving paths. Physical-device LAN acceptance remains separate.
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:

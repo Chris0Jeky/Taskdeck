@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-09
 
+Comparison compatibility continuation (#2808): recording uses a UUID fallback available on HTTP LAN origins; version-2 file imports retain the same SHA-256-derived observation IDs when SubtleCrypto is unavailable. Frontend attribution includes resolved base, target, minification, CSS/asset and sourcemap options. These changes preserve manual comparison portability across layouts and builds without adding telemetry or changing board review/apply behavior.
+
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).

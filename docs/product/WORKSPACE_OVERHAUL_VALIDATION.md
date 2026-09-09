@@ -1,5 +1,21 @@
 # Workspace overhaul validation and follow-through
 
+## Comparison compatibility follow-through (2026-09-09)
+
+The observation UUID fallback uses the [browser API available on insecure origins](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues).
+Legacy import checksums retain SHA-256 compatibility using a local fallback solely for observation
+deduplication. The standalone `node --test build/comparisonIdentity.node-check.mjs` check compares
+Unicode, block-boundary and long inputs against Node's SHA-256. Store and
+`comparison-compatibility.spec.ts` browser tests remove `randomUUID` and `subtle` while retaining
+`getRandomValues`, then prove record/export/import and cross-path duplicate handling. This simulates
+the relevant LAN API availability; it is not a physical LAN-device acceptance claim.
+
+The frontend identity plugin reads [Vite's resolved configuration](https://vite.dev/guide/api-plugin.html#configresolved)
+and stamps the identity module at build time. Base path, production mode, target, minification,
+CSS/asset options, sourcemaps and public environment join the existing source/config input hash.
+The default production build and a `/Taskdeck/` base-path build must emit distinct stamps.
+The fingerprint remains input attribution, not a signed artifact or deployment assertion.
+
 Date: 2026-09-08 · Delivery tracker: [#2800](https://github.com/Chris0Jeky/Taskdeck/issues/2800)
 
 The [resource map and feature ledger](WORKSPACE_OVERHAUL.md) distinguish supplied design intent from
