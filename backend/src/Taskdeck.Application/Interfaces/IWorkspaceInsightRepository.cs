@@ -14,5 +14,6 @@ public interface IWorkspaceInsightRepository
     Task<WorkspaceMemory?> ThinkingAnswerAsync(Guid userId, Guid cardId, Guid layerId, string questionHash, CancellationToken ct);
     void Add(QuietInsight insight);
     void Add(WorkspaceMemory memory);
+    void GuardMemoryRevision(WorkspaceMemory memory);
     Task<bool> SaveAsync(CancellationToken ct);
 }

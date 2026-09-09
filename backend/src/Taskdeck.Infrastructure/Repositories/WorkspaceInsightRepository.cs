@@ -31,6 +31,7 @@ public class WorkspaceInsightRepository(TaskdeckDbContext db) : IWorkspaceInsigh
     public Task<WorkspaceMemory?> MemoryAsync(Guid userId, Guid id, CancellationToken ct) => db.Set<WorkspaceMemory>().Include(x => x.History).SingleOrDefaultAsync(x => x.UserId == userId && x.Id == id, ct);
     public void Add(QuietInsight insight) => db.Set<QuietInsight>().Add(insight);
     public void Add(WorkspaceMemory memory) => db.Set<WorkspaceMemory>().Add(memory);
+    public void GuardMemoryRevision(WorkspaceMemory memory) => db.Entry(memory).Property(x => x.Revision).IsModified = true;
     public async Task<bool> SaveAsync(CancellationToken ct)
     {
         try { await db.SaveChangesAsync(ct); return true; }

@@ -123,6 +123,37 @@ public sealed class LegacyMemorySourceApiTests(TestWebApplicationFactory factory
         (await db.Captures.Where(x => x.UserId == user.UserId).Select(x => x.Id).ToListAsync()).Should().Equal(winning.SourceCaptureId!.Value);
     }
 
+    [Fact]
+    public async Task MixedRetryBatchRollsBackLegacyAdmissionWhenPreservedItemChanges()
+    {
+        using var client = factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "legacy-mixed-retry");
+        var board = await ApiTestHarness.CreateBoardAsync(client);
+        var created = await client.PostAsJsonAsync("/api/workspace-memory", new CreateWorkspaceMemoryDto(board.Id, "Preserved", "Saved answer", "unknown"));
+        created.EnsureSuccessStatusCode();
+        var saved = (await created.Content.ReadFromJsonAsync<WorkspaceMemoryDto>())!;
+        var legacy = new WorkspaceMemory(user.UserId, board.Id, "Older", "Original words", "unknown");
+        await Seed(legacy);
+        using var first = factory.Services.CreateScope();
+        using var second = factory.Services.CreateScope();
+        var firstRepo = new WorkspaceInsightRepository(first.ServiceProvider.GetRequiredService<TaskdeckDbContext>());
+        var secondRepo = new WorkspaceInsightRepository(second.ServiceProvider.GetRequiredService<TaskdeckDbContext>());
+        var retry = (await firstRepo.MemoryAsync(user.UserId, saved.Id, default))!;
+        var older = (await firstRepo.MemoryAsync(user.UserId, legacy.Id, default))!;
+        firstRepo.GuardMemoryRevision(retry);
+        firstRepo.GuardMemoryRevision(older);
+        older.BeginSourcePreservation();
+        await new CaptureIntakeService(first.ServiceProvider.GetRequiredService<ICaptureStore>(), null).StageMemorySourcesAsync(older);
+        var competing = (await secondRepo.MemoryAsync(user.UserId, saved.Id, default))!;
+        competing.SetArchived(true);
+        (await secondRepo.SaveAsync(default)).Should().BeTrue();
+        (await firstRepo.SaveAsync(default)).Should().BeFalse("unchanged retry items must still validate their revision when the batch commits");
+        using var verify = factory.Services.CreateScope();
+        var db = verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.Set<WorkspaceMemory>().FindAsync(legacy.Id))!.SourceCaptureId.Should().BeNull();
+        (await db.Captures.CountAsync(x => x.UserId == user.UserId)).Should().Be(1);
+    }
+
     private async Task Seed(params WorkspaceMemory[] memories)
     {
         using var scope = factory.Services.CreateScope();

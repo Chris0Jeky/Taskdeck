@@ -118,8 +118,11 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
         }
         try
         {
-            foreach (var memory in memories.Where(x => !x.SourceCaptureId.HasValue))
+            foreach (var memory in memories)
             {
+                // Even an already-preserved retry participates in the commit-time CAS contract.
+                repository.GuardMemoryRevision(memory);
+                if (memory.SourceCaptureId.HasValue) continue;
                 memory.BeginSourcePreservation();
                 await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
             }
