@@ -488,9 +488,9 @@ backfilling existing proposals. Consumers must handle absence --
 | Id | `Guid` | Yes | PK | |
 | ProposalId | `Guid` | Yes | FK to AutomationProposal (Cascade), unique | Owning proposal |
 | CorrelationId | `string` | Yes | 1-100 chars | Ties provenance to the originating pipeline run |
-| ModelId | `string` | Yes | 1-100 chars | The model id the creating caller supplied, server-stamped on every path since `#2583` (PR `#2600`): capture triage records the real model (e.g. `gpt-5.6-luna`), and `POST /api/automation/proposals` no longer binds `provenanceModelId` (`[JsonIgnore]`, see `#2499`); when none is supplied, an origin label from the source type (`chat-tools`, `manual`, `queue`; `unknown` only for an out-of-range value), so this column alone never proves a model produced the proposal |
-| Provider | `string?` | No | Max 64 chars | Producer that ran, as capture triage records it: `OpenAI` for the live leg, `deterministic-extractor` for the fallback (the mock provider declines before extraction, so `mock` is never stored); stamped today only by capture triage; null for pre-`20260904030926` rows and for every row whose `ModelId` is an origin label |
-| PromptVersion | `string?` | No | Max 64 chars | Prompt version the producer used; same coverage as `Provider` |
+| ModelId | `string` | Yes | 1-100 chars | Server-stamped model identity. Capture triage records the real model (e.g. `gpt-5.6-luna`); Chat records the model from the actual dispatched response that produced a parsed proposal, or from the exact tool-call round that created a tool proposal. `POST /api/automation/proposals` cannot bind `provenanceModelId` (`[JsonIgnore]`, see `#2499`). When no trusted producer is supplied, storage retains an origin label from the source type (`chat-tools`, `manual`, `queue`; `unknown` only for an out-of-range value), so this column alone never proves a model produced the proposal |
+| Provider | `string?` | No | Max 64 chars | Producer that ran. Capture triage records `OpenAI` for the live leg or `deterministic-extractor` for its explicit fallback. Chat records only a non-mock provider observed at the outbound dispatch boundary for the response or tool-call round that produced the proposal. It remains null for unknown, missing, mock, and pre-dispatch outcomes, and for deterministic Chat paths such as checklist bootstrap, manual planning, and queue planning |
+| PromptVersion | `string?` | No | Max 64 chars | Versioned producer prompt contract. Capture triage records its known contract version; current Chat prompts have no version identifier, so Chat-created proposals leave this null |
 | TotalTokens | `int` | Yes | >= 0 | Prompt plus completion tokens as an application-layer producer records them; server-stamped and not client-bindable on `POST /api/automation/proposals` (`[JsonIgnore]` since `#2604`, PR `#2611`); no shipped producer records usage yet, so the column is 0 for every new row |
 | CreatedAt | `DateTimeOffset` | Yes | | |
 | UpdatedAt | `DateTimeOffset` | Yes | Concurrency token | |
@@ -499,8 +499,9 @@ backfilling existing proposals. Consumers must handle absence --
 (`ProvenanceQueryService.MapMetadata`): model and prompt version are reported only alongside a
 recorded `Provider`, so a row whose `Provider` is null answers with all three fields null even when
 `ModelId` holds a real model id (pre-migration live-triage rows), because an origin label rendered as a
-model name would be a false producer claim. `#2499` tracks whether those rows are backfilled from
-the `CaptureProvenanceV1` block the triage workers stamp into `LlmRequest.Payload`.
+model name would be a false producer claim. The `#2499` ruling explicitly declines legacy backfill:
+existing rows remain unchanged, and consumers never infer a producer from an origin-label `ModelId`
+or from historical request payloads.
 
 **Navigation:** Fields (children)
 
