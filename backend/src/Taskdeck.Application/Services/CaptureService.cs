@@ -858,7 +858,7 @@ public class CaptureService : ICaptureService
         // stored bytes. The record of what the user first typed or pasted survives every correction,
         // and a representation can still name the exact asset it was derived from. Staged into the
         // same unit of work as the queue row, so the edit and the new source commit together.
-        var durable = await SupersedeDurableTextAsync(
+        var durable = await UpdateDurableCaptureAsync(
             userId,
             item.Id,
             dto.Text,
@@ -903,14 +903,15 @@ public class CaptureService : ICaptureService
                 "The linked transcript cannot be corrected");
         }
 
-        var normalizedText = NormalizeLineEndings(dto.Text);
-        var textChanged = !string.Equals(normalizedText, canonical.Text, StringComparison.Ordinal);
         var maxTextLength = CaptureRequestContract.MaxTranscriptTextLength;
-        if (normalizedText.Length > maxTextLength)
+        if (dto.Text.Length > maxTextLength)
         {
             return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
                 $"Text exceeds maximum length of {maxTextLength} characters");
         }
+
+        var normalizedText = NormalizeLineEndings(dto.Text);
+        var textChanged = !string.Equals(normalizedText, canonical.Text, StringComparison.Ordinal);
 
         var updatedPayload = currentPayload with
         {
@@ -968,10 +969,10 @@ public class CaptureService : ICaptureService
                     currentPayload.TitleHint,
                     StringComparison.Ordinal))
             {
-                durable = await SupersedeDurableTextAsync(
+                durable = await UpdateDurableCaptureAsync(
                     userId,
                     item.Id,
-                    normalizedText,
+                    textChanged ? dto.Text : null,
                     updatedPayload.TitleHint,
                     cancellationToken);
             }
@@ -1031,10 +1032,11 @@ public class CaptureService : ICaptureService
         text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 
     /// <summary>
-    /// Appends the corrected text as a superseding <c>SourceAsset</c> on the durable capture, if
-    /// there is one, and carries the edited title hint onto the aggregate in the same unit of work.
-    /// Returns the mutated aggregate so the caller's DTO reflects the new current text; null when
-    /// the capture is not (yet) durable, which leaves the queue-row reading intact.
+    /// Applies a corrected text as a superseding <c>SourceAsset</c> on the durable capture when
+    /// <paramref name="sourceText"/> is provided, and carries the edited title hint onto the
+    /// aggregate in the same unit of work. Returns the mutated aggregate so the caller's DTO
+    /// reflects the new current text; null when the capture is not (yet) durable, which leaves the
+    /// queue-row reading intact.
     /// <para>
     /// Deliberately NOT gated on <c>DualWriteCaptures</c>. That flag governs whether a NEW capture
     /// reaches the aggregate; it must never mean that an aggregate which already exists is allowed
@@ -1042,10 +1044,10 @@ public class CaptureService : ICaptureService
     /// and turning it back on would serve that text through the read switch.
     /// </para>
     /// </summary>
-    private async Task<Capture?> SupersedeDurableTextAsync(
+    private async Task<Capture?> UpdateDurableCaptureAsync(
         Guid userId,
         Guid captureId,
-        string text,
+        string? sourceText,
         string? titleHint,
         CancellationToken cancellationToken)
     {
@@ -1062,7 +1064,11 @@ public class CaptureService : ICaptureService
 
         try
         {
-            capture.SupersedeInlineTextSource(text);
+            if (sourceText is not null)
+            {
+                capture.SupersedeInlineTextSource(sourceText);
+            }
+
             // The queue payload carries the edited title hint, so the aggregate has to take it too --
             // otherwise UserTitle silently keeps the pre-edit value forever.
             capture.Retitle(titleHint);
@@ -1074,7 +1080,7 @@ public class CaptureService : ICaptureService
             // detects that and the reconcile pass repairs it on the next start.
             _logger?.LogWarning(
                 ex,
-                "Context Fabric: could not record a superseding source for capture {CaptureId}; " +
+                "Context Fabric: could not update the durable capture {CaptureId}; " +
                 "the edit still applied to the queue row and the backfill will reconcile it.",
                 captureId);
             return null;
@@ -1182,7 +1188,7 @@ public class CaptureService : ICaptureService
         DateTimeOffset queueUpdatedAt,
         CancellationToken cancellationToken)
     {
-        // Not gated on DualWriteCaptures, for the same reason as SupersedeDurableTextAsync: the flag
+        // Not gated on DualWriteCaptures, for the same reason as UpdateDurableCaptureAsync: the flag
         // decides whether new captures reach the aggregate, never whether an existing one may drift.
         if (_captureStore is null)
         {
