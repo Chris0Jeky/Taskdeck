@@ -134,3 +134,8 @@ Stable reference material belongs in topical subfolders.
   3. `ISSUE_EXECUTION_GUIDE.md` when order or dependencies change
   4. `TESTING_GUIDE.md` or `MANUAL_TEST_CHECKLIST.md` when verification changes
 - Keep root `docs/` readable at a glance; use `LIVING_DOCUMENTS_GUIDE.md` before promoting new recurring docs into root.
+
+## Workspace overhaul
+
+- [Source map and delivery ledger](product/WORKSPACE_OVERHAUL.md)
+- [Integration decision](decisions/ADR-0070-switchable-workspace-experiences.md)

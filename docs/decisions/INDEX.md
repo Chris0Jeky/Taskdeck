@@ -71,6 +71,7 @@
 | [0067](ADR-0067-open-core-commercial-model-and-inbound-rights.md) | Commercial Model — Open-Core with Managed Hosting and Services; Inbound Contributions Paused Pending a Relicensing-Capable Instrument | Accepted (maintainer decision packet 2026-09-03, rulings COMM_MODEL / COMM_INBOUND, recorded on `#2012`; ADR-0050 unchanged) | 2026-09-03 |
 | [0068](ADR-0068-development-sandbox-never-widens-write-authorization.md) | The Development Sandbox Never Widens Write-Class Authorization | Accepted (coordinator ruling on `#1866`, story S2: converge on the strictest gate) | 2026-09-04 |
 | [0069](ADR-0069-accountable-automation-chat.md) | Accountable Automation Chat: default proposal attempts, explicit board binding, grounding and one clarification round | Accepted under the maintainer's September 4 ruling reaffirmed September 6; implementation pending on #2004 | 2026-09-07 |
+| [0070](ADR-0070-switchable-workspace-experiences.md) | Switchable workspace experiences, card thinking, quiet insights and explicit working memory | Accepted under the maintainer's overhaul implementation delegation; #2800 | 2026-09-08 |
 
 > Rows above that say "parked: archive pivot" predate ADR-0044 (2026-07-10), which superseded the
 > archive pivot. Those premises (multi-org tenancy, cloud scale-out, staged cloud deployment,

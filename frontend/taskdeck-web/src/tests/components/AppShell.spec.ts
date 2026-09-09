@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
+import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
 import { defineComponent, h, nextTick, reactive } from 'vue'
 import AppShell from '../../components/shell/AppShell.vue'
 import {
@@ -262,6 +264,8 @@ describe('AppShell workspace navigation and command palette', () => {
   let mountedWrapper: ReturnType<typeof mountShell> | null = null
 
   beforeEach(() => {
+    window.localStorage.removeItem('td.workspace.layout.v1')
+    setActivePinia(createPinia())
     vi.clearAllMocks()
     mockRoute.path = '/workspace/home'
     mockWorkspace.mode = 'guided'
@@ -283,6 +287,29 @@ describe('AppShell workspace navigation and command palette', () => {
   afterEach(() => {
     mountedWrapper?.unmount()
     mountedWrapper = null
+  })
+
+  it('keeps routed drafts mounted while changing every experience and presentation', async () => {
+    let mounts = 0
+    const DraftRoute = defineComponent({
+      setup() { mounts++; return () => h('input', { 'aria-label': 'Unsaved draft' }) },
+    })
+    const shell = mountShell(undefined, { RouterView: DraftRoute })
+    const input = shell.get('input[aria-label="Unsaved draft"]')
+    await input.setValue('Still writing this capture')
+    const element = input.element
+    const layout = useWorkspaceLayoutStore()
+    for (const experience of ['studio', 'companion', 'unified', 'classic'] as const) {
+      layout.setExperience(experience)
+      for (const presentation of ['zen', 'control', 'studio'] as const) {
+        layout.setPresentation(presentation)
+        await nextTick()
+        expect(shell.get('input[aria-label="Unsaved draft"]').element).toBe(element)
+        expect((element as HTMLInputElement).value).toBe('Still writing this capture')
+      }
+    }
+    expect(mounts).toBe(1)
+    shell.unmount()
   })
 
   it('shows reduced IA sidebar with primary items', async () => {

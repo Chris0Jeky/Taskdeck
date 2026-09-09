@@ -135,6 +135,11 @@ const navCatalog: NavItem[] = [
     keywords: 'inbox captures triage',
   },
   {
+    id: 'insights', label: 'Quiet insights', icon: '✧', path: '/workspace/insights', flag: null, primaryModes: ['guided', 'workbench', 'agent'], keywords: 'insights questions observations suggestions',
+  },
+  { id: 'memory', label: 'Memory', icon: 'M', path: '/workspace/memory', flag: null, primaryModes: ['guided', 'workbench', 'agent'], keywords: 'memory knowledge questions assumptions' },
+  { id: 'experiences', label: 'Experiences', icon: '◒', path: '/workspace/experiences', flag: null, primaryModes: ['guided', 'workbench', 'agent'], keywords: 'experiences layouts themes studio companion unified compare' },
+  {
     id: 'agents',
     label: 'Agents',
     icon: 'G',
