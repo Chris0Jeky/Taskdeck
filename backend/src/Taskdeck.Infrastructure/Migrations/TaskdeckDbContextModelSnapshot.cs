@@ -668,6 +668,24 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("BoardAccesses", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.BoardDependencies", b =>
+                {
+                    b.Property<Guid>("BoardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EdgesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("BoardId");
+
+                    b.ToTable("BoardDependencies", (string)null);
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.Capture", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2904,6 +2922,15 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Board");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.BoardDependencies", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.Board", null)
+                        .WithOne()
+                        .HasForeignKey("Taskdeck.Domain.Entities.BoardDependencies", "BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Capture", b =>

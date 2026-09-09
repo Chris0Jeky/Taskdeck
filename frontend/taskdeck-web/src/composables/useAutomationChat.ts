@@ -49,7 +49,7 @@ export function useAutomationChat(options: { boardId?: () => string | undefined 
   const selectedNewSessionBoardId = ref<string | null>(null)
   const messageContent = ref('')
   const contextSelection = ref<ChatContextSelection | null>(null)
-  watch(() => [selectedSession.value?.id, selectedSession.value?.boardId], () => {
+  watch([() => selectedSession.value?.id, () => selectedSession.value?.boardId], () => {
     contextSelection.value = null
   }, { flush: 'sync' })
 

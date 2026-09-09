@@ -59,8 +59,8 @@ explicit approve action followed by a separate apply action and the existing con
 | Comparison | User-initiated session-only scenarios, explicit completion outcomes, optional ease ratings and notes with JSON download | Implemented; version-2 export records selected experience/detail/theme and backend-reported product version (null if unavailable). No telemetry, random assignment or statistical A/B claim |
 | In-place proposal previews | Authoritative diff beside the card conversation, with the effective revision in the same response | Implemented read-only preview with expiry, bounded freshness and identity clearing. Open Review retains approval/subset/explicit Apply. Mapping changes onto affected board objects remains next |
 | Personal continuity | Chosen plan, last-worked focus, List/Board/Horizon over planned cards | Implemented privately with revision checks. Home resume uses explicit focus and shows chosen threads; the separate agenda remains derived from Today. Requires a connected backend; backend-less demo builds hide these entry points |
-| Linked steps | Explicit title/destination, atomic child-card/link/audit creation, repeat-safe requests, refreshed real card status and portable links | Implemented; shares the guarded card writer and board concurrency token. Removing thinking never deletes linked cards. Separate dependency edges are still next |
-| Dependencies | Explicit prerequisite links between real cards | Next; no inference from linked thinking steps |
+| Linked steps | Explicit title/destination, atomic child-card/link/audit creation, repeat-safe requests, refreshed real card status and portable links | Implemented; shares the guarded card writer and board concurrency token. Removing thinking never deletes linked cards. Explicit dependency edges are also available |
+| Dependencies | Explicit same-board prerequisite relationships with both directions, live status refresh and portable import | Implemented with cycle validation, revision conflicts, archive and deletion guards. No automatic edges or status/deadline changes |
 | Audio answers and unified source evidence | Context Fabric original/representation pipeline and typed source anchors | Later; new memory currently preserves evidence directly, not as Capture/SourceAsset records. No microphone/transcription integration added here |
 | Model-generated observations and recall | Bounded candidate producer and authorized knowledge retrieval | Later; requires grounding, fresh evidence, usefulness corpus, privacy and budget proof |
 | Optional nudges | Opt-in attention policy after usefulness is established | Later; requires non-intrusion evaluation, focus/input suppression and shared user budgets |
@@ -93,7 +93,22 @@ retrying the old promotion. Board JSON import remaps links to the newly imported
 already-deleted cards become unlinked thinking items in the export, leaving source tombstones intact.
 Linked material uses thinking schema version 2, so older importers reject it instead of silently
 discarding relationships. Ordinary decks retain version 1; the current importer accepts both.
-This adds no database migration and no dependency edge or automatic proposal execution.
+Step promotion itself adds no database migration or automatic dependency edge.
+
+Choose **Explore dependencies** in a card's thinking space to see its prerequisites and the cards
+that depend on it. **Add prerequisite** and **Remove link** save explicit relationships immediately.
+The server rejects cycles, duplicate/self links and references outside the board. Read-only and archived
+boards retain read access; editing requires write permission on an active board. **Refresh dependencies**
+reloads current card status and board relationships. A failed save clears stale metadata and requires a
+reload, including when a response may have been lost. Neither action changes task status, assignments,
+deadlines or the original thinking step. Use the normal review/approve/apply flow for automation.
+
+The board graph is limited to 500 edges and uses a separate revision. Saving stages the actor audit and
+archive guard in one transaction, then revalidates card existence before commit. Deleted-card references
+are hidden on reads and exports and pruned by the next save; board deletion cascades the stored graph.
+Portable exports with dependencies use the `taskdeck-board` version-2 envelope, which older readers
+reject. Import remaps both ends within the payload and rolls back the board if any relationship is
+invalid. Existing files and exports without dependencies retain the prior shape.
 
 Additive database migrations create thinking/insight/memory tables, question-source columns and personal-plan preference columns.
 Follow [UPGRADING.md](../../UPGRADING.md) when updating an existing instance. The integration's automated
