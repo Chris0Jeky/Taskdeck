@@ -46,6 +46,7 @@ public sealed class CaptureIntakeService
     /// Stages native private memory sources in the memory's unit of work. This is not a legacy
     /// queue mirror and never schedules processing. Historical rows are admitted on their next
     /// explicit write; their saved text remains the authority, not a reconstructed question.
+    /// Existing memories must advance their concurrency revision before staging an admission.
     /// </summary>
     public async Task StageMemorySourcesAsync(WorkspaceMemory memory, CancellationToken ct = default)
     {

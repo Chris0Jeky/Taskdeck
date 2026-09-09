@@ -103,6 +103,9 @@ public sealed class PrivateMemorySourceApiTests(TestWebApplicationFactory factor
             var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             db.Add(memory); await db.SaveChangesAsync();
         }
+        var noOp = await client.PatchAsJsonAsync($"/api/workspace-memory/{memory.Id}", new ArchiveWorkspaceMemoryDto(false, memory.Revision));
+        noOp.EnsureSuccessStatusCode();
+        (await noOp.Content.ReadFromJsonAsync<WorkspaceMemoryDto>())!.Sources.Should().BeNull("a no-op must not admit competing sources without advancing the concurrency revision");
         var response = await client.PutAsJsonAsync($"/api/workspace-memory/{memory.Id}", new UpdateWorkspaceMemoryDto(memory.Title, "Latest correction", "statement", memory.Revision));
         response.EnsureSuccessStatusCode();
         var updated = (await response.Content.ReadFromJsonAsync<WorkspaceMemoryDto>())!;

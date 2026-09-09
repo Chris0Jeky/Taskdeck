@@ -146,9 +146,12 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
         if (memory.Revision != (dto?.Revision ?? archive?.Revision)) return Conflict<WorkspaceMemoryDto>();
         try
         {
+            var priorRevision = memory.Revision;
             if (dto != null) memory.Revise(dto.Title, dto.Text, dto.Status);
             else memory.SetArchived(archive!.Archived);
-            await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
+            // A no-op archive does not advance CAS, so it must not attach competing native captures.
+            if (memory.Revision != priorRevision)
+                await new CaptureIntakeService(captureStore, null).StageMemorySourcesAsync(memory, ct);
             await Revalidate(userId, memory.BoardId, false, ct);
             return await repository.SaveAsync(ct) ? Result.Success(MapMemory(memory)) : Conflict<WorkspaceMemoryDto>();
         }
