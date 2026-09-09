@@ -31,7 +31,8 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null,
     IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
     IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
-    IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null);
+    IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null,
+    SourceStorageExportDto? SourceStorage = null);
 
 public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
 
@@ -153,7 +154,8 @@ public record UserDataExportSourceAssetDto(
     string? OriginalName,
     Guid? SupersedesAssetId,
     Guid? SupersededByAssetId,
-    string? Text);
+    string? Text,
+    Guid? BlobReferenceId = null);
 
 public record UserDataExportCaptureDispositionDto(
     string Kind,

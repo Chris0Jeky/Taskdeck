@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Taskdeck.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using Taskdeck.Infrastructure.Persistence;
 namespace Taskdeck.Infrastructure.Migrations
 {
     [DbContext(typeof(TaskdeckDbContext))]
-    partial class TaskdeckDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260909231242_AddDurableManualRepresentations")]
+    partial class AddDurableManualRepresentations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "8.0.30");
@@ -2668,74 +2671,6 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("StoredBlobReferences");
                 });
 
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ThinkingAudioAnswer", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("BoardId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("CaptureId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("CardId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ConfirmedMemoryId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("LayerId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("QuestionHash")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("RepresentationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("Revision")
-                        .IsConcurrencyToken()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<Guid>("SourceAssetId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UploadId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoardId");
-
-                    b.HasIndex("CaptureId");
-
-                    b.HasIndex("ConfirmedMemoryId");
-
-                    b.HasIndex("RepresentationId");
-
-                    b.HasIndex("SourceAssetId");
-
-                    b.HasIndex("UserId", "UploadId")
-                        .IsUnique();
-
-                    b.HasIndex("UserId", "CardId", "LayerId", "QuestionHash")
-                        .IsUnique();
-
-                    b.ToTable("ThinkingAudioAnswers");
-                });
-
             modelBuilder.Entity("Taskdeck.Domain.Entities.ThinkingDeck", b =>
                 {
                     b.Property<Guid>("CardId")
@@ -3618,42 +3553,6 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasForeignKey("BlobId", "OwnerUserId")
                         .HasPrincipalKey("Id", "OwnerUserId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("Taskdeck.Domain.Entities.ThinkingAudioAnswer", b =>
-                {
-                    b.HasOne("Taskdeck.Domain.Entities.Board", null)
-                        .WithMany()
-                        .HasForeignKey("BoardId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Taskdeck.Domain.Entities.Capture", null)
-                        .WithMany()
-                        .HasForeignKey("CaptureId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Taskdeck.Domain.Entities.WorkspaceMemory", null)
-                        .WithMany()
-                        .HasForeignKey("ConfirmedMemoryId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Taskdeck.Domain.Entities.Representation", null)
-                        .WithMany()
-                        .HasForeignKey("RepresentationId")
-                        .OnDelete(DeleteBehavior.NoAction);
-
-                    b.HasOne("Taskdeck.Domain.Entities.SourceAsset", null)
-                        .WithMany()
-                        .HasForeignKey("SourceAssetId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
-
-                    b.HasOne("Taskdeck.Domain.Entities.User", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

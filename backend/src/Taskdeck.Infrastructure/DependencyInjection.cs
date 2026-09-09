@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Taskdeck.Application.Connectors;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Connectors;
@@ -102,6 +103,11 @@ public static class DependencyInjection
         services.AddScoped<IArtefactExtractionRepository, ArtefactExtractionRepository>();
         services.AddScoped<ITranscriptRepository, TranscriptRepository>();
         services.AddScoped<ICaptureStore, EfCaptureStore>();
+        services.AddScoped<IBlobStore, Taskdeck.Infrastructure.Storage.SqliteBlobStore>();
+        services.AddScoped<IManualRepresentationStore, EfManualRepresentationStore>();
+        services.AddScoped<IThinkingAudioRepository, ThinkingAudioRepository>();
+        services.AddScoped<ISourcePortabilityStore, SourcePortabilityStore>();
+        services.TryAddSingleton(_ => configuration.GetSection("SourceStorage").Get<BlobStorageSettings>() ?? new BlobStorageSettings());
         services.AddScoped<ICaptureBackfillStore, EfCaptureBackfillStore>();
         // ADR-0065 / CF-01 (#2255): the Context Fabric switches and the ID-preserving backfill must
         // reach EVERY host that applies migrations or writes a capture -- web API, standalone MCP
