@@ -239,6 +239,8 @@ test('makes comparison and Grove themes usable on desktop and narrow screens', a
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     }
   }
+  await page.screenshot({ path: '../../artifacts/overhaul/retained-comparison-mobile.png', fullPage: true })
+  expect((await new AxeBuilder({ page }).include('.comparison-files').analyze()).violations.filter(item => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
   await page.goto(`/workspace/memory?boardId=${boardId}`)
   await page.getByRole('button', { name: 'Add memory', exact: true }).click()
   await page.getByLabel('Title', { exact: true }).fill('A question for the next visit')
