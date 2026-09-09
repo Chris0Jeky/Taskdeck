@@ -1,14 +1,12 @@
 <script setup lang="ts">
 defineProps<{
   messageContent: string
-  requestProposal: boolean
   sendingMessage: boolean
   lastMessageIsClarification: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:messageContent', value: string): void
-  (e: 'update:requestProposal', value: boolean): void
   (e: 'send-message'): void
   (e: 'skip-clarification'): void
 }>()
@@ -35,14 +33,6 @@ const emit = defineEmits<{
       @input="emit('update:messageContent', ($event.target as HTMLTextAreaElement).value)"
       @keydown.ctrl.enter.prevent="emit('send-message')"
     ></textarea>
-    <label class="td-checkbox">
-      <input
-        :checked="requestProposal"
-        type="checkbox"
-        @change="emit('update:requestProposal', ($event.target as HTMLInputElement).checked)"
-      />
-      Request proposal generation
-    </label>
     <button class="td-btn td-btn--primary" @click="emit('send-message')" :disabled="sendingMessage">
       {{ sendingMessage ? 'Sending...' : 'Send Message' }}
     </button>
@@ -78,14 +68,6 @@ const emit = defineEmits<{
   border-radius: var(--td-radius-md);
   font-size: var(--td-font-sm);
   resize: vertical;
-}
-
-.td-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--td-space-1);
-  font-size: var(--td-font-xs);
-  color: var(--td-text-secondary);
 }
 
 .td-btn {

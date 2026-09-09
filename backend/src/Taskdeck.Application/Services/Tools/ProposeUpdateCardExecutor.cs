@@ -165,6 +165,23 @@ public sealed class ProposeUpdateCardExecutor : IToolExecutor
             }, ToolJsonOptions.Default);
         }
 
+        // Sessions may predate inline binding and can be readable by viewers. Recheck the
+        // write bar at proposal creation so grounded reads never expand into an unauthorized
+        // proposal merely because the card ID is valid (#2004).
+        var permissionResult = await _policyEngine.ValidatePermissionsAsync(
+            context.UserId,
+            context.BoardId,
+            operationDtos,
+            BoardAccessBar.Write,
+            ct);
+        if (!permissionResult.IsSuccess)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                error = permissionResult.ErrorMessage
+            }, ToolJsonOptions.Default);
+        }
+
         var riskLevel = _policyEngine.ClassifyRisk(operationDtos);
 
         // Build summary describing what is being updated

@@ -1,6 +1,6 @@
 # ADR-0069: Accountable Automation Chat
 
-- **Status**: Accepted under the maintainer's recorded product ruling; implementation pending on #2004
+- **Status**: Accepted under the maintainer's recorded product ruling; runtime candidate in PR #2790, final review and acceptance pending on #2004
 - **Date**: 2026-09-07
 - **Deciders**: Chris0Jeky, product ruling of 2026-09-04 reaffirmed 2026-09-06; the coordinator records the implementation contract below
 - **Related**: #2004, CF-09 #2263, ADR-0003, ADR-0056, ADR-0065

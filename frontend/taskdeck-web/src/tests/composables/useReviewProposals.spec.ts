@@ -1082,6 +1082,25 @@ describe('useReviewProposals', () => {
       expect(mockToast.error).toHaveBeenCalled()
     })
 
+    it('does not carry a revoked board claim into another scope that has a transient failure', async () => {
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+      expect(rp.queueAccessRevoked.value).toBe(true)
+
+      mockRoute.query = { boardId: 'board-c' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+      await rp.loadProposals()
+
+      // A 500 says C could not be refreshed. It cannot prove that C refused
+      // access, so the durable panel from B must not describe C.
+      expect(rp.queueAccessRevoked.value).toBe(false)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+      expect(rp.queueScopeLoaded.value).toBe(false)
+      expect(mockToast.error).toHaveBeenCalled()
+    })
+
     it('keeps the pin-leg 403 as the single-proposal outcome #2593 shipped', async () => {
       // A readable board with one proposal this reviewer may not open is the
       // opposite case, and it must stay the unavailable pin rather than tearing
@@ -1133,6 +1152,26 @@ describe('useReviewProposals', () => {
       await rp.loadProposals()
       expect(rp.queueAccessRevoked.value).toBe(false)
       expect(rp.queueAccessRevokedRetry.value).toBe(false)
+    })
+
+    it('keeps repeated refusal feedback when the second explicit read changes scope', async () => {
+      mockRoute.query = { boardId: 'board-a' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      const rp = useReviewProposals()
+      await rp.loadProposals()
+
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(false)
+
+      mockRoute.query = { boardId: 'board-b' }
+      mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
+      await rp.loadProposals()
+
+      // Clearing board A's authority claim before the board B read must not
+      // erase the fact that this is the second explicit refusal.
+      expect(rp.queueAccessRevoked.value).toBe(true)
+      expect(rp.queueAccessRevokedRetry.value).toBe(true)
+      expect(mockToast.error).not.toHaveBeenCalled()
     })
 
     it('does not raise the retry disclosure for a non-user list read', async () => {
