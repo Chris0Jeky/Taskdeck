@@ -113,6 +113,21 @@ describe('ChatMessageList board recovery', () => {
     expect(wrapper.emitted('reload-boards')).toHaveLength(1)
   })
 
+  it('keeps cached writable choices usable alongside a board-load retry error', async () => {
+    const wrapper = mountList({ boardLoadError: 'Boards unavailable' })
+
+    expect(wrapper.text()).toContain('Boards unavailable')
+    expect(wrapper.text()).toContain('Retry loading boards')
+    expect(wrapper.find('select').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Release Board')
+
+    await wrapper.get('select').setValue('board-1')
+    await wrapper.get('button.td-btn--primary').trigger('click')
+
+    expect(wrapper.emitted('bind-board')).toEqual([['assistant-1', 'board-1']])
+    expect(wrapper.emitted('reload-boards')).toBeUndefined()
+  })
+
   it('shows a binding receipt and waits for explicit continuation', async () => {
     const wrapper = mountList({
       selectedSessionBoardId: 'board-1',
