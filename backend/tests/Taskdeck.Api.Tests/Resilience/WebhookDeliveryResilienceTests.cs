@@ -11,12 +11,14 @@ namespace Taskdeck.Api.Tests.Resilience;
 /// <summary>
 /// Tests that webhook delivery failures are handled with retries, backoff, and
 /// dead-lettering rather than crashing or silently losing deliveries.
+/// These tests drive repository claims manually; hosted workers must not claim
+/// the same immediately due deliveries between setup and assertion.
 /// </summary>
-public class WebhookDeliveryResilienceTests : IClassFixture<TestWebApplicationFactory>
+public class WebhookDeliveryResilienceTests : IClassFixture<HostedWorkerDisabledTestWebApplicationFactory>
 {
-    private readonly TestWebApplicationFactory _factory;
+    private readonly HostedWorkerDisabledTestWebApplicationFactory _factory;
 
-    public WebhookDeliveryResilienceTests(TestWebApplicationFactory factory)
+    public WebhookDeliveryResilienceTests(HostedWorkerDisabledTestWebApplicationFactory factory)
     {
         _factory = factory;
     }
