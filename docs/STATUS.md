@@ -1,12 +1,17 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-08
+Last Updated: 2026-09-09
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.
+
+September 8-9 PR closeout (#2235):
+
+- CF06-1's immutable representation header, supplied-lineage validation, forward supersession edge and typed descriptor are merged through PR #2809 (`f935ebcbc`). Original quality, warnings and legacy payload IDs are retained; the store remains unregistered and adds no persistence mapping or runtime writer. The refreshed head passed 21 Domain and one Application test plus required hosted CI. #2260 remains open for the transactional store and broader acceptance; ordinary headers accepting a null processing-run identity is a tracked P2 contract gap, not a proven runtime authorization boundary.
+- PR #2813's earlier delivery record is merged and its post-merge CI passed. PR #2807 is merged at `7ac99a7ac`, including the qualified SQLite rollback repair. The remaining product changes and four explicitly delegated dependency/CI candidates are combined in PR #2815 for final hosted qualification. Separate independent interaction reviews are clear; local checks passed 148 Smart CI tests, typecheck and 19 branding/version tests. The final receipt repairs passed 122 ChatService tests. The final parallel-lane additions (#2816, #2817, #2818) preserve their reviewed source commits, pass 226 combined frontend tests and a fresh integration review; their parent acceptance and documented MEDIUM residuals remain open. Exact source heads, review dispositions and remaining hosted gates are in the [batch closeout](analysis/2026-09-09-codex-pr-closeout.md). Human decisions in `OUTSTANDING_TASKS.md` remain open.
 
 September 8 parallel delivery wave (merged work; #2235):
 
@@ -1422,3 +1427,17 @@ Rule:
 The remaining board-control candidate scopes collapse preferences to the signed-in user, keeps the latest requested navigation while a discard confirmation is open, and focuses a newly selected card in the desktop inspector. Wide cards now fill their lane's content width: browser measurement found the old 248px card cap inside a 340px lane, and the Chromium regression compares the rendered card and card-content widths after the fix.
 
 At source head `b479064e7`, the three affected view/modal test files passed 129 tests, the Wide-card Chromium journey passed, and typecheck/build/scoped lint passed. Synthetic desktop and 390px mobile inspector evidence was visually inspected and retained outside the worktree; the mobile inspector remains a viewport-bounded modal. Full frontend qualification is not green: five date-fixture failures were observed and are independently tracked on unchanged main in #2789. Independent review, hosted checks, and complete #2090 residual acceptance remain pending. These changes reduce board maintenance and context-switching friction without changing proposal review or execution authority.
+
+## Accountable Automation Chat candidate (2026-09-08, #2004 / PR #2790)
+
+The ADR-0069 runtime candidate makes actionable instructions attempt a proposal by default and removes the proposal opt-in checkbox. Unbound turns retain the instruction beside an inline board picker; linking the owned session does not resend it, and explicit continuation attempts the proposal. Binding rechecks writable board state and ownership, uses atomic compare-and-set, and refreshes a losing tracked row so concurrent same-board requests remain idempotent. Clarification allows one persisted round, then an answer or Skip attempts best effort. Persisted board-needed/no-proposal outcomes and real tool receipts distinguish drafts from applied work, including failure and stream paths. Existing-card updates use real board/card state and remain subject to Review, Approve, and Apply.
+
+At source head `7a7895964`, post-integration checks passed 118 ChatService tests, 31 API/live-stub/concurrency tests, and 83 changed frontend tests. A real SQLite two-context same-board race failed before the tracker refresh and passed after it. The natural-update API test proves a persisted PendingReview Chat proposal with the actual card ID, current-title summary, and proposed-title diff while the card remains unchanged. The Mock Chromium SC-005 journey passed, with a visually inspected Review screenshot and trace retained outside the worktree; it proves inline binding, explicit continuation, proposal visibility, and no card creation before Apply.
+
+The full backend invocation had 8,992 passes, 5 skips, and one obsolete assertion failure; the corrected complete API rerun passed 2,862 with 4 skips. This is scoped correction evidence, not one green full-solution invocation. Full frontend had 6,144 passes, 3 skips, and five date-fixture failures independently reproduced on unchanged main and tracked in #2789; the three affected files pass 102/102 under UTC. Lint, typecheck, and build passed. Independent full-stack/security review and hosted qualification remain pending. Live LLM-provider and direct browser-controller verification are not claimed. #2004 remains open until the complete acceptance is verified.
+
+## CI10-2 observation candidate (2026-09-08, PR #2791)
+
+The nightly integration candidate adds a parallel observation job. It derives a baseline only from authenticated successful CI Nightly and Nightly Quality Signals runs at the same main head, checks the complete expected job set and latest attempts, binds the bounded JSON plan artifact to the run and Git tree, and verifies ancestry and changed files. Missing or inconsistent evidence selects a full sweep. Both schedules and all twelve deep suites remain unconditional; this does not enable selective execution.
+
+At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.

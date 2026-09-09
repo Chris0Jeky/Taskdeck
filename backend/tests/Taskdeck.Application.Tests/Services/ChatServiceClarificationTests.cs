@@ -93,7 +93,7 @@ public class ChatServiceClarificationTests
         result.Value.MessageType.Should().Be("clarification");
         result.Value.Content.Should().Contain("Could you tell me");
         result.Value.Content.Should().Contain("nothing was created or changed on any board");
-        result.Value.Content.Should().Contain("board-scoped chat session");
+        result.Value.Content.Should().Contain("Select a writable board below");
     }
 
     [Fact]
@@ -165,29 +165,89 @@ public class ChatServiceClarificationTests
     }
 
     [Fact]
-    public async Task SendMessage_ShouldForceBestEffort_AfterMaxClarificationRounds()
+    public async Task SendMessage_ShouldForceBestEffort_AfterOnePersistedClarificationRound()
     {
         var userId = Guid.NewGuid();
         var session = new ChatSession(userId, "Test session");
 
-        // Simulate 2 clarification rounds already completed
+        // Simulate the persisted original intent and one assistant clarification.
         session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.User, "Create tasks for onboarding"));
         session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.Assistant, "How many tasks?", "clarification"));
-        session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.User, "3 tasks"));
-        session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.Assistant, "Which column?", "clarification"));
 
         _chatSessionRepoMock
             .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
             .ReturnsAsync(session);
 
-        // After max rounds, even an ambiguous request should not get clarification
+        // The plain answer completes the single allowed round after reload.
         var result = await _service.SendMessageAsync(
             session.Id, userId,
-            new SendChatMessageDto("put them in Backlog"),
+            new SendChatMessageDto("3 tasks in Backlog"),
             default);
 
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().NotBe("clarification");
+    }
+
+    [Fact]
+    public async Task SendMessage_ShouldAttemptOriginalIntentWithPlainClarificationAnswer()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Reloaded clarification", boardId);
+        session.AddMessage(new ChatMessage(
+            session.Id,
+            ChatMessageRole.User,
+            "create card for the release follow-up"));
+        session.AddMessage(new ChatMessage(
+            session.Id,
+            ChatMessageRole.Assistant,
+            "What should the card be called?",
+            "clarification"));
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _plannerMock
+            .Setup(planner => planner.ParseInstructionAsync(
+                It.Is<string>(instruction =>
+                    instruction.Contains("create card for the release follow-up") &&
+                    instruction.Contains("Clarification answer: Ship notes")),
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                ProposalSourceType.Chat,
+                session.Id.ToString(),
+                It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId,
+                ProposalSourceType.Chat,
+                null,
+                boardId,
+                userId,
+                ProposalStatus.PendingReview,
+                RiskLevel.Low,
+                "Create release follow-up",
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1),
+                null,
+                null,
+                null,
+                null,
+                "corr",
+                new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("Ship notes"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
     }
 
     [Fact]

@@ -28,7 +28,7 @@ Covers: 5 open PRs (#665-#669) and recent merged PRs (#568-#664).
 **What changed:** Review proposal cards now have max-height with scroll, sticky action footer, and capped entity/operation sections.
 
 ### Prerequisites
-- At least 2-3 proposals in the Review queue (create board-scoped chat sessions, send actionable messages with "Request proposal generation" enabled, or triage inbox captures)
+- At least 2-3 proposals in the Review queue (create board-scoped chat sessions, send actionable messages (proposal attempts are enabled by default), or triage inbox captures)
 - At least one proposal with many affected entities (apply a starter pack to generate a multi-entity proposal)
 
 ### Verifications
@@ -168,7 +168,7 @@ Covers: 5 open PRs (#665-#669) and recent merged PRs (#568-#664).
 ### Verifications — Fallback Behavior
 
 - [ ] Send a non-board message like "What is the capital of France?" Verify the LLM responds with text (no tool calls) and does not crash or error.
-- [ ] Send an actionable instruction with proposal generation enabled: "Create a card called Test in Backlog." Verify the existing proposal creation path still works — a proposal is generated, not a tool-call-only response.
+- [ ] Send an actionable instruction using the default proposal-attempt flow: "Create a card called Test in Backlog." Verify the existing proposal creation path still works — a proposal is generated, not a tool-call-only response.
 
 ### Verifications — Status Events
 
@@ -234,7 +234,7 @@ Covers: 5 open PRs (#665-#669) and recent merged PRs (#568-#664).
 
 ### Verifications
 
-- [ ] Open `/workspace/automations/chat`. Create a board-scoped session. Send an actionable message like "Create a card called Weekly Standup in the To Do column" with proposal generation enabled. Verify a proposal reference appears in the response — not just prose text.
+- [ ] Open `/workspace/automations/chat`. Create a board-scoped session. Send an actionable message like "Create a card called Weekly Standup in the To Do column" using the default proposal-attempt flow. Verify a proposal reference appears in the response — not just prose text.
 - [ ] Send a message that would produce a long response. Verify the response is NOT truncated mid-sentence or mid-JSON. If truncation occurs, verify a user-friendly "Response was truncated" message appears instead of raw partial JSON.
 - [ ] Send a message and verify the response never shows raw JSON (e.g., `{ "reply": "..." }`) to the user. All responses should be rendered as readable text.
 - [ ] Send a multi-instruction message: "Create a card called A and another called B." Verify both instructions are parsed and reflected in the proposal.

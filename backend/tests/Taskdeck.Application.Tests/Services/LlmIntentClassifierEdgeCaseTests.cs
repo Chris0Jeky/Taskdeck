@@ -45,6 +45,17 @@ public class LlmIntentClassifierEdgeCaseTests
             $"question about another tool '{input}' should not be actionable");
     }
 
+    [Theory]
+    [InlineData("How do I create a card called Release?")]
+    [InlineData("What happens when I archive a task?")]
+    public void Classify_TaskdeckInformationalQuestion_IsNotActionable(string input)
+    {
+        var (isActionable, actionIntent) = LlmIntentClassifier.Classify(input);
+
+        isActionable.Should().BeFalse($"informational question '{input}' should remain conversational");
+        actionIntent.Should().BeNull();
+    }
+
     // ── Positive detection ───────────────────────────────────────
 
     [Theory]

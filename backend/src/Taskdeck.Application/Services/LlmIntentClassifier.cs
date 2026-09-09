@@ -148,21 +148,29 @@ public static class LlmIntentClassifier
                 matcher))
             return true;
 
-        // Asking about another tool: "how do I create a card in Jira?"
+        if (TryMatch(
+                QuestionAboutHowPattern,
+                original.Trim(),
+                "negative-context.question",
+                logger,
+                ref timeoutReported,
+                matcher))
+            return true;
+
         return TryMatch(
-                   OtherToolPattern,
-                   lower,
-                   "negative-context.other-tool",
-                   logger,
-                   ref timeoutReported,
-                   matcher)
-               && TryMatch(
-                   QuestionAboutHowPattern,
-                   original.Trim(),
-                   "negative-context.question",
-                   logger,
-                   ref timeoutReported,
-                   matcher);
+            OtherToolPattern,
+            lower,
+            "negative-context.other-tool",
+            logger,
+            ref timeoutReported,
+            matcher)
+            && TryMatch(
+                QuestionAboutHowPattern,
+                original.Trim(),
+                "negative-context.other-tool-question",
+                logger,
+                ref timeoutReported,
+                matcher);
     }
 
     private static bool MatchesCardCreate(
