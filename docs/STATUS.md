@@ -1470,3 +1470,8 @@ September 9 older-memory continuation (#2808): explicit preservation on the Memo
 originals and historical corrections through the native-source/export path without editing content,
 enqueuing processing or changing board work. Targeted API14 and frontend20 checks passed; full-suite
 and hosted qualification are recorded separately in the continuation PR.
+
+Companion continuity (#2808): unsaved thinking blocks embedded sends until saved; pending sends hold
+in-app navigation with honest cancellation wording. Failed post-send receipt reads can be retried
+without resending. Preview expiry uses server-relative receipt timestamps and elapsed request time.
+These frontend safeguards preserve successful responses and the existing review-first mutation path.

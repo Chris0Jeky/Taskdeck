@@ -2265,3 +2265,14 @@ Older-memory source admission (#2808) now has an explicit bounded Memory action.
 entries are selectable through their existing list filters; batches use expected revisions and one
 atomic save, and can be resumed after reload. This completes legacy text-original admission; audio,
 representation processing, direct source selection and broader source evaluation remain open.
+
+## Companion send continuity (#2808, 2026-09-09)
+
+Embedded card conversations pause sends while the thinking workspace has unsaved work, with an
+explanation that only saved thinking is read. In-app navigation waits for an outstanding send;
+the dialog explains that closing the browser does not cancel an accepted server request.
+A failed post-send conversation refresh keeps the successful response and offers a guarded GET-only
+receipt retry. Proposal preview freshness uses the server receipt interval minus elapsed request time,
+so client clock skew cannot extend its lifetime. These changes reduce repeated context entry and
+accidental duplicate sends while preserving explicit source choice and Review before board changes.
+Broader source representations, object overlays, attention and usefulness evaluation remain in #2808.
