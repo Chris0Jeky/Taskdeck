@@ -8,6 +8,12 @@ Last Updated: 2026-09-09
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.
 
+September 9 delivered integration (#2815):
+
+- PR #2815 merged at `22029c760`, preserving thirteen reviewed source candidates: #2790, #2797, #2810, #2811, #2812, #2814, #2769, #2803, #2791, #2792, #2816, #2817 and #2818. The four control PRs carry the maintainer's explicit in-session delegation with their review afterward. Required CI `34339766712` passed; the actual tested merge tree and regenerated merge tree were byte-identical after the already-included palette change independently reached main.
+- Failed proposal-tool receipts now survive thrown and returned errors through degradation, with one terminal event after oversized deltas (#2795 closed). Review refusal scope, version-test isolation, policy/SSE contracts, the dependency updates, nightly observation/trust tests, Paper focus and the ruled batch Apply scope are included. Review/Approve/Apply remains explicit. The three individual Vitest bumps #2770/#2771/#2773 are closed as superseded by the merged coherent update.
+- The later #2819 candidate deletes the unused shortcut dispatcher and its sole test, with no runtime references remaining. Its refreshed-base patch is identical to the independently reviewed source; 36 combined shortcut/palette tests pass. Its final hosted qualification remains separate from the delivered integration.
+- Broader parent acceptance and recorded MEDIUM findings remain open. The human-action file retains post-hoc review, historical disclosures, signing, cutover, credentials, device and release decisions; no personal acceptance or release is inferred. Post-merge hosted execution is tracked separately from the passing PR gate.
 September 8-9 PR closeout (#2235):
 
 - CF06-1's immutable representation header, supplied-lineage validation, forward supersession edge and typed descriptor are merged through PR #2809 (`f935ebcbc`). Original quality, warnings and legacy payload IDs are retained; the store remains unregistered and adds no persistence mapping or runtime writer. The refreshed head passed 21 Domain and one Application test plus required hosted CI. #2260 remains open for the transactional store and broader acceptance; ordinary headers accepting a null processing-run identity is a tracked P2 contract gap, not a proven runtime authorization boundary.

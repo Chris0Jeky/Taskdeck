@@ -16,10 +16,13 @@ authoritative ranking is taken at the `v0.3.0` tag, not before.
 | --- | --- | --- |
 | PR **#2356** `issue-2236/refactor-measurement-tooling` | **OPEN, ready, PARKED** | 3 files, +747/-0: `scripts/analysis/rank_refactor_candidates.py`, `scripts/analysis/test_rank_refactor_candidates.py`, `docs/analysis/refactoring/README.md`. Head `c3c04a26b`. Parked at the review-loop ceiling on a confirmed HIGH (see below). None of these paths exist on `main` |
 | `v0.3.0` tag | not yet cut (`v0.3.0-rc.1` published 2026-08-30) | REF-1's baseline waits for the exact final tag; REF-0 does not |
-| `#2007`, `#1968` keyboard-shortcut ledger | open | Named candidates; `frontend/taskdeck-web/src/utils/keyboardShortcuts.ts` exists (started by PR #2226) |
+| `#1968` keyboard-shortcut ledger | open | Named candidate; `frontend/taskdeck-web/src/utils/keyboardShortcuts.ts` exists (started by PR #2226) |
 | `#2141` two skins | open | Legacy-vs-Paper retirement boundary is a **product decision**, not a measurement output |
 | `#1770` i18n catalogs | open | Named candidate; also the reason the eager-bundle budget moved to 1250 KB |
 | Context Fabric wave (`#2256`–`#2277`) | open | The reason `CaptureService` must not be refactored now — the issue's own second comment says so |
+
+The earlier `#2007` pointer is retired from this v0.4 candidate list: the D-5 ruling on
+2026-09-06 kept `#2007` in v0.3 and reduced it to its remaining acceptance criteria.
 
 ## Child slices (one PR each, in order)
 
