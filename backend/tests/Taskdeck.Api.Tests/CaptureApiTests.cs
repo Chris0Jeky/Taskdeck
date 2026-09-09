@@ -339,6 +339,69 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task LinkedTriagedCorrection_ShouldAppendTranscriptAndKeepOriginalReadable()
+    {
+        await AuthenticateAsAsync("capture-linked-correction");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "canonical queue text", "transcriptPaste"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        Guid originalTranscriptId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created!.Id);
+            var original = new Transcript(
+                created.UserId,
+                CaptureSource.TranscriptPaste,
+                "canonical queue text\nwith offsets",
+                [new TranscriptSegment(0, 0, "Speaker", 1_000)],
+                createdFromCaptureId: created.Id);
+            db.Transcripts.Add(original);
+            request.AttachTranscript(original.Id);
+            request.MarkAsProcessing();
+            request.MarkAsCompleted();
+            await db.SaveChangesAsync();
+            originalTranscriptId = original.Id;
+        }
+
+        var editResponse = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("corrected queue text\nwith offsets"));
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var edited = await editResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        edited.Should().NotBeNull();
+        edited!.RawText.Should().Be("corrected queue text\nwith offsets");
+        edited.Status.Should().Be(CaptureStatus.Triaged);
+        edited.CanEditSuggestion.Should().BeTrue();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created.Id);
+            var transcripts = await db.Transcripts
+                .Where(transcript => transcript.CreatedFromCaptureId == created.Id)
+                .ToListAsync();
+            var original = transcripts.Single(transcript => transcript.Id == originalTranscriptId);
+            var replacement = transcripts.Single(transcript => transcript.Id == request.TranscriptId);
+
+            transcripts.Should().HaveCount(2);
+            request.Status.Should().Be(RequestStatus.Completed);
+            request.Payload.Should().Contain("corrected queue text");
+            original.Text.Should().Be("canonical queue text\nwith offsets");
+            original.SegmentsJson.Should().Contain("Speaker");
+            replacement.Text.Should().Be("corrected queue text\nwith offsets");
+            replacement.SegmentsJson.Should().Be("[]");
+            replacement.CreatedFromCaptureId.Should().Be(created.Id);
+            replacement.UserId.Should().Be(created.UserId);
+        }
+    }
+
+    [Fact]
     public async Task Ignore_ShouldBeIdempotent()
     {
         await AuthenticateAsAsync("capture-ignore");

@@ -21,6 +21,7 @@ public class CaptureService : ICaptureService
     private readonly ICaptureBackfillStore? _backfillStore;
     private readonly ContextFabricSettings _contextFabric;
     private readonly ILogger<CaptureService>? _logger;
+    private readonly ITranscriptRepository? _transcriptRepository;
 
     /// <summary>
     /// Memoized read-switch decision for this scope (one Inbox request). Cached rather than
@@ -66,7 +67,8 @@ public class CaptureService : ICaptureService
         ICaptureStore? captureStore,
         ContextFabricSettings? contextFabricSettings,
         ICaptureBackfillStore? backfillStore,
-        ILogger<CaptureService>? logger)
+        ILogger<CaptureService>? logger,
+        ITranscriptRepository? transcriptRepository = null)
     {
         _unitOfWork = unitOfWork;
         _authorizationService = authorizationService;
@@ -74,6 +76,7 @@ public class CaptureService : ICaptureService
         _backfillStore = backfillStore;
         _contextFabric = contextFabricSettings ?? new ContextFabricSettings();
         _logger = logger;
+        _transcriptRepository = transcriptRepository;
         _captureIntake = new CaptureIntakeService(captureStore, contextFabricSettings);
     }
 
@@ -793,15 +796,25 @@ public class CaptureService : ICaptureService
         if (item.UserId != userId)
             return Result.Failure<CaptureItemDto>(ErrorCodes.Forbidden, "You do not have permission to modify this capture item");
 
-        if (item.TranscriptId.HasValue)
-        {
-            return Result.Failure<CaptureItemDto>(
-                ErrorCodes.Conflict,
-                "Capture text cannot be edited after its transcript is linked");
-        }
-
         var currentPayload = ParsePayload(item);
         var currentStatus = ResolveCaptureStatus(item, currentPayload);
+
+        if (item.TranscriptId.HasValue)
+        {
+            if (currentStatus != CaptureStatus.Triaged ||
+                currentPayload.Provenance?.ProposalId is { } linkedProposalId && linkedProposalId != Guid.Empty)
+            {
+                return Result.Failure<CaptureItemDto>(ErrorCodes.Conflict,
+                    $"Capture item in status {currentStatus} cannot be edited");
+            }
+
+            return await UpdateLinkedTranscriptSuggestionAsync(
+                userId,
+                item,
+                currentPayload,
+                dto,
+                cancellationToken);
+        }
 
         if (!CanEditSuggestion(item, currentStatus))
         {
@@ -860,6 +873,163 @@ public class CaptureService : ICaptureService
             effectiveBoardId: null,
             await ReadableMaterialAsync(durable, cancellationToken)));
     }
+
+    private async Task<Result<CaptureItemDto>> UpdateLinkedTranscriptSuggestionAsync(
+        Guid userId,
+        LlmRequest item,
+        CapturePayloadV1 currentPayload,
+        UpdateCaptureSuggestionDto dto,
+        CancellationToken cancellationToken)
+    {
+        if (_transcriptRepository is null || item.TranscriptId is not { } transcriptId)
+        {
+            return Result.Failure<CaptureItemDto>(
+                ErrorCodes.Conflict,
+                "The linked transcript cannot be corrected");
+        }
+
+        var canonical = await _transcriptRepository.GetByIdForUserAsync(
+            transcriptId,
+            userId,
+            cancellationToken);
+        if (canonical is null ||
+            canonical.CreatedFromCaptureId != item.Id ||
+            canonical.UserId != userId ||
+            canonical.CaptureSource != currentPayload.Source ||
+            canonical.BoardId != item.BoardId ||
+            !CaptureRequestContract.IsTranscriptSource(currentPayload.Source))
+        {
+            return Result.Failure<CaptureItemDto>(
+                ErrorCodes.Conflict,
+                "The linked transcript cannot be corrected");
+        }
+
+        var normalizedText = NormalizeLineEndings(dto.Text);
+        var textChanged = !string.Equals(normalizedText, canonical.Text, StringComparison.Ordinal);
+        var maxTextLength = CaptureRequestContract.MaxTranscriptTextLength;
+        if (normalizedText.Length > maxTextLength)
+        {
+            return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
+                $"Text exceeds maximum length of {maxTextLength} characters");
+        }
+
+        var updatedPayload = currentPayload with
+        {
+            Text = normalizedText,
+            TitleHint = dto.TitleHint ?? currentPayload.TitleHint,
+            DueDate = dto.Metadata == null ? currentPayload.DueDate : dto.Metadata.DueDate,
+            Labels = dto.Metadata == null
+                ? currentPayload.Labels
+                : dto.Metadata.Labels ?? Array.Empty<string>(),
+        };
+        var payloadValidation = CaptureRequestContract.ValidatePayload(updatedPayload);
+        if (!payloadValidation.IsSuccess)
+        {
+            return Result.Failure<CaptureItemDto>(
+                payloadValidation.ErrorCode,
+                payloadValidation.ErrorMessage);
+        }
+
+        var replacementTranscriptId = transcriptId;
+        Transcript? replacementTranscript = null;
+        if (textChanged)
+        {
+            replacementTranscript = new Transcript(
+                userId,
+                canonical.CaptureSource,
+                normalizedText,
+                boardId: canonical.BoardId,
+                createdFromCaptureId: item.Id,
+                sourceArtefactId: canonical.SourceArtefactId);
+            replacementTranscriptId = replacementTranscript.Id;
+        }
+
+        var replacementPayload = CaptureRequestContract.SerializePayload(updatedPayload);
+        var expectedStatus = item.Status;
+        var expectedUpdatedAt = item.UpdatedAt;
+        var expectedPayload = item.Payload;
+        var durable = default(Capture);
+        var transactionOpen = false;
+
+        try
+        {
+            await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            transactionOpen = true;
+
+            if (replacementTranscript is not null)
+            {
+                await _transcriptRepository.AddAsync(replacementTranscript, cancellationToken);
+            }
+
+            // Keep an existing durable mirror in lockstep with the new canonical text while the
+            // queue CAS remains pending. Both the append and this supersession roll back together
+            // if a concurrent re-triage wins the queue row.
+            if (textChanged || !string.Equals(
+                    updatedPayload.TitleHint,
+                    currentPayload.TitleHint,
+                    StringComparison.Ordinal))
+            {
+                durable = await SupersedeDurableTextAsync(
+                    userId,
+                    item.Id,
+                    normalizedText,
+                    updatedPayload.TitleHint,
+                    cancellationToken);
+            }
+
+            // Persist the new transcript before the FK-bearing raw SQL CAS. The open transaction
+            // makes this provisional: a stale edit rolls the insert and durable mirror back.
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var updated = await _unitOfWork.LlmQueue.TryCorrectLinkedTranscriptCaptureAsync(
+                item.Id,
+                expectedStatus,
+                expectedUpdatedAt,
+                transcriptId,
+                expectedPayload,
+                replacementTranscriptId,
+                replacementPayload,
+                cancellationToken);
+            if (!updated)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                transactionOpen = false;
+                return Result.Failure<CaptureItemDto>(
+                    ErrorCodes.Conflict,
+                    "Capture item changed while its transcript was being corrected");
+            }
+
+            await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            transactionOpen = false;
+
+            return Result.Success(MapToDetailDto(
+                item,
+                updatedPayload,
+                effectiveBoardId: null,
+                await ReadableMaterialAsync(durable, cancellationToken)));
+        }
+        catch (DomainException ex)
+        {
+            if (transactionOpen)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
+            return Result.Failure<CaptureItemDto>(ex.ErrorCode, ex.Message);
+        }
+        catch
+        {
+            if (transactionOpen)
+            {
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+            }
+
+            throw;
+        }
+    }
+
+    private static string NormalizeLineEndings(string text) =>
+        text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 
     /// <summary>
     /// Appends the corrected text as a superseding <c>SourceAsset</c> on the durable capture, if
@@ -1316,7 +1486,8 @@ public class CaptureService : ICaptureService
     }
 
     private static bool CanEditSuggestion(LlmRequest item, CaptureStatus status) =>
-        !item.TranscriptId.HasValue && IsSuggestionEditableStatus(status);
+        (!item.TranscriptId.HasValue || status == CaptureStatus.Triaged) &&
+        IsSuggestionEditableStatus(status);
 
     private static bool IsSuggestionEditableStatus(CaptureStatus status) =>
         status is CaptureStatus.New or CaptureStatus.Failed or CaptureStatus.Triaged;
