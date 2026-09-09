@@ -89,11 +89,12 @@ describe('workspace comparison observations', () => {
     expect(store.groups).toHaveLength(2)
     expect(store.groups[0]).toMatchObject({ count: 2, completed: 1, blocked: 1, rated: 1, easeTotal: 4 })
   })
-  it('abandons asynchronous legacy imports if the session changes', async () => {
+  it.each(['account', 'clear'])('abandons asynchronous legacy imports on %s', async change => {
     const store = useWorkspaceExperimentStore()
     const old = JSON.stringify({ kind: 'taskdeck-workspace-comparison', version: 2, trials: [{ ...trial, recordedAt: '2026-09-01T00:00:00Z' }] })
     const importing = store.importJson(old)
-    session.userId = 'second'
+    if (change === 'clear') store.clear()
+    else session.userId = 'second'
     await expect(importing).rejects.toThrow('session changed')
     expect(store.trials).toEqual([])
   })

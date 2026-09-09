@@ -5,15 +5,16 @@ import WorkspaceComparisonFiles from '../../components/workspace/WorkspaceCompar
 
 const mocks = vi.hoisted(() => ({ importJson: vi.fn() }))
 const session = reactive({ userId: 'u1' as string | null })
+const experiment = reactive({ importJson: mocks.importJson, groups: [], resetVersion: 0 })
 vi.mock('../../store/sessionStore', () => ({ useSessionStore: () => session }))
 vi.mock('../../store/workspaceExperimentStore', () => ({
   MAX_COMPARISON_FILE_BYTES: 2 * 1024 * 1024,
   WORKSPACE_COMPARISON_SCENARIOS: [],
-  useWorkspaceExperimentStore: () => ({ importJson: mocks.importJson, groups: [] }),
+  useWorkspaceExperimentStore: () => experiment,
 }))
 
 describe('portable comparison files', () => {
-  beforeEach(() => { vi.clearAllMocks(); session.userId = 'u1'; mocks.importJson.mockResolvedValue(1) })
+  beforeEach(() => { vi.clearAllMocks(); session.userId = 'u1'; experiment.resetVersion = 0; mocks.importJson.mockResolvedValue(1) })
   it('imports explicitly and reports validation failures without claiming success', async () => {
     const wrapper = mount(WorkspaceComparisonFiles)
     expect(mocks.importJson).not.toHaveBeenCalled()
@@ -39,16 +40,17 @@ describe('portable comparison files', () => {
     expect(wrapper.get('[role=alert]').text()).toContain('2 MiB')
     wrapper.unmount()
   })
-  it.each(['account', 'unmount'])('does not import a file after %s changes during reading', async change => {
+  it.each(['account', 'unmount', 'clear'])('does not import a file after %s changes during reading', async change => {
     const wrapper = mount(WorkspaceComparisonFiles)
     const input = wrapper.get('input')
     let resolve!: (json: string) => void
     Object.defineProperty(input.element, 'files', { value: [{ size: 2, text: () => new Promise<string>(done => { resolve = done }) }] })
     await input.trigger('change')
     if (change === 'account') session.userId = 'u2'
+    else if (change === 'clear') experiment.resetVersion++
     else wrapper.unmount()
     resolve('{}'); await flushPromises()
     expect(mocks.importJson).not.toHaveBeenCalled()
-    if (change === 'account') wrapper.unmount()
+    if (change !== 'unmount') wrapper.unmount()
   })
 })

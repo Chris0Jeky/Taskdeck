@@ -9,7 +9,7 @@ const loading = ref(false)
 const error = ref('')
 const status = ref('')
 let generation = 0
-watch(() => session.userId, () => { generation++; loading.value = false; error.value = ''; status.value = '' }, { flush: 'sync' })
+watch([() => session.userId, () => experiment.resetVersion], () => { generation++; loading.value = false; error.value = ''; status.value = '' }, { flush: 'sync' })
 onScopeDispose(() => { generation++ })
 
 async function importFile(event: Event) {

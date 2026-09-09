@@ -50,8 +50,8 @@ function isCompletionOutcome(value: unknown): value is WorkspaceCompletionOutcom
 export const useWorkspaceExperimentStore = defineStore('workspaceExperiment', () => {
   const session = useSessionStore()
   const trials = ref<WorkspaceTrial[]>([])
-  let generation = 0
-  watch(() => session.userId, () => { generation++; trials.value = [] }, { flush: 'sync' })
+  const resetVersion = ref(0)
+  watch(() => session.userId, () => { resetVersion.value++; trials.value = [] }, { flush: 'sync' })
 
   function record(trial: WorkspaceTrialInput) {
     const ease = trial.ease ?? null
@@ -65,13 +65,13 @@ export const useWorkspaceExperimentStore = defineStore('workspaceExperiment', ()
     return true
   }
 
-  function clear() { generation++; trials.value = [] }
+  function clear() { resetVersion.value++; trials.value = [] }
   function exportJson() {
     return JSON.stringify({ kind: 'taskdeck-workspace-comparison', version: 3, trials: trials.value }, null, 2)
   }
 
   async function importJson(json: string) {
-    const request = generation
+    const request = resetVersion.value
     if (!session.userId) throw new Error('Sign in before importing observations.')
     if (new TextEncoder().encode(json).byteLength > MAX_COMPARISON_FILE_BYTES) throw new Error('Choose a comparison file smaller than 2 MiB.')
     const envelope: unknown = JSON.parse(json)
@@ -89,7 +89,7 @@ export const useWorkspaceExperimentStore = defineStore('workspaceExperiment', ()
       }
       incoming.push(value)
     }
-    if (request !== generation || !session.userId) throw new Error('The session changed. Select the file again.')
+    if (request !== resetVersion.value || !session.userId) throw new Error('The session changed. Select the file again.')
     const merged = new Map(trials.value.map(trial => [trial.id, trial]))
     let added = 0
     for (const trial of incoming) {
@@ -116,7 +116,7 @@ export const useWorkspaceExperimentStore = defineStore('workspaceExperiment', ()
     return [...result.values()]
   })
 
-  return { trials, groups, record, clear, exportJson, importJson }
+  return { trials, groups, resetVersion, record, clear, exportJson, importJson }
 })
 
 function validateImportedTrial(input: unknown, version: number): WorkspaceTrial {
