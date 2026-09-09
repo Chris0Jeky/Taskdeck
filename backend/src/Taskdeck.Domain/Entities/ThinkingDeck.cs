@@ -3,7 +3,7 @@ using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Domain.Entities;
 
-public sealed record ThinkingItem(Guid Id, string Text, bool Completed = false);
+public sealed record ThinkingItem(Guid Id, string Text, bool Completed = false, Guid? LinkedCardId = null);
 public sealed record ThinkingLayer(Guid Id, string Kind, string Title, string Body,
     IReadOnlyList<ThinkingItem> Items, Guid? SelectedOptionId = null);
 
@@ -36,7 +36,9 @@ public sealed class ThinkingDeck
             var itemIds = new HashSet<Guid>();
             foreach (var item in layer.Items)
                 if (item is null || item.Id == Guid.Empty || !itemIds.Add(item.Id) ||
-                    string.IsNullOrWhiteSpace(item.Text) || item.Text.Length > 2000)
+                    string.IsNullOrWhiteSpace(item.Text) || item.Text.Length > 2000 ||
+                    item.LinkedCardId == Guid.Empty || item.LinkedCardId == CardId ||
+                    item.LinkedCardId.HasValue && (layer.Kind != "steps" || item.Completed))
                     throw new DomainException(ErrorCodes.ValidationError, "Invalid thinking item.");
             if (layer.Kind is "note" or "question" && layer.Items.Count != 0 ||
                 layer.SelectedOptionId.HasValue && (layer.Kind != "options" || !itemIds.Contains(layer.SelectedOptionId.Value)) ||
