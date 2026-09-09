@@ -7,7 +7,7 @@ import { useThinkingDeck } from '../../composables/useThinkingDeck'
 import type { ThinkingKind, ThinkingLayer } from '../../types/thinking'
 
 const props = defineProps<{ boardId: string; cardId: string }>()
-const emit = defineEmits<{ 'dirty-change': [dirty: boolean] }>()
+const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; busy: [busy: boolean] }>()
 const { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, save, add, move, acceptPromotion } =
   useThinkingDeck(toRef(props, 'boardId'), toRef(props, 'cardId'))
 const view = ref<'stack' | 'path'>('stack')
@@ -18,6 +18,9 @@ const promoting = ref(false)
 const dependenciesBusy = ref(false)
 const stepDrafts = ref<Record<string, boolean>>({})
 const privateDrafts = ref<Record<string, boolean>>({})
+const privateBusy = ref<Record<string, boolean>>({})
+const answering = computed(() => layers.value.some(layer => privateBusy.value[layer.id]))
+watch(answering, value => emit('busy', value), { flush: 'sync' })
 const anyDirty = computed(() => dependenciesBusy.value || promoting.value || dirty.value || layers.value.some(layer => privateDrafts.value[layer.id] || layer.items.some(item => stepDrafts.value[item.id])))
 watch(anyDirty, value => emit('dirty-change', value), { immediate: true })
 function addItem(layer: ThinkingLayer) {
@@ -56,7 +59,7 @@ function reload() { confirmReload.value = false; void load() }
       <p v-if="!layers.length" class="empty">This task can stay simple. Start a layer when you need space to work something out.</p>
       <ol class="layers" :class="`layers--${view}`">
         <li v-for="(layer, index) in layers" :key="layer.id" class="layer">
-          <fieldset :disabled="!canWrite || promoting || saving" :aria-label="`Shared thinking layer ${index + 1}`">
+          <fieldset :disabled="!canWrite || promoting || saving || answering" :aria-label="`Shared thinking layer ${index + 1}`">
           <div class="layer-top"><span class="layer-kind">{{ index + 1 }} · {{ layer.kind }}</span>
             <div class="layer-tools">
               <button type="button" :disabled="index === 0" :aria-label="`Move layer ${index + 1} up`" @click="move(index, -1)">↑</button>
@@ -89,15 +92,15 @@ function reload() { confirmReload.value = false; void load() }
           <template v-if="layer.kind === 'steps'">
             <ThinkingStepCard v-for="item in layer.items" :key="item.id" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :item="item" :revision="revision" :can-write="canWrite" :source-ready="!dirty && !saving && !promoting && !conflict" @promoted="acceptPromotion" @busy="promoting = $event" @dirty-change="stepDrafts[item.id] = $event" />
           </template>
-          <ThinkingQuestionAnswer v-if="layer.kind === 'question'" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :revision="revision" :source-ready="!dirty && !saving" @dirty-change="privateDrafts[layer.id] = $event" />
+          <ThinkingQuestionAnswer v-if="layer.kind === 'question'" :board-id="boardId" :card-id="cardId" :layer-id="layer.id" :revision="revision" :source-ready="!dirty && !saving" @dirty-change="privateDrafts[layer.id] = $event" @busy="privateBusy[layer.id] = $event" />
         </li>
       </ol>
-      <fieldset :disabled="!canWrite || promoting || saving" aria-label="Shared thinking layer controls">
+      <fieldset :disabled="!canWrite || promoting || saving || answering" aria-label="Shared thinking layer controls">
       <div class="add-layers" role="group" aria-label="Add thinking layer"><button v-for="kind in kinds" :key="kind" type="button" :disabled="layers.length >= 40" @click="add(kind)">+ {{ kind }}</button></div>
       </fieldset>
       <footer class="deck-footer">
         <span role="status">{{ dirty ? 'Unsaved thinking' : revision ? 'Thinking saved' : 'No layers yet' }}</span>
-        <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
+        <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict || answering" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
       </footer>
       <CardDependencies :board-id="boardId" :card-id="cardId" @busy="dependenciesBusy = $event" />
     </template>
