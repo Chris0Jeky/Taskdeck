@@ -1,0 +1,56 @@
+{
+  "source": "frontend/taskdeck-web/src/paper-tokens.css",
+  "viewport": { "width": 1440, "height": 1000 },
+  "variants": [
+    {
+      "id": "baseline",
+      "label": "Current night",
+      "intent": "The shipped reference, measured without overrides.",
+      "overrides": {}
+    },
+    {
+      "id": "walnut-outline",
+      "label": "A. Walnut outline",
+      "intent": "Keep the nearly-black reading field and introduce legible warm boundaries with only a small surface lift.",
+      "overrides": {
+        "--paper": "#191510",
+        "--paper-2": "#15110d",
+        "--paper-card": "#221d17",
+        "--paper-edge": "#2a2117",
+        "--line": "#786750",
+        "--line-soft": "#50422f",
+        "--whisper": "#504536"
+      }
+    },
+    {
+      "id": "open-folio",
+      "label": "B. Open folio",
+      "intent": "Lift the substrate around darker recessed cards to reduce page-scale contrast while retaining warm depth.",
+      "overrides": {
+        "--paper": "#28221b",
+        "--paper-2": "#221c16",
+        "--paper-card": "#1c1813",
+        "--paper-edge": "#3b2f20",
+        "--line": "#786750",
+        "--line-soft": "#50422f",
+        "--whisper": "#655744",
+        "--faint": "#958a75"
+      }
+    },
+    {
+      "id": "cedar-layers",
+      "label": "C. Cedar layers",
+      "intent": "Make cards visibly rise from a dark substrate, with the strongest surface and boundary hierarchy of the set.",
+      "overrides": {
+        "--paper": "#19140f",
+        "--paper-2": "#15100c",
+        "--paper-card": "#28221b",
+        "--paper-edge": "#332719",
+        "--line": "#857156",
+        "--line-soft": "#5d4c37",
+        "--whisper": "#5f513e",
+        "--faint": "#958a75"
+      }
+    }
+  ]
+}
