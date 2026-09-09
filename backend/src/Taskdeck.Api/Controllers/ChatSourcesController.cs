@@ -9,8 +9,14 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/llm/chat/context-memory")]
-public sealed class ChatSourcesController(ChatContextResolver context, IUserContext userContext) : AuthenticatedControllerBase(userContext)
+public class ChatSourcesController : AuthenticatedControllerBase
 {
+    private readonly ChatContextResolver context;
+    public ChatSourcesController(ChatContextResolver context, IUserContext userContext) : base(userContext)
+    {
+        this.context = context;
+    }
+
     [HttpGet("{id:guid}/sources")]
     [ResponseCache(NoStore = true)]
     public async Task<IActionResult> Sources(Guid id, [FromQuery] Guid boardId, [FromQuery] int revision,
