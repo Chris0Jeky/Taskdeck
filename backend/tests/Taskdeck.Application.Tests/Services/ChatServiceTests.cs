@@ -1829,7 +1829,7 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_FailedProposalToolWithoutClassifierIntent_TerminalTimeoutFallback_PersistsNoProposalOutcome()
+    public async Task SendMessageAsync_FailedProposalToolErrorEnvelopeWithoutClassifierIntent_TerminalTimeoutFallback_PersistsNoProposalOutcome()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -1871,7 +1871,7 @@ public class ChatServiceTests
                 It.IsAny<ToolExecutionContext>(),
                 It.IsAny<System.Text.Json.JsonElement>(),
                 It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new InvalidOperationException("simulated executor failure"));
+            .ReturnsAsync("{\"error\":\"simulated expected proposal rejection\"}");
         var service = BuildServiceWithOrchestrator(new ToolCallingChatOrchestrator(
             provider.Object,
             new ToolExecutorRegistry(new[] { executor.Object }),
@@ -2985,17 +2985,19 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task StreamResponseAsync_OversizedTerminal_PersistsPlaceholderAndCommitsAuthoritativeUsage()
+    public async Task StreamResponseAsync_OversizedNonTerminalAction_EmitsOneTerminalOutcomeAndPersistsReceipt()
     {
         var userId = Guid.NewGuid();
-        var session = new ChatSession(userId, "Oversized terminal stream");
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Oversized non-terminal stream", boardId);
+        session.AddMessage(new ChatMessage(session.Id, ChatMessageRole.User, "create card for release notes"));
         _chatSessionRepoMock
             .Setup(r => r.GetByIdWithMessagesAsync(session.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(session);
         _llmProviderMock
             .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
             .Returns((ChatCompletionRequest request, CancellationToken _) =>
-                OversizedTerminalStream(request));
+                OversizedNonTerminalStream(request));
         var reservationId = Guid.NewGuid();
         var quotaMock = new Mock<ILlmQuotaService>();
         quotaMock.Setup(q => q.ReserveAsync(userId, Domain.Enums.LlmSurface.Chat, It.IsAny<CancellationToken>()))
@@ -3009,22 +3011,23 @@ public class ChatServiceTests
         events.Should().ContainSingle();
         events[0].IsComplete.Should().BeTrue();
         events[0].Error.Should().Be("Streamed assistant response exceeded the safety limit.");
-        events[0].TokensUsed.Should().Be(100000);
+        events[0].TokensUsed.Should().BeNull();
         events[0].Provider.Should().Be("OpenAICompatible");
         events[0].Model.Should().Be("vendor/model");
         var persisted = session.Messages.Single(message => message.Role == ChatMessageRole.Assistant);
-        persisted.Content.Should().Be("The provider could not complete the response.");
+        persisted.Content.Should().Contain("The provider could not complete the response.");
+        persisted.Content.Should().Contain("No proposal was created");
         persisted.Content.Length.Should().BeLessThan(1_048_577);
         persisted.MessageType.Should().Be("degraded");
         persisted.DegradedReason.Should().Be("Streamed assistant response exceeded the safety limit.");
-        persisted.TokenUsage.Should().Be(100000);
+        persisted.TokenUsage.Should().BeNull();
         quotaMock.Verify(q => q.CommitReservationAsync(
             reservationId,
             userId,
             Domain.Enums.LlmSurface.Chat,
             "OpenAICompatible",
             "vendor/model",
-            100000,
+            2000,
             0,
             CancellationToken.None), Times.Once);
         quotaMock.Verify(q => q.ReleaseReservationAsync(
@@ -3287,15 +3290,14 @@ public class ChatServiceTests
         await Task.CompletedTask;
     }
 
-    private static async IAsyncEnumerable<LlmTokenEvent> OversizedTerminalStream(
+    private static async IAsyncEnumerable<LlmTokenEvent> OversizedNonTerminalStream(
         ChatCompletionRequest request)
     {
         request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
         request.DispatchContext.MarkDispatched();
         yield return new LlmTokenEvent(
             new string('x', 1_048_577),
-            true,
-            TokensUsed: 100000,
+            false,
             Provider: "OpenAICompatible",
             Model: "vendor/model");
         await Task.CompletedTask;

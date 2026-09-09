@@ -380,8 +380,7 @@ public class ChatService : IChatService
                         toolCompletionRequest, session.BoardId.Value, userId, ct);
 
                     var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
-                    failedProposalToolAttempt = toolResult.ToolCallLog.Any(
-                        toolCall => toolCall.IsError && IsProposalToolCall(toolCall));
+                    failedProposalToolAttempt = toolResult.ToolCallLog.Any(IsFailedProposalToolCall);
                     // A write tool may have durably created a proposal before a later provider
                     // round fails. Its receipt is authoritative even when the closing prose is
                     // missing; falling back here could create a duplicate proposal (#2004).
@@ -934,6 +933,10 @@ public class ChatService : IChatService
                     streamDegradedReason = "Streamed assistant response exceeded the safety limit.";
                     terminalHadError = true;
                     persistEmptyTerminalOutcome = true;
+                    // This synthetic degraded event is terminal even when the rejected provider
+                    // delta was non-terminal. Mark it before yielding so the action-outcome suffix
+                    // is not emitted as a second completion after the loop.
+                    terminalEventSeen = true;
                     yield return new LlmTokenEvent(
                         streamOutcomeSuffix == null ? string.Empty : $"\n\n{streamOutcomeSuffix}",
                         true,
@@ -1259,6 +1262,26 @@ public class ChatService : IChatService
 
     private static bool IsProposalToolCall(ToolCallLogEntry toolCall) =>
         toolCall.ToolName.StartsWith("propose_", StringComparison.Ordinal);
+
+    private static bool IsFailedProposalToolCall(ToolCallLogEntry toolCall)
+    {
+        if (!IsProposalToolCall(toolCall))
+            return false;
+
+        if (toolCall.IsError)
+            return true;
+
+        try
+        {
+            using var result = JsonDocument.Parse(toolCall.ResultSummary);
+            return result.RootElement.ValueKind == JsonValueKind.Object
+                && result.RootElement.TryGetProperty("error", out _);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     private async Task<Result> PublishMentionNotificationsAsync(
         ChatSession session,
