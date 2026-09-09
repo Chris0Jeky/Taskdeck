@@ -2235,3 +2235,8 @@ PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal a
 ## CI10-2 remaining acceptance (2026-09-08)
 
 PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
+
+Across-release comparison continuation (#2808): portable observation import/export, build attribution,
+predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
+sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
+selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.

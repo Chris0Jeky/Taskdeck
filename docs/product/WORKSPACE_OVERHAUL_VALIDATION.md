@@ -130,3 +130,23 @@ and identity reset. The insight/memory follow-through uses delayed-response comp
 prove that analysis settles across route changes, conflicting actions are disabled, initial memory reads
 finish before creation, and Retry returns to failed board discovery. These are fixes from #2808's
 recorded review residuals, not changes to approval/apply authority.
+
+## Comparison files across releases (2026-09-09)
+
+Comparison exports now use version3 with stable observation IDs and frontend input fingerprints.
+The comparison page imports version2/3 files locally, validates the full batch before accepting it,
+skips identical IDs, rejects conflicting IDs and enforces 500 observations / 2 MiB per file. Legacy
+version2 entries receive deterministic content-based IDs and retain unknown frontend attribution.
+Import is manual; notes remain in memory until explicitly exported, and identity changes clear them.
+No notes are sent to a server or assigned automatically. The grouped table keeps scenario, experience,
+presentation, theme, backend version and frontend fingerprint separate; ratings exclude unrated
+entries. This is descriptive personal evidence, not a randomized/statistical A/B result.
+
+Production Vite builds embed a SHA256 fingerprint over frontend source/public/build inputs, locked
+packages/configuration, Node version, mode and public Vite environment values. Only the digest is
+embedded. Development has no fixed frontend identity and records null. This fingerprint identifies
+build inputs, not a signed release or an external deployment's contents.
+
+Proving seams: workspaceExperimentStore.spec.ts, WorkspaceComparisonFiles.spec.ts and
+`node --test build/frontendIdentity.test.mjs`; the extended comparison/Grove browser journey exports,
+reloads, imports, skips duplicates and checks all four experiences at desktop/tablet/375px widths.

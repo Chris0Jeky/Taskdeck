@@ -1451,3 +1451,9 @@ The full backend invocation had 8,992 passes, 5 skips, and one obsolete assertio
 The nightly integration candidate adds a parallel observation job. It derives a baseline only from authenticated successful CI Nightly and Nightly Quality Signals runs at the same main head, checks the complete expected job set and latest attempts, binds the bounded JSON plan artifact to the run and Git tree, and verifies ancestry and changed files. Missing or inconsistent evidence selects a full sweep. Both schedules and all twelve deep suites remain unconditional; this does not enable selective execution.
 
 At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.
+
+September 9 retained-comparison continuation (#2808): version3 observation files can be imported and
+combined across releases with atomic validation, stable IDs and duplicate/conflict handling. Production
+frontend inputs receive a build fingerprint; legacy/dev observations keep unknown attribution.
+Grouped descriptive outcomes preserve scenario/layout/theme/build conditions. Notes remain manually
+retained files with no automatic telemetry. Exact local/hosted checks belong to the continuation PR.
