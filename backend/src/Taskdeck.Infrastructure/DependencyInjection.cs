@@ -49,6 +49,7 @@ public static class DependencyInjection
 
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IWorkspaceInsightRepository, WorkspaceInsightRepository>();
+        services.AddScoped<IChatSourceReader, ChatSourceReader>();
         services.AddScoped<WorkspaceInsightService>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
         services.AddScoped<ICardRepository, CardRepository>();

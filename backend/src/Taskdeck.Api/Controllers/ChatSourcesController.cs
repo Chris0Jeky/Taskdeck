@@ -1,0 +1,23 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Taskdeck.Api.Extensions;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
+
+namespace Taskdeck.Api.Controllers;
+
+[ApiController]
+[Authorize]
+[Route("api/llm/chat/context-memory")]
+public sealed class ChatSourcesController(ChatContextResolver context, IUserContext userContext) : AuthenticatedControllerBase(userContext)
+{
+    [HttpGet("{id:guid}/sources")]
+    [ResponseCache(NoStore = true)]
+    public async Task<IActionResult> Sources(Guid id, [FromQuery] Guid boardId, [FromQuery] int revision,
+        [FromQuery] int offset, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var actor, out var error)) return error!;
+        var result = await context.ListSourcesAsync(actor, boardId, id, revision, offset, ct);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+}
