@@ -28,7 +28,24 @@ public record UserDataExportContentDto(
     UserDataExportNotificationPreferencesDto? NotificationPreferences,
     IReadOnlyList<UserDataExportProposalFeedbackDto> ProposalFeedback,
     IReadOnlyList<UserDataExportArtefactDto>? Artefacts = null,
-    IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null);
+    IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null,
+    IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
+    IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null);
+
+public record UserDataExportWorkspaceMemoryDto(
+    Guid Id, Guid BoardId, Guid? InsightId, Guid? SourceCardId, Guid? SourceLayerId,
+    long? SourceDeckRevision, string? SourceQuestionHash, string Title, string Text,
+    string OriginalText, string? OriginalEvidence, string Status, bool Archived, int Revision,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, IReadOnlyList<UserDataExportWorkspaceMemoryRevisionDto> History);
+
+public record UserDataExportWorkspaceMemoryRevisionDto(
+    Guid Id, Guid MemoryId, string Title, string Text, string Status, bool Archived, int Revision,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+
+public record UserDataExportQuietInsightDto(
+    Guid Id, Guid BoardId, Guid? CardId, Guid? MemoryId, string Rule, string TargetKey,
+    string Title, string Detail, string Evidence, string State, DateTimeOffset CheckedAt,
+    DateTimeOffset? SnoozeUntil, int Revision, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 /// <summary>
 /// A portable normalized transcript. <see cref="Text"/> remains the only
@@ -205,4 +222,7 @@ public record AccountDeletionResultDto(
     int PreferencesDeleted,
     int ArtefactsDeleted = 0,
     int TranscriptsDeleted = 0,
-    int DurableCapturesDeleted = 0);
+    int DurableCapturesDeleted = 0,
+    int WorkspaceMemoriesDeleted = 0,
+    int WorkspaceMemoryRevisionsDeleted = 0,
+    int QuietInsightsDeleted = 0);

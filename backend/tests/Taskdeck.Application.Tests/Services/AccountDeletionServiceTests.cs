@@ -76,7 +76,7 @@ public class AccountDeletionServiceTests
         _unitOfWorkMock.Setup(u => u.CommitTransactionAsync(default)).Returns(Task.CompletedTask);
         _unitOfWorkMock.Setup(u => u.SaveChangesAsync(default)).ReturnsAsync(1);
 
-        _service = new AccountDeletionService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object);
+        _service = new AccountDeletionService(_unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create());
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public class AccountDeletionServiceTests
             _unitOfWorkMock.Object,
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
-            _transcriptRepoMock.Object,
+            _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(),
             captureStore: captureStoreMock.Object);
 
         var result = await service.DeleteAccountAsync(_userId, new AccountDeletionRequest(_password, "DELETE MY ACCOUNT"));
@@ -575,7 +575,7 @@ public class AccountDeletionServiceTests
         // Arrange — create a service with a cache mock
         var cacheMock = new Mock<IActiveUserCache>();
         var serviceWithCache = new AccountDeletionService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, cacheMock.Object);
+            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(), cacheMock.Object);
 
         SetupUserFound();
         SetupEmptyRepositories();
@@ -613,7 +613,7 @@ public class AccountDeletionServiceTests
 
         var loggerMock = new Mock<ILogger<AccountDeletionService>>();
         var serviceWithLogger = new AccountDeletionService(
-            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object,
+            _unitOfWorkMock.Object, _historyServiceMock.Object, _artefactRepoMock.Object, _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(),
             activeUserCache: null, logger: loggerMock.Object);
 
         var expectedException = new InvalidOperationException("DB error");

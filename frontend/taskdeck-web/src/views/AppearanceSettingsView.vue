@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { usePaperThemeStore, type PaperMode } from '../store/paperThemeStore'
 import { useLocaleStore } from '../store/localeStore'
+import WorkspaceExperienceSwitcher from '../components/workspace/WorkspaceExperienceSwitcher.vue'
 import { LOCALE_LABELS, MACHINE_TRANSLATED_LOCALES, type SupportedLocale } from '../i18n'
 
 const { t } = useI18n()
@@ -18,7 +19,7 @@ interface ThemeOption {
 // Static key map rather than a key assembled from `mode`: `paper-night` is not
 // a valid identifier segment, and runtime-built keys are invisible to grep and
 // fail silently (fallback is silent by design, ADR-0054 §5).
-const MODE_KEYS: Record<PaperMode, { label: string; hint: string }> = {
+const MODE_KEYS: Record<Exclude<PaperMode, 'grove' | 'grove-night'>, { label: string; hint: string }> = {
   off: {
     label: 'settings.appearance.modes.off.label',
     hint: 'settings.appearance.modes.off.hint',
@@ -37,7 +38,7 @@ const MODE_KEYS: Record<PaperMode, { label: string; hint: string }> = {
   },
 }
 
-const MODE_ORDER: PaperMode[] = ['off', 'paper', 'paper-night', 'auto']
+const MODE_ORDER = ['off', 'paper', 'paper-night', 'auto'] as const
 
 // Single source of truth for the four selectable modes. `off` is the Legacy
 // (Obsidian) escape hatch: it removes the Paper body class so AppShell renders
@@ -46,11 +47,14 @@ const MODE_ORDER: PaperMode[] = ['off', 'paper', 'paper-night', 'auto']
 // A computed, not a module const: the labels are now translated, so they have
 // to re-resolve when the language changes rather than freezing at import time.
 const options = computed<ThemeOption[]>(() =>
-  MODE_ORDER.map((mode) => ({
+  [ ...MODE_ORDER.map((mode) => ({
     mode,
     label: t(MODE_KEYS[mode].label),
     hint: t(MODE_KEYS[mode].hint),
   })),
+  { mode: 'grove', label: 'Grove', hint: 'Sage, warm ivory, and forest ink. A calmer palette across your workspace.' },
+  { mode: 'grove-night', label: 'Grove Night', hint: 'Deep forest surfaces and soft sage accents for working after hours.' },
+  ],
 )
 
 const activeMode = computed(() => paperTheme.mode)
@@ -145,6 +149,12 @@ const localeStatus = computed(() => {
         </button>
       </div>
       <p class="paper-appearance__hint">{{ activeHint }}</p>
+    </section>
+
+    <section class="paper-appearance__panel" data-testid="appearance-experience">
+      <h2 class="tk-h3 paper-appearance__panel-title">Make room for your work</h2>
+      <WorkspaceExperienceSwitcher />
+      <p class="paper-appearance__hint">Choose a workspace layout, then how much detail to show. Your boards, captures, and review decisions stay with you.</p>
     </section>
 
     <!--
