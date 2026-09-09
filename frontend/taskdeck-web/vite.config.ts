@@ -4,6 +4,7 @@ import { defineConfig, loadEnv, type Plugin, type ResolvedConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { hoistWorkerImportScripts } from './src/pwa/hoistWorkerImportScripts.ts'
+import { fingerprintFrontend } from './build/frontendIdentity.ts'
 import {
   createLocaleCatalogRuntimePattern,
   createStaticAssetRuntimePattern,
@@ -49,10 +50,11 @@ function hoistServiceWorkerImportScripts(specifiers: readonly string[]): Plugin 
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
 
   return {
+    define: { __TASKDECK_FRONTEND_BUILD__: JSON.stringify(command === 'build' ? fingerprintFrontend(process.cwd(), mode, env) : null) },
     plugins: [
     vue(),
     VitePWA({

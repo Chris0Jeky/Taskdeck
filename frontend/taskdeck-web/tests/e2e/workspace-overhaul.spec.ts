@@ -220,9 +220,17 @@ test('makes comparison and Grove themes usable on desktop and narrow screens', a
   let comparisonText = ''
   for await (const chunk of comparisonStream!) comparisonText += chunk.toString()
   const comparison = JSON.parse(comparisonText)
-  expect(comparison.version).toBe(2)
+  expect(comparison.version).toBe(3)
   expect(comparison.trials[0]).toMatchObject({ scenario: 'resume-thinking', completionOutcome: 'completed', ease: 4 })
   expect(comparison.trials[0]).toHaveProperty('build')
+  expect(comparison.trials[0]).toHaveProperty('frontendBuild')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Your observations', exact: true })).toHaveCount(0)
+  await page.getByLabel('Import saved observations', { exact: true }).setInputFiles({ name: 'retained-comparison.json', mimeType: 'application/json', buffer: Buffer.from(comparisonText) })
+  await expect(page.getByText('Imported 1 observation. Exact duplicates were skipped.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('table')).toContainText('1 completed')
+  await page.getByLabel('Import saved observations', { exact: true }).setInputFiles({ name: 'retained-comparison.json', mimeType: 'application/json', buffer: Buffer.from(comparisonText) })
+  await expect(page.getByText('Imported 0 observations. Exact duplicates were skipped.', { exact: true })).toBeVisible()
   for (const width of [1440, 768, 375]) {
     await page.setViewportSize({ width, height: 900 })
     for (const experience of ['classic', 'studio', 'companion', 'unified']) {
