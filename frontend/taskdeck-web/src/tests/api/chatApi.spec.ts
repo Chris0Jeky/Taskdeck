@@ -43,6 +43,14 @@ describe('chatApi', () => {
     })
   })
 
+  it('can fail fast for a post-send reconciliation read', async () => {
+    const failure = new Error('Refresh unavailable')
+    vi.mocked(http.get).mockRejectedValue(failure)
+
+    await expect(chatApi.getSession('session/1', { skipRetry: true })).rejects.toBe(failure)
+    expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session%2F1', { skipRetry: true })
+  })
+
   it('loads provider health', async () => {
     const healthPayload = {
       isAvailable: true,
