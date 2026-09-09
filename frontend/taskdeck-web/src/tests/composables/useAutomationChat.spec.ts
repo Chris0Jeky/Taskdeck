@@ -352,6 +352,62 @@ describe('useAutomationChat', () => {
       expect(chatApiMocks.sendMessage).toHaveBeenCalledTimes(1)
     })
 
+    it('clears the pre-bind local fallback when binding returns the authoritative transcript', async () => {
+      const instruction = 'create card for release notes'
+      const unbound = { id: 's1', title: 'Test', boardId: null, recentMessages: pendingMessages }
+      const initialReply = {
+        id: 'a2', sessionId: 's1', role: 1, content: 'No board linked for the new instruction',
+        messageType: 'action-needs-board', proposalId: null, tokenUsage: 12,
+        createdAt: '2026-05-16T10:03:00Z',
+      }
+      const bound = {
+        ...unbound,
+        boardId: 'b1',
+        recentMessages: [
+          { ...pendingMessages[0], id: 'server-user-1' },
+          { ...pendingMessages[1], id: 'server-recovery-1' },
+        ],
+      }
+      const proposal = {
+        id: 'a3', sessionId: 's1', role: 1, content: 'Proposal created for review.',
+        messageType: 'proposal-reference', proposalId: 'p1', tokenUsage: null,
+        createdAt: '2026-05-16T10:04:00Z',
+      }
+      chatApiMocks.getMySessions.mockResolvedValue([unbound])
+      chatApiMocks.getSession
+        .mockResolvedValueOnce(unbound)
+        .mockRejectedValue(new Error('refresh failed'))
+      chatApiMocks.sendMessage
+        .mockResolvedValueOnce(initialReply)
+        .mockResolvedValueOnce(proposal)
+      chatApiMocks.bindBoard.mockResolvedValue(bound)
+      boardsApiMocks.getBoards.mockResolvedValue([
+        { id: 'b1', name: 'Release Board', description: null, isArchived: false, canWrite: true },
+      ])
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.pendingBoardRecovery.value?.messageId).toBe('a1'))
+
+      chat.messageContent.value = instruction
+      await chat.handleSendMessage()
+      await vi.waitFor(() => expect(chat.pendingBoardRecovery.value?.messageId).toBe('a2'))
+      await chat.bindBoardToPendingTurn('a2', 'b1')
+      await chat.continuePendingInstruction('server-recovery-1')
+
+      const visibleMessages = chat.selectedSession.value?.recentMessages ?? []
+      expect(chatApiMocks.sendMessage).toHaveBeenCalledTimes(2)
+      expect(visibleMessages.filter((message) => message.id.startsWith('local-user-'))).toHaveLength(1)
+      expect(visibleMessages.some((message) => message.id === 'local-user-s1-1')).toBe(false)
+      expect(visibleMessages.some((message) => message.id === 'a2')).toBe(false)
+      expect(visibleMessages.map((message) => message.content)).toEqual([
+        instruction,
+        'No board linked',
+        instruction,
+        'Proposal created for review.',
+      ])
+    })
+
     it('excludes archived and explicitly read-only boards from binding choices', async () => {
       boardsApiMocks.getBoards.mockResolvedValue([
         { id: 'archived', name: 'Archived', description: null, isArchived: true, canWrite: true },

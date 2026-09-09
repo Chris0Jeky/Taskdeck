@@ -416,7 +416,12 @@ export function useAutomationChat() {
       const sessionIndex = sessions.value.findIndex((item) => item.id === sessionId)
       if (sessionIndex >= 0) sessions.value.splice(sessionIndex, 1, bound)
 
-      if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
+      if (
+        requestedSessionId === sessionId
+        && selectedSession.value?.id === sessionId
+        && bindingGeneration === boardBindingGeneration
+      ) {
+        localMessagesBySession.delete(sessionId)
         selectedSession.value = bound
         boardBindingReceipt.value = boardNameById.value.get(boardId) ?? 'the selected board'
       }
