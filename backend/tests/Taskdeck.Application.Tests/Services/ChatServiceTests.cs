@@ -1829,7 +1829,7 @@ public class ChatServiceTests
     }
 
     [Fact]
-    public async Task SendMessageAsync_FailedProposalToolWithoutClassifierIntent_PersistsNoProposalOutcome()
+    public async Task SendMessageAsync_FailedProposalToolWithoutClassifierIntent_TerminalTimeoutFallback_PersistsNoProposalOutcome()
     {
         var userId = Guid.NewGuid();
         var boardId = Guid.NewGuid();
@@ -1861,13 +1861,7 @@ public class ChatServiceTests
                         IsComplete: false));
                 }
 
-                return Task.FromResult(new LlmToolCompletionResult(
-                    Content: "I could not complete that request.",
-                    TokensUsed: 10,
-                    Provider: "Mock",
-                    Model: "mock-chat",
-                    ToolCalls: null,
-                    IsComplete: true));
+                throw new TimeoutException("simulated terminal timeout after failed write tool");
             });
 
         var executor = new Mock<IToolExecutor>();
@@ -1892,6 +1886,140 @@ public class ChatServiceTests
         result.IsSuccess.Should().BeTrue();
         result.Value.MessageType.Should().Be("action-no-proposal");
         result.Value.Content.Should().Contain("No proposal was created");
+        result.Value.ProposalId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_FailedProposalTool_DegradedTerminalContent_PersistsNoProposalOutcome()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Failed proposal tool degraded terminal", boardId);
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var provider = new Mock<ILlmProvider>();
+        provider
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest _, IReadOnlyList<TaskdeckToolSchema> _,
+                IReadOnlyList<ToolCallResult>? previousResults, CancellationToken _) =>
+            {
+                if (previousResults == null)
+                {
+                    var arguments = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("{}");
+                    return new LlmToolCompletionResult(
+                        Content: null,
+                        TokensUsed: 20,
+                        Provider: "Mock",
+                        Model: "mock-chat",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "propose_create_card", arguments) },
+                        IsComplete: false);
+                }
+
+                return new LlmToolCompletionResult(
+                    Content: "The terminal provider response was degraded.",
+                    TokensUsed: 10,
+                    Provider: "Mock",
+                    Model: "mock-chat",
+                    ToolCalls: null,
+                    IsComplete: true,
+                    IsDegraded: true,
+                    DegradedReason: "simulated terminal degradation");
+            });
+
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("propose_create_card");
+        executor
+            .Setup(e => e.ExecuteAsync(
+                It.IsAny<ToolExecutionContext>(),
+                It.IsAny<System.Text.Json.JsonElement>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated executor failure"));
+        var service = BuildServiceWithOrchestrator(new ToolCallingChatOrchestrator(
+            provider.Object,
+            new ToolExecutorRegistry(new[] { executor.Object }),
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object));
+
+        var result = await service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please help me understand the release workflow"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("action-no-proposal");
+        result.Value.Content.Should().Contain("The terminal provider response was degraded.");
+        result.Value.Content.Should().Contain("No proposal was created");
+        result.Value.ProposalId.Should().BeNull();
+        _llmProviderMock.Verify(
+            fallback => fallback.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_FailedReadOnlyTool_TerminalTimeoutFallback_RemainsConversational()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Failed read-only tool", boardId);
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+
+        var provider = new Mock<ILlmProvider>();
+        var callCount = 0;
+        provider
+            .Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(() =>
+            {
+                callCount++;
+                if (callCount == 1)
+                {
+                    var arguments = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>("{}");
+                    return Task.FromResult(new LlmToolCompletionResult(
+                        Content: null,
+                        TokensUsed: 20,
+                        Provider: "Mock",
+                        Model: "mock-chat",
+                        ToolCalls: new[] { new ToolCallRequest("call-1", "list_board_columns", arguments) },
+                        IsComplete: false));
+                }
+
+                throw new TimeoutException("simulated terminal timeout after failed read-only tool");
+            });
+
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("list_board_columns");
+        executor
+            .Setup(e => e.ExecuteAsync(
+                It.IsAny<ToolExecutionContext>(),
+                It.IsAny<System.Text.Json.JsonElement>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("simulated executor failure"));
+        var service = BuildServiceWithOrchestrator(new ToolCallingChatOrchestrator(
+            provider.Object,
+            new ToolExecutorRegistry(new[] { executor.Object }),
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object));
+
+        var result = await service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("please help me understand the release workflow"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("text");
+        result.Value.Content.Should().Be("Assistant response");
+        result.Value.Content.Should().NotContain("No proposal was created");
         result.Value.ProposalId.Should().BeNull();
     }
 

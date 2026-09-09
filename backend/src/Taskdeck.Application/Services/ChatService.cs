@@ -358,6 +358,7 @@ public class ChatService : IChatService
             else
             {
                 var usedToolCalling = false;
+                var failedProposalToolAttempt = false;
                 LlmCompletionResult? reusableNoToolResponse = null;
 
                 // Try tool-calling path for board-scoped sessions with orchestrator.
@@ -379,6 +380,8 @@ public class ChatService : IChatService
                         toolCompletionRequest, session.BoardId.Value, userId, ct);
 
                     var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
+                    failedProposalToolAttempt = toolResult.ToolCallLog.Any(
+                        toolCall => toolCall.IsError && IsProposalToolCall(toolCall));
                     // A write tool may have durably created a proposal before a later provider
                     // round fails. Its receipt is authoritative even when the closing prose is
                     // missing; falling back here could create a duplicate proposal (#2004).
@@ -407,9 +410,17 @@ public class ChatService : IChatService
                         }
                         else if (toolResult.IsDegraded)
                         {
-                            messageType = "degraded";
-                            if (turnRequestsAction)
+                            if (failedProposalToolAttempt)
+                            {
+                                messageType = "action-no-proposal";
                                 assistantContent = AppendNoProposalActionNotice(assistantContent);
+                            }
+                            else
+                            {
+                                messageType = "degraded";
+                                if (turnRequestsAction)
+                                    assistantContent = AppendNoProposalActionNotice(assistantContent);
+                            }
                         }
                         else if (turnRequestsAction || toolResult.ToolCallLog.Any(IsProposalToolCall))
                         {
@@ -541,8 +552,14 @@ public class ChatService : IChatService
                     assistantContent = llmResult.Content;
                     tokenUsage = llmResult.HasAuthoritativeTokenUsage ? llmResult.TokensUsed : null;
                     degradedReason = llmResult.DegradedReason;
+                    var preserveFailedProposalToolAttempt = failedProposalToolAttempt && proposalId == null;
 
-                    if (llmResult.IsDegraded)
+                    if (preserveFailedProposalToolAttempt)
+                    {
+                        messageType = "action-no-proposal";
+                        assistantContent = AppendNoProposalActionNotice(assistantContent);
+                    }
+                    else if (llmResult.IsDegraded)
                     {
                         messageType = "degraded";
                     }
@@ -551,7 +568,7 @@ public class ChatService : IChatService
                     // (either via the IsClarificationRequest flag from the provider, or
                     // detected heuristically), set the message type to "clarification"
                     // instead of attempting proposal creation.
-                    var isClarification = !forceBestEffort &&
+                    var isClarification = !preserveFailedProposalToolAttempt && !forceBestEffort &&
                         (llmResult.IsClarificationRequest
                          || (!llmResult.IsActionable
                              && ClarificationDetector.IsClarificationResponse(llmResult.Content)));
@@ -577,7 +594,7 @@ public class ChatService : IChatService
                         if (!session.BoardId.HasValue && !string.IsNullOrWhiteSpace(llmResult.Content))
                             assistantContent = AppendNoBoardActionNotice(llmResult.Content);
                     }
-                    else
+                    else if (!preserveFailedProposalToolAttempt)
                     {
                         var hasProposalIntent = llmResult.IsActionable || turnRequestsAction;
                         var shouldAttemptProposal = !llmResult.IsDegraded && hasProposalIntent;
