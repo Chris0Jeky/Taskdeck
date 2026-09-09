@@ -889,6 +889,7 @@ export function useReviewProposals() {
     // `recordQueueAccessRevoked`, so it cannot carry the old board into view.
     const hadRevokedPreviousScope =
       queueAccessRevoked.value && queueAccessRevokedScope.value !== requestedAccessScope
+    resetQueueRefreshHealthForScope(requestedAccessScope)
     let outcome: ProposalLoadOutcome = 'landed'
 
     try {
@@ -1009,6 +1010,10 @@ export function useReviewProposals() {
   let refreshInFlight = false
   let consecutiveQueueRefreshFailures = 0
   let consecutiveQueueRefreshRefusals = 0
+  // Refresh health describes one readable board scope. Keep its owner so a
+  // board transition cannot carry the previous board's disclosure, recovery,
+  // or uninterrupted run into the next read (#2214).
+  let queueRefreshScope: string | null | undefined
   // A 403 pauses the configured poll without making it forget how the owning
   // surface asked it to behave. Permanent stop/disposal clears this state so a
   // late successful explicit load cannot resurrect a surface that has left.
@@ -1063,6 +1068,16 @@ export function useReviewProposals() {
       // now false".
       retireQueueRecovery()
     }
+  }
+
+  function resetQueueRefreshHealthForScope(scope: string | null) {
+    if (queueRefreshScope === scope) return
+    queueRefreshScope = scope
+    consecutiveQueueRefreshFailures = 0
+    consecutiveQueueRefreshRefusals = 0
+    queueRefreshStale.value = false
+    queueRefreshRefused.value = false
+    retireQueueRecovery()
   }
 
   /**
@@ -1305,6 +1320,7 @@ export function useReviewProposals() {
     // describes the board it queried, never whichever board is on screen now.
     const requestedBoardId = activeBoardFilter.value || null
     const requestedHistoryMode = isArchivedHistory.value
+    resetQueueRefreshHealthForScope(queueAccessScopeOf(requestedBoardId))
     // A hash target is part of the question too. Hash navigation does not start
     // a queue load, so it needs its own snapshot to stop an old by-id answer from
     // inserting or marking unavailable whichever proposal is selected next.
