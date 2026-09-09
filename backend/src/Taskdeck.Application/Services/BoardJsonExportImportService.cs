@@ -11,6 +11,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly DevelopmentSandboxSettings _sandboxSettings;
+    private readonly IThinkingDeckRepository? _thinkingDecks;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -20,10 +21,12 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
     public BoardJsonExportImportService(
         IUnitOfWork unitOfWork,
-        DevelopmentSandboxSettings? sandboxSettings = null)
+        DevelopmentSandboxSettings? sandboxSettings = null,
+        IThinkingDeckRepository? thinkingDecks = null)
     {
         _unitOfWork = unitOfWork;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
+        _thinkingDecks = thinkingDecks;
     }
 
     public async Task<Result<ExportBoardDto>> ExportBoardAsync(Guid boardId, Guid userId)
@@ -85,6 +88,11 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                     a.GrantedAt))
                 .ToList();
 
+            var thinkingDecks = _thinkingDecks is null ? null :
+                (await _thinkingDecks.GetByCardIdsAsync(cards.Select(card => card.Id).ToArray(), default))
+                    .Select(deck => new ExportThinkingDeckDto(deck.CardId, new ThinkingMaterialDto(deck.SchemaVersion, deck.ReadLayers())))
+                    .ToList();
+
             var exportDto = new ExportBoardDto(
                 boardDto,
                 columns,
@@ -92,7 +100,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 labels,
                 accessDtos,
                 DateTimeOffset.UtcNow,
-                requestingUser.Username);
+                requestingUser.Username,
+                thinkingDecks);
 
             return Result.Success(exportDto);
         }
@@ -187,6 +196,16 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 }
 
                 await _unitOfWork.Cards.AddAsync(card);
+                if (importCard.Thinking is not null)
+                {
+                    if (_thinkingDecks is null)
+                        throw new DomainException(ErrorCodes.ValidationError, "This host cannot import thinking material.");
+                    if (importCard.Thinking.SchemaVersion != 1)
+                        throw new DomainException(ErrorCodes.ValidationError, "Unsupported thinking material schema version.");
+                    var deck = new ThinkingDeck(card.Id);
+                    deck.Replace(importCard.Thinking.Layers);
+                    _thinkingDecks.AddForImport(deck);
+                }
                 cardsImported++;
             }
 
@@ -310,8 +329,19 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             }
         }
 
+        var exportedCards = (exportDto.Cards ?? Enumerable.Empty<CardDto>()).ToList();
+        var exportedCardIds = exportedCards.Select(card => card.Id).ToHashSet();
+        if (exportedCardIds.Count != exportedCards.Count)
+            throw new JsonException("Export payload contains duplicate card IDs");
+        var thinkingByCard = new Dictionary<Guid, ThinkingMaterialDto>();
+        foreach (var deck in exportDto.ThinkingDecks ?? [])
+        {
+            if (deck is null || deck.Material is null || !exportedCardIds.Contains(deck.CardId) || !thinkingByCard.TryAdd(deck.CardId, deck.Material))
+                throw new JsonException("Export payload contains an invalid or duplicate thinking card reference");
+        }
+
         var cards = new List<ImportCardDto>();
-        foreach (var card in exportDto.Cards ?? Enumerable.Empty<CardDto>())
+        foreach (var card in exportedCards)
         {
             if (!columnNameById.TryGetValue(card.ColumnId, out var columnName))
             {
@@ -331,7 +361,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 columnName,
                 card.Position,
                 card.DueDate,
-                labelNames));
+                labelNames,
+                thinkingByCard.GetValueOrDefault(card.Id)));
         }
 
         return new ImportBoardDto(

@@ -96,7 +96,7 @@ public class DataExportServiceTests
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
-            _transcriptRepoMock.Object);
+            _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create());
     }
 
     [Fact]
@@ -684,7 +684,7 @@ public class DataExportServiceTests
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
-            _transcriptRepoMock.Object,
+            _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(),
             loggerMock.Object);
 
         var result = await serviceWithLogger.ExportUserDataAsync(_userId);
@@ -923,7 +923,7 @@ public class DataExportServiceTests
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
-            _transcriptRepoMock.Object,
+            _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create(),
             loggerMock.Object);
 
         var expectedException = new InvalidOperationException("Database connection lost");
@@ -1073,7 +1073,7 @@ public class DataExportServiceStreamingTests
             _historyServiceMock.Object,
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
-            _transcriptRepoMock.Object);
+            _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create());
     }
 
     [Fact]
