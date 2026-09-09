@@ -31,6 +31,7 @@ public sealed class PrivateMemorySourceApiTests(TestWebApplicationFactory factor
         (await client.PutAsJsonAsync($"/api/workspace-memory/{original.Id}", new UpdateWorkspaceMemoryDto("Stale", "Must not enter sources", "statement", 1))).StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await client.PatchAsJsonAsync($"/api/workspace-memory/{memory.Id}", new ArchiveWorkspaceMemoryDto(true, memory.Revision))).EnsureSuccessStatusCode();
         var source = (await client.GetFromJsonAsync<UserDataExportNativeCaptureDto>($"/api/workspace-memory/{memory.Id}/sources"))!;
+        (await client.GetAsync($"/api/workspace-memory/{memory.Id}/sources")).Headers.CacheControl!.NoStore.Should().BeTrue();
         source.Capture.SourceAssets.Should().HaveCount(2);
         using var other = factory.CreateClient();
         (await other.GetAsync($"/api/workspace-memory/{memory.Id}/sources")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);

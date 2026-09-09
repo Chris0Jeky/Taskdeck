@@ -30,6 +30,7 @@ public class WorkspaceMemoryController : AuthenticatedControllerBase
         return result.IsSuccess ? Created($"/api/workspace-memory?boardId={dto.BoardId}", result.Value) : result.ToErrorActionResult();
     }
     [HttpGet("{id:guid}/sources")]
+    [ResponseCache(NoStore = true)]
     public async Task<IActionResult> Sources(Guid id, CancellationToken ct)
     {
         if (!TryGetCurrentUserId(out var user, out var error)) return error!;
