@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -46,6 +48,12 @@ public sealed class ThinkingAnswerApiTests(TestWebApplicationFactory factory) : 
         var memory = (await response.Content.ReadFromJsonAsync<WorkspaceMemoryDto>())!;
         memory.ThinkingSource.Should().Be(new ThinkingAnswerSourceDto(card, question.Id, 1));
         memory.OriginalEvidence.Should().Contain("Shared question context");
+        memory.Sources.Should().NotBeNull();
+        var originalSources = (await viewer.GetFromJsonAsync<UserDataExportNativeCaptureDto>($"/api/workspace-memory/{memory.Id}/sources"))!;
+        originalSources.Capture.SourceAssets.Should().HaveCount(2);
+        originalSources.Capture.SourceAssets.Single(x => x.Id == memory.Sources!.EvidenceAssetId).Text.Should().Be(memory.OriginalEvidence);
+        originalSources.Capture.SourceAssets.Single(x => x.Id == memory.Sources!.AnswerAssetId).Text.Should().Be(request.Text);
+        (await owner.GetAsync($"/api/workspace-memory/{memory.Id}/sources")).StatusCode.Should().Be(HttpStatusCode.NotFound);
         var repeated = await viewer.PostAsJsonAsync(url, request);
         (await repeated.Content.ReadFromJsonAsync<WorkspaceMemoryDto>())!.Id.Should().Be(memory.Id);
         (await viewer.GetFromJsonAsync<List<WorkspaceMemoryDto>>($"/api/workspace-memory?boardId={board}")).Should().HaveCount(1);
@@ -62,6 +70,12 @@ public sealed class ThinkingAnswerApiTests(TestWebApplicationFactory factory) : 
         var corrected = (await viewer.GetFromJsonAsync<WorkspaceMemoryDto>(url))!;
         corrected.History.Should().Contain(x => x.Text == request.Text);
         corrected.OriginalEvidence.Should().Be(memory.OriginalEvidence);
+        corrected.History.Single().AnswerSourceAssetId.Should().Be(memory.Sources!.AnswerAssetId);
+        var sources = (await viewer.GetFromJsonAsync<UserDataExportNativeCaptureDto>($"/api/workspace-memory/{memory.Id}/sources"))!;
+        sources.Capture.SourceAssets.Should().HaveCount(3);
+        sources.Capture.SourceAssets.Single(x => x.Id == corrected.Sources!.AnswerAssetId).SupersedesAssetId.Should().Be(memory.Sources.AnswerAssetId);
+        sources.Capture.SourceAssets.Single(x => x.Id == memory.Sources.AnswerAssetId).Text.Should().Be(request.Text);
+        sources.Capture.SourceAssets.Single(x => x.Id == memory.Sources.EvidenceAssetId).SupersededByAssetId.Should().BeNull();
         (await viewer.PostAsJsonAsync(url, request)).StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 
@@ -112,9 +126,12 @@ public sealed class ThinkingAnswerApiTests(TestWebApplicationFactory factory) : 
         (await secondDecks.SaveAsync(current, 1, default)).Should().BeTrue();
         var ownerId = (await firstDb.Boards.FindAsync(board))!.OwnerId!.Value;
         var memory = new WorkspaceMemory(ownerId, board, "Stale source", "Should roll back", "statement");
+        await new CaptureIntakeService(firstScope.ServiceProvider.GetRequiredService<ICaptureStore>(), null).StageMemorySourcesAsync(memory);
         var repository = new WorkspaceInsightRepository(firstDb);
         repository.Add(memory); firstDecks.GuardRevision(stale);
         (await repository.SaveAsync(default)).Should().BeFalse();
         (await secondDb.Set<WorkspaceMemory>().AnyAsync(x => x.Id == memory.Id)).Should().BeFalse();
+        (await secondDb.Captures.AnyAsync(x => x.Id == memory.SourceCaptureId)).Should().BeFalse();
+        (await secondDb.SourceAssets.AnyAsync(x => x.CaptureId == memory.SourceCaptureId)).Should().BeFalse();
     }
 }

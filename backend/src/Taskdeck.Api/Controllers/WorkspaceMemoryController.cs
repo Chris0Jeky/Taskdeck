@@ -29,6 +29,13 @@ public class WorkspaceMemoryController : AuthenticatedControllerBase
         var result = await service.CreateAsync(user, dto, ct);
         return result.IsSuccess ? Created($"/api/workspace-memory?boardId={dto.BoardId}", result.Value) : result.ToErrorActionResult();
     }
+    [HttpGet("{id:guid}/sources")]
+    public async Task<IActionResult> Sources(Guid id, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var user, out var error)) return error!;
+        var result = await service.SourcesAsync(user, id, ct);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> Update(Guid id, UpdateWorkspaceMemoryDto dto, CancellationToken ct)
     {
