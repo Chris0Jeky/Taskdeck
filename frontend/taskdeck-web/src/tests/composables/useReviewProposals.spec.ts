@@ -3360,6 +3360,56 @@ describe('useReviewProposals', () => {
       rp.stopQueueRefresh()
     })
 
+    it.each(['stale', 'refused'] as const)(
+      'restores retained board B %s health after a failed board C detour',
+      async (healthKind) => {
+        vi.useFakeTimers()
+        mockRoute.query = { boardId: 'board-b' }
+        mockAutomationApi.getProposals.mockResolvedValueOnce([
+          makeProposal({ id: 'b-1', boardId: 'board-b' }),
+        ])
+        const rp = useReviewProposals()
+        await rp.loadProposals()
+        rp.startQueueRefresh()
+
+        const failure = healthKind === 'stale'
+          ? { response: { status: 500 } }
+          : { response: { status: 400 } }
+        for (let attempt = 0; attempt < REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD; attempt += 1) {
+          mockAutomationApi.getProposals.mockRejectedValueOnce(failure)
+          await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+        }
+        expect(rp.queueRefreshStale.value).toBe(healthKind === 'stale')
+        expect(rp.queueRefreshRefused.value).toBe(healthKind === 'refused')
+
+        // C fails, so B's landed rows remain rendered while C is the active
+        // request scope.
+        mockRoute.query = { boardId: 'board-c' }
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await rp.loadProposals()
+        expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['b-1'])
+
+        // B fails too. The retained B rows still need the known B disclosure,
+        // rather than silently becoming an ordinary stale-looking queue.
+        mockRoute.query = { boardId: 'board-b' }
+        mockAutomationApi.getProposals.mockRejectedValueOnce({ response: { status: 500 } })
+        await rp.loadProposals()
+        expect(rp.proposals.value.map((proposal: any) => proposal.id)).toEqual(['b-1'])
+        expect(rp.queueRefreshStale.value).toBe(healthKind === 'stale')
+        expect(rp.queueRefreshRefused.value).toBe(healthKind === 'refused')
+
+        // Once B lands successfully again, its restored warning is cleared by
+        // the existing same-scope success accounting.
+        mockAutomationApi.getProposals.mockResolvedValueOnce([
+          makeProposal({ id: 'b-2', boardId: 'board-b' }),
+        ])
+        await rp.loadProposals()
+        expect(rp.queueRefreshStale.value).toBe(false)
+        expect(rp.queueRefreshRefused.value).toBe(false)
+        rp.stopQueueRefresh()
+      },
+    )
+
     it('does not let a late board B failure restore health after board C takes over', async () => {
       vi.useFakeTimers()
       mockRoute.query = { boardId: 'board-b' }
