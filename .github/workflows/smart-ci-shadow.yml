@@ -119,6 +119,8 @@ jobs:
             --base-ref "$BASE_REF" \
             --merge-out artifacts/merge-sha.txt \
             --tree-out artifacts/merge-tree-sha.txt \
+            --merge-base-out artifacts/merge-base-sha.txt \
+            --merge-base-tip-out artifacts/merge-base-tip-sha.txt \
             --note-out artifacts/merge-ref-note.txt
 
       - name: Plan
@@ -131,10 +133,13 @@ jobs:
           if [ -s artifacts/merge-ref-note.txt ]; then
             plan_args+=(--note "$(cat artifacts/merge-ref-note.txt)")
           fi
-          if [ -s artifacts/merge-sha.txt ] && [ -s artifacts/merge-tree-sha.txt ]; then
+          if [ -s artifacts/merge-sha.txt ] && [ -s artifacts/merge-tree-sha.txt ] \
+            && [ -s artifacts/merge-base-sha.txt ] && [ -s artifacts/merge-base-tip-sha.txt ]; then
             plan_args+=(
               --merge-sha "$(cat artifacts/merge-sha.txt)"
               --merge-tree-sha "$(cat artifacts/merge-tree-sha.txt)"
+              --merge-base-sha "$(cat artifacts/merge-base-sha.txt)"
+              --merge-base-tip-sha "$(cat artifacts/merge-base-tip-sha.txt)"
             )
           fi
           node scripts/ci/smart-ci/plan.mjs \
