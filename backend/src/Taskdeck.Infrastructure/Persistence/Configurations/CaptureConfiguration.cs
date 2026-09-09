@@ -29,6 +29,7 @@ public sealed class CaptureConfiguration : IEntityTypeConfiguration<Capture>
         builder.Property(capture => capture.UserTitle).HasMaxLength(Capture.MaxUserTitleLength);
         builder.Property(capture => capture.UserNote).HasMaxLength(Capture.MaxUserNoteLength);
         builder.Property(capture => capture.LegacyRequestId);
+        builder.Property(capture => capture.LegacyReconciliationVersion).HasDefaultValue(0).IsRequired();
         builder.Property(capture => capture.CreatedAt).IsRequired();
         builder.Property(capture => capture.UpdatedAt).IsRequired();
         builder.Ignore(capture => capture.Timeline);

@@ -12,6 +12,26 @@ changes.
 
 ---
 
+## Unreleased workspace overhaul
+
+**BREAKING: none.** Three additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
+and correction-history tables, then private question-source columns. Existing boards, cards, captures and proposals retain their identities. Thinking material
+is attached to a card and is removed when that card is deleted. Insights and memory remain private
+to their author and require access to an active board. Memory archive retains correction history.
+
+Normal startup migrations apply the additive schema. Back up the stopped SQLite workspace before
+upgrading. A database backup includes all new records. Current board JSON export/import includes
+shared Thinking Decks; older imports remain valid. Private answers are deliberately excluded from
+shared board exports. Memory's explicit JSON download includes active and archived private entries,
+originals and history, but is not an import format or an atomic backup. Both account export formats
+also include private memory, revision history and quiet insights, including archived records.
+Account deletion explicitly erases these private records even when their shared board survives;
+other users' private records and shared thinking remain intact. See the
+[overhaul delivery ledger](docs/product/WORKSPACE_OVERHAUL.md) for exact coverage.
+
+Experience, presentation and theme selections are local browser preferences. Classic remains the
+default. Choosing another experience never changes authorization or the approve/apply boundary.
+
 ## Backup the database and packaged identity
 
 Everything Taskdeck stores — boards, cards, captures, proposals, audit history, API keys — lives
@@ -133,6 +153,17 @@ tested) — lossless while the setting was never enabled; if you did enable it, 
 the mirrored rows go with the tables. Downgrading past `ReconcileContextFabricScaffold` also folds the
 three state axes back into the single legacy `Lifecycle` column, which is lossy — irrelevant while the
 tables are empty, but a reason to export before downgrading if you ever turned the setting on.
+
+- **BREAKING: none — repair historical capture text divergence (#2418).** Migration
+  `20260908005202_AddCaptureLegacyReconciliationVersion` adds one integer column defaulting to zero.
+  The startup backfill checks existing queue-backed captures in bounded batches, including text
+  mismatches hidden by a later Keep/Archive timestamp. Successful repairs append superseding source
+  assets and retain the original text. Each successful row earns a repair version, so subsequent
+  starts do not reload its payload for this upgrade. The new `capture.legacy-queue.v2` completion
+  marker cannot inherit the older marker's success. An archived mismatch remains outstanding,
+  while healthy rows behind it progress; Inbox reads retain the queue text until repair is complete.
+  Disabling `ContextFabric:BackfillCaptures` defers the repair and keeps the upgraded read switch
+  on queue data. No board changes or review approvals are made by this repair.
 
 - **BREAKING: none — proposal provenance records the producer triple.** Migration
   `20260904030926_AddProposalProvenanceProducerTriple` adds two nullable columns, `Provider` and

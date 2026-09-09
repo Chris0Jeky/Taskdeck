@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import PaperShortcutsOverlay from '../../../components/paper/PaperShortcutsOverlay.vue'
+import { useFeatureFlagStore } from '../../../store/featureFlagStore'
 import overlaySource from '../../../components/paper/PaperShortcutsOverlay.vue?raw'
 import appShellSource from '../../../components/shell/AppShell.vue?raw'
 import reviewKeymapSource from '../../../composables/useReviewKeymap.ts?raw'
@@ -182,6 +183,18 @@ describe('PaperShortcutsOverlay', () => {
     // `f` is gated on `!paperOn` in BoardView, so Paper must not advertise it.
     expect(displayedIds).not.toContain('board-toggle-filter')
     expect(teleportContent().textContent).not.toContain('Filter panel')
+  })
+
+  it('hides the Review binding when its feature flag is disabled', () => {
+    const featureFlags = useFeatureFlagStore()
+    featureFlags.flags.newAutomation = false
+    wrapper = mount(PaperShortcutsOverlay, { props: { visible: true }, attachTo: document.body })
+
+    const displayedIds = Array.from(
+      teleportContent().querySelectorAll<HTMLElement>('[data-shortcut-id]'),
+    ).map((row) => row.dataset.shortcutId)
+
+    expect(displayedIds).not.toContain('workspace-review')
   })
 
   it('does not advertise an undo shortcut that the product does not implement', () => {

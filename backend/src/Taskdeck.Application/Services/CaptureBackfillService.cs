@@ -42,8 +42,9 @@ public readonly record struct CaptureBackfillResult(
 /// </para>
 /// <para>
 /// <b>Backfill and reconcile are the same pass.</b> The backlog is a divergence join, so a row is
-/// picked up when it has no capture <i>or</i> when the queue row has been written since its capture
-/// last was. That second case is what protects the read switch: an operator who turns dual-write
+/// picked up when it has no capture, has not earned the current repair version, <i>or</i> when the
+/// queue row has been written since its capture last was. The version checks pre-upgrade rows once
+/// even when a later Keep/Archive timestamp masks stale text. The timestamp case protects the read switch: an operator who turns dual-write
 /// off, lets a user edit a capture and turns it back on would otherwise leave the aggregate holding
 /// pre-edit text, and the Inbox would serve it. A changed source is reconciled by appending a
 /// superseding asset, never by rewriting one.
@@ -89,7 +90,8 @@ public sealed class CaptureBackfillService
 
     /// <summary>
     /// Drains the backlog and records completion. Safe to call on every startup: a database whose
-    /// captures all agree with their queue rows costs one marker read and one indexed count.
+    /// captures all earned the current repair version and agree with their queue rows costs one
+    /// marker read and one metadata-only count; it never scans their payloads again.
     /// </summary>
     public async Task<CaptureBackfillResult> RunAsync(
         int batchSize = DefaultBatchSize,

@@ -1,0 +1,2 @@
+# Fixture hashes cover exact bytes; do not normalize corpus line endings on checkout.
+corpus/* -text

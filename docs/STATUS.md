@@ -1,12 +1,27 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-07
+Last Updated: 2026-09-08
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
 **Execution plan** (phases, waves, ship gate, checkpoint) is owned by [`docs/REVIVAL_PLAN.md`](REVIVAL_PLAN.md).
 **History** - delivery records dated before 2026-07-01 - lives in [`docs/archive/status-history/`](archive/status-history/) and is non-authoritative.
+
+September 8 parallel delivery wave (merged work; #2235):
+
+- Historical Capture text divergence masked by later Keep/Archive timestamps is repaired by PR #2805 (#2418). The additive `LegacyReconciliationVersion` column defaults old rows to zero, bounded SQL pages revisit them once, and successful reconciliation appends immutable superseding assets before stamping the current version. The distinct v2 completion marker ignores historical v1 success. Archived mismatches remain outstanding and readable through safe queue fallback while healthy rows progress; list/detail guards do not rely on timestamps alone for unresolved version-zero rows. The full backend gate passed 8,977 tests with five existing skips, followed by clean independent review and hosted CI. No existing private database or large-database timing was exercised. This supersedes the timestamp-only repair description in the original CF-01 record below.
+- Shared frontend instructions now name the actual Claude adapter/import, runtime-specific search fallback and explicit PowerShell working directory (PR #2806, #2777). Documentation, syntax/path checks, independent review and required hosted checks passed; no runtime behavior or authority changed.
+- CF-24A's first benchmark slice is available (PR #2804, #2319): nine synthetic text sources totaling 934 bytes, explicit origin/license/hash/reference metadata, a 16 KiB source-byte budget, and deterministic per-kind precision/recall/F1 scoring from supplied predictions. Twenty-one Python tests and the required hosted checks passed. The command does not run a processor; audio/image/PDF quality, latency, WER and cost are unmeasured. Schema-validation and persisted processor-identity limitations remain tracked on #2319, alongside the larger corpus acceptance. This establishes fixture/scoring tooling, not a release-quality result.
+- Capture polling preserves the server's `canEditSuggestion` decision (PR #2796), reducing interrupted editing while keeping the server authoritative. Paper read-only keyboard behavior and dialog focus are corrected (PRs #2788 and #2799); the wider #1968, #1999 and #2090 acceptance remains open. The Processing-state capture API regression now disables its background triage worker and proves the persisted state before asserting rejection (PR #2801, #2798).
+- These four slices each passed independent Terra review and their required hosted checks at the merged head. Local focused evidence is scoped to each PR; it is not a new full-suite count for current `main` or a packaged/live-provider acceptance claim.
+- Sentry.AspNetCore 6.10.0 and Testcontainers.PostgreSql 4.15.0 landed in PR #2772 with green hosted CI and independent review. **Authority correction:** the coordinator missed the maintainer-own-review requirement for `backend/Directory.Packages.props`, a declared CI control path. The merge is disclosed on #2772 and #2337; no retrospective approval is inferred. New npm/Vitest and CI-control PRs remain subject to that review under [OUTSTANDING_TASKS.md](../OUTSTANDING_TASKS.md).
+
+Workspace overhaul (#2800, integrated implementation; no release or working-database migration claimed):
+
+- Four switchable experiences and Zen/Studio/Control presentation share existing work and retain Classic as the default. Grove/Grove Night extend the existing theme tokens. Zen card disclosure preserves due/blocked/trust information; Control adds compact operational cards.
+- Thinking Decks persist ordered typed layers with revision conflicts and board JSON portability. Saved questions can have private answers with immutable source evidence; answers never appear in shared decks or board exports. Private Memory supports correction history, archive/restore and an explicit JSON download. Quiet insights currently scan recorded blockers and unknown/needs-review memories on request, with durable suppression and source revalidation.
+- Five integrated Chromium journeys exercise capture/review/explicit apply across experiences, draft continuity, stale thinking saves, private question answers, memory history/export, board disclosure, and desktop/phone layouts. Automated accessibility checks cover the new Home and card surfaces. The [resource/feature map](product/WORKSPACE_OVERHAUL.md) and [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) preserve exact scope and remaining source, linked-step, contextual companion, model/audio and attention work. No statistical A/B, microphone, new model intelligence, deployment or owner acceptance is claimed.
 
 Transcript prompt identity (#2211, current implementation):
 
@@ -1401,3 +1416,9 @@ Historical/spec detail material:
 
 Rule:
 - If archive content conflicts with active docs, active docs win.
+
+## Paper board-control candidate (2026-09-08, #2090 / PR #2793)
+
+The remaining board-control candidate scopes collapse preferences to the signed-in user, keeps the latest requested navigation while a discard confirmation is open, and focuses a newly selected card in the desktop inspector. Wide cards now fill their lane's content width: browser measurement found the old 248px card cap inside a 340px lane, and the Chromium regression compares the rendered card and card-content widths after the fix.
+
+At source head `b479064e7`, the three affected view/modal test files passed 129 tests, the Wide-card Chromium journey passed, and typecheck/build/scoped lint passed. Synthetic desktop and 390px mobile inspector evidence was visually inspected and retained outside the worktree; the mobile inspector remains a viewport-bounded modal. Full frontend qualification is not green: five date-fixture failures were observed and are independently tracked on unchanged main in #2789. Independent review, hosted checks, and complete #2090 residual acceptance remain pending. These changes reduce board maintenance and context-switching friction without changing proposal review or execution authority.

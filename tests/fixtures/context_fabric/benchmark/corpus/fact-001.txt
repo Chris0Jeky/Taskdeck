@@ -1,0 +1,1 @@
+Fact: the review queue stores candidate evidence before a proposal is eligible for board changes.

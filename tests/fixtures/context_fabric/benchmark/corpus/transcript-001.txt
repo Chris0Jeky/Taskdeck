@@ -1,0 +1,2 @@
+Alex: I will label the transcript before the next review.
+Sam: Question: can we keep the original speaker anchors?

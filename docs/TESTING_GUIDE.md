@@ -12,13 +12,29 @@ old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputCon
 is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
 
 
-Last Updated: 2026-09-05
+Last Updated: 2026-09-08
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Context Fabric benchmark corpus (#2319)
+
+The first CF-24A slice validates nine synthetic text/transcript fixtures and scores supplied
+candidate predictions by kind. From the repository root:
+
+```powershell
+py -3 -B -m unittest discover -s scripts/context_fabric -p "test_*.py"
+py -3 -B scripts/context_fabric/benchmark_fixtures.py tests/fixtures/context_fabric/benchmark/fixtures.json
+```
+
+The validator checks exact source hashes, licence/reference metadata, hostile-injection markers
+and a 16 KiB source-byte budget. Without predictions, metrics are explicitly unavailable. See the
+[corpus README](../tests/fixtures/context_fabric/benchmark/README.md) for the optional scoring
+command and deliberately imperfect example predictions. This command does not execute a processor;
+audio, image, PDF, latency, memory, cost and processor-quality measurements remain follow-on work.
 
 ## 2026-09-02 v0.3 post-RC integration wave
 
@@ -2757,3 +2773,7 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 - `#717` — Property-based and adversarial input tests (211 tests)
 
 **All 25 of 25 issues in the test expansion wave are now delivered.** Total new tests from the wave: ~1,350+.
+
+## Paper Wide-card regression (#2090)
+
+From `frontend/taskdeck-web`, run `npx playwright test tests/e2e/paper-responsive.spec.ts --grep "Wide Paper lanes" --project=chromium --reporter=line` against the isolated Mock test stack. It creates its own authenticated board/card, selects Wide, and compares actual rendered card width with the lane's card-content width. Focused unit coverage is in `BoardView.spec.ts`, `PaperBoardView.spec.ts`, and `CardModal.spec.ts`; standard typecheck/build and full frontend qualification still apply. Keep screenshot inspection separate from geometry assertions and report any known #2789 calendar-fixture failures explicitly.

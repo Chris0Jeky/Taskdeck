@@ -9,7 +9,8 @@ namespace Taskdeck.Application.Interfaces;
 /// whether the backfill has finished on this database.
 /// <para>
 /// <b>The backlog is a divergence join, not an anti-join.</b> A row qualifies when it has no capture
-/// under the same id <i>or</i> when the queue row has been written since its capture last was
+/// under the same id and owner, when that capture has not earned the current reconciliation
+/// version, <i>or</i> when the queue row has been written since its capture last was
 /// (<c>LlmRequest.UpdatedAt &gt; Capture.UpdatedAt</c>). Missing rows alone are not enough: an
 /// operator who turns <c>ContextFabric:DualWriteCaptures</c> off, lets a user edit a capture, and
 /// turns it back on would otherwise leave the aggregate holding pre-edit text forever, and the read

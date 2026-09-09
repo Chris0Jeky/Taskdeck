@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://taskdeck.dev/schemas/context-fabric-evaluation-fixture.v1.json",
+  "title": "Context Fabric evaluation fixture",
+  "description": "A source-linked, reproducible semantic extraction benchmark record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "capability",
+    "sourceType",
+    "sourcePath",
+    "sourceHash",
+    "license",
+    "referenceOutputPath",
+    "measurementMethod",
+    "measurementDate",
+    "hostileInjection"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]+$"
+    },
+    "capability": {
+      "const": "semantic.extract"
+    },
+    "sourceType": {
+      "enum": ["text", "transcript"]
+    },
+    "sourcePath": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "sourceHash": {
+      "type": "string",
+      "description": "Lowercase SHA-256 digest of the exact source file bytes.",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1
+    },
+    "referenceOutputPath": {
+      "$ref": "#/$defs/relativePath"
+    },
+    "measurementMethod": {
+      "type": "string",
+      "minLength": 1
+    },
+    "measurementDate": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "hostileInjection": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\]+$"
+    }
+  }
+}
