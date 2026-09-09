@@ -896,7 +896,6 @@ public class CaptureService : ICaptureService
             canonical.CreatedFromCaptureId != item.Id ||
             canonical.UserId != userId ||
             canonical.CaptureSource != currentPayload.Source ||
-            canonical.BoardId != item.BoardId ||
             !CaptureRequestContract.IsTranscriptSource(currentPayload.Source))
         {
             return Result.Failure<CaptureItemDto>(

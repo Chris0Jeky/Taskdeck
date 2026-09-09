@@ -439,6 +439,72 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task LinkedTriagedCorrection_ShouldAllowReroutedBoardWithBoardlessCanonicalTranscript()
+    {
+        await AuthenticateAsAsync("capture-linked-reroute-correction");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-linked-reroute-board");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(board.Id, "canonical queue text", "transcriptPaste"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        Guid originalTranscriptId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created!.Id);
+            var original = new Transcript(
+                created.UserId,
+                CaptureSource.TranscriptPaste,
+                "boardless canonical text",
+                createdFromCaptureId: created.Id);
+            db.Transcripts.Add(original);
+            request.AttachTranscript(original.Id);
+            request.MarkAsProcessing();
+            request.MarkAsCompleted();
+            await db.SaveChangesAsync();
+            originalTranscriptId = original.Id;
+        }
+
+        var editResponse = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("corrected boardless canonical text"));
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var edited = await editResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        edited.Should().NotBeNull();
+        edited!.RawText.Should().Be("corrected boardless canonical text");
+        edited.Status.Should().Be(CaptureStatus.Triaged);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created.Id);
+            var transcripts = await db.Transcripts
+                .Where(transcript => transcript.CreatedFromCaptureId == created.Id)
+                .ToListAsync();
+            var original = transcripts.Single(transcript => transcript.Id == originalTranscriptId);
+            var replacement = transcripts.Single(transcript => transcript.Id == request.TranscriptId);
+
+            request.BoardId.Should().Be(board.Id);
+            transcripts.Should().HaveCount(2);
+            original.BoardId.Should().BeNull();
+            replacement.BoardId.Should().BeNull();
+            original.UserId.Should().Be(created.UserId);
+            replacement.UserId.Should().Be(created.UserId);
+            original.CaptureSource.Should().Be(CaptureSource.TranscriptPaste);
+            replacement.CaptureSource.Should().Be(CaptureSource.TranscriptPaste);
+            original.CreatedFromCaptureId.Should().Be(created.Id);
+            replacement.CreatedFromCaptureId.Should().Be(created.Id);
+            original.Text.Should().Be("boardless canonical text");
+            replacement.Text.Should().Be("corrected boardless canonical text");
+            replacement.SegmentsJson.Should().Be("[]");
+        }
+    }
+
+    [Fact]
     public async Task Ignore_ShouldBeIdempotent()
     {
         await AuthenticateAsAsync("capture-ignore");
