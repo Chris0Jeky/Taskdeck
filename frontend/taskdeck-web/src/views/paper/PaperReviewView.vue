@@ -500,12 +500,19 @@ watch(
 const unavailableReturnRef = ref<HTMLButtonElement | null>(null)
 
 // The unavailable panel replaces the decision column after an async lookup.
-// Give keyboard and assistive-technology users a stable recovery control as
-// soon as that panel lands instead of leaving focus on the document body.
+// Recover focus when its old control disappears, but preserve a queue control
+// or dialog the reviewer focused while the lookup was pending.
 watch(unavailableProposalId, (id) => {
   if (!id) return
+  const previousFocus = document.activeElement
   activeProposalSettledElsewhere.value = null
-  void nextTick(() => unavailableReturnRef.value?.focus?.())
+  void nextTick(() => {
+    const currentFocus = document.activeElement
+    if (currentFocus !== document.body && currentFocus !== document.documentElement) return
+    if (previousFocus?.isConnected && previousFocus !== document.body &&
+      previousFocus !== document.documentElement) return
+    unavailableReturnRef.value?.focus?.()
+  })
 })
 
 const selectors = usePaperReviewSelectors(activeProposal)
