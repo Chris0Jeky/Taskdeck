@@ -424,6 +424,7 @@ public class LlmProviderRegistrationTests
         EnumeratePipeline(compatible).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
         EnumeratePipeline(ollama).OfType<SocketsHttpHandler>().Single().UseProxy.Should().BeFalse();
         ProxySafeHttpHandlerTestHarness.AssertProxySafeOriginHandler(compatible);
+        EnumeratePipeline(openAi).Should().Contain(item => item.GetType().Name == "LlmDispatchTrackingHandler");
         EnumeratePipeline(compatible).Should().Contain(item => item is EgressEnvelopeHandler);
         EnumeratePipeline(compatible).Select(item => item.GetType().Name).Should().ContainInOrder(
             "PolicyHttpMessageHandler",
@@ -431,6 +432,7 @@ public class LlmProviderRegistrationTests
             nameof(EgressEnvelopeHandler),
             "LlmDispatchTrackingHandler",
             nameof(SocketsHttpHandler));
+        EnumeratePipeline(ollama).Should().Contain(item => item.GetType().Name == "LlmDispatchTrackingHandler");
 
         var workerServices = new ServiceCollection();
         workerServices.AddLogging();

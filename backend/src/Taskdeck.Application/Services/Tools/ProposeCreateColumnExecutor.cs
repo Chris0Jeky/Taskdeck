@@ -163,7 +163,12 @@ public sealed class ProposeCreateColumnExecutor : IToolExecutor
             null,
             1440,
             operations
-        );
+        )
+        {
+            ProvenanceProvider = context.ProducerMetadata?.Provider,
+            ProvenanceModelId = context.ProducerMetadata?.Model,
+            ProvenancePromptVersion = context.ProducerMetadata?.PromptVersion
+        };
 
         var result = await _proposalService.CreateProposalAsync(createDto, ct);
         if (!result.IsSuccess)

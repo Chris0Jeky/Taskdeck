@@ -29,6 +29,7 @@ public class OllamaLlmProvider : ILlmProvider
 
     public async Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
     {
+        request.DispatchContext.Observe("Ollama", GetConfiguredModelOrDefault());
         var lastUserMessage = request.Messages
             .LastOrDefault(m => string.Equals(m.Role, "User", StringComparison.OrdinalIgnoreCase))
             ?.Content ?? string.Empty;
@@ -51,6 +52,7 @@ public class OllamaLlmProvider : ILlmProvider
             using var message = new HttpRequestMessage(HttpMethod.Post, BuildChatEndpoint());
             LlmRequestAttributionMapper.AddAttributionHeaders(message, request.Attribution);
             message.Content = JsonContent.Create(BuildRequestPayload(request));
+            LlmDispatchTrackingHandler.Attach(message, request.DispatchContext);
 
             if (_protectOutboundTelemetry)
             {

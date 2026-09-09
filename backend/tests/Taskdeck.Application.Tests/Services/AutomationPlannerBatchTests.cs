@@ -79,6 +79,28 @@ public class AutomationPlannerBatchTests
     #region ParseBatchInstructionAsync - Validation
 
     [Fact]
+    public async Task ParseBatchInstruction_DispatchedProducerMetadata_StampsTrustedProposalFields()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        SetupMocksForSuccess(userId, boardId);
+        CreateProposalDto? captured = null;
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => captured = dto)
+            .ReturnsAsync(Result.Success(CreateExpectedProposal(userId, boardId)));
+
+        await _service.ParseBatchInstructionAsync(
+            ["create card 'One'", "create card 'Two'"], userId, boardId, default,
+            ProposalSourceType.Chat, "session-1", null,
+            new ProposalProducerMetadata("OpenAICompatible", "vendor/model"));
+
+        captured.Should().NotBeNull();
+        captured!.ProvenanceProvider.Should().Be("OpenAICompatible");
+        captured.ProvenanceModelId.Should().Be("vendor/model");
+        captured.ProvenancePromptVersion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ParseBatchInstruction_ShouldReturnFailure_WhenInstructionsListIsEmpty()
     {
         var userId = Guid.NewGuid();
