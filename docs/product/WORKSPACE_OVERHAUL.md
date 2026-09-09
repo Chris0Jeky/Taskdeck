@@ -184,5 +184,49 @@ captures, including originals whose board was deleted. Board deletion removes me
 originals. Account deletion erases native captures and their assets. Archiving only excludes active
 memory context; the viewer states this retention rule explicitly. Shared board exports omit originals.
 
-Bulk historical admission, audio/transcription representations, retry handling and explicit typed
-source selection remain in [the continuation tracker](https://github.com/Chris0Jeky/Taskdeck/issues/2808).
+Further source and representation work remains in
+[the continuation tracker](https://github.com/Chris0Jeky/Taskdeck/issues/2808).
+
+## Private audio answers
+
+In a saved Thinking Deck question, open **Your private answer**, then **Record or open a private
+audio answer**. Recording begins only after **Record audio** and browser permission. It stops at
+60 seconds; file selection also accepts WebM, Ogg, WAV, MP3 and MP4/M4A audio up to 2 MiB. The draft
+offers playback/download and remains local until **Save original privately**. Keeping audio first
+reduces capture friction without requiring immediate transcription or treating unheard audio as knowledge.
+
+The saved original remains immutable and untranscribed. **Save written version** preserves your
+own transcription or description as a separate transcript representation. Corrections append versions;
+**Confirm written version as my answer** creates private memory and a human-confirmed representation.
+Confirmation is not external verification. A separate existing private answer is corrected in Memory.
+The question and original evidence stay unchanged. Saving a recording, writing a version or confirming
+an answer never queues a model/transcription job or changes the card. Automatic transcription, provider
+consent, streaming recognition and model usefulness remain separate continuation work.
+
+One original is retained per person and saved question version. Retrying an uncertain upload uses the
+same upload ID and checks the original bytes and metadata; it cannot silently replace that recording.
+The UI preserves draft files/text after failures and holds navigation while recording or saving.
+The server rejects stale recording revisions and confirmation against changed question text. Up to
+50 written/confirmation representations are retained for one recording. Confirmed answer corrections
+belong to Memory, with its existing immutable source history.
+
+Original playback/download requires recording ownership and current access to an active board.
+Collaborators cannot read another person's recordings, even with board ownership. Missing, foreign and
+revoked private sources return 404; anonymous requests return 401. Deleted-board recordings remain in
+the owner's account export. Shared board exports exclude private audio and written answers.
+
+Both account export formats add `data.sourceStorage`: objects, references, ordered base64 chunks,
+representation headers/supersession links and audio-answer links. Transcript text remains in
+`data.transcripts`; source assets carry their `blobReferenceId`. To reconstruct an original, concatenate
+decoded chunks by object ID and ordinal, then verify byte size and SHA-256. Buffered export preflights
+source size and enforces its budget while collecting rows; streaming export emits bounded chunks.
+This is archival export, not an import/restore tool. Account erasure removes the owner’s native
+captures, representation links/payloads and blob references/bytes in the account transaction.
+
+Storage uses 64 KiB SQLite chunk rows, with per-owner content deduplication. Declared-size, owner,
+modality and reference quotas are checked before input is read. The `SourceStorage` configuration
+defaults are `MaximumUploadBytes=67108864`, `OwnerQuotaBytes=268435456`, `ModalityQuotaBytes=134217728`,
+`MaximumReferencesPerOwner=10000`; the question-audio endpoint retains its stricter 2 MiB limit.
+An unknown duplicate can be refused at quota before its hash is known; an accepted upload's retry
+does not reacquire quota. Existing artefact storage is unchanged. New manual representation headers
+cover this audio path; legacy representation backfill and automated processing remain unclaimed.

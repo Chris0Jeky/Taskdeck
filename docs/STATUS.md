@@ -35,6 +35,8 @@ September 8 parallel delivery wave (merged work; #2235):
 
 Workspace overhaul (#2800, integrated implementation; no release or working-database migration claimed):
 
+- Private audio answers under #2808 retain an explicitly saved original before a written answer exists. Owner-scoped SQLite chunk storage, immutable written representations and explicit human confirmation connect to private memory. Playback/download, uncertain-upload retry, account export and complete source erasure are integrated; no automatic transcription or real microphone/provider qualification is claimed. The [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) records local and hosted evidence separately.
+
 - The dependency continuation under #2808 adds explicit prerequisite relationships between cards on the same board, with both directions in Thinking Decks, cycle validation, revision conflicts and portable ID remapping. A transaction rechecks referenced-card existence and rolls back its audit on concurrent deletion; the existing board token guards archive. Dependency edits leave card material unchanged. Targeted API/component/browser proof is recorded in the [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md); exact hosted qualification remains on the continuation PR.
 
 - Personal plans now persist up to 40 chosen cards with separate plan dates, revision conflicts and an explicit server-stamped last focus. List/Board/Horizon project the same chosen work; Focus opens thinking and Make room removes only the personal choice. Live permission checks hide unavailable card details, and both account exports/deletion include the private plan.

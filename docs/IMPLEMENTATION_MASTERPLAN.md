@@ -1,6 +1,8 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+Private audio continuation (#2808): retain an original recording first, add manual written representations separately, then explicitly confirm into private memory. The vertical uses native source assets, bounded SQLite chunks, owner-scoped playback, idempotent upload retry, version conflicts and account portability/erasure. All four experiences share the question UI; automated transcription, real-device qualification and the wider source/attention work remain separate. This is a prototype delivery path with executable evidence, not a provider or release acceptance decision.
 
 Original-source Companion continuation (#2808): explicit per-asset source selection builds on native private-memory preservation. Bounded owner-scoped source queries, expected revisions and content hashes connect historical originals to chat receipts without implicit retrieval. All four experiences share the same picker and source contract. Execution evidence belongs to the continuation PR; hosted qualification and the wider overhaul remain separate.
 <br>

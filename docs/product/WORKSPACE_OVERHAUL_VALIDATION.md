@@ -208,3 +208,34 @@ changes and unmount. The browser journey `legacy-memory-originals.spec.ts` requi
 `TASKDECK_E2E_DB=legacy-originals.e2e.db`; it inserts one legacy-shaped synthetic row in that exact
 isolated database, then uses the real UI/API to preserve, inspect, export and reload it at 375px.
 Exact executed results belong to the continuation PR; hosted checks are separate.
+
+## Private audio-answer continuation — 2026-09-10
+
+This implementation adds original audio retention and manual written confirmation under #2808.
+Focused proof: `dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1
+--filter "FullyQualifiedName~ThinkingAudioApiTests|FullyQualifiedName~ManualRepresentationStoreTests|FullyQualifiedName~SqliteBlobStoreTests|FullyQualifiedName~PrivateMemorySourceApiTests"`
+passed 20 tests, covering real SQLite chunk streaming, quota-before-read, owner deduplication, two-writer
+acquisition, lost-receipt retries, original byte integrity, stale question confirmation, both account
+exports, board-deletion retention and account erasure. An initial erasure failure exposed deletion order
+against new representation FKs; dependent rows now erase before source assets and the rerun passed.
+
+Four targeted frontend files passed 18 tests: recorder permission/disposal, draft retention, uncertain
+upload retry IDs, separate written confirmation, playback URL cleanup and workspace navigation guards.
+The Chromium `thinking-audio.spec.ts` journey passed in 47.4 seconds using a synthetic playable WAV:
+it held an accepted upload, blocked navigation, simulated a lost response, retried without duplication,
+loaded real playback, saved/confirmed a written answer, reloaded all four experiences, and preserved
+the original card. At 375 px the audio region had no overflow or serious/critical axe findings.
+
+Full frontend: 6,330 passed, three existing skips across 409 files; typecheck and production build passed.
+The full backend command recorded 9,175 passes, 34 existing skips and one capture export wire-format
+parity failure. Adding `blobReferenceId` to its manual streaming writer fixed that mismatch; a scoped
+34-test API rerun passed, including the failing parity test and a new 7 MiB streaming/buffer-budget test.
+The original full-command failure is retained as evidence, not reported as a green full rerun. CLI
+(243), architecture (28 plus one skip), and integration (7 plus 29 skips) all passed. Later actor-change
+and same-user token-refresh guards passed 20 targeted frontend tests and typecheck. Scoped ESLint and
+674-file doc-link/governance checks passed. Raw untranscribed audio has an explained local caption-rule
+exception: the UI offers written alternatives and does not fabricate a timed caption track.
+Hosted qualification remains on the continuation PR.
+Actual microphone capture, mobile hardware/browser playback, external transcription quality, provider
+consent and archival restore have not been verified by these tests. All data was synthetic; no working
+database migration, external processing, telemetry or release acceptance is claimed.
