@@ -1388,6 +1388,31 @@ public class AutomationProposalService : IAutomationProposalService
         if (proposal == null)
             return Result.Failure<string>(ErrorCodes.NotFound, $"Proposal with ID {id} not found");
 
+        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        return await BuildProposalDiffAsync(proposal, effectiveRevision, cancellationToken);
+    }
+
+    public async Task<Result<ProposalPreviewDto>> GetProposalPreviewAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var proposal = await _unitOfWork.AutomationProposals.GetByIdAsync(id, cancellationToken);
+        if (proposal is null)
+            return Result.Failure<ProposalPreviewDto>(ErrorCodes.NotFound, "Proposal not found.");
+        if (proposal.Status is not (ProposalStatus.PendingReview or ProposalStatus.Approved))
+            return Result.Failure<ProposalPreviewDto>(ErrorCodes.Conflict, "This proposal is no longer actionable. Open Review for its decision history.");
+        // Capture the effective revision once. Both the receipt and the diff must describe
+        // this same immutable payload, including the approved pin rather than a later revision.
+        var revision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
+        var diff = await BuildProposalDiffAsync(proposal, revision, cancellationToken, useStoredOriginal: false);
+        return diff.IsSuccess
+            ? Result.Success(new ProposalPreviewDto(id, proposal.BoardId, proposal.Status, revision?.Id,
+                revision?.RevisionNumber, proposal.UpdatedAt, proposal.ExpiresAt, DateTimeOffset.UtcNow, diff.Value))
+            : Result.Failure<ProposalPreviewDto>(diff.ErrorCode, diff.ErrorMessage);
+    }
+
+    private async Task<Result<string>> BuildProposalDiffAsync(AutomationProposal proposal, ProposalRevision? effectiveRevision,
+        CancellationToken cancellationToken, bool useStoredOriginal = true)
+    {
+        var id = proposal.Id;
         // When a reviewer has saved a revision, Apply executes THAT payload — the executor
         // materializes the EFFECTIVE ProposalRevision (the pinned one once approved, the latest
         // while pending) via AutomationExecutorService.MaterializeEffectiveProposalAsync, not the
@@ -1396,7 +1421,6 @@ public class AutomationProposalService : IAutomationProposalService
         // raced in after approval cannot make the diff diverge from the pinned apply set (#1428).
         // The stored DiffPreview is deliberately bypassed on this path because it describes the
         // original proposal, which is exactly the stale-preview bug we are fixing.
-        var effectiveRevision = await GetEffectiveRevisionAsync(proposal, cancellationToken);
         if (effectiveRevision is not null)
         {
             if (!ProposalRevisionPayload.TryParseOperations(
@@ -1498,7 +1522,7 @@ public class AutomationProposalService : IAutomationProposalService
         if (!originalValidation.IsSuccess)
             return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
 
-        if (!string.IsNullOrWhiteSpace(proposal.DiffPreview))
+        if (useStoredOriginal && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
         var orderedViews = originalOperations

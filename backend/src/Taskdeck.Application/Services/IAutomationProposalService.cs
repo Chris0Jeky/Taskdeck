@@ -73,6 +73,8 @@ public interface IAutomationProposalService
     /// </summary>
     Task<Result<string>> GetProposalDiffAsync(Guid id, CancellationToken cancellationToken = default);
 
+    Task<Result<ProposalPreviewDto>> GetProposalPreviewAsync(Guid id, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Serves the STORED diff preview for a decided (terminal) proposal — Applied, Rejected,
     /// Failed, Expired, or Dismissed — after re-running ONLY the requester/board-access half of
