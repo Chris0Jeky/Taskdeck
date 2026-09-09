@@ -19,6 +19,7 @@ public class CaptureServiceTests
     private readonly Mock<IAutomationProposalRepository> _automationProposalRepositoryMock;
     private readonly Mock<IBoardRepository> _boardRepositoryMock;
     private readonly Mock<IUserRepository> _userRepositoryMock;
+    private readonly Mock<ITranscriptRepository> _transcriptRepositoryMock;
     private readonly CaptureService _service;
 
     public static IEnumerable<object[]> InvalidCaptureLabels()
@@ -46,6 +47,7 @@ public class CaptureServiceTests
         _automationProposalRepositoryMock = new Mock<IAutomationProposalRepository>();
         _boardRepositoryMock = new Mock<IBoardRepository>();
         _userRepositoryMock = new Mock<IUserRepository>();
+        _transcriptRepositoryMock = new Mock<ITranscriptRepository>();
 
         _unitOfWorkMock.SetupGet(u => u.LlmQueue).Returns(_llmQueueRepositoryMock.Object);
         _unitOfWorkMock.SetupGet(u => u.AutomationProposals).Returns(_automationProposalRepositoryMock.Object);
@@ -73,7 +75,14 @@ public class CaptureServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
-        _service = new CaptureService(_unitOfWorkMock.Object, _authorizationServiceMock.Object);
+        _service = new CaptureService(
+            _unitOfWorkMock.Object,
+            _authorizationServiceMock.Object,
+            captureStore: null,
+            contextFabricSettings: null,
+            backfillStore: null,
+            logger: null,
+            transcriptRepository: _transcriptRepositoryMock.Object);
     }
 
     /// <summary>
@@ -1883,6 +1892,118 @@ public class CaptureServiceTests
         result.ErrorCode.Should().Be(ErrorCodes.Conflict);
         result.ErrorMessage.Should().Contain("cannot be edited");
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldAppendImmutableTranscriptForLinkedTriagedCapture()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeTranscriptV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.TranscriptPaste, "canonical transcript")),
+            boardId);
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        var original = new Transcript(
+            userId,
+            CaptureSource.TranscriptPaste,
+            "canonical transcript\nsecond line",
+            [new TranscriptSegment(0, 0, "Speaker", 1000)],
+            boardId,
+            item.Id);
+        item.AttachTranscript(original.Id);
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _transcriptRepositoryMock
+            .Setup(r => r.GetByIdForUserAsync(original.Id, userId, default))
+            .ReturnsAsync(original);
+        Transcript? replacement = null;
+        _transcriptRepositoryMock
+            .Setup(r => r.AddAsync(It.IsAny<Transcript>(), It.IsAny<CancellationToken>()))
+            .Callback<Transcript, CancellationToken>((transcript, _) => replacement = transcript)
+            .ReturnsAsync((Transcript transcript, CancellationToken _) => transcript);
+        _llmQueueRepositoryMock
+            .Setup(r => r.TryCorrectLinkedTranscriptCaptureAsync(
+                item.Id,
+                item.Status,
+                item.UpdatedAt,
+                original.Id,
+                item.Payload,
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto("corrected transcript\nsecond line"));
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.RawText.Should().Be("corrected transcript\nsecond line");
+        result.Value.CanEditSuggestion.Should().BeTrue();
+        replacement.Should().NotBeNull();
+        replacement!.Id.Should().NotBe(original.Id);
+        replacement.Text.Should().Be("corrected transcript\nsecond line");
+        replacement.SegmentsJson.Should().Be("[]");
+        replacement.CreatedFromCaptureId.Should().Be(item.Id);
+        replacement.UserId.Should().Be(userId);
+        replacement.BoardId.Should().Be(boardId);
+        replacement.CaptureSource.Should().Be(CaptureSource.TranscriptPaste);
+        original.Text.Should().Be("canonical transcript\nsecond line");
+        original.SegmentsJson.Should().Contain("Speaker");
+        _unitOfWorkMock.Verify(u => u.BeginTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateSuggestionAsync_ShouldRollbackReplacementWhenQueueCasIsStale()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, CaptureRequestContract.RequestTypeTranscriptV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(1, CaptureSource.TranscriptPaste, "canonical transcript")));
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+        var original = new Transcript(
+            userId,
+            CaptureSource.TranscriptPaste,
+            "canonical transcript",
+            createdFromCaptureId: item.Id);
+        item.AttachTranscript(original.Id);
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _transcriptRepositoryMock
+            .Setup(r => r.GetByIdForUserAsync(original.Id, userId, default))
+            .ReturnsAsync(original);
+        _llmQueueRepositoryMock
+            .Setup(r => r.TryCorrectLinkedTranscriptCaptureAsync(
+                It.IsAny<Guid>(),
+                It.IsAny<RequestStatus>(),
+                It.IsAny<DateTimeOffset>(),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<Guid>(),
+                It.IsAny<string>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var result = await _service.UpdateSuggestionAsync(
+            userId,
+            item.Id,
+            new UpdateCaptureSuggestionDto("stale correction"));
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Conflict);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Never);
     }
 
     [Theory]
