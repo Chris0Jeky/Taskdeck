@@ -44,14 +44,25 @@ export interface ChatContextSelection {
   cardId: string | null
   includeThinking: boolean
   memories: { id: string; revision: number }[]
+  assets?: ChatAssetReference[]
 }
 
+export interface ChatAssetReference { memoryId: string; revision: number; assetId: string; contentHash: string }
+export interface ChatAssetOption {
+  id: string; name: string; contentHash: string; byteSize: number
+  supersededByAssetId: string | null; excerpt: string; truncated: boolean
+}
+export interface ChatAssetPage { memoryId: string; revision: number; items: ChatAssetOption[]; nextOffset: number | null }
+
 export interface ChatContextSource {
-  kind: 'card' | 'thinking' | 'private-memory'
+  kind: 'card' | 'thinking' | 'private-memory' | 'private-source'
   id: string
   title: string
   revision: number | null
   truncated: boolean
+  memoryId?: string | null
+  contentHash?: string | null
+  supersededByAssetId?: string | null
 }
 
 export interface ChatSession {
