@@ -477,6 +477,30 @@ describe('CardModal', () => {
     wrapper.unmount()
   })
 
+  it('hands discard confirmation to the parent without reopening a stale local prompt', async () => {
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'inspector' },
+      attachTo: document.body,
+    })
+    await nextTick()
+
+    await wrapper.get('#card-title').setValue('Unsaved title')
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).not.toBeNull()
+
+    await wrapper.setProps({ suppressDiscardPrompt: true })
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+
+    await wrapper.setProps({ suppressDiscardPrompt: false })
+    await nextTick()
+    expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
   it('should not render when isOpen is false', () => {
     const wrapper = mount(CardModal, {
       props: {
