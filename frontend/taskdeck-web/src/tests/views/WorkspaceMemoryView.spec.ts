@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import WorkspaceMemoryView from '../../views/WorkspaceMemoryView.vue'
 import type { Board } from '../../types/board'
 import type { Memory } from '../../types/workspaceInsights'
+
+enableAutoUnmount(afterEach)
 
 const mocks = vi.hoisted(() => ({
   route: { query: {} as Record<string, string> },
@@ -23,7 +25,7 @@ const api = mocks.api
 vi.mock('vue-router', () => ({
   onBeforeRouteLeave: vi.fn(),
   onBeforeRouteUpdate: vi.fn(),
-  useRoute: () => mocks.route,
+  useRoute: () => routeMock,
   RouterLink: {
     props: ['to'],
     template: '<a :href="typeof to === \'string\' ? to : \'#\'"><slot /></a>',
@@ -31,7 +33,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('../../store/boardStore', () => ({
-  useBoardStore: () => mocks.boardStore,
+  useBoardStore: () => boardStore,
 }))
 
 vi.mock('../../api/workspaceInsights', () => ({
@@ -104,7 +106,7 @@ describe('WorkspaceMemoryView', () => {
   })
 
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     routeMock.query = {}
     boardStore.boards = [board]
     boardStore.fetchBoards.mockResolvedValue(undefined)
@@ -166,6 +168,35 @@ describe('WorkspaceMemoryView', () => {
 
     expect(api.setMemoryArchived).toHaveBeenCalledWith('memory-1', { archived: true, revision: memory.revision })
     expect(wrapper.text()).toContain('No memory yet')
+  })
+
+  it('waits for the initial list before allowing a new memory', async () => {
+    let finish!: (value: Memory[]) => void
+    api.getMemories.mockReturnValueOnce(new Promise<Memory[]>(resolve => { finish = resolve }))
+    const wrapper = mount(WorkspaceMemoryView)
+    await settle()
+    expect(wrapper.get('[data-action="new-memory"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-action="new-memory"]').trigger('click')
+    expect(wrapper.find('form').exists()).toBe(false)
+    finish([memory])
+    await settle()
+    expect(wrapper.get('[data-action="new-memory"]').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('retries board discovery after a linked-board transition fails', async () => {
+    const wrapper = mount(WorkspaceMemoryView)
+    await settle()
+    boardStore.boards = [board, { ...board, id: 'board-2' }]
+    boardStore.fetchBoards.mockRejectedValueOnce(new Error('Board discovery unavailable'))
+    routeMock.query = { boardId: 'board-2' }
+    await settle()
+    expect(wrapper.find('[role="alert"]').text()).toContain('Board discovery unavailable')
+    await wrapper.find('[role="alert"] button').trigger('click')
+    await settle()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(api.getMemories).toHaveBeenLastCalledWith('board-2', false)
+    wrapper.unmount()
   })
 
   it('keeps board mutation out of the memory copy', async () => {

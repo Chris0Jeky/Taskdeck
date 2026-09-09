@@ -51,10 +51,11 @@ counts are not used as evidence. Further implementation is tracked in
 
 ## Remaining sequence
 
-1. **Linked steps and dependency connections.** Reuse the guarded card writer with transaction-safe
-   post-commit notifications before introducing promotion. Promotion must be idempotent, preserve
-   WIP/archive/audit rules, derive status from the real child, and never delete a child when its
-   thinking layer is removed. Do not call destructive deletion an undo.
+1. **Dependency connections after linked steps.** Explicit saved-step promotion now stages card,
+   board concurrency token and audit through the shared guarded writer; one atomic deck CAS commits
+   them before realtime notification. Repeated promotion reuses the link, import remaps relationships,
+   and removing thinking retains cards. Status is fetched from the real card on load/explicit refresh.
+   Next: separate dependency edges and their lifecycle; do not infer them from a thinking link.
 2. **Contextual companion and proposal overlays.** Bind current board/card/selected source evidence;
    render the existing effective proposal revision in place and preserve the approve/apply separation.
    Integrate private memory retrieval only with explicit user scope and archived exclusion.
@@ -67,9 +68,37 @@ counts are not used as evidence. Further implementation is tracked in
 5. **Expanded intelligence and optional attention.** Build a usefulness corpus for new structural and
    model-generated observations, then prove freshness, permissions, deduplication, budget and dismissal.
    Optional nudges require a separate opt-in suppression policy; current insights never interrupt.
-6. **Comparison beyond personal trials.** Record product build and scenario when trials span releases;
-   define outcomes, assignment and sample requirements before making statistical A/B claims.
+6. **Comparison beyond personal trials.** Scenarios, explicit completion outcomes, optional ease ratings
+   and backend-reported version attribution now travel in version-2 exports. Next: independent participant
+   sampling/assignment and outcome analysis before statistical A/B claims. The version is not an exact
+   frontend commit fingerprint; unavailable attribution remains null.
 
 These are remaining prototype capabilities, not blockers hidden behind placeholder success states.
 Existing owner decisions remain in [OUTSTANDING_TASKS.md](../../OUTSTANDING_TASKS.md); no publisher,
 signing, private-instance, release/runner or subjective palette/dogfooding item is inferred complete.
+
+
+## Linked-step continuation (2026-09-09)
+
+The next vertical under #2808 adds manual card promotion to saved thinking steps. Its direct checks
+are `ThinkingStepApiTests` (authentication, viewer/foreign scope, WIP/archive/stale/invalid rejection,
+concurrent saves, repeat safety, actor audit, deletion and portable links), the existing
+`ThinkingDeckApiTests` and `CardServiceTests`, and `ThinkingStepCard.spec.ts`. The new journey in
+`workspace-overhaul.spec.ts` exercises creation, retry, refreshed blocker status, all experiences,
+phone width and automated accessibility. Exact execution results belong to the continuation PR.
+
+New links are server introduced only; general deck saves cannot inject a foreign card reference.
+Import accepts optional source card IDs only to remap relationships within the imported payload.
+Source IDs never become the IDs of newly created cards. Linked material advertises schema version 2
+to prevent silent link loss in older readers. API tests cover version-2 round trips, reject linked
+material mislabeled as version 1, and verify ordinary decks still use version 1.
+This uses existing JSON thinking storage,
+with no migration. It does not introduce a dependency graph, private-memory retrieval or autonomy.
+
+
+Comparison follow-through keeps observations session-only and explicit. `workspaceExperimentStore.spec.ts`
+and the comparison browser journey cover scenario/outcome validation, optional ratings, versioned export
+and identity reset. The insight/memory follow-through uses delayed-response component regressions to
+prove that analysis settles across route changes, conflicting actions are disabled, initial memory reads
+finish before creation, and Retry returns to failed board discovery. These are fixes from #2808's
+recorded review residuals, not changes to approval/apply authority.

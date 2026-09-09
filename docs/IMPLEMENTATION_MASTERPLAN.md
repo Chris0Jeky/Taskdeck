@@ -65,6 +65,19 @@ behaviour.
 
 ## Dated delivery and governance updates (newest first)
 
+### 2026-09-09 — Overhaul continuation: saved thinking into board work (#2808)
+
+PR #2807 is merged, including its SQLite rollback correction. The next vertical adds explicit
+saved-step promotion over the guarded manual card writer. Card, link, board token and actor audit
+commit together; realtime follows success. Revision/WIP/archive conflicts preserve the source,
+repeated promotion does not duplicate a card, and shared board import remaps links to new IDs.
+The browser flow retains Classic/Studio/Companion/Unified and reads actual linked-card status.
+The comparison follow-through adds explicit scenarios/outcomes and backend version attribution.
+Tracked insight/memory operation-order and board-discovery retry defects receive focused regressions.
+Separate dependency edges, contextual Companion, personal continuity, source/audio integration and
+optional intelligence/attention remain on the [overhaul ledger](product/WORKSPACE_OVERHAUL.md).
+
+
 ## Delivered PR integration (2026-09-09, #2235)
 
 Integration #2815 landed as `22029c760` with thirteen source candidates preserved and required hosted qualification passed. The final #2795 receipt repair is delivered; the larger #2004 acceptance remains open for its tracked recovery and causal-order residuals. The four dependency/CI candidates were merged under the maintainer's explicit four-PR delegation, with their review afterward. The separate #2819 candidate finishes the unused-dispatcher deletion for #2007; its source review, unchanged patch and 36 current-base shortcut tests are recorded on the PR, with hosted qualification still required. No release or human acknowledgement is inferred.

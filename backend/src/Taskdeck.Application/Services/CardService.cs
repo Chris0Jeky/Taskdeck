@@ -58,23 +58,48 @@ public class CardService
     {
         try
         {
+            var staged = await StageCardCreationAsync(dto, cardId, cancellationToken);
+            if (!staged.IsSuccess) return Result.Failure<CardDto>(staged.ErrorCode, staged.ErrorMessage);
+            var card = staged.Value;
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.NotifyBoardMutationAsync(
+                new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
+                cancellationToken);
+            await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, $"title={card.Title}");
+
+            var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
+            return Result.Success(MapToDto(createdCard!));
+        }
+        catch (DomainException ex)
+        {
+            return Result.Failure<CardDto>(ex.ErrorCode, ex.Message);
+        }
+    }
+
+    // Shared guarded writer. The caller must atomically commit staged entities, audit and
+    // links before publishing realtime. This method performs no save or notification.
+    internal async Task<Result<Card>> StageCardCreationAsync(
+        CreateCardDto dto, Guid? cardId, CancellationToken cancellationToken)
+    {
+        try
+        {
             // Verify board and column exist
             var board = await _unitOfWork.Boards.GetByIdAsync(dto.BoardId, cancellationToken);
             if (board == null)
-                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId} not found");
+                return Result.Failure<Card>(ErrorCodes.NotFound, $"Board with ID {dto.BoardId} not found");
             if (board.IsArchived)
-                return Result.Failure<CardDto>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
+                return Result.Failure<Card>(ErrorCodes.InvalidOperation, ArchivedBoardWriteMessage);
 
             var column = await _unitOfWork.Columns.GetByIdWithCardsAsync(dto.ColumnId, cancellationToken);
             if (column == null)
-                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found");
+                return Result.Failure<Card>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found");
 
             if (column.BoardId != dto.BoardId)
-                return Result.Failure<CardDto>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found in board {dto.BoardId}");
+                return Result.Failure<Card>(ErrorCodes.NotFound, $"Column with ID {dto.ColumnId} not found in board {dto.BoardId}");
 
             // Check WIP limit
             if (column.WouldExceedWipLimitIfAdded())
-                return Result.Failure<CardDto>(ErrorCodes.WipLimitExceeded,
+                return Result.Failure<Card>(ErrorCodes.WipLimitExceeded,
                     $"Cannot add card, column '{column.Name}' has reached its WIP limit of {column.WipLimit}");
 
             // Determine position (add to bottom)
@@ -99,19 +124,9 @@ public class CardService
             }
 
             board.RecordCardMutation();
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _realtimeNotifier.NotifyBoardMutationAsync(
-                new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
-                cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, $"title={card.Title}");
-
-            var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
-            return Result.Success(MapToDto(createdCard!));
+            return Result.Success(card);
         }
-        catch (DomainException ex)
-        {
-            return Result.Failure<CardDto>(ex.ErrorCode, ex.Message);
-        }
+        catch (DomainException ex) { return Result.Failure<Card>(ex.ErrorCode, ex.Message); }
     }
 
     public async Task<Result<CardDto>> UpdateCardAsync(
