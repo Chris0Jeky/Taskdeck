@@ -57,7 +57,8 @@
 //     [--summary "$GITHUB_STEP_SUMMARY"]
 // Omitting `--changed-files`, or pointing it at a missing file, means the diff is UNAVAILABLE and
 // escalates; an existing empty file means an empty diff. Omitting `--last-receipt` means no last
-// receipt and escalates. The CLI always exits 0: the verdict is the output, not the exit status.
+// receipt and escalates. A valid invocation writes the verdict receipt; invalid arguments or an
+// output-write failure remain ordinary non-zero CLI errors.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -118,6 +119,7 @@ const FRONTEND_SUITES = Object.freeze([
   'frontend-coverage',
   'e2e-smoke',
   'e2e-cross-browser',
+  'container-images',
 ]);
 const DEPENDENCY_SUITES = Object.freeze([
   'dependency-security-signals',
@@ -214,7 +216,9 @@ function normaliseSha(value) {
 }
 
 function isIsoTimestamp(value) {
-  return typeof value === 'string' && value.length > 0 && !Number.isNaN(Date.parse(value));
+  return typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+    && !Number.isNaN(Date.parse(value));
 }
 
 /** Codepoint sort, matching `lib/plan.mjs`; locale-sensitive ordering would not be byte-stable. */

@@ -2777,3 +2777,9 @@ This wave delivered the final 2 issues from the rigorous test expansion wave (`#
 ## Paper Wide-card regression (#2090)
 
 From `frontend/taskdeck-web`, run `npx playwright test tests/e2e/paper-responsive.spec.ts --grep "Wide Paper lanes" --project=chromium --reporter=line` against the isolated Mock test stack. It creates its own authenticated board/card, selects Wide, and compares actual rendered card width with the lane's card-content width. Focused unit coverage is in `BoardView.spec.ts`, `PaperBoardView.spec.ts`, and `CardModal.spec.ts`; standard typecheck/build and full frontend qualification still apply. Keep screenshot inspection separate from geometry assertions and report any known #2789 calendar-fixture failures explicitly.
+
+## Nightly baseline observation contract (#2334, CI10-2)
+
+From the repository root, `node --test scripts/ci/smart-ci/*.test.mjs` exercises the deterministic coordinator and authenticated-baseline fixtures. `node scripts/ci/smart-ci/action-pins.mjs --check` checks workflow pinning. These are additive local checks: CI-control changes require the hosted run at the exact PR head.
+
+Fixtures cover successful same-head CI Nightly/Nightly Quality pairs, missing or unsuccessful jobs, latest-attempt and workflow identity mismatches, bounded pagination/artifact handling, and head/tree/diff consistency. They do not prove a real Actions artifact download or a quiet-night/week result. The observer job records the intended plan while the existing deep jobs continue unconditionally; a plan artifact alone is never evidence of completed qualification.
