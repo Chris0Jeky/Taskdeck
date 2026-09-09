@@ -2664,6 +2664,15 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PersonalPlanJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("PersonalPlanRevision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0L);
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .HasColumnType("TEXT");
 

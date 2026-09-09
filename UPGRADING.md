@@ -21,8 +21,12 @@ use the `taskdeck-board` version-2 envelope. Current importers remap both ends t
 older importers reject that envelope instead of silently dropping relationships. Boards without
 dependencies retain the existing JSON shape, and existing JSON imports remain supported.
 
-**BREAKING: none.** Three additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
-and correction-history tables, then private question-source columns. Existing boards, cards, captures and proposals retain their identities. Thinking material
+**BREAKING: none.** Additive migrations add `ThinkingDecks`, `QuietInsights`, `WorkspaceMemories`
+and correction-history tables, then private question-source columns. A further additive migration
+adds private personal-plan JSON and revision columns to UserPreferences with empty defaults. Plan dates
+are independent of card deadlines. Both account exports include the plan and last explicit focus;
+account deletion erases them, while shared board export omits them.
+ Existing boards, cards, captures and proposals retain their identities. Thinking material
 is attached to a card and is removed when that card is deleted. Insights and memory remain private
 to their author and require access to an active board. Memory archive retains correction history.
 

@@ -142,8 +142,14 @@ answers and memory, explicit structural insights and local comparison notes. Cla
 existing review-first apply boundary remain available. [ADR-0070](decisions/ADR-0070-switchable-workspace-experiences.md)
 records the delegated product decision; this does not change release gates or external settings.
 
+The Studio continuity continuation under #2808 adds a private server-backed personal plan, explicit
+last-worked focus and List/Board/Horizon projections over current cards. Plan dates never change card
+deadlines; Make room changes only the caller's plan. The two additive UserPreferences columns retain
+account export and deletion behavior. This delivers the planning portion of the continuation while
+contextual companion, dependencies, source/audio and intelligence/attention remain in the tracker.
+
 The [validation/follow-through ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) orders the remaining
-work: transaction-safe linked steps, contextual companion/proposal overlays, Studio continuity,
+work: transaction-safe linked steps, contextual companion/proposal overlays,
 Context Fabric source/audio integration, evidence-grounded intelligence/attention, then broader
 comparison. These remain separate from the delivered structural and private-memory behavior.
 

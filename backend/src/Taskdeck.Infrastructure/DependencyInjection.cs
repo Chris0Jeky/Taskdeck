@@ -54,6 +54,7 @@ public static class DependencyInjection
         services.AddScoped<ICardRepository, CardRepository>();
         services.AddScoped<IThinkingDeckRepository, ThinkingDeckRepository>();
         services.AddScoped<IBoardDependencyRepository, BoardDependencyRepository>();
+        services.AddScoped<IWorkspacePlanRepository, WorkspacePlanRepository>();
         services.AddScoped<ICardCommentRepository, CardCommentRepository>();
         services.AddScoped<ILabelRepository, LabelRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
