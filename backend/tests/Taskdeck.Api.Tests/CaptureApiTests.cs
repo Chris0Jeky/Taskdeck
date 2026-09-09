@@ -339,6 +339,172 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task LinkedTriagedCorrection_ShouldAppendTranscriptAndKeepOriginalReadable()
+    {
+        await AuthenticateAsAsync("capture-linked-correction");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(null, "canonical queue text", "transcriptPaste"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        Guid originalTranscriptId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created!.Id);
+            var original = new Transcript(
+                created.UserId,
+                CaptureSource.TranscriptPaste,
+                "canonical queue text\nwith offsets",
+                [new TranscriptSegment(0, 0, "Speaker", 1_000)],
+                createdFromCaptureId: created.Id);
+            db.Transcripts.Add(original);
+            request.AttachTranscript(original.Id);
+            request.MarkAsProcessing();
+            request.MarkAsCompleted();
+            await db.SaveChangesAsync();
+            originalTranscriptId = original.Id;
+        }
+
+        var editResponse = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("corrected queue text\nwith offsets"));
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var edited = await editResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        edited.Should().NotBeNull();
+        edited!.RawText.Should().Be("corrected queue text\nwith offsets");
+        edited.Status.Should().Be(CaptureStatus.Triaged);
+        edited.CanEditSuggestion.Should().BeTrue();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created.Id);
+            var transcripts = await db.Transcripts
+                .Where(transcript => transcript.CreatedFromCaptureId == created.Id)
+                .ToListAsync();
+            var original = transcripts.Single(transcript => transcript.Id == originalTranscriptId);
+            var replacement = transcripts.Single(transcript => transcript.Id == request.TranscriptId);
+
+            transcripts.Should().HaveCount(2);
+            request.Status.Should().Be(RequestStatus.Completed);
+            request.Payload.Should().Contain("corrected queue text");
+            original.Text.Should().Be("canonical queue text\nwith offsets");
+            original.SegmentsJson.Should().Contain("Speaker");
+            replacement.Text.Should().Be("corrected queue text\nwith offsets");
+            replacement.SegmentsJson.Should().Be("[]");
+            replacement.CreatedFromCaptureId.Should().Be(created.Id);
+            replacement.UserId.Should().Be(created.UserId);
+        }
+
+        // The correction remains proposal-less and explicitly re-enters triage only when the
+        // reader asks for it. This exercises the real API enqueue and hosted transcript worker,
+        // which must consume the replacement transcript rather than the immutable original.
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-linked-correction-board");
+        var columnResponse = await _client.PostAsJsonAsync(
+            $"/api/boards/{board.Id}/columns",
+            new CreateColumnDto(board.Id, "Inbox", null, null));
+        columnResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var triageResponse = await _client.PostAsJsonAsync(
+            $"/api/capture/items/{created.Id}/triage",
+            new { boardId = board.Id });
+        triageResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+        var finalItem = await WaitForCaptureStatusAsync(created.Id, CaptureStatus.ProposalCreated);
+        finalItem.RawText.Should().Be("corrected queue text\nwith offsets");
+        finalItem.Provenance.Should().NotBeNull();
+        finalItem.Provenance!.ProposalId.Should().NotBeNull();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created.Id);
+            request.TranscriptId.Should().NotBeNull();
+            request.TranscriptId.Should().NotBe(originalTranscriptId);
+
+            var replacement = await db.Transcripts.SingleAsync(
+                transcript => transcript.Id == request.TranscriptId);
+            replacement.Text.Should().Be("corrected queue text\nwith offsets");
+            replacement.SegmentsJson.Should().Be("[]");
+
+            var proposal = await db.AutomationProposals.SingleAsync(
+                value => value.Id == finalItem.Provenance!.ProposalId);
+            proposal.SourceReferenceId.Should().Be(created.Id.ToString());
+            proposal.BoardId.Should().Be(board.Id);
+        }
+    }
+
+    [Fact]
+    public async Task LinkedTriagedCorrection_ShouldAllowReroutedBoardWithBoardlessCanonicalTranscript()
+    {
+        await AuthenticateAsAsync("capture-linked-reroute-correction");
+        var board = await ApiTestHarness.CreateBoardAsync(_client, "capture-linked-reroute-board");
+
+        var createResponse = await _client.PostAsJsonAsync(
+            "/api/capture/items",
+            new CreateCaptureItemDto(board.Id, "canonical queue text", "transcriptPaste"));
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await createResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        created.Should().NotBeNull();
+
+        Guid originalTranscriptId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created!.Id);
+            var original = new Transcript(
+                created.UserId,
+                CaptureSource.TranscriptPaste,
+                "boardless canonical text",
+                createdFromCaptureId: created.Id);
+            db.Transcripts.Add(original);
+            request.AttachTranscript(original.Id);
+            request.MarkAsProcessing();
+            request.MarkAsCompleted();
+            await db.SaveChangesAsync();
+            originalTranscriptId = original.Id;
+        }
+
+        var editResponse = await _client.PutAsJsonAsync(
+            $"/api/capture/items/{created!.Id}/suggestion",
+            new UpdateCaptureSuggestionDto("corrected boardless canonical text"));
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var edited = await editResponse.Content.ReadFromJsonAsync<CaptureItemDto>();
+        edited.Should().NotBeNull();
+        edited!.RawText.Should().Be("corrected boardless canonical text");
+        edited.Status.Should().Be(CaptureStatus.Triaged);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var request = await db.LlmRequests.SingleAsync(item => item.Id == created.Id);
+            var transcripts = await db.Transcripts
+                .Where(transcript => transcript.CreatedFromCaptureId == created.Id)
+                .ToListAsync();
+            var original = transcripts.Single(transcript => transcript.Id == originalTranscriptId);
+            var replacement = transcripts.Single(transcript => transcript.Id == request.TranscriptId);
+
+            request.BoardId.Should().Be(board.Id);
+            transcripts.Should().HaveCount(2);
+            original.BoardId.Should().BeNull();
+            replacement.BoardId.Should().BeNull();
+            original.UserId.Should().Be(created.UserId);
+            replacement.UserId.Should().Be(created.UserId);
+            original.CaptureSource.Should().Be(CaptureSource.TranscriptPaste);
+            replacement.CaptureSource.Should().Be(CaptureSource.TranscriptPaste);
+            original.CreatedFromCaptureId.Should().Be(created.Id);
+            replacement.CreatedFromCaptureId.Should().Be(created.Id);
+            original.Text.Should().Be("boardless canonical text");
+            replacement.Text.Should().Be("corrected boardless canonical text");
+            replacement.SegmentsJson.Should().Be("[]");
+        }
+    }
+
+    [Fact]
     public async Task Ignore_ShouldBeIdempotent()
     {
         await AuthenticateAsAsync("capture-ignore");

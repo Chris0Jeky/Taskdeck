@@ -784,7 +784,7 @@ describe('PaperTriageTable', () => {
     expect(row.find('[data-testid="capture-edit-textarea"]').exists()).toBe(true)
   })
 
-  it('does not advertise editing a transcript-linked Triaged row', () => {
+  it('fails closed when the server denies editing a transcript-linked Triaged row', () => {
     const items = makeItems()
     items[0] = { ...items[0], status: 'Triaged', canEditSuggestion: false }
     const wrapper = mount(PaperTriageTable, { props: { items } })
