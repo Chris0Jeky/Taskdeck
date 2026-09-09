@@ -65,6 +65,9 @@ behaviour.
 
 ## Dated delivery and governance updates (newest first)
 
+## Delivered PR integration (2026-09-09, #2235)
+
+Integration #2815 landed as `22029c760` with thirteen source candidates preserved and required hosted qualification passed. The final #2795 receipt repair is delivered; the larger #2004 acceptance remains open for its tracked recovery and causal-order residuals. The four dependency/CI candidates were merged under the maintainer's explicit four-PR delegation, with their review afterward. The separate #2819 candidate finishes the unused-dispatcher deletion for #2007; its source review, unchanged patch and 36 current-base shortcut tests are recorded on the PR, with hosted qualification still required. No release or human acknowledgement is inferred.
 ## PR closeout (2026-09-09, #2235)
 
 PR #2809 lands the first #2260 representation-contract slice at `f935ebcbc`;

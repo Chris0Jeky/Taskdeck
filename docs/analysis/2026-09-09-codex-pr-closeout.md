@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-09
 
+**Delivered checkpoint:** integration #2815 merged at `22029c760653519622de2e9bcdd86bb668a50d41` after required run `34339766712` passed. Tested merge `8111decc` and the regenerated current-base merge `48438cb` have identical tree `3a1a2b7bdbc3e6f844a411abd52a1c5f694bd458`; independent base reconciliation confirmed the already-included palette merge changed only ancestry. The candidate sections below retain the qualification history. #2795 is closed, and the three superseded Vitest singles are closed. The later dispatcher PR #2819 has its own final qualification.
+
 ## Shipped
 
 - #2813: prior delivery record, merge `1777e3c9f`; required CI and post-merge run `34285088054` passed.
