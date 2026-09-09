@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -22,7 +22,7 @@ const NEWLINE = String.fromCharCode(10);
 function observation(overrides = {}) {
   return {
     mergeSha: MERGE_SHA,
-    baseSha: CONTROL_BASE,
+    mergeBaseSha: CONTROL_BASE,
     headSha: EVENT_HEAD,
     treeSha: TREE_SHA,
     ...overrides,
@@ -35,23 +35,29 @@ function outputFixture() {
     root,
     mergeOutput: join(root, 'merge-sha.txt'),
     treeOutput: join(root, 'merge-tree-sha.txt'),
+    mergeBaseOutput: join(root, 'merge-base-sha.txt'),
+    mergeBaseTipOutput: join(root, 'merge-base-tip-sha.txt'),
   };
 }
 
-function assertPublished(fixture) {
+function assertPublished(fixture, { mergeBaseSha = CONTROL_BASE, mergeBaseTipSha = null } = {}) {
   assert.equal(readFileSync(fixture.mergeOutput, 'utf8'), `${MERGE_SHA}\n`);
   assert.equal(readFileSync(fixture.treeOutput, 'utf8'), `${TREE_SHA}\n`);
+  assert.equal(readFileSync(fixture.mergeBaseOutput, 'utf8'), `${mergeBaseSha}\n`);
+  assert.equal(readFileSync(fixture.mergeBaseTipOutput, 'utf8'), `${mergeBaseTipSha ?? 'null'}\n`);
 }
 
 function assertNotPublished(fixture) {
   assert.equal(existsSync(fixture.mergeOutput), false);
   assert.equal(existsSync(fixture.treeOutput), false);
+  assert.equal(existsSync(fixture.mergeBaseOutput), false);
+  assert.equal(existsSync(fixture.mergeBaseTipOutput), false);
 }
 
 test('a stale base observation retries and then publishes one valid identity', async () => {
   const fixture = outputFixture();
   const observations = [
-    observation({ baseSha: 'e'.repeat(40) }),
+    observation({ mergeBaseSha: 'e'.repeat(40) }),
     observation(),
   ];
   const sleeps = [];
@@ -62,11 +68,13 @@ test('a stale base observation retries and then publishes one valid identity', a
       expectedHead: EVENT_HEAD,
       mergeOutput: fixture.mergeOutput,
       treeOutput: fixture.treeOutput,
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
       observe: async () => observations.shift(),
       sleep: async (milliseconds) => sleeps.push(milliseconds),
     });
 
-    assert.deepEqual(resolved, observation({ mergeRefMoved: false, baseTipSha: null }));
+    assert.deepEqual(resolved, observation({ mergeRefMoved: false, mergeBaseTipSha: null }));
     assert.equal(observations.length, 0);
     assert.equal(sleeps.length, 1);
     assertPublished(fixture);
@@ -85,6 +93,8 @@ test('an unavailable observation retries and then publishes one valid identity',
       expectedHead: EVENT_HEAD,
       mergeOutput: fixture.mergeOutput,
       treeOutput: fixture.treeOutput,
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
       observe: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error('merge ref unavailable');
@@ -93,7 +103,7 @@ test('an unavailable observation retries and then publishes one valid identity',
       sleep: async () => {},
     });
 
-    assert.deepEqual(resolved, observation({ mergeRefMoved: false, baseTipSha: null }));
+    assert.deepEqual(resolved, observation({ mergeRefMoved: false, mergeBaseTipSha: null }));
     assert.equal(attempts, 2);
     assertPublished(fixture);
   } finally {
@@ -112,9 +122,11 @@ test('a persistently wrong base stops after three attempts without outputs', asy
         expectedHead: EVENT_HEAD,
         mergeOutput: fixture.mergeOutput,
         treeOutput: fixture.treeOutput,
+        mergeBaseOutput: fixture.mergeBaseOutput,
+        mergeBaseTipOutput: fixture.mergeBaseTipOutput,
         observe: async () => {
           attempts += 1;
-          return observation({ baseSha: 'e'.repeat(40) });
+          return observation({ mergeBaseSha: 'e'.repeat(40) });
         },
         sleep: async () => {},
       }),
@@ -139,6 +151,8 @@ test('a persistently wrong head stops without publishing outputs', async () => {
         expectedHead: EVENT_HEAD,
         mergeOutput: fixture.mergeOutput,
         treeOutput: fixture.treeOutput,
+        mergeBaseOutput: fixture.mergeBaseOutput,
+        mergeBaseTipOutput: fixture.mergeBaseTipOutput,
         observe: async () => {
           attempts += 1;
           return observation({ headSha: 'f'.repeat(40) });
@@ -194,16 +208,22 @@ test('a merge ref regenerated against the live base branch tip resolves as merge
       expectedHead: EVENT_HEAD,
       mergeOutput: fixture.mergeOutput,
       treeOutput: fixture.treeOutput,
-      observe: async () => observation({ baseSha: advancedBase }),
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
+      observe: async () => observation({ mergeBaseSha: advancedBase }),
       resolveBaseTip: async () => advancedBase,
       sleep: async () => {},
       log: (message) => logs.push(message),
     });
 
     assert.equal(resolved.mergeRefMoved, true);
-    assert.equal(resolved.baseTipSha, advancedBase);
+    assert.equal(resolved.mergeBaseSha, advancedBase);
+    assert.equal(resolved.mergeBaseTipSha, advancedBase);
     assert.equal(resolved.headSha, EVENT_HEAD);
-    assertPublished(fixture);
+    assert.equal(readFileSync(fixture.mergeOutput, 'utf8'), `${MERGE_SHA}\n`);
+    assert.equal(readFileSync(fixture.treeOutput, 'utf8'), `${TREE_SHA}\n`);
+    assert.equal(readFileSync(fixture.mergeBaseOutput, 'utf8'), `${ADVANCED_BASE}\n`);
+    assert.equal(readFileSync(fixture.mergeBaseTipOutput, 'utf8'), `${ADVANCED_BASE}\n`);
     assert.equal(logs.length, 1);
     assert.match(logs[0], /^merge-ref-moved —/);
   } finally {
@@ -221,7 +241,9 @@ test('a first parent that is not the live base branch tip stays fail-closed', as
       expectedHead: EVENT_HEAD,
       mergeOutput: fixture.mergeOutput,
       treeOutput: fixture.treeOutput,
-      observe: async () => { attempts.push('observe'); return observation({ baseSha: 'e'.repeat(40) }); },
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
+      observe: async () => { attempts.push('observe'); return observation({ mergeBaseSha: 'e'.repeat(40) }); },
       resolveBaseTip: async () => 'f'.repeat(40),
       sleep: async () => {},
     }), /not the live base branch tip/);
@@ -243,7 +265,9 @@ test('a moved base never excuses a head mismatch', async () => {
       expectedHead: EVENT_HEAD,
       mergeOutput: fixture.mergeOutput,
       treeOutput: fixture.treeOutput,
-      observe: async () => observation({ baseSha: 'f'.repeat(40), headSha: '9'.repeat(40) }),
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
+      observe: async () => observation({ mergeBaseSha: 'f'.repeat(40), headSha: '9'.repeat(40) }),
       resolveBaseTip: async () => { baseTipReads += 1; return 'f'.repeat(40); },
       sleep: async () => {},
     }), /base and head mismatch/);
@@ -264,7 +288,9 @@ test('an unreadable base branch tip stays fail-closed', async () => {
       expectedHead: EVENT_HEAD,
       mergeOutput: fixture.mergeOutput,
       treeOutput: fixture.treeOutput,
-      observe: async () => observation({ baseSha: 'f'.repeat(40) }),
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
+      observe: async () => observation({ mergeBaseSha: 'f'.repeat(40) }),
       resolveBaseTip: async () => { throw new Error('network down'); },
       sleep: async () => {},
     }), /the base branch tip could not be read/);
@@ -284,12 +310,12 @@ test('observeBaseTip fetches exactly the named base ref and keeps the token out 
     return `${ADVANCED_BASE}${NEWLINE}`;
   };
 
-  const tip = await observeBaseTip({ baseRef: 'main', token, executeGit });
+  const tip = await observeBaseTip({ baseRef: 'release/v0.3', token, executeGit });
 
   assert.equal(tip, ADVANCED_BASE);
   assert.equal(calls.length, 2);
   assert.match(calls[0].args[0], /^--config-env=http\.extraHeader=/);
-  assert.deepEqual(calls[0].args.slice(1), ['fetch', '--no-tags', '--depth=1', 'origin', 'refs/heads/main']);
+  assert.deepEqual(calls[0].args.slice(1), ['fetch', '--no-tags', '--depth=1', 'origin', 'refs/heads/release/v0.3']);
   assert.deepEqual(calls[1].args, ['rev-parse', 'FETCH_HEAD^{commit}']);
   assert.equal(JSON.stringify(calls.map((call) => call.args)).includes(token), false);
   // The token travels only in the fetch environment, never the argument list.
@@ -318,7 +344,9 @@ test('the CLI note wiring records an accepted moved base with an LF-terminated l
       expectedHead: EVENT_HEAD,
       mergeOutput: fixture.mergeOutput,
       treeOutput: fixture.treeOutput,
-      observe: async () => observation({ baseSha: ADVANCED_BASE }),
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
+      observe: async () => observation({ mergeBaseSha: ADVANCED_BASE }),
       resolveBaseTip: async () => ADVANCED_BASE,
       sleep: async () => {},
     });
@@ -332,7 +360,30 @@ test('the CLI note wiring records an accepted moved base with an LF-terminated l
     assert.ok(note.includes(ADVANCED_BASE));
     assert.equal(note.endsWith(NEWLINE), true);
     assert.equal(note.includes('\r'), false);
-    assertPublished(fixture);
+    assertPublished(fixture, { mergeBaseSha: ADVANCED_BASE, mergeBaseTipSha: ADVANCED_BASE });
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('failure removes stale outputs for every merge identity field', async () => {
+  const fixture = outputFixture();
+  try {
+    for (const path of [fixture.mergeOutput, fixture.treeOutput, fixture.mergeBaseOutput, fixture.mergeBaseTipOutput]) {
+      writeFileSync(path, 'stale\n');
+    }
+    await assert.rejects(resolveMergeRef({
+      expectedBase: CONTROL_BASE,
+      expectedHead: EVENT_HEAD,
+      mergeOutput: fixture.mergeOutput,
+      treeOutput: fixture.treeOutput,
+      mergeBaseOutput: fixture.mergeBaseOutput,
+      mergeBaseTipOutput: fixture.mergeBaseTipOutput,
+      observe: async () => observation({ mergeBaseSha: ADVANCED_BASE }),
+      resolveBaseTip: async () => 'e'.repeat(40),
+      sleep: async () => {},
+    }), /not the live base branch tip/);
+    assertNotPublished(fixture);
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

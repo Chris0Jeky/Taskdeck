@@ -37,6 +37,8 @@ function planFor(prNumber, headSha, options = {}) {
     isDraft: false,
     baseSha: options.baseSha,
     headSha,
+    mergeBaseSha: options.mergeBaseSha,
+    mergeBaseTipSha: options.mergeBaseTipSha ?? null,
     mergeSha: options.mergeSha,
     mergeTreeSha: options.mergeTreeSha,
     actorLogin: 'Chris0Jeky',
@@ -66,6 +68,8 @@ function observation(prNumber, options = {}) {
   const headBranch = `issue-${prNumber}/fixture`;
   const baseSha = options.baseSha ?? shaFor(100000 + prNumber);
   const planBaseSha = options.planBaseSha ?? baseSha;
+  const mergeBaseSha = options.mergeBaseSha ?? planBaseSha;
+  const mergeBaseTipSha = options.mergeBaseTipSha ?? null;
   const planMergeSha = options.planMergeSha ?? shaFor(200000 + prNumber);
   const planMergeTreeSha = options.planMergeTreeSha ?? shaFor(300000 + prNumber);
   const mergeCommitSha = options.mergeCommitSha ?? shaFor(400000 + prNumber);
@@ -114,10 +118,16 @@ function observation(prNumber, options = {}) {
       updatedAt: '2026-08-31T09:05:00.000Z',
       pullRequests: [prNumber],
     },
-    plan: planFor(prNumber, headSha, { baseSha: planBaseSha, mergeSha: planMergeSha, mergeTreeSha: planMergeTreeSha }),
+    plan: planFor(prNumber, headSha, {
+      baseSha: planBaseSha,
+      mergeBaseSha,
+      mergeBaseTipSha,
+      mergeSha: planMergeSha,
+      mergeTreeSha: planMergeTreeSha,
+    }),
     planMergeCommit: {
       sha: planMergeSha,
-      parents: [planBaseSha, headSha],
+      parents: [mergeBaseSha, headSha],
       treeSha: planMergeTreeSha,
     },
     requiredRun: {
@@ -464,6 +474,7 @@ test('plan, landed merge, PR and temporal bindings fail closed on mismatch', () 
 
   const finalBase = observation(393, { mutate: (raw) => {
     raw.plan.baseSha = 'f'.repeat(40);
+    raw.plan.mergeBaseSha = 'f'.repeat(40);
     raw.planMergeCommit.parents[0] = 'f'.repeat(40);
   } });
   assert(normaliseObservation(finalBase, policy, window).errors.includes('final-plan-base-sha-mismatch'));
@@ -473,6 +484,73 @@ test('plan, landed merge, PR and temporal bindings fail closed on mismatch', () 
 
   const outsideWindow = observation(395, { mergedAt: '2026-09-01T12:00:00.000Z' });
   assert(normaliseObservation(outsideWindow, policy, window).errors.includes('merged-at-outside-window'));
+});
+
+test('a valid older-head failure keeps recall evidence after the base moves for the final head', () => {
+  const prNumber = 389;
+  const finalHeadSha = shaFor(900389);
+  const earlierBase = shaFor(800389);
+  const finalBase = shaFor(800390);
+  const earlier = observation(prNumber, {
+    headSha: shaFor(900388),
+    finalHeadSha,
+    baseSha: finalBase,
+    planBaseSha: earlierBase,
+    mergeBaseSha: earlierBase,
+    requiredRunId: 700389,
+    runAttempt: 1,
+    failedCheckName: 'Docs Governance / Docs Governance',
+  });
+  const final = observation(prNumber, {
+    headSha: finalHeadSha,
+    finalHeadSha,
+    baseSha: finalBase,
+    planBaseSha: finalBase,
+    mergeBaseSha: finalBase,
+    requiredRunId: 700390,
+    runAttempt: 1,
+  });
+  assert.equal(normaliseObservation(earlier, policy, window).usable, true);
+  assert.equal(normaliseObservation(final, policy, window).usable, true);
+  const report = buildRecallReport([earlier, final], policy, window);
+  assert.equal(report.observationCount, 1);
+  assert.equal(report.revisionObservationCount, 2);
+  assert.equal(report.unusableObservationCount, 0);
+  assert.equal(report.failedLaneCount, 1);
+  assert.equal(report.missedFailureCount, 0);
+  assert.equal(report.pullRequests[0].usable, true);
+  assert.equal(report.pullRequests[0].revisionCount, 2);
+});
+
+test('recall validates an accepted moved-base plan against its observed first parent', () => {
+  const controlBase = shaFor(500390);
+  const liveBase = shaFor(500391);
+  const moved = observation(398, {
+    baseSha: liveBase,
+    planBaseSha: controlBase,
+    mergeBaseSha: liveBase,
+    mergeBaseTipSha: liveBase,
+  });
+  const result = normaliseObservation(moved, policy, window);
+  assert.equal(result.usable, true);
+  assert.equal(result.baseSha, liveBase);
+  assert.equal(result.mergeBaseSha, liveBase);
+
+  moved.planMergeCommit.parents[0] = controlBase;
+  assert(normaliseObservation(moved, policy, window).errors.includes('plan-merge-commit-parents-mismatch'));
+});
+
+test('recall uses legacy plan.baseSha only when both merge-base fields are absent', () => {
+  const legacy = observation(399);
+  delete legacy.plan.mergeBaseSha;
+  delete legacy.plan.mergeBaseTipSha;
+  assert.equal(normaliseObservation(legacy, policy, window).usable, true);
+
+  const partial = observation(400);
+  delete partial.plan.mergeBaseTipSha;
+  const result = normaliseObservation(partial, policy, window);
+  assert.equal(result.usable, false);
+  assert(result.errors.some((error) => error.startsWith('plan-invalid:') && error.includes('must both be present')));
 });
 
 test('present PR association metadata must match, while GitHub empty arrays remain explicit', () => {

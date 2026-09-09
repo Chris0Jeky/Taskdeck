@@ -94,8 +94,8 @@ export async function observeMergeRef({
     throw new Error('the fetched merge ref did not yield one complete four-SHA observation');
   }
 
-  const [mergeSha, baseSha, headSha, treeSha] = values.map((value) => value.toLowerCase());
-  return { mergeSha, baseSha, headSha, treeSha };
+  const [mergeSha, mergeBaseSha, headSha, treeSha] = values.map((value) => value.toLowerCase());
+  return { mergeSha, mergeBaseSha, headSha, treeSha };
 }
 
 /**
@@ -137,20 +137,23 @@ function removeOutputs(paths) {
   for (const path of paths) rmSync(path, { force: true });
 }
 
-function publishOutputs(observation, mergeOutput, treeOutput) {
-  const mergeTemporary = `${mergeOutput}.tmp-${process.pid}`;
-  const treeTemporary = `${treeOutput}.tmp-${process.pid}`;
-  const temporaryPaths = [mergeTemporary, treeTemporary];
-  const outputPaths = [mergeOutput, treeOutput];
+function publishOutputs(observation, outputs) {
+  const entries = [
+    [outputs.merge, observation.mergeSha],
+    [outputs.tree, observation.treeSha],
+    [outputs.mergeBase, observation.mergeBaseSha],
+    [outputs.mergeBaseTip, observation.mergeBaseTipSha ?? 'null'],
+  ];
+  const outputPaths = entries.map(([path]) => path);
+  const temporaryPaths = outputPaths.map((path) => `${path}.tmp-${process.pid}`);
 
   try {
-    mkdirSync(dirname(mergeOutput), { recursive: true });
-    mkdirSync(dirname(treeOutput), { recursive: true });
+    for (const path of outputPaths) mkdirSync(dirname(path), { recursive: true });
     removeOutputs(temporaryPaths);
-    writeFileSync(mergeTemporary, `${observation.mergeSha}\n`, { encoding: 'utf8', flag: 'wx' });
-    writeFileSync(treeTemporary, `${observation.treeSha}\n`, { encoding: 'utf8', flag: 'wx' });
-    renameSync(mergeTemporary, mergeOutput);
-    renameSync(treeTemporary, treeOutput);
+    entries.forEach(([, value], index) => {
+      writeFileSync(temporaryPaths[index], `${value}\n`, { encoding: 'utf8', flag: 'wx' });
+    });
+    entries.forEach(([path], index) => renameSync(temporaryPaths[index], path));
   } catch (error) {
     removeOutputs([...temporaryPaths, ...outputPaths]);
     throw error;
@@ -161,14 +164,14 @@ function mismatchReason(observation, expectedBase, expectedHead) {
   if (!observation || typeof observation !== 'object') return 'merge ref unavailable';
   const values = [
     observation.mergeSha,
-    observation.baseSha,
+    observation.mergeBaseSha,
     observation.headSha,
     observation.treeSha,
   ];
   if (values.some((value) => !SHA_PATTERN.test(String(value ?? '')))) return 'invalid observation';
-  if (observation.baseSha.toLowerCase() !== expectedBase
+  if (observation.mergeBaseSha.toLowerCase() !== expectedBase
     && observation.headSha.toLowerCase() !== expectedHead) return 'base and head mismatch';
-  if (observation.baseSha.toLowerCase() !== expectedBase) return 'base mismatch';
+  if (observation.mergeBaseSha.toLowerCase() !== expectedBase) return 'base mismatch';
   if (observation.headSha.toLowerCase() !== expectedHead) return 'head mismatch';
   return null;
 }
@@ -190,6 +193,8 @@ export async function resolveMergeRef({
   expectedHead,
   mergeOutput,
   treeOutput,
+  mergeBaseOutput,
+  mergeBaseTipOutput,
   observe,
   resolveBaseTip = null,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
@@ -199,10 +204,13 @@ export async function resolveMergeRef({
   const normalizedHead = requireSha(expectedHead, 'expected head');
   const mergeOutputPath = requireOutputPath(mergeOutput, 'merge output path');
   const treeOutputPath = requireOutputPath(treeOutput, 'tree output path');
-  if (mergeOutputPath === treeOutputPath) throw new Error('merge and tree output paths must differ');
+  const mergeBaseOutputPath = requireOutputPath(mergeBaseOutput, 'merge base output path');
+  const mergeBaseTipOutputPath = requireOutputPath(mergeBaseTipOutput, 'merge base tip output path');
+  const outputPaths = [mergeOutputPath, treeOutputPath, mergeBaseOutputPath, mergeBaseTipOutputPath];
+  if (new Set(outputPaths).size !== outputPaths.length) throw new Error('merge identity output paths must differ');
   if (typeof observe !== 'function') throw new Error('merge-ref observer is required');
 
-  removeOutputs([mergeOutputPath, treeOutputPath]);
+  removeOutputs(outputPaths);
   let finalReason = 'merge ref unavailable';
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
@@ -220,7 +228,7 @@ export async function resolveMergeRef({
       // only if — it is the live tip of the base ref on origin.
       try {
         const tip = await resolveBaseTip();
-        if (SHA_PATTERN.test(String(tip ?? '')) && String(tip).toLowerCase() === observation.baseSha.toLowerCase()) {
+        if (SHA_PATTERN.test(String(tip ?? '')) && String(tip).toLowerCase() === observation.mergeBaseSha.toLowerCase()) {
           movedBase = String(tip).toLowerCase();
           finalReason = null;
         } else {
@@ -232,13 +240,19 @@ export async function resolveMergeRef({
     }
 
     if (finalReason === null) {
-      publishOutputs(observation, mergeOutputPath, treeOutputPath);
+      const resolved = { ...observation, mergeRefMoved: movedBase !== null, mergeBaseTipSha: movedBase };
+      publishOutputs(resolved, {
+        merge: mergeOutputPath,
+        tree: treeOutputPath,
+        mergeBase: mergeBaseOutputPath,
+        mergeBaseTip: mergeBaseTipOutputPath,
+      });
       if (movedBase) {
         log(`merge-ref-moved — the base advanced from ${normalizedBase} to the live base branch tip ${movedBase} after dispatch; the event head matched exactly on attempt ${attempt}/${MAX_ATTEMPTS}`);
       } else {
         log(`merge ref matched the control base and event head on attempt ${attempt}/${MAX_ATTEMPTS}`);
       }
-      return { ...observation, mergeRefMoved: movedBase !== null, baseTipSha: movedBase };
+      return resolved;
     }
 
     if (attempt < MAX_ATTEMPTS) {
@@ -247,7 +261,7 @@ export async function resolveMergeRef({
     }
   }
 
-  removeOutputs([mergeOutputPath, treeOutputPath]);
+  removeOutputs(outputPaths);
   throw new Error(`merge ref resolution failed closed after ${MAX_ATTEMPTS} attempts: ${finalReason}`);
 }
 
@@ -259,7 +273,7 @@ export function writeMergeRefNote(noteOutput, expectedBase, resolved) {
   mkdirSync(dirname(noteOutput), { recursive: true });
   writeFileSync(
     noteOutput,
-    `merge-ref-moved: the base advanced from ${String(expectedBase).toLowerCase()} to ${resolved.baseTipSha} after dispatch; the merge ref was regenerated against the base branch live tip on origin and the event head matched exactly\n`,
+    `merge-ref-moved: the base advanced from ${String(expectedBase).toLowerCase()} to ${resolved.mergeBaseTipSha} after dispatch; the merge ref was regenerated against the base branch live tip on origin and the event head matched exactly\n`,
     { encoding: 'utf8' },
   );
 }
@@ -272,6 +286,8 @@ function parseArgs(argv) {
     baseRef: null,
     mergeOutput: null,
     treeOutput: null,
+    mergeBaseOutput: null,
+    mergeBaseTipOutput: null,
     noteOutput: null,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -284,6 +300,8 @@ function parseArgs(argv) {
       case '--base-ref': args.baseRef = next(); break;
       case '--merge-out': args.mergeOutput = next(); break;
       case '--tree-out': args.treeOutput = next(); break;
+      case '--merge-base-out': args.mergeBaseOutput = next(); break;
+      case '--merge-base-tip-out': args.mergeBaseTipOutput = next(); break;
       case '--note-out': args.noteOutput = next(); break;
       default: throw new Error(`unknown argument: ${argument}`);
     }
@@ -299,6 +317,8 @@ async function main() {
     expectedHead: args.expectedHead,
     mergeOutput: args.mergeOutput,
     treeOutput: args.treeOutput,
+    mergeBaseOutput: args.mergeBaseOutput,
+    mergeBaseTipOutput: args.mergeBaseTipOutput,
     observe: () => observeMergeRef({
       pullRequestNumber: args.pullRequestNumber,
       token: process.env.GH_TOKEN,
