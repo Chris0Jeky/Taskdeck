@@ -1,11 +1,16 @@
 <script setup lang="ts">
+import { watch } from 'vue'
 import { useAutomationChat } from '../composables/useAutomationChat'
 import ChatHeroHeader from '../components/chat/ChatHeroHeader.vue'
 import LlmHealthStatusBar from '../components/chat/LlmHealthStatusBar.vue'
 import ChatSessionSidebar from '../components/chat/ChatSessionSidebar.vue'
 import ChatMessageList from '../components/chat/ChatMessageList.vue'
 import ChatComposeBar from '../components/chat/ChatComposeBar.vue'
+import ChatContextPicker from '../components/chat/ChatContextPicker.vue'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
+
+const props = defineProps<{ boardId?: string; cardId?: string; embedded?: boolean }>()
+const emit = defineEmits<{ 'dirty-change': [dirty: boolean] }>()
 
 const {
   sessions,
@@ -25,6 +30,7 @@ const {
   newSessionTitle,
   newSessionBoardId,
   messageContent,
+  contextSelection,
   boardOptions,
   eligibleBoards,
   sortedMessages,
@@ -47,12 +53,14 @@ const {
   applyHintSuggestion,
   openReviewRoute,
   openProposalReview,
-} = useAutomationChat()
+} = useAutomationChat({ boardId: () => props.boardId })
+watch([messageContent, sendingMessage], () => emit('dirty-change', !!messageContent.value.trim() || sendingMessage.value))
 </script>
 
 <template>
-  <div class="paper-chat">
+  <div class="paper-chat" :class="{ 'paper-chat--embedded': embedded }">
     <ChatHeroHeader
+      v-if="!embedded"
       :loading-health="loadingHealth"
       @refresh-health="loadProviderHealth()"
       @verify-llm="loadProviderHealth({ probe: true })"
@@ -75,7 +83,8 @@ const {
         :creating-session="creatingSession"
         :new-session-title="newSessionTitle"
         :new-session-board-id="newSessionBoardId"
-        :board-options="boardOptions"
+        :board-options="boardId ? boardOptions.filter(board => board.value === boardId) : boardOptions"
+        :fixed-board="!!boardId"
         :query-board-id="queryBoardId"
         :pending-session-board-context-label="pendingSessionBoardContextLabel"
         @update:new-session-title="newSessionTitle = $event"
@@ -131,6 +140,13 @@ const {
             @reload-boards="loadBoardOptions"
           />
 
+          <ChatContextPicker
+            :key="`${selectedSession.id}:${selectedSession.boardId}`"
+            :board-id="selectedSession.boardId"
+            :disabled="sendingMessage"
+            :suggested-card-id="cardId"
+            @change="contextSelection = $event"
+          />
           <ChatComposeBar
             :message-content="messageContent"
             :sending-message="sendingMessage"
@@ -167,12 +183,17 @@ const {
 }
 
 .paper-chat__layout {
+  min-width: 0;
   display: grid;
   grid-template-columns: 320px 1fr;
   gap: var(--s-4, 16px);
 }
 
+.paper-chat--embedded .paper-chat__layout { grid-template-columns: 240px minmax(0, 1fr); }
+.paper-chat--embedded { max-width: 100%; min-width: 0; }
+
 .paper-chat__panel {
+  min-width: 0;
   background: var(--paper-card, #fbf7ee);
   border: 1px solid var(--line, #d8d0bf);
   border-radius: var(--r-3, 6px);
@@ -234,6 +255,8 @@ const {
   .paper-chat__layout {
     grid-template-columns: 1fr;
   }
+
+  .paper-chat--embedded .paper-chat__layout { grid-template-columns: 1fr; }
 
   .paper-chat__panel {
     min-height: 0;

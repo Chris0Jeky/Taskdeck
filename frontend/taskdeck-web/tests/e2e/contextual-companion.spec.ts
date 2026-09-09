@@ -1,0 +1,66 @@
+import { expect, test } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
+import { API_BASE_URL, registerAndAttachSession } from './support/authSession'
+import { createBoardWithColumn } from './support/boardHelpers'
+import { assertOk } from './support/httpAsserts'
+
+test('card companion keeps explicit sources and revision preview beside shared thinking', async ({ page, request }) => {
+  test.setTimeout(90000)
+  const auth = await registerAndAttachSession(page, request, 'context-companion')
+  const headers = { Authorization: `Bearer ${auth.token}` }
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('td.workspace.layout.v1')) localStorage.setItem('td.workspace.layout.v1', JSON.stringify({ experience: 'companion', presentation: 'studio' }))
+    localStorage.setItem('td.paper.mode.v2', 'grove')
+  })
+  const boardId = await createBoardWithColumn(request, auth, String(Date.now()), { boardNamePrefix: 'Companion sources', description: 'Synthetic context proof', columnNamePrefix: 'Next' })
+  const board = await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()
+  const cardResponse = await request.post(`${API_BASE_URL}/boards/${boardId}/cards`, { headers, data: { boardId, columnId: board.columns[0].id, title: 'A difficult decision', description: 'Keep the original card unchanged.' } })
+  await assertOk(cardResponse, 'seed contextual card'); const card = await cardResponse.json()
+  const memoryResponse = await request.post(`${API_BASE_URL}/workspace-memory`, { headers, data: { boardId, title: 'Unknown delivery date', text: 'The delivery date still needs confirmation.', status: 'unknown' } })
+  await assertOk(memoryResponse, 'seed private memory'); const memory = await memoryResponse.json()
+  await page.goto(`/workspace/boards/${boardId}/cards/${card.id}/thinking`)
+  await page.getByRole('button', { name: 'Open card companion', exact: true }).click()
+  const companion = page.getByRole('region', { name: 'Card companion', exact: true })
+  await companion.getByLabel('Session title', { exact: true }).fill('Think through this decision')
+  await companion.getByRole('button', { name: 'Create Session', exact: true }).click()
+  await expect(companion.getByRole('heading', { name: 'Think through this decision', exact: true })).toBeVisible()
+  await companion.getByRole('button', { name: 'Choose sources', exact: true }).click()
+  await companion.getByRole('button', { name: 'Include the card you are working on' }).click()
+  await companion.getByLabel('Include shared thinking for this card').check()
+  await companion.getByLabel(/Unknown delivery date/).check()
+  await companion.getByLabel('Automation instruction').fill('create card "Contextual next step"')
+  const sent = page.waitForRequest(req => req.method() === 'POST' && /chat\/sessions\/[^/]+\/messages$/.test(new URL(req.url()).pathname))
+  await companion.getByRole('button', { name: 'Send Message', exact: true }).click()
+  expect((await sent).postDataJSON().context).toEqual({ cardId: card.id, includeThinking: true, memories: [{ id: memory.id, revision: memory.revision }] })
+  await expect(companion.getByText('Sources included in this turn (3)', { exact: true })).toBeVisible()
+  const previewButton = companion.getByRole('button', { name: 'Preview proposed changes', exact: true })
+  await expect(previewButton).toBeVisible()
+  await previewButton.click()
+  await expect(companion.getByRole('region', { name: 'Proposal preview' })).toContainText('Contextual next step')
+  const sessions = await (await request.get(`${API_BASE_URL}/llm/chat/sessions`, { headers })).json()
+  const conversation = await (await request.get(`${API_BASE_URL}/llm/chat/sessions/${sessions.find((item: { boardId: string }) => item.boardId === boardId).id}`, { headers })).json()
+  const proposalId = conversation.recentMessages.find((message: { proposalId?: string }) => message.proposalId)?.proposalId
+  expect(proposalId).toBeTruthy()
+  const revisedPayload = JSON.stringify({ operations: [{ sequence: 0, actionType: 'create', targetType: 'card', parameters: JSON.stringify({ title: 'Revised contextual next step', boardId, columnId: board.columns[0].id }), idempotencyKey: `context-${Date.now()}` }] })
+  await assertOk(await request.post(`${API_BASE_URL}/automation/proposals/${proposalId}/revisions`, { headers, data: { revisedPayload, reason: 'Explicit synthetic revision' } }), 'revise contextual proposal')
+  await companion.getByRole('button', { name: 'Refresh preview', exact: true }).click()
+  await expect(companion.getByRole('region', { name: 'Proposal preview' })).toContainText('Revision 1')
+  await expect(companion.getByRole('region', { name: 'Proposal preview' })).toContainText('Revised contextual next step')
+  expect(await (await request.get(`${API_BASE_URL}/boards/${boardId}/cards`, { headers })).json()).toEqual([card])
+  await companion.getByLabel('Automation instruction').fill('Keep this draft for later')
+  await page.getByRole('link', { name: 'Choose work for your personal plan' }).click()
+  await expect(page.getByRole('dialog', { name: 'Leave unsaved thinking?' })).toBeVisible()
+  await page.getByRole('button', { name: 'Keep editing', exact: true }).click()
+  await expect(companion.getByLabel('Automation instruction')).toHaveValue('Keep this draft for later')
+  await companion.getByLabel('Automation instruction').fill('')
+  for (const experience of ['classic', 'studio', 'companion', 'unified']) {
+    await page.evaluate(value => localStorage.setItem('td.workspace.layout.v1', JSON.stringify({ experience: value, presentation: 'studio' })), experience)
+    await page.reload()
+    await page.getByRole('button', { name: 'Open card companion', exact: true }).click()
+    await expect(companion.getByText('Sources included in this turn (3)', { exact: true })).toBeVisible()
+  }
+  await page.setViewportSize({ width: 375, height: 812 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+  await page.screenshot({ path: 'test-results/contextual-companion-mobile.png', fullPage: true })
+  expect((await new AxeBuilder({ page }).include('[aria-label="Card companion"]').analyze()).violations.filter(item => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
+})

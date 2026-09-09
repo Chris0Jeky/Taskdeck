@@ -64,14 +64,13 @@ counts are not used as evidence. Further implementation is tracked in
 
 ## Remaining sequence
 
-1. **Dependency connections after linked steps.** Explicit saved-step promotion now stages card,
-   board concurrency token and audit through the shared guarded writer; one atomic deck CAS commits
-   them before realtime notification. Repeated promotion reuses the link, import remaps relationships,
-   and removing thinking retains cards. Status is fetched from the real card on load/explicit refresh.
-   Next: separate dependency edges and their lifecycle; do not infer them from a thinking link.
-2. **Contextual companion and proposal overlays.** Bind current board/card/selected source evidence;
-   render the existing effective proposal revision in place and preserve the approve/apply separation.
-   Integrate private memory retrieval only with explicit user scope and archived exclusion.
+1. **Dependency delivery qualification.** Linked-step promotion is merged in PR #2837. Explicit
+   dependency edges, cycle/CAS/deletion/archive guards and portable ID remapping are implemented in
+   PR #2844; complete its hosted qualification and merge. Do not reimplement those edges.
+2. **Contextual companion follow-through.** Card thinking/Focus now embeds board-scoped conversations,
+   explicit selected card/shared-thinking/private-memory context and effective-revision previews.
+   Continue with typed SourceAsset selection and previews mapped onto affected board objects; retain
+   existing subset-selection, approve and explicit Apply behavior.
 3. **Studio continuity and planning.** Implemented personal plan, last-worked continuation, Focus and
    Make room without changing due dates. List/Board/Horizon represent chosen work over the same cards.
    Direct product verification is recorded below; subjective experience preference remains a human choice.
@@ -87,6 +86,29 @@ counts are not used as evidence. Further implementation is tracked in
    frontend commit fingerprint; unavailable attribution remains null.
 
 These are remaining prototype capabilities, not blockers hidden behind placeholder success states.
+
+## Contextual companion continuation (2026-09-09)
+
+`ChatContextApiTests` proves explicit source inclusion without changing user intent, private actor and
+board isolation, archive/revision/size selection rejection, replay revalidation, and unchanged cards.
+`ProposalRevisionApiTests` proves that the preview receipt and rendered diff use the same effective
+revision, including the approved pin after a later revision appears; preview never applies changes.
+Existing chat/SSE and proposal service regressions remain part of the proving set.
+
+The source picker loads on request, clears on identity/board changes and failed refresh, caps selected
+private memories at five, and submits IDs/revisions rather than private text. Preview is text-only,
+clears after at most 30 seconds or proposal expiry, and cannot approve or execute. The browser journey
+`tests/e2e/contextual-companion.spec.ts` uses an isolated database and the deterministic Mock provider
+to prove source receipts, a revised preview, unsent-draft protection, all experiences, 375px width and
+automated accessibility. Mock proves wiring, not model usefulness or live-provider quality.
+
+Focused execution: 80 API, 237 Application, 28 Architecture (one existing skip), and 89 frontend tests
+passed. The Chromium journey passed after a mobile wrapping correction. Full-suite/build and hosted
+qualification are recorded on the contextual delivery PR; these focused results do not imply them.
+
+Selected material is bounded and may be excerpted. The receipt exposes source identity/version and
+excerpt status; generated answers remain in owned chat history after a source changes. Audio and
+question originals are not yet promoted into Context Fabric by this delivery.
 Existing owner decisions remain in [OUTSTANDING_TASKS.md](../../OUTSTANDING_TASKS.md); no publisher,
 signing, private-instance, release/runner or subjective palette/dogfooding item is inferred complete.
 

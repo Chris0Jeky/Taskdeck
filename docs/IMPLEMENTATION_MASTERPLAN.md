@@ -2240,3 +2240,14 @@ Across-release comparison continuation (#2808): portable observation import/expo
 predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
 sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
 selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.
+
+## Contextual companion continuation (#2808, 2026-09-09)
+
+Card thinking and Focus now embed existing board-scoped conversations with explicit card, shared-thinking
+and private-memory source selection. The server returns per-turn source receipts and rejects changed
+replay sources. An authoritative read-only proposal preview couples its diff to the effective revision;
+Review retains the approval and Apply flow. This reduces navigation and repeated context entry while
+keeping source choice and board mutation explicit. SourceAsset/audio integration, affected-board-object
+overlays, expanded grounded observations/attention and cross-release comparison remain in the overhaul
+validation ledger. Full delivery scope is still tracked by #2808.
+

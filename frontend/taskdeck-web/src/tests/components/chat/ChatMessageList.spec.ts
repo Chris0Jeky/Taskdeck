@@ -71,6 +71,13 @@ function mountList(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ChatMessageList board recovery', () => {
+  it('renders the saved source receipt separately from original user intent', () => {
+    const wrapper = mountList({ messages: [{ ...messages[0], contextSources: [{ kind: 'private-memory', id: 'm1', title: 'Uncertainty', revision: 3, truncated: true }] }] })
+    expect(wrapper.get('.td-message-content').text()).toBe(messages[0]!.content)
+    expect(wrapper.get('details').text()).toContain('Private memory')
+    expect(wrapper.get('details').text()).toContain('version 3')
+    expect(wrapper.get('details').text()).toContain('excerpt')
+  })
   it('requires an explicit choice when multiple writable boards are available', async () => {
     const wrapper = mountList()
 
