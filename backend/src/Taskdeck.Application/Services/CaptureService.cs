@@ -903,14 +903,15 @@ public class CaptureService : ICaptureService
                 "The linked transcript cannot be corrected");
         }
 
-        var normalizedText = NormalizeLineEndings(dto.Text);
-        var textChanged = !string.Equals(normalizedText, canonical.Text, StringComparison.Ordinal);
         var maxTextLength = CaptureRequestContract.MaxTranscriptTextLength;
-        if (normalizedText.Length > maxTextLength)
+        if (dto.Text.Length > maxTextLength)
         {
             return Result.Failure<CaptureItemDto>(ErrorCodes.ValidationError,
                 $"Text exceeds maximum length of {maxTextLength} characters");
         }
+
+        var normalizedText = NormalizeLineEndings(dto.Text);
+        var textChanged = !string.Equals(normalizedText, canonical.Text, StringComparison.Ordinal);
 
         var updatedPayload = currentPayload with
         {
