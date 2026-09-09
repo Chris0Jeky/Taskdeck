@@ -15,6 +15,7 @@ const AutomationChatView = defineAsyncComponent(() => import('../AutomationChatV
 const session = useSessionStore()
 const companionOpened = ref(false)
 const companionDirty = ref(false)
+const companionSending = ref(false)
 
 const route = useRoute()
 const boardId = computed(() => String(route.params.boardId ?? ''))
@@ -26,7 +27,10 @@ const dirty = ref(false)
 const loading = ref(true)
 const error = ref<string | null>(null)
 let generation = 0
-const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => dirty.value || companionDirty.value)
+const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => dirty.value || companionDirty.value || companionSending.value)
+function leave() {
+  if (!companionSending.value) decide(true)
+}
 
 async function load() {
   const current = ++generation
@@ -35,6 +39,7 @@ async function load() {
   dirty.value = false
   companionOpened.value = false
   companionDirty.value = false
+  companionSending.value = false
   loading.value = true
   error.value = null
   try {
@@ -71,10 +76,10 @@ onUnmounted(() => { generation++ })
         <h2>Think it through with your companion</h2>
         <p>Keep this card nearby while you talk. Choose the sources for each turn, then preview proposed changes before opening Review.</p>
         <button v-if="!companionOpened" type="button" @click="companionOpened = true">Open card companion</button>
-        <AutomationChatView v-if="companionOpened" :key="card.id" :board-id="boardId" :card-id="cardId" embedded @dirty-change="companionDirty = $event" />
+        <AutomationChatView v-if="companionOpened" :key="card.id" :board-id="boardId" :card-id="cardId" :thinking-dirty="dirty" embedded @dirty-change="companionDirty = $event" @sending-change="companionSending = $event" />
       </section>
     </template>
-    <TdDialog :open="leaveRequested" title="Leave unsaved thinking?" description="Your thinking or companion message has unsaved changes. Save or send it before leaving, or discard this draft." @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" @click="decide(true)">Discard draft and leave</button></template></TdDialog>
+    <TdDialog :open="leaveRequested" :title="companionSending ? 'A companion message is still sending' : 'Leave this thinking space?'" :description="companionSending ? 'Wait for the send to finish before leaving. Closing the browser does not cancel a message already sent to the server.' : dirty || companionDirty ? 'Your thinking or companion message has unsaved changes. Save or send it before leaving, or discard this draft.' : 'Your message has finished sending. You can leave this thinking space.'" @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" :disabled="companionSending" @click="leave">{{ dirty || companionDirty ? 'Discard draft and leave' : 'Leave thinking space' }}</button></template></TdDialog>
   </div>
 </template>
 

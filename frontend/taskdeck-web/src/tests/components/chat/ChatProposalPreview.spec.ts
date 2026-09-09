@@ -13,7 +13,31 @@ function setup() {
 }
 describe('contextual proposal preview', () => {
   beforeEach(() => { vi.clearAllMocks(); api.preview.mockResolvedValue(snapshot()) })
-  afterEach(() => vi.useRealTimers())
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+  it.each([-3600000, 3600000])('uses server-relative expiry with a client clock skew of %i ms', async skew => {
+    vi.useFakeTimers()
+    const now = Date.now()
+    api.preview.mockResolvedValue({ ...snapshot(), checkedAt: new Date(now + skew).toISOString(), expiresAt: new Date(now + skew + 5000).toISOString() })
+    const { wrapper } = setup()
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(wrapper.find('pre').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(wrapper.find('pre').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('subtracts request time and rejects an already exhausted receipt', async () => {
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(100)
+    const now = Date.now()
+    api.preview.mockImplementation(async () => {
+      clock.mockReturnValue(6100)
+      return { ...snapshot(), checkedAt: new Date(now).toISOString(), expiresAt: new Date(now + 5000).toISOString() }
+    })
+    const { wrapper } = setup()
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(clock).toHaveBeenCalled()
+    expect(wrapper.find('pre').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('shows one authoritative revision receipt as text and offers no mutation', async () => {
     const { wrapper } = setup(); expect(api.preview).not.toHaveBeenCalled()
     await wrapper.get('button').trigger('click'); await flushPromises()

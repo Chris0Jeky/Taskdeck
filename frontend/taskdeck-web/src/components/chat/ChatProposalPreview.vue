@@ -20,13 +20,17 @@ watch(() => [props.proposalId, props.boardId, session.userId, session.token], cl
 async function load() {
   clear()
   const request = generation
+  const startedAt = performance.now()
   loading.value = true
   try {
     const result = await automationApi.getProposalPreview(props.proposalId)
     if (request !== generation) return
     if (result.proposalId !== props.proposalId || result.boardId !== props.boardId)
       throw new Error('This preview does not belong to the current conversation board.')
-    const lifetime = Math.min(30000, Date.parse(result.expiresAt) - Date.now())
+    // Both receipt timestamps use the server clock. Subtract the full round
+    // trip conservatively; the client's wall clock may be hours out of sync.
+    const lifetime = Math.min(30000, Date.parse(result.expiresAt) - Date.parse(result.checkedAt))
+      - (performance.now() - startedAt)
     if (!Number.isFinite(lifetime) || lifetime <= 0) throw new Error('This proposal has expired. Open Review for its history.')
     preview.value = result
     timer = setTimeout(() => { clear(); error.value = 'Refresh the preview to check the latest changes.' }, lifetime)

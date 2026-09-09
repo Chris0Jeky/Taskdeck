@@ -9,8 +9,8 @@ import ChatComposeBar from '../components/chat/ChatComposeBar.vue'
 import ChatContextPicker from '../components/chat/ChatContextPicker.vue'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 
-const props = defineProps<{ boardId?: string; cardId?: string; embedded?: boolean }>()
-const emit = defineEmits<{ 'dirty-change': [dirty: boolean] }>()
+const props = defineProps<{ boardId?: string; cardId?: string; embedded?: boolean; thinkingDirty?: boolean }>()
+const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; 'sending-change': [sending: boolean] }>()
 
 const {
   sessions,
@@ -20,6 +20,9 @@ const {
   loadingHealth,
   creatingSession,
   sendingMessage,
+  refreshingReceipt,
+  receiptRefreshError,
+  retryReceiptRefresh,
   bindingBoard,
   bindingMessageId,
   boardBindingError,
@@ -53,8 +56,9 @@ const {
   applyHintSuggestion,
   openReviewRoute,
   openProposalReview,
-} = useAutomationChat({ boardId: () => props.boardId })
+} = useAutomationChat({ boardId: () => props.boardId, sendBlocked: () => !!props.thinkingDirty })
 watch([messageContent, sendingMessage], () => emit('dirty-change', !!messageContent.value.trim() || sendingMessage.value))
+watch(sendingMessage, value => emit('sending-change', value), { flush: 'sync' })
 </script>
 
 <template>
@@ -150,11 +154,17 @@ watch([messageContent, sendingMessage], () => emit('dirty-change', !!messageCont
           <ChatComposeBar
             :message-content="messageContent"
             :sending-message="sendingMessage"
+            :send-blocked="thinkingDirty || refreshingReceipt"
             :last-message-is-clarification="lastMessageIsClarification"
             @update:message-content="messageContent = $event"
             @send-message="handleSendMessage"
             @skip-clarification="handleSkipClarification"
           />
+          <p v-if="thinkingDirty" role="status">Save your shared thinking before sending a companion message. The companion reads the saved version.</p>
+          <div v-if="receiptRefreshError || refreshingReceipt" role="status">
+            <p>{{ refreshingReceipt ? 'Refreshing the saved conversation and source receipts…' : receiptRefreshError }}</p>
+            <button v-if="receiptRefreshError" type="button" :disabled="sendingMessage || refreshingReceipt" @click="retryReceiptRefresh">Retry receipt refresh</button>
+          </div>
         </template>
       </section>
     </div>
