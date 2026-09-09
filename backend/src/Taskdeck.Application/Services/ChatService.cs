@@ -1462,10 +1462,7 @@ public class ChatService : IChatService
             session.Status,
             session.CreatedAt,
             session.UpdatedAt,
-            // The UI and recovery logic consume this as a turn transcript. EF does not guarantee
-            // Include collection order, so return the causal creation order explicitly.
             session.Messages
-                .OrderBy(message => message.CreatedAt)
                 .Select(MapMessageToDto)
                 .ToList()
         );
