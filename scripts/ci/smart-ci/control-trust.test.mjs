@@ -6,7 +6,7 @@ import { test } from 'node:test';
 const WORKFLOW_DIRECTORY = new URL('../../../.github/workflows/', import.meta.url);
 const SUPPORTED_WORKFLOW = 'smart-ci-shadow.yml';
 const EXPECTED_JOB_IDS = ['plan', 'required-gate'];
-const EXPECTED_WORKFLOW_FINGERPRINT = '3d1c24768d218402f250f7c6fef7c02f113984811113ef449cdf8bb6dff1d182';
+const EXPECTED_WORKFLOW_FINGERPRINT = '7735fc735753bd0ad30820d231ba308fd8a386351a4bb9d172366dad03f465bb';
 
 // These fingerprints cover executable step configuration. Step names and comment-only lines are
 // deliberately omitted. A changed action, input, environment binding, condition, or run body must
@@ -17,8 +17,8 @@ const EXPECTED_STEP_FINGERPRINTS = {
     'a6342a9bd46d724db04e7559ae7b51b73153a22b474d52167f86da0934f1a2c3',
     '6ee8ac0fb69ff35cc55766271d8547c83c1133f77cb21e546b51074bd026d12a',
     '3e6e7741bbee62150621607b3a3a686c291f896e4268c9adef72a914a57bdcdc',
-    'f4e7fb7d1587380193bb4b87dc9a48802923412c47485d7c76e7f7a4de5008d9',
-    '0b1a3547a5895f0f13c4ebf219755c818193cc8fa88d7cbebb6857ba72757508',
+    'ab7b91b6f5aae2854a98ec0f10a97982e38792721776852dd0019d3c0e13791b',
+    'c800841e0bb44197cb09f1df284704ea1ca855a054df99db529340c4e0f2ad27',
     '5be7249fea7aef1261b2b749b3bbc3e2ad69333891b95bf7135b53f02c36eff2',
   ],
   'required-gate': [

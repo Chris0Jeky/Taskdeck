@@ -103,6 +103,8 @@ function main() {
       headSha: plan ? plan.headSha : null,
       mergeSha: plan ? plan.mergeSha : null,
       mergeTreeSha: plan ? plan.mergeTreeSha : null,
+      mergeBaseSha: plan ? plan.mergeBaseSha ?? null : null,
+      mergeBaseTipSha: plan ? plan.mergeBaseTipSha ?? null : null,
       risk: plan ? plan.risk : null,
       trust: plan ? plan.trust : null,
       escalated: plan ? plan.escalated : null,

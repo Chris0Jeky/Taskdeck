@@ -25,6 +25,7 @@ import { observeMergeRef } from './resolve-merge-ref.mjs';
 
 const policyText = readFileSync(new URL('../../../ci/policy.v1.json', import.meta.url), 'utf8');
 const policy = JSON.parse(policyText);
+const planReceiptSchema = JSON.parse(readFileSync(new URL('../../../ci/schemas/ci-plan.v1.schema.json', import.meta.url), 'utf8'));
 const runReceiptSchema = JSON.parse(readFileSync(new URL('../../../ci/schemas/ci-run.v1.schema.json', import.meta.url), 'utf8'));
 const digest = policyDigest(policyText);
 const BASE = 'a'.repeat(40);
@@ -39,6 +40,8 @@ function ownerInput(changedFiles, overrides = {}) {
     isDraft: false,
     baseSha: BASE,
     headSha: HEAD,
+    mergeBaseSha: BASE,
+    mergeBaseTipSha: null,
     mergeSha: null,
     mergeTreeSha: null,
     actorLogin: 'Chris0Jeky',
@@ -215,6 +218,78 @@ test('errorPlan selects every lane hosted and records the error', () => {
   assert.equal(plan.selected.length, Object.keys(policy.lanes).length);
   assert.ok(plan.selected.every((entry) => entry.hosted === true));
   assert.equal(plan.executionMode.effective, 'hosted');
+  assert.equal(plan.mergeBaseSha, null);
+  assert.equal(plan.mergeBaseTipSha, null);
+  assert.deepEqual(validatePlan(plan), []);
+});
+
+test('merge-base receipt metadata binds the observed first parent without rewriting the control base', () => {
+  const movedBase = 'c'.repeat(40);
+  const exact = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+  assert.deepEqual(validatePlan(exact), []);
+  assert.equal(evaluateGate(exact, { mode: 'shadow', expectedBaseSha: BASE }).ok, true);
+
+  const moved = buildPlan(ownerInput(['docs/x.md'], {
+    mergeBaseSha: movedBase,
+    mergeBaseTipSha: movedBase,
+  }), policy, digest);
+  const movedVerdict = evaluateGate(moved, { mode: 'shadow', expectedBaseSha: BASE });
+  assert.equal(movedVerdict.ok, true);
+  assert.equal(moved.baseSha, BASE);
+  assert.equal(moved.mergeBaseSha, movedBase);
+  assert.equal(moved.mergeBaseTipSha, movedBase);
+
+  const wrongControlBase = evaluateGate(moved, { mode: 'shadow', expectedBaseSha: movedBase });
+  assert.ok(wrongControlBase.failures.some((failure) => failure.code === 'base-sha-mismatch'));
+});
+
+test('partial, malformed, and mismatched merge-base metadata fail closed while truly absent legacy fields remain readable', () => {
+  const exact = buildPlan(ownerInput(['docs/x.md']), policy, digest);
+  const partial = structuredClone(exact);
+  delete partial.mergeBaseTipSha;
+  assert.ok(validatePlan(partial).some((error) => error.includes('must both be present')));
+
+  const malformed = { ...exact, mergeBaseSha: 'not-a-sha' };
+  assert.ok(validatePlan(malformed).some((error) => error.includes('mergeBaseSha')));
+
+  const mismatched = { ...exact, mergeBaseSha: 'c'.repeat(40), mergeBaseTipSha: 'd'.repeat(40) };
+  const mismatchVerdict = evaluateGate(mismatched, { mode: 'shadow', expectedBaseSha: BASE });
+  assert.equal(mismatchVerdict.ok, false);
+  assert.ok(mismatchVerdict.failures.some((failure) => failure.code === 'merge-base-binding-mismatch'));
+
+  const redundantTip = { ...exact, mergeBaseTipSha: BASE };
+  assert.ok(validatePlan(redundantTip).some((error) => error.includes('null when the merge ref used plan.baseSha')));
+
+  const legacy = structuredClone(exact);
+  delete legacy.mergeBaseSha;
+  delete legacy.mergeBaseTipSha;
+  assert.deepEqual(validatePlan(legacy), []);
+  const legacyVerdict = evaluateGate(legacy, { mode: 'shadow', expectedBaseSha: BASE });
+  assert.equal(legacyVerdict.ok, true);
+  assert.ok(legacyVerdict.notes.some((note) => note.includes('legacy plan')));
+});
+
+test('version-1 documentation schemas expose the paired merge-base receipt fields', () => {
+  for (const schema of [planReceiptSchema, runReceiptSchema]) {
+    assert.ok(schema.properties.mergeBaseSha);
+    assert.ok(schema.properties.mergeBaseTipSha);
+    assert.deepEqual(schema.dependentRequired.mergeBaseSha, ['mergeBaseTipSha']);
+    assert.deepEqual(schema.dependentRequired.mergeBaseTipSha, ['mergeBaseSha']);
+  }
+  assert.ok(runReceiptSchema.properties.failures.items.properties.code.enum.includes('merge-base-binding-mismatch'));
+});
+
+test('non-PR plans record explicit null merge-base metadata', () => {
+  const input = inputFromEvent({
+    repository: { full_name: 'Chris0Jeky/Taskdeck', owner: { login: 'Chris0Jeky' } },
+    before: BASE,
+    after: HEAD,
+    ref: 'refs/heads/main',
+    sender: { login: 'Chris0Jeky', type: 'User' },
+  }, 'push', { changedFiles: ['docs/x.md'], changedFilesAvailable: true });
+  const plan = buildPlan(input, policy, digest);
+  assert.equal(plan.mergeBaseSha, null);
+  assert.equal(plan.mergeBaseTipSha, null);
   assert.deepEqual(validatePlan(plan), []);
 });
 
@@ -511,6 +586,8 @@ test('inputFromEvent reads pull_request payloads without content and detects for
     changedFilesAvailable: true,
     mergeSha: fetchedMergeSha,
     mergeTreeSha: fetchedMergeTreeSha,
+    mergeBaseSha: BASE,
+    mergeBaseTipSha: null,
   });
   assert.equal(input.isFork, true);
   assert.equal(input.eventAction, 'synchronize');
@@ -521,10 +598,16 @@ test('inputFromEvent reads pull_request payloads without content and detects for
   assert.deepEqual(input.labels, ['ci:full']);
   assert.equal(input.mergeSha, fetchedMergeSha);
   assert.equal(input.mergeTreeSha, fetchedMergeTreeSha);
+  assert.equal(input.mergeBaseSha, BASE);
+  assert.equal(input.mergeBaseTipSha, null);
   requirePullRequestMergeBinding(event, input);
   assert.throws(
     () => requirePullRequestMergeBinding(event, { ...input, mergeSha: null }),
     /merge SHA and tree SHA from the same fetched merge ref/,
+  );
+  assert.throws(
+    () => requirePullRequestMergeBinding(event, { ...input, mergeBaseTipSha: undefined }),
+    /observed first parent and live-tip metadata/,
   );
   const plan = buildPlan(input, policy, digest);
   assert.equal(plan.trust, 'T3');
@@ -544,6 +627,7 @@ test('a merge-binding error receipt keeps trusted CLI identity overrides', () =>
   const eventPath = join(fixtureRoot, 'event.json');
   const changedFilesPath = join(fixtureRoot, 'changed-files.tsv');
   const planPath = join(fixtureRoot, 'ci-plan.json');
+  const receiptPath = join(fixtureRoot, 'ci-run.json');
   const staleEventBase = 'c'.repeat(40);
 
   try {
@@ -582,10 +666,27 @@ test('a merge-binding error receipt keeps trusted CLI identity overrides', () =>
     assert.notEqual(plan.baseSha, staleEventBase);
     assert.ok(!JSON.stringify(plan).includes(staleEventBase));
     assert.equal(plan.headSha, HEAD);
+    assert.equal(plan.mergeBaseSha, null);
+    assert.equal(plan.mergeBaseTipSha, null);
     assert.equal(plan.trust, 'T3');
     assert.equal(plan.risk, 'R4');
     assert.equal(plan.executionMode.effective, 'hosted');
     assert.deepEqual(plan.escalationReasons, ['planner-error']);
+    assert.throws(() => execFileSync(process.execPath, [
+      fileURLToPath(new URL('./evaluate-gate.mjs', import.meta.url)),
+      '--plan', planPath,
+      '--policy', fileURLToPath(new URL('../../../ci/policy.v1.json', import.meta.url)),
+      '--event', eventPath,
+      '--event-name', 'pull_request_target',
+      '--expected-head', HEAD,
+      '--expected-base', BASE,
+      '--plan-job-result', 'success',
+      '--receipt', receiptPath,
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    assert.equal(receipt.mergeBaseSha, null);
+    assert.equal(receipt.mergeBaseTipSha, null);
+    assert.equal(receipt.ok, false);
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
@@ -600,11 +701,15 @@ test('the shadow workflow binds resolver, planner, and gate to fixed control ide
   assert.match(workflow, /--head "\$CONTROL_HEAD"/);
   assert.match(workflow, /--merge-out artifacts\/merge-sha\.txt/);
   assert.match(workflow, /--tree-out artifacts\/merge-tree-sha\.txt/);
+  assert.match(workflow, /--merge-base-out artifacts\/merge-base-sha\.txt/);
+  assert.match(workflow, /--merge-base-tip-out artifacts\/merge-base-tip-sha\.txt/);
   assert.match(workflow, /--base-sha "\$CONTROL_BASE"/);
   assert.match(workflow, /EXPECTED_BASE: \$\{\{ env\.CONTROL_BASE \}\}/);
   assert.match(workflow, /EXPECTED_HEAD: \$\{\{ env\.CONTROL_HEAD \}\}/);
   assert.match(workflow, /--merge-sha "\$\(cat artifacts\/merge-sha\.txt\)"/);
   assert.match(workflow, /--merge-tree-sha "\$\(cat artifacts\/merge-tree-sha\.txt\)"/);
+  assert.match(workflow, /--merge-base-sha "\$\(cat artifacts\/merge-base-sha\.txt\)"/);
+  assert.match(workflow, /--merge-base-tip-sha "\$\(cat artifacts\/merge-base-tip-sha\.txt\)"/);
   assert.doesNotMatch(workflow, /auth_header=/);
 });
 
@@ -662,7 +767,7 @@ test('the shadow workflow fetch depth exposes both parents of a synthetic merge 
     assert.equal(depthMatch[1], '2');
     assert.deepEqual(
       await observeMergeRef({ pullRequestNumber: 1, token: 'synthetic-fixture-token', cwd: checkout }),
-      { mergeSha, baseSha, headSha, treeSha: mergeTreeSha },
+      { mergeSha, mergeBaseSha: baseSha, headSha, treeSha: mergeTreeSha },
     );
   } finally {
     rmSync(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
