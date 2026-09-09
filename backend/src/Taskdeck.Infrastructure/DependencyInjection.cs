@@ -48,8 +48,11 @@ public static class DependencyInjection
             options.UseTaskdeckSqlite(connectionString, databaseSettings));
 
         services.AddScoped<IBoardRepository, BoardRepository>();
+        services.AddScoped<IWorkspaceInsightRepository, WorkspaceInsightRepository>();
+        services.AddScoped<WorkspaceInsightService>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
         services.AddScoped<ICardRepository, CardRepository>();
+        services.AddScoped<IThinkingDeckRepository, ThinkingDeckRepository>();
         services.AddScoped<ICardCommentRepository, CardCommentRepository>();
         services.AddScoped<ILabelRepository, LabelRepository>();
         services.AddScoped<IUserRepository, UserRepository>();

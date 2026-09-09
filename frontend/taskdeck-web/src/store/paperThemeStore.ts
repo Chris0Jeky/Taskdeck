@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
+import '../grove-tokens.css'
 
-export type PaperMode = 'off' | 'paper' | 'paper-night' | 'auto'
+export type PaperMode = 'off' | 'paper' | 'paper-night' | 'auto' | 'grove' | 'grove-night'
 
 // Bumped to v2 for the canonical-Paper flip (ADR-0038). The default is now 'paper', so a
 // pre-flip stored 'off' — which was BOTH the old default AND a deliberate opt-out — must not be
@@ -11,7 +12,7 @@ const LEGACY_STORAGE_KEY = 'td.paper.mode'
 // Paper is the canonical UI (ADR-0038): default ON, in light Paper.
 const DEFAULT_MODE: PaperMode = 'paper'
 
-const VALID_MODES: ReadonlyArray<PaperMode> = ['off', 'paper', 'paper-night', 'auto']
+const VALID_MODES: ReadonlyArray<PaperMode> = ['off', 'paper', 'paper-night', 'auto', 'grove', 'grove-night']
 
 // Reads the persisted mode, performing the one-time v2 migration inline (ADR-0038). The migration
 // runs only while v2 is unset: a DELIBERATE pre-flip choice (paper / paper-night / auto) is carried
@@ -56,19 +57,22 @@ export function resolveBodyClass(mode: PaperMode): 'paper' | 'paper-night' | nul
     case 'off':
       return null
     case 'paper':
+    case 'grove':
       return 'paper'
     case 'paper-night':
+    case 'grove-night':
       return 'paper-night'
     case 'auto':
       return prefersDark() ? 'paper-night' : 'paper'
   }
 }
 
-function applyBodyClass(klass: 'paper' | 'paper-night' | null) {
+function applyBodyClass(klass: 'paper' | 'paper-night' | null, mode?: PaperMode) {
   if (typeof document === 'undefined') return
   const body = document.body
-  body.classList.remove('paper', 'paper-night')
+  body.classList.remove('paper', 'paper-night', 'grove', 'grove-night')
   if (klass) body.classList.add(klass)
+  if (mode === 'grove' || mode === 'grove-night') body.classList.add(mode)
 }
 
 // The prefers-color-scheme listener is module-scoped rather than living in
@@ -97,10 +101,11 @@ export const usePaperThemeStore = defineStore('paperTheme', {
      * Also wires the prefers-color-scheme listener when in auto mode.
      */
     apply() {
-      applyBodyClass(resolveBodyClass(this.mode))
+      applyBodyClass(resolveBodyClass(this.mode), this.mode)
       this._wireAutoListener()
     },
     setMode(mode: PaperMode) {
+      if (!VALID_MODES.includes(mode)) return
       this.mode = mode
       try {
         if (typeof window !== 'undefined') {
@@ -114,7 +119,9 @@ export const usePaperThemeStore = defineStore('paperTheme', {
     toggleNight() {
       // Quick toggle between light and night when Paper is on.
       // Off/auto round-trip through paper.
-      if (this.mode === 'paper') this.setMode('paper-night')
+      if (this.mode === 'grove') this.setMode('grove-night')
+      else if (this.mode === 'grove-night') this.setMode('grove')
+      else if (this.mode === 'paper') this.setMode('paper-night')
       else if (this.mode === 'paper-night') this.setMode('paper')
       else this.setMode('paper')
     },

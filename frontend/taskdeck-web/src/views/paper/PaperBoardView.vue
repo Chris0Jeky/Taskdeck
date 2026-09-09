@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../../store/boardStore'
 import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
 import { useBoardDragDrop } from '../../composables/useBoardDragDrop'
 import { useViewportMode } from '../../composables/useViewportMode'
 import PaperBoardColumn from './PaperBoardColumn.vue'
@@ -80,6 +81,8 @@ const route = useRoute()
 const router = useRouter()
 const boardStore = useBoardStore()
 const session = useSessionStore()
+const layout = useWorkspaceLayoutStore()
+const boardPresentation = computed(() => layout.experience === 'classic' ? 'classic' : layout.presentation)
 const { t } = useI18n()
 const { mode: viewportMode } = useViewportMode()
 
@@ -825,9 +828,10 @@ async function addStarterColumns() {
   <div
     class="paper-board-view"
     data-surface="paper-board"
-    :data-density="density"
+    :data-density="boardPresentation === 'control' ? 'compact' : boardPresentation === 'zen' ? 'comfortable' : density"
+    :data-presentation="boardPresentation"
     :data-column-width="columnWidth"
-    :data-card-detail="cardDetail"
+    :data-card-detail="boardPresentation === 'classic' ? cardDetail : 'full'"
   >
     <div class="paper-board-view__inner">
       <header class="paper-board-view__head">
@@ -864,6 +868,7 @@ async function addStarterColumns() {
             </select>
           </label>
           <PaperHLBtn
+            v-if="boardPresentation === 'classic' || boardPresentation === 'studio'"
             :label="t('boardDetail.actions.compactDensity')"
             :aria-label="t('boardDetail.actions.compactDensityAria')"
             :aria-pressed="density === 'compact'"
@@ -880,6 +885,7 @@ async function addStarterColumns() {
             let its own activation keys through would fire a shortcut too.
           -->
           <PaperHLBtn
+            v-if="boardPresentation === 'classic'"
             :label="t('boardDetail.actions.titlesOnly')"
             :aria-label="t('boardDetail.actions.titlesOnlyAria')"
             :aria-pressed="cardDetail === 'titles'"
@@ -1030,6 +1036,7 @@ async function addStarterColumns() {
             :cards="cardsByColumn.get(column.id) ?? []"
             :collapsed="isColumnCollapsed(column.id)"
             :card-variant="props.cardVariant"
+            :presentation="boardPresentation"
             :style="columnWidthStyle"
             :is-drag-over="dragOverColumnId === column.id"
             :selected-card-id="activeSelectedCardId"
