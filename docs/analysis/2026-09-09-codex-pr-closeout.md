@@ -7,25 +7,25 @@ Last Updated: 2026-09-09
 - #2813: prior delivery record, merge `1777e3c9f`; required CI and post-merge run `34285088054` passed.
 - #2809: first representation contract slice, merge `f935ebcbc`; required run `34285872287` passed. Refreshed local proof: 21 Domain and one Application test, docs links/governance. Original independent review plus current-base interaction review were clear. #2260 remains open; its new null-run-identity P2 is explicitly tracked and replied to.
 
-## Prepared, not shipped
+## Product integration candidate
 
-The following heads include main `f935ebcbc` after #2809. Their refreshed hosted CI is still a gate; old green runs do not qualify these heads.
+PR #2807 merged at `7ac99a7ac` after required run `34288600727` passed. The remaining heads below include that base and are combined, with their commit ancestry preserved, in one integration candidate. The integration head requires its own hosted CI and interaction review; earlier runs do not qualify the combination.
 
 | PR | Current head | Direct evidence before the final base refresh |
 | --- | --- | --- |
-| #2797 | `fe088a48198a389ccf7aabcc7574d1a133598cbd` | Repeated explicit 403 feedback repaired without leaking the prior board's refusal into a 500. 180 composable tests, typecheck/build/lint and exact Chromium recovery E2E 1/1; independent Terra review repeated 180 tests. |
-| #2807 | `54ca9d768e4f00af008625347b09f453830cd6dd` | SQLite rollback repaired in nine provider-specific lines. Migration tests 22/22; full backend at `837ca3306` passed 8,982 tests with 34 skips. Independent Terra fix review clear. |
-| #2810 | `3c364d11d8318e73ed32f383f2e7e9da13f86681` | Four focused files / 94 tests and typecheck passed; Terra checked the AppShell/base interaction with the default version fixture and real transport test. |
-| #2811 | `7ae0f475b3d393c3e605b5d780c3869df62c6a35` | Twelve policy tests and docs checks passed; original review and base-only reconciliation clear. Two policy P2s remain tracked on #2257. |
-| #2812 | `ccb10e0a6e233511404cdbb3fe8a3bb323e041f2` | Two SSE API tests passed; original review and scoped fix verification retained, with base-only reconciliation. |
+| #2797 | `83f9920f70f15b8282e82615e984c9e17bf5ae8a` | Repeated explicit 403 feedback repaired without leaking the prior board's refusal into a 500. 180 composable tests, typecheck/build/lint and exact Chromium recovery E2E 1/1; independent Terra review repeated 180 tests. |
+| #2807 (merged) | `54ca9d768e4f00af008625347b09f453830cd6dd` | SQLite rollback repaired in nine provider-specific lines. Migration tests 22/22; full backend at `837ca3306` passed 8,982 tests with 34 skips. Independent Terra fix review clear. |
+| #2810 | `1d1b69cfcc2da9bebf5bdb12d6ae49c6c13ff367` | Four focused files / 94 tests and typecheck passed; Terra checked the AppShell/base interaction with the default version fixture and real transport test. |
+| #2811 | `57c13cf00e742725bdb854c81959662d9fc66633` | Twelve policy tests and docs checks passed; original review and base-only reconciliation clear. Two policy P2s remain tracked on #2257. |
+| #2812 | `f6017133827413ab45577909cc3d07892100bd03` | Two SSE API tests passed; original review and scoped fix verification retained, with base-only reconciliation. |
 
 The 29 Integration skips in #2807 are PostgreSQL/Testcontainers tests whose Docker availability check found no Docker Desktop Linux daemon. Neither override variable was set. Four API and one Architecture skips are existing; skipped tests are not passed coverage. No operational database or live external model was exercised.
 
 ## Review and human gates
 
-New source-confirmed P2s on #2807 are tracked on #2808 and replied to: generated evidence exceeding the accepted length, board-discovery Retry after query transitions, and hidden Classic Home shortcut listeners. They were not independently reproduced in a browser during this repair. #2214 retains the separate refresh-health attribution issue. No additional MEDIUM fix cascade was opened.
+New source-confirmed P2s on #2807 are tracked on #2808 and replied to: generated evidence exceeding the accepted length, board-discovery Retry after query transitions, hidden Classic Home shortcut listeners, and analysis busy state after overlapping per-insight actions. They were not independently reproduced in a browser during this repair. #2214 retains the separate refresh-health attribution issue. No additional MEDIUM fix cascade was opened.
 
-#2791, #2792 and #2803 have prior independent reviews but await the maintainer's own control-path review; #2791 also has a conflict. #2769 still needs independent review. The three individual Vitest PRs #2770/#2771/#2773 remain open until replacement #2803 lands. #2790 stays parked under its existing review ceiling and confirmed HIGH #2795.
+#2791, #2792, #2803 and #2769 have refreshed heads and await the maintainer's own control-path review. The #2791 documentation conflict was resolved by preserving both unresolved human-review disclosures. Independent dependency review is in progress. The three individual Vitest PRs #2770/#2771/#2773 remain open until replacement #2803 lands. #2790 received renewed issue-specific repair authorization when the maintainer requested all remaining PRs be dealt with and merged. Repair `16a4d2126` preserves failed proposal-tool outcomes through degraded terminal/fallback paths: the exact pre-fix probe failed, then three regressions and all 122 ChatService tests passed. Fresh independent repair review and hosted qualification remain gates; the previous review rounds are not relabeled. This head is also included in the integration candidate.
 
 The five active implementation PRs and #2214 were directly verified as Project `Review` / `Priority II`. A broader priority audit exposed historical drift; a repeat snapshot failed on a network timeout, so no complete Project-cleanup claim is made. `OUTSTANDING_TASKS.md` retains the publisher/signing, private-instance/cutover, credential, device/native-language, release/dogfooding and product-decision gates. No human acknowledgement was inferred.
 

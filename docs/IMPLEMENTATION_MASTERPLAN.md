@@ -74,8 +74,7 @@ backfill is tracked on #2260 before that contract is used by a runtime writer.
 
 Luna xhigh workers and Terra high reviewers completed current-base proofs for four
 existing PRs and isolated the #2797 repeated-refusal feedback and #2807 SQLite
-rollback repairs. After #2809 moved main, the remaining five source PRs were
-refreshed again; their earlier green checks are not final-head qualification.
+rollback repairs. PR #2807 then merged at `7ac99a7ac`. The remaining product heads are combined in one commit-preserving integration candidate; its hosted run qualifies the combination.
 The [closeout record](analysis/2026-09-09-codex-pr-closeout.md) retains exact heads,
 verification limits and deferred review findings. No release or human-action
 completion is inferred.
