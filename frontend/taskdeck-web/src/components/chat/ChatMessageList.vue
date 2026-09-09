@@ -242,52 +242,54 @@ function bindSelectedBoard(messageId: string) {
             {{ sendingMessage ? 'Continuing...' : 'Continue retained instruction' }}
           </button>
         </template>
-        <template v-else-if="boardLoadError">
-          <p class="td-board-recovery__error" role="alert">
-            Unable to load writable boards: {{ boardLoadError }}
-          </p>
-          <button
-            class="td-btn td-btn--secondary td-btn--sm"
-            :disabled="loadingBoards"
-            @click="emit('reload-boards')"
-          >
-            {{ loadingBoards ? 'Retrying...' : 'Retry loading boards' }}
-          </button>
-        </template>
-        <template v-else-if="loadingBoards">
-          <p class="td-board-recovery__copy">Loading writable boards...</p>
-        </template>
-        <template v-else-if="eligibleBoards.length === 0">
-          <p class="td-board-recovery__copy">
-            There are no active boards you can edit. Create a board or ask an owner for edit access, then reload boards.
-          </p>
-          <button class="td-btn td-btn--secondary td-btn--sm" @click="emit('open-boards')">
-            Open Boards
-          </button>
-        </template>
         <template v-else>
-          <label class="td-board-recovery__label" :for="`chat-board-${message.id}`">
-            Board for this session
-          </label>
-          <select
-            :id="`chat-board-${message.id}`"
-            class="td-board-recovery__select"
-            :value="selectedBoardId(message.id)"
-            :disabled="bindingBoard && bindingMessageId === message.id"
-            @change="updateSelectedBoardId(message.id, ($event.target as HTMLSelectElement).value)"
-          >
-            <option v-if="eligibleBoards.length > 1" value="">Choose a board</option>
-            <option v-for="board in eligibleBoards" :key="board.id" :value="board.id">
-              {{ board.name }}
-            </option>
-          </select>
-          <button
-            class="td-btn td-btn--primary td-btn--sm"
-            :disabled="!selectedBoardId(message.id) || (bindingBoard && bindingMessageId === message.id)"
-            @click="bindSelectedBoard(message.id)"
-          >
-            {{ bindingBoard && bindingMessageId === message.id ? 'Linking...' : 'Link board' }}
-          </button>
+          <template v-if="boardLoadError">
+            <p class="td-board-recovery__error" role="alert">
+              Unable to load writable boards: {{ boardLoadError }}
+            </p>
+            <button
+              class="td-btn td-btn--secondary td-btn--sm"
+              :disabled="loadingBoards"
+              @click="emit('reload-boards')"
+            >
+              {{ loadingBoards ? 'Retrying...' : 'Retry loading boards' }}
+            </button>
+          </template>
+          <template v-if="loadingBoards">
+            <p class="td-board-recovery__copy">Loading writable boards...</p>
+          </template>
+          <template v-else-if="eligibleBoards.length === 0 && !boardLoadError">
+            <p class="td-board-recovery__copy">
+              There are no active boards you can edit. Create a board or ask an owner for edit access, then reload boards.
+            </p>
+            <button class="td-btn td-btn--secondary td-btn--sm" @click="emit('open-boards')">
+              Open Boards
+            </button>
+          </template>
+          <template v-else-if="eligibleBoards.length > 0">
+            <label class="td-board-recovery__label" :for="`chat-board-${message.id}`">
+              Board for this session
+            </label>
+            <select
+              :id="`chat-board-${message.id}`"
+              class="td-board-recovery__select"
+              :value="selectedBoardId(message.id)"
+              :disabled="bindingBoard && bindingMessageId === message.id"
+              @change="updateSelectedBoardId(message.id, ($event.target as HTMLSelectElement).value)"
+            >
+              <option v-if="eligibleBoards.length > 1" value="">Choose a board</option>
+              <option v-for="board in eligibleBoards" :key="board.id" :value="board.id">
+                {{ board.name }}
+              </option>
+            </select>
+            <button
+              class="td-btn td-btn--primary td-btn--sm"
+              :disabled="!selectedBoardId(message.id) || (bindingBoard && bindingMessageId === message.id)"
+              @click="bindSelectedBoard(message.id)"
+            >
+              {{ bindingBoard && bindingMessageId === message.id ? 'Linking...' : 'Link board' }}
+            </button>
+          </template>
         </template>
         <p v-if="boardBindingError" class="td-board-recovery__error" role="alert">
           {{ boardBindingError }}
