@@ -21,6 +21,7 @@ const props = defineProps<{
   bindingMessageId: string | null
   boardBindingError: string | null
   boardBindingReceipt: string | null
+  boardLoadError: string | null
 }>()
 
 const emit = defineEmits<{
@@ -29,6 +30,7 @@ const emit = defineEmits<{
   (e: 'bind-board', messageId: string, boardId: string): void
   (e: 'continue-instruction', messageId: string): void
   (e: 'open-boards'): void
+  (e: 'reload-boards'): void
 }>()
 
 const expandedHintIds = ref<Set<string>>(new Set())
@@ -238,6 +240,18 @@ function bindSelectedBoard(messageId: string) {
             @click="emit('continue-instruction', message.id)"
           >
             {{ sendingMessage ? 'Continuing...' : 'Continue retained instruction' }}
+          </button>
+        </template>
+        <template v-else-if="boardLoadError">
+          <p class="td-board-recovery__error" role="alert">
+            Unable to load writable boards: {{ boardLoadError }}
+          </p>
+          <button
+            class="td-btn td-btn--secondary td-btn--sm"
+            :disabled="loadingBoards"
+            @click="emit('reload-boards')"
+          >
+            {{ loadingBoards ? 'Retrying...' : 'Retry loading boards' }}
           </button>
         </template>
         <template v-else-if="loadingBoards">

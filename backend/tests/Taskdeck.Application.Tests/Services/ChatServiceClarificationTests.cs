@@ -251,6 +251,78 @@ public class ChatServiceClarificationTests
     }
 
     [Fact]
+    public async Task SendMessage_ShouldRecoverOriginalIntent_WhenPersistedHistoryArrivesScrambled()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Scrambled clarification", boardId);
+        var original = new ChatMessage(
+            session.Id,
+            ChatMessageRole.User,
+            "create card for the release follow-up");
+        var clarification = new ChatMessage(
+            session.Id,
+            ChatMessageRole.Assistant,
+            "What should the card be called?",
+            "clarification");
+        var baseTime = DateTimeOffset.UtcNow.AddMinutes(-2);
+        SetCreatedAt(original, baseTime);
+        SetCreatedAt(clarification, baseTime.AddMinutes(1));
+
+        // EF navigation fixup can expose persisted rows in a different order than creation time.
+        session.AddMessage(clarification);
+        session.AddMessage(original);
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _plannerMock
+            .Setup(planner => planner.ParseInstructionAsync(
+                It.Is<string>(instruction =>
+                    instruction.Contains("create card for the release follow-up") &&
+                    instruction.Contains("Clarification answer: Ship notes")),
+                userId,
+                boardId,
+                It.IsAny<CancellationToken>(),
+                ProposalSourceType.Chat,
+                session.Id.ToString(),
+                It.IsAny<string?>()))
+            .ReturnsAsync(Result.Success(new ProposalDto(
+                proposalId,
+                ProposalSourceType.Chat,
+                null,
+                boardId,
+                userId,
+                ProposalStatus.PendingReview,
+                RiskLevel.Low,
+                "Create release follow-up",
+                null,
+                null,
+                DateTimeOffset.UtcNow,
+                DateTimeOffset.UtcNow,
+                DateTime.UtcNow.AddHours(1),
+                null,
+                null,
+                null,
+                null,
+                "corr",
+                new List<ProposalOperationDto>())));
+
+        var result = await _service.SendMessageAsync(
+            session.Id,
+            userId,
+            new SendChatMessageDto("Ship notes"),
+            default);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.MessageType.Should().Be("proposal-reference");
+        result.Value.ProposalId.Should().Be(proposalId);
+    }
+
+    private static void SetCreatedAt(Entity entity, DateTimeOffset timestamp)
+        => typeof(Entity).GetProperty(nameof(Entity.CreatedAt))!.SetValue(entity, timestamp);
+
+    [Fact]
     public async Task MockProvider_ShouldReturnClarification_ForAmbiguousInput()
     {
         var provider = new MockLlmProvider();
