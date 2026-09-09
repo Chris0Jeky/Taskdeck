@@ -46,6 +46,10 @@ function isStringArray(value) {
   return Array.isArray(value) && value.every(isNonEmptyString);
 }
 
+function isFullSha(value) {
+  return /^[0-9a-f]{40}$/i.test(String(value ?? ''));
+}
+
 /** Structural validation of a policy document. Returns a list of error strings (empty = valid). */
 export function validatePolicy(policy) {
   const errors = [];
@@ -217,7 +221,7 @@ function uniqueSorted(values) {
 /**
  * Build the deterministic plan.
  * @param {object} input see README: eventName, repository, pullRequestNumber, ref, isDraft, baseSha,
- *   headSha, mergeSha, mergeTreeSha, actorLogin, actorType, authorAssociation, isFork, labels,
+ *   headSha, mergeSha, mergeTreeSha, mergeBaseSha, mergeBaseTipSha, actorLogin, actorType, authorAssociation, isFork, labels,
  *   changedFiles, changedFilesAvailable, executionMode
  * @param {object} policy parsed policy document
  * @param {string} digest policyDigest() of the policy file bytes
@@ -319,6 +323,8 @@ export function buildPlan(input, policy, digest) {
     headSha: input.headSha ?? null,
     mergeSha: input.mergeSha ?? null,
     mergeTreeSha: input.mergeTreeSha ?? null,
+    mergeBaseSha: input.mergeBaseSha ?? null,
+    mergeBaseTipSha: input.mergeBaseTipSha ?? null,
     actor: {
       login: input.actorLogin ?? null,
       type: input.actorType ?? null,
@@ -359,6 +365,8 @@ export function errorPlan(input, policy, digest, error) {
     headSha: input.headSha ?? null,
     mergeSha: input.mergeSha ?? null,
     mergeTreeSha: input.mergeTreeSha ?? null,
+    mergeBaseSha: null,
+    mergeBaseTipSha: null,
     actor: { login: input.actorLogin ?? null, type: input.actorType ?? null, association: input.authorAssociation ?? null, isFork: input.isFork === true, sender: input.senderLogin ?? null, headActors: Array.isArray(input.headActors) ? uniqueSorted(input.headActors.map(String).filter(Boolean)) : [] },
     labels: uniqueSorted((input.labels ?? []).map(String)),
     trust: 'T3',
@@ -396,6 +404,27 @@ export function validatePlan(plan, policy = null) {
   if (!/^sha256:[0-9a-f]{64}$/.test(String(plan.policyDigest ?? ''))) errors.push('policyDigest must be sha256:<hex>');
   if (!['shadow', 'enforce'].includes(plan.mode)) errors.push('mode must be shadow or enforce');
   if (!plan.event || !Object.hasOwn(plan.event, 'action') || (plan.event.action !== null && typeof plan.event.action !== 'string')) errors.push('event.action must be a string or null');
+  const hasMergeBaseSha = Object.hasOwn(plan, 'mergeBaseSha');
+  const hasMergeBaseTipSha = Object.hasOwn(plan, 'mergeBaseTipSha');
+  if (hasMergeBaseSha !== hasMergeBaseTipSha) {
+    errors.push('mergeBaseSha and mergeBaseTipSha must both be present or both be absent');
+  } else if (hasMergeBaseSha) {
+    const successfulPullRequestPlan = Number.isInteger(plan.event && plan.event.pullRequest) && !plan.plannerError;
+    if (successfulPullRequestPlan) {
+      if (!isFullSha(plan.mergeBaseSha)) errors.push('mergeBaseSha must be a full 40-character Git SHA');
+      if (!(plan.mergeBaseTipSha === null || isFullSha(plan.mergeBaseTipSha))) errors.push('mergeBaseTipSha must be null or a full 40-character Git SHA');
+      if (isFullSha(plan.mergeBaseSha)) {
+        if (plan.mergeBaseTipSha === null && plan.mergeBaseSha !== plan.baseSha) {
+          errors.push('mergeBaseSha must equal plan.baseSha when mergeBaseTipSha is null');
+        } else if (isFullSha(plan.mergeBaseTipSha)) {
+          if (plan.mergeBaseSha !== plan.mergeBaseTipSha) errors.push('mergeBaseSha must equal mergeBaseTipSha for an accepted moved base');
+          if (plan.mergeBaseTipSha === plan.baseSha) errors.push('mergeBaseTipSha must be null when the merge ref used plan.baseSha');
+        }
+      }
+    } else if (plan.mergeBaseSha !== null || plan.mergeBaseTipSha !== null) {
+      errors.push('non-PR and error plans must record null merge-base metadata');
+    }
+  }
   if (!TRUST_CLASSES.includes(plan.trust)) errors.push('trust must be T0..T4');
   if (!RISK_ORDER.includes(plan.risk)) errors.push('risk must be R0..R4');
   if (typeof plan.escalated !== 'boolean') errors.push('escalated must be boolean');
@@ -436,7 +465,7 @@ export function validatePlan(plan, policy = null) {
   return errors;
 }
 
-const PLANNER_FAILURE_CODES = new Set(['plan-missing', 'plan-invalid', 'planner-error', 'plan-job-failed', 'policy-digest-mismatch', 'head-sha-mismatch', 'base-sha-mismatch', 'trust-mismatch', 'labels-mismatch', 'mode-mismatch']);
+const PLANNER_FAILURE_CODES = new Set(['plan-missing', 'plan-invalid', 'planner-error', 'plan-job-failed', 'policy-digest-mismatch', 'head-sha-mismatch', 'base-sha-mismatch', 'merge-base-binding-mismatch', 'trust-mismatch', 'labels-mismatch', 'mode-mismatch']);
 
 /**
  * Evaluate the gate.
@@ -468,6 +497,20 @@ export function evaluateGate(plan, context) {
     }
     if (context.expectedHeadSha && plan.headSha !== context.expectedHeadSha) failures.push({ code: 'head-sha-mismatch', detail: `plan ${plan.headSha} vs event ${context.expectedHeadSha}` });
     if (context.expectedBaseSha && plan.baseSha !== context.expectedBaseSha) failures.push({ code: 'base-sha-mismatch', detail: `plan ${plan.baseSha} vs event ${context.expectedBaseSha}` });
+    const hasMergeBaseSha = Object.hasOwn(plan, 'mergeBaseSha');
+    const hasMergeBaseTipSha = Object.hasOwn(plan, 'mergeBaseTipSha');
+    if (!hasMergeBaseSha && !hasMergeBaseTipSha) {
+      notes.push('legacy plan has no observed merge-base receipt; plan.baseSha remains the compatibility fallback without the new first-parent proof');
+    } else if (hasMergeBaseSha && hasMergeBaseTipSha && Number.isInteger(plan.event && plan.event.pullRequest) && !plan.plannerError) {
+      const observedMatchesControl = plan.mergeBaseSha === plan.baseSha && plan.mergeBaseTipSha === null;
+      const observedMatchesLiveTip = isFullSha(plan.mergeBaseTipSha)
+        && plan.mergeBaseSha === plan.mergeBaseTipSha
+        && plan.mergeBaseTipSha !== plan.baseSha;
+      if (!observedMatchesControl && !observedMatchesLiveTip) failures.push({
+        code: 'merge-base-binding-mismatch',
+        detail: `observed first parent ${plan.mergeBaseSha} is not plan base ${plan.baseSha} or its recorded distinct live tip ${plan.mergeBaseTipSha}`,
+      });
+    }
     if (context.expectedPolicyDigest && plan.policyDigest !== context.expectedPolicyDigest) failures.push({ code: 'policy-digest-mismatch', detail: `plan ${plan.policyDigest} vs policy ${context.expectedPolicyDigest}` });
     if (context.eventInput && context.policy) {
       const expectedTrust = classifyTrust(context.eventInput, plan.controlPathsChanged ?? [], context.policy);

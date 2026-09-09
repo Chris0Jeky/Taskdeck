@@ -547,6 +547,12 @@ export function normaliseObservation(raw, policy, options = {}) {
   }
 
   const plan = raw.plan;
+  const legacyMergeBaseReceipt = isObject(plan)
+    && !Object.hasOwn(plan, 'mergeBaseSha')
+    && !Object.hasOwn(plan, 'mergeBaseTipSha');
+  const observedPlanBaseSha = isObject(plan)
+    ? (legacyMergeBaseReceipt ? plan.baseSha : plan.mergeBaseSha)
+    : null;
   const planErrors = validatePlan(plan, policy);
   if (planErrors.length > 0) addError(`plan-invalid:${planErrors.join('; ')}`);
   if (isObject(plan)) {
@@ -566,9 +572,9 @@ export function normaliseObservation(raw, policy, options = {}) {
       if (!REQUIRED_PULL_REQUEST_ACTIONS.has(plan.event.action)) addError('plan-event-action-not-required');
       if (plan.event.ref !== raw.baseBranch) addError('plan-base-branch-mismatch');
     }
-    validateCommit(raw.planMergeCommit, plan.mergeSha, [plan.baseSha, headSha], plan.mergeTreeSha, 'plan-merge-commit');
+    validateCommit(raw.planMergeCommit, plan.mergeSha, [observedPlanBaseSha, headSha], plan.mergeTreeSha, 'plan-merge-commit');
     if (headSha === finalHeadSha) {
-      if (plan.baseSha !== baseSha) addError('final-plan-base-sha-mismatch');
+      if (observedPlanBaseSha !== baseSha) addError('final-plan-base-sha-mismatch');
       if (isObject(raw.mergeCommit) && plan.mergeTreeSha !== raw.mergeCommit.treeSha) addError('final-plan-merge-tree-mismatch');
     }
   }
@@ -649,6 +655,7 @@ export function normaliseObservation(raw, policy, options = {}) {
     baseBranch: typeof raw.baseBranch === 'string' ? raw.baseBranch : null,
     baseRepository: typeof raw.baseRepository === 'string' ? raw.baseRepository : null,
     baseSha: validSha(baseSha) ? String(baseSha).toLowerCase() : null,
+    mergeBaseSha: validSha(observedPlanBaseSha) ? String(observedPlanBaseSha).toLowerCase() : null,
     mergeCommitSha: validSha(mergeCommitSha) ? String(mergeCommitSha).toLowerCase() : null,
     mergeTreeSha: isObject(raw.mergeCommit) && validSha(raw.mergeCommit.treeSha) ? String(raw.mergeCommit.treeSha).toLowerCase() : null,
     shadowRunId: isObject(raw.shadowRun) && Number.isInteger(raw.shadowRun.id) ? raw.shadowRun.id : null,
@@ -722,7 +729,7 @@ export function buildRecallReport(rawObservations, policy, options) {
   for (const indexes of groupIndexes.values()) {
     const rows = indexes.map((index) => observations[index]);
     const groupErrors = [];
-    for (const field of ['mergedAt', 'finalHeadSha', 'headBranch', 'headRepository', 'baseSha', 'baseBranch', 'baseRepository', 'mergeCommitSha', 'mergeTreeSha']) {
+    for (const field of ['mergedAt', 'finalHeadSha', 'headBranch', 'headRepository', 'baseSha', 'mergeBaseSha', 'baseBranch', 'baseRepository', 'mergeCommitSha', 'mergeTreeSha']) {
       if (new Set(rows.map((row) => row[field])).size !== 1) groupErrors.push(`pr-${field.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}-mismatch`);
     }
     if (!rows.some((row) => row.usable && row.headSha === row.finalHeadSha && row.requiredConclusion === 'success')) {
