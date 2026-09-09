@@ -53,9 +53,6 @@ async function createChatSessionAndSendProposal(
   if (!sessionId) throw new Error('Expected chat session header to expose data-session-id')
 
   await page.getByPlaceholder('Describe an automation instruction...').fill(instruction)
-  const requestProposalCheckbox = page.getByRole('checkbox', { name: 'Request proposal generation' })
-  await requestProposalCheckbox.check()
-  await expect(requestProposalCheckbox).toBeChecked()
   await page.getByRole('button', { name: 'Send Message' }).click()
 
   const proposalId = await waitForProposalInSession(request, auth.token, sessionId)

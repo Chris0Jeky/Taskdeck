@@ -401,7 +401,8 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         if (!TryGetCurrentUserId(out var callerUserId, out var errorResult))
             return errorResult!;
 
-        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: true, cancellationToken);
+        var auth = await AuthorizeProposalAsync(id, callerUserId, requireWriteAccess: true, cancellationToken,
+            concealUnreadable: true);
         if (auth.ErrorResult is not null)
             return auth.ErrorResult;
 
@@ -838,16 +839,33 @@ public class AutomationProposalsController : AuthenticatedControllerBase
         Guid proposalId,
         Guid callerUserId,
         bool requireWriteAccess,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool concealUnreadable = false)
     {
         var proposalResult = await _proposalService.GetProposalByIdAsync(proposalId, cancellationToken);
         if (!proposalResult.IsSuccess)
+        {
+            if (concealUnreadable && proposalResult.ErrorCode == ErrorCodes.NotFound)
+                return (null, Result.Failure(ErrorCodes.NotFound, "Proposal not found").ToErrorActionResult());
             return (null, proposalResult.ToErrorActionResult());
+        }
 
         var proposal = proposalResult.Value;
 
         if (proposal.BoardId.HasValue)
         {
+            // Single execute follows batch execute's visibility contract (#1307 D-4):
+            // unreadable and missing proposals are indistinguishable. A readable board
+            // without Write still returns the ordinary Forbidden result below.
+            if (concealUnreadable)
+            {
+                var readable = await _authorizationService.CanReadBoardAsync(callerUserId, proposal.BoardId.Value);
+                if (!readable.IsSuccess && readable.ErrorCode != ErrorCodes.NotFound)
+                    return (null, readable.ToErrorActionResult());
+                if (!readable.IsSuccess || !readable.Value)
+                    return (null, Result.Failure(ErrorCodes.NotFound, "Proposal not found").ToErrorActionResult());
+            }
+
             var permissionError = await EnsureBoardPermissionAsync(
                 _authorizationService,
                 callerUserId,
@@ -866,6 +884,8 @@ public class AutomationProposalsController : AuthenticatedControllerBase
 
         if (proposal.RequestedByUserId != callerUserId)
         {
+            if (concealUnreadable)
+                return (null, Result.Failure(ErrorCodes.NotFound, "Proposal not found").ToErrorActionResult());
             return (null, Result.Failure(ErrorCodes.Forbidden, "You do not have permission to access this proposal.").ToErrorActionResult());
         }
 

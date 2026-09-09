@@ -1,5 +1,5 @@
 import http from './http'
-import type { ChatMessage, ChatProviderHealth, ChatSession, CreateChatSessionRequest, SendChatMessageRequest } from '../types/chat'
+import type { BindChatSessionBoardRequest, ChatMessage, ChatProviderHealth, ChatSession, CreateChatSessionRequest, SendChatMessageRequest } from '../types/chat'
 import { buildQueryString } from '../utils/queryBuilder'
 
 export const chatApi = {
@@ -15,6 +15,14 @@ export const chatApi = {
 
   async getSession(sessionId: string): Promise<ChatSession> {
     const { data } = await http.get<ChatSession>(`/llm/chat/sessions/${encodeURIComponent(sessionId)}`)
+    return data
+  },
+
+  async bindBoard(sessionId: string, request: BindChatSessionBoardRequest): Promise<ChatSession> {
+    const { data } = await http.post<ChatSession>(
+      `/llm/chat/sessions/${encodeURIComponent(sessionId)}/board`,
+      request,
+    )
     return data
   },
 

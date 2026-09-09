@@ -24,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   getHealth: vi.fn(),
   sendMessage: vi.fn(),
+  bindBoard: vi.fn(),
   createSession: vi.fn(),
   getBoards: vi.fn(),
   successToast: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('../../api/chatApi', () => ({
     getSession: mocks.getSession,
     getHealth: mocks.getHealth,
     sendMessage: mocks.sendMessage,
+    bindBoard: mocks.bindBoard,
     createSession: mocks.createSession,
   },
 }))
@@ -190,6 +192,7 @@ describe('AutomationChatView — message sending flow', () => {
     ])
     mocks.createSession.mockResolvedValue({ id: 'session-created' })
     mocks.sendMessage.mockResolvedValue(undefined)
+    mocks.bindBoard.mockResolvedValue(undefined)
   })
 
   it('sends a message when Send Message button is clicked', async () => {
@@ -204,10 +207,11 @@ describe('AutomationChatView — message sending flow', () => {
     await sendBtn!.trigger('click')
     await waitForAsyncUi()
 
-    expect(mocks.sendMessage).toHaveBeenCalledWith(
-      'session-1',
-      expect.objectContaining({ content: 'Create a new card for deployment' }),
-    )
+    expect(mocks.sendMessage).toHaveBeenCalledWith('session-1', {
+      content: 'Create a new card for deployment',
+    })
+    expect(wrapper.text()).not.toContain('Request proposal generation')
+    expect(wrapper.find('input[type="checkbox"]').exists()).toBe(false)
   })
 
   it('does not send empty messages', async () => {

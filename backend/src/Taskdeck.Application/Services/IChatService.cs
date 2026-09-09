@@ -6,6 +6,7 @@ namespace Taskdeck.Application.Services;
 public interface IChatService
 {
     Task<Result<ChatSessionDto>> CreateSessionAsync(Guid userId, CreateChatSessionDto dto, CancellationToken ct = default);
+    Task<Result<ChatSessionDto>> BindBoardAsync(Guid sessionId, Guid userId, BindChatSessionBoardDto dto, CancellationToken ct = default);
     Task<Result<ChatSessionDto>> GetSessionAsync(Guid sessionId, Guid userId, CancellationToken ct = default);
     Task<Result<IEnumerable<ChatSessionDto>>> GetUserSessionsAsync(Guid userId, CancellationToken ct = default);
     Task<ChatProviderHealthDto> GetProviderHealthAsync(bool probe = false, CancellationToken ct = default);

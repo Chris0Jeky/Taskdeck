@@ -1340,10 +1340,12 @@ describe('PaperReviewView', () => {
     try {
       expect(wrapper.find('[data-testid="paper-review-access-revoked-retry"]').exists()).toBe(false)
 
-      // Changing the board is a deliberate list-read attempt. The queue is
-      // already refused, so the second refusal needs its own durable sentence.
+      // Switching this board into its read-only history is a second deliberate
+      // list-read attempt for the SAME board. A different board must start
+      // with its own first-refusal state, but this retry keeps the same board
+      // authority scope and needs its own durable sentence.
       mocks.getProposals.mockRejectedValueOnce({ response: { status: 403 } })
-      await routerOf(wrapper).replace('/workspace/review?boardId=another-board')
+      await routerOf(wrapper).replace('/workspace/review?boardId=board-revoked&history=archived')
       await flushPromises()
       await wrapper.vm.$nextTick()
 
