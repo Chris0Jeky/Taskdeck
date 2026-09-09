@@ -582,6 +582,9 @@ function onEdit(item: CaptureItemSummary) {
  */
 function closeEdit() {
   const itemId = editItemId.value
+  const activeElement = typeof document === 'undefined' ? null : document.activeElement
+  const editorOwnedFocus = activeElement instanceof HTMLElement &&
+    activeElement.closest('[data-testid="capture-edit"]') !== null
   if (itemId !== null) {
     const report = readOpenEditor()
     if (report.state === 'ready') {
@@ -593,6 +596,18 @@ function closeEdit() {
   }
   editItemId.value = null
   editItemLabel.value = null
+
+  // A Cancel click leaves focus on the editor that is about to disappear.
+  // Return it to this row's Edit control only in that case; a persistent row
+  // control or dialog may have taken focus while the editor was closing.
+  if (itemId !== null && editorOwnedFocus) {
+    void nextTick(() => {
+      const row = Array.from(document.querySelectorAll<HTMLElement>('.paper-triage__row'))
+        .find(candidate => candidate.dataset.itemId === itemId)
+      const editButton = row?.querySelector<HTMLButtonElement>('button[data-action="edit"]')
+      if (editButton && !editButton.disabled) editButton.focus()
+    })
+  }
 }
 
 /** The editor has put a held correction back; say which one, once it is true. */

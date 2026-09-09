@@ -41,7 +41,7 @@ export type PaperTriageDraftReport =
 </script>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PaperHLBtn from '../../../components/paper/PaperHLBtn.vue'
 import { getErrorDisplay } from '../../../composables/useErrorMapper'
@@ -118,6 +118,8 @@ const { t } = useI18n()
 type LoadState = 'loading' | 'ready' | 'blocked' | 'error'
 
 const loadState = ref<LoadState>('loading')
+let loadGeneration = 0
+let loadAbortController: AbortController | null = null
 const loadErrorMessage = ref<string | null>(null)
 const saveErrorMessage = ref<string | null>(null)
 const saving = ref(false)
@@ -308,6 +310,10 @@ function readDraft(): PaperTriageDraftReport {
 defineExpose({ readDraft })
 
 async function load() {
+  const generation = ++loadGeneration
+  loadAbortController?.abort()
+  const abortController = new AbortController()
+  loadAbortController = abortController
   loadState.value = 'loading'
   loadErrorMessage.value = null
   saveErrorMessage.value = null
@@ -329,7 +335,10 @@ async function load() {
       forceRefresh: true,
       recordError: false,
       showToast: false,
+      requestOptions: { signal: abortController.signal },
+      shouldCache: () => generation === loadGeneration && !abortController.signal.aborted,
     })
+    if (generation !== loadGeneration || abortController.signal.aborted) return
     if (detail.canEditSuggestion !== true) {
       loadState.value = 'blocked'
       return
@@ -345,9 +354,19 @@ async function load() {
     applyRestoredDraft()
     loadState.value = 'ready'
   } catch (e: unknown) {
+    if (generation !== loadGeneration || abortController.signal.aborted) return
     loadErrorMessage.value = getErrorDisplay(e, t('inbox.triage.edit.unknownReason')).message
     loadState.value = 'error'
+  } finally {
+    if (generation === loadGeneration) loadAbortController = null
   }
+}
+
+function cancelLoading() {
+  loadGeneration += 1
+  loadAbortController?.abort()
+  loadAbortController = null
+  emit('close')
 }
 
 async function save() {
@@ -393,6 +412,12 @@ async function save() {
 onMounted(() => {
   void load()
 })
+
+onBeforeUnmount(() => {
+  loadGeneration += 1
+  loadAbortController?.abort()
+  loadAbortController = null
+})
 </script>
 
 <template>
@@ -404,6 +429,14 @@ onMounted(() => {
       data-testid="capture-edit-loading"
     >
       <span class="tk-meta">{{ t('inbox.triage.edit.loading') }}</span>
+      <div class="paper-triage-edit__actions">
+        <PaperHLBtn
+          :label="t('inbox.triage.edit.cancel')"
+          variant="ghost"
+          data-action="edit-cancel"
+          @click="cancelLoading"
+        />
+      </div>
     </div>
 
     <div
