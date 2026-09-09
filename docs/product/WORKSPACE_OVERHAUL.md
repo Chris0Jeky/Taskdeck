@@ -58,7 +58,8 @@ explicit approve action followed by a separate apply action and the existing con
 | Companion | Existing accountable chat embedded in Companion Home and contextual links to existing chat/review | Implemented entry point; no new model provider or memory retrieval integration. Unified's board-side contextual companion remains next |
 | Comparison | User-initiated session-only ratings and notes with JSON download | Implemented; records selected experience/detail/theme. No telemetry, random assignment or statistical A/B claim |
 | In-place proposal overlays | Existing authoritative diff rendered at affected board objects | Next; preserve effective proposal revision, subset-selection semantics and explicit apply gate |
-| Linked steps, connections and continuity | Guarded child-card promotion, live dependency links, chosen daily plan and last-worked continuation | Next; preserve transactional card writer, WIP, audit and realtime consistency. Current agenda is derived from existing Today data, not last-worked tracking |
+| Linked steps and connections | Guarded child-card promotion and live dependency links | Linked steps are in PR #2837; separate dependency links remain next |
+| Personal continuity | Chosen plan, last-worked focus, List/Board/Horizon over planned cards | Implemented privately with revision checks. Home resume uses explicit focus and shows chosen threads; the separate agenda remains derived from Today |
 | Audio answers and unified source evidence | Context Fabric original/representation pipeline and typed source anchors | Later; new memory currently preserves evidence directly, not as Capture/SourceAsset records. No microphone/transcription integration added here |
 | Model-generated observations and recall | Bounded candidate producer and authorized knowledge retrieval | Later; requires grounding, fresh evidence, usefulness corpus, privacy and budget proof |
 | Optional nudges | Opt-in attention policy after usefulness is established | Later; requires non-intrusion evaluation, focus/input suppression and shared user budgets |
@@ -80,7 +81,7 @@ That answer is separate from the shared question. Mark uncertain context **Unkno
 then use **Quiet insights → Analyze now** for that board. **Memory** supports correction, original history,
 archive/restore and a private JSON download. **Experiences** offers the manual comparison protocol.
 
-The three additive database migrations create thinking/insight/memory tables and question-source columns.
+Additive database migrations create thinking/insight/memory tables, question-source columns and personal-plan preference columns.
 Follow [UPGRADING.md](../../UPGRADING.md) when updating an existing instance. The integration's automated
 browser proof uses an isolated synthetic database; it does not migrate a maintainer's working database.
 

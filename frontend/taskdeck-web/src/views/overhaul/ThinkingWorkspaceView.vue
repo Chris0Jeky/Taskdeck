@@ -55,7 +55,7 @@ onUnmounted(() => { generation++ })
     <section v-else-if="error" role="alert"><p>{{ error }}</p><button type="button" @click="load">Try again</button></section>
     <template v-else-if="card">
       <p v-if="route.query.focus === '1'" role="status">FOCUS · One thread at a time. <RouterLink to="/workspace/plan">Return to your plan</RouterLink></p>
-      <p v-if="focused">Before you leave, add a <strong>thread</strong> below for next time. Save it with the card’s thinking so it is here when you return.</p>
+      <p v-if="focused">Before you leave, add a shared <strong>thread</strong> below for next time. Save it with the card’s thinking so it is here when you return.</p>
       <header><p class="thinking-workspace__eyebrow">ROOM TO THINK · {{ board?.name }}</p><h1>{{ card.title }}</h1><RouterLink to="/workspace/plan">Choose work for your personal plan</RouterLink><p>Keep possibilities, questions and next steps close to the work. A simple card can stay simple.</p></header>
       <ThinkingDeckPanel :key="card.id" :board-id="boardId" :card-id="cardId" @dirty-change="dirty = $event" />
     </template>
