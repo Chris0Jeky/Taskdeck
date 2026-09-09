@@ -58,9 +58,9 @@ counts are not used as evidence. Further implementation is tracked in
 2. **Contextual companion and proposal overlays.** Bind current board/card/selected source evidence;
    render the existing effective proposal revision in place and preserve the approve/apply separation.
    Integrate private memory retrieval only with explicit user scope and archived exclusion.
-3. **Studio continuity and planning.** Add a chosen personal plan, last-worked continuation, Focus and
-   Make room without silently changing due dates. Broader Board/List/Horizon representations follow
-   evidence from the current selectable experiences.
+3. **Studio continuity and planning.** Implemented personal plan, last-worked continuation, Focus and
+   Make room without changing due dates. List/Board/Horizon represent chosen work over the same cards.
+   Direct product verification is recorded below; subjective experience preference remains a human choice.
 4. **Shared source infrastructure.** Connect question originals and audio representations to Context
    Fabric, with supersession/history and retention/deletion/export coverage. Keep board-shared thinking
    and user-private answers separate throughout those pipelines.
@@ -73,3 +73,19 @@ counts are not used as evidence. Further implementation is tracked in
 These are remaining prototype capabilities, not blockers hidden behind placeholder success states.
 Existing owner decisions remain in [OUTSTANDING_TASKS.md](../../OUTSTANDING_TASKS.md); no publisher,
 signing, private-instance, release/runner or subjective palette/dogfooding item is inferred complete.
+
+## Personal planning continuation (2026-09-09)
+
+`WorkspacePlanApiTests` proves authentication, viewer permission for private choices, foreign-card
+rejection, stale and interleaved writer conflicts, archive/deletion/revocation redaction, explicit
+focus timestamps, both account exports, account erasure and unchanged card material. Its streaming
+export regression catches synchronous response flushing; bounded plan serialization writes through
+the existing asynchronous stream path. `UserPreferenceRaceTests` covers the existing insert-or-ignore
+preference initialization with new default columns.
+
+`workspacePlanStore.spec.ts` and `usePlanCardPicker.spec.ts` exercise identity clearing, old-response
+rejection, failed-write refresh requirements, project pagination and discovery retry. The Chromium
+journey `tests/e2e/workspace-plan.spec.ts` covers plan/reload/List/Board/Horizon, Focus, Home resume,
+Make room, unchanged card deadlines, 375px width and automated accessibility. Use the repository
+Playwright setup with an isolated synthetic database. Exact full-suite and hosted results belong to
+the continuation PR; no live working database or physical device is claimed by these checks.

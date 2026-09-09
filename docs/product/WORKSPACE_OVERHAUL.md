@@ -103,3 +103,25 @@ hypotheses. Archive is not erasure. A human statement is not independently verif
 Existing human decisions remain in [OUTSTANDING_TASKS.md](../../OUTSTANDING_TASKS.md): publisher
 and signing, private-instance execution, release/runner settings, and the remaining subjective
 night-palette and dogfooding choices. This overhaul does not infer any of those complete.
+
+## Personal plan and continuity
+
+Open **Personal plan** from navigation or Home. Choose any readable active project and card, select
+**Plan for**, then **Add to plan**. The plan persists privately across reloads and experiences.
+It holds at most 40 cards. **List** preserves your chosen order, **Board** groups by current project
+and column, and **Horizon** groups by your chosen plan date. These are representations of your plan;
+the actual board and calendar remain available for broader work.
+
+**Focus** records the card and server time, then opens its Thinking Deck with surrounding navigation hidden. A saved thread layer holds a note
+for next time; the normal draft/leave guard remains in place. Home and the plan offer
+**Resume focus**. This is the last card you explicitly focused, not a guess based on views, due dates,
+board activity or a collaborator's edits. **Plan tomorrow** changes only its personal plan date;
+**Make room** removes it from the plan without deleting, completing or rescheduling the card.
+Removing a plan entry retains its last-focus receipt. Unavailable cards show no title or board metadata
+and remain removable. Refresh rechecks permissions and live card state; no background attention or
+automatic board mutation is added.
+
+Concurrent updates reject stale revisions. After an unconfirmed save, refresh before retrying so a
+lost response cannot silently overwrite another session. Account export includes plan references and
+last focus in both formats; shared board exports exclude them. Account deletion erases the preference
+row. An additive migration introduces the plan JSON and revision columns with empty defaults.
