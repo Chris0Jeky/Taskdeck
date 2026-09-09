@@ -15,3 +15,7 @@ The capture harness uses the repository Playwright fixture helpers with one synt
 The current night baseline keeps the shipped behavior. It records a real parity finding on Review: the body is selected as `paper-night`, but `PaperReviewView` mounts a static `.paper` root, so its inner surface computes the shipped light tokens. Candidate Review rows are clearly experimental comparisons: the harness applies the full night token set plus the selected `palettes.json` surface overrides to the real `.paper` root with page-local CSS only. This makes the candidate surfaces comparable without claiming a production fix or palette adoption. Home and Today inherit the selected body scope directly.
 
 The harness asserts the Playwright page viewport and PNG IHDR dimensions are both exactly 1440 by 1000, verifies selected candidate values on the document and actual surface roots, and checks that populated app text is present before each capture. Its source is retained under [`harness/`](./harness/); the disposable Mock database and server state are excluded from delivery.
+
+## Source binding
+
+The screenshots were rendered from application base `64508d3e2f2d9dc8f8ea9aa5e9eb4539173ccb08`. The candidate measurements and palette inputs were saved at `209d5af1c5758f10305e4fe68b28f44602807dcb` before this evidence package was integrated. The later `origin/main` merge into this branch is integration context only; it does not imply a recapture or change the source binding of these screenshots and measurements.
