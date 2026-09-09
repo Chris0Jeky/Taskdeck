@@ -597,7 +597,7 @@ async function createFixture(platform) {
   }
 }
 
-async function installPostTaskkillUnknownProbe(fixture) {
+async function installTransientIdentityProbe(fixture, probeNumber = 2, persistent = false) {
   const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
   const source = await readFile(launcherPath, 'utf8')
   const identityFunction = 'function Get-ProcessIdentityStatus {'
@@ -616,8 +616,8 @@ function Get-ProcessIdentityStatus {
     $actual = Get-RealProcessIdentityStatus -Record $Record
     if (-not $script:IdentityProbeCounts.ContainsKey($key)) { $script:IdentityProbeCounts[$key] = 0 }
     $script:IdentityProbeCounts[$key] = [int]$script:IdentityProbeCounts[$key] + 1
-    if ([int]$script:IdentityProbeCounts[$key] -eq 2) {
-        Write-Host '[dev-up-test] Forced transient post-taskkill identity: Unknown'
+      if (${persistent ? '$true' : `[int]$script:IdentityProbeCounts[$key] -eq ${probeNumber}`}) {
+          Write-Host '[dev-up-test] Forced transient identity probe ${probeNumber}: Unknown'
         return 'Unknown'
     }
     return $actual
@@ -626,6 +626,33 @@ function Get-ProcessIdentityStatus {
 function Assert-ProcessIdentityMatch {`,
     )
   await writeFile(launcherPath, instrumented)
+}
+
+async function installPidFileLockProbe(fixture, persistent = false) {
+  const launcherPath = join(fixture.scriptsDir, 'dev-up.ps1')
+  const source = await readFile(launcherPath, 'utf8')
+  const anchor = 'function Stop-LoadedStack {'
+  assert.equal(source.split(anchor).length - 1, 1, 'unexpected stack-stop function count')
+  await writeFile(launcherPath, source.replace(anchor, String.raw`
+$script:PidRemovalProbed = $false
+function Remove-Item {
+    [CmdletBinding()]
+    param([string]$LiteralPath)
+    if ($LiteralPath -eq $PidFile -and (${persistent ? '$true' : '-not $script:PidRemovalProbed'})) {
+        $script:PidRemovalProbed = $true
+        $stateLock = [System.IO.File]::Open($LiteralPath, 'Open', 'ReadWrite', 'None')
+        try {
+            Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -ErrorAction Stop
+        } finally {
+            $stateLock.Dispose()
+            Write-Host '[dev-up-test] Released transient PID-file lock'
+        }
+        return
+    }
+    Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -ErrorAction Stop
+}
+
+function Stop-LoadedStack {`))
 }
 
 async function installExitedPreflightRecordProbe(fixture) {
@@ -1435,38 +1462,64 @@ if (powershell) {
     }
   })
 
-  test('PowerShell: Stop retries transient post-taskkill Unknown until both trees are missing', { concurrency: false }, async () => {
-    const platform = { name: 'PowerShell', launcher: 'dev-up.ps1' }
-    const fixture = await createFixture(platform)
-    const apiPort = await getFreePort()
-    const frontendPort = await getFreePort()
-    const foreign = await listenForeign()
-    try {
-      const startResult = runLauncher(platform, fixture, {
-        apiPort,
-        env: { FAKE_FRONTEND_PORT: String(frontendPort) },
-      })
-      assert.ifError(startResult.error)
-      assert.equal(startResult.status, 0, combinedOutput(startResult))
-      assert.equal(await canBind(apiPort), false)
-      assert.equal(await canBind(frontendPort), false)
+  for (const probeNumber of [1, 2, 'persistent', 'state-lock', 'repeated-state-lock']) {
+    test(`PowerShell: Stop handles cleanup probe ${probeNumber} without losing identity safety`, { concurrency: false }, async () => {
+      const platform = { name: 'PowerShell', launcher: 'dev-up.ps1' }
+      const fixture = await createFixture(platform)
+      const apiPort = await getFreePort()
+      const frontendPort = await getFreePort()
+      const foreign = await listenForeign()
+      try {
+        const startResult = runLauncher(platform, fixture, {
+          apiPort,
+          env: { FAKE_FRONTEND_PORT: String(frontendPort) },
+        })
+        assert.ifError(startResult.error)
+        assert.equal(startResult.status, 0, combinedOutput(startResult))
+        assert.equal(await canBind(apiPort), false)
+        assert.equal(await canBind(frontendPort), false)
 
-      await installPostTaskkillUnknownProbe(fixture)
-      const stopResult = runLauncher(platform, fixture, { stop: true })
-      assert.ifError(stopResult.error)
-      assert.equal(stopResult.status, 0, combinedOutput(stopResult))
-      assert.match(combinedOutput(stopResult), /Forced transient post-taskkill identity: Unknown/)
-      assert.match(combinedOutput(stopResult), /Stack stopped/)
-      assert.equal(await readOptional(fixture.stateFile), null)
-      assert.equal(await canBind(apiPort), true)
-      assert.equal(await canBind(frontendPort), true)
-      assert.equal(foreign.listening, true, 'Stop killed an unrelated listener')
-    } finally {
-      if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
-      await new Promise((resolve) => foreign.close(resolve))
-      await removeFixture(fixture)
-    }
-  })
+        if (String(probeNumber).endsWith('state-lock')) await installPidFileLockProbe(fixture, probeNumber === 'repeated-state-lock')
+        else await installTransientIdentityProbe(fixture, probeNumber === 'persistent' ? 1 : probeNumber, probeNumber === 'persistent')
+        const stopResult = runLauncher(platform, fixture, { stop: true })
+        assert.ifError(stopResult.error)
+        if (probeNumber === 'repeated-state-lock') {
+          assert.equal(stopResult.status, 1, combinedOutput(stopResult))
+          assert.match(combinedOutput(stopResult), /PID state could not be removed/)
+          assert.notEqual(await readOptional(fixture.stateFile), null)
+          assert.equal(await canBind(apiPort), true)
+          assert.equal(await canBind(frontendPort), true)
+          const attempts = combinedOutput(stopResult).match(/Released transient PID-file lock/g)?.length ?? 0
+          assert.ok(attempts > 1 && attempts <= 10, `unbounded or absent removal retries: ${attempts}`)
+          assert.equal(foreign.listening, true)
+          return
+        }
+        if (probeNumber === 'persistent') {
+          assert.equal(stopResult.status, 1, combinedOutput(stopResult))
+          assert.match(combinedOutput(stopResult), /identity is unknown/)
+          assert.notEqual(await readOptional(fixture.stateFile), null)
+          assert.equal(await canBind(apiPort), false, 'unverified API identity was killed')
+          assert.equal(await canBind(frontendPort), false, 'unverified frontend identity was killed')
+          assert.equal(foreign.listening, true)
+          return
+        }
+        assert.equal(stopResult.status, 0, combinedOutput(stopResult))
+        assert.match(combinedOutput(stopResult), probeNumber === 'state-lock'
+          ? /Released transient PID-file lock/
+          : new RegExp(`Forced transient identity probe ${probeNumber}: Unknown`))
+        assert.match(combinedOutput(stopResult), /Stack stopped/)
+        assert.equal(await readOptional(fixture.stateFile), null)
+        assert.equal(await canBind(apiPort), true)
+        assert.equal(await canBind(frontendPort), true)
+        assert.equal(foreign.listening, true, 'Stop killed an unrelated listener')
+      } finally {
+        await copyFile(powershellLauncher, join(fixture.scriptsDir, 'dev-up.ps1'))
+        if (existsSync(fixture.stateFile)) runLauncher(platform, fixture, { stop: true })
+        await new Promise((resolve) => foreign.close(resolve))
+        await removeFixture(fixture)
+      }
+    })
+  }
 }
 
 if (bash) {
