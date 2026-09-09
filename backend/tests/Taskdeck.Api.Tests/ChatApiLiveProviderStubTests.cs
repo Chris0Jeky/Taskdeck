@@ -64,6 +64,43 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
     }
 
     [Fact]
+    public async Task SendMessage_DispatchedProviderProposal_PersistsProjectedProducerMetadata()
+    {
+        using var factory = _baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Development");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ILlmProvider>();
+                services.AddScoped<ILlmProvider>(_ => new OpenAiProviderStub(_ => { }));
+            });
+        });
+        using var client = factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "chat-dispatch-provenance");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "Dispatch provenance board");
+        var createSessionResponse = await client.PostAsJsonAsync(
+            "/api/llm/chat/sessions",
+            new CreateChatSessionDto("Dispatch provenance", boardId));
+        var session = await createSessionResponse.Content.ReadFromJsonAsync<ChatSessionDto>();
+
+        var sendResponse = await client.PostAsJsonAsync(
+            $"/api/llm/chat/sessions/{session!.Id}/messages",
+            new SendChatMessageDto("create card 'Dispatch proof'"));
+
+        sendResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var assistant = await sendResponse.Content.ReadFromJsonAsync<ChatMessageDto>();
+        assistant!.MessageType.Should().Be("proposal-reference");
+        assistant.ProposalId.Should().NotBeNull();
+
+        var metadataResponse = await client.GetAsync(
+            $"/api/automation/proposals/{assistant.ProposalId}/provenance/metadata");
+        metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var metadata = await metadataResponse.Content.ReadFromJsonAsync<ProposalProvenanceMetadataDto>();
+        metadata.Should().Be(new ProposalProvenanceMetadataDto("OpenAI", "gpt-4o-mini", null));
+        user.UserId.Should().NotBeEmpty();
+    }
+
+    [Fact]
     public async Task GetProviderHealth_ShouldExposeLiveProviderStubStatus()
     {
         using var factory = _baseFactory.WithWebHostBuilder(builder =>
@@ -212,6 +249,7 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
         public Task<LlmCompletionResult> CompleteAsync(ChatCompletionRequest request, CancellationToken ct = default)
         {
             _onCompletion(request);
+            MarkDispatched(request, "OpenAI", "gpt-4o-mini");
             return Task.FromResult(new LlmCompletionResult(
                 Content: "OpenAI stub completion for integration test.",
                 TokensUsed: 123,
@@ -247,5 +285,16 @@ public class ChatApiLiveProviderStubTests : IClassFixture<TestWebApplicationFact
                 Model: "gpt-4o-mini",
                 IsProbed: true);
         }
+    }
+
+    // Dispatch state is intentionally internal to Application. The API integration
+    // stub uses reflection so production does not expose a test-only stamping hook.
+    private static void MarkDispatched(ChatCompletionRequest request, string provider, string model)
+    {
+        var context = typeof(ChatCompletionRequest)
+            .GetProperty("DispatchContext", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(request)!;
+        context.GetType().GetMethod("Observe")!.Invoke(context, [provider, model]);
+        context.GetType().GetMethod("MarkDispatched")!.Invoke(context, null);
     }
 }

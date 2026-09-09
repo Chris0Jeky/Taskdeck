@@ -1,11 +1,15 @@
 using System.Text.Json;
+using Taskdeck.Application.DTOs;
 
 namespace Taskdeck.Application.Services.Tools;
 
 /// <summary>
 /// Context passed to tool executors, providing board scope and user identity.
 /// </summary>
-public record ToolExecutionContext(Guid BoardId, Guid UserId);
+public record ToolExecutionContext(
+    Guid BoardId,
+    Guid UserId,
+    ProposalProducerMetadata? ProducerMetadata = null);
 
 /// <summary>
 /// Executes a single tool invocation against the board data layer.

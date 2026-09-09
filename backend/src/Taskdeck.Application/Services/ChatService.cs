@@ -360,6 +360,7 @@ public class ChatService : IChatService
                 var usedToolCalling = false;
                 var failedProposalToolAttempt = false;
                 LlmCompletionResult? reusableNoToolResponse = null;
+                ProposalProducerMetadata? proposalProducerMetadata = null;
 
                 // Try tool-calling path for board-scoped sessions with orchestrator.
                 // The feature flag allows disabling the orchestrator without code changes
@@ -378,6 +379,8 @@ public class ChatService : IChatService
 
                     var toolResult = await _toolCallingOrchestrator.ExecuteAsync(
                         toolCompletionRequest, session.BoardId.Value, userId, ct);
+                    var firstToolRoundProducer = ProposalProducerMetadataResolver.FromDispatchedRequest(
+                        toolCompletionRequest.DispatchContext);
 
                     var toolCallsActuallyMade = toolResult.ToolCallLog.Count > 0;
                     failedProposalToolAttempt = toolResult.ToolCallLog.Any(IsFailedProposalToolCall);
@@ -474,6 +477,7 @@ public class ChatService : IChatService
                             Model: toolResult.Model,
                             IsDegraded: false,
                             Instructions: classifiedInstructions);
+                        proposalProducerMetadata = firstToolRoundProducer;
 
                         // Finalize the quota reservation for the already-made call
                         if (_quotaService != null && quotaReservationId is Guid reuseResId && toolResult.TokensUsed > 0)
@@ -523,6 +527,8 @@ public class ChatService : IChatService
                             SystemPrompt: clarificationPrompt);
                         quotaDispatchContext = completionRequest.DispatchContext;
                         llmResult = await _llmProvider.CompleteAsync(completionRequest, ct);
+                        proposalProducerMetadata = ProposalProducerMetadataResolver.FromDispatchedRequest(
+                            completionRequest.DispatchContext);
 
                         // Finalize with authoritative combined usage when present. If the provider
                         // omitted usage, commit the reservation estimate so a short output cannot
@@ -627,7 +633,19 @@ public class ChatService : IChatService
                                 // atomic proposal. For single instructions, use the original
                                 // single-instruction parser for backward compatibility.
                                 Result<ProposalDto>? proposalResult;
-                                if (instructionsToParse.Count > 1)
+                                if (instructionsToParse.Count > 1 && proposalProducerMetadata is not null)
+                                {
+                                    proposalResult = await _automationPlanner.ParseBatchInstructionAsync(
+                                        instructionsToParse,
+                                        userId,
+                                        session.BoardId,
+                                        ct,
+                                        ProposalSourceType.Chat,
+                                        session.Id.ToString(),
+                                        correlationId: null,
+                                        proposalProducerMetadata);
+                                }
+                                else if (instructionsToParse.Count > 1)
                                 {
                                     proposalResult = await _automationPlanner.ParseBatchInstructionAsync(
                                         instructionsToParse,
@@ -636,6 +654,18 @@ public class ChatService : IChatService
                                         ct,
                                         sourceType: ProposalSourceType.Chat,
                                         sourceReferenceId: session.Id.ToString());
+                                }
+                                else if (proposalProducerMetadata is not null)
+                                {
+                                    proposalResult = await _automationPlanner.ParseInstructionAsync(
+                                        instructionsToParse[0],
+                                        userId,
+                                        session.BoardId,
+                                        ct,
+                                        ProposalSourceType.Chat,
+                                        session.Id.ToString(),
+                                        correlationId: null,
+                                        proposalProducerMetadata);
                                 }
                                 else
                                 {
