@@ -1,5 +1,21 @@
 # Workspace overhaul validation and follow-through
 
+## Original-source context continuation (2026-09-09)
+
+`ChatOriginalContextApiTests.cs` extends the context API suite with original-only dispatch, exact
+historical receipts, stream replay, immutable source membership, current-version rejection, private
+owner/access checks, bounded pages/excerpts and untracked current-memory reads. Source selection
+does not introduce a migration, implicit retrieval, background processing or automatic board writes.
+`ChatOriginalSourcePicker.spec.ts`, the parent picker suite and the API client suite cover explicit
+load, text escaping, page continuation, the combined five-source budget, retry and stale responses
+after identity/revision changes or unmount. `original-source-context.spec.ts` uses a fresh synthetic
+account to select a superseded answer, send through the real API, reload all four experiences and
+inspect the receipt at 375px with an accessibility scan. Execute with a dedicated database and
+`TASKDECK_E2E_REUSE_EXISTING_SERVER=0`; exact run results are recorded with the continuation PR.
+
+These checks prove selection and source transport with the test/Mock provider. They do not establish
+live model answer quality, audio/transcription quality, release deployment or physical-device acceptance.
+
 Date: 2026-09-08 · Delivery tracker: [#2800](https://github.com/Chris0Jeky/Taskdeck/issues/2800)
 
 The [resource map and feature ledger](WORKSPACE_OVERHAUL.md) distinguish supplied design intent from

@@ -2,6 +2,15 @@
 
 Last Updated: 2026-09-09
 
+Companion's source picker also offers individual preserved originals beside each private memory.
+Open **Choose original sources**, inspect the saved excerpt, then select the exact answer or evidence
+asset for the next message. Superseded answers are explicitly historical. Current memories and
+originals share a five-item limit, and sources are sent to the configured model only when selected
+for processing. Source receipts keep the asset fingerprint and memory version across reloads and
+experience switches. Refresh choices after a correction or access change. Older memories without
+native sources can first be preserved from Memory. No original is rewritten and board changes
+still require Review/Approve/Apply.
+
 Delivery tracker: [#2800](https://github.com/Chris0Jeky/Taskdeck/issues/2800).
 
 The maintainer authorized this overhaul on 2026-09-08: map all supplied prototypes and chats,

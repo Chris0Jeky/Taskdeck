@@ -2,6 +2,11 @@
 
 Last Updated: 2026-09-09
 
+Original-source Companion continuation (#2808):
+
+- Companion can explicitly select individual native private-memory text sources, including superseded answers. The server checks owner, active board access, memory revision, capture membership and content hash before model processing. Receipts retain the asset identity, fingerprint and supersession state; replay revalidates them. Unselected originals are not added to context.
+- Source choices load on request in pages of ten with bounded excerpts. Five combined private memories/originals and the existing total context budget apply. Context resolution reads current memory rows without historical graphs. This reduces copying and source maintenance while retaining explicit Review/Approve/Apply. Audio, transcription, broader observations and model-quality acceptance remain separate work.
+
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
 **Direction** (product identity, release themes, open strategy decisions) is owned by [`docs/strategy/PRODUCT_DIRECTION.md`](strategy/PRODUCT_DIRECTION.md).
