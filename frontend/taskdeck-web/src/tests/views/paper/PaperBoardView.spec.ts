@@ -133,7 +133,7 @@ function mountView(props: Record<string, unknown> = {}) {
       stubs: {
         CardModal: {
           name: 'CardModal',
-          props: ['card', 'isOpen', 'labels', 'presentation'],
+          props: ['card', 'isOpen', 'labels', 'presentation', 'suppressDiscardPrompt', 'skipFocusRestore'],
           emits: ['dirty-change', 'updated', 'close'],
           template: '<div v-if="isOpen" data-testid="paper-card-modal" :data-presentation="presentation">{{ card.title }}</div>',
         },
@@ -366,6 +366,30 @@ describe('PaperBoardView', () => {
     await nextTick()
     await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
     await expect(allowedNavigation).resolves.toBe(true)
+    expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
+  })
+
+  it('lets the parent own the single confirmation when route navigation supersedes card close', async () => {
+    const wrapper = mountView()
+    await openDirtyCard(wrapper, cardsByColumn.get('col-backlog')![0]!)
+    const modal = wrapper.findComponent({ name: 'CardModal' })
+
+    const cancelledNavigation = routeLeaveGuard!()
+    await nextTick()
+    expect(modal.props('suppressDiscardPrompt')).toBe(true)
+    expect(wrapper.findAll('[role="dialog"]')).toHaveLength(1)
+
+    await wrapper.get('[data-testid="card-switch-cancel"]').trigger('click')
+    await expect(cancelledNavigation).resolves.toBe(false)
+    await nextTick()
+    expect(modal.props('suppressDiscardPrompt')).toBe(false)
+    expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
+
+    const confirmedNavigation = routeUpdateGuard!()
+    await nextTick()
+    expect(modal.props('suppressDiscardPrompt')).toBe(true)
+    await wrapper.get('[data-testid="card-switch-confirm"]').trigger('click')
+    await expect(confirmedNavigation).resolves.toBe(true)
     expect(wrapper.find('[data-testid="paper-card-modal"]').exists()).toBe(false)
   })
 
