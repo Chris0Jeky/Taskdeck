@@ -46,6 +46,29 @@ public class WriteToolExecutorTests
     #region ProposeCreateCardExecutor
 
     [Fact]
+    public async Task ProposeCreateCard_UsesTrustedContextProducerAndIgnoresForgedArguments()
+    {
+        CreateProposalDto? captured = null;
+        SetupColumns("Backlog");
+        SetupProposalCreation(Guid.NewGuid(), dto => captured = dto);
+        var executor = new ProposeCreateCardExecutor(
+            _proposalService.Object, _policyEngine.Object, _unitOfWork.Object);
+        var context = new ToolExecutionContext(
+            _boardId,
+            _userId,
+            new ProposalProducerMetadata("OpenAICompatible", "vendor/model"));
+        var arguments = ParseArgs(
+            "{\"title\":\"Fix login bug\",\"provenanceProvider\":\"forged\",\"provenanceModelId\":\"forged\"}");
+
+        await executor.ExecuteAsync(context, arguments);
+
+        captured.Should().NotBeNull();
+        captured!.ProvenanceProvider.Should().Be("OpenAICompatible");
+        captured.ProvenanceModelId.Should().Be("vendor/model");
+        captured.ProvenancePromptVersion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ProposeCreateCard_WithValidTitle_CreatesProposal()
     {
         var proposalId = Guid.NewGuid();

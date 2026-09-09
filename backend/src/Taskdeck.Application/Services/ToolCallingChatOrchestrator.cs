@@ -101,13 +101,19 @@ public sealed class ToolCallingChatOrchestrator
             }
 
             LlmToolCompletionResult llmResult;
+            // Keep dispatch identity scoped to the exact provider round that produced
+            // each tool call. The original request remains the first-round receipt used
+            // by ChatService for quota settlement and no-tool response reuse.
+            var roundRequest = round == 1
+                ? request
+                : request with { DispatchContext = new LlmDispatchContext() };
             try
             {
                 using var roundCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 roundCts.CancelAfter(TimeSpan.FromSeconds(PerRoundTimeoutSeconds));
 
                 llmResult = await _provider.CompleteWithToolsAsync(
-                    request, tools, previousResults, roundCts.Token);
+                    roundRequest, tools, previousResults, roundCts.Token);
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -132,6 +138,8 @@ public sealed class ToolCallingChatOrchestrator
             totalTokensUsed += llmResult.TokensUsed;
             provider = llmResult.Provider;
             model = llmResult.Model;
+            var producerMetadata = ProposalProducerMetadataResolver.FromDispatchedRequest(
+                roundRequest.DispatchContext);
 
             // If the LLM returned a degraded result, return it immediately
             if (llmResult.IsDegraded)
@@ -222,7 +230,7 @@ public sealed class ToolCallingChatOrchestrator
                 {
                     try
                     {
-                        var context = new ToolExecutionContext(boardId, userId);
+                        var context = new ToolExecutionContext(boardId, userId, producerMetadata);
                         resultContent = await executor.ExecuteAsync(context, toolCall.Arguments, ct);
                         isError = false;
                     }

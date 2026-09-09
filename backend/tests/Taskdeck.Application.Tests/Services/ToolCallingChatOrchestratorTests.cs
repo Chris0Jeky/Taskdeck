@@ -3,6 +3,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Services;
 using Taskdeck.Application.Services.Tools;
 
@@ -89,6 +90,53 @@ public class ToolCallingChatOrchestratorTests
         result.ToolCallLog[0].ToolName.Should().Be("list_cards_in_column");
         result.ToolCallLog[0].Round.Should().Be(1);
         result.TokensUsed.Should().Be(150); // 50 + 100
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ProposalToolsReceiveProducerFromTheirOwnDispatchRound()
+    {
+        var firstArgs = JsonDocument.Parse(
+            "{\"title\":\"One\",\"provenanceProvider\":\"forged\",\"provenanceModelId\":\"forged\"}").RootElement;
+        var secondArgs = JsonDocument.Parse("{\"title\":\"Two\"}").RootElement;
+        var provider = new Mock<ILlmProvider>();
+        var callSequence = 0;
+        provider.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(),
+                It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, IReadOnlyList<TaskdeckToolSchema> _,
+                IReadOnlyList<ToolCallResult>? _, CancellationToken _) =>
+            {
+                callSequence++;
+                request.DispatchContext.Observe($"Observed-{callSequence}", $"model-{callSequence}");
+                request.DispatchContext.MarkDispatched();
+                return callSequence switch
+                {
+                    1 => new LlmToolCompletionResult(null, 10, "untrusted", "untrusted", [
+                        new ToolCallRequest("call-1", "propose_create_card", firstArgs)], false),
+                    2 => new LlmToolCompletionResult(null, 10, "untrusted", "untrusted", [
+                        new ToolCallRequest("call-2", "propose_create_card", secondArgs)], false),
+                    _ => new LlmToolCompletionResult("Done", 10, "final-provider", "final-model", null, true)
+                };
+            });
+        var contexts = new List<ToolExecutionContext>();
+        var executor = new Mock<IToolExecutor>();
+        executor.SetupGet(e => e.ToolName).Returns("propose_create_card");
+        executor.Setup(e => e.ExecuteAsync(
+                It.IsAny<ToolExecutionContext>(), It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
+            .Callback<ToolExecutionContext, JsonElement, CancellationToken>((context, _, _) => contexts.Add(context))
+            .ReturnsAsync("{\"full_proposal_id\":\"11111111-1111-1111-1111-111111111111\"}");
+        var orchestrator = new ToolCallingChatOrchestrator(
+            provider.Object,
+            new ToolExecutorRegistry([executor.Object]),
+            new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
+
+        await orchestrator.ExecuteAsync(MakeRequest("Create two cards"), _boardId, Guid.NewGuid());
+
+        contexts.Should().HaveCount(2);
+        contexts[0].ProducerMetadata.Should().Be(new ProposalProducerMetadata("Observed-1", "model-1"));
+        contexts[1].ProducerMetadata.Should().Be(new ProposalProducerMetadata("Observed-2", "model-2"));
     }
 
     [Fact]

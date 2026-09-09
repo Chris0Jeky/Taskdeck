@@ -15,6 +15,19 @@ public interface IAutomationPlannerService
         string? sourceReferenceId = null,
         string? correlationId = null);
 
+    Task<Result<ProposalDto>> ParseInstructionAsync(
+        string instruction,
+        Guid userId,
+        Guid? boardId,
+        CancellationToken cancellationToken,
+        ProposalSourceType sourceType,
+        string? sourceReferenceId,
+        string? correlationId,
+        ProposalProducerMetadata producerMetadata)
+        => ParseInstructionAsync(
+            instruction, userId, boardId, cancellationToken, sourceType,
+            sourceReferenceId, correlationId);
+
     /// <summary>
     /// Parses multiple instructions into a single multi-operation proposal.
     /// Each instruction is parsed independently and all resulting operations
@@ -29,4 +42,17 @@ public interface IAutomationPlannerService
         ProposalSourceType sourceType = ProposalSourceType.Manual,
         string? sourceReferenceId = null,
         string? correlationId = null);
+
+    Task<Result<ProposalDto>> ParseBatchInstructionAsync(
+        IReadOnlyList<string> instructions,
+        Guid userId,
+        Guid? boardId,
+        CancellationToken cancellationToken,
+        ProposalSourceType sourceType,
+        string? sourceReferenceId,
+        string? correlationId,
+        ProposalProducerMetadata producerMetadata)
+        => ParseBatchInstructionAsync(
+            instructions, userId, boardId, cancellationToken, sourceType,
+            sourceReferenceId, correlationId);
 }

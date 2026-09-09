@@ -156,7 +156,8 @@ public static class LlmProviderRegistration
         })
         .AddPolicyHandler(openAiCircuitBreakerPolicy)
         .RemoveAllLoggers()
-        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>()
+        .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
         services.AddHttpClient(OpenAiCompatibleHttpClientName, (sp, client) =>
         {
             var settings = sp.GetRequiredService<LlmProviderSettings>();
@@ -210,7 +211,8 @@ public static class LlmProviderRegistration
         })
         .AddPolicyHandler(ollamaCircuitBreakerPolicy)
         .RemoveAllLoggers()
-        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>();
+        .AddHttpMessageHandler<ProtectedOutboundTelemetryHandler>()
+        .AddHttpMessageHandler(_ => new LlmDispatchTrackingHandler());
 
         services.AddScoped<MockLlmProvider>();
 

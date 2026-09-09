@@ -40,6 +40,35 @@ public class AutomationPlannerServiceTests
     #region ParseInstruction Tests
 
     [Fact]
+    public async Task ParseInstruction_DispatchedProducerMetadata_StampsTrustedProposalFields()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var column = TestDataBuilder.CreateColumn(boardId, "To Do", 0);
+        CreateProposalDto? captured = null;
+        _columnRepoMock.Setup(r => r.GetByBoardIdAsync(boardId, default))
+            .ReturnsAsync([column]);
+        _policyEngineMock.Setup(e => e.ClassifyRisk(It.IsAny<IEnumerable<ProposalOperationDto>>()))
+            .Returns(RiskLevel.Low);
+        _policyEngineMock.Setup(e => e.ValidatePermissionsAsync(
+                userId, boardId, It.IsAny<IEnumerable<ProposalOperationDto>>(), BoardAccessBar.Write, default))
+            .ReturnsAsync(Result.Success());
+        _proposalServiceMock.Setup(s => s.CreateProposalAsync(It.IsAny<CreateProposalDto>(), default))
+            .Callback<CreateProposalDto, CancellationToken>((dto, _) => captured = dto)
+            .ReturnsAsync(Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "captured"));
+
+        await _service.ParseInstructionAsync(
+            "create card 'Test Task'", userId, boardId, default,
+            ProposalSourceType.Chat, "session-1", null,
+            new ProposalProducerMetadata("OpenAICompatible", "vendor/model"));
+
+        captured.Should().NotBeNull();
+        captured!.ProvenanceProvider.Should().Be("OpenAICompatible");
+        captured.ProvenanceModelId.Should().Be("vendor/model");
+        captured.ProvenancePromptVersion.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ParseInstruction_ShouldReturnFailure_ForEmptyInstruction()
     {
         // Arrange

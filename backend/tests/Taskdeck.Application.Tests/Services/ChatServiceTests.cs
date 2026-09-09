@@ -1673,6 +1673,168 @@ public class ChatServiceTests
             new Mock<ILogger<ToolCallingChatOrchestrator>>().Object);
     }
 
+    private static ProposalDto SuccessfulChatProposal(Guid proposalId, Guid userId, Guid boardId) => new(
+        proposalId,
+        ProposalSourceType.Chat,
+        null,
+        boardId,
+        userId,
+        ProposalStatus.PendingReview,
+        RiskLevel.Low,
+        "summary",
+        null,
+        null,
+        DateTimeOffset.UtcNow,
+        DateTimeOffset.UtcNow,
+        DateTime.UtcNow.AddHours(1),
+        null,
+        null,
+        null,
+        null,
+        "corr",
+        []);
+
+    [Fact]
+    public async Task SendMessageAsync_DispatchedProvider_StampsSingleProposalProducer()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Dispatched proposal", boardId);
+        _chatSessionRepoMock.Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock.Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "vendor/model");
+                request.DispatchContext.MarkDispatched();
+                return new LlmCompletionResult(
+                    "Creating it.", 12, true, "card.create",
+                    Provider: "forged-result-provider", Model: "forged-result-model");
+            });
+        _plannerMock.Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId, It.IsAny<CancellationToken>(),
+                ProposalSourceType.Chat, session.Id.ToString(), null,
+                It.Is<ProposalProducerMetadata>(metadata =>
+                    metadata.Provider == "OpenAICompatible" && metadata.Model == "vendor/model" &&
+                    metadata.PromptVersion == null)))
+            .ReturnsAsync(Result.Success(SuccessfulChatProposal(proposalId, userId, boardId)));
+
+        var result = await _service.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("create card 'x'"), default);
+
+        result.Value.ProposalId.Should().Be(proposalId);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_DispatchedProvider_StampsBatchProposalProducer()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Dispatched batch", boardId);
+        _chatSessionRepoMock.Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock.Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "batch/model");
+                request.DispatchContext.MarkDispatched();
+                return new LlmCompletionResult(
+                    "Creating both.", 18, true, "card.create",
+                    Provider: "untrusted-result", Model: "untrusted-result",
+                    Instructions: ["create card 'One'", "create card 'Two'"]);
+            });
+        _plannerMock.Setup(p => p.ParseBatchInstructionAsync(
+                It.Is<IReadOnlyList<string>>(items => items.Count == 2),
+                userId, boardId, It.IsAny<CancellationToken>(),
+                ProposalSourceType.Chat, session.Id.ToString(), null,
+                It.Is<ProposalProducerMetadata>(metadata =>
+                    metadata.Provider == "OpenAICompatible" && metadata.Model == "batch/model")))
+            .ReturnsAsync(Result.Success(SuccessfulChatProposal(proposalId, userId, boardId)));
+
+        var result = await _service.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("create two cards"), default);
+
+        result.Value.ProposalId.Should().Be(proposalId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SendMessageAsync_UnobservedOrMockProvider_DoesNotStampProducer(bool markMockDispatched)
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Unobserved proposal", boardId);
+        _chatSessionRepoMock.Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock.Setup(p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .ReturnsAsync((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                if (markMockDispatched)
+                {
+                    request.DispatchContext.Observe("Mock", "mock-default");
+                    request.DispatchContext.MarkDispatched();
+                }
+                return new LlmCompletionResult(
+                    "Creating it.", 12, true, "card.create",
+                    Provider: "OpenAICompatible", Model: "vendor/model");
+            });
+        _plannerMock.Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId, It.IsAny<CancellationToken>(),
+                ProposalSourceType.Chat, session.Id.ToString(), null))
+            .ReturnsAsync(Result.Success(SuccessfulChatProposal(proposalId, userId, boardId)));
+
+        var result = await _service.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("create card 'x'"), default);
+
+        result.Value.ProposalId.Should().Be(proposalId);
+        _plannerMock.Verify(p => p.ParseInstructionAsync(
+            It.IsAny<string>(), userId, boardId, It.IsAny<CancellationToken>(),
+            ProposalSourceType.Chat, session.Id.ToString(), null,
+            It.IsAny<ProposalProducerMetadata>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendMessageAsync_ReusedFirstToolRoundResponse_PreservesDispatchProducer()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var proposalId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Reused tool response", boardId);
+        _chatSessionRepoMock.Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        var provider = new Mock<ILlmProvider>();
+        provider.Setup(p => p.CompleteWithToolsAsync(
+                It.IsAny<ChatCompletionRequest>(), It.IsAny<IReadOnlyList<TaskdeckToolSchema>>(),
+                It.IsAny<IReadOnlyList<ToolCallResult>?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ChatCompletionRequest request, IReadOnlyList<TaskdeckToolSchema> _,
+                IReadOnlyList<ToolCallResult>? _, CancellationToken _) =>
+            {
+                request.DispatchContext.Observe("OpenAICompatible", "reuse/model");
+                request.DispatchContext.MarkDispatched();
+                return new LlmToolCompletionResult(
+                    "Creating it.", 20, "untrusted-result", "untrusted-model", null, true);
+            });
+        _plannerMock.Setup(p => p.ParseInstructionAsync(
+                It.IsAny<string>(), userId, boardId, It.IsAny<CancellationToken>(),
+                ProposalSourceType.Chat, session.Id.ToString(), null,
+                It.Is<ProposalProducerMetadata>(metadata =>
+                    metadata.Provider == "OpenAICompatible" && metadata.Model == "reuse/model")))
+            .ReturnsAsync(Result.Success(SuccessfulChatProposal(proposalId, userId, boardId)));
+
+        var service = BuildServiceWithOrchestrator(BuildOrchestrator(provider));
+        var result = await service.SendMessageAsync(
+            session.Id, userId, new SendChatMessageDto("create card 'x'"), default);
+
+        result.Value.ProposalId.Should().Be(proposalId);
+        _llmProviderMock.Verify(
+            p => p.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
     [Fact]
     public async Task SendMessageAsync_BoardScoped_NoToolCalls_ShouldNotCallCompleteAsync()
     {
