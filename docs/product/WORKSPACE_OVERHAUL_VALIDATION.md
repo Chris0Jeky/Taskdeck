@@ -9,6 +9,19 @@ executable application code or committed as public source material.
 
 ## Evidence
 
+The dependency continuation adds `BoardDependencyApiTests` for actor-derived authentication,
+viewer/foreign scope, explicit card immutability, cycles, stale writes, interleaved archive/deletion/CAS,
+audit rollback, deleted references and both JSON export endpoints. Import tests prove ID remapping and
+atomic rejection of foreign links, cycles and unsupported envelope versions. Domain tests cover a
+diamond DAG, cycles, invalid/duplicate links and the 500-edge limit. The repository performs existence
+validation inside its write transaction; the board archive token alone does not serialize independent
+card deletions.
+
+`CardDependencies.spec.ts` covers demand loading, explicit selected mutations, failed-write metadata
+clearing, account changes and viewer rendering. `card-dependencies.spec.ts` proves both relationship
+directions, all four experiences, reload, cycle refusal, export/import, unchanged cards, 375px layout and
+automated accessibility. Exact full-suite and hosted execution results belong to the dependency PR.
+
 Integration checks use an isolated checkout based on `origin/main`, not the maintainer's two unpublished
 local commits. Playwright provisions synthetic accounts and a separate SQLite database. No operational
 database, live external model, microphone or production deployment is part of this proof.
