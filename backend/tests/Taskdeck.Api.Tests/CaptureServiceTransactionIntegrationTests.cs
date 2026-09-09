@@ -15,6 +15,68 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class CaptureServiceTransactionIntegrationTests
 {
+    [Theory]
+    [InlineData(CaptureDisposition.Kept, "\r\n")]
+    [InlineData(CaptureDisposition.Archived, "\r\n")]
+    [InlineData(CaptureDisposition.Kept, "\r")]
+    [InlineData(CaptureDisposition.Archived, "\r")]
+    public async Task LinkedCorrection_AfterRetryFailure_PreservesRawSourceOnDisposition(
+        CaptureDisposition disposition, string lineEnding)
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"taskdeck-source-disposition-{Guid.NewGuid():N}.db");
+        var rawText = $"corrected{lineEnding}second line";
+        try
+        {
+            var options = new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(TestSqlite.ConnectionString(dbPath)).Options;
+            await using var db = new TaskdeckDbContext(options);
+            await db.Database.MigrateAsync();
+            var fixture = CreateLinkedTranscriptFixture("original transcript");
+            db.Users.Add(fixture.User);
+            db.LlmRequests.Add(fixture.Item);
+            db.Transcripts.Add(fixture.Original);
+            db.Captures.Add(fixture.DurableCapture);
+            await db.SaveChangesAsync();
+            var service = CreateTransactionalService(db, fixture.Item, true, out _, out _, useRealQueue: true);
+            var correction = await service.UpdateSuggestionAsync(
+                fixture.User.Id, fixture.Item.Id, new UpdateCaptureSuggestionDto(rawText));
+            correction.IsSuccess.Should().BeTrue(correction.ErrorMessage);
+
+            db.ChangeTracker.Clear();
+            var afterCorrection = await new EfCaptureStore(db).GetByIdForUserAsync(fixture.Item.Id, fixture.User.Id);
+            afterCorrection!.CurrentText.Should().Be(rawText);
+            var rawAsset = afterCorrection.SourceAssets.Single(value => value.IsActive);
+            var row = await db.LlmRequests.SingleAsync(value => value.Id == fixture.Item.Id);
+            CaptureRequestContract.ParseStoredPayload(row.Payload).Text.Should().Be("corrected\nsecond line");
+            // Keep/Archive is legal after failed re-triage, not immediately after a Triaged correction.
+            row.RequeueCompletedCaptureForTriage();
+            row.MarkAsFailed("synthetic retry failure");
+            await db.SaveChangesAsync();
+            db.ChangeTracker.Clear();
+
+            var result = disposition == CaptureDisposition.Kept
+                ? await service.KeepAsync(fixture.User.Id, fixture.Item.Id)
+                : await service.ArchiveAsync(fixture.User.Id, fixture.Item.Id);
+            result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+            db.ChangeTracker.Clear();
+            var persisted = await new EfCaptureStore(db).GetByIdForUserAsync(fixture.Item.Id, fixture.User.Id);
+            persisted!.CurrentText.Should().Be(rawText);
+            persisted.SourceAssets.Should().HaveCount(2);
+            var active = persisted.SourceAssets.Single(value => value.IsActive);
+            active.Id.Should().Be(rawAsset.Id);
+            active.ContentHash.Should().Be(rawAsset.ContentHash);
+            active.TextPayload!.Text.Should().Be(rawText);
+        }
+        finally
+        {
+            foreach (var suffix in new[] { "", "-wal", "-shm", "-journal" })
+            {
+                try { File.Delete(dbPath + suffix); }
+                catch (IOException) { }
+            }
+        }
+    }
+
     [Fact]
     public async Task LinkedCorrection_WhenQueueCasLoses_RollsBackTranscriptAppendOnSqlite()
     {
@@ -500,7 +562,8 @@ public sealed class CaptureServiceTransactionIntegrationTests
         LlmRequest item,
         bool queueCasResult,
         out Mock<IUnitOfWork> unitOfWork,
-        out Func<string?> getReplacementPayload)
+        out Func<string?> getReplacementPayload,
+        bool useRealQueue = false)
     {
         var queue = new Mock<ILlmQueueRepository>();
         string? replacementPayload = null;
@@ -521,6 +584,11 @@ public sealed class CaptureServiceTransactionIntegrationTests
 
         unitOfWork = new Mock<IUnitOfWork>();
         unitOfWork.SetupGet(value => value.LlmQueue).Returns(queue.Object);
+        if (useRealQueue)
+        {
+            unitOfWork.SetupGet(value => value.LlmQueue).Returns(new LlmQueueRepository(db));
+            unitOfWork.SetupGet(value => value.AutomationProposals).Returns(new AutomationProposalRepository(db));
+        }
         IDbContextTransaction? transaction = null;
         unitOfWork.Setup(value => value.BeginTransactionAsync(It.IsAny<CancellationToken>()))
             .Returns(async (CancellationToken cancellationToken) =>
