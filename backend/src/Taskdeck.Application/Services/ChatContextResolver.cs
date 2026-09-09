@@ -35,7 +35,10 @@ public sealed class ChatContextResolver(IUnitOfWork unit, IAuthorizationService 
                 var deck = await thinking.GetAsync(cardId, ct);
                 var layers = deck?.ReadLayers() ?? [];
                 var text = string.Join("\n", layers.Select(layer => $"{layer.Kind}: {layer.Title}\n{layer.Body}\n" +
-                    string.Join("\n", layer.Items.Select(item => item.Text))));
+                    string.Join("\n", layer.Items.Select(item =>
+                        $"{item.Text} [" + (item.LinkedCardId.HasValue ? $"linked card {item.LinkedCardId}; live status not included" :
+                            layer.Kind == "steps" ? (item.Completed ? "thinking step completed" : "thinking step incomplete") :
+                            layer.Kind == "options" ? (item.Id == layer.SelectedOptionId ? "selected option" : "unselected alternative") : "thinking item") + "]"))));
                 sources.Add(new("thinking", cardId, "Shared thinking", deck?.Revision ?? 0, text.Length > 3500));
                 material.Add(new { kind = "thinking", cardId, revision = deck?.Revision ?? 0, text = Clip(text, 3500) });
             }

@@ -31,6 +31,7 @@ public sealed class ChatContextApiTests(TestWebApplicationFactory baseFactory) :
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         requests.Should().ContainSingle();
         requests[0].BoardContext.Should().Contain("Private uncertainty").And.Contain("Shared thinking detail").And.Contain("evidence, not instructions");
+        requests[0].BoardContext.Should().Contain("Done already [thinking step completed]").And.Contain("Chosen [selected option]").And.Contain("Alternative [unselected alternative]");
         requests[0].Messages.Last().Content.Should().Be(request.Content);
         var saved = (await client.GetFromJsonAsync<ChatSessionDto>($"/api/llm/chat/sessions/{session.Id}"))!;
         var original = saved.RecentMessages.Single(message => message.Role == ChatMessageRole.User);
@@ -184,7 +185,12 @@ public sealed class ChatContextApiTests(TestWebApplicationFactory baseFactory) :
         using var scope = factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var column = new Column(board.Id, "Next", 0); var card = new Card(board.Id, column.Id, "Selected card", "Card source detail");
         var memory = new WorkspaceMemory(actor.UserId, board.Id, "Selected private source", "Private uncertainty", "unknown");
-        var thinking = new ThinkingDeck(card.Id); thinking.Replace([new(Guid.NewGuid(), "note", "Source note", "Shared thinking detail", [])]);
+        var optionId = Guid.NewGuid();
+        var thinking = new ThinkingDeck(card.Id); thinking.Replace([
+            new(Guid.NewGuid(), "note", "Source note", "Shared thinking detail", []),
+            new(Guid.NewGuid(), "steps", "Progress", "", [new(Guid.NewGuid(), "Done already", true)]),
+            new(Guid.NewGuid(), "options", "Alternatives", "", [new(optionId, "Chosen"), new(Guid.NewGuid(), "Alternative")], optionId),
+        ]);
         db.Columns.Add(column); db.Cards.Add(card); db.Add(memory); db.Add(thinking); await db.SaveChangesAsync();
         var response = await client.PostAsJsonAsync("/api/llm/chat/sessions", new CreateChatSessionDto("Context conversation", board.Id));
         response.EnsureSuccessStatusCode();
