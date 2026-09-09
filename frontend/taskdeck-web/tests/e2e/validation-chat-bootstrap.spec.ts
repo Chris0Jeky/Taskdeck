@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE_URL, registerAndAttachSession, type AuthResult } from './support/authSession'
+import { API_BASE_URL, API_ORIGIN, registerAndAttachSession, type AuthResult } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
 
@@ -162,6 +162,63 @@ test.describe('TST09 Chat Session Behavior', () => {
     await assertOk(cardsInReviewResponse, 'list cards in Review before Apply')
     const cardsInReview = (await cardsInReviewResponse.json()) as Array<{ title: string }>
     expect(cardsInReview.some((card) => card.title === uniqueCardTitle)).toBeFalsy()
+  })
+
+  test('SC-005b: failed refresh after continuation does not retain the pre-bind fallback turn', async ({ page, request }) => {
+    let sessionDetailReads = 0
+    let messagePosts = 0
+    await page.route((url) => (
+      url.origin === API_ORIGIN && /^\/api\/llm\/chat\/sessions\/[^/]+(?:\/messages)?$/.test(url.pathname)
+    ), async (route) => {
+      const path = new URL(route.request().url()).pathname
+      const method = route.request().method()
+      if (method === 'GET' && /^\/api\/llm\/chat\/sessions\/[^/]+$/.test(path)) {
+        sessionDetailReads += 1
+        if (sessionDetailReads >= 2) {
+          await route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ errorCode: 'SyntheticRefreshFailure', message: 'Refresh unavailable' }),
+          })
+          return
+        }
+      }
+      if (method === 'POST' && path.endsWith('/messages')) {
+        messagePosts += 1
+      }
+      await route.continue()
+    })
+
+    const seed = `${Date.now()}-${crypto.randomUUID().slice(0, 8)}`
+    const boardId = await createBoardWithColumn(request, auth, seed, {
+      boardNamePrefix: 'SliceC Refresh Recovery',
+      description: 'failed refresh recovery validation board',
+      columnNamePrefix: 'Todo',
+    })
+    const instruction = `create card "Refresh Recovery ${seed}"`
+
+    await page.goto('/workspace/automations/chat')
+    await page.getByPlaceholder('Session title').fill(`Refresh Recovery ${seed}`)
+    await page.getByRole('button', { name: 'Create Session' }).click()
+
+    await page.getByPlaceholder('Describe an automation instruction...').fill(instruction)
+    await page.getByRole('button', { name: 'Send Message' }).click()
+
+    const recoveryTurn = page.locator('[data-message-type="action-needs-board"]').last()
+    await expect(recoveryTurn).toBeVisible()
+    await recoveryTurn.getByRole('button', { name: 'Link board' }).click()
+    await expect(recoveryTurn.getByRole('button', { name: 'Continue retained instruction' })).toBeVisible()
+
+    await recoveryTurn.getByRole('button', { name: 'Continue retained instruction' }).click()
+    await expect(page.locator('[data-message-type="proposal-reference"]').last()).toBeVisible()
+
+    const visibleInstructionTurns = page
+      .locator('[data-message-type="text"] .td-message-content')
+      .filter({ hasText: instruction })
+    await expect(visibleInstructionTurns).toHaveCount(2)
+    expect(messagePosts).toBe(2)
+    expect(sessionDetailReads).toBeGreaterThanOrEqual(3)
+    expect(boardId).toBeTruthy()
   })
 
   test('SC-038: LLM health banner displays correct state for mock provider', async ({ page }) => {
