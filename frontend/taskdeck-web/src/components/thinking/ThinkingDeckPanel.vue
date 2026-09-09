@@ -2,6 +2,7 @@
 import { computed, ref, toRef, watch } from 'vue'
 import ThinkingStepCard from './ThinkingStepCard.vue'
 import ThinkingQuestionAnswer from './ThinkingQuestionAnswer.vue'
+import CardDependencies from './CardDependencies.vue'
 import { useThinkingDeck } from '../../composables/useThinkingDeck'
 import type { ThinkingKind, ThinkingLayer } from '../../types/thinking'
 
@@ -14,9 +15,10 @@ const confirmReload = ref(false)
 const pendingRemoval = ref<string | null>(null)
 const kinds: ThinkingKind[] = ['note', 'question', 'options', 'steps', 'thread']
 const promoting = ref(false)
+const dependenciesBusy = ref(false)
 const stepDrafts = ref<Record<string, boolean>>({})
 const privateDrafts = ref<Record<string, boolean>>({})
-const anyDirty = computed(() => promoting.value || dirty.value || layers.value.some(layer => privateDrafts.value[layer.id] || layer.items.some(item => stepDrafts.value[item.id])))
+const anyDirty = computed(() => dependenciesBusy.value || promoting.value || dirty.value || layers.value.some(layer => privateDrafts.value[layer.id] || layer.items.some(item => stepDrafts.value[item.id])))
 watch(anyDirty, value => emit('dirty-change', value), { immediate: true })
 function addItem(layer: ThinkingLayer) {
   if (layer.items.length < 50) layer.items.push({ id: crypto.randomUUID(), text: 'New item', completed: false, linkedCardId: null })
@@ -97,6 +99,7 @@ function reload() { confirmReload.value = false; void load() }
         <span role="status">{{ dirty ? 'Unsaved thinking' : revision ? 'Thinking saved' : 'No layers yet' }}</span>
         <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
       </footer>
+      <CardDependencies :board-id="boardId" :card-id="cardId" @busy="dependenciesBusy = $event" />
     </template>
   </section>
 </template>
