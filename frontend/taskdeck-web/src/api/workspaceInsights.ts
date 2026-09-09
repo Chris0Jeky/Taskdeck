@@ -61,6 +61,11 @@ export const workspaceInsightsApi = {
     return data
   },
 
+  async preserveMemorySources(boardId: string, memories: { id: string; revision: number }[]): Promise<Memory[]> {
+    const { data } = await http.post<Memory[]>('/workspace-memory/preserve-sources', { boardId, memories })
+    return data
+  },
+
   async updateMemory(id: string, request: UpdateMemoryRequest): Promise<Memory> {
     const { data } = await http.put<Memory>(
       `/workspace-memory/${encodeURIComponent(id)}`,

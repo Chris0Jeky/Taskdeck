@@ -4,6 +4,7 @@ import { RouterLink, useRoute } from 'vue-router'
 import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import WorkspaceMemoryExport from '../components/workspace/WorkspaceMemoryExport.vue'
 import WorkspaceMemorySources from '../components/workspace/WorkspaceMemorySources.vue'
+import WorkspaceMemoryPreservation from '../components/workspace/WorkspaceMemoryPreservation.vue'
 import { TdSkeleton } from '../components/ui'
 import { useBoardStore } from '../store/boardStore'
 import TdDialog from '../components/ui/TdDialog.vue'
@@ -280,6 +281,9 @@ watch(queryBoardId, () => {
     </section>
 
     <WorkspaceMemoryExport :board-id="selectedBoardId" :disabled="boardLoading || saving" />
+    <WorkspaceMemoryPreservation :key="`${selectedBoardId}-${showArchived}`" :board-id="selectedBoardId" :memories="memories"
+      :disabled="loading || boardLoading || Boolean(boardError) || showEditor || saving || busyMemoryIds.size > 0"
+      @preserved="updated => updated.forEach(replaceMemory)" />
     <p class="paper-memory__trust-note">
       Memories are private to you and linked to this board. Editing or archiving one never changes board cards, columns, or statuses.
     </p>
