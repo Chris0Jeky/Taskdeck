@@ -1087,6 +1087,50 @@ public class ChatServiceTests
     }
 
     [Fact]
+    public async Task StreamResponseAsync_ShouldSendChronologicalHistory_WhenTrackedMessagesArriveScrambled()
+    {
+        var userId = Guid.NewGuid();
+        var session = new ChatSession(userId, "Scrambled stream history", Guid.NewGuid());
+        var original = new ChatMessage(
+            session.Id,
+            ChatMessageRole.User,
+            "create card for the release follow-up");
+        var clarification = new ChatMessage(
+            session.Id,
+            ChatMessageRole.Assistant,
+            "What should the card be called?",
+            "clarification");
+        var answer = new ChatMessage(session.Id, ChatMessageRole.User, "Ship notes");
+        var baseTime = DateTimeOffset.UtcNow.AddMinutes(-3);
+        SetCreatedAt(original, baseTime);
+        SetCreatedAt(clarification, baseTime.AddMinutes(1));
+        SetCreatedAt(answer, baseTime.AddMinutes(2));
+
+        session.AddMessage(answer);
+        session.AddMessage(clarification);
+        session.AddMessage(original);
+        ChatCompletionRequest? capturedRequest = null;
+        _chatSessionRepoMock
+            .Setup(r => r.GetByIdWithMessagesAsync(session.Id, default))
+            .ReturnsAsync(session);
+        _llmProviderMock
+            .Setup(p => p.StreamAsync(It.IsAny<ChatCompletionRequest>(), default))
+            .Returns((ChatCompletionRequest request, CancellationToken _) =>
+            {
+                capturedRequest = request;
+                return StreamEvents();
+            });
+
+        await foreach (var _ in _service.StreamResponseAsync(session.Id, userId, default)) { }
+
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.Messages.Select(message => message.Content).Should().Equal(
+            "create card for the release follow-up",
+            "What should the card be called?",
+            "Ship notes");
+    }
+
+    [Fact]
     public async Task GetProviderHealthAsync_ShouldSurfaceProviderStatus()
     {
         _llmProviderMock
@@ -3392,6 +3436,9 @@ public class ChatServiceTests
         yield return new LlmTokenEvent("token", true, TokensUsed: 10, Provider: "Mock", Model: "mock-default");
         await Task.CompletedTask;
     }
+
+    private static void SetCreatedAt(Entity entity, DateTimeOffset timestamp)
+        => typeof(Entity).GetProperty(nameof(Entity.CreatedAt))!.SetValue(entity, timestamp);
 
     private static async IAsyncEnumerable<LlmTokenEvent> StreamEventsWithUsage()
     {

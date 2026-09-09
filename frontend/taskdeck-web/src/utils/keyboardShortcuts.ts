@@ -341,6 +341,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerOwner: 'review-keymap',
     handlerEvidence: "case 'Enter':",
     skins: ['paper'],
+    flag: 'newAutomation',
   },
   {
     id: 'review-reject',
@@ -350,6 +351,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerOwner: 'review-keymap',
     handlerEvidence: "case 'Backspace':",
     skins: ['paper'],
+    flag: 'newAutomation',
   },
   {
     id: 'review-request-edit',
@@ -359,6 +361,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerOwner: 'review-keymap',
     handlerEvidence: "if (k === 'e')",
     skins: ['paper'],
+    flag: 'newAutomation',
   },
   {
     id: 'review-defer',
@@ -368,6 +371,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerOwner: 'review-keymap',
     handlerEvidence: "if (k === 'd')",
     skins: ['paper'],
+    flag: 'newAutomation',
   },
   {
     id: 'review-provenance',
@@ -378,6 +382,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerOwner: 'review-keymap',
     handlerEvidence: "if (k === 'p')",
     skins: ['paper'],
+    flag: 'newAutomation',
   },
   {
     id: 'review-preview-diff',
@@ -388,6 +393,7 @@ export const PAPER_SHORTCUT_BINDINGS: readonly ShortcutBinding[] = [
     handlerOwner: 'review-keymap',
     handlerEvidence: "case ' ':",
     skins: ['paper'],
+    flag: 'newAutomation',
   },
   {
     id: 'board-next-card',

@@ -3,7 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { chatApi } from '../api/chatApi'
 import { boardsApi } from '../api/boardsApi'
 import { useToastStore } from '../store/toastStore'
-import type { ChatProviderHealth, ChatSession } from '../types/chat'
+import type { ChatMessage, ChatProviderHealth, ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
 import { normalizeChatRole } from '../utils/chat'
 import { getErrorDisplay } from './useErrorMapper'
@@ -28,10 +28,13 @@ export function useAutomationChat() {
   const bindingMessageId = ref<string | null>(null)
   const boardBindingError = ref<string | null>(null)
   const boardBindingReceipt = ref<string | null>(null)
+  const boardOptionsLoadError = ref<string | null>(null)
   let boardOptionsRequest: Promise<boolean> | null = null
   let sessionSelectionGeneration = 0
   let boardBindingGeneration = 0
   let requestedSessionId: string | null = null
+  let localMessageSequence = 0
+  const localMessagesBySession = new Map<string, ChatMessage[]>()
   const chatHealth = ref<ChatProviderHealth | null>(null)
   const chatHealthLoadError = ref<string | null>(null)
 
@@ -134,6 +137,47 @@ export function useAutomationChat() {
 
   const queryBoardId = computed(() => normalizeBoardIdQueryParam(route.query.boardId))
 
+  function createLocalUserMessage(sessionId: string, content: string, assistantCreatedAt: string): ChatMessage {
+    const assistantTimestamp = Date.parse(assistantCreatedAt)
+    const createdAt = Number.isFinite(assistantTimestamp)
+      ? new Date(assistantTimestamp - 1).toISOString()
+      : new Date().toISOString()
+
+    // Local-only identity: this message is merged into the visible transcript,
+    // never sent back through the chat API. The sequence keeps IDs unique within
+    // this composable while the timestamp fixes the user/reply ordering.
+    localMessageSequence += 1
+    return {
+      id: `local-user-${sessionId}-${localMessageSequence}`,
+      sessionId,
+      role: 'User',
+      content,
+      messageType: 'text',
+      proposalId: null,
+      tokenUsage: null,
+      createdAt,
+    }
+  }
+
+  function retainLocalMessages(sessionId: string, messages: ChatMessage[]): ChatMessage[] {
+    const existing = localMessagesBySession.get(sessionId) ?? []
+    const byId = new Map(existing.map((message) => [message.id, message]))
+    for (const message of messages) {
+      byId.set(message.id, message)
+    }
+    const retained = [...byId.values()]
+    localMessagesBySession.set(sessionId, retained)
+    return retained
+  }
+
+  function mergeLocalMessages(messages: ChatMessage[], localMessages: ChatMessage[]): ChatMessage[] {
+    const knownIds = new Set(messages.map((message) => message.id))
+    return [
+      ...messages,
+      ...localMessages.filter((message) => !knownIds.has(message.id)),
+    ]
+  }
+
   function normalizeSelectedBoardId(rawValue: string): string | null {
     const trimmed = rawValue.trim()
     if (!trimmed) {
@@ -227,6 +271,7 @@ export function useAutomationChat() {
     try {
       const result = await chatApi.getSession(sessionId)
       if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
+      localMessagesBySession.delete(sessionId)
       selectedSession.value = result
     } catch (e: unknown) {
       if (isDisposed || selectionGeneration !== sessionSelectionGeneration) return
@@ -239,6 +284,7 @@ export function useAutomationChat() {
     try {
       const result = await chatApi.getSession(sessionId)
       if (isDisposed || requestedSessionId !== sessionId || selectedSession.value?.id !== sessionId) return
+      localMessagesBySession.delete(sessionId)
       selectedSession.value = result
       const sessionIndex = sessions.value.findIndex((session) => session.id === sessionId)
       if (sessionIndex >= 0) sessions.value.splice(sessionIndex, 1, result)
@@ -322,12 +368,11 @@ export function useAutomationChat() {
       if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
         messageContent.value = ''
         const currentSession = selectedSession.value
+        const localUserMessage = createLocalUserMessage(sessionId, content, sentMessage.createdAt)
+        const retainedLocalMessages = retainLocalMessages(sessionId, [localUserMessage, sentMessage])
         selectedSession.value = {
           ...currentSession,
-          recentMessages: [
-            ...currentSession.recentMessages.filter((message) => message.id !== sentMessage.id),
-            sentMessage,
-          ],
+          recentMessages: mergeLocalMessages(currentSession.recentMessages, retainedLocalMessages),
         }
         await refreshSelectedSession(sessionId)
       }
@@ -402,13 +447,15 @@ export function useAutomationChat() {
     request = (async () => {
       try {
         loadingBoards.value = true
+        boardOptionsLoadError.value = null
         const result = await boardsApi.getBoards()
         if (isDisposed) return false
         availableBoards.value = result
         return true
       } catch (e: unknown) {
         if (isDisposed) return false
-        toast.error(getErrorDisplay(e, 'Failed to load boards').message)
+        boardOptionsLoadError.value = getErrorDisplay(e, 'Failed to load boards').message
+        toast.error(boardOptionsLoadError.value)
         return false
       } finally {
         if (!isDisposed) loadingBoards.value = false
@@ -476,6 +523,7 @@ export function useAutomationChat() {
 
   onScopeDispose(() => {
     isDisposed = true
+    localMessagesBySession.clear()
     stopWatch()
   })
 
@@ -492,6 +540,7 @@ export function useAutomationChat() {
     bindingMessageId,
     boardBindingError,
     boardBindingReceipt,
+    boardOptionsLoadError,
     chatHealth,
     chatHealthLoadError,
     newSessionTitle,

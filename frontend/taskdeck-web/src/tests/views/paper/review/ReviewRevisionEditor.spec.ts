@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { i18n } from '../../../../i18n'
 import ReviewRevisionEditor from '../../../../views/paper/review/ReviewRevisionEditor.vue'
 
 function mountEditor(operationsPayload: string, revisionChanged = false) {
@@ -57,17 +58,23 @@ describe('ReviewRevisionEditor', () => {
   })
 
   it('keeps provenance and diff inspection reachable from the editor actions', async () => {
+    const previousLocale = i18n.global.locale.value
+    i18n.global.locale.value = 'it'
     const wrapper = mountEditor('{"title":"Original"}')
     const provenance = wrapper.get('[data-testid="revision-inspect-provenance"]')
     const diff = wrapper.get('[data-testid="revision-inspect-diff"]')
 
     expect(provenance.element.tagName).toBe('BUTTON')
     expect(diff.element.tagName).toBe('BUTTON')
+    expect(provenance.text()).toBe('Mostra o nascondi il pannello di provenienza')
+    expect(diff.text()).toBe('Anteprima del diff nel dettaglio della scheda')
     await provenance.trigger('click')
     await diff.trigger('click')
 
     expect(wrapper.emitted('toggle-provenance')).toHaveLength(1)
     expect(wrapper.emitted('preview-diff')).toHaveLength(1)
+    wrapper.unmount()
+    i18n.global.locale.value = previousLocale
   })
 
   it('announces a collaborator revision without replacing the typed draft (#2215 D3aB)', async () => {
