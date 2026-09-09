@@ -64,6 +64,7 @@ function mountList(overrides: Record<string, unknown> = {}) {
       bindingMessageId: null,
       boardBindingError: null,
       boardBindingReceipt: null,
+      boardLoadError: null,
       ...overrides,
     },
   })
@@ -99,6 +100,17 @@ describe('ChatMessageList board recovery', () => {
     expect(wrapper.text()).toContain('no active boards you can edit')
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('open-boards')).toHaveLength(1)
+  })
+
+  it('keeps board-load failure separate from the no-board state and offers retry', async () => {
+    const wrapper = mountList({ boardLoadError: 'Boards unavailable' })
+
+    expect(wrapper.text()).toContain('Boards unavailable')
+    expect(wrapper.text()).toContain('Retry loading boards')
+    expect(wrapper.text()).not.toContain('no active boards you can edit')
+
+    await wrapper.get('button.td-btn--secondary').trigger('click')
+    expect(wrapper.emitted('reload-boards')).toHaveLength(1)
   })
 
   it('shows a binding receipt and waits for explicit continuation', async () => {

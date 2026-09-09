@@ -19,6 +19,7 @@ const {
   bindingMessageId,
   boardBindingError,
   boardBindingReceipt,
+  boardOptionsLoadError,
   chatHealth,
   chatHealthLoadError,
   newSessionTitle,
@@ -121,11 +122,13 @@ const {
             :binding-message-id="bindingMessageId"
             :board-binding-error="boardBindingError"
             :board-binding-receipt="boardBindingReceipt"
+            :board-load-error="boardOptionsLoadError"
             @apply-hint-suggestion="applyHintSuggestion"
             @open-proposal-review="openProposalReview"
             @bind-board="bindBoardToPendingTurn"
             @continue-instruction="continuePendingInstruction"
             @open-boards="openRoute('/workspace/boards')"
+            @reload-boards="loadBoardOptions"
           />
 
           <ChatComposeBar

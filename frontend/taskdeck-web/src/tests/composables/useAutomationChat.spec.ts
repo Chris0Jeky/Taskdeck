@@ -392,6 +392,113 @@ describe('useAutomationChat', () => {
   })
 
   describe('session response races', () => {
+    it('does not add a local turn before the send request succeeds', async () => {
+      const session = { id: 's1', title: 'First', boardId: null, recentMessages: [] }
+      const deferred = createDeferred<{
+        id: string; sessionId: string; role: number; messageType: string; proposalId: null;
+        tokenUsage: number; content: string; createdAt: string;
+      }>()
+      chatApiMocks.getMySessions.mockResolvedValue([session])
+      chatApiMocks.getSession.mockResolvedValue(session)
+      chatApiMocks.sendMessage.mockReturnValue(deferred.promise)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.selectedSession.value?.id).toBe('s1'))
+
+      chat.messageContent.value = 'new instruction'
+      const pendingSend = chat.handleSendMessage()
+      await Promise.resolve()
+
+      expect(chat.selectedSession.value?.recentMessages).toEqual([])
+
+      deferred.resolve({
+        id: 'reply-1', sessionId: 's1', role: 1, messageType: 'text', proposalId: null,
+        tokenUsage: 12, content: 'Done', createdAt: '2026-05-16T10:01:00Z',
+      })
+      await pendingSend
+    })
+
+    it('retains the just-submitted instruction when the immediate refresh fails', async () => {
+      const oldUser = {
+        id: 'old-user', sessionId: 's1', role: 0, messageType: 'text',
+        proposalId: null, tokenUsage: null, content: 'older instruction',
+        createdAt: '2026-05-16T10:00:00Z',
+      }
+      const oldRecovery = {
+        id: 'old-recovery', sessionId: 's1', role: 1, messageType: 'action-needs-board',
+        proposalId: null, tokenUsage: 12, content: 'No board linked',
+        createdAt: '2026-05-16T10:01:00Z',
+      }
+      const session = { id: 's1', title: 'First', boardId: null, recentMessages: [oldUser, oldRecovery] }
+      const reply = {
+        id: 'new-recovery', sessionId: 's1', role: 1, messageType: 'action-needs-board',
+        proposalId: null, tokenUsage: 12, content: 'No board linked for the new instruction',
+        createdAt: '2026-05-16T10:03:00Z',
+      }
+      chatApiMocks.getMySessions.mockResolvedValue([session])
+      chatApiMocks.getSession
+        .mockResolvedValueOnce(session)
+        .mockRejectedValueOnce(new Error('refresh failed'))
+      chatApiMocks.sendMessage.mockResolvedValue(reply)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.selectedSession.value?.id).toBe('s1'))
+
+      chat.messageContent.value = 'new instruction'
+      await chat.handleSendMessage()
+
+      expect(chat.selectedSession.value?.recentMessages.map((message) => message.content)).toEqual([
+        'older instruction',
+        'No board linked',
+        'new instruction',
+        'No board linked for the new instruction',
+      ])
+      expect(chat.selectedSession.value?.recentMessages[2]?.id).toMatch(/^local-/)
+      expect(chat.pendingBoardRecovery.value).toEqual({
+        messageId: 'new-recovery',
+        instruction: 'new instruction',
+      })
+    })
+
+    it('replaces retained local messages with the next authoritative session result', async () => {
+      const session = { id: 's1', title: 'First', boardId: null, recentMessages: [] }
+      const reply = {
+        id: 'reply-1', sessionId: 's1', role: 1, messageType: 'text',
+        proposalId: null, tokenUsage: 12, content: 'Done',
+        createdAt: '2026-05-16T10:01:00Z',
+      }
+      const authoritative = {
+        ...session,
+        recentMessages: [
+          {
+            id: 'server-user-1', sessionId: 's1', role: 0, messageType: 'text',
+            proposalId: null, tokenUsage: null, content: 'new instruction',
+            createdAt: '2026-05-16T10:00:59Z',
+          },
+          reply,
+        ],
+      }
+      chatApiMocks.getMySessions.mockResolvedValue([session])
+      chatApiMocks.getSession
+        .mockResolvedValueOnce(session)
+        .mockRejectedValueOnce(new Error('refresh failed'))
+        .mockResolvedValueOnce(authoritative)
+      chatApiMocks.sendMessage.mockResolvedValue(reply)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.selectedSession.value?.id).toBe('s1'))
+
+      chat.messageContent.value = 'new instruction'
+      await chat.handleSendMessage()
+      await chat.loadSession('s1')
+
+      expect(chat.selectedSession.value?.recentMessages).toEqual(authoritative.recentMessages)
+      expect(chat.selectedSession.value?.recentMessages.filter((message) => message.id === 'reply-1')).toHaveLength(1)
+    })
+
     it('does not switch back when a send response completes after another session is selected', async () => {
       const first = { id: 's1', title: 'First', boardId: null, recentMessages: [] }
       const second = { id: 's2', title: 'Second', boardId: null, recentMessages: [] }
@@ -484,6 +591,71 @@ describe('useAutomationChat', () => {
         expect(chat.selectedSession.value).not.toBeNull()
       })
       expect(chat.selectedSessionBoardName.value).toBe('Project Alpha')
+    })
+  })
+
+  describe('board loading recovery', () => {
+    it('keeps a board-load error available instead of presenting unavailable boards as empty', async () => {
+      boardsApiMocks.getBoards.mockRejectedValue(new Error('Boards unavailable'))
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+
+      await vi.waitFor(() => expect(chat.boardOptionsLoadError.value).toBe('Boards unavailable'))
+      expect(chat.eligibleBoards.value).toEqual([])
+      expect(chat.boardOptionsLoadError.value).toBe('Boards unavailable')
+    })
+
+    it('clears the board-load error only after an explicit retry succeeds', async () => {
+      boardsApiMocks.getBoards
+        .mockRejectedValueOnce(new Error('Boards unavailable'))
+        .mockResolvedValueOnce([
+          { id: 'b1', name: 'Release Board', description: null, isArchived: false, canWrite: true },
+        ])
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.boardOptionsLoadError.value).toBe('Boards unavailable'))
+
+      await expect(chat.loadBoardOptions()).resolves.toBe(true)
+
+      expect(chat.boardOptionsLoadError.value).toBeNull()
+      expect(chat.eligibleBoards.value.map((board) => board.id)).toEqual(['b1'])
+    })
+
+    it('shows loading during retry and keeps the failure when retry also fails', async () => {
+      let rejectRetry!: (reason?: unknown) => void
+      const retryPromise = new Promise<unknown[]>((_, reject) => { rejectRetry = reject })
+      boardsApiMocks.getBoards
+        .mockRejectedValueOnce(new Error('Boards unavailable'))
+        .mockReturnValueOnce(retryPromise)
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      await vi.waitFor(() => expect(chat.boardOptionsLoadError.value).toBe('Boards unavailable'))
+
+      const pendingRetry = chat.loadBoardOptions()
+      expect(chat.loadingBoards.value).toBe(true)
+      expect(chat.boardOptionsLoadError.value).toBeNull()
+
+      rejectRetry(new Error('Still unavailable'))
+      await expect(pendingRetry).resolves.toBe(false)
+      expect(chat.loadingBoards.value).toBe(false)
+      expect(chat.boardOptionsLoadError.value).toBe('Still unavailable')
+    })
+
+    it('does not write a late board-load error after disposal', async () => {
+      let rejectBoards!: (reason?: unknown) => void
+      boardsApiMocks.getBoards.mockReturnValue(new Promise<unknown[]>((_, reject) => { rejectBoards = reject }))
+
+      const { useAutomationChat } = await loadComposable()
+      const chat = useAutomationChat()
+      for (const fn of scopeDisposeFns) fn()
+
+      rejectBoards(new Error('late board failure'))
+      await vi.waitFor(() => expect(boardsApiMocks.getBoards).toHaveBeenCalled())
+
+      expect(chat.boardOptionsLoadError.value).toBeNull()
     })
   })
 
