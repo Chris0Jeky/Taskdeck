@@ -13,8 +13,8 @@ export const chatApi = {
     return data
   },
 
-  async getSession(sessionId: string): Promise<ChatSession> {
-    const { data } = await http.get<ChatSession>(`/llm/chat/sessions/${encodeURIComponent(sessionId)}`)
+  async getSession(sessionId: string, options?: { skipRetry?: boolean }): Promise<ChatSession> {
+    const { data } = await http.get<ChatSession>(`/llm/chat/sessions/${encodeURIComponent(sessionId)}`, options)
     return data
   },
 

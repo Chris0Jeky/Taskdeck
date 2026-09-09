@@ -289,7 +289,9 @@ export function useAutomationChat(options: { boardId?: () => string | undefined 
 
   async function refreshSelectedSession(sessionId: string) {
     try {
-      const result = await chatApi.getSession(sessionId)
+      // The send already succeeded and its messages are retained locally. A
+      // failed reconciliation must not hold continuation behind read retries.
+      const result = await chatApi.getSession(sessionId, { skipRetry: true })
       if (isDisposed || requestedSessionId !== sessionId || selectedSession.value?.id !== sessionId) return
       if (options.boardId?.() && result.boardId !== options.boardId()) throw new Error('This conversation belongs to a different board.')
       localMessagesBySession.delete(sessionId)
