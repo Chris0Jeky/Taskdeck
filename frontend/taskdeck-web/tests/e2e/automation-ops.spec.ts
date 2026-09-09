@@ -106,9 +106,6 @@ test('chat proposal flow should create, approve, and execute proposal', async ({
   }
 
   await page.getByPlaceholder('Describe an automation instruction...').fill(`create card "${uniqueCardTitle}"`)
-  const requestProposalCheckbox = page.getByRole('checkbox', { name: 'Request proposal generation' })
-  await requestProposalCheckbox.check()
-  await expect(requestProposalCheckbox).toBeChecked()
   await page.getByRole('button', { name: 'Send Message' }).click()
 
   const proposalId = await waitForProposalInSession(request, auth.token, sessionId)

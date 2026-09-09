@@ -1,7 +1,18 @@
-import { beforeAll, beforeEach, afterEach } from 'vitest'
+import { beforeAll, beforeEach, afterEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { config } from '@vue/test-utils'
 import { i18n, DEFAULT_LOCALE, SUPPORTED_LOCALES, ensureLocaleMessages } from '../i18n'
+
+// Version is a cosmetic footer read that can be reached transitively by any
+// component mounting the real Paper shell. Keep the default unit-test fixture
+// offline so those specs never contact a developer backend. The explicit
+// `api/versionApi.spec.ts` contract tests opt out with `vi.unmock` and exercise
+// the real request seam with their own HTTP mock.
+vi.mock('../api/versionApi', () => ({
+  versionApi: {
+    getProductVersion: vi.fn(async () => null),
+  },
+}))
 
 // Install the i18n plugin globally for every mounted component (ADR-0054).
 // Without it, any SFC using `$t` / `useI18n()` throws on mount and every spec

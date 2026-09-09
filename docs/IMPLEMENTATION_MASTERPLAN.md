@@ -1,6 +1,6 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-08
+Last Updated: 2026-09-09
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -64,6 +64,21 @@ behaviour.
 **De-scoped permanently** (closed as not-planned or parked during archive closeout, with dated notes): distribution & code-signing (`#1167`), GTM/marketing (`#544`/`#546`/`#550`), cloud & collaboration (`#537`/`#548`), mobile (`#540`), beta intake, multi-DB *production* support (the production runtime is SQLite-only forever; the PostgreSQL Testcontainers compatibility lane in CI — `Taskdeck.Integration.Tests` / `reusable-container-integration.yml` — remains as a legacy regression guard, not a product direction), and multi-user scale work. The platform-expansion strategy docs under `docs/strategy/` and the cloud/platform ADRs **0014, 0020, 0023, 0026–0028** are retained as historical records of parked tracks, not active plans. Three ADRs in the 0023–0029 range decide behaviour that is **still live** in the single-instance app — only their multi-instance/enterprise premise is parked: **ADR-0024** (the `ICacheService` cache-aside abstraction, in-memory by default), **ADR-0025** (the `AddTaskdeckSignalR` Redis-backplane wiring, config-gated and dormant in the single-instance default), and **ADR-0029** (optional TOTP MFA + OIDC/OAuth). Likewise the single-self-contained-executable packaging path in `docs/strategy/02_PACKAGING_DISTRIBUTION_STRATEGY.md` stays the active personal run path; only its installer / cross-platform-distribution / GTM framing is parked. **ADR-0004** (shared-schema multi-tenancy) also stays **live** for its cross-user-isolation behaviour — enforced today by per-`UserId` and board-access predicates rather than a `TenantId` column (no `TenantId` symbol exists in `backend/src`, `backend/tests`, or the frontend), with the `403`/`404` existence policy enforced in the running app (consistent with GP-02 Claims-First Identity and GP-03 Stable Error Contracts); only its multi-organization / hosted-SaaS expansion premise (including any `TenantId`-keyed shared-schema tenancy) is parked — agents must neither park the live cross-user isolation security model nor resurrect multi-org tenancy work. The planning principles below remain valid for the *product* (review-first, capture-friction, novice legibility) even though the *distribution* roadmap is retired.
 
 ## Dated delivery and governance updates (newest first)
+
+## PR closeout (2026-09-09, #2235)
+
+PR #2809 lands the first #2260 representation-contract slice at `f935ebcbc`;
+the persistence facade, transactional lineage/ownership enforcement and migration
+acceptance remain separate work. A missing processing-run identity outside legacy
+backfill is tracked on #2260 before that contract is used by a runtime writer.
+
+Luna xhigh workers and Terra high reviewers completed current-base proofs for four
+existing PRs and isolated the #2797 repeated-refusal feedback and #2807 SQLite
+rollback repairs. After #2809 moved main, the remaining five source PRs were
+refreshed again; their earlier green checks are not final-head qualification.
+The [closeout record](analysis/2026-09-09-codex-pr-closeout.md) retains exact heads,
+verification limits and deferred review findings. No release or human-action
+completion is inferred.
 
 ## Delivery update (2026-09-08, parallel implementation and asynchronous review)
 
@@ -2184,3 +2199,7 @@ Rule:
 ## Board controls residual acceptance (2026-09-08)
 
 PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.
+
+## Accountable chat acceptance (2026-09-08)
+
+PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal attempts, owned-session inline binding, grounded existing-card updates, one persisted clarification round, and durable honest outcomes. This reduces the maintenance burden of discovering that a chat instruction produced only prose while preserving explicit human Review, Approve, and Apply. The natural-update API proof covers actual card identity and an unchanged board; the Mock browser journey covers same-session context recovery and Review visibility. Complete the distinct full-stack and authorization/state review lenses, resolve any confirmed blockers in one batch, and qualify the final head before closing #2004. Repair the independently reproduced test-clock failures in #2789 separately; do not weaken the local-calendar contract or infer live-provider acceptance from Mock evidence.

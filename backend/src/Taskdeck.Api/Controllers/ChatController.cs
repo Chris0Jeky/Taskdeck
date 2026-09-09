@@ -117,6 +117,29 @@ public class ChatController : AuthenticatedControllerBase
     }
 
     /// <summary>
+    /// Link an existing owned chat session to one writable, active board.
+    /// Repeating the same binding is idempotent; replacing it requires a new session.
+    /// </summary>
+    [HttpPost("sessions/{id}/board")]
+    [EnableRateLimiting(RateLimitingPolicyNames.HotPathPerUser)]
+    [ProducesResponseType(typeof(ChatSessionDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> BindBoard(
+        Guid id,
+        [FromBody] BindChatSessionBoardDto dto,
+        CancellationToken ct = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult))
+            return errorResult!;
+
+        var result = await _chatService.BindBoardAsync(id, userId, dto, ct);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    /// <summary>
     /// Send a message in a chat session. The LLM responds and may generate
     /// automation proposals when RequestProposal is true.
     /// </summary>
