@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Night palette candidate comparison</title>
+<style>
+  :root { color-scheme: dark; background: #0e0b08; color: #f1e8d6; font: 14px system-ui, sans-serif; }
+  body { margin: 24px; }
+  h1 { font: 600 24px Georgia, serif; margin: 0 0 6px; }
+  p { color: #b9aa93; max-width: 80ch; }
+  .grid { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 16px; align-items: start; }
+  figure { margin: 0; border: 1px solid #2a241c; background: #1c1813; padding: 8px; }
+  img { display: block; width: 100%; height: auto; aspect-ratio: 1440 / 1000; object-fit: cover; object-position: top; background: #14110d; }
+  figcaption { padding: 8px 2px 2px; color: #d96a3e; font-weight: 600; }
+  figcaption small { display: block; color: #9a8f7a; font-weight: 400; margin-top: 3px; }
+  code { color: #d9c9aa; }
+</style>
+<h1>Issue #2009 · rendered Paper palette candidates</h1>
+<p>Real Chromium captures from the synthetic Mock stack at <code>1440×1000</code>. Each image is the live Paper surface with a selected theme mode and an ephemeral page-local token override. Open the full-resolution PNGs under <code>captures/1440x1000/</code>.</p>
+<p><strong>Review parity:</strong> the shipped night selection leaves Review’s static <code>.paper</code> root light inside the dark shell; that baseline is retained as evidence. Candidate Review tiles apply an explicitly experimental page-local night token set to the real root for comparison only. Click any tile to open its full-resolution PNG.</p>
+<div class="grid">
+  <figure><a href="../captures/1440x1000/home/light-baseline.png"><img src="../captures/1440x1000/home/light-baseline.png" alt="Home light baseline"></a><figcaption>Home · Light baseline<small>selected mode: <code>paper</code></small></figcaption></figure>
+  <figure><a href="../captures/1440x1000/home/baseline.png"><img src="../captures/1440x1000/home/baseline.png" alt="Home current night"></a><figcaption>Home · Current night<small>selected mode: <code>paper-night</code></small></figcaption></figure>
+  <figure><a href="../captures/1440x1000/home/walnut-outline.png"><img src="../captures/1440x1000/home/walnut-outline.png" alt="Home walnut outline"></a><figcaption>Home · A. Walnut outline</figcaption></figure>
+  <figure><a href="../captures/1440x1000/home/open-folio.png"><img src="../captures/1440x1000/home/open-folio.png" alt="Home open folio"></a><figcaption>Home · B. Open folio</figcaption></figure>
+  <figure><a href="../captures/1440x1000/home/cedar-layers.png"><img src="../captures/1440x1000/home/cedar-layers.png" alt="Home cedar layers"></a><figcaption>Home · C. Cedar layers</figcaption></figure>
+  <figure><a href="../captures/1440x1000/today/light-baseline.png"><img src="../captures/1440x1000/today/light-baseline.png" alt="Today light baseline"></a><figcaption>Today · Light baseline</figcaption></figure>
+  <figure><a href="../captures/1440x1000/today/baseline.png"><img src="../captures/1440x1000/today/baseline.png" alt="Today current night"></a><figcaption>Today · Current night</figcaption></figure>
+  <figure><a href="../captures/1440x1000/today/walnut-outline.png"><img src="../captures/1440x1000/today/walnut-outline.png" alt="Today walnut outline"></a><figcaption>Today · A. Walnut outline</figcaption></figure>
+  <figure><a href="../captures/1440x1000/today/open-folio.png"><img src="../captures/1440x1000/today/open-folio.png" alt="Today open folio"></a><figcaption>Today · B. Open folio</figcaption></figure>
+  <figure><a href="../captures/1440x1000/today/cedar-layers.png"><img src="../captures/1440x1000/today/cedar-layers.png" alt="Today cedar layers"></a><figcaption>Today · C. Cedar layers</figcaption></figure>
+  <figure><a href="../captures/1440x1000/review/light-baseline.png"><img src="../captures/1440x1000/review/light-baseline.png" alt="Review light baseline"></a><figcaption>Review · Light baseline</figcaption></figure>
+  <figure><a href="../captures/1440x1000/review/baseline.png"><img src="../captures/1440x1000/review/baseline.png" alt="Review current night"></a><figcaption>Review · Current night</figcaption></figure>
+  <figure><a href="../captures/1440x1000/review/walnut-outline.png"><img src="../captures/1440x1000/review/walnut-outline.png" alt="Review walnut outline"></a><figcaption>Review · A. Walnut outline</figcaption></figure>
+  <figure><a href="../captures/1440x1000/review/open-folio.png"><img src="../captures/1440x1000/review/open-folio.png" alt="Review open folio"></a><figcaption>Review · B. Open folio</figcaption></figure>
+  <figure><a href="../captures/1440x1000/review/cedar-layers.png"><img src="../captures/1440x1000/review/cedar-layers.png" alt="Review cedar layers"></a><figcaption>Review · C. Cedar layers</figcaption></figure>
+</div>
