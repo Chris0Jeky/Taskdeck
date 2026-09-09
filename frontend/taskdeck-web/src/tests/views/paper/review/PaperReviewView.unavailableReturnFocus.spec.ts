@@ -295,4 +295,44 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
       wrapper.unmount()
     }
   })
+
+  it.each(['queue control', 'batch dialog'] as const)(
+    'preserves focus in a %s when a delayed missing lookup resolves',
+    async (target) => {
+      let rejectLookup!: (reason: unknown) => void
+      mocks.getProposal.mockReturnValueOnce(new Promise((_resolve, reject) => {
+        rejectLookup = reject
+      }))
+      const proposal = makeProposal({
+        operations: [{ ...makeProposal().operations[0], actionType: 'create', targetType: 'card' }],
+      })
+      const wrapper = await mountView([proposal], [proposal], '/workspace/review')
+      try {
+        await routerOf(wrapper).push('/workspace/review#proposal-proposal-missing')
+        await flushPromises()
+        expect(mocks.getProposal).toHaveBeenCalledWith('proposal-missing')
+        const selection = wrapper.get('[data-testid="queue-batch-select-proposal-active"]')
+        let focused = selection.element as HTMLElement
+        if (target === 'batch dialog') {
+          await selection.trigger('change')
+          await wrapper.get('[data-testid="queue-batch-approve"]').trigger('click')
+          await flushPromises()
+          focused = document.body.querySelector<HTMLElement>('[data-testid="batch-approve-confirm"]')!
+          expect(focused).not.toBeNull()
+        }
+        focused.focus()
+        expect(document.activeElement).toBe(focused)
+
+        rejectLookup({ response: { status: 404 } })
+        await flushPromises()
+        await nextTick()
+
+        expect(wrapper.find('[data-testid="paper-review-unavailable-return"]').exists()).toBe(true)
+        expect(focused.isConnected).toBe(true)
+        expect(document.activeElement).toBe(focused)
+      } finally {
+        wrapper.unmount()
+      }
+    },
+  )
 })
