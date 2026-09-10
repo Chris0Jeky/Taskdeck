@@ -21,6 +21,12 @@ and added test requirements. Keep an unchanged-contract positive control. This i
 [#2336](https://github.com/Chris0Jeky/Taskdeck/issues/2336#issuecomment-5615579153);
 `admissible: true` is not a production qualification claim, even with library mode `enforce`.
 
+The execution array also lacks an independently protected completeness assertion. A supplied
+contradictory execution rejects omission, but a truncated collection can hide that record.
+Authoritative integration must prove inventory completeness before treating absence as evidence;
+a candidate-produced flag is insufficient. This is another tracked pre-activation requirement on
+[#2336](https://github.com/Chris0Jeky/Taskdeck/issues/2336#issuecomment-5616115715).
+
 ## Durable reference ledger
 
 `core/ledger.mjs` supplies bounded single-host JSONL append storage, canonical hash chaining, exclusive writer lock, expected-anchor comparison, file fsync, revocation/circuit reduction and age-plus-merge-exposure decisions. Events record revocation, trip, successful complete baseline, explicit recovery or landed exposure. Invalid recovery is rejected before append; historical revocations are not silently cleared.
@@ -39,6 +45,11 @@ The protected controller should append revocation/trip events after an omitted o
 
 Permission to use ordinary policy is not successful CI. Landed exposure must come from authenticated events. No event broker is installed; the metadata observer cannot issue full-baseline events. A protected controller must verify actual checkout, complete suite execution and bypassed reuse first.
 
+The reference reducer currently counts deliveries, so replaying the same merge event charges
+exposure twice and can force an unnecessary full run. Before production accounting, add and
+deduplicate an authenticated landing identity; separate landings may share a tree. This conservative
+overcount is tracked with the other [integration follow-ups](https://github.com/Chris0Jeky/Taskdeck/issues/2336#issuecomment-5616115715).
+
 ## Activation and remaining integration
 
 Validate immutable inputs and event/merge bindings, establish independent execution provenance, provide protected anchor/key/revocation storage, qualify selection with frozen-plan/full-oracle recall, rehearse corruption/cancellation/audit misses, then request maintainer review for one family. Merely changing mode to enforce is not activation approval.
@@ -47,6 +58,12 @@ Administrative and evidence gates remain open. This PR does not provide a produc
 
 ## Validation and rollback
 
-Combined continuation/placement suite: **352 passed, zero failed/skipped/cancelled**, local Node 22.16.0/Linux. New regressions cover recomputation, stale/empty/skipped/cancelled/retried outcomes, missing verifier and exception redaction, unqualified omission, contention, rollback/corrupt/partial chains, invalid recovery, duplicate baselines and age/exposure circuits.
+Verified cumulative command: `node --test scripts/ci/smart-ci/*.test.mjs` passed **511 tests,
+zero failed/skipped/cancelled**, on Node 24.13.1/Windows at scheduling head
+`8b3f4432880559807ad3a909207b38aafb81a19f`. This includes later portability/scheduling slices;
+it is not an admission-only count and supersedes the unsupported historical 352-test claim.
+Admission/ledger regressions cover recomputation, stale/empty/skipped/cancelled/retried fresh
+outcomes, missing verifier and exception redaction, unqualified omission, contention,
+rollback/corrupt/partial chains, invalid recovery, duplicate baselines and age/exposure circuits.
 
 This is reference-mechanism validation, not production provenance or distributed durability. Hosted configured-Node checks and independent/maintainer review remain required. Revert auxiliary modules without altering canonical qualification; preserve any real ledger and historical revocations separately from code rollback.
