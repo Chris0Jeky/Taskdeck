@@ -16,8 +16,8 @@
 export default {
   polling: {
     waiting: "Smistamento in corso. I risultati appariranno qui quando saranno pronti.",
-    retrying: "Aggiornamento dello stato in ritardo. Nuovo tentativo automatico; la richiesta ? stata accettata.",
-    unavailable: "Una cattura non ? pi? disponibile per il controllo. Aggiorna lo stato per riprovare.",
+    retrying: "Aggiornamento dello stato in ritardo. Nuovo tentativo automatico; la richiesta è stata accettata.",
+    unavailable: "Una cattura non è più disponibile per il controllo. Aggiorna lo stato per riprovare.",
     paused: "Controlli dello stato in pausa: la sessione richiede attenzione. Accedi di nuovo per continuare.",
     refresh: "Aggiorna stato",
   },

@@ -17,10 +17,10 @@
  */
 export default {
   polling: {
-    waiting: "Esperando la clasificaci?n. Los resultados aparecer?n aqu? cuando est?n listos.",
-    retrying: "La actualizaci?n del estado se ha retrasado. Reintentando autom?ticamente; la solicitud fue aceptada.",
-    unavailable: "Una captura ya no est? disponible para consultar. Actualiza el estado para reintentar.",
-    paused: "Las consultas de estado est?n en pausa porque la sesi?n requiere atenci?n. Inicia sesi?n de nuevo para continuar.",
+    waiting: "Esperando la clasificación. Los resultados aparecerán aquí cuando estén listos.",
+    retrying: "La actualización del estado se ha retrasado. Reintentando automáticamente; la solicitud fue aceptada.",
+    unavailable: "Una captura ya no está disponible para consultar. Actualiza el estado para reintentar.",
+    paused: "Las consultas de estado están en pausa porque la sesión requiere atención. Inicia sesión de nuevo para continuar.",
     refresh: "Actualizar estado",
   },
   eyebrow:
