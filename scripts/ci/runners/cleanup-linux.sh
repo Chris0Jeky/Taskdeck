@@ -178,15 +178,17 @@ verify_policy() {
 }
 
 clear_children() {
-  local candidate="$1" action_code="$2" count
-  count="$(find "$candidate" -mindepth 1 -maxdepth 1 -printf '.' | wc -c | tr -d '[:space:]')" \
+  local candidate="$1" action_code="$2" count remaining
+  count="$(find "$candidate" -mindepth 1 -maxdepth 1 -printf '.' 2>/dev/null | wc -c | tr -d '[:space:]')" \
     || fail 'count_failed'
   [[ "$count" =~ ^[0-9]+$ ]] || fail 'count_invalid'
 
   if [[ "$DRY_RUN" -eq 0 && "$count" -gt 0 ]]; then
     find "$candidate" -mindepth 1 -maxdepth 1 -exec rm --one-file-system -rf -- {} + \
       >/dev/null 2>&1 || fail 'clear_failed'
-    [[ -z "$(find "$candidate" -mindepth 1 -maxdepth 1 -print -quit)" ]] || fail 'clear_incomplete'
+    remaining="$(find "$candidate" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" \
+      || fail 'clear_verify_failed'
+    [[ -z "$remaining" ]] || fail 'clear_incomplete'
   fi
   emit "ACTION code=$action_code count=$count"
 }
