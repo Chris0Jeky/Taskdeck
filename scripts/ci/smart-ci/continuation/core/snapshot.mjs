@@ -26,7 +26,8 @@ export function parseTree(bytes) {
 export function snapshot(repo, commit) {
   invariant(isGitId(commit), 'snapshot requires an exact full commit ID, not an expression or branch');
   const git = args => execFileSync('git', ['--no-replace-objects', '-C', repo, ...args], {
-    maxBuffer: 64 * 1024 * 1024, timeout: 30000, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' }
+    maxBuffer: 64 * 1024 * 1024, timeout: 30000,
+    env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' }
   });
   const resolved = decode(git(['rev-parse', '--verify', `${commit}^{commit}`])).trim();
   invariant(resolved === commit, 'commit binding mismatch');
