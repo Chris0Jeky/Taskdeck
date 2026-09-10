@@ -45,6 +45,24 @@ public static class ProposalOperationContractValidator
         // while references to not-yet-created entities still fail closed.
         foreach (var operation in materializedOperations.OrderBy(operation => operation.Sequence))
         {
+            if (operation.ActionType.Equals(ProposalAssignmentContract.Action, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+                    !OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var assignmentParameters, out _))
+                    return Result.Failure(ErrorCodes.ValidationError, "Assignment operation requires a card and valid parameters.");
+                var assignment = await ProposalAssignmentContract.ValidateAsync(unitOfWork, proposalBoardId, assignmentParameters, cancellationToken);
+                if (!assignment.IsSuccess) return Result.Failure(assignment.ErrorCode, assignment.ErrorMessage);
+                var assignmentCardId = assignmentParameters.GetProperty("cardId").GetGuid();
+                foreach (var other in materializedOperations.Where(other => !ReferenceEquals(other, operation) &&
+                             other.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (Guid.TryParse(other.TargetId, out var target) && target == assignmentCardId ||
+                        OperationParameterParser.TryDeserializeParameters(other.Parameters, out var otherParameters, out _) &&
+                        OperationParameterParser.TryGetRequiredGuid(otherParameters, "cardId", out var otherCardId, out _) && otherCardId == assignmentCardId)
+                        return Result.Failure(ErrorCodes.ValidationError,
+                            "An assignment replacement must be the only operation on that card in a proposal.");
+                }
+            }
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
 
@@ -367,6 +385,14 @@ public static class ProposalOperationContractValidator
 
         if (normalizedAction is "create" or "update")
             return Result.Success();
+
+        if (normalizedAction == ProposalAssignmentContract.Action)
+        {
+            try { ProposalAssignmentContract.Read(parameters); }
+            catch (DomainException ex) { return Result.Failure(ex.ErrorCode, ex.Message); }
+            return OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var assignmentError)
+                ? Result.Success() : Result.Failure(ErrorCodes.ValidationError, assignmentError);
+        }
 
         if (normalizedAction is "move" or "archive" or "archive-lifecycle" or "restore-lifecycle" or "delete")
         {

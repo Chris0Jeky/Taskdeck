@@ -18,26 +18,43 @@ public class OperationHandlerRegistry
     private readonly CardService _cardService;
     private readonly BoardService _boardService;
     private readonly ColumnService _columnService;
+    private readonly CardAssignmentService? _assignments;
 
     public OperationHandlerRegistry(
         IUnitOfWork unitOfWork,
         CardService cardService,
         BoardService boardService,
-        ColumnService columnService)
+        ColumnService columnService,
+        CardAssignmentService? assignments = null)
     {
         _unitOfWork = unitOfWork;
         _cardService = cardService;
         _boardService = boardService;
         _columnService = columnService;
+        _assignments = assignments;
     }
 
-    public async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken)
+    public async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken, Guid? actorUserId = null)
     {
         var actionType = operation.ActionType.ToLowerInvariant();
         var targetType = operation.TargetType.ToLowerInvariant();
 
         try
         {
+            if (targetType == "card" && actionType == ProposalAssignmentContract.Action)
+            {
+                if (_assignments is null || !actorUserId.HasValue)
+                    return Result.Failure(ErrorCodes.InvalidOperation, "Assignment execution needs an authenticated actor.");
+                if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var error) ||
+                    !OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out error))
+                    return Result.Failure(ErrorCodes.ValidationError, error);
+                var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+                if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found.");
+                var result = await _assignments.StageReplaceAsync(card.BoardId, cardId,
+                    ProposalAssignmentContract.Read(parameters), actorUserId.Value, cancellationToken);
+                if (result.IsSuccess) await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
+            }
             if (targetType == "card")
             {
                 return await ExecuteCardOperationAsync(actionType, operation, cancellationToken);
@@ -55,9 +72,23 @@ public class OperationHandlerRegistry
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported target type: {targetType}");
             }
         }
+        catch (DomainException ex) { return Result.Failure(ex.ErrorCode, ex.Message); }
         catch (Exception ex)
         {
             return Result.Failure(ErrorCodes.UnexpectedError, $"Operation execution failed: {ex.Message}");
+        }
+    }
+
+    public async Task NotifyAssignmentsCommittedAsync(IEnumerable<ProposalOperationDto> operations, CancellationToken ct)
+    {
+        if (_assignments is null) return;
+        foreach (var operation in operations.Where(o => o.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) &&
+                     o.ActionType.Equals(ProposalAssignmentContract.Action, StringComparison.OrdinalIgnoreCase)))
+        {
+            using var parameters = JsonDocument.Parse(operation.Parameters);
+            var id = parameters.RootElement.GetProperty("cardId").GetGuid();
+            var card = await _unitOfWork.Cards.GetByIdAsync(id, ct);
+            if (card is not null) await _assignments.NotifyAsync(card.BoardId, id, ct);
         }
     }
 

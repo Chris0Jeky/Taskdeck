@@ -65,6 +65,7 @@ public sealed class GetCardDetailsExecutor : IToolExecutor
             is_archived = card.IsArchived,
             workItemType = card.WorkItemType.ToString(),
             parentCardId = card.ParentCardId,
+            assignments = CardService.MapToDto(card).Assignments,
             description = card.Description ?? "",
             column = column?.Name ?? "Unknown",
             labels = cardLabels,

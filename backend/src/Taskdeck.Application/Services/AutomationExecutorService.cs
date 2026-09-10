@@ -38,12 +38,13 @@ public class AutomationExecutorService : IAutomationExecutorService
         CardService cardService,
         BoardService boardService,
         ColumnService columnService,
-        ILogger<AutomationExecutorService>? logger)
+        ILogger<AutomationExecutorService>? logger,
+        CardAssignmentService? assignments = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
-        _handlerRegistry = new OperationHandlerRegistry(unitOfWork, cardService, boardService, columnService);
+        _handlerRegistry = new OperationHandlerRegistry(unitOfWork, cardService, boardService, columnService, assignments);
         _auditRecorder = new ExecutionAuditRecorder(unitOfWork);
         _logger = logger;
     }
@@ -320,7 +321,8 @@ public class AutomationExecutorService : IAutomationExecutorService
 
             foreach (var operation in orderedOperations)
             {
-                var executionResult = await _handlerRegistry.ExecuteOperationAsync(operation, cancellationToken);
+                var executionResult = await _handlerRegistry.ExecuteOperationAsync(operation, cancellationToken,
+                    callerUserId);
                 if (!executionResult.IsSuccess)
                 {
                     failedOperation = operation.Sequence;
@@ -386,6 +388,7 @@ public class AutomationExecutorService : IAutomationExecutorService
             }
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            await _handlerRegistry.NotifyAssignmentsCommittedAsync(orderedOperations, cancellationToken);
 
             var captureSyncResult = await SyncLinkedCaptureConversionAsync(
                 effectiveProposal with

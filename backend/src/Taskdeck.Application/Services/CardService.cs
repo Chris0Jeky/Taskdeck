@@ -610,7 +610,9 @@ public partial class CardService
             card.UpdatedAt,
             card.IsArchived,
             card.WorkItemType.ToString(),
-            card.ParentCardId
+            card.ParentCardId,
+            card.Assignments.OrderBy(a => a.UserId).Select(a => new CardAssignmentDto(
+                a.UserId, a.User?.Username ?? "Participant", a.AssignedAt, a.AssignedByUserId)).ToArray()
         );
     }
 

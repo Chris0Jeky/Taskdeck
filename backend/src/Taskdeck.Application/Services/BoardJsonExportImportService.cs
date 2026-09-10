@@ -13,6 +13,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
     private readonly DevelopmentSandboxSettings _sandboxSettings;
     private readonly IThinkingDeckRepository? _thinkingDecks;
     private readonly IBoardDependencyRepository? _dependencies;
+    private readonly ICardAssignmentStore? _assignments;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -24,12 +25,14 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
         IUnitOfWork unitOfWork,
         DevelopmentSandboxSettings? sandboxSettings = null,
         IThinkingDeckRepository? thinkingDecks = null,
-        IBoardDependencyRepository? dependencies = null)
+        IBoardDependencyRepository? dependencies = null,
+        ICardAssignmentStore? assignments = null)
     {
         _unitOfWork = unitOfWork;
         _sandboxSettings = sandboxSettings ?? new DevelopmentSandboxSettings();
         _thinkingDecks = thinkingDecks;
         _dependencies = dependencies;
+        _assignments = assignments;
     }
 
     public async Task<Result<ExportBoardDto>> ExportBoardAsync(Guid boardId, Guid userId)
@@ -131,19 +134,61 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
         return Result.Success(json);
     }
 
-    public async Task<Result<ImportResultDto>> ImportBoardAsync(ImportBoardDto dto, Guid userId)
+    public Task<Result<ImportResultDto>> ImportBoardAsync(ImportBoardDto dto, Guid userId)
+        => ImportBoardCoreAsync(dto, userId, preview: false);
+
+    public async Task<Result<BoardImportPreviewDto>> PreviewBoardAsync(string json, Guid userId)
     {
         try
         {
+            var dto = TryDeserializeImportDto(json);
+            if (dto is null) return Result.Failure<BoardImportPreviewDto>(ErrorCodes.ValidationError, "Invalid or unsupported board JSON.");
+            var validation = await ImportBoardCoreAsync(dto, userId, preview: true);
+            if (!validation.IsSuccess) return Result.Failure<BoardImportPreviewDto>(validation.ErrorCode, validation.ErrorMessage);
             var user = await _unitOfWork.Users.GetByIdAsync(userId);
-            if (user == null)
-                return Result.Failure<ImportResultDto>(ErrorCodes.NotFound, $"User with ID {userId} not found");
+            var cards = (dto.Cards ?? []).ToArray();
+            var sources = cards.SelectMany((c, index) => (c.SourceAssignees ?? []).Select(a => new { Assignee = a, CardIndex = index }))
+                .GroupBy(x => x.Assignee.SourceKey, StringComparer.Ordinal)
+                .Select(g => new ImportAssigneePreviewDto(g.Key, g.First().Assignee.DisplayName, g.Select(x => x.CardIndex).Distinct().Count()))
+                .OrderBy(x => x.DisplayName).ToArray();
+            return Result.Success(new BoardImportPreviewDto(dto, cards.Length, (dto.Columns ?? []).Count(), sources,
+                new BoardParticipantDto(userId, user!.Username)));
+        }
+        catch (Exception ex) when (ex is JsonException or DomainException or ArgumentException)
+        {
+            return Result.Failure<BoardImportPreviewDto>(ErrorCodes.ValidationError, "Invalid board import payload.");
+        }
+    }
 
+    private async Task<Result<ImportResultDto>> ImportBoardCoreAsync(ImportBoardDto dto, Guid userId, bool preview)
+    {
+        try
+        {
             await _unitOfWork.BeginTransactionAsync();
+            if (_assignments is not null)
+                await _assignments.RefreshAuthorityAsync(Guid.Empty, userId, default);
+            var user = await _unitOfWork.Users.GetByIdAsync(userId);
+            if (user is null)
+                throw new DomainException(ErrorCodes.NotFound, "Importing user not found.");
+            if (user is not { IsActive: true })
+                throw new DomainException(ErrorCodes.Forbidden, "An active account is required to import a board.");
 
             var labels = dto.Labels ?? Enumerable.Empty<ImportLabelDto>();
             var columns = dto.Columns ?? Enumerable.Empty<ImportColumnDto>();
             var cards = (dto.Cards ?? Enumerable.Empty<ImportCardDto>()).ToList();
+            var sourceKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var source in cards.SelectMany(c => c.SourceAssignees ?? []))
+            {
+                if (source is null || string.IsNullOrWhiteSpace(source.SourceKey) || source.SourceKey.Length > 200 ||
+                    string.IsNullOrWhiteSpace(source.DisplayName) || source.DisplayName.Length > 200)
+                    throw new DomainException(ErrorCodes.ValidationError, "Every source assignee needs a bounded key and display name.");
+                sourceKeys.Add(source.SourceKey);
+            }
+            if (dto.AssigneeMappings is not null && dto.AssigneeMappings.Any(m => !sourceKeys.Contains(m.Key) ||
+                    m.Value.HasValue && m.Value != userId))
+                throw new DomainException(ErrorCodes.ValidationError, "Mappings may target only Me or explicit unassigned, and must reference a source assignee.");
+            if (!preview && sourceKeys.Any(key => dto.AssigneeMappings is null || !dto.AssigneeMappings.ContainsKey(key)))
+                throw new DomainException(ErrorCodes.ValidationError, "Explicitly map every source assignee before importing.");
             var cardIds = new Dictionary<Guid, Guid>();
             foreach (var source in cards.Where(card => card.SourceId.HasValue))
                 if (source.SourceId == Guid.Empty || !cardIds.TryAdd(source.SourceId!.Value, Guid.NewGuid()))
@@ -219,6 +264,12 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                     card.AddLabel(cardLabel);
                 }
 
+                var mappedUsers = (importCard.SourceAssignees ?? []).Select(a =>
+                    dto.AssigneeMappings?.GetValueOrDefault(a.SourceKey)).Where(id => id.HasValue).Select(id => id!.Value);
+                card.ReplaceAssignments(mappedUsers, userId);
+                if (card.Assignments.Count > 0)
+                    await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id, Taskdeck.Domain.Enums.AuditAction.Created, userId,
+                        JsonSerializer.Serialize(new { reason = "assignment-import-mapping", assigneeUserIds = card.Assignments.Select(a => a.UserId).ToArray() })));
                 if (importCard.IsArchived) card.Archive();
                 await _unitOfWork.Cards.AddAsync(card);
                 if (importCard.Thinking is not null)
@@ -265,11 +316,12 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 }
 
                 await _unitOfWork.SaveChangesAsync();
-            await _unitOfWork.CommitTransactionAsync();
+            if (preview) await _unitOfWork.RollbackTransactionAsync();
+            else await _unitOfWork.CommitTransactionAsync();
 
             var result = new ImportResultDto(
                 true,
-                board.Id,
+                preview ? null : board.Id,
                 null,
                 columnsByName.Count,
                 cardsImported,
@@ -325,11 +377,20 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
         try
         {
             using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("source", out var source))
+            {
+                var parsed = TryDeserializeImportDto(source.GetRawText());
+                if (parsed is null) return null;
+                var mappings = document.RootElement.TryGetProperty("assigneeMappings", out var mappingJson)
+                    ? JsonSerializer.Deserialize<Dictionary<string, Guid?>>(mappingJson.GetRawText(), JsonOptions) : null;
+                return parsed with { AssigneeMappings = mappings };
+            }
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("format", out _))
             {
                 var envelope = JsonSerializer.Deserialize<BoardExportEnvelope>(json, JsonOptions);
-                return envelope is { Format: "taskdeck-board", Version: 2 or 3, Payload: not null }
-                    ? ConvertExportToImportDto(envelope.Payload) : null;
+                if (envelope is not { Format: "taskdeck-board", Version: 2 or 3 or 4, Payload: not null }) return null;
+                if (envelope.Version < 4 && envelope.Payload.Cards.Any(c => c.Assignments is { Count: > 0 })) return null;
+                return ConvertExportToImportDto(envelope.Payload);
             }
         }
         catch (JsonException) { return null; }
@@ -409,6 +470,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
         var cards = new List<ImportCardDto>();
         foreach (var card in exportedCards)
         {
+            if (card.Assignments?.Any(a => a is null || a.UserId == Guid.Empty || string.IsNullOrWhiteSpace(a.DisplayName)) == true)
+                throw new JsonException("Export payload contains an invalid source assignee.");
             if (!columnNameById.TryGetValue(card.ColumnId, out var columnName))
             {
                 throw new JsonException(
@@ -428,7 +491,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 card.Position,
                 card.DueDate,
                 labelNames,
-                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived, card.WorkItemType, card.ParentCardId));
+                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived, card.WorkItemType, card.ParentCardId,
+                card.Assignments?.Select(a => new ImportSourceAssigneeDto(a.UserId.ToString(), a.DisplayName)).ToArray()));
         }
 
         return new ImportBoardDto(
@@ -440,7 +504,9 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             exportDto.Dependencies);
     }
 
-    public static object ToPortablePayload(ExportBoardDto dto) => dto.Cards.Any(card => card.ParentCardId.HasValue)
+    public static object ToPortablePayload(ExportBoardDto dto) => dto.Cards.Any(card => card.Assignments is { Count: > 0 })
+        ? new BoardExportEnvelope("taskdeck-board", 4, dto)
+        : dto.Cards.Any(card => card.ParentCardId.HasValue)
         ? new BoardExportEnvelope("taskdeck-board", 3, dto)
         : dto.Dependencies is { Count: > 0 } ? new BoardExportEnvelope("taskdeck-board", 2, dto) : dto;
 
@@ -480,6 +546,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             card.Position,
             labels,
             card.CreatedAt,
-            card.UpdatedAt, card.IsArchived, card.WorkItemType.ToString(), card.ParentCardId);
+            card.UpdatedAt, card.IsArchived, card.WorkItemType.ToString(), card.ParentCardId,
+            CardService.MapToDto(card).Assignments);
     }
 }
