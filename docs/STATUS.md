@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+#2808 delivery labels reconciled (2026-09-10, coordinator). Seven entries below still read "pending main delivery" or "implementation branch". Issue `#2808` is closed and its whole PR train is merged, the last of it on 2026-09-10 (`#2897` at 12:04Z, `#2895` at 11:34Z, `#2886`/`#2885`/`#2884`/`#2883`/`#2882`/`#2881`/`#2880`/`#2879` at 08:10Z), so the qualifier is now "delivered" on each. What was verified is train-level: the issue is closed and every referenced PR shows a merge commit. The per-paragraph behavioural claims and their evidence numbers were **not** re-run by this pass and are the authoring lane's record.
+
 v0.4 QA preparation ([#2898](https://github.com/Chris0Jeky/Taskdeck/issues/2898)): eleven session issues now define 44 initial cases covering feature truth, core-loop authority, experience comparison, accessibility, work-model interactions, private sources, audio/questions, reminders, portability, hosted operations and Fabric contracts. All are milestone v0.4, Project Pending, Priority III. The [capability catalogue](product/FEATURE_CAPABILITIES.md), [qualification plan](testing/V04_QUALIFICATION_PLAN.md) and session/result templates distinguish implemented behavior, limits and future work. These are prepared cases, all NOT RUN; existing overhaul verification is separate from future release acceptance.
 
 Reminder save ownership (#2896): a delayed completion from a previous account can no longer release the guard for a newer account's enable save. Both success and failure interleavings were reproduced before repair; 22 targeted component cases and the full 6,438-test frontend suite pass, with three existing skips. Typecheck, production build and scoped lint pass. This is a focused follow-up to #2895; the delivery tracker records its hosted gate and merge receipt.
@@ -12,13 +14,13 @@ Optional reminder hours (#2808, merged #2892): explicit weekday and time windows
 
 Overhaul integrations #2866 and #2886 are merged at `384d8dfaa` and `f00cf1d31` respectively. Required CI passed at the reviewed #2886 head `fce97dc67`, including both operating-system API/unit suites and the final browser smoke job. The continuation delivers explicit transcription, route-exit recovery and grounded commit/account-erasure protection. Final local 6,428 frontend tests and ten browser journeys pass; the full backend's single unchanged worker-wait failure passes in the 30-case isolated/fix verification. Reminder work-hours/time-zone selection is merged in #2892. Earlier pending-delivery notes below are historical slice evidence superseded by these merge receipts. [Full evidence](product/WORKSPACE_OVERHAUL_VALIDATION.md).
 
-Grounded-question commit recovery (#2808, pending main delivery): recheck source/access inside the same serializable transaction that saves observations, and detach rejected staged questions. Settle model usage before staging; accounting failure now has a definite no-save result and cannot hide a successful question save. Seventeen application and sixteen API/reminder tests pass, including changes after the final service read. Full backend verification passes 9,240 tests with 34 existing skips; bounded independent review is clean. Hosted qualification remains separate.
+Grounded-question commit recovery (#2808, delivered): recheck source/access inside the same serializable transaction that saves observations, and detach rejected staged questions. Settle model usage before staging; accounting failure now has a definite no-save result and cannot hide a successful question save. Seventeen application and sixteen API/reminder tests pass, including changes after the final service read. Full backend verification passes 9,240 tests with 34 existing skips; bounded independent review is clean. Hosted qualification remains separate.
 
-Thinking-route exit recovery (#2808, pending main delivery): snapshot valid board/card IDs and invalidate pending receipts before route-exit cleanup. The view no longer requests empty-board endpoints while unmounting. Full frontend verification passes 6,420 tests with three existing skips, plus six continuity tests, typecheck/build and both planning browser journeys; bounded review is clean. Hosted qualification remains separate. This closes the previously recorded readonly navigation error without changing plan or card data.
+Thinking-route exit recovery (#2808, delivered): snapshot valid board/card IDs and invalidate pending receipts before route-exit cleanup. The view no longer requests empty-board endpoints while unmounting. Full frontend verification passes 6,420 tests with three existing skips, plus six continuity tests, typecheck/build and both planning browser journeys; bounded review is clean. Hosted qualification remains separate. This closes the previously recorded readonly navigation error without changing plan or card data.
 
-Explicit audio transcription (#2808, pending main delivery): optional destination/model consent, durable attempts and daily admission, separate provisional results, reviewed-draft provenance and existing explicit answer confirmation. Four domain, 25 provider and 24 focused API/transport/export tests pass; 33 component tests, typecheck/lint and three real-API Chromium journeys pass, including a synthetic speech transport and lost receipt. Full frontend passes 6,425 tests; the full backend run finds one outbound inventory omission, corrected with 28 architecture and 22 final API checks. Migration/model checks pass; hosted qualification remains separate. [Behavior and limits](product/AUDIO_TRANSCRIPTION.md).
+Explicit audio transcription (#2808, delivered): optional destination/model consent, durable attempts and daily admission, separate provisional results, reviewed-draft provenance and existing explicit answer confirmation. Four domain, 25 provider and 24 focused API/transport/export tests pass; 33 component tests, typecheck/lint and three real-API Chromium journeys pass, including a synthetic speech transport and lost receipt. Full frontend passes 6,425 tests; the full backend run finds one outbound inventory omission, corrected with 28 architecture and 22 final API checks. Migration/model checks pass; hosted qualification remains separate. [Behavior and limits](product/AUDIO_TRANSCRIPTION.md).
 
-Expanded overhaul follow-through (#2808, pending main delivery): optional reminders, audio recovery and retained previews now pass combined qualification: 9,232 backend tests, 6,418 frontend tests, eleven Chromium journeys and both migrations together. A final filename-normalization fix has eleven passing audio API tests. Independent interaction reviews are clean; hosted/base qualification remains on the delivery PRs. [Evidence and limits](product/WORKSPACE_OVERHAUL_VALIDATION.md).
+Expanded overhaul follow-through (#2808, delivered): optional reminders, audio recovery and retained previews now pass combined qualification: 9,232 backend tests, 6,418 frontend tests, eleven Chromium journeys and both migrations together. A final filename-normalization fix has eleven passing audio API tests. Independent interaction reviews are clean; hosted/base qualification remains on the delivery PRs. [Evidence and limits](product/WORKSPACE_OVERHAUL_VALIDATION.md).
 
 Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.
 
@@ -39,7 +41,7 @@ Audio draft recovery continuation (#2808): unfinished written audio versions ret
 
 Source-storage configuration continuation (#2808): all four quota values bind through validated options, and the byte store receives that same validated instance. Nonpositive settings fail API startup before a user attempts an upload, with a message naming the invalid setting. Defaults and valid large limits remain supported; runtime checks remain for directly constructed settings. This prevents a configuration mistake from appearing as a first-upload server error.
 
-Grounded observation continuation (#2808, pending main delivery): Quiet insights can preview one selected card and explicitly ask the configured model for up to three private, quoted questions. Strict bounded output, before/after source checks, shared Chat quota/kill switch, category/card deduplication and one-day expiry preserve review-first behavior. No board write, implicit private retrieval or background attention is added. See [the contract and usefulness corpus](product/GROUNDED_OBSERVATIONS.md); synthetic transport proves wiring, not live-model quality.
+Grounded observation continuation (#2808, delivered): Quiet insights can preview one selected card and explicitly ask the configured model for up to three private, quoted questions. Strict bounded output, before/after source checks, shared Chat quota/kill switch, category/card deduplication and one-day expiry preserve review-first behavior. No board write, implicit private retrieval or background attention is added. See [the contract and usefulness corpus](product/GROUNDED_OBSERVATIONS.md); synthetic transport proves wiring, not live-model quality.
 
 Source upload bounds (#2808): coalesce fragmented reads into fixed 64 KiB database chunks with one final tail, preserving quota/size/hash/rollback checks. Twenty-four focused API tests pass; exact hosted repair qualification remains on the integration PR.
 
@@ -97,11 +99,11 @@ Workspace overhaul (#2800, integrated implementation; no release or working-data
 - Comparison observations now require a scenario and explicit outcome, leave ease unrated until chosen, and export backend-reported version attribution (or null) with format version 2. Insight analysis settles independently of read generations; Memory creation waits for the first list; failed board discovery retries at the board boundary.
 - Five integrated Chromium journeys exercise capture/review/explicit apply across experiences, draft continuity, stale thinking saves, private question answers, memory history/export, board disclosure, and desktop/phone layouts. Automated accessibility checks cover the new Home and card surfaces. The [resource/feature map](product/WORKSPACE_OVERHAUL.md) and [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) preserve exact scope and remaining source, linked-step, contextual companion, model/audio and attention work. No statistical A/B, microphone, new model intelligence, deployment or owner acceptance is claimed.
 
-Contextual companion continuation (#2808, implementation branch):
+Contextual companion continuation (#2808, delivered):
 - Card thinking and Focus can open a board-scoped companion with explicit card, shared thinking and private-memory selections. The server rechecks access, archive state and saved memory versions before dispatch; streaming also rejects a changed source receipt. User intent remains separate from bounded source material.
 - Read-only proposal previews return the diff and effective revision together, preserve approved pins, and expire on the client. Review remains the approval and explicit Apply surface. SourceAsset/audio integration, affected-object overlays and model usefulness are still open. Direct proof is in the [overhaul validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md).
 
-Private memory source continuation (#2808, implementation branch):
+Private memory source continuation (#2808, delivered):
 - New private answers preserve original question evidence and answer text as native Context Fabric source assets, with immutable supersession on correction. The source and memory write share a transaction; a stale question or competing correction rolls both back. Existing saved history is admitted on the next explicit memory write.
 - The private originals viewer and version-2 memory download expose the retained text and source links across all experiences. Both account export formats include native originals even after board deletion; account erasure removes them. Archiving excludes active context without erasing sources. Audio, source representations, explicit SourceAsset selection and bulk historical admission remain open.
 
@@ -1009,6 +1011,57 @@ v0.3 milestone work (2026-09-07, coordinator delivery checkpoint):
 - **Three acceptance audits closed existing milestone work.** #1984 follows the maintainer's D1=B ruling: capture promises board scope only, with both scope-truth regressions passing. #2250 release-note composition and dispatch checks passed 157/157 with the process-local Git Bash executable pinned; the recorded positive rehearsal passed composition and the negative rehearsal failed composition, and both skipped release creation. #2691's shipped cancellation handshake passed four subsequent required Windows Backend Unit jobs; this is bounded observation, not a claim that timing failures can never recur. Evidence and run links are recorded on each closed issue. #2090 remains open for its explicitly retained inspector and layout follow-ups.
 - **Release acceptance is still separate.** This work does not accept a release deck, change repository visibility, publish a release, or complete the private-instance and subjective device/accessibility actions in [OUTSTANDING_TASKS.md](../OUTSTANDING_TASKS.md).
 
+September 8 to 10 candidate and continuation records, relocated (2026-09-10, coordinator). The block below sat after `## Canonical Documentation Policy`, outside this file's dated-record area, and described three PRs as unmerged candidates after all three had merged. The prose is unchanged; only the three headings and this preface are new. Merge facts measured from the API: `#2793` merged 2026-09-08T00:03Z (`2fd93d6e1`), `#2790` and `#2791` both 2026-09-09T10:57Z (`7be107bf8`, `17481cd2d`).
+
+Paper board controls (2026-09-08, `#2090` partial, PR `#2793`, merge `2fd93d6e1`). The paragraphs below were written as a pre-merge candidate record and are kept verbatim; the pending items they name were the state at candidate time, not after merge:
+
+The remaining board-control candidate scopes collapse preferences to the signed-in user, keeps the latest requested navigation while a discard confirmation is open, and focuses a newly selected card in the desktop inspector. Wide cards now fill their lane's content width: browser measurement found the old 248px card cap inside a 340px lane, and the Chromium regression compares the rendered card and card-content widths after the fix.
+
+At source head `b479064e7`, the three affected view/modal test files passed 129 tests, the Wide-card Chromium journey passed, and typecheck/build/scoped lint passed. Synthetic desktop and 390px mobile inspector evidence was visually inspected and retained outside the worktree; the mobile inspector remains a viewport-bounded modal. Full frontend qualification is not green: five date-fixture failures were observed and are independently tracked on unchanged main in #2789. Independent review, hosted checks, and complete #2090 residual acceptance remain pending. These changes reduce board maintenance and context-switching friction without changing proposal review or execution authority.
+
+Accountable Automation Chat (2026-09-08, `#2004`, PR `#2790`, merged 2026-09-09T10:57Z as `7be107bf8`). Candidate record kept verbatim; the pending items it names were the state at candidate time:
+
+The ADR-0069 runtime candidate makes actionable instructions attempt a proposal by default and removes the proposal opt-in checkbox. Unbound turns retain the instruction beside an inline board picker; linking the owned session does not resend it, and explicit continuation attempts the proposal. Binding rechecks writable board state and ownership, uses atomic compare-and-set, and refreshes a losing tracked row so concurrent same-board requests remain idempotent. Clarification allows one persisted round, then an answer or Skip attempts best effort. Persisted board-needed/no-proposal outcomes and real tool receipts distinguish drafts from applied work, including failure and stream paths. Existing-card updates use real board/card state and remain subject to Review, Approve, and Apply.
+
+At source head `7a7895964`, post-integration checks passed 118 ChatService tests, 31 API/live-stub/concurrency tests, and 83 changed frontend tests. A real SQLite two-context same-board race failed before the tracker refresh and passed after it. The natural-update API test proves a persisted PendingReview Chat proposal with the actual card ID, current-title summary, and proposed-title diff while the card remains unchanged. The Mock Chromium SC-005 journey passed, with a visually inspected Review screenshot and trace retained outside the worktree; it proves inline binding, explicit continuation, proposal visibility, and no card creation before Apply.
+
+The full backend invocation had 8,992 passes, 5 skips, and one obsolete assertion failure; the corrected complete API rerun passed 2,862 with 4 skips. This is scoped correction evidence, not one green full-solution invocation. Full frontend had 6,144 passes, 3 skips, and five date-fixture failures independently reproduced on unchanged main and tracked in #2789; the three affected files pass 102/102 under UTC. Lint, typecheck, and build passed. Independent full-stack/security review and hosted qualification remain pending. Live LLM-provider and direct browser-controller verification are not claimed. #2004 remains open until the complete acceptance is verified.
+
+CI-10 slice 2, nightly observation (2026-09-08, `#2334` partial, PR `#2791`, merged 2026-09-09T10:57Z as `17481cd2d` under the maintainer's 2026-09-09 four-PR delegation recorded on `#2337`). Candidate record kept verbatim; the pending items it names were the state at candidate time:
+
+The nightly integration candidate adds a parallel observation job. It derives a baseline only from authenticated successful CI Nightly and Nightly Quality Signals runs at the same main head, checks the complete expected job set and latest attempts, binds the bounded JSON plan artifact to the run and Git tree, and verifies ancestry and changed files. Missing or inconsistent evidence selects a full sweep. Both schedules and all twelve deep suites remain unconditional; this does not enable selective execution.
+
+At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.
+
+September 9 retained-comparison continuation (#2808): version3 observation files can be imported and
+combined across releases with atomic validation, stable IDs and duplicate/conflict handling. Production
+frontend inputs receive a build fingerprint; legacy/dev observations keep unknown attribution.
+Grouped descriptive outcomes preserve scenario/layout/theme/build conditions. Notes remain manually
+retained files with no automatic telemetry. Exact local/hosted checks belong to the continuation PR.
+September 9 older-memory continuation (#2808): explicit preservation on the Memory page admits up to
+50 displayed legacy memories, with all-or-nothing revision and ownership checks. It retains exact
+originals and historical corrections through the native-source/export path without editing content,
+enqueuing processing or changing board work. Targeted API14 and frontend20 checks passed; full-suite
+and hosted qualification are recorded separately in the continuation PR.
+
+Companion continuity (#2808): unsaved thinking blocks embedded sends until saved; pending sends hold
+in-app navigation with honest cancellation wording. Failed post-send receipt reads can be retried
+without resending. Preview expiry uses server-relative receipt timestamps and elapsed request time.
+These frontend safeguards preserve successful responses and the existing review-first mutation path.
+
+September 10 original-library continuation (#2808): Memory now offers explicit owner-private discovery,
+read-only evidence/history and original playback/download for earlier audio questions. Existing-board
+access is required even when the board is archived; deleted-board originals remain owner-linked.
+Changed questions cannot be confirmed from the library. API8, targeted frontend26 and typecheck passed;
+full suites and corrected browser proof are recorded separately in the continuation PR.
+
+September 10 source-interaction follow-through (#2808): named original pickers and permission errors,
+same-user token-refresh continuity, shared retained-instruction disabled states, and bounded original
+history pages beyond 1000 address the recorded usability findings. Targeted frontend 33/API 27 and two
+Chromium journeys pass; full-suite and hosted outcomes belong to the continuation PR. Board mutation
+and model dispatch authority are unchanged.
+
+
 ## Project Summary
 
 Taskdeck is a local-first execution system for developers, built with a .NET 8 backend and a Vue 3 frontend.
@@ -1521,51 +1574,3 @@ Historical/spec detail material:
 
 Rule:
 - If archive content conflicts with active docs, active docs win.
-
-## Paper board-control candidate (2026-09-08, #2090 / PR #2793)
-
-The remaining board-control candidate scopes collapse preferences to the signed-in user, keeps the latest requested navigation while a discard confirmation is open, and focuses a newly selected card in the desktop inspector. Wide cards now fill their lane's content width: browser measurement found the old 248px card cap inside a 340px lane, and the Chromium regression compares the rendered card and card-content widths after the fix.
-
-At source head `b479064e7`, the three affected view/modal test files passed 129 tests, the Wide-card Chromium journey passed, and typecheck/build/scoped lint passed. Synthetic desktop and 390px mobile inspector evidence was visually inspected and retained outside the worktree; the mobile inspector remains a viewport-bounded modal. Full frontend qualification is not green: five date-fixture failures were observed and are independently tracked on unchanged main in #2789. Independent review, hosted checks, and complete #2090 residual acceptance remain pending. These changes reduce board maintenance and context-switching friction without changing proposal review or execution authority.
-
-## Accountable Automation Chat candidate (2026-09-08, #2004 / PR #2790)
-
-The ADR-0069 runtime candidate makes actionable instructions attempt a proposal by default and removes the proposal opt-in checkbox. Unbound turns retain the instruction beside an inline board picker; linking the owned session does not resend it, and explicit continuation attempts the proposal. Binding rechecks writable board state and ownership, uses atomic compare-and-set, and refreshes a losing tracked row so concurrent same-board requests remain idempotent. Clarification allows one persisted round, then an answer or Skip attempts best effort. Persisted board-needed/no-proposal outcomes and real tool receipts distinguish drafts from applied work, including failure and stream paths. Existing-card updates use real board/card state and remain subject to Review, Approve, and Apply.
-
-At source head `7a7895964`, post-integration checks passed 118 ChatService tests, 31 API/live-stub/concurrency tests, and 83 changed frontend tests. A real SQLite two-context same-board race failed before the tracker refresh and passed after it. The natural-update API test proves a persisted PendingReview Chat proposal with the actual card ID, current-title summary, and proposed-title diff while the card remains unchanged. The Mock Chromium SC-005 journey passed, with a visually inspected Review screenshot and trace retained outside the worktree; it proves inline binding, explicit continuation, proposal visibility, and no card creation before Apply.
-
-The full backend invocation had 8,992 passes, 5 skips, and one obsolete assertion failure; the corrected complete API rerun passed 2,862 with 4 skips. This is scoped correction evidence, not one green full-solution invocation. Full frontend had 6,144 passes, 3 skips, and five date-fixture failures independently reproduced on unchanged main and tracked in #2789; the three affected files pass 102/102 under UTC. Lint, typecheck, and build passed. Independent full-stack/security review and hosted qualification remain pending. Live LLM-provider and direct browser-controller verification are not claimed. #2004 remains open until the complete acceptance is verified.
-
-## CI10-2 observation candidate (2026-09-08, PR #2791)
-
-The nightly integration candidate adds a parallel observation job. It derives a baseline only from authenticated successful CI Nightly and Nightly Quality Signals runs at the same main head, checks the complete expected job set and latest attempts, binds the bounded JSON plan artifact to the run and Git tree, and verifies ancestry and changed files. Missing or inconsistent evidence selects a full sweep. Both schedules and all twelve deep suites remain unconditional; this does not enable selective execution.
-
-At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.
-
-September 9 retained-comparison continuation (#2808): version3 observation files can be imported and
-combined across releases with atomic validation, stable IDs and duplicate/conflict handling. Production
-frontend inputs receive a build fingerprint; legacy/dev observations keep unknown attribution.
-Grouped descriptive outcomes preserve scenario/layout/theme/build conditions. Notes remain manually
-retained files with no automatic telemetry. Exact local/hosted checks belong to the continuation PR.
-September 9 older-memory continuation (#2808): explicit preservation on the Memory page admits up to
-50 displayed legacy memories, with all-or-nothing revision and ownership checks. It retains exact
-originals and historical corrections through the native-source/export path without editing content,
-enqueuing processing or changing board work. Targeted API14 and frontend20 checks passed; full-suite
-and hosted qualification are recorded separately in the continuation PR.
-
-Companion continuity (#2808): unsaved thinking blocks embedded sends until saved; pending sends hold
-in-app navigation with honest cancellation wording. Failed post-send receipt reads can be retried
-without resending. Preview expiry uses server-relative receipt timestamps and elapsed request time.
-These frontend safeguards preserve successful responses and the existing review-first mutation path.
-
-September 10 original-library continuation (#2808): Memory now offers explicit owner-private discovery,
-read-only evidence/history and original playback/download for earlier audio questions. Existing-board
-access is required even when the board is archived; deleted-board originals remain owner-linked.
-Changed questions cannot be confirmed from the library. API8, targeted frontend26 and typecheck passed;
-full suites and corrected browser proof are recorded separately in the continuation PR.
-
-September 10 source-interaction follow-through (#2808): named original pickers and permission errors,
-same-user token-refresh continuity, shared retained-instruction disabled states, and bounded original
-history pages beyond 1000 address the recorded usability findings. Targeted frontend 33/API 27 and two
-Chromium journeys pass; full-suite and hosted outcomes belong to the continuation PR. Board mutation
-and model dispatch authority are unchanged.
