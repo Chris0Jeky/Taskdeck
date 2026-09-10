@@ -23,6 +23,19 @@ const pending = ref(false)
 const loading = ref(false)
 const loaded = ref(false)
 const text = ref('')
+const writtenDraftSource = ref<{ id: string; questionHash: string; evidence: string } | null>(null)
+const staleWrittenDraft = computed(() => !!writtenDraftSource.value && (
+  writtenDraftSource.value.id !== saved.value?.id || writtenDraftSource.value.questionHash !== saved.value?.questionHash
+  || !!saved.value?.confirmedMemoryId))
+function beginWrittenDraft() {
+  if (text.value === (currentVersion.value?.text ?? '')) { writtenDraftSource.value = null; return }
+  if (!writtenDraftSource.value && saved.value)
+    writtenDraftSource.value = { id: saved.value.id, questionHash: saved.value.questionHash, evidence: saved.value.originalEvidence }
+}
+function discardWrittenDraft() {
+  writtenDraftSource.value = null
+  text.value = currentVersion.value?.text ?? ''
+}
 const status = ref<MemoryStatus>('statement')
 const error = ref('')
 const playbackUrl = ref('')
@@ -31,7 +44,7 @@ let uploadId = createSourceUploadId()
 let generation = 0
 let live = true
 const currentVersion = computed(() => saved.value?.writtenVersions.find(x => x.id === saved.value?.representationId))
-const dirty = computed(() => !!file.value || text.value !== (currentVersion.value?.text ?? ''))
+const dirty = computed(() => !!file.value || staleWrittenDraft.value || text.value !== (currentVersion.value?.text ?? ''))
 const busy = computed(() => pending.value || recording.value)
 watch(dirty, value => emit('dirty-change', value), { immediate: true, flush: 'sync' })
 watch(busy, value => emit('busy', value), { immediate: true, flush: 'sync' })
@@ -69,7 +82,7 @@ async function mutate(action: () => Promise<ThinkingAudio>, kind: 'upload' | 'wr
     if (!live || request !== generation) return
     saved.value = receipt
     if (kind === 'upload') file.value = null
-    if (kind !== 'upload') text.value = currentVersion.value?.text ?? ''
+    if (kind !== 'upload') { writtenDraftSource.value = null; text.value = currentVersion.value?.text ?? '' }
     if (kind === 'confirm') emit('confirmed')
   } catch (cause) { if (live && request === generation) message(cause) }
   finally { if (live && request === generation) pending.value = false }
@@ -81,7 +94,7 @@ function upload() {
   void mutate(() => thinkingAudioApi.upload(source.boardId, source.cardId, source.layerId, source.revision, id, draft), 'upload')
 }
 function write() {
-  const receipt = saved.value; if (!receipt || !text.value.trim()) return
+  const receipt = saved.value; if (!receipt || staleWrittenDraft.value || !text.value.trim()) return
   const draft = text.value
   void mutate(() => thinkingAudioApi.write(receipt.id, receipt.revision, draft), 'write')
 }
@@ -111,6 +124,12 @@ onUnmounted(() => { live = false; generation++; if (playbackUrl.value) URL.revok
     <p v-if="loading" role="status">Loading your recording…</p>
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" :disabled="busy || loading || !sourceReady" @click="load">Reload saved recording</button>
+    <section v-if="staleWrittenDraft" aria-label="Retained written audio draft">
+      <p>Your recording or question changed. This draft still belongs to the earlier source. Copy it before discarding; it will not be saved against a different recording.</p>
+      <label>Earlier written draft<textarea :value="text" readonly aria-label="Earlier written audio draft" rows="4" /></label>
+      <details><summary>Draft's original question</summary><p class="verbatim">{{ writtenDraftSource?.evidence }}</p></details>
+      <button type="button" :disabled="busy || loading" @click="discardWrittenDraft">Discard earlier written draft</button>
+    </section>
     <template v-if="!saved">
       <AudioAnswerRecorder v-model="file" :disabled="pending || loading || !loaded || !sourceReady" @draft-started="beginDraft" @busy="recording = $event" />
       <p v-if="staleDraft" role="status">The question changed after this audio draft began. Replay or download it, then discard it or record a new answer for the current question.</p>
@@ -129,14 +148,14 @@ onUnmounted(() => { live = false; generation++; if (playbackUrl.value) URL.revok
         <a :href="playbackUrl" :download="saved.fileName">Download original recording</a>
       </template>
       <details><summary>Original question evidence</summary><p class="verbatim">{{ saved.originalEvidence }}</p></details>
-      <template v-if="!saved.confirmedMemoryId">
-        <label>Written version of your recording<textarea v-model="text" aria-label="Written audio version" :disabled="pending" maxlength="8000" rows="4" /></label>
+      <template v-if="!saved.confirmedMemoryId && !staleWrittenDraft">
+        <label>Written version of your recording<textarea v-model="text" aria-label="Written audio version" :disabled="pending" maxlength="8000" rows="4" @input="beginWrittenDraft" /></label>
         <p>Write or paste your own version. Nothing is sent to a transcription provider. Keep uncertain words explicit.</p>
-        <button type="button" :disabled="!text.trim() || !dirty || busy || loading || !sourceReady" @click="write">Save written version</button>
+        <button type="button" :disabled="!text.trim() || !dirty || busy || loading || !loaded || !sourceReady" @click="write">Save written version</button>
         <label>How to treat the confirmed answer<select v-model="status" aria-label="Audio answer status" :disabled="pending"><option value="statement">Statement</option><option value="assumption">Assumption</option><option value="unknown">Unknown</option><option value="needsReview">Needs review</option></select></label>
-        <button type="button" :disabled="!saved.representationId || dirty || busy || loading || !sourceReady || answerAlreadyKept" @click="confirm">Confirm written version as my answer</button>
+        <button type="button" :disabled="!saved.representationId || dirty || busy || loading || !loaded || !sourceReady || answerAlreadyKept" @click="confirm">Confirm written version as my answer</button>
       </template>
-      <RouterLink v-else :to="{ path: '/workspace/memory', query: { boardId } }">Review or correct the confirmed answer in private memory</RouterLink>
+      <RouterLink v-else-if="saved.confirmedMemoryId" :to="{ path: '/workspace/memory', query: { boardId } }">Review or correct the confirmed answer in private memory</RouterLink>
       <details v-if="saved.writtenVersions.length"><summary>Saved written versions ({{ saved.writtenVersions.length }})</summary><ol><li v-for="version in saved.writtenVersions" :key="version.id"><strong>{{ version.quality === 'Verified' ? 'Confirmed by you' : version.quality === 'Superseded' ? 'Previous version' : 'Written, unconfirmed' }}</strong><p class="verbatim">{{ version.text }}</p></li></ol></details>
       <template v-if="file"><AudioAnswerRecorder :model-value="file" disabled /><p>Reloading the saved recording keeps this local draft while this page stays open. A browser refresh or closing the page loses an unuploaded file. <button type="button" :disabled="busy" @click="file = null">Discard this local audio draft</button></p></template>
     </template>

@@ -126,6 +126,8 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
     {
         var answer = await OwnedAsync(userId, id, ct);
         if (answer.ConfirmedMemoryId.HasValue) throw Conflict();
+        var (_, question) = await QuestionAsync(userId, answer.BoardId!.Value, answer.CardId, answer.LayerId, ct);
+        if (Hash(question) != answer.QuestionHash) throw Conflict();
         if (string.IsNullOrWhiteSpace(dto.Text) || dto.Text.Length > 8000) throw Invalid("Write between 1 and 8,000 characters.");
         var payload = new Transcript(userId, CaptureSource.Typed, dto.Text, boardId: answer.BoardId, createdFromCaptureId: answer.CaptureId);
         var previous = answer.RepresentationId is { } previousId ? await representations.HeaderAsync(previousId, userId, ct) : null;

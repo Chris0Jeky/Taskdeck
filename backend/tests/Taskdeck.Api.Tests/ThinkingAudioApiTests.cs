@@ -205,7 +205,14 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
         (await Upload(client, url)).StatusCode.Should().Be(HttpStatusCode.Conflict, "an accepted original cannot be silently replaced");
         var written = await Receipt(await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(1, "Unconfirmed text")));
         (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(1, [question with { Body = "Different question" }]))).EnsureSuccessStatusCode();
+        (await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(2, "A stale written draft"))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(2, "Unconfirmed text"))).StatusCode.Should().Be(HttpStatusCode.Conflict, "an identical retry must also revalidate its question");
         (await client.PostAsJsonAsync($"/api/thinking-audio/{original.Id}/confirm", new ThinkingAudioConfirmDto(2, 2, written.RepresentationId!.Value, "statement"))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(2, []))).EnsureSuccessStatusCode();
+        (await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(2, "Removed question draft"))).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var retained = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>($"/api/thinking-audio/library/{original.Id}"))!;
+        retained.Recording.Revision.Should().Be(written.Revision);
+        retained.Recording.WrittenVersions.Should().BeEquivalentTo(written.WrittenVersions);
         (await client.GetByteArrayAsync($"/api/thinking-audio/{original.Id}/original")).Should().Equal(Audio());
         (await client.GetFromJsonAsync<List<WorkspaceMemoryDto>>($"/api/workspace-memory?boardId={board}"))!.Should().BeEmpty();
     }
