@@ -195,7 +195,12 @@ the ones that already have a gate clause behind them from the ones that do not. 
 against `main` `a1f797913`, replacing the 2026-09-05 count of 44:
 
 - **5 carry `dogfooding`**, the product-polish family seeded from real use: `#2009`, `#2004`, `#1999`,
-  `#1949`, `#1940`. Three of the five are Priority I (`#2004`, `#1949`, `#1940`). Five left this group
+  `#1949`, `#1940`. Three of the five are Priority I (`#2004`, `#1949`, `#1940`), but **`#1940` is not
+  implementable work**: all three of its acceptance criteria are checked and its 2026-09-09
+  reconciliation records them implemented on `main` `06bd4d18e`. What holds it open is §K D-9 (b)
+  request-edit fields and (c) defer durations, parked for a written ruling, plus two non-blocking
+  `#1968` usability residuals. Count it against the human gates in section 3, not against the
+  Priority I implementation load. Five left this group
   since 2026-09-05, all closed on evidence: `#2141` (09-06), `#1984` (09-07), `#2007` (09-09),
   `#1968` (09-09), `#2090` (09-09).
 - **17 carry `ci`**, and almost none of them are residuals:
