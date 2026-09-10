@@ -64,6 +64,15 @@ test('reminder hours persist across experiences and recover a concurrent setting
   for (const day of ['Tuesday', 'Wednesday', 'Thursday', 'Friday']) await settings.getByRole('checkbox', { name: day, exact: true }).uncheck()
   await settings.getByLabel('Start time', { exact: true }).fill('22:00')
   await settings.getByLabel('End time', { exact: true }).fill('02:00')
+  for (const enabled of [true, false]) {
+    const toggled = page.waitForResponse(response => response.url().endsWith('/workspace-attention') && response.request().method() === 'PUT')
+    await settings.getByRole('checkbox', { name: 'Enable occasional reminders', exact: true }).setChecked(enabled)
+    const toggleReceipt = await toggled; expect(toggleReceipt.ok()).toBe(true)
+    expect((await toggleReceipt.json()).window).toBeNull()
+    await expect(settings.getByLabel('Time zone', { exact: true })).toHaveValue('Europe/London')
+    await expect(settings.getByLabel('Start time', { exact: true })).toHaveValue('22:00')
+    await expect(settings.getByLabel('End time', { exact: true })).toHaveValue('02:00')
+  }
   const saved = page.waitForResponse(response => response.url().endsWith('/workspace-attention') && response.request().method() === 'PUT')
   await settings.getByRole('button', { name: 'Save reminder hours', exact: true }).click()
   const receipt = await saved; expect(receipt.ok()).toBe(true)

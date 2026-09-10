@@ -9,20 +9,30 @@ const restricted = ref(false)
 const zone = ref('UTC')
 const days = ref<number[]>([1, 2, 3, 4, 5])
 const start = ref('09:00'); const end = ref('17:00')
+let savingEnablement = false
 const dayOptions = [{ value: 1, name: 'Monday' }, { value: 2, name: 'Tuesday' }, { value: 3, name: 'Wednesday' },
   { value: 4, name: 'Thursday' }, { value: 5, name: 'Friday' }, { value: 6, name: 'Saturday' }, { value: 0, name: 'Sunday' }]
 const formatTime = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
 const minutes = (value: string) => { const [hour, minute] = value.split(':').map(Number); return hour! * 60 + minute! }
 watch(() => attention.settings, settings => {
+  // An enable-only receipt must not replace an independent, unsaved hours draft.
+  if (settings && savingEnablement) return
+  savingEnablement = false
   const window = settings?.window
   restricted.value = !!window
   zone.value = window?.timeZoneId ?? 'UTC'
   days.value = window ? dayOptions.filter(day => (window.daysMask & (1 << day.value)) !== 0).map(day => day.value) : [1, 2, 3, 4, 5]
   start.value = formatTime(window?.startMinute ?? 540); end.value = formatTime(window?.endMinute ?? 1020)
-}, { immediate: true })
+}, { immediate: true, flush: 'sync' })
 const valid = computed(() => !restricted.value || (zone.value.trim().length > 0 && days.value.length > 0
   && /^\d{2}:\d{2}$/.test(start.value) && /^\d{2}:\d{2}$/.test(end.value) && start.value !== end.value))
 function localZone() { zone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }
+async function saveEnabled(enabled: boolean) {
+  if (attention.busy || !attention.settings) return
+  savingEnablement = true
+  try { await attention.save(enabled) }
+  finally { savingEnablement = false }
+}
 function saveHours() {
   if (!attention.settings || !valid.value) return
   void attention.save(attention.settings.enabled, restricted.value ? { timeZoneId: zone.value.trim(),
@@ -37,7 +47,7 @@ onMounted(() => { void attention.load() })
     <p>Show a quiet link to an existing question while you browse a board. At most two per UTC day, at least two hours apart across your devices. No new questions or model calls are made.</p>
     <p>Reminders stay hidden while typing, using a dialog, working in Focus or Zen, or away from this tab.</p>
     <label><input type="checkbox" :checked="attention.settings?.enabled ?? false" :disabled="attention.busy || !attention.settings"
-      @change="attention.save(($event.target as HTMLInputElement).checked)"> Enable occasional reminders</label>
+      @change="saveEnabled(($event.target as HTMLInputElement).checked)"> Enable occasional reminders</label>
     <form v-if="attention.settings" @submit.prevent="saveHours">
       <fieldset :disabled="attention.busy">
         <legend>Reminder hours</legend>

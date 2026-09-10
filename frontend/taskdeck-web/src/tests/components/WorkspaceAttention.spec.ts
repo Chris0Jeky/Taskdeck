@@ -27,6 +27,43 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = ''; vi.useRealTimers(); vi.restoreAllMocks() })
 describe('optional quiet reminders', () => {
+  it.each([true, false])('preserves an hours draft across an enable-only save to %s', async enabled => {
+    vi.mocked(workspaceAttentionApi.get).mockResolvedValue({ ...settings, enabled: !enabled })
+    wrapper = mount(WorkspaceAttentionSettings); await flushPromises()
+    await wrapper.findAll('input[type=checkbox]')[1]!.setValue(true)
+    await wrapper.get('input[type=text]').setValue('America/New_York')
+    await wrapper.findAll('input[type=checkbox]')[4]!.setValue(false)
+    await wrapper.findAll('input[type=checkbox]')[7]!.setValue(true)
+    await wrapper.findAll('input[type=time]')[0]!.setValue('22:00')
+    await wrapper.findAll('input[type=time]')[1]!.setValue('02:00')
+    vi.mocked(workspaceAttentionApi.save).mockResolvedValue({ ...settings, enabled, revision: 2 })
+    await wrapper.get('input').setValue(enabled); await flushPromises()
+    expect(workspaceAttentionApi.save).toHaveBeenCalledExactlyOnceWith(1, enabled)
+    expect((wrapper.findAll('input[type=checkbox]')[1]!.element as HTMLInputElement).checked).toBe(true)
+    const window = { timeZoneId: 'America/New_York', daysMask: 118, startMinute: 1320, endMinute: 120 }
+    vi.mocked(workspaceAttentionApi.save).mockResolvedValue({ ...settings, enabled, revision: 3, window })
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(workspaceAttentionApi.save).toHaveBeenCalledTimes(2)
+    expect(workspaceAttentionApi.save).toHaveBeenLastCalledWith(2, enabled, window)
+  })
+
+  it('clears an hours draft on account change while ignoring the old enable receipt', async () => {
+    wrapper = mount(WorkspaceAttentionSettings); await flushPromises()
+    await wrapper.findAll('input[type=checkbox]')[1]!.setValue(true)
+    await wrapper.get('input[type=text]').setValue('America/New_York')
+    let complete!: (value: typeof settings) => void
+    vi.mocked(workspaceAttentionApi.save).mockReturnValue(new Promise(resolve => { complete = resolve }))
+    await wrapper.get('input').setValue(false); await flushPromises()
+    session.userId = 'different-owner'; await flushPromises()
+    expect(wrapper.find('form').exists()).toBe(false)
+    const window = { timeZoneId: 'Europe/London', daysMask: 62, startMinute: 540, endMinute: 1020 }
+    vi.mocked(workspaceAttentionApi.get).mockResolvedValue({ ...settings, window })
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    complete({ ...settings, enabled: false, revision: 2 }); await flushPromises()
+    expect((wrapper.get('input[type=text]').element as HTMLInputElement).value).toBe('Europe/London')
+    expect(useWorkspaceAttentionStore().settings?.enabled).toBe(true)
+  })
+
   it('saves an explicit weekly window and disables controls until its receipt arrives', async () => {
     wrapper = mount(WorkspaceAttentionSettings); await flushPromises()
     const restrict = wrapper.findAll('input[type=checkbox]')[1]!
