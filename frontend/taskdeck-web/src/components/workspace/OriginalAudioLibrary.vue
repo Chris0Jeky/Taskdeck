@@ -88,7 +88,7 @@ async function playback() {
       <ul class="original-library__list">
         <li v-for="item in page.items" :key="item.id">
           <strong>{{ item.fileName }}</strong> · {{ (item.byteSize / 1024).toFixed(1) }} KiB
-          <p>{{ item.hasConfirmedAnswer ? 'Confirmed answer kept separately' : item.hasWrittenVersion ? 'Written version, unconfirmed' : 'Untranscribed original' }}<span v-if="item.boardRemoved"> · Board removed</span></p>
+          <p>{{ item.hasConfirmedAnswer ? (item.boardRemoved ? 'Previously confirmed; written version retained' : 'Confirmed answer kept separately') : item.hasWrittenVersion ? 'Written version, unconfirmed' : 'Untranscribed original' }}<span v-if="item.boardRemoved"> · Board removed</span></p>
           <p class="verbatim">{{ item.questionExcerpt }}</p>
           <button type="button" :disabled="loading" :aria-label="`Inspect ${item.fileName}: ${item.questionExcerpt}`" @click="inspect(item.id)">Inspect recording</button>
         </li>

@@ -267,6 +267,11 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
             await db.Boards.Where(x => x.Id == board).ExecuteDeleteAsync();
         }
         (await client.GetAsync($"/api/thinking-audio/{original.Id}/original")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var entry = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!.Items.Single();
+        entry.BoardRemoved.Should().BeTrue(); entry.HasConfirmedAnswer.Should().BeTrue();
+        var retained = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>($"/api/thinking-audio/library/{original.Id}"))!;
+        retained.Recording.ConfirmedMemoryId.Should().BeNull();
+        retained.Recording.WrittenVersions.Should().Contain(x => x.Quality == "Verified");
         foreach (var route in new[] { "/api/account/export", "/api/account/export/stream" })
         {
             var export = (await client.GetFromJsonAsync<UserDataExportDto>(route))!;

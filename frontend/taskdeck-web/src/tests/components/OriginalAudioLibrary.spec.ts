@@ -15,6 +15,13 @@ const render = () => mount(OriginalAudioLibrary, { global: { stubs: { RouterLink
 const button = (wrapper: ReturnType<typeof render>, text: string) => wrapper.findAll('button').find(x => x.text() === text)!
 
 describe('private original library', () => {
+  it('distinguishes prior confirmation from a surviving private memory after board removal', async () => {
+    api.library.mockResolvedValue({ items: [{ ...item, boardRemoved: true, hasWrittenVersion: true, hasConfirmedAnswer: true }], nextOffset: null })
+    const wrapper = render(); await button(wrapper, 'Browse original recordings').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('Previously confirmed; written version retained')
+    expect(wrapper.text()).not.toContain('Written version, unconfirmed')
+    expect(wrapper.text()).not.toContain('Confirmed answer kept separately')
+  })
   beforeEach(() => {
     vi.clearAllMocks(); session.userId = 'owner'; session.token = 'token'
     api.library.mockResolvedValue({ items: [item], nextOffset: null })
