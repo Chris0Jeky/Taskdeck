@@ -362,8 +362,6 @@ export function useCardModal(options: UseCardModalOptions) {
       return
     }
 
-    isSaving.value = true
-    saveError.value = null
     try {
       await boardStore.updateCardComment(targetCard.boardId, targetCard.id, commentId, { content })
       if (
