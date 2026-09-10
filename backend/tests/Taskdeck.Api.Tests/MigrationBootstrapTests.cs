@@ -25,6 +25,30 @@ public class MigrationBootstrapTests : IDisposable
     private readonly TaskdeckDbContext _context;
 
     [Fact]
+    public async Task AssignmentMigrationStartsEmptyAndDownPreservesCardsAndHierarchy()
+    {
+        var migrations = _context.Database.GetMigrations().ToList();
+        var index = migrations.FindIndex(name => name.EndsWith("_AddCardAssignments"));
+        var migrator = _context.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[index - 1]);
+        var user = new User("migration-assignments", "assignment@example.com", "hash");
+        var board = new Board("Assignments", ownerId: user.Id); var column = new Column(board.Id, "Next", 0);
+        _context.AddRange(user, board, column); await _context.SaveChangesAsync();
+        var parent = Guid.NewGuid(); var child = Guid.NewGuid();
+        foreach (var id in new[] { parent, child })
+            await _context.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Cards (Id, BoardId, ColumnId, Title, Description, IsBlocked, IsArchived, Position, CreatedAt, UpdatedAt, WorkItemType, ParentCardId) VALUES ({id}, {board.Id}, {column.Id}, 'Retain', '', 0, 0, 0, '2026-01-01', '2026-01-01', 0, NULL)");
+        await _context.Database.ExecuteSqlInterpolatedAsync($"UPDATE Cards SET ParentCardId={parent} WHERE Id={child}");
+        await migrator.MigrateAsync(migrations[index]);
+        (await _context.Set<CardAssignment>().CountAsync()).Should().Be(0);
+        _context.Add(new CardAssignment(child, user.Id, user.Id)); await _context.SaveChangesAsync();
+        await migrator.MigrateAsync(migrations[index - 1]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM Cards").SingleAsync()).Should().Be(2);
+        (await _context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM Cards WHERE ParentCardId IS NOT NULL").SingleAsync()).Should().Be(1);
+        await migrator.MigrateAsync(migrations[index]);
+        (await _context.Set<CardAssignment>().CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
     public async Task ParentHierarchyMigration_DefaultsOldCardsToNull_AndDownPreservesRows()
     {
         var migrations = _context.Database.GetMigrations().ToList();

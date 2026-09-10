@@ -16,6 +16,7 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
             .ValueGeneratedNever();
 
         builder.Property(c => c.ParentCardId).IsRequired(false);
+        builder.Navigation(c => c.Assignments).AutoInclude();
 
         builder.Property(c => c.Title)
             .IsRequired()
