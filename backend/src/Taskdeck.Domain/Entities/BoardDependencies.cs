@@ -15,6 +15,9 @@ public sealed class BoardDependencies
     public BoardDependencies(Guid boardId) { BoardId = boardId; }
     public IReadOnlyList<CardDependency> ReadEdges() => JsonSerializer.Deserialize<List<CardDependency>>(EdgesJson)!;
 
+    // Archive/restore changes the editable projection without changing stored edges.
+    public void InvalidateProjection() => Revision++;
+
     public void Replace(IReadOnlyList<CardDependency> edges)
     {
         if (edges is null || edges.Count > 500)

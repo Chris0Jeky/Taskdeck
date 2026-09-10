@@ -75,6 +75,7 @@ public class CardService
                 card.Restore();
             }
             else card.Archive();
+            await _unitOfWork.Cards.StageDependencyProjectionInvalidationAsync(boardId, cancellationToken);
             board.RecordCardMutation();
             await _unitOfWork.AuditLogs.AddAsync(new AuditLog("card", card.Id,
                 archive ? AuditAction.Archived : AuditAction.Unarchived, actorUserId,

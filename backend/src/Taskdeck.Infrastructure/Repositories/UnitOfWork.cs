@@ -187,6 +187,13 @@ public class UnitOfWork : IUnitOfWork
                     "Record was updated by another session. Refresh and retry your action.",
                     ex);
             }
+            catch (DbUpdateException ex) when (
+                ex.InnerException is SqliteException { SqliteExtendedErrorCode: 1555 or 2067 } &&
+                ex.Entries.Any(entry => entry.Entity is BoardDependencies && entry.State == EntityState.Added))
+            {
+                throw new DomainException(ErrorCodes.Conflict,
+                    "Dependencies changed while updating the card. Refresh and retry your action.", ex);
+            }
             catch (DbUpdateException ex) when (IsProposalRevisionUniqueViolation(ex))
             {
                 throw new DomainException(

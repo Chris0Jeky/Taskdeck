@@ -882,6 +882,7 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
         var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
         foreach (var archive in new[] { true, false })
         {
+            var oldDependencies = (await client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{boardId}/dependencies"))!;
             var action = archive ? "archive-lifecycle" : "restore-lifecycle";
             var created = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
                 ProposalSourceType.Manual, user.UserId, archive ? "Archive card" : "Restore card", RiskLevel.High,
@@ -904,6 +905,11 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
             card = (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{card.Id}"))!;
             card.IsArchived.Should().Be(archive);
             card.IsBlocked.Should().BeFalse();
+            (await client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{boardId}/dependencies"))!.Revision
+                .Should().BeGreaterThan(oldDependencies.Revision);
+            (await client.PutAsJsonAsync($"/api/boards/{boardId}/dependencies",
+                new SaveBoardDependenciesDto(oldDependencies.Revision, oldDependencies.Edges)))
+                .StatusCode.Should().Be(HttpStatusCode.Conflict);
         }
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();

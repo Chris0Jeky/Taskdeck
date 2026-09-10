@@ -40,6 +40,19 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
     }
 
+    public async Task StageDependencyProjectionInvalidationAsync(Guid boardId, CancellationToken cancellationToken = default)
+    {
+        var graph = await _context.Set<BoardDependencies>().FindAsync([boardId], cancellationToken);
+        if (graph == null)
+        {
+            graph = new BoardDependencies(boardId);
+            _context.Set<BoardDependencies>().Add(graph);
+        }
+        // The caller commits this revision together with card state and audit. A stale
+        // graph writer or lifecycle writer then loses the same optimistic-concurrency race.
+        graph.InvalidateProjection();
+    }
+
     public async Task<IReadOnlyList<Card>> GetExportPageByUserIdAsync(Guid userId, int offset, int limit, CancellationToken cancellationToken = default)
     {
         // Explicit history projection: no archive filter, scoped to the same owner/member

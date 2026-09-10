@@ -41,9 +41,12 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
         (await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
             new CreateCardDto(board.Id, column.Id, "Active control", null, null, null)))
             .StatusCode.Should().Be(HttpStatusCode.Created);
+        var beforeFailedRestore = (await _client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{board.Id}/dependencies"))!;
         (await _client.PostAsJsonAsync(path + "/restore", new { expectedUpdatedAt = archived.UpdatedAt }))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await _client.GetFromJsonAsync<CardDto>(path))!.IsArchived.Should().BeTrue();
+        (await _client.GetFromJsonAsync<CardDto>(path)).Should().BeEquivalentTo(archived);
+        (await _client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{board.Id}/dependencies"))
+            .Should().BeEquivalentTo(beforeFailedRestore);
         await _client.PutAsJsonAsync($"/api/boards/{board.Id}", new UpdateBoardDto(null, null, true));
         (await _client.PostAsJsonAsync(path + "/restore", new { expectedUpdatedAt = archived.UpdatedAt }))
             .StatusCode.Should().Be(HttpStatusCode.Conflict);
