@@ -71,6 +71,13 @@ Retain the August historical baseline, then append a fresh ledger after deployme
 
 No numeric production savings are claimed. The extra launcher and observer jobs add setup/rounding cost; they are justified by separation and measurement, to be evaluated against real avoided work. Do not infer a speedup merely because more sophisticated scheduling code exists.
 
+Measure delivery overhead as well as job duration. This train required fresh qualification after
+each stacked base landed, and three concurrent product merges invalidated the admission candidate's
+base during qualification. For future tightly coupled CI-control changes, prefer one reviewable PR
+with small preserved commits over a stack that repeatedly qualifies the same combined tree. Keep
+independent changes separate and coordinate a stable merge window where possible. This is a planning
+recommendation, not permission to reuse stale checks or bypass exact-head/current-base qualification.
+
 ## Recovery and handoff
 
 Dependency-only rollback removes only the new needs edges. Launcher rollback must restore the original step when removing its separate job and reconcile canonical/input contracts together. Observer rollback removes its own workflow/modules without changing required CI. Core/admission rollback must not delete external revocation history. Ledger corruption, stale anchors or orphaned writer locks disable optimisation until authenticated reconciliation.
