@@ -39,6 +39,10 @@ test('delayed unavailable proposal preserves keyboard focus in the queue', async
   await page.goto('/workspace/review')
   const queueControl = page.locator('.paper-review-rail__pill').first()
   await expect(queueControl).toBeVisible()
+  const announcement = page.getByTestId('paper-review-unavailable-announcement')
+  await expect(announcement).toHaveAttribute('role', 'status')
+  await expect(announcement).toHaveAttribute('aria-live', 'polite')
+  await expect(announcement).toBeEmpty()
   await page.evaluate((id) => {
     window.history.pushState({}, '', `/workspace/review#proposal-${id}`)
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -49,7 +53,10 @@ test('delayed unavailable proposal preserves keyboard focus in the queue', async
   releaseLookup()
   await expect(page.getByTestId('paper-review-unavailable-return')).toBeVisible()
   await expect(queueControl).toBeFocused()
+  await expect(announcement).toContainText(missingId)
   await page.screenshot({ path: testInfo.outputPath('unavailable-preserves-queue-focus.png'), fullPage: true })
+  await page.getByTestId('paper-review-unavailable-return').click()
+  await expect(announcement).toBeEmpty()
 })
 
 test('shows repeated refusal feedback only after a second explicit 403 and clears it on success', async ({ page }, testInfo) => {
