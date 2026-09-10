@@ -47,6 +47,7 @@ export interface Card {
   isBlocked: boolean
   /** Older cached card payloads default to active. */
   isArchived?: boolean
+  parentCardId?: string | null
   workItemType?: CardWorkItemType
   blockReason: string | null
   position: number
@@ -107,6 +108,7 @@ export interface UpdateColumnDto {
 }
 
 export interface CreateCardDto {
+  parentCardId?: string | null
   workItemType?: CardWorkItemType
   columnId: string
   title: string
@@ -116,6 +118,8 @@ export interface CreateCardDto {
 }
 
 export interface UpdateCardDto {
+  clearParent?: boolean
+  parentCardId?: string | null
   workItemType?: CardWorkItemType | null
   title?: string | null
   description?: string | null
@@ -140,4 +144,11 @@ export interface CreateLabelDto {
 export interface UpdateLabelDto {
   name?: string | null
   colorHex?: string | null
+}
+
+export interface CardDetachPreview {
+  cardId: string
+  expectedUpdatedAt: string
+  expectedChildrenFingerprint: string
+  children: { id: string; parentCardId: string; title: string; isArchived: boolean; updatedAt: string }[]
 }
