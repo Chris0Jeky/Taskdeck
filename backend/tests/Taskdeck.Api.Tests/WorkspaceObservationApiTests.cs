@@ -117,6 +117,41 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
         (await db.Set<QuietInsight>().CountAsync(x => x.BoardId == board)).Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompetingQuestionWritesReportConcurrencyWithoutChangingTheSourceOrLeakingTheLoser(bool updateExisting)
+    {
+        using var app = WithProvider(new Provider()); var (_, board, card, source) = await Setup(app);
+        using var scope = app.Services.CreateScope(); var first = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var user = (await first.Boards.FindAsync(board))!.OwnerId!.Value;
+        await using var second = new TaskdeckDbContext(new DbContextOptionsBuilder<TaskdeckDbContext>()
+            .UseSqlite(first.Database.GetConnectionString()!).Options);
+        var firstRepository = new WorkspaceInsightRepository(first); var secondRepository = new WorkspaceInsightRepository(second);
+        var winner = new QuietInsight(user, board, "model-question-next-step", card.ToString(), card, null);
+        firstRepository.Add(winner);
+        QuietInsight loser;
+        if (updateExisting)
+        {
+            await first.SaveChangesAsync();
+            loser = await second.Set<QuietInsight>().SingleAsync(x => x.Id == winner.Id);
+        }
+        else
+        {
+            loser = new QuietInsight(user, board, winner.Rule, winner.TargetKey, card, null);
+            secondRepository.Add(loser);
+        }
+        // Both requests hold their question state before either attempts its observation commit.
+        winner.Refresh("First result", "Winner", "Original evidence", DateTimeOffset.UtcNow);
+        loser.Refresh("Second result", "Loser", "Different generated evidence", DateTimeOffset.UtcNow);
+        (await firstRepository.SaveObservationAsync(user, board, card, source.Fingerprint, default)).Should().Be(ObservationSaveOutcome.Saved);
+        (await secondRepository.SaveObservationAsync(user, board, card, source.Fingerprint, default)).ToString().Should().Be("ConcurrentWrite");
+        await second.SaveChangesAsync();
+        var retained = await second.Set<QuietInsight>().AsNoTracking().SingleAsync(x => x.BoardId == board);
+        retained.Title.Should().Be("First result"); retained.Evidence.Should().Be("Original evidence");
+        (await new WorkspaceObservationReader(second).SourceAsync(user, board, card, default))!.Fingerprint.Should().Be(source.Fingerprint);
+    }
+
     private sealed class Provider : ILlmProvider
     {
         public int Calls;
@@ -163,7 +198,8 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
         var again = await Generate(client, board, source); again.EnsureSuccessStatusCode();
         (await again.Content.ReadFromJsonAsync<List<QuietInsightDto>>())!.Single().Id.Should().Be(insight.Id);
         provider.Request!.Messages.Should().ContainSingle();
-        provider.Request.Messages[0].Content.Should().Contain(source.Fingerprint);
+        provider.Request.Messages[0].Content.Should().Be(source.Text)
+            .And.NotContain(source.Fingerprint).And.NotContain(cardId.ToString());
         (await client.GetFromJsonAsync<List<QuietInsightDto>>($"/api/workspace-insights?boardId={board}"))!.Single().State.Should().Be("available");
         (await client.PatchAsJsonAsync($"/api/workspace-insights/{insight.Id}", new InsightActionDto("dismiss"))).EnsureSuccessStatusCode();
         var dismissed = await Generate(client, board, source); dismissed.EnsureSuccessStatusCode();

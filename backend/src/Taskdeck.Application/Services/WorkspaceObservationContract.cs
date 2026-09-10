@@ -18,7 +18,7 @@ public static class WorkspaceObservationContract
         kind is next-step, outcome, or dependency. Use each kind at most once.
         question is a question, not a factual claim or instruction to change a board (max 240 characters).
         reason explains why asking is useful (max 600 characters). quote is an exact, nonempty excerpt
-        from the supplied Text (max 400 characters). Cite only this source; do not invent people, dates,
+        from the supplied excerpt (max 400 characters). Cite only this source; do not invent people, dates,
         dependencies, missing decisions or urgency. Do not repeat an already answered question, paraphrase
         a clear next step as a problem, or ask for detail that would not change the work. Return [] when
         the source already gives a clear outcome and next step. No Markdown, tools or board operations.

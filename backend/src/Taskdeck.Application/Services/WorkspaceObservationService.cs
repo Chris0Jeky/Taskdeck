@@ -31,7 +31,7 @@ public sealed class WorkspaceObservationService(IWorkspaceObservationReader read
         if (health.IsMock || !health.IsAvailable)
             return Result.Failure<List<QuietInsightDto>>(ErrorCodes.InvalidOperation, "Model analysis needs an available configured provider. Structural analysis remains available.");
 
-        var request = new ChatCompletionRequest([new("user", JsonSerializer.Serialize(source))], MaxTokens: 1600, Temperature: 0.2,
+        var request = new ChatCompletionRequest([new("user", source.Text)], MaxTokens: 1600, Temperature: 0.2,
             Attribution: new(userId, Guid.NewGuid().ToString("N"), LlmRequestSourceSurface.Chat, dto.BoardId),
             SystemPrompt: WorkspaceObservationContract.Prompt);
         // UTF-8 byte count is a conservative input-token ceiling, plus bounded output and framing.
@@ -89,6 +89,8 @@ public sealed class WorkspaceObservationService(IWorkspaceObservationReader read
             return await repository.SaveObservationAsync(userId, dto.BoardId, dto.CardId, source.Fingerprint, ct) switch
             {
                 ObservationSaveOutcome.Saved => Result.Success(result),
+                ObservationSaveOutcome.ConcurrentWrite => Result.Failure<List<QuietInsightDto>>(ErrorCodes.Conflict,
+                    "Another request changed your question results. This request saved no observations. Reload Quiet insights to read the current results. Model usage was already accounted for; analyzing again uses budget again."),
                 ObservationSaveOutcome.StorageBusy => Result.Failure<List<QuietInsightDto>>(ErrorCodes.UnexpectedError,
                     "Storage was busy. No observations were saved. Model usage was already accounted for; analyzing again uses budget again. Wait, then preview the evidence before deciding whether to retry."),
                 _ => Changed(),
