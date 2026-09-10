@@ -31,9 +31,12 @@ public class BoardListCacheCoherenceTests
 
     public BoardListCacheCoherenceTests()
     {
+
         _unitOfWorkMock.SetupGet(work => work.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.SetupGet(work => work.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.SetupGet(work => work.Cards).Returns(_cardRepoMock.Object);
+        _unitOfWorkMock.SetupGet(u => u.AuditLogs).Returns(Mock.Of<IAuditLogRepository>());
+        _cardRepoMock.Setup(r => r.GetHierarchyByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
         _unitOfWorkMock.Setup(work => work.SaveChangesAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(1);
     }

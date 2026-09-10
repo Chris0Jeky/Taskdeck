@@ -22,6 +22,7 @@ for (const theme of ['paper', 'legacy'] as const) {
     const editor = page.getByRole('dialog', { name: 'Edit Card' })
     await expect(editor).toBeVisible()
     await editor.getByRole('button', { name: 'Archive card', exact: true }).click()
+    await page.getByRole('button', { name: 'Confirm archive', exact: true }).click()
     await expect(editor).not.toBeVisible()
     const active = await request.get(`${API_BASE_URL}/boards/${boardId}/cards`, { headers })
     expect((await active.json()).some((item: { id: string }) => item.id === card.id)).toBe(false)

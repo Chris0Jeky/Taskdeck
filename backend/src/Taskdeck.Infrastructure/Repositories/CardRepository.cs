@@ -40,6 +40,9 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
     }
 
+    public async Task<IReadOnlyList<Card>> GetHierarchyByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
+        => await _dbSet.Where(card => card.BoardId == boardId).ToListAsync(cancellationToken);
+
     public async Task StageDependencyProjectionInvalidationAsync(Guid boardId, CancellationToken cancellationToken = default)
     {
         var graph = await _context.Set<BoardDependencies>().FindAsync([boardId], cancellationToken);

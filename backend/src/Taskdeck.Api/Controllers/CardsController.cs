@@ -54,6 +54,17 @@ public class CardsController : AuthenticatedControllerBase
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 
+    [HttpGet("{cardId}/detach-preview")]
+    public async Task<IActionResult> PreviewDetach(Guid boardId, Guid cardId)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult)) return errorResult!;
+        var permissionError = await EnsureBoardPermissionAsync(_authorizationService, userId, boardId,
+            static (auth, actor, board) => auth.CanWriteBoardAsync(actor, board), "You do not have permission to modify this board");
+        if (permissionError is not null) return permissionError;
+        var result = await _cardService.PreviewDetachAsync(boardId, cardId);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     [HttpPost("{cardId}/archive")]
     public Task<IActionResult> ArchiveCard(Guid boardId, Guid cardId, [FromBody] CardLifecycleDto dto)
         => SetArchivedAsync(boardId, cardId, dto, true);
@@ -259,10 +270,12 @@ public class CardsController : AuthenticatedControllerBase
     }
 
     /// <summary>
-    /// Delete a card from a board.
+    /// Delete a card from a board. A parent requires a current confirmed child-detachment preview.
     /// </summary>
     /// <param name="boardId">The board identifier.</param>
     /// <param name="cardId">The card identifier.</param>
+    /// <param name="expectedUpdatedAt">Target timestamp from the detach preview.</param>
+    /// <param name="expectedChildrenFingerprint">Immutable child-list fingerprint from the detach preview.</param>
     /// <response code="204">Card deleted successfully.</response>
     /// <response code="401">Authentication required.</response>
     /// <response code="403">User does not have write access to this board.</response>
@@ -274,7 +287,7 @@ public class CardsController : AuthenticatedControllerBase
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status403Forbidden)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiErrorResponse), StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> DeleteCard(Guid boardId, Guid cardId)
+    public async Task<IActionResult> DeleteCard(Guid boardId, Guid cardId, [FromQuery] DateTimeOffset? expectedUpdatedAt = null, [FromQuery] string? expectedChildrenFingerprint = null)
     {
         if (!TryGetCurrentUserId(out var userId, out var errorResult))
             return errorResult!;
@@ -289,7 +302,7 @@ public class CardsController : AuthenticatedControllerBase
         if (permissionError is not null)
             return permissionError;
 
-        var result = await _cardService.DeleteCardAsync(boardId, cardId, actorUserId: userId);
+        var result = await _cardService.DeleteCardAsync(boardId, cardId, actorUserId: userId, confirmation: new CardLifecycleDto(expectedUpdatedAt, expectedChildrenFingerprint));
         return result.IsSuccess ? NoContent() : result.ToErrorActionResult();
     }
 }
