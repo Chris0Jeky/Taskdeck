@@ -145,6 +145,26 @@ enough independent participants and a defined outcome before experimentation.
 
 ## Boundaries and follow-through
 
+The source-pack reconciliation separates the requested prototype experience from the wider platform
+roadmap. Unified `INSIGHTS_AND_MEMORY.md` lines 173–175 describes scoped, non-archived retrieval and
+explicitly excludes semantic consolidation, vector indexing and global personal memory. Lines 187–200
+require original audio, distinct received/transcribed/confirmed states, retry/text fallback and explicit
+remote destination consent. Those behaviors use the integrated memory and audio services. Companion's
+chat lines 34–47 describes prepared prototype transcripts, not a working speech provider.
+
+Unified `INTEGRATION_HANDOFF.md` lines 84–104 adds production speech/recovery proof and bounded model
+questions with optional interruption controls. Reminder work-hours/time-zone selection remains a
+concrete continuation item. Physical microphone, live-provider quality, subjective usefulness and
+non-intrusion need direct acceptance; synthetic proof does not satisfy those claims.
+
+Generic processor hosting remains CF-04 [#2258](https://github.com/Chris0Jeky/Taskdeck/issues/2258), and
+general historical representation migration remains CF-06
+[#2260](https://github.com/Chris0Jeky/Taskdeck/issues/2260). The source pack asks for playback/export and
+preserved evidence; it does not define source-storage import/restore or a global semantic recall
+product. Those wider capabilities belong to the [Context Fabric roadmap](../architecture/CONTEXT_FABRIC.md),
+not a claim that the overhaul already implements them. The complete local source paths and hashes
+remain in [the resource manifest](overhaul-resource-map.json).
+
 Do not copy the prototype's hardcoded TD-15 support rule, September walkthrough text, simulated
 model answers or browser-global data model. The original HTML has no authentication, backend,
 live model, real collaboration or distributed idempotency. Its optional nudge timings are design

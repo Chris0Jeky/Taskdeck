@@ -1,5 +1,33 @@
 # Workspace overhaul validation and follow-through
 
+## Final integrated continuation qualification (2026-09-10)
+
+The continuation combines grounded commit recovery, thinking-route exit and explicit transcription,
+including destination-bound consent. A real SQLite write-lock regression distinguishes storage
+contention from changed evidence, detaches rejected candidates and preserves accounted model usage;
+18 application and 17 API/reminder cases pass for that slice.
+
+The full backend run at `ea8c0cbe6` passes 9,281 tests with 34 existing skips and one worker-wait
+failure: its bounded queue read was not observed within the test's waiting period. The worker and
+test are unchanged from the baseline. The final 30 API/worker cases pass in isolation, including
+that case and the reviewed account-erasure repair. Full-run per-project passes are Domain 1,645,
+Application 4,301, API 3,057, CLI 243, Architecture 28 and Integration 7. The initial run is not
+claimed green.
+
+The first full frontend run passes 6,427 tests and exceeds a five-second startup-test timeout.
+That unchanged test passes in isolation; the complete rerun with four workers passes all 6,428
+tests with three existing skips across 416 files. Typecheck and production build pass. Ten combined
+Chromium journeys pass in 1.3 minutes using an isolated database and actual synthetic speech HTTP
+transport: transcription/recovery, manual audio, retained originals, both planning journeys,
+attention, grounded evidence, Companion continuity, contextual companion and board previews.
+
+The bounded combined review identified a HIGH account-erasure race: a surviving board owner ID
+could authorize a late grounded-analysis save after the user's account was deactivated. Commit
+`948751cab` adds the active-user predicate to every source read, including the transaction's final
+check. The real regression deletes an account after the final service read while a co-owner retains
+the board; the response conflicts and no insight is recreated. The independent fix review confirms
+resolution with no remaining HIGH/CRITICAL. Hosted exact-head qualification remains separate.
+
 ## Grounded-question commit recovery (2026-09-10)
 
 The source/access fingerprint is checked again inside the serializable transaction that persists staged observations. Four real API races change evidence, archive/delete the source or revoke membership just after the final service read; all return conflicts and persist no candidates. A separate repository test rejects staged questions and then performs another save, proving rejected state cannot leak through the scoped context.

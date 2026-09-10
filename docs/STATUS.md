@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Overhaul integration #2866 merged at `384d8dfaa` after required CI passed. The combined #2886 continuation adds explicit transcription, route-exit recovery and grounded commit/account-erasure protection. Final 6,428 frontend tests and ten browser journeys pass; the full backend's single unchanged worker-wait failure passes in the 30-case isolated/fix verification. Independent fix review is clean. Exact-head hosted qualification remains pending for this continuation. Reminder work-hours/time-zone selection is being implemented separately. [Full evidence](product/WORKSPACE_OVERHAUL_VALIDATION.md).
+
 Grounded-question commit recovery (#2808, pending main delivery): recheck source/access inside the same serializable transaction that saves observations, and detach rejected staged questions. Settle model usage before staging; accounting failure now has a definite no-save result and cannot hide a successful question save. Seventeen application and sixteen API/reminder tests pass, including changes after the final service read. Full backend verification passes 9,240 tests with 34 existing skips; bounded independent review is clean. Hosted qualification remains separate.
 
 Thinking-route exit recovery (#2808, pending main delivery): snapshot valid board/card IDs and invalidate pending receipts before route-exit cleanup. The view no longer requests empty-board endpoints while unmounting. Full frontend verification passes 6,420 tests with three existing skips, plus six continuity tests, typecheck/build and both planning browser journeys; bounded review is clean. Hosted qualification remains separate. This closes the previously recorded readonly navigation error without changing plan or card data.

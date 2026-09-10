@@ -84,7 +84,8 @@ Buffered and streaming account exports include `sourceStorage.audioTranscription
 `sourceStorage.audioTranscriptionBudgets`, alongside original bytes, transcripts and representation
 provenance. Account deletion erases both new tables in its transaction. Capture erasure deletes
 attempts before source-dependent rows while preserving the owner's daily allowance counter.
-Source-storage import/replay and a complete restore acceptance drill remain separate #2808 work.
+Source-storage import/replay and a complete restore acceptance drill remain separate platform work;
+the supplied overhaul defines archival export and playback, not a source-storage import contract.
 
 ## Verification
 

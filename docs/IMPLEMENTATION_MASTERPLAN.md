@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Overhaul closeout (#2808): #2866 is merged. Carry the combined #2886 transcription/grounded/navigation continuation through exact-head CI, then finish the source-backed reminder-hours/time-zone behavior. Scope reconciliation keeps generic processor hosting (#2258), historical representation migration (#2260) and undefined source-storage restore outside the requested prototype delivery. Retain live-provider/device/usefulness acceptance as unverified rather than inferring it from synthetic tests.
+
 Grounded-question commit recovery (#2808): close the final source-read/save interval and settle accounting before staging questions. Keep short transaction ownership in the insight repository, preserve source/access and insight concurrency checks, and prove no rejected staged state can leak into subsequent saves. This completes the two previously tracked observation consistency gaps; general semantic processing and recall remain separate.
 
 Thinking-route exit recovery (#2808): finish the last observed planning navigation error by treating cleared route params as exit state, with no network read. Preserve request generations and validate route reentry and late responses. Backend planning/accounting behavior remains unchanged; record full frontend and hosted qualification with the continuation.
