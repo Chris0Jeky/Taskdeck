@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Finish delivery of #2895 and its bounded #2896 reminder-save ownership follow-up. The latter replaces a component-wide boolean with a request identity so an older account's completion cannot discard a newer account's unsaved hours. Its reproduced interleavings, full frontend suite, typecheck/build and lint pass. Keep the final #2808 completion record tied to the merged delivery receipts.
+
 The #2893/#2894 recovery follow-up is implemented in [PR #2895](https://github.com/Chris0Jeky/Taskdeck/pull/2895): preserve reminder drafts, report concurrent question writes accurately and align model payloads with the evidence preview. Keep the existing privacy/revision/usage boundaries, prove the reproduced cases and publish one reviewed follow-up. Local full suites, focused final payload checks, browser recovery and bounded independent review pass.
 
 Merged #2892 as 93eab3443 after required run 34453924959 passed at reviewed head 42965edde. The reminder-hours slice under #2808 delivers: optional named-zone weekly windows, explicit save/recovery, existing shared budgets and server-side eligibility. Local full backend/frontend, combined privacy/recovery and cross-browser proof pass. The final active-account write condition prevents erased private hours from being restored by an in-flight request. Old opted-in users retain unrestricted behavior; reminders remain default off.
