@@ -187,6 +187,7 @@ function keepEditing() {
 
 const {
   // Form state
+  workItemType,
   title,
   description,
   dueDate,
@@ -195,6 +196,8 @@ const {
   selectedLabelIds,
   isFormValid,
   hasUnsavedChanges,
+  isSaving,
+  saveError,
 
   // Due date
   formattedDueDate,
@@ -311,10 +314,13 @@ useEscapeToClose(
           @changed="emit('updated'); emit('close')" @refresh="refreshArchiveState" />
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
-        <fieldset :disabled="card.isArchived" class="space-y-4">
+        <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
+        <fieldset :disabled="card.isArchived || isSaving" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
+            v-model:work-item-type="workItemType"
+            :can-edit-type="boardStore.currentBoard?.id === card.boardId && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived && !card.isArchived"
             v-model:description="description"
             v-model:due-date="dueDate"
             v-model:is-blocked="isBlocked"
@@ -358,7 +364,8 @@ useEscapeToClose(
         </fieldset>
 
       <CardModalActions
-          :is-form-valid="isFormValid && !card.isArchived"
+          :is-form-valid="isFormValid && !card.isArchived && !isSaving"
+          :is-saving="isSaving"
           :card="card"
           @save="handleSave"
           @close="handleClose"

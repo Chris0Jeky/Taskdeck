@@ -87,6 +87,34 @@ describe('CardModal', () => {
     vi.mocked(useSessionStore).mockReturnValue(mockSessionStore as any)
   })
 
+  it('edits a work item type with the displayed version and retains a failed draft', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: false }
+    card.workItemType = 'Epic'
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+    const selector = wrapper.get('#card-work-item-type')
+    expect((selector.element as HTMLSelectElement).value).toBe('Epic')
+    await selector.setValue('Spike')
+    mockStore.updateCard.mockRejectedValueOnce({ response: { status: 409 } })
+    await wrapper.findAll('button').find(button => button.text() === 'Save Changes')!.trigger('click')
+    await flushPromises()
+    expect(mockStore.updateCard).toHaveBeenCalledWith(card.boardId, card.id,
+      expect.objectContaining({ workItemType: 'Spike', expectedUpdatedAt: card.updatedAt }))
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect((selector.element as HTMLSelectElement).value).toBe('Spike')
+    wrapper.unmount()
+  })
+
+  it('shows old cards as Task and disables type changes for a viewer', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: false, isArchived: false }
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+    const selector = wrapper.get('#card-work-item-type').element as HTMLSelectElement
+    expect(selector.value).toBe('Task')
+    expect(selector.disabled).toBe(true)
+    wrapper.unmount()
+  })
+
   it('should request capture provenance when modal opens', async () => {
     mount(CardModal, {
       props: {

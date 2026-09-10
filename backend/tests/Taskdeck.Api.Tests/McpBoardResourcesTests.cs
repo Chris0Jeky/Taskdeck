@@ -495,7 +495,7 @@ public class McpBoardResourcesTests : IDisposable
 
         var col = await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Backlog", null, null));
         var colId = col.Value.Id;
-        await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Card A", "desc", null, null));
+        await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Card A", "desc", null, null, "Epic"));
         await cardService.CreateCardAsync(new CreateCardDto(boardId, colId, "Card B", null, null, null));
 
         var resources = CreateBoardResources(scope, user.Id);
@@ -510,6 +510,8 @@ public class McpBoardResourcesTests : IDisposable
 
         var firstCard = root.GetProperty("cards").EnumerateArray().First();
         firstCard.GetProperty("title").GetString().Should().Be("Card A");
+        firstCard.GetProperty("workItemType").GetString().Should().Be("Epic");
+        firstCard.GetProperty("updatedAt").GetDateTimeOffset().Should().BeAfter(DateTimeOffset.MinValue);
         firstCard.GetProperty("hasDescription").GetBoolean().Should().BeTrue();
     }
 
@@ -531,7 +533,7 @@ public class McpBoardResourcesTests : IDisposable
         var board = await boardService.CreateBoardAsync(new CreateBoardDto("CardBoard", null), user.Id);
         var boardId = board.Value.Id;
         var col = await columnService.CreateColumnAsync(new CreateColumnDto(boardId, "Active", null, null));
-        var card = await cardService.CreateCardAsync(new CreateCardDto(boardId, col.Value.Id, "My Card", "Full description", null, null));
+        var card = await cardService.CreateCardAsync(new CreateCardDto(boardId, col.Value.Id, "My Card", "Full description", null, null, "Spike"));
 
         var resources = CreateBoardResources(scope, user.Id);
         var json = await resources.GetCardDetail(boardId.ToString(), card.Value.Id.ToString());
@@ -540,6 +542,7 @@ public class McpBoardResourcesTests : IDisposable
         var root = doc.RootElement;
 
         root.GetProperty("title").GetString().Should().Be("My Card");
+        root.GetProperty("workItemType").GetString().Should().Be("Spike");
         root.GetProperty("description").GetString().Should().Be("Full description");
         root.GetProperty("columnName").GetString().Should().Be("Active");
     }
