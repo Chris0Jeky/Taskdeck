@@ -415,7 +415,7 @@ useEscapeToClose(
     :close-on-backdrop="!isDeleting"
     @close="handleDeleteCancel"
   >
-    <p v-if="deletePreviewLoading" role="status">Loading every affected child?</p>
+    <p v-if="deletePreviewLoading" role="status">Loading every affected child...</p>
     <p v-if="deletePreviewError" role="alert">{{ deletePreviewError }}</p>
     <CardDetachList v-if="detachPreview" :preview="detachPreview" />
     <template #footer>

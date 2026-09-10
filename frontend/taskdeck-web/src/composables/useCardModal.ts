@@ -6,6 +6,7 @@ import type { CardDetachPreview, CardWorkItemType, Card, CardCaptureProvenance, 
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
+import { getValidationReason, isValidationError } from './useErrorMapper'
 import {
   calendarDateKeyToMidnightUtc,
   formatCalendarDate,
@@ -271,7 +272,9 @@ export function useCardModal(options: UseCardModalOptions) {
       logError('Failed to update card:', error)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
       const status = (error as { response?: { status?: number } })?.response?.status
-      saveError.value = status === 409
+      saveError.value = isValidationError(error)
+        ? `${getValidationReason(error) ?? 'Please check the card fields.'} Your draft is kept.`
+        : status === 409
         ? 'The card changed or is read-only. Your draft is kept. Refresh the board and reopen the card before saving again.'
         : status === 403
           ? 'You no longer have permission to edit this card. Your draft is kept.'

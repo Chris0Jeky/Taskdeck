@@ -664,6 +664,25 @@ describe('useCardModal', () => {
       )
     })
 
+    it.each([
+      'Card parents cannot form a cycle.',
+      'Card hierarchy supports at most three links (four levels), including descendants.',
+    ])('keeps the parent draft and explains validation: %s', async (message) => {
+      mockBoardStore.updateCard.mockRejectedValue({ response: { status: 400, data: { errorCode: 'ValidationError', message } } })
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      await nextTick()
+      ctx.result.parentCardId.value = 'selected-parent'
+
+      await ctx.result.handleSave()
+
+      expect(ctx.result.saveError.value).toBe(`${message} Your draft is kept.`)
+      expect(ctx.result.parentCardId.value).toBe('selected-parent')
+      expect(ctx.onUpdated).not.toHaveBeenCalled()
+      expect(ctx.onClose).not.toHaveBeenCalled()
+    })
+
     it('handles updateCard failure gracefully', async () => {
       mockBoardStore.updateCard.mockRejectedValue(new Error('Save failed'))
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})

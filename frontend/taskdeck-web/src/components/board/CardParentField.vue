@@ -33,7 +33,7 @@ const candidates = computed(() => cards.value.filter(card => card.id !== props.c
       <option v-if="model && !candidates.some(card => card.id === model)" :value="model">Current parent ({{ model }})</option>
       <option v-for="candidate in candidates" :key="candidate.id" :value="candidate.id">{{ candidate.title }} ({{ candidate.workItemType ?? 'Task' }})</option>
     </select>
-    <p v-if="loading" role="status" class="text-sm">Loading parent choices?</p>
+    <p v-if="loading" role="status" class="text-sm">Loading parent choices...</p>
     <p v-else-if="error" role="alert" class="text-sm">Parent choices could not be loaded. Close and reopen this card to retry.</p>
     <p v-else class="text-sm text-on-surface-variant">Optional, on this board. Up to four levels; all card types can be parents. Save changes to apply.</p>
   </div>
