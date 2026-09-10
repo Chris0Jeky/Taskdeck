@@ -15,6 +15,13 @@ const render = () => mount(OriginalAudioLibrary, { global: { stubs: { RouterLink
 const button = (wrapper: ReturnType<typeof render>, text: string) => wrapper.findAll('button').find(x => x.text() === text)!
 
 describe('private original library', () => {
+  it('distinguishes prior confirmation from a surviving private memory after board removal', async () => {
+    api.library.mockResolvedValue({ items: [{ ...item, boardRemoved: true, hasWrittenVersion: true, hasConfirmedAnswer: true }], nextOffset: null })
+    const wrapper = render(); await button(wrapper, 'Browse original recordings').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('Previously confirmed; written version retained')
+    expect(wrapper.text()).not.toContain('Written version, unconfirmed')
+    expect(wrapper.text()).not.toContain('Confirmed answer kept separately')
+  })
   beforeEach(() => {
     vi.clearAllMocks(); session.userId = 'owner'; session.token = 'token'
     api.library.mockResolvedValue({ items: [item], nextOffset: null })
@@ -27,7 +34,7 @@ describe('private original library', () => {
     const wrapper = render(); expect(api.library).not.toHaveBeenCalled()
     await button(wrapper, 'Browse original recordings').trigger('click'); await flushPromises()
     expect(api.library).toHaveBeenCalledWith(0)
-    expect(wrapper.text()).toContain('Untranscribed original')
+    expect(wrapper.text()).toContain('Original without a written answer')
     await button(wrapper, 'Inspect recording').trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('Exact original question')
     expect(wrapper.get('a').attributes('href')).toBe('/workspace/boards/b1/cards/c1/thinking')
@@ -36,12 +43,12 @@ describe('private original library', () => {
     expect(wrapper.get('audio').attributes('src')).toBe('blob:original')
     wrapper.unmount(); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
   })
-  it('keeps deleted-board originals read-only with visible written alternatives', async () => {
+  it('keeps deleted-board originals separate from answers with visible written alternatives', async () => {
     api.library.mockResolvedValue({ items: [{ ...item, boardRemoved: true, hasWrittenVersion: true }], nextOffset: null })
     api.libraryDetail.mockResolvedValue({ ...receipt, currentBoardId: null, currentCardId: null, recording: { ...receipt.recording, writtenVersions: [{ id: 'v1', text: 'Earlier words', quality: 'Superseded', supersededById: 'v2' }] } })
     const wrapper = render(); await button(wrapper, 'Browse original recordings').trigger('click'); await flushPromises()
     await button(wrapper, 'Inspect recording').trigger('click'); await flushPromises()
-    expect(wrapper.text()).toContain('Board removed'); expect(wrapper.text()).toContain('read-only')
+    expect(wrapper.text()).toContain('Board removed'); expect(wrapper.text()).toContain('it cannot answer a different question')
     expect(wrapper.text()).toContain('Earlier words'); expect(wrapper.find('a').exists()).toBe(false)
     expect(wrapper.find('textarea').exists()).toBe(false)
   })

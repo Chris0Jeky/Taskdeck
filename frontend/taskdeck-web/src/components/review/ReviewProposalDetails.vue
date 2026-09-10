@@ -52,13 +52,18 @@ function closeLinkDropdown(event: FocusEvent) {
 }
 
 const fullCorrelationId = computed(() => props.proposal.correlationId?.trim() ?? '')
+const canPreviewBoard = computed(() => Boolean(props.proposal.boardId) && !props.readOnly
+  && ['PendingReview', 'Approved'].includes(normalizeProposalStatus(props.proposal.status)))
 </script>
 
 <template>
   <div
-    v-if="affectedEntities.length > 0 || operationHeadlines.length > 0 || hasProvenance"
+    v-if="affectedEntities.length > 0 || operationHeadlines.length > 0 || hasProvenance || canPreviewBoard"
     class="td-review-card__details"
   >
+    <router-link v-if="canPreviewBoard" class="td-btn td-btn--secondary td-btn--sm"
+      :to="{ path: `/workspace/boards/${proposal.boardId}`, query: { proposalId: proposal.id } }"
+    >Preview on board</router-link>
     <!-- Collapsible: Affected cards -->
     <div v-if="affectedEntities.length > 0" class="td-review-card__collapsible">
       <button
@@ -168,13 +173,6 @@ const fullCorrelationId = computed(() => props.proposal.correlationId?.trim() ??
             >
               Review Link
             </router-link>
-            <router-link
-              v-if="proposal.boardId && !props.readOnly && ['PendingReview', 'Approved'].includes(normalizeProposalStatus(proposal.status))"
-              class="td-review-card__links-dropdown-item"
-              role="menuitem"
-              :to="{ path: `/workspace/boards/${proposal.boardId}`, query: { proposalId: proposal.id } }"
-              @mousedown.prevent
-            >Preview on board</router-link>
             <button
               v-if="proposal.boardId && !props.readOnly"
               class="td-review-card__links-dropdown-item"

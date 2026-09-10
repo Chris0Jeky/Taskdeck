@@ -3,6 +3,7 @@ import { computed, onScopeDispose, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import { thinkingAudioApi, type AudioLibraryDetail, type AudioLibraryPage } from '../../api/thinkingAudioApi'
 import { useSessionStore } from '../../store/sessionStore'
+import AudioTranscriptionPanel from '../thinking/AudioTranscriptionPanel.vue'
 
 const session = useSessionStore()
 const page = ref<AudioLibraryPage | null>(null)
@@ -88,7 +89,7 @@ async function playback() {
       <ul class="original-library__list">
         <li v-for="item in page.items" :key="item.id">
           <strong>{{ item.fileName }}</strong> · {{ (item.byteSize / 1024).toFixed(1) }} KiB
-          <p>{{ item.hasConfirmedAnswer ? 'Confirmed answer kept separately' : item.hasWrittenVersion ? 'Written version, unconfirmed' : 'Untranscribed original' }}<span v-if="item.boardRemoved"> · Board removed</span></p>
+          <p>{{ item.hasConfirmedAnswer ? (item.boardRemoved ? 'Previously confirmed; written version retained' : 'Confirmed answer kept separately') : item.hasWrittenVersion ? 'Written version, unconfirmed' : 'Original without a written answer' }}<span v-if="item.boardRemoved"> · Board removed</span></p>
           <p class="verbatim">{{ item.questionExcerpt }}</p>
           <button type="button" :disabled="loading" :aria-label="`Inspect ${item.fileName}: ${item.questionExcerpt}`" @click="inspect(item.id)">Inspect recording</button>
         </li>
@@ -108,12 +109,13 @@ async function playback() {
         <a :href="playbackUrl" :download="detail.recording.fileName">Download selected original</a>
       </template>
       <h4>Original question evidence</h4><p class="verbatim">{{ detail.recording.originalEvidence }}</p>
-      <p v-if="!detail.recording.writtenVersions.length">No written version has been saved. This original has not been automatically transcribed.</p>
+      <AudioTranscriptionPanel :key="detail.recording.id" :audio="detail.recording" />
+      <p v-if="!detail.recording.writtenVersions.length">No written version was present when this detail loaded. Check transcription receipts for any newer provisional result.</p>
       <details v-else><summary>Retained written versions ({{ detail.recording.writtenVersions.length }})</summary>
-        <ol><li v-for="version in detail.recording.writtenVersions" :key="version.id"><strong>{{ version.quality === 'Verified' ? 'Confirmed by you' : version.quality === 'Superseded' ? 'Previous written version' : 'Written, unconfirmed' }}</strong><p class="verbatim">{{ version.text }}</p></li></ol>
+        <ol><li v-for="version in detail.recording.writtenVersions" :key="version.id"><strong>{{ version.quality === 'Verified' ? 'Confirmed by you' : version.quality === 'Provisional' ? 'Provisional automatic transcript' : version.quality === 'Superseded' ? 'Previous written version' : 'Written, unconfirmed' }}</strong><p class="verbatim">{{ version.text }}</p></li></ol>
       </details>
       <RouterLink v-if="detail.currentBoardId && detail.currentCardId" :to="`/workspace/boards/${detail.currentBoardId}/cards/${detail.currentCardId}/thinking`">Open the current question to continue</RouterLink>
-      <p v-else>The original question is no longer current or its board is archived or removed. This retained copy is read-only.</p>
+      <p v-else>The original question is no longer current or its board is archived or removed. You can inspect or transcribe the retained original; it cannot answer a different question.</p>
       <details><summary>Original source receipt</summary><p>Capture {{ detail.recording.captureId }}</p><p>Asset {{ detail.recording.sourceAssetId }}</p><p>SHA256 {{ detail.recording.contentHash }}</p></details>
     </article>
   </section>

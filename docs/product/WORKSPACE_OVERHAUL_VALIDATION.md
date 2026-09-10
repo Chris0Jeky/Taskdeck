@@ -1,5 +1,104 @@
 # Workspace overhaul validation and follow-through
 
+## Final integrated continuation qualification (2026-09-10)
+
+The continuation combines grounded commit recovery, thinking-route exit and explicit transcription,
+including destination-bound consent. A real SQLite write-lock regression distinguishes storage
+contention from changed evidence, detaches rejected candidates and preserves accounted model usage;
+18 application and 17 API/reminder cases pass for that slice.
+
+The full backend run at `ea8c0cbe6` passes 9,281 tests with 34 existing skips and one worker-wait
+failure: its bounded queue read was not observed within the test's waiting period. The worker and
+test are unchanged from the baseline. The final 30 API/worker cases pass in isolation, including
+that case and the reviewed account-erasure repair. Full-run per-project passes are Domain 1,645,
+Application 4,301, API 3,057, CLI 243, Architecture 28 and Integration 7. The initial run is not
+claimed green.
+
+The first full frontend run passes 6,427 tests and exceeds a five-second startup-test timeout.
+That unchanged test passes in isolation; the complete rerun with four workers passes all 6,428
+tests with three existing skips across 416 files. Typecheck and production build pass. Ten combined
+Chromium journeys pass in 1.3 minutes using an isolated database and actual synthetic speech HTTP
+transport: transcription/recovery, manual audio, retained originals, both planning journeys,
+attention, grounded evidence, Companion continuity, contextual companion and board previews.
+
+The bounded combined review identified a HIGH account-erasure race: a surviving board owner ID
+could authorize a late grounded-analysis save after the user's account was deactivated. Commit
+`948751cab` adds the active-user predicate to every source read, including the transaction's final
+check. The real regression deletes an account after the final service read while a co-owner retains
+the board; the response conflicts and no insight is recreated. The independent fix review confirms
+resolution with no remaining HIGH/CRITICAL. Hosted exact-head qualification remains separate.
+
+## Grounded-question commit recovery (2026-09-10)
+
+The source/access fingerprint is checked again inside the serializable transaction that persists staged observations. Four real API races change evidence, archive/delete the source or revoke membership just after the final service read; all return conflicts and persist no candidates. A separate repository test rejects staged questions and then performs another save, proving rejected state cannot leak through the scoped context.
+
+Usage settlement precedes question staging. A failed commit produces a known no-save result without retrying usage; a failed release does not replace the provider's original cancellation. Seventeen application tests and sixteen API/reminder tests pass. The first application-test compile used the wrong mock argument type for the existing quota method; correcting the fixture to its integer signature resolved compilation. Full backend verification passes 9,240 tests with 34 existing skips: Domain 1,641, Application 4,275, API 3,046, CLI 243, Architecture 28 and Integration 7. Bounded independent review is CLEAN; documentation links/governance and diff checks pass. Hosted qualification remains separate. No frontend, migration or external-provider change is included.
+
+## Thinking route exit recovery (2026-09-10)
+
+Leaving a thinking route invalidates pending receipts and clears view state before checking route IDs. Incomplete params no longer request an empty board endpoint; complete reentry loads normally. Six continuity component tests and typecheck pass, including delayed responses after route exit. Both full personal-plan Chromium journeys pass in 47.2 seconds with per-page assertions that no empty-board request occurs, plus existing Focus, recovery, four-experience, calendar, mobile and accessibility checks. Full frontend verification passes 6,420 tests with three existing skips across 415 files. Production build, typecheck, scoped ESLint and bounded independent review pass. Hosted qualification remains separate. Backend behavior is unchanged.
+
+## Explicit audio transcription (2026-09-10)
+
+Four domain cases cover attempt deadlines and UTC admission. Twenty-five application cases cover accepted formats, single multipart dispatch, bounded output, invalid responses, cancellation and disabled/unsafe configuration. Eight real API cases cover separate provisional results, exact retries, competing requests, expired output, erasure during processing, deactivation, retained originals, both exports, account erasure and kill/configuration gates. Three actual localhost transport cases cover multipart bytes, disclosure/trace suppression, blocked redirects and the shared circuit; existing audio/export cases bring the focused run to 24 passes. A later reviewed-draft provenance extension passes 22 API/transport/audio cases.
+
+The first API compile exposed the snapshot-export test decorator's missing new interface methods; forwarding them fixed compilation. The first transport run exposed an unclassified egress redirect rejection; the adapter now returns a content-free failure receipt, and all 24 cases pass. The application fixture needed an explicit Xunit import. No live provider or paid request was involved.
+
+Thirty-three component tests, typecheck and scoped ESLint pass. Two old library text assertions were updated for the new ability to request a transcript from retained originals while keeping them separate from answers. The three real-API Chromium journeys pass in 41.8 seconds: automatic transcription through actual synthetic HTTP transport, existing audio upload/confirmation recovery, and the retained original library. The new journey proves provider failure, explicit retry, lost success response/reload, reviewed draft provenance and confirmation, all four experiences, 375px overflow and scoped accessibility. The mobile screenshot was inspected; temporary listeners 5244,5346,5349 are stopped. Full-suite, migration and independent/hosted outcomes remain pending here.
+
+Full frontend qualification passes 6,425 tests with three existing skips across 416 files; production build passes. The full backend run passes 9,272 tests with 34 existing skips and catches one architecture inventory failure: the new protected speech client/registration were not listed among known outbound sites. Their direct transport/envelope proof already passes; adding those two legitimate entries resolves the inventory seam. Domain 1,645, Application 4,298, API 3,052, CLI 243 and Integration 7 all pass in that full run; 27 architecture tests pass before the inventory correction. This records a corrected full-run failure rather than claiming the original run was green. The new migration applies to an isolated empty SQLite database and EF reports no pending model changes. Bounded backend review finds no HIGH/CRITICAL; its two MEDIUM limits are recorded in [AUDIO_TRANSCRIPTION.md](AUDIO_TRANSCRIPTION.md). Final scoped fix and frontend review evidence follow on the PR.
+
+Final backend correction passes all 28 architecture tests (one existing skip) plus 22 transcription/audio/transport API cases. Confirmation warnings now retain truthful transcription provenance and point to the reviewed-parent lineage instead of claiming no automated transcription occurred. No behavior change to consent, provider dispatch or frontend follows its full run. Hosted qualification and physical/live-provider usefulness remain separate.
+
+The separately configured disabled-provider Chromium run also passes (one journey, 23.4 seconds including startup), proving default-off options across all four experiences without a speech fixture or external request. This is additional to the three configured-provider/audio/library journeys above.
+
+The frontend review found a HIGH consent defect: refreshing options after a provider configuration change preserved a checked checkbox. The final fix binds consent to the displayed configuration hash and clears it on any change, including A→B→A. The regression proves dispatch remains blocked until fresh consent and an unchanged configuration can retain deliberate consent. All 34 affected components, typecheck and scoped ESLint pass after the fix; the bounded independent fix review confirms resolution with no remaining HIGH/CRITICAL. This later change supersedes the earlier statement that frontend consent was unchanged after the full run.
+
+## Expanded follow-through qualification (2026-09-10)
+
+The combined runtime at 6c6a344a4 includes optional reminders, playback binding, exact confirmation receipts, retained confirmation labels, both moved-card lane markers and the fragmented-upload repair. Full backend verification passed 9,232 tests with 34 existing skips: Domain 1,641, Application 4,273, API 3,040, CLI 243, Architecture 28 and Integration 7. Full frontend passed 6,418 tests with three existing skips across 415 files; production build and typecheck passed.
+
+Ten combined Chromium journeys passed in 2.1 minutes, covering reminders, both board renderers, audio/library recovery, original source conflicts, grounded questions, companion continuity and both personal-plan flows. The separate comparison compatibility journey passed in 21.4 seconds. Both additive migrations were applied together to an isolated empty SQLite database, and EF reports no pending model changes. The latest attention migration's target model retains the earlier confirmation receipt. A bounded combined interaction review found no HIGH/CRITICAL defect.
+
+The final filename-only recovery patch normalizes the raw validated name for both storage and retry comparison, rejecting whitespace-only names before storage. Eleven audio API tests and a bounded independent review pass at 66b082a8d; the merged product tree is identical to that tested input. It follows the combined full-suite pass without altering frontend or migration inputs. The retained-library hard-delete label is proved by the real SQLite API and component tests; the browser archive journey is not misreported as physical deletion.
+
+All local services are stopped and all databases are synthetic. Exact-head hosted CI and the moving main base remain delivery gates. Automated transcription, general representation backfill/recall, complete restoration, real-provider/device usefulness and OUTSTANDING_TASKS.md owner decisions remain open.
+
+## Audio playback receipt binding (2026-09-10)
+
+Playback responses are bound to the original recording ID and both source/request generations. Changing the source invalidates the request and revokes its object URL; late success, failure and cleanup cannot overwrite a newer request. Playback is unavailable until the current receipt has loaded successfully.
+
+Sixteen component tests, typecheck, production build and scoped ESLint passed. Full frontend: 6,403 passed, three existing skips, 414 files. The Chromium audio journey passed in 17.1 seconds, including a controlled stalled original response, question edit, discarded old playback, restored question, playback recovery, lost-upload receipt retry, explicit written confirmation, all four experiences and narrow-screen accessibility. A bounded independent review found no HIGH/CRITICAL defect. Backend behavior is unchanged; no hardware microphone or provider acceptance is claimed.
+
+## Optional reminders (2026-09-10)
+
+The default-off account preference and shared server budget permit quiet board-page links to existing revalidated questions. No implicit analysis/model call is added. Two domain and three API tests pass; initial API compilation caught an incorrect test DbSet name, corrected before the three API cases passed. Thirteen component tests, typecheck/build and the 8.5-second Chromium consent/Zen/budget/mobile/accessibility journey pass. The first browser fixture had an automatic-semicolon-insertion error, corrected without changing runtime assertions. Screenshot inspected.
+
+The full frontend run passed 6,382 tests with three existing skips and exposed 31 failures in an old shell fixture with incomplete mocked route data. Isolating the independently tested reminder child in existing shell/view fixtures restores their intended seam; all 102 tests across the four affected suites pass. No product logic was changed for that fixture repair. The full backend passed 9,224 tests with 34 existing skips and exposed three architecture-parser failures on the new controller declaration. Using the repository's conventional controller constructor/declaration preserves authorization and resolves all three: final architecture tests pass 28 with one existing skip and all three reminder API tests pass. A temporary browser API initially locked rebuild outputs; stopping that synthetic service permitted the final API rebuild. Bounded independent review found no HIGH/CRITICAL defect. Hosted outcomes remain separate. See [attention policy](WORKSPACE_ATTENTION.md) for limits and subjective acceptance boundaries.
+
+
+
+## Combined continuation qualification (2026-09-10)
+
+The continuation combines comparison appearance, uncertain-plan recovery, accepted-navigation Focus, retained audio drafts, source-selection conflicts, storage startup validation, grounded questions and receipt/Review recovery. All four experiences use the same services and stored data.
+
+At combined runtime 652ee5d1a, the full backend passed 9,222 tests with 34 existing skips; the full frontend passed 6,396 with three existing skips. Typecheck/build and ten Chromium journeys passed, covering comparison, two plan flows, audio/library/history, grounded preview, companion continuity, board overlays and contextual companion. Grounded provider transport has separate synthetic-localhost proof on its input PR. The later frontend-only receipt/Review patch has the full-run and final 73-test/final two-browser proof recorded above; backend inputs remain unchanged. The subsequent main merge changes only CI scheduling, with 261 passing continuation/workflow contract tests and a clean bounded base interaction review. Combined interaction review found no HIGH/CRITICAL defect.
+
+Exact-head hosted CI and merge state remain on the delivery PR. Local proof does not imply real microphone, external model usefulness, physical-device, full restore or release acceptance.
+
+
+
+## Receipt and Review recovery (2026-09-10)
+
+Post-send receipt reconciliation has a 15-second HTTP timeout and disables automatic retries. A timeout preserves the successful message and offers an explicit GET-only Retry. Legacy Review exposes eligible board previews for Chat and Manual proposals even without capture provenance; status and read-only guards remain enforced.
+
+Validation: production build and typecheck passed. Full Vitest ran 6,399 passing tests, three existing skips and one stale request-options assertion; the assertion was updated for the new timeout, then all 73 tests across the four affected suites passed. Scoped ESLint passed. Two Chromium journeys passed in 49.5 seconds, including a genuinely stalled receipt request, exactly one message POST, explicit read recovery, both Review renderers and narrow-screen accessibility. Bounded independent review found no HIGH/CRITICAL defect. No backend behavior changed; hosted qualification remains pending on the continuation PR.
+## Exact audio confirmation receipts (2026-09-10)
+
+New confirmations retain a SHA-256 fingerprint of the original expected recording revision, expected deck revision, representation ID and answer status under a versioned schema. An identical retry returns the existing result; changing any field returns a conflict before another memory or representation is written. Pre-migration confirmations have no provable request fingerprint and require a read rather than accepting an unverifiable write retry. Their retained originals and read access remain available.
+
+The nullable receipt is included in both account export routes. The additive migration was applied successfully to an isolated empty SQLite database. Ten API tests passed, including all four mismatched fields, exact retry identity, unchanged representation count, both exports and a legacy null receipt. Full backend qualification passed 9,223 tests with 34 existing skips. Exact-head hosted state belongs to the continuation PR. Independent review found no HIGH/CRITICAL defect. No working database was migrated.
+
 ## Fragmented upload bounds (2026-09-10)
 
 The byte store fills its existing 64 KiB buffer before inserting a chunk, except for the final short tail. This prevents tiny network fragments from creating a database row each while retaining bounded memory, size validation, content hashing and savepoint rollback. Four new fragment/mismatch cases and all selected blob, audio and source-export regressions pass: 24 API tests. This scoped repair follows the earlier full backend qualification; exact-head hosted checks remain required.
@@ -375,3 +474,51 @@ PR #2866 now also contains the reviewed source interaction, board overlay, libra
 Sixteen selected Chromium journeys have passing evidence. The initial combined batch passed fifteen and found one ambiguous memory-title locator; using the checkbox role fixed that test, and both complete contextual/source specs then passed. Coverage includes four experiences, both board renderers, Los Angeles calendar dates, Classic resume, 375 px accessibility/overflow, source permissions, exact original audio, explicit Review/Apply and three production audio-policy cases. This is not a claim that the initial batch was entirely green.
 
 Two comparison identity checks, two audio-policy checks, eleven failure-ledger projection tests, documentation links and GitHub governance pass. A bounded fresh-context integration review found no HIGH/CRITICAL interaction defect. Temporary browser services are stopped; all databases are synthetic. Hosted exact-head qualification remains the merge gate. The wider #2808 scope, physical microphones/devices, live processors, restoration and the existing human decisions remain open.
+
+## Comparison appearance attribution (2026-09-10)
+
+Auto observations use the existing version-3 theme string to retain both selected mode and resolved appearance at submission: auto (paper) or auto (paper-night). Old auto labels remain unchanged and separate; no version-2 checksum input, file schema or historic identity changes. The UI explains the submission-time scope and asks the observer to note any appearance changes during the task.
+
+The HTTP LAN compatibility Chromium journey records both live color-scheme settings, confirms the body theme, exports those labels alongside a legacy auto observation, checks three separate result rows, reloads and imports all three without SubtleCrypto or randomUUID. It passes in 14.6 seconds. Node fingerprint checks verify that src/tests and build/*.node-check.mjs changes leave product attribution stable, while runtime source, public assets, build plugin code and build configuration change it. Full frontend/build results belong to the continuation PR; there is no telemetry, randomized assignment or statistical conclusion.
+Final local comparison-attribution gate: 6,377 frontend tests passed with three existing skips across 412 files. Production build/typecheck, two Node identity checks, the 14.6-second Chromium journey, documentation links and GitHub governance pass. Independent bounded Luna review is CLEAN. The test-only fingerprint exclusions are exact repository paths; this is still an input fingerprint, not a byte-for-byte bundle hash or proof of the remote server version. Temporary services are stopped; hosted checks remain separate.
+
+## Personal-plan operation recovery (2026-09-10)
+
+Shared plan reads coalesce across Home and plan consumers, with account changes detaching the old request so its cleanup cannot release a new account's pending read. Store tests exercise that ordering and both uncertain save/Focus failures. Failed mutations remove displayed plan metadata and block subsequent writes until an explicit successful refresh. Empty board/card Focus targets are validated before repository access; real API tests preserve the complete prior plan, revision and last-worked timestamp.
+
+The browser recovery journey simulates a rejected Focus response and a committed plan edit whose response is lost. It verifies retracted entries, disabled controls, explicit refresh reconciliation and exactly one write. The first run exposed the shared client's automatic PUT retry; plan writes now use the existing retry opt-out. The full successful planning journey remains alongside this failure proof. Final counts and hosted qualification belong to the continuation PR. This does not yet change when navigation records Focus or assert physical-device acceptance.
+Final local plan-recovery qualification: 9,188 backend tests passed with 34 existing skips; 6,380 frontend tests passed with three existing skips across 412 files. Production build/typecheck, ten targeted store cases, scoped ESLint, documentation links/governance and diff checks pass. Both Chromium journeys pass in 27.3 seconds, including the lost-after-commit response, exactly one write, explicit refresh, complete successful plan/Focus/Classic continuity and mobile proof. One bounded independent Luna review is CLEAN, including the HTTP retry opt-out. Temporary services are stopped; hosted qualification and accepted-navigation Focus timing remain separate.
+
+## Accepted Focus navigation (2026-09-10)
+
+`usePersonalPlanFocus` connects Home and plan controls to one accepted-route check before calling the existing revision-guarded Focus API. Six real memory-router cases cover delayed acceptance, origin disposal with the router app retained, aborted/login/account guards, leaving while the save is pending and unavailable plan state. Together with the store cases, sixteen targeted tests pass. The first fixture incorrectly destroyed the whole router application when trying to simulate disposal of its source component; the corrected fixture models the actual surviving app and passes.
+
+The two real-API planning journeys pass in 21.5 seconds, including failed-history recovery from the thinking destination and successful Classic/other-experience resume. The destination banner directs the user back to refresh the plan; no late save redirects them. Full frontend/build and independent review results belong to this continuation. Browser logs also expose the existing thinking-route watcher attempting an empty-board read while leaving; it does not navigate or mutate and remains a bounded follow-through item under #2808.
+Final local Focus navigation qualification: 6,386 frontend tests passed with three existing skips across 413 files. Sixteen targeted router/store cases, production build/typecheck, scoped ESLint, documentation links/governance and diff checks pass. Both real-API Chromium journeys pass in 21.5 seconds. Independent bounded Luna review is CLEAN. Backend code is unchanged from #2880; temporary services are stopped. Hosted qualification remains separate.
+
+## Written audio draft recovery (2026-09-10)
+
+Thirteen ThinkingAudioAnswer component cases include missing, replaced and confirmed receipts retaining the exact draft plus its original question evidence; explicit discard clears the guard, and failed reloads disable both mutation controls until recovery. Nine real API tests include changed and removed questions rejecting written versions, including an identical-text retry, without changing revision or representation history. Original bytes remain downloadable.
+
+The original-library browser journey now edits the shared question while a private written draft exists, saves that edit, checks the accessible retained text and explicit discard, then continues through removed-question/library/playback/all-experience/mobile proof. The original audio save/retry/write/confirm journey remains alongside it. Final browser/full-suite evidence belongs to the continuation PR. These changes address hosted comments3974815071,3974815077 and3974815082; automatic transcription, physical devices and wider source operations remain open.
+Final local written-draft recovery qualification: 9,186 backend tests passed with 34 existing skips; 6,381 frontend tests passed with three existing skips across 412 files. Thirteen focused component cases, nine real API tests, production build/typecheck, scoped ESLint, documentation links/governance and diff checks pass. The two Chromium journeys pass in 38.7 seconds, including the actual edited-question draft recovery and the original retry/confirmation/library flows. Independent bounded Luna review is CLEAN. Temporary services are stopped; hosted qualification and physical/provider acceptance remain separate.
+
+## Original-source selection recovery (2026-09-10)
+
+The shared original picker retracts items and emits an empty selection on HTTP 409, with explicit refresh guidance. Thirteen targeted component tests and typecheck pass. The real-API original-source Chromium journey changes a selected memory concurrently, receives the actual revision conflict on the next page, refreshes and reselects, and proves the outgoing context uses revision13. Receipt replay, all four experiences,403 recovery and375px accessibility remain covered; the journey passes in17.6seconds.
+
+Full frontend verification passes6,378tests with three existing skips across412files; production build/typecheck, documentation links/governance and diff checks pass. This addresses hosted comment3975016183. No backend authority changes, implicit retrieval or automatic send are introduced. Temporary services are stopped; hosted qualification and physical/provider acceptance remain separate.
+
+## Source-storage startup validation (2026-09-10)
+
+Eleven focused API-project tests cover each quota at zero and minus one, default and large valid limits, the identity of the direct settings singleton and IOptions value, and actual API refusal to boot with OwnerQuotaBytes=0 before any upload. The first isolated DI fixture omitted the repository's standard synthetic connector encryption key; adding that fixture prerequisite made all eleven pass. No real credentials were used.
+
+Shared infrastructure registers ValidateOnStart and preserves runtime validation for directly constructed settings. API/MCP hosts start their host; the CLI currently only builds and dispatches, so it validates source options when resolved rather than at CLI startup. No all-host startup claim is made. Independent bounded Luna review found no concrete API configuration-binding defect. Full backend verification passed 9,197 tests with 34 existing skips: Domain 1,639, Application 4,258, API 3,022, CLI 243, Architecture 28 and Integration 7. Hosted results remain the merge gate; there is no frontend change or browser requirement for this configuration seam. This addresses hosted comment3975016187; human deployment choices remain separate.
+
+## Explicit grounded questions qualification (2026-09-10)
+
+The one-card model question vertical passed fifteen contract/budget tests and eight real API cases. The initial full backend run passed 9,205 tests with 34 existing skips and found three MCP startup failures: the model-dependent observation service had been registered in shared infrastructure. Moving that registration into API model setup fixed the host boundary. The final scoped API/insight/MCP pass is 21/21, including all three original failures and the added membership-revocation interleaving. This records a corrected full-run failure, not a claim that the initial full run was green.
+
+Full frontend verification passed 6,382 tests with three existing skips across 413 files. Final typecheck/build and fourteen focused frontend tests pass after the actionable HTTP409 message and theme-token correction. The browser initially exposed generic Axios conflict copy and then a localhost fixture configured with a blocked literal IP; the final standard localhost configuration passed the full real-transport journey in 13.6 seconds. It covers all experiences, exact source preview, actual stale submission409, provider transport, private saved questions, reload, private answer, 375px overflow and scoped accessibility. The screenshot was inspected. Services are stopped and the database/provider are synthetic.
+
+No live-model usefulness, production provider, unattended attention, physical-device or broad semantic-recall acceptance is inferred. The usefulness corpus and two tracked non-blocking review limits are in [GROUNDED_OBSERVATIONS.md](GROUNDED_OBSERVATIONS.md). Exact-head hosted CI remains the merge gate. OUTSTANDING_TASKS.md owner choices remain open.

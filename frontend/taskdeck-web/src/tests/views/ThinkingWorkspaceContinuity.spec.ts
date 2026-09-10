@@ -3,13 +3,20 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import ThinkingWorkspaceView from '../../views/overhaul/ThinkingWorkspaceView.vue'
 import { useSessionStore } from '../../store/sessionStore'
+import { boardsApi } from '../../api/boardsApi'
+import { cardsApi } from '../../api/cardsApi'
 
 const navigation = vi.hoisted(() => ({ leave: null as null | (() => boolean | Promise<boolean>) }))
-vi.mock('vue-router', () => ({
-  useRoute: () => ({ params: { boardId: 'b1', cardId: 'c1' }, query: {} }),
+const routed = vi.hoisted(() => ({ current: null as null | { params: Record<string, string>; query: Record<string, string> } }))
+vi.mock('vue-router', async () => {
+  const { reactive } = await import('vue')
+  const route = reactive({ params: { boardId: 'b1', cardId: 'c1' } as Record<string, string>, query: {} })
+  routed.current = route
+  return {
+  useRoute: () => route,
   onBeforeRouteLeave: (guard: () => boolean | Promise<boolean>) => { navigation.leave = guard },
   onBeforeRouteUpdate: vi.fn(),
-}))
+} })
 vi.mock('../../api/boardsApi', () => ({ boardsApi: { getBoard: vi.fn().mockResolvedValue({ id: 'b1', name: 'Board' }) } }))
 vi.mock('../../api/cardsApi', () => ({ cardsApi: { getCards: vi.fn().mockResolvedValue([{ id: 'c1', title: 'Card' }]) } }))
 vi.mock('../../store/sessionStore', async () => {
@@ -33,7 +40,37 @@ async function setup() {
   return wrapper
 }
 describe('thinking workspace continuity', () => {
-  beforeEach(() => { navigation.leave = null; useSessionStore().userId = 'owner'; useSessionStore().token = 'first' })
+  beforeEach(() => { vi.clearAllMocks(); routed.current!.params = { boardId: 'b1', cardId: 'c1' }; navigation.leave = null; useSessionStore().userId = 'owner'; useSessionStore().token = 'first' })
+  it('clears a leaving view without fetching an empty board and can load a complete route again', async () => {
+    const wrapper = await setup()
+    const boardReads = vi.mocked(boardsApi.getBoard).mock.calls.length
+    const cardReads = vi.mocked(cardsApi.getCards).mock.calls.length
+    routed.current!.params = {}
+    await flushPromises()
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(boardReads)
+    expect(cardsApi.getCards).toHaveBeenCalledTimes(cardReads)
+    expect(wrapper.findComponent({ name: 'ThinkingDeckPanel' }).exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    routed.current!.params = { boardId: 'b1', cardId: 'c1' }
+    await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Card')
+    wrapper.unmount()
+  })
+
+  it('discards a pending board receipt when route params clear', async () => {
+    const wrapper = await setup()
+    let release!: (value: Awaited<ReturnType<typeof boardsApi.getBoard>>) => void
+    vi.mocked(boardsApi.getBoard).mockImplementation(() => new Promise(resolve => { release = resolve }))
+    routed.current!.params = { boardId: 'b2', cardId: 'c1' }
+    await flushPromises()
+    routed.current!.params = {}
+    release({ id: 'b2', name: 'Late board' } as Awaited<ReturnType<typeof boardsApi.getBoard>>)
+    await flushPromises()
+    expect(wrapper.find('h1').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'ThinkingDeckPanel' }).exists()).toBe(false)
+    vi.mocked(boardsApi.getBoard).mockResolvedValue({ id: 'b1', name: 'Board' } as Awaited<ReturnType<typeof boardsApi.getBoard>>)
+    wrapper.unmount()
+  })
   it('passes unsaved thinking state to the companion and releases it after save', async () => {
     const wrapper = await setup()
     const thinking = wrapper.findComponent({ name: 'ThinkingDeckPanel' })

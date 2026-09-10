@@ -68,6 +68,11 @@ async function load() {
       const id = typeof parameterId === 'string' ? parameterId : operation.targetId
       const key = `${kind}:${id?.toLowerCase()}`
       if (operation.actionType.toLowerCase() !== 'create' && existing.has(key)) markers[key] = 'Proposed change'
+      if (kind === 'card' && operation.actionType.toLowerCase() === 'move') {
+        const sourceCard = props.cards.find(card => sameId(card.id, id))
+        const source = `column:${sourceCard?.columnId.toLowerCase()}`
+        if (existing.has(source)) markers[source] = 'Proposed change'
+      }
       if (kind === 'card' && ['create', 'move'].includes(operation.actionType.toLowerCase()) && typeof parameters.columnId === 'string') {
         const destination = `column:${parameters.columnId.toLowerCase()}`
         if (existing.has(destination)) markers[destination] = 'Proposed change'

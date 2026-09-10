@@ -2,6 +2,12 @@
 
 Last Updated: 2026-09-10
 
+**Automatic transcription** is an optional, explicit step for a saved private recording. Open its
+options and receipts in Thinking Decks or the original-recording library, inspect the configured
+destination/model and consent to one request. A provisional result stays separate until reviewed as
+a written draft and explicitly confirmed as an answer. Failure and lost-response receipts survive
+reloads across all experiences. It is disabled by default; see [configuration, evidence and limits](AUDIO_TRANSCRIPTION.md).
+
 **Preview on board** opens a read-only proposal layer from Chat or Review. Choose **Refresh board preview** to check the current proposal revision and highlight saved cards/columns affected by its operations in either board renderer. The checked diff also describes new or hidden objects. The board continues to show saved data; **Open Review** returns to that exact proposal for approval and explicit Apply. Closing the preview, changing board data, losing access or reaching the short freshness limit removes its markers. This reduces the need to mentally match proposal changes to board objects while preserving review-first trust.
 
 Companion's source picker also offers individual preserved originals beside each private memory.
@@ -66,15 +72,15 @@ explicit approve action followed by a separate apply action and the existing con
 | Quiet insights | Explicit analysis of blocked cards and unknown/needs-review private memory; durable dismiss/snooze/mute state and revalidation | Implemented structural rules only; no semantic/model inference, automatic scans or interruption |
 | Questions and memory | Saved shared questions can have private answers; source snapshots, statements/assumptions/unknowns, corrections and archive/restore | Implemented. Thinking is board-shared; answers, memory and insights are private to the user. Original answer/evidence and correction history survive; archive excludes the active memory list |
 | Memory portability and account privacy | Private JSON download plus both account export formats include originals, evidence, native source references and history; account deletion erases the private source graph | Implemented for active and archived records. Board-scoped download uses independent authenticated reads, not an atomic backup or import format. Native originals also survive physical board deletion in account export. Shared board exports exclude private answers; collaborators' records survive account deletion |
-| Companion | Accountable chat beside card thinking/Focus, board-scoped conversations, explicit card/shared-thinking/private-memory and native original-asset sources, persisted receipts | Implemented across experiences. Up to five combined private memories/originals; permission/archive/revision/hash checks before dispatch and replay. Unsaved-thinking and pending-send guards plus receipt-only recovery preserve continuity. No implicit private retrieval or new provider. Board-object overlays remain next |
-| Comparison | User-initiated scenarios, explicit completion outcomes, ease ratings and notes retained through manual JSON export/import across releases | Implemented; version-3 files retain stable IDs, selected experience/detail/theme, backend version and frontend input fingerprint. Version-2 imports retain unknown frontend attribution. Atomic validation, deduplication and descriptive grouping; no telemetry, random assignment or statistical A/B claim. Auto-theme resolved appearance remains follow-through |
-| In-place proposal previews | Authoritative diff beside the card conversation, with the effective revision in the same response | Implemented read-only preview with expiry, bounded freshness and identity clearing. Open Review retains approval/subset/explicit Apply. Mapping changes onto affected board objects remains next |
+| Companion | Accountable chat beside card thinking/Focus, board-scoped conversations, explicit card/shared-thinking/private-memory and native original-asset sources, persisted receipts | Implemented across experiences. Up to five combined private memories/originals; permission/archive/revision/hash checks before dispatch and replay. Unsaved-thinking and pending-send guards plus receipt-only recovery preserve continuity. No implicit private retrieval or new provider. Checked board-object markers and read-only previews are available in both renderers |
+| Comparison | User-initiated scenarios, explicit completion outcomes, ease ratings and notes retained through manual JSON export/import across releases | Implemented; version-3 files retain stable IDs, selected experience/detail/theme, backend version and frontend input fingerprint. Version-2 imports retain unknown frontend attribution. Atomic validation, deduplication and descriptive grouping; no telemetry, random assignment or statistical A/B claim. New Auto-theme entries retain their resolved light/night appearance; older records preserve unknown attribution |
+| In-place proposal previews | Authoritative diff beside the card conversation, with the effective revision in the same response | Implemented read-only preview with expiry, bounded freshness and identity clearing. Open Review retains approval/subset/explicit Apply. Affected existing cards/columns are marked from a checked proposal receipt; proposed new objects remain in the authoritative diff |
 | Personal continuity | Chosen plan, last-worked focus, List/Board/Horizon over planned cards | Implemented privately with revision checks. Home resume uses explicit focus and shows chosen threads; the separate agenda remains derived from Today. Requires a connected backend; backend-less demo builds hide these entry points |
 | Linked steps | Explicit title/destination, atomic child-card/link/audit creation, repeat-safe requests, refreshed real card status and portable links | Implemented; shares the guarded card writer and board concurrency token. Removing thinking never deletes linked cards. Explicit dependency edges are also available |
 | Dependencies | Explicit same-board prerequisite relationships with both directions, live status refresh and portable import | Implemented with cycle validation, revision conflicts, archive and deletion guards. No automatic edges or status/deadline changes |
-| Audio answers and unified source evidence | Native Capture/SourceAsset question originals, explicit older-memory preservation, original audio and separate immutable written representations | Implemented for manual question answers: explicit recording/file intake, playback/download, stable upload retry, written history and confirmation, account portability/erasure and read-only retained library. Audio alone stays untranscribed; automatic transcription/failure processing and general legacy representation backfill remain next |
-| Model-generated observations and recall | Bounded candidate producer and authorized knowledge retrieval | Later; requires grounding, fresh evidence, usefulness corpus, privacy and budget proof |
-| Optional nudges | Opt-in attention policy after usefulness is established | Later; requires non-intrusion evaluation, focus/input suppression and shared user budgets |
+| Audio answers and unified source evidence | Native Capture/SourceAsset question originals, explicit older-memory preservation, original audio and separate immutable written representations | Implemented: recording/file intake, playback/download, stable upload retry, written history/confirmation and retained library. Optional explicit transcription has destination-bound consent, durable failure/retry receipts and provisional output; adoption preserves lineage. Account export/erasure includes storage and receipts. General legacy representation backfill and import/restore remain separate |
+| Model-generated observations and recall | Explicit one-card preview and up to three quoted private questions with shared Chat budget, category/card deduplication and one-day freshness | Experimental question producer implemented; [contract and usefulness corpus](GROUNDED_OBSERVATIONS.md). General semantic candidates, recall and live-provider usefulness acceptance remain separate |
+| Optional nudges | Explicit account opt-in, quiet links to existing questions, shared two-per-day/two-hour budget | Implemented experimentally with typing/dialog/Focus/Zen/visibility suppression and no automatic model work. [Policy and limits](WORKSPACE_ATTENTION.md); subjective usefulness/non-intrusion evaluation remains open |
 
 Insight actions wait for active analysis to settle, Memory creation waits for the initial list, and Retry repeats failed board discovery before reading content. These guards prevent overlapping operations from stranding the workspace or hiding a newly saved memory.
 
@@ -139,6 +145,26 @@ enough independent participants and a defined outcome before experimentation.
 
 ## Boundaries and follow-through
 
+The source-pack reconciliation separates the requested prototype experience from the wider platform
+roadmap. Unified `INSIGHTS_AND_MEMORY.md` lines 173–175 describes scoped, non-archived retrieval and
+explicitly excludes semantic consolidation, vector indexing and global personal memory. Lines 187–200
+require original audio, distinct received/transcribed/confirmed states, retry/text fallback and explicit
+remote destination consent. Those behaviors use the integrated memory and audio services. Companion's
+chat lines 34–47 describes prepared prototype transcripts, not a working speech provider.
+
+Unified `INTEGRATION_HANDOFF.md` lines 84–104 adds production speech/recovery proof and bounded model
+questions with optional interruption controls. Reminder work-hours/time-zone selection remains a
+concrete continuation item. Physical microphone, live-provider quality, subjective usefulness and
+non-intrusion need direct acceptance; synthetic proof does not satisfy those claims.
+
+Generic processor hosting remains CF-04 [#2258](https://github.com/Chris0Jeky/Taskdeck/issues/2258), and
+general historical representation migration remains CF-06
+[#2260](https://github.com/Chris0Jeky/Taskdeck/issues/2260). The source pack asks for playback/export and
+preserved evidence; it does not define source-storage import/restore or a global semantic recall
+product. Those wider capabilities belong to the [Context Fabric roadmap](../architecture/CONTEXT_FABRIC.md),
+not a claim that the overhaul already implements them. The complete local source paths and hashes
+remain in [the resource manifest](overhaul-resource-map.json).
+
 Do not copy the prototype's hardcoded TD-15 support rule, September walkthrough text, simulated
 model answers or browser-global data model. The original HTML has no authentication, backend,
 live model, real collaboration or distributed idempotency. Its optional nudge timings are design
@@ -200,13 +226,15 @@ audio answer**. Recording begins only after **Record audio** and browser permiss
 offers playback/download and remains local until **Save original privately**. Keeping audio first
 reduces capture friction without requiring immediate transcription or treating unheard audio as knowledge.
 
-The saved original remains immutable and untranscribed. **Save written version** preserves your
+The saved original remains immutable. **Save written version** preserves your
 own transcription or description as a separate transcript representation. Corrections append versions;
 **Confirm written version as my answer** creates private memory and a human-confirmed representation.
 Confirmation is not external verification. A separate existing private answer is corrected in Memory.
 The question and original evidence stay unchanged. Saving a recording, writing a version or confirming
-an answer never queues a model/transcription job or changes the card. Automatic transcription, provider
-consent, streaming recognition and model usefulness remain separate continuation work.
+an answer never queues a model/transcription job or changes the card. **Automatic transcription** is
+a separate explicit request with destination-bound consent, provisional output and recoverable receipts;
+see [Audio transcription](AUDIO_TRANSCRIPTION.md). Streaming recognition and live-provider usefulness
+remain unverified.
 
 One original is retained per person and saved question version. Retrying an uncertain upload uses the
 same upload ID and checks the original bytes and metadata; it cannot silently replace that recording.
@@ -233,8 +261,8 @@ loaded private content and playback URLs; refreshing a token for the same person
 This library explicitly extends archive access: owner-linked originals on archived boards remain
 readable with current board permission, and originals whose board was deleted remain readable under
 their owner identity. Deleted-board retention already existed in account export. Library reads do not
-restore a board, reactivate a question or authorize a write. Changed/removed questions and archived or
-deleted boards show a read-only retained copy; only an unchanged current question links back to Thinking
+restore a board, reactivate a question or authorize an answer write. Changed/removed questions and archived or
+deleted boards retain playback and explicit transcription; only an unchanged current question links back to Thinking
 for writing or confirmation. Account deletion remains the erasure boundary for these retained originals.
 An unsaved local file is held only while the current page stays open: **Reload saved recording** keeps
 that draft, but a browser refresh or closing the page loses an unuploaded file.

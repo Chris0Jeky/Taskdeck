@@ -27,6 +27,61 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    [Fact]
+    public async Task UploadRetryUsesThePersistedNormalizedFileName()
+    {
+        var (client, user, board, card, question) = await Setup();
+        var url = Url(board, card, question.Id);
+        var uploadId = Guid.NewGuid();
+        var original = await Receipt(await Upload(client, url, uploadId, fileName: " voice.wav "));
+        original.FileName.Should().Be("voice.wav");
+        (await Receipt(await Upload(client, url, uploadId, fileName: " voice.wav "))).Should().BeEquivalentTo(original);
+        (await Receipt(await Upload(client, url, uploadId, fileName: "voice.wav"))).Should().BeEquivalentTo(original);
+        (await Upload(client, url, uploadId, fileName: "other.wav")).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await Upload(client, url, fileName: "   ")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.ThinkingAudioAnswers.CountAsync(x => x.UserId == user)).Should().Be(1);
+        (await db.StoredBlobReferences.CountAsync(x => x.OwnerUserId == user)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task ConfirmRetryRequiresTheExactOriginalRequestAndPreservesTheReceipt()
+    {
+        var (client, _, board, card, question) = await Setup();
+        var original = await Receipt(await Upload(client, Url(board, card, question.Id)));
+        var written = await Receipt(await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version",
+            new ThinkingAudioWriteDto(1, "My confirmed answer")));
+        var request = new ThinkingAudioConfirmDto(2, 1, written.RepresentationId!.Value, "statement");
+        var endpoint = $"/api/thinking-audio/{original.Id}/confirm";
+        var confirmed = await Receipt(await client.PostAsJsonAsync(endpoint, request));
+        foreach (var changed in new[]
+        {
+            request with { ExpectedRevision = 3 }, request with { ExpectedDeckRevision = 2 },
+            request with { RepresentationId = confirmed.RepresentationId!.Value }, request with { Status = "unknown" }
+        })
+            (await client.PostAsJsonAsync(endpoint, changed)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var retried = await Receipt(await client.PostAsJsonAsync(endpoint, request));
+        retried.Should().BeEquivalentTo(confirmed);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var answer = await db.ThinkingAudioAnswers.AsNoTracking().SingleAsync(x => x.Id == original.Id);
+        answer.ConfirmationRequestHash.Should().HaveLength(64);
+        (await db.Representations.CountAsync(x => x.CaptureId == original.CaptureId)).Should().Be(2);
+        foreach (var route in new[] { "/api/account/export", "/api/account/export/stream" })
+        {
+            var exported = (await client.GetFromJsonAsync<UserDataExportDto>(route))!.Data.SourceStorage!.AudioAnswers.Single();
+            exported.ConfirmationRequestHash.Should().Be(answer.ConfirmationRequestHash);
+        }
+        // Simulate a pre-migration confirmation: GET still works, but no exact write retry can be proven.
+        await db.ThinkingAudioAnswers.Where(x => x.Id == original.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.ConfirmationRequestHash, (string?)null));
+        (await client.PostAsJsonAsync(endpoint, request)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var retained = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>($"/api/thinking-audio/library/{original.Id}"))!;
+        retained.Should().NotBeNull();
+        (await db.Representations.CountAsync(x => x.CaptureId == original.CaptureId)).Should().Be(2);
+    }
+
     private sealed class LibraryCommandProbe : DbCommandInterceptor
     {
         public List<string> Commands { get; } = [];
@@ -98,10 +153,10 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
         var bytes = new byte[size]; "RIFF"u8.CopyTo(bytes); "WAVE"u8.CopyTo(bytes.AsSpan(8)); return bytes;
     }
     private static async Task<HttpResponseMessage> Upload(HttpClient client, string url, Guid? uploadId = null,
-        byte[]? bytes = null, long revision = 1, long? declaredSize = null, string mime = "audio/wav")
+        byte[]? bytes = null, long revision = 1, long? declaredSize = null, string mime = "audio/wav", string fileName = "original.wav")
     {
         bytes ??= Audio(); using var content = new ByteArrayContent(bytes); content.Headers.ContentType = new MediaTypeHeaderValue(mime);
-        return await client.PostAsync($"{url}?uploadId={uploadId ?? Guid.NewGuid()}&expectedDeckRevision={revision}&byteSize={declaredSize ?? bytes.Length}&fileName=original.wav", content);
+        return await client.PostAsync($"{url}?uploadId={uploadId ?? Guid.NewGuid()}&expectedDeckRevision={revision}&byteSize={declaredSize ?? bytes.Length}&fileName={Uri.EscapeDataString(fileName)}", content);
     }
     private static async Task<ThinkingAudioDto> Receipt(HttpResponseMessage response)
     {
@@ -205,7 +260,14 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
         (await Upload(client, url)).StatusCode.Should().Be(HttpStatusCode.Conflict, "an accepted original cannot be silently replaced");
         var written = await Receipt(await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(1, "Unconfirmed text")));
         (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(1, [question with { Body = "Different question" }]))).EnsureSuccessStatusCode();
+        (await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(2, "A stale written draft"))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(2, "Unconfirmed text"))).StatusCode.Should().Be(HttpStatusCode.Conflict, "an identical retry must also revalidate its question");
         (await client.PostAsJsonAsync($"/api/thinking-audio/{original.Id}/confirm", new ThinkingAudioConfirmDto(2, 2, written.RepresentationId!.Value, "statement"))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(2, []))).EnsureSuccessStatusCode();
+        (await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(2, "Removed question draft"))).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var retained = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>($"/api/thinking-audio/library/{original.Id}"))!;
+        retained.Recording.Revision.Should().Be(written.Revision);
+        retained.Recording.WrittenVersions.Should().BeEquivalentTo(written.WrittenVersions);
         (await client.GetByteArrayAsync($"/api/thinking-audio/{original.Id}/original")).Should().Equal(Audio());
         (await client.GetFromJsonAsync<List<WorkspaceMemoryDto>>($"/api/workspace-memory?boardId={board}"))!.Should().BeEmpty();
     }
@@ -223,6 +285,11 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
             await db.Boards.Where(x => x.Id == board).ExecuteDeleteAsync();
         }
         (await client.GetAsync($"/api/thinking-audio/{original.Id}/original")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var entry = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!.Items.Single();
+        entry.BoardRemoved.Should().BeTrue(); entry.HasConfirmedAnswer.Should().BeTrue();
+        var retained = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>($"/api/thinking-audio/library/{original.Id}"))!;
+        retained.Recording.ConfirmedMemoryId.Should().BeNull();
+        retained.Recording.WrittenVersions.Should().Contain(x => x.Quality == "Verified");
         foreach (var route in new[] { "/api/account/export", "/api/account/export/stream" })
         {
             var export = (await client.GetFromJsonAsync<UserDataExportDto>(route))!;

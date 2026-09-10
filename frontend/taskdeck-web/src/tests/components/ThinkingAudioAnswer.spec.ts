@@ -16,6 +16,7 @@ const confirmed: ThinkingAudio = { ...written, revision: 3, representationId: 'c
   { ...written.writtenVersions[0]!, quality: 'Superseded', supersededById: 'confirmed' }, { id: 'confirmed', text: 'My version', quality: 'Verified', supersededById: null },
 ] }
 const global = { stubs: {
+  AudioTranscriptionPanel: true,
   RouterLink: { template: '<a><slot /></a>' },
   AudioAnswerRecorder: { name: 'AudioAnswerRecorder', props: ['modelValue', 'disabled'], emits: ['update:modelValue', 'busy', 'draft-started'], template: '<div>Recorder draft: {{ modelValue?.name }}</div>' },
 } }
@@ -28,6 +29,85 @@ beforeEach(() => {
 })
 
 describe('private audio answers', () => {
+  it('keeps a selected transcript as a guarded draft and preserves its source when saved', async () => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValue(original)
+    vi.mocked(thinkingAudioApi.write).mockResolvedValue(written)
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    wrapper.findComponent({ name: 'AudioTranscriptionPanel' }).vm.$emit('adopt', { id: 'candidate', text: 'Reviewed transcript' })
+    await flushPromises()
+    expect(wrapper.get('textarea[aria-label="Written audio version"]').element).toHaveProperty('value', 'Reviewed transcript')
+    expect(thinkingAudioApi.write).not.toHaveBeenCalled(); expect(thinkingAudioApi.confirm).not.toHaveBeenCalled()
+    await button(wrapper, 'Save written version').trigger('click'); await flushPromises()
+    expect(thinkingAudioApi.write).toHaveBeenCalledWith('audio', 1, 'Reviewed transcript', 'candidate')
+  })
+  it.each(['resolve', 'reject'] as const)('discards a stale playback %s without changing the newer request', async outcome => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(original)
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    let complete!: (value: Blob) => void; let fail!: (cause: Error) => void
+    vi.mocked(thinkingAudioApi.original).mockReturnValueOnce(new Promise((resolve, reject) => { complete = resolve; fail = reject }))
+    await button(wrapper, 'Load original for playback or download').trigger('click')
+    vi.mocked(thinkingAudioApi.get).mockResolvedValue({ ...original, id: 'new-audio', fileName: 'new.wav' })
+    await wrapper.setProps({ revision: 4 }); await flushPromises()
+    let finishNew!: (value: Blob) => void
+    vi.mocked(thinkingAudioApi.original).mockReturnValueOnce(new Promise(resolve => { finishNew = resolve }))
+    await button(wrapper, 'Load original for playback or download').trigger('click')
+    if (outcome === 'resolve') complete(new Blob(['old'])); else fail(new Error('Old download failed'))
+    await flushPromises()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(button(wrapper, 'Loading original…').attributes('disabled')).toBeDefined()
+    const nextBlob = new Blob(['new']); finishNew(nextBlob); await flushPromises()
+    expect(URL.createObjectURL).toHaveBeenCalledExactlyOnceWith(nextBlob)
+    expect(wrapper.get('a[download]').attributes('download')).toBe('new.wav')
+    wrapper.unmount()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
+  })
+  it('revokes existing playback as soon as its source is invalidated', async () => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(original)
+    vi.mocked(thinkingAudioApi.original).mockResolvedValue(new Blob(['original']))
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    await button(wrapper, 'Load original for playback or download').trigger('click'); await flushPromises()
+    expect(wrapper.find('audio').exists()).toBe(true)
+    await wrapper.setProps({ sourceReady: false })
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
+    expect(wrapper.find('audio').exists()).toBe(false)
+    expect(button(wrapper, 'Load original for playback or download').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+  it.each(['missing', 'replaced', 'confirmed'] as const)('keeps a written draft visible when its receipt becomes %s', async change => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(written)
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    await wrapper.get('[aria-label="Written audio version"]').setValue('Keep these exact unfinished words')
+    vi.mocked(thinkingAudioApi.get).mockResolvedValue(change === 'missing' ? null : change === 'replaced' ? { ...original, id: 'new-audio', questionHash: 'new-question' } : confirmed)
+    await wrapper.setProps({ revision: 4 }); await flushPromises()
+    expect((wrapper.get('[aria-label="Earlier written audio draft"]').element as HTMLTextAreaElement).value).toBe('Keep these exact unfinished words')
+    expect(wrapper.get('[aria-label="Retained written audio draft"]').text()).toContain('Exact question')
+    expect(wrapper.find('[aria-label="Written audio version"]').exists()).toBe(false)
+    expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([true])
+    expect(thinkingAudioApi.write).not.toHaveBeenCalled()
+    expect(thinkingAudioApi.confirm).not.toHaveBeenCalled()
+    await button(wrapper, 'Discard earlier written draft').trigger('click')
+    expect(wrapper.find('[aria-label="Retained written audio draft"]').exists()).toBe(false)
+    expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([false])
+    wrapper.unmount()
+  })
+  it('disables both mutation controls after a failed reload and recovers explicitly', async () => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(written)
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    expect(button(wrapper, 'Confirm written version as my answer').attributes('disabled')).toBeUndefined()
+    vi.mocked(thinkingAudioApi.get).mockRejectedValueOnce(new Error('Reload failed'))
+    await wrapper.setProps({ revision: 4 }); await flushPromises()
+    expect(button(wrapper, 'Confirm written version as my answer').attributes('disabled')).toBeDefined()
+    await wrapper.get('[aria-label="Written audio version"]').setValue('Still my local draft')
+    expect(button(wrapper, 'Save written version').attributes('disabled')).toBeDefined()
+    await button(wrapper, 'Save written version').trigger('click')
+    expect(thinkingAudioApi.write).not.toHaveBeenCalled()
+    vi.mocked(thinkingAudioApi.get).mockResolvedValue(written)
+    await button(wrapper, 'Reload saved recording').trigger('click'); await flushPromises()
+    expect(button(wrapper, 'Save written version').attributes('disabled')).toBeUndefined()
+    expect((wrapper.get('[aria-label="Written audio version"]').element as HTMLTextAreaElement).value).toBe('Still my local draft')
+    wrapper.unmount()
+  })
   it.each(['selected', 'recording'])('binds a %s draft to the question revision at its start', async kind => {
     const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
     const recorder = wrapper.findComponent({ name: 'AudioAnswerRecorder' })

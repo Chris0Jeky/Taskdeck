@@ -1,19 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { usePersonalPlanFocus } from '../../composables/usePersonalPlanFocus'
 import { useWorkspacePlanStore } from '../../store/workspacePlanStore'
 import { usePlanCardPicker } from '../../composables/usePlanCardPicker'
 import type { PlanEntry, PlanCard } from '../../api/workspacePlanApi'
 import { addCalendarDays, formatCalendarDate, localCalendarDateKey } from '../../utils/dueDates'
 
-const router = useRouter()
+const { openFocus, opening, navigationError } = usePersonalPlanFocus()
 const store = useWorkspacePlanStore()
 const { boards, cards, boardId, cardId, loadingBoards, loadingCards, error: pickerError, loadBoards, loadCards } = usePlanCardPicker()
 const plannedDate = ref(localCalendarDateKey())
 const view = ref<'list' | 'board' | 'horizon'>('list')
 const day = ref('')
 const message = ref('')
-const disabled = computed(() => !store.ready || store.loading || store.saving)
+const disabled = computed(() => !store.ready || store.loading || store.saving || opening.value)
 const entries = computed(() => (store.plan?.entries ?? []).filter(entry => !day.value || entry.plannedDate === day.value))
 const groups = computed(() => {
   const result = new Map<string, PlanEntry[]>()
@@ -48,8 +48,7 @@ async function tomorrow(entry: PlanEntry) {
 async function focus(card: PlanCard) {
   if (!card.available) return
   message.value = ''
-  if (await store.focus(card.boardId, card.cardId))
-    await router.push({ path: `/workspace/boards/${card.boardId}/cards/${card.cardId}/thinking`, query: { focus: '1' } })
+  await openFocus(card)
 }
 async function retryChoices() { await loadBoards(); if (!pickerError.value && boardId.value) await loadCards() }
 onMounted(() => { if (store.available) { void store.load(); void loadBoards() } })
@@ -60,6 +59,7 @@ onMounted(() => { if (store.available) { void store.load(); void loadBoards() } 
     <header><p class="personal-plan__eyebrow">A LITTLE ROOM FOR TODAY</p><h1>Your personal plan</h1><p>Choose work you want to spend time on. This private plan keeps your choices separate from the board’s due dates.</p></header>
     <p v-if="!store.available" role="status">Personal planning needs a connected Taskdeck workspace. This preview has no backend. <RouterLink to="/workspace/boards">Explore the demo boards</RouterLink>.</p>
     <template v-else>
+    <p v-if="navigationError" role="alert">{{ navigationError }}</p>
     <div v-if="store.error" role="alert"><p>{{ store.error }}</p><button type="button" :disabled="store.loading || store.saving" @click="store.load">Refresh personal plan</button></div>
     <p v-if="store.loading" role="status">Loading your plan…</p>
     <section v-if="store.plan?.lastWorked" class="personal-plan__resume" aria-label="Last worked on">

@@ -30,6 +30,17 @@ function setup() {
   return { wrapper, load, session }
 }
 describe('board proposal preview', () => {
+  it('marks the saved source lane and destination when the effective card moves', async () => {
+    const value = detail()
+    value.operations = [{ ...value.operations[0]!, targetType: 'card', actionType: 'move', targetId: 'wrong', parameters: JSON.stringify({ cardId: 'A1', columnId: 'c2' }) }]
+    api.detail.mockResolvedValue(value)
+    const { wrapper, load } = setup()
+    await wrapper.setProps({ board: { ...board, columns: [...board.columns, { ...board.columns[0]!, id: 'c2', name: 'Later' }] } })
+    await load()
+    expect(wrapper.emitted('markers')?.at(-1)?.[0]).toEqual({ 'card:a1': 'Proposed change', 'column:c1': 'Proposed change', 'column:c2': 'Proposed change' })
+    expect(wrapper.props('cards')).toEqual([card])
+    wrapper.unmount()
+  })
   beforeEach(() => { vi.clearAllMocks(); api.preview.mockResolvedValue(receipt()); api.detail.mockResolvedValue(detail()) })
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
   it('explicitly checks one matching revision, marks existing targets and never writes board state', async () => {

@@ -84,9 +84,10 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
     public Task<Result<ThinkingAudioDto>> UploadAsync(Guid userId, Guid boardId, Guid cardId, Guid layerId,
         ThinkingAudioUploadDto dto, string mediaType, Stream content, CancellationToken ct) => TransactionAsync(async () =>
     {
-        if (dto.UploadId == Guid.Empty || dto.ByteSize is <= 0 or > MaximumBytes || dto.FileName is null
+        if (dto.UploadId == Guid.Empty || dto.ByteSize is <= 0 or > MaximumBytes || string.IsNullOrWhiteSpace(dto.FileName)
             || dto.FileName.Length is 0 or > 200 || dto.FileName.Any(char.IsControl) || dto.FileName.IndexOfAny(['/', '\\']) >= 0)
             throw Invalid("Choose an audio file up to 2 MiB with a plain file name.");
+        var fileName = dto.FileName.Trim();
         mediaType = mediaType.Split(';')[0].Trim().ToLowerInvariant();
         if (mediaType is not ("audio/webm" or "audio/ogg" or "audio/wav" or "audio/x-wav" or "audio/mpeg" or "audio/mp4"))
             throw Invalid("Choose WebM, Ogg, WAV, MP3 or MP4 audio.");
@@ -97,7 +98,7 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         {
             if (prior.BoardId != boardId || prior.CardId != cardId || prior.LayerId != layerId || prior.QuestionHash != hash) throw Conflict();
             var saved = await MapAsync(prior, ct);
-            if (saved.ByteSize != dto.ByteSize || saved.MediaType != mediaType || saved.FileName != dto.FileName
+            if (saved.ByteSize != dto.ByteSize || saved.MediaType != mediaType || saved.FileName != fileName
                 || saved.ContentHash != await HashUploadAsync(content, dto.ByteSize, ct)) throw Conflict();
             return saved;
         }
@@ -114,7 +115,7 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         }
         var title = string.IsNullOrWhiteSpace(layer.Title) ? "Thinking question" : layer.Title;
         var (capture, asset) = await new CaptureIntakeService(captures, null).StageAudioAnswerAsync(userId, boardId,
-            title.Length > 240 ? title[..240] : title, $"Thinking question: {layer.Title}\n{layer.Body}", blob, mediaType, dto.FileName, ct);
+            title.Length > 240 ? title[..240] : title, $"Thinking question: {layer.Title}\n{layer.Body}", blob, mediaType, fileName, ct);
         var answer = new ThinkingAudioAnswer(userId, boardId, cardId, layerId, hash, capture.Id, asset.Id, dto.UploadId);
         answers.Add(answer); decks.GuardRevision(deck);
         (await work.Boards.GetByIdAsync(boardId, ct))!.RecordDependentMutation();
@@ -126,14 +127,28 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
     {
         var answer = await OwnedAsync(userId, id, ct);
         if (answer.ConfirmedMemoryId.HasValue) throw Conflict();
+        var (_, question) = await QuestionAsync(userId, answer.BoardId!.Value, answer.CardId, answer.LayerId, ct);
+        if (Hash(question) != answer.QuestionHash) throw Conflict();
         if (string.IsNullOrWhiteSpace(dto.Text) || dto.Text.Length > 8000) throw Invalid("Write between 1 and 8,000 characters.");
         var payload = new Transcript(userId, CaptureSource.Typed, dto.Text, boardId: answer.BoardId, createdFromCaptureId: answer.CaptureId);
         var previous = answer.RepresentationId is { } previousId ? await representations.HeaderAsync(previousId, userId, ct) : null;
-        if (previous is not null && previous.ContentHash == Representation.ComputeTextContentHash(payload.Text)) return await MapAsync(answer, ct);
+        Representation? adopted = null;
+        if (dto.SourceRepresentationId is { } adoptedId)
+        {
+            adopted = await representations.HeaderAsync(adoptedId, userId, ct) ?? throw Missing();
+            if (adopted.CaptureId != answer.CaptureId || adopted.ParentSourceAssetId != answer.SourceAssetId
+                || adopted.QualityState != RepresentationQualityState.Provisional || adopted.ProcessingRunId is null) throw Conflict();
+        }
+        if (previous is not null && previous.ContentHash == Representation.ComputeTextContentHash(payload.Text)
+            && (adopted is null || previous.ParentRepresentationId == adopted.Id)) return await MapAsync(answer, ct);
         if (answer.Revision != dto.ExpectedRevision) throw Conflict();
         if ((await representations.ListByCaptureAsync(answer.CaptureId, userId, ct)).Count >= MaximumWrittenVersions - 1)
             throw Invalid("This recording has reached its written-version limit. Confirm the current version or use a text answer.");
-        var header = Header(answer, payload, previous, RepresentationQualityState.Final);
+        var header = adopted is null ? Header(answer, payload, previous, RepresentationQualityState.Final)
+            : new Representation(payload.Id, answer.CaptureId, userId, RepresentationKind.Transcript, null, adopted.Id, null,
+                "human-reviewed-transcript", "1", null, Representation.ComputeTextContentHash("thinking-audio-reviewed-v1"), 1,
+                Representation.ComputeTextContentHash(payload.Text), null, RepresentationQualityState.Final,
+                ["The owner reviewed or edited an automatic transcript. It is not a confirmed answer or external verification."], DateTimeOffset.UtcNow);
         await representations.StageTranscriptAsync(userId, header, payload, previous is null ? null : new(previous, header), ct);
         answer.RecordWrittenVersion(header.Id);
         if (!await answers.SaveAsync(ct)) throw Conflict();
@@ -143,7 +158,16 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
     public Task<Result<ThinkingAudioDto>> ConfirmAsync(Guid userId, Guid id, ThinkingAudioConfirmDto dto, CancellationToken ct) => TransactionAsync(async () =>
     {
         var answer = await OwnedAsync(userId, id, ct);
-        if (answer.ConfirmedMemoryId.HasValue) return await MapAsync(answer, ct);
+        var requestHash = Representation.ComputeTextContentHash(JsonSerializer.Serialize(new
+        {
+            Schema = 1, dto.ExpectedRevision, dto.ExpectedDeckRevision, dto.RepresentationId, dto.Status
+        }));
+        if (answer.ConfirmedMemoryId.HasValue)
+        {
+            // Older receipts cannot prove which request succeeded. Reload them without replaying a write.
+            if (answer.ConfirmationRequestHash != requestHash) throw Conflict();
+            return await MapAsync(answer, ct);
+        }
         if (answer.Revision != dto.ExpectedRevision || answer.RepresentationId != dto.RepresentationId) throw Conflict();
         var (_, layer) = await QuestionAsync(userId, answer.BoardId!.Value, answer.CardId, answer.LayerId, ct);
         if (Hash(layer) != answer.QuestionHash) throw Conflict();
@@ -155,7 +179,7 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         var payload = new Transcript(userId, CaptureSource.Typed, previousText.Text, boardId: answer.BoardId, createdFromCaptureId: answer.CaptureId);
         var header = Header(answer, payload, previous, RepresentationQualityState.Verified);
         await representations.StageTranscriptAsync(userId, header, payload, new(previous, header), ct);
-        answer.Confirm(header.Id, saved.Value.Id);
+        answer.Confirm(header.Id, saved.Value.Id, requestHash);
         (await work.Boards.GetByIdAsync(answer.BoardId.Value, ct))!.RecordDependentMutation();
         if (!await answers.SaveAsync(ct)) throw Conflict();
         return await MapAsync(answer, ct);
@@ -225,7 +249,9 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         new(payload.Id, answer.CaptureId, answer.UserId, RepresentationKind.Transcript, parent is null ? answer.SourceAssetId : null,
             parent?.Id, null, quality == RepresentationQualityState.Verified ? "human-confirmation" : "human-written", "1", null,
             Representation.ComputeTextContentHash("thinking-audio-manual-v1"), 1, Representation.ComputeTextContentHash(payload.Text), null,
-            quality, ["Written by the owner; no automated transcription or external verification."], DateTimeOffset.UtcNow);
+            quality, [quality == RepresentationQualityState.Verified
+                ? "Confirmed by the owner; source and transcription provenance remain in the parent lineage. This is not external verification."
+                : "Written or pasted by the owner; this action does not request transcription or external verification."], DateTimeOffset.UtcNow);
     private static string Hash(ThinkingLayer layer) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { layer.Title, layer.Body }))));
     private static async Task<string> HashUploadAsync(Stream content, long size, CancellationToken ct)
     {

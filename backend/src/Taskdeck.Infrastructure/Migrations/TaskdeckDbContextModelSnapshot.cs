@@ -397,6 +397,116 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.ToTable("ArtefactExtractions", (string)null);
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.AudioTranscriptionAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AudioAnswerId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CaptureId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConfigurationHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("Deadline")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FailureCode")
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Model")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("RepresentationId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RequestHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid>("SourceAssetId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("State")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudioAnswerId");
+
+                    b.HasIndex("CaptureId");
+
+                    b.HasIndex("RepresentationId");
+
+                    b.HasIndex("SourceAssetId");
+
+                    b.HasIndex("UserId", "AudioAnswerId");
+
+                    b.HasIndex("UserId", "RequestId")
+                        .IsUnique();
+
+                    b.ToTable("AudioTranscriptionAttempts");
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.AudioTranscriptionBudget", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("InputBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("Revision")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UtcDay")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("AudioTranscriptionBudgets");
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.AuditLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2682,6 +2792,10 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<Guid>("CardId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ConfirmationRequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("ConfirmedMemoryId")
                         .HasColumnType("TEXT");
 
@@ -2890,6 +3004,14 @@ namespace Taskdeck.Infrastructure.Migrations
                 {
                     b.Property<Guid>("Id")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("AttentionJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("AttentionRevision")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0L);
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
@@ -3108,6 +3230,47 @@ namespace Taskdeck.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("SourceArtefactId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.AudioTranscriptionAttempt", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.ThinkingAudioAnswer", null)
+                        .WithMany()
+                        .HasForeignKey("AudioAnswerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Capture", null)
+                        .WithMany()
+                        .HasForeignKey("CaptureId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Representation", null)
+                        .WithMany()
+                        .HasForeignKey("RepresentationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Taskdeck.Domain.Entities.SourceAsset", null)
+                        .WithMany()
+                        .HasForeignKey("SourceAssetId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.AudioTranscriptionBudget", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 
