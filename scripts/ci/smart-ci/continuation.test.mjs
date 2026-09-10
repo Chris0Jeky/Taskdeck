@@ -10,3 +10,4 @@ import './continuation/tests/workflow.test.mjs';
 import './continuation/tests/launcher-inputs.test.mjs';
 import './continuation/tests/github.test.mjs';
 import './continuation/tests/admission-ledger.test.mjs';
+import './continuation/tests/export.test.mjs';
