@@ -14,7 +14,7 @@ public sealed class ChatContextResolver(IUnitOfWork unit, IAuthorizationService 
 {
     public async Task<Result<ChatAssetPage>> ListSourcesAsync(Guid actorId, Guid boardId, Guid memoryId, int revision, int offset, CancellationToken ct)
     {
-        if (boardId == Guid.Empty || memoryId == Guid.Empty || revision < 1 || offset < 0 || offset > 1000)
+        if (boardId == Guid.Empty || memoryId == Guid.Empty || revision < 1 || offset < 0)
             return Result.Failure<ChatAssetPage>(ErrorCodes.ValidationError, "Choose a saved memory version and a valid page.");
         var access = await authorization.CanReadBoardAsync(actorId, boardId);
         var board = access.IsSuccess && access.Value ? await unit.Boards.GetByIdAsync(boardId, ct) : null;
@@ -24,7 +24,8 @@ public sealed class ChatContextResolver(IUnitOfWork unit, IAuthorizationService 
         if (record.Revision != revision)
             return Result.Failure<ChatAssetPage>(ErrorCodes.Conflict, "This memory changed. Refresh sources before selecting an original.");
         var assets = record.CaptureId.HasValue ? await memory.AssetsAsync(actorId, boardId, record.CaptureId.Value, offset, ct) : [];
-        return Result.Success(new ChatAssetPage(record.Id, record.Revision, assets.Take(10).ToArray(), assets.Count > 10 ? offset + 10 : null));
+        return Result.Success(new ChatAssetPage(record.Id, record.Revision, assets.Take(10).ToArray(),
+            assets.Count > 10 && offset <= int.MaxValue - 10 ? offset + 10 : null));
     }
 
     public async Task<Result<ResolvedChatContext>> ResolveAsync(Guid actorId, Guid? boardId, ChatContextSelection selection, CancellationToken ct)

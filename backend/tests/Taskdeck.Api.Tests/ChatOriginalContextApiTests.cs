@@ -150,5 +150,35 @@ public sealed partial class ChatContextApiTests
         events.Should().ContainSingle().Which.Error.Should().Contain("changed"); requests.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task OriginalPagesContinuePastOneThousandWithoutLoadingFullHistory()
+    {
+        var requests = new List<ChatCompletionRequest>(); using var factory = CreateFactory(requests);
+        using var client = factory.CreateClient(); var (actor, board, _, memory, _) = await Setup(factory, client);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var saved = (await db.Set<WorkspaceMemory>().FindAsync(memory.Id))!;
+            var store = scope.ServiceProvider.GetRequiredService<ICaptureStore>();
+            await new CaptureIntakeService(store, null).StageMemorySourcesAsync(saved); await db.SaveChangesAsync();
+            var capture = (await store.GetByIdForUserAsync(saved.SourceCaptureId!.Value, actor))!;
+            for (var index = 1; index <= 1011; index++)
+            {
+                var replacement = capture.SupersedeInlineTextSource($"Historical correction {index}");
+                db.Add(replacement);
+            }
+            await db.SaveChangesAsync();
+        }
+        var url = SourceUrl(board.Id, memory.Id, 1);
+        var first = (await client.GetFromJsonAsync<ChatAssetPage>(url + "&offset=1000"))!;
+        first.Items.Should().HaveCount(10); first.NextOffset.Should().Be(1010);
+        var final = (await client.GetFromJsonAsync<ChatAssetPage>(url + $"&offset={first.NextOffset}"))!;
+        final.Items.Should().HaveCount(2); final.NextOffset.Should().BeNull();
+        final.Items.Last().Excerpt.Should().Be("Historical correction 1011");
+        first.Items.Select(x => x.Id).Intersect(final.Items.Select(x => x.Id)).Should().BeEmpty();
+        (await client.GetAsync(url + "&offset=2147483647")).StatusCode.Should().Be(HttpStatusCode.OK);
+        requests.Should().BeEmpty();
+    }
+
     private static string SourceUrl(Guid board, Guid memory, int revision) => $"/api/llm/chat/context-memory/{memory}/sources?boardId={board}&revision={revision}";
 }
