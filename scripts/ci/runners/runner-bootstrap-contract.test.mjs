@@ -167,6 +167,13 @@ test('scripts exclude runner registration, credentials and download shortcuts', 
 test('cleanup output is limited to stable codes and counts', () => {
   assert.match(linuxCleanup, /RUNNER_CLEANUP (?:OK|ERROR|ACTION)/)
   assert.doesNotMatch(linuxCleanup, /(?:printf|echo)[^\n]+\$(?:WORK|TEMP|CACHE|CONFIG|RUNNER_ACCOUNT)/)
+  assert.match(linuxCleanup, /-printf '\.' 2>\/dev\/null/)
+  assert.match(linuxCleanup, /-print -quit 2>\/dev\/null/)
+  assert.match(linuxBootstrap, /install -d -o root[\s\S]{0,180}>\/dev\/null 2>&1/)
+  assert.match(linuxBootstrap, /install -o root -g root -m 0555[\s\S]{0,160}>\/dev\/null 2>&1/)
+  assert.match(linuxBootstrap, /chown root:root[^\n]+>\/dev\/null 2>&1/)
+  assert.match(linuxBootstrap, /chmod 0444[^\n]+>\/dev\/null 2>&1/)
+  assert.match(linuxBootstrap, /mv -f --[^\n]+>\/dev\/null 2>&1/)
   assert.match(windowsCleanup, /RUNNER_CLEANUP \$Text/)
   assert.doesNotMatch(windowsCleanup, /Write-(?:Output|Host)[^\n]+\$(?:.*Path|.*Root|.*Account|env:)/i)
 })

@@ -269,7 +269,7 @@ verify_layout() {
 
 apply_layout() {
   local script_dir cleanup_source runner_group config_stage
-  script_dir="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)" \
+  script_dir="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P 2>/dev/null)" \
     || fail 'script_root'
   cleanup_source="$script_dir/cleanup-linux.sh"
   [[ -f "$cleanup_source" && ! -L "$cleanup_source" ]] || fail 'cleanup_source'
@@ -295,33 +295,38 @@ apply_layout() {
 
   runner_group="$(id -gn "$RUNNER_ACCOUNT" 2>/dev/null)" || fail 'account_group_probe'
   install -d -o root -g root -m 0755 "$POLICY_ROOT" "$HOOK_ROOT" "$STATE_ROOT" "$CACHE_ROOT" \
+    >/dev/null 2>&1 \
     || fail 'layout_policy_create'
   install -d -o "$RUNNER_ACCOUNT" -g "$runner_group" -m 0700 \
     "$HOME_ROOT" "$WORK_ROOT" "$TEMP_ROOT" "$NPM_CACHE_ROOT" "$NUGET_CACHE_ROOT" \
     "$PLAYWRIGHT_CACHE_ROOT" "$DOCKER_CONFIG_ROOT" "$BUILDKIT_STATE_ROOT" \
+    >/dev/null 2>&1 \
     || fail 'layout_runner_create'
 
   install -o root -g root -m 0555 "$cleanup_source" "$HOOK_PATH" \
+    >/dev/null 2>&1 \
     || fail 'hook_install'
 
   config_stage="$POLICY_ROOT/.policy.conf.stage"
   trap 'rm -f -- "$config_stage" >/dev/null 2>&1' RETURN
-  printf '%s\n' \
-    'POLICY_VERSION=1' \
-    "HOME_ROOT=$HOME_ROOT" \
-    "WORK_ROOT=$WORK_ROOT" \
-    "TEMP_ROOT=$TEMP_ROOT" \
-    "NPM_CACHE_ROOT=$NPM_CACHE_ROOT" \
-    "NUGET_CACHE_ROOT=$NUGET_CACHE_ROOT" \
-    "PLAYWRIGHT_CACHE_ROOT=$PLAYWRIGHT_CACHE_ROOT" \
-    "DOCKER_CONFIG_ROOT=$DOCKER_CONFIG_ROOT" \
-    "BUILDKIT_STATE_ROOT=$BUILDKIT_STATE_ROOT" \
-    'BUILDKIT_MAX_USED_SPACE=20gb' \
-    'CONTAINER_STATE_MAX_BYTES=32212254720' \
-    >"$config_stage" || fail 'policy_write'
-  chown root:root "$config_stage" || fail 'policy_owner'
-  chmod 0444 "$config_stage" || fail 'policy_mode'
-  mv -f -- "$config_stage" "$CONFIG_PATH" || fail 'policy_publish'
+  {
+    printf '%s\n' \
+      'POLICY_VERSION=1' \
+      "HOME_ROOT=$HOME_ROOT" \
+      "WORK_ROOT=$WORK_ROOT" \
+      "TEMP_ROOT=$TEMP_ROOT" \
+      "NPM_CACHE_ROOT=$NPM_CACHE_ROOT" \
+      "NUGET_CACHE_ROOT=$NUGET_CACHE_ROOT" \
+      "PLAYWRIGHT_CACHE_ROOT=$PLAYWRIGHT_CACHE_ROOT" \
+      "DOCKER_CONFIG_ROOT=$DOCKER_CONFIG_ROOT" \
+      "BUILDKIT_STATE_ROOT=$BUILDKIT_STATE_ROOT" \
+      'BUILDKIT_MAX_USED_SPACE=20gb' \
+      'CONTAINER_STATE_MAX_BYTES=32212254720' \
+      >"$config_stage"
+  } 2>/dev/null || fail 'policy_write'
+  chown root:root "$config_stage" >/dev/null 2>&1 || fail 'policy_owner'
+  chmod 0444 "$config_stage" >/dev/null 2>&1 || fail 'policy_mode'
+  mv -f -- "$config_stage" "$CONFIG_PATH" >/dev/null 2>&1 || fail 'policy_publish'
   trap - RETURN
 }
 
