@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Grounded observation continuation (#2808, pending main delivery): Quiet insights can preview one selected card and explicitly ask the configured model for up to three private, quoted questions. Strict bounded output, before/after source checks, shared Chat quota/kill switch, category/card deduplication and one-day expiry preserve review-first behavior. No board write, implicit private retrieval or background attention is added. See [the contract and usefulness corpus](product/GROUNDED_OBSERVATIONS.md); synthetic transport proves wiring, not live-model quality.
+
 Source-storage export continuation (#2808): buffered and streamed account exports now hold one deferred SQLite read snapshot across blob objects, references, chunks, representations and audio-answer rows. Concurrent WAL uploads can commit without reserving the writer for the duration of the export; all five sections retain the earlier view until disposal. This is source-storage consistency, not a claim of a single snapshot across every account-export section or a tested restore workflow.
 
 Planning continuity follow-through (#2808): Classic Home now offers the same private last-worked Focus resume as the other experiences, in both Paper/Grove and Legacy rendering. Personal-plan due dates use canonical calendar-day formatting; Today and tomorrow use the local calendar date without changing card deadlines. This reduces the work needed to resume a thought after switching versions.
