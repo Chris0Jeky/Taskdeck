@@ -19,6 +19,38 @@ namespace Taskdeck.Api.Tests;
 public sealed class BoardDependencyApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
     [Fact]
+    public async Task SavingActiveDependencies_PreservesArchivedEdges_AndAllowsActiveRemoval()
+    {
+        using var client = factory.CreateClient();
+        var (_, board, a, b) = await Setup(client);
+        async Task<CardDto> Create(string title)
+        {
+            var response = await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+                new CreateCardDto(board.Id, a.ColumnId, title, null, null, null));
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+        var c = await Create("Active prerequisite");
+        var d = await Create("Active dependency");
+        var retained = new CardDependency(a.Id, b.Id);
+        var active = new CardDependency(c.Id, d.Id);
+        (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(0, [retained]))).EnsureSuccessStatusCode();
+        var archivedResponse = await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{a.Id}/archive", new CardLifecycleDto(a.UpdatedAt));
+        archivedResponse.EnsureSuccessStatusCode();
+        var archived = (await archivedResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        var visible = (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!;
+        visible.Edges.Should().BeEmpty();
+        var saved = await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(visible.Revision, [.. visible.Edges, active]));
+        saved.EnsureSuccessStatusCode();
+        (await saved.Content.ReadFromJsonAsync<BoardDependencyDto>())!.Edges.Should().Equal(active);
+        (await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{a.Id}/restore", new CardLifecycleDto(archived.UpdatedAt))).EnsureSuccessStatusCode();
+        var restored = (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!;
+        restored.Edges.Should().BeEquivalentTo(new[] { retained, active });
+        (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(restored.Revision, [retained]))).EnsureSuccessStatusCode();
+        (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!.Edges.Should().Equal(retained);
+    }
+
+    [Fact]
     public async Task ExplicitLinksPersistWithoutChangingCards_AndExportRemapsThem()
     {
         using var client = factory.CreateClient();
