@@ -24,6 +24,10 @@ An abandoned underlying transport may remain active until it honors cancellation
 Status reads patch only status fields on existing rows and cached detail summaries. They never add,
 remove or reorder list rows, and do not replace source text or provenance. A terminal status starts
 a fresh full-detail read. Only a current terminal detail ends the watch and refreshes workload counts.
+Status and full-detail requests share per-item read authority: an older response cannot replace a
+newer observation in either response order. A failed or cancelled newer read does not make an older
+request current again; the watch retains its next retry. Terminal hydration continues the authority
+of its triggering status request.
 An older cached terminal result cannot complete a new enqueue. Per-item watch identity, session epoch
 and successful-write generation checks reject obsolete results, including a re-enqueue during hydration.
 
