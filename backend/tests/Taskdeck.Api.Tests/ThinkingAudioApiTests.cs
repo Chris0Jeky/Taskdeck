@@ -28,6 +28,24 @@ namespace Taskdeck.Api.Tests;
 public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
     [Fact]
+    public async Task UploadRetryUsesThePersistedNormalizedFileName()
+    {
+        var (client, user, board, card, question) = await Setup();
+        var url = Url(board, card, question.Id);
+        var uploadId = Guid.NewGuid();
+        var original = await Receipt(await Upload(client, url, uploadId, fileName: " voice.wav "));
+        original.FileName.Should().Be("voice.wav");
+        (await Receipt(await Upload(client, url, uploadId, fileName: " voice.wav "))).Should().BeEquivalentTo(original);
+        (await Receipt(await Upload(client, url, uploadId, fileName: "voice.wav"))).Should().BeEquivalentTo(original);
+        (await Upload(client, url, uploadId, fileName: "other.wav")).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await Upload(client, url, fileName: "   ")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.ThinkingAudioAnswers.CountAsync(x => x.UserId == user)).Should().Be(1);
+        (await db.StoredBlobReferences.CountAsync(x => x.OwnerUserId == user)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task ConfirmRetryRequiresTheExactOriginalRequestAndPreservesTheReceipt()
     {
         var (client, _, board, card, question) = await Setup();
@@ -135,10 +153,10 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
         var bytes = new byte[size]; "RIFF"u8.CopyTo(bytes); "WAVE"u8.CopyTo(bytes.AsSpan(8)); return bytes;
     }
     private static async Task<HttpResponseMessage> Upload(HttpClient client, string url, Guid? uploadId = null,
-        byte[]? bytes = null, long revision = 1, long? declaredSize = null, string mime = "audio/wav")
+        byte[]? bytes = null, long revision = 1, long? declaredSize = null, string mime = "audio/wav", string fileName = "original.wav")
     {
         bytes ??= Audio(); using var content = new ByteArrayContent(bytes); content.Headers.ContentType = new MediaTypeHeaderValue(mime);
-        return await client.PostAsync($"{url}?uploadId={uploadId ?? Guid.NewGuid()}&expectedDeckRevision={revision}&byteSize={declaredSize ?? bytes.Length}&fileName=original.wav", content);
+        return await client.PostAsync($"{url}?uploadId={uploadId ?? Guid.NewGuid()}&expectedDeckRevision={revision}&byteSize={declaredSize ?? bytes.Length}&fileName={Uri.EscapeDataString(fileName)}", content);
     }
     private static async Task<ThinkingAudioDto> Receipt(HttpResponseMessage response)
     {

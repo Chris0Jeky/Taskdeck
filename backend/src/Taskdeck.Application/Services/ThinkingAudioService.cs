@@ -84,9 +84,10 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
     public Task<Result<ThinkingAudioDto>> UploadAsync(Guid userId, Guid boardId, Guid cardId, Guid layerId,
         ThinkingAudioUploadDto dto, string mediaType, Stream content, CancellationToken ct) => TransactionAsync(async () =>
     {
-        if (dto.UploadId == Guid.Empty || dto.ByteSize is <= 0 or > MaximumBytes || dto.FileName is null
+        if (dto.UploadId == Guid.Empty || dto.ByteSize is <= 0 or > MaximumBytes || string.IsNullOrWhiteSpace(dto.FileName)
             || dto.FileName.Length is 0 or > 200 || dto.FileName.Any(char.IsControl) || dto.FileName.IndexOfAny(['/', '\\']) >= 0)
             throw Invalid("Choose an audio file up to 2 MiB with a plain file name.");
+        var fileName = dto.FileName.Trim();
         mediaType = mediaType.Split(';')[0].Trim().ToLowerInvariant();
         if (mediaType is not ("audio/webm" or "audio/ogg" or "audio/wav" or "audio/x-wav" or "audio/mpeg" or "audio/mp4"))
             throw Invalid("Choose WebM, Ogg, WAV, MP3 or MP4 audio.");
@@ -97,7 +98,7 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         {
             if (prior.BoardId != boardId || prior.CardId != cardId || prior.LayerId != layerId || prior.QuestionHash != hash) throw Conflict();
             var saved = await MapAsync(prior, ct);
-            if (saved.ByteSize != dto.ByteSize || saved.MediaType != mediaType || saved.FileName != dto.FileName
+            if (saved.ByteSize != dto.ByteSize || saved.MediaType != mediaType || saved.FileName != fileName
                 || saved.ContentHash != await HashUploadAsync(content, dto.ByteSize, ct)) throw Conflict();
             return saved;
         }
@@ -114,7 +115,7 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         }
         var title = string.IsNullOrWhiteSpace(layer.Title) ? "Thinking question" : layer.Title;
         var (capture, asset) = await new CaptureIntakeService(captures, null).StageAudioAnswerAsync(userId, boardId,
-            title.Length > 240 ? title[..240] : title, $"Thinking question: {layer.Title}\n{layer.Body}", blob, mediaType, dto.FileName, ct);
+            title.Length > 240 ? title[..240] : title, $"Thinking question: {layer.Title}\n{layer.Body}", blob, mediaType, fileName, ct);
         var answer = new ThinkingAudioAnswer(userId, boardId, cardId, layerId, hash, capture.Id, asset.Id, dto.UploadId);
         answers.Add(answer); decks.GuardRevision(deck);
         (await work.Boards.GetByIdAsync(boardId, ct))!.RecordDependentMutation();
