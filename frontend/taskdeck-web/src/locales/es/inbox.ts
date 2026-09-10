@@ -16,6 +16,13 @@
  * invariable y no necesita forma propia.
  */
 export default {
+  polling: {
+    waiting: "Esperando la clasificaci?n. Los resultados aparecer?n aqu? cuando est?n listos.",
+    retrying: "La actualizaci?n del estado se ha retrasado. Reintentando autom?ticamente; la solicitud fue aceptada.",
+    unavailable: "Una captura ya no est? disponible para consultar. Actualiza el estado para reintentar.",
+    paused: "Las consultas de estado est?n en pausa porque la sesi?n requiere atenci?n. Inicia sesi?n de nuevo para continuar.",
+    refresh: "Actualizar estado",
+  },
   eyebrow:
     'Inbox · superficie de captura · {pending} por clasificar · {total} capturada | Inbox · superficie de captura · {pending} por clasificar · {total} capturadas',
   // Se muestra EN LUGAR de `eyebrow` mientras se sustituye el ámbito (#2501):
