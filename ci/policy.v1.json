@@ -40,6 +40,7 @@
     "api-integration-linux": { "checkName": "API Integration / API Integration (ubuntu-latest)", "family": "backend", "runner": "selfHostedLinuxHeavy", "trustedOnly": true, "hostedFallback": "hostedLinux", "description": "API integration suite on Linux" },
     "api-integration-windows": { "checkName": "API Integration / API Integration (windows-latest)", "family": "windows", "runner": "selfHostedWindowsCompat", "trustedOnly": true, "hostedFallback": "hostedWindows", "description": "API integration suite on Windows (full duplicate today; MCP/process/SQLite contract shard after CI-06/CI-07)" },
     "migration-validation": { "checkName": "Migration Validation / Migration Validation", "family": "persistence", "runner": "hostedLinux", "trustedOnly": false, "description": "EF Core migration chain validation" },
+    "source-launcher-linux": { "checkName": "Frontend Unit / Source Launcher (Linux)", "family": "launchers", "runner": "hostedLinux", "trustedOnly": false, "description": "source launcher regression, isolated from frontend semantics; Linux only under SC-3" },
     "frontend-unit-linux": { "checkName": "Frontend Unit / Frontend Unit (ubuntu-latest)", "family": "frontend", "runner": "selfHostedLinuxHeavy", "trustedOnly": true, "hostedFallback": "hostedLinux", "description": "lint + typecheck + build + coverage + bundle budget" },
     "frontend-unit-windows": { "checkName": "Frontend Unit / Frontend Unit (windows-latest)", "family": "windows", "runner": "selfHostedWindowsCompat", "trustedOnly": true, "hostedFallback": "hostedWindows", "description": "full frontend duplicate today; launcher/platform subset after CI-08 (launcher suite runs on the Linux leg only since CI-07 #2331)" },
     "paper-color-audit": { "checkName": "Paper Color Audit / Paper Color Audit", "family": "frontend", "runner": "hostedLinux", "trustedOnly": false, "description": "hex-literal regression gate" },
@@ -88,6 +89,7 @@
     ".semgrep/**"
   ],
   "pathGroups": [
+    { "id": "source-launcher-inputs", "patterns": ["backend/**", "frontend/**", "scripts/**"], "riskFloor": "R1", "lanes": ["source-launcher-linux"] },
     { "id": "docs", "patterns": ["docs/**", "**/*.md", "autodoc/**", "LICENSES/**", "LICENSE", ".github/ISSUE_TEMPLATE/**", ".github/pull_request_template.md", "design_handoff_taskdeck_paper/**"], "riskFloor": "R0", "lanes": ["docs-governance"] },
     { "id": "repo-metadata", "patterns": [".editorconfig", ".gitattributes", ".gitignore", ".dockerignore", ".prettierrc*", ".prettierignore"], "riskFloor": "R0", "lanes": [] },
     { "id": "agent-tooling", "patterns": [".claude/**", ".codex/**", "scripts/agent_hooks/**", "scripts/agentic/**", "AGENTS.md", "CLAUDE.md", "GEMINI.md"], "riskFloor": "R1", "lanes": ["docs-governance"] },
