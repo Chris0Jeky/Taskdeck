@@ -1029,8 +1029,6 @@ export function useReviewProposals() {
     scope: string
     stale: boolean
     refused: boolean
-    consecutiveFailures: number
-    consecutiveRefusals: number
   }
   // Only one queue can remain rendered while another scope is loading. Keep
   // health for that retained queue only; this is intentionally not a per-board
@@ -1124,7 +1122,10 @@ export function useReviewProposals() {
     // An empty queue can itself be stale. For its own scope, keep the warning
     // even when filters hide every row; only a successful read proves recovery.
     if (healthScope === scope) return true
-    return visibleProposals.value.length > 0
+    const healthBoard = healthScope.slice(0, healthScope.lastIndexOf(':'))
+    return visibleProposals.value.some(proposal =>
+      healthBoard === '<unscoped>' || proposal.boardId?.toLowerCase() === healthBoard,
+    )
   }
 
   function resetQueueRefreshHealthForScope(scope: string) {
@@ -1154,8 +1155,6 @@ export function useReviewProposals() {
         scope: queueRefreshScope,
         stale: queueRefreshStale.value,
         refused: queueRefreshRefused.value,
-        consecutiveFailures: consecutiveQueueRefreshFailures,
-        consecutiveRefusals: consecutiveQueueRefreshRefusals,
       }
     }
 
@@ -1177,8 +1176,9 @@ export function useReviewProposals() {
       if (retainedQueueRefreshHealth.stale || retainedQueueRefreshHealth.refused) {
         retireQueueRecovery()
       }
-      consecutiveQueueRefreshFailures = retainedQueueRefreshHealth.consecutiveFailures
-      consecutiveQueueRefreshRefusals = retainedQueueRefreshHealth.consecutiveRefusals
+      // Visibility restores disclosures, not a past run of requests. Keep the
+      // current counters: replacing them would erase newer failures or revive
+      // a run already interrupted by a different response or scope.
       // Restoring an older disclosure is not a successful read and cannot
       // retract a warning raised while the wider scope was failing.
       queueRefreshStale.value ||= retainedQueueRefreshHealth.stale
