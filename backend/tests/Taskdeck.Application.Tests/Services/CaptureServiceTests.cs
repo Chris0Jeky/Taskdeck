@@ -865,6 +865,62 @@ public class CaptureServiceTests
     }
 
     [Fact]
+    public async Task GetStatusAsync_ShouldResolveConversion_WithoutMutatingOrSaving()
+    {
+        var userId = Guid.NewGuid();
+        var boardId = Guid.NewGuid();
+        var item = new LlmRequest(
+            userId,
+            CaptureRequestContract.RequestTypeV1,
+            CaptureRequestContract.SerializePayload(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "capture payload")));
+        item.MarkAsProcessing();
+        item.MarkAsCompleted();
+
+        var proposal = new AutomationProposal(
+            ProposalSourceType.Queue,
+            userId,
+            "Applied capture proposal",
+            RiskLevel.Low,
+            Guid.NewGuid().ToString(),
+            boardId,
+            item.Id.ToString());
+        proposal.Approve(userId);
+        proposal.MarkAsApplied();
+        item.UpdatePayload(CaptureRequestContract.SerializePayload(
+            CaptureRequestContract.WithProvenance(
+                new CapturePayloadV1(
+                    CaptureRequestContract.CurrentSchemaVersion,
+                    CaptureSource.Typed,
+                    "capture payload"),
+                captureItemId: Guid.NewGuid(),
+                triageRunId: Guid.NewGuid(),
+                proposalId: proposal.Id)));
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+        _automationProposalRepositoryMock
+            .Setup(r => r.GetByIdAsync(proposal.Id, default))
+            .ReturnsAsync(proposal);
+
+        var originalPayload = item.Payload;
+        var originalUpdatedAt = item.UpdatedAt;
+        var result = await _service.GetStatusAsync(userId, item.Id);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Status.Should().Be(CaptureStatus.Converted);
+        result.Value.CanEditSuggestion.Should().BeFalse();
+        item.Payload.Should().Be(originalPayload);
+        item.UpdatedAt.Should().Be(originalUpdatedAt);
+        item.BoardId.Should().BeNull();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldBackfillConvertedProvenance_WhenLinkedProposalIsAlreadyApplied()
     {
         var userId = Guid.NewGuid();
@@ -915,6 +971,34 @@ public class CaptureServiceTests
         result.Value.Provenance.Should().NotBeNull();
         result.Value.Provenance!.ConvertedAt.Should().NotBeNull();
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_ShouldRejectNonCaptureBeforeParsing()
+    {
+        var userId = Guid.NewGuid();
+        var item = new LlmRequest(userId, "other", "not json");
+        _llmQueueRepositoryMock.Setup(r => r.GetByIdAsync(item.Id, default)).ReturnsAsync(item);
+        var result = await _service.GetStatusAsync(userId, item.Id);
+        result.ErrorCode.Should().Be(ErrorCodes.NotFound);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_ShouldReturnForbidden_WhenCaptureBelongsToDifferentUser()
+    {
+        var ownerId = Guid.NewGuid();
+        var callerId = Guid.NewGuid();
+        var item = new LlmRequest(ownerId, CaptureRequestContract.RequestTypeV1, "capture payload");
+
+        _llmQueueRepositoryMock
+            .Setup(r => r.GetByIdAsync(item.Id, default))
+            .ReturnsAsync(item);
+
+        var result = await _service.GetStatusAsync(callerId, item.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.Forbidden);
     }
 
     [Fact]

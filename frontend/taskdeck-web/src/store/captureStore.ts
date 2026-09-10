@@ -69,8 +69,8 @@ type DetailLoadOptions = {
    *   that resolve from state already present, the non-forced cached early
    *   return and the demo branch: the question a caller asks is whether the
    *   store holds this detail, not whether this call did the writing.
-   * - `superseded` — the caller's own `shouldCache` said no, so a newer read
-   *   for the same id is already the authority.
+   * - `superseded` — the caller's `shouldCache` said no, or a newer detail
+   *   read for the same id is already the authority.
    * - `generation` — a successful write for this id landed mid-read. Reachable
    *   in a LIVE session, not only after a logout: a first open observes
    *   generation 0 for an uncached item and a batch triage that includes it
@@ -159,6 +159,7 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   let latestListLoadRequestId = 0
+  const latestDetailReadById = new Map<string, symbol>()
   // One monotonic clock for both guards below. A write records it to reject
   // older reads; a summary records it so an older BACKGROUND list snapshot
   // cannot regress a row that moved after that read began (#2301).
@@ -335,6 +336,8 @@ export const useCaptureStore = defineStore('capture', () => {
 
     const observedDetailWriteGeneration = detailWriteGeneration(itemId)
     const observedSessionEpoch = sessionEpoch
+    const readToken = Symbol()
+    latestDetailReadById.set(itemId, readToken)
     try {
       if (trackLoading) {
         loadingDetail.value = true
@@ -345,8 +348,8 @@ export const useCaptureStore = defineStore('capture', () => {
       const detail = requestOptions
         ? await captureApi.getItem(itemId, requestOptions)
         : await captureApi.getItem(itemId)
-      // The three drop paths, in the order they have always been checked and
-      // now named for the caller (#2640). The epoch comes before any generation
+      // Keep the caller, epoch and write-generation guards before comparing
+      // read ownership. The epoch comes before any generation
       // compare: the reset discards the generations this read observed, so
       // after a logout the compare is no longer meaningful.
       let outcome: DetailCacheOutcome = 'cached'
@@ -356,6 +359,8 @@ export const useCaptureStore = defineStore('capture', () => {
         outcome = 'epoch'
       } else if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) {
         outcome = 'generation'
+      } else if (latestDetailReadById.get(itemId) !== readToken) {
+        outcome = 'superseded'
       }
       if (outcome === 'cached') {
         cacheDetail(detail, syncSummary)
@@ -372,6 +377,9 @@ export const useCaptureStore = defineStore('capture', () => {
       }
       throw e
     } finally {
+      if (latestDetailReadById.get(itemId) === readToken) {
+        latestDetailReadById.delete(itemId)
+      }
       if (trackLoading) {
         loadingDetail.value = false
       }
@@ -519,85 +527,173 @@ export const useCaptureStore = defineStore('capture', () => {
     }
   }
 
-  const triagePollingItemId = ref<string | null>(null)
-  let activeTriagePollStop: (() => void) | null = null
+  type TriageWatch = { id: string; due: number; delay: number }
+  const triageWatches = new Map<string, TriageWatch>()
+  const triagePollingItemIds = ref<Set<string>>(new Set())
+  // Retained compatibility for consumers outside the Inbox. Rows use the complete set.
+  const triagePollingItemId = computed(() => triagePollingItemIds.value.values().next().value ?? null)
+  const triagePollingProblems = ref<Record<string, 'retrying' | 'unavailable'>>({})
+  const triagePollingPaused = ref(false)
+  let triageTimer: ReturnType<typeof setTimeout> | null = null
+  let triageRequest: { entry: TriageWatch; controller: AbortController } | null = null
+  let triageRunning = false
+  let triageScope = 0
+
+  function publishTriageWatches() {
+    triagePollingItemIds.value = new Set(triageWatches.keys())
+  }
+
+  function retireTriageWatch(entry: TriageWatch) {
+    if (triageWatches.get(entry.id) !== entry) return
+    triageWatches.delete(entry.id)
+    if (triageRequest?.entry === entry) triageRequest.controller.abort()
+    publishTriageWatches()
+  }
+
+  function stopTriagePolling() {
+    triageScope++
+    triageWatches.clear()
+    publishTriageWatches()
+    if (triageTimer !== null) clearTimeout(triageTimer)
+    triageTimer = null
+    triageRequest?.controller.abort()
+    triagePollingProblems.value = {}
+  }
+
+  function scheduleTriagePoll() {
+    if (triageRunning || triagePollingPaused.value || triageWatches.size === 0) return
+    if (triageTimer !== null) clearTimeout(triageTimer)
+    const due = Math.min(...Array.from(triageWatches.values(), entry => entry.due))
+    triageTimer = setTimeout(() => { void tickTriagePoll() }, Math.max(0, due - Date.now()))
+  }
+
+  // Each read has a deadline even when a transport ignores AbortSignal.
+  // Terminal hydration also checks that signal before caching a late response.
+  async function readTriage<T>(entry: TriageWatch, read: (options: CaptureReadOptions) => Promise<T>): Promise<T> {
+    const controller = new AbortController()
+    triageRequest = { entry, controller }
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    let onAbort: () => void = () => {}
+    const cancelled = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new Error('Triage status refresh interrupted'))
+      controller.signal.addEventListener('abort', onAbort, { once: true })
+      deadline = setTimeout(() => controller.abort(), 10_000)
+    })
+    try {
+      return await Promise.race([read({ signal: controller.signal, skipRetry: true }), cancelled])
+    } finally {
+      clearTimeout(deadline)
+      controller.signal.removeEventListener('abort', onAbort)
+      if (triageRequest?.controller === controller) triageRequest = null
+    }
+  }
+
+  async function tickTriagePoll() {
+    triageTimer = null
+    const entry = Array.from(triageWatches.values()).find(candidate => candidate.due <= Date.now())
+    if (!entry || triageRunning || triagePollingPaused.value) { scheduleTriagePoll(); return }
+    triageRunning = true
+    const epoch = sessionEpoch
+    const generation = detailWriteGeneration(entry.id)
+    const isCurrent = () => sessionEpoch === epoch && triageWatches.get(entry.id) === entry &&
+      detailWriteGeneration(entry.id) === generation
+    try {
+      const status = await readTriage(entry, options => captureApi.getStatus(entry.id, options))
+      if (!isCurrent()) return
+      // Polls own fields, never list membership/order or private source material.
+      const patch = {
+        status: status.status, processedAt: status.processedAt,
+        errorMessage: status.errorMessage ?? null, disposition: status.disposition ?? null,
+        canEditSuggestion: status.canEditSuggestion,
+      }
+      const summary = items.value.find(item => item.id === entry.id)
+      if (summary) upsertSummary({ ...summary, ...patch })
+      if (detailById.value[entry.id]) {
+        detailById.value[entry.id] = { ...detailById.value[entry.id]!, ...patch }
+      }
+      delete triagePollingProblems.value[entry.id]
+      if (isTriageTerminalStatus(status.status)) {
+        let cached = false
+        const detail = await readTriage(entry, options => fetchDetail(entry.id, {
+          forceRefresh: true,
+          recordError: false,
+          showToast: false,
+          trackLoading: false,
+          syncSummary: false,
+          requestOptions: options,
+          shouldCache: () => isCurrent() && !options.signal?.aborted,
+          onCacheOutcome: outcome => {
+            cached = outcome === 'cached'
+            // Membership can change during the read; the poll never inserts
+            // a row that the current list no longer contains.
+            if (cached && items.value.some(item => item.id === entry.id)) {
+              upsertSummary(toSummary(detailById.value[entry.id]!))
+            }
+          },
+        }))
+        // A superseding foreground read owns the detail. Keep watching until
+        // a current terminal body has actually reached the shared cache.
+        if (!isCurrent() || !cached) return
+        if (isTriageTerminalStatus(detail.status)) {
+          retireTriageWatch(entry)
+          notifyTriageCountChanged()
+        }
+      }
+    } catch (error) {
+      if (!isCurrent()) return
+      const status = (error as { response?: { status?: number } } | null)?.response?.status
+      if (status === 401) {
+        stopTriagePolling()
+        triagePollingPaused.value = true
+      } else if (status === 403 || status === 404) {
+        retireTriageWatch(entry)
+        triagePollingProblems.value[entry.id] = 'unavailable'
+      } else {
+        triagePollingProblems.value[entry.id] = 'retrying'
+      }
+    } finally {
+      if (triageWatches.get(entry.id) === entry) {
+        entry.delay = Math.min(entry.delay * 2, 30_000)
+        entry.due = Date.now() + entry.delay
+        // Rotate after each attempt so an always-due item cannot starve peers.
+        triageWatches.delete(entry.id)
+        triageWatches.set(entry.id, entry)
+      }
+      triageRunning = false
+      scheduleTriagePoll()
+    }
+  }
 
   function pollTriageCompletion(itemId: string): () => void {
-    const POLL_INTERVAL_MS = 2_000
-    // About 15 minutes at the normal cadence; #1585 owns provider-aware elapsed-time policy.
-    const MAX_POLLS = 450
-    let pollCount = 0
-    let stopped = false
-    let timerId: ReturnType<typeof setTimeout> | null = null
+    if (triagePollingPaused.value) return () => {}
+    const previous = triageWatches.get(itemId)
+    if (previous) retireTriageWatch(previous)
+    const entry = { id: itemId, due: Date.now() + 2_000, delay: 2_000 }
+    triageWatches.set(itemId, entry)
+    delete triagePollingProblems.value[itemId]
+    publishTriageWatches()
+    scheduleTriagePoll()
+    return () => retireTriageWatch(entry)
+  }
 
-    if (activeTriagePollStop) {
-      activeTriagePollStop()
-    }
-
-    triagePollingItemId.value = itemId
-
-    async function tick() {
-      if (stopped) return
-      pollCount++
-
-      try {
-        const observedDetailWriteGeneration = detailWriteGeneration(itemId)
-        const observedSessionEpoch = sessionEpoch
-        const detail = await captureApi.getItem(itemId)
-        if (stopped) return
-        // The epoch is checked first: a logout discards the generations this
-        // read observed, so its response can no longer be reconciled.
-        if (
-          observedSessionEpoch === sessionEpoch &&
-          observedDetailWriteGeneration === detailWriteGeneration(itemId)
-        ) {
-          cacheDetail(detail)
-
-          if (isTriageTerminalStatus(detail.status)) {
-            // Triage finished while the user watched: the badge moves again here
-            // (a `Failed` outcome puts the capture back into the pending count).
-            notifyTriageCountChanged()
-            stop()
-            return
-          }
-        }
-      } catch {
-        // Silently retry on transient errors; the manual refresh button is still available.
-      }
-
-      if (!stopped && pollCount < MAX_POLLS) {
-        timerId = setTimeout(tick, POLL_INTERVAL_MS)
-      } else {
-        stop()
-      }
-    }
-
-    function stop() {
-      stopped = true
-      if (timerId !== null) {
-        clearTimeout(timerId)
-        timerId = null
-      }
-      if (activeTriagePollStop === stop) {
-        activeTriagePollStop = null
-      }
-      if (triagePollingItemId.value === itemId) {
-        triagePollingItemId.value = null
-      }
-    }
-
-    activeTriagePollStop = stop
-    timerId = setTimeout(tick, POLL_INTERVAL_MS)
-    return stop
+  function retryTriagePolling() {
+    if (triagePollingPaused.value) return
+    for (const id of Object.keys(triagePollingProblems.value)) pollTriageCompletion(id)
   }
 
   async function triageItem(itemId: string, boardId?: string | null) {
     guardDemoMutation()
+    const epoch = sessionEpoch
+    const scope = triageScope
+    const previous = triageWatches.get(itemId)
+    if (previous) retireTriageWatch(previous)
+    recordCaptureWrite(itemId, false)
     try {
       actionBusyItemId.value = itemId
       actionError.value = null
       const triageResult = await captureApi.enqueueTriage(itemId, boardId)
 
+      if (epoch !== sessionEpoch) return triageResult
       const existingDetail = detailById.value[itemId]
       const existingSummary = items.value.find((item) => item.id === itemId)
       // An uncached item has no summary to protect. Avoid invalidating an
@@ -620,13 +716,10 @@ export const useCaptureStore = defineStore('capture', () => {
           status: triageResult.status,
           disposition: null,
         })
-      } else if (optimisticDetail) {
-        upsertSummary(toSummary(optimisticDetail))
       }
 
-      // The enqueue is the write. A transient follow-up GET failure must not report that
-      // successful write as failed or prevent the caller from polling the queued work.
-      await fetchDetail(itemId, { forceRefresh: true, showToast: false }).catch(() => undefined)
+      // Accepted work is watched independently; a failed refresh is not a failed enqueue.
+      if (scope === triageScope) pollTriageCompletion(itemId)
       // QUEUED (#1970): triage has been enqueued, not run and not applied.
       // Both branches are the same outcome class — the queue already holds it.
       toast.success(
@@ -1077,7 +1170,10 @@ export const useCaptureStore = defineStore('capture', () => {
    * can reach `items`, so no row of a previous session's list survives it.
    */
   function resetForLogout() {
+    stopTriagePolling()
+    triagePollingPaused.value = false
     latestDetailWriteGenerationById.clear()
+    latestDetailReadById.clear()
     latestSummaryGenerationById.clear()
     sessionEpoch += 1
   }
@@ -1105,6 +1201,11 @@ export const useCaptureStore = defineStore('capture', () => {
     cancelItem,
     triageItem,
     triagePollingItemId,
+    triagePollingItemIds,
+    triagePollingProblems,
+    triagePollingPaused,
+    stopTriagePolling,
+    retryTriagePolling,
     pollTriageCompletion,
     pollBatchTriageCompletion,
     batchTriage,
