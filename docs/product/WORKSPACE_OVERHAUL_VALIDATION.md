@@ -2,6 +2,17 @@
 
 ## Reminder work-hours and time zones (2026-09-10)
 
+After integrating the final transcription and grounded-question continuation, 56 targeted API tests
+and 56 component tests pass, alongside typecheck and production build. Five combined Chromium
+journeys pass in 36.3 seconds, including actual synthetic speech transport, planning and reminder
+hours. The hours journey also reloads Grove and Grove Night at mobile width and checks accessibility.
+
+A real account-erasure race first reproduced a failed expectation (HTTP 200 instead of 409): an
+in-flight request could recreate default preferences after deletion and then save private hours.
+The conditional database update now also requires an active account. The same regression passes
+within the final 56-case API run, preserving an empty, disabled default preference after erasure.
+This is a scoped repair after full-suite qualification, not a claim of another full-suite run.
+
 Twenty-five domain cases cover existing budget/spacing behavior and the new named-zone window:
 start/end boundaries, selected days, overnight carry, seasonal and repeated DST hours, invalid values
 and unchanged daily limits. Eight API cases prove save/read/export, outside-window no-budget behavior,

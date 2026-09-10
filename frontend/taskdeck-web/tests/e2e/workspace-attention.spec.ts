@@ -93,4 +93,12 @@ test('reminder hours persist across experiences and recover a concurrent setting
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
   expect((await new AxeBuilder({ page }).include('[aria-label="Optional reminders"]').analyze()).violations.filter(item => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
   await page.screenshot({ path: 'test-results/reminder-hours-mobile.png', fullPage: true })
+  for (const theme of ['grove', 'grove-night']) {
+    await page.evaluate(value => localStorage.setItem('td.paper.mode.v2', value), theme)
+    await page.reload()
+    await expect(settings.getByLabel('Time zone', { exact: true })).toHaveValue('UTC')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+    expect((await new AxeBuilder({ page }).include('[aria-label="Optional reminders"]').analyze()).violations.filter(item => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
+    await page.screenshot({ path: `test-results/reminder-hours-${theme}-mobile.png`, fullPage: true })
+  }
 })
