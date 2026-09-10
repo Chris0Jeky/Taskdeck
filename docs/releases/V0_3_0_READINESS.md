@@ -145,21 +145,27 @@ The earlier pair named here is closed: **`#2425`** (Windows worktree helper scen
 
 ## 3. Human gates
 
+**Row states re-checked against `OUTSTANDING_TASKS.md` §J on 2026-09-10.** Five of the eleven SC rows
+read as open here while their §J row was already `[x]`: SC-1, SC-5, SC-9, SC-10 and SC-11. All five are
+corrected below. The still-open gates are **SC-4** (register the stable gate), **SC-6** (visibility) and
+**SC-7** (register the runners), and their order is SC-6 before SC-4 before SC-7. §J is the authority for
+these states; this table is a view of it.
+
 Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and map to issues:
 
 | Item | Issue | Nature |
 |---|---|---|
-| SC-1 confirm or overturn the nine CI-00 delegated rulings | `#2324` | One reply |
+| SC-1 confirm or overturn the nine CI-00 delegated rulings | `#2324` | **Closed 2026-09-03**: confirmed with the private-Pro approval-boundary amendment |
 | SC-2 authorize the one-time artifact deletion, or accept the spend | `#2333`, `#2337` | **Executed 2026-09-03**: 1,498 PR-lane artifacts deleted, evidence on `#2333` |
 | SC-3 confirm the plan and set a spend ceiling | `#2337` | **Re-ruled 2026-09-03**: Pro confirmed, ceiling deferred, Linux-only hosted minutes; J.7 read-back and Codex/Copilot billing check remain |
 | SC-4 register the stable gate in branch protection | `#2327`, `#2337` | Blocked by section 2 |
-| SC-5 flip `sha_pinning_required` after CI-11 | `#2335` | Follows `#2335` |
+| SC-5 flip `sha_pinning_required` after CI-11 | `#2335` | **Closed 2026-09-06**: the maintainer ran the corrected command and `gh api repos/Chris0Jeky/Taskdeck/actions/permissions` reads back `sha_pinning_required: true`. `#2335` itself stays open for its non-maintainer criteria |
 | SC-6 change repository visibility to private | `#2337` | The release-defining action |
 | SC-7 register the isolated runners after cutover | `#2328`, `#2337` | Post-cutover |
 | SC-8 public-asset and launch-kit decision | `#2337`, `#2242` | **Ruled 2026-09-03**, see below |
 | SC-9 top up Codex review credits or accept the fresh-context fallback | `#2337` | **Closed 2026-09-06** (walkthrough q-4 = A). The connector was reviewing normally when last observed, 2026-09-10 |
 | SC-10 review the queued control-plane PRs (ADR-0066 amendment 2026-09-03) | `#2324`, `#2331` | **Closed 2026-09-06**, all twelve merged under the q-1 = A delegation. That delegation covered those twelve named PRs only; the amendment still binds a new control-plane PR, and whether it should is the open question in `OUTSTANDING_TASKS.md` §J.3. Parked control-plane PRs are now recorded on §J.2, which holds `#2838` |
-| SC-11 enable `delete_branch_on_merge`, then decide the one-time merged-branch sweep | none | Open, seeded 2026-09-04 by PR `#2564` (merge `7155f1042`). Repository setting and a destructive sweep, both maintainer-only; not a v0.3.0 gate item |
+| SC-11 enable `delete_branch_on_merge`, then decide the one-time merged-branch sweep | none | **Closed 2026-09-06**: sweep executed, setting flipped by the maintainer and read back `true` |
 
 **SC-8 is answered.** The maintainer ruled on 2026-09-03: a **private development repository plus a
 public release and source mirror**. Development, CI, issues and the control plane go private for
