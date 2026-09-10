@@ -9,12 +9,16 @@ import { useUnsavedWorkspaceNavigation } from '../../composables/useUnsavedWorks
 import { getErrorDisplay } from '../../composables/useErrorMapper'
 import type { BoardDetail, Card } from '../../types/board'
 import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspacePlanStore } from '../../store/workspacePlanStore'
 import { isDemoMode } from '../../utils/demoMode'
 
 const AutomationChatView = defineAsyncComponent(() => import('../AutomationChatView.vue'))
 const session = useSessionStore()
+const plan = useWorkspacePlanStore()
 const companionOpened = ref(false)
 const companionDirty = ref(false)
+const companionSending = ref(false)
+const answerBusy = ref(false)
 
 const route = useRoute()
 const boardId = computed(() => String(route.params.boardId ?? ''))
@@ -26,21 +30,31 @@ const dirty = ref(false)
 const loading = ref(true)
 const error = ref<string | null>(null)
 let generation = 0
-const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => dirty.value || companionDirty.value)
+const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => dirty.value || companionDirty.value || companionSending.value || answerBusy.value)
+function leave() {
+  if (!companionSending.value && !answerBusy.value) decide(true)
+}
 
 async function load() {
   const current = ++generation
+  const requestedBoardId = boardId.value
+  const requestedCardId = cardId.value
   board.value = null
   card.value = null
   dirty.value = false
   companionOpened.value = false
   companionDirty.value = false
+  companionSending.value = false
+  answerBusy.value = false
   loading.value = true
   error.value = null
+  // Route params clear before the leaving view is unmounted. Invalidate old receipts
+  // above, but never turn that transition into an empty-board network request.
+  if (!requestedBoardId || !requestedCardId) { loading.value = false; return }
   try {
-    const [nextBoard, cards] = await Promise.all([boardsApi.getBoard(boardId.value), cardsApi.getCards(boardId.value)])
+    const [nextBoard, cards] = await Promise.all([boardsApi.getBoard(requestedBoardId), cardsApi.getCards(requestedBoardId)])
     if (current !== generation) return
-    const nextCard = cards.find(item => item.id === cardId.value)
+    const nextCard = cards.find(item => item.id === requestedCardId)
     if (!nextCard) {
       error.value = 'This card is no longer available on this board.'
       return
@@ -53,12 +67,14 @@ async function load() {
     if (current === generation) loading.value = false
   }
 }
-watch([boardId, cardId], load, { immediate: true })
+// A different actor must never inherit private drafts or late receipts. Same-user token refresh keeps them.
+watch([boardId, cardId, () => session.userId], load, { immediate: true, flush: 'sync' })
 onUnmounted(() => { generation++ })
 </script>
 
 <template>
   <div class="thinking-workspace">
+    <p v-if="focused && plan.error" role="alert">{{ plan.error }} <RouterLink to="/workspace/plan">Refresh personal plan</RouterLink></p>
     <nav aria-label="Card context"><RouterLink :to="`/workspace/boards/${boardId}`">← {{ board?.name || 'Back to board' }}</RouterLink><RouterLink v-if="!focused" :to="{ path: '/workspace/insights', query: { boardId } }">Quiet insights</RouterLink><RouterLink v-if="!focused" :to="{ path: '/workspace/memory', query: { boardId } }">Memory</RouterLink></nav>
     <p v-if="loading" role="status">Opening your thinking space…</p>
     <section v-else-if="error" role="alert"><p>{{ error }}</p><button type="button" @click="load">Try again</button></section>
@@ -66,15 +82,15 @@ onUnmounted(() => { generation++ })
       <p v-if="route.query.focus === '1'" role="status">FOCUS · One thread at a time. <RouterLink to="/workspace/plan">Return to your plan</RouterLink></p>
       <p v-if="focused">Before you leave, add a shared <strong>thread</strong> below for next time. Save it with the card’s thinking so it is here when you return.</p>
       <header><p class="thinking-workspace__eyebrow">ROOM TO THINK · {{ board?.name }}</p><h1>{{ card.title }}</h1><RouterLink to="/workspace/plan">Choose work for your personal plan</RouterLink><p>Keep possibilities, questions and next steps close to the work. A simple card can stay simple.</p></header>
-      <ThinkingDeckPanel :key="card.id" :board-id="boardId" :card-id="cardId" @dirty-change="dirty = $event" />
+      <ThinkingDeckPanel :key="card.id" :board-id="boardId" :card-id="cardId" @dirty-change="dirty = $event" @busy="answerBusy = $event" />
       <section v-if="!isDemoMode && !session.isDemo" aria-label="Card companion">
         <h2>Think it through with your companion</h2>
         <p>Keep this card nearby while you talk. Choose the sources for each turn, then preview proposed changes before opening Review.</p>
         <button v-if="!companionOpened" type="button" @click="companionOpened = true">Open card companion</button>
-        <AutomationChatView v-if="companionOpened" :key="card.id" :board-id="boardId" :card-id="cardId" embedded @dirty-change="companionDirty = $event" />
+        <AutomationChatView v-if="companionOpened" :key="card.id" :board-id="boardId" :card-id="cardId" :thinking-dirty="dirty" embedded @dirty-change="companionDirty = $event" @sending-change="companionSending = $event" />
       </section>
     </template>
-    <TdDialog :open="leaveRequested" title="Leave unsaved thinking?" description="Your thinking or companion message has unsaved changes. Save or send it before leaving, or discard this draft." @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" @click="decide(true)">Discard draft and leave</button></template></TdDialog>
+    <TdDialog :open="leaveRequested" :title="answerBusy ? 'Your private answer is still in progress' : companionSending ? 'A companion message is still sending' : 'Leave this thinking space?'" :description="answerBusy ? 'Stop the recording or wait for your save receipt before leaving. Closing the browser does not cancel a request already received by the server.' : companionSending ? 'Wait for the send to finish before leaving. Closing the browser does not cancel a message already sent to the server.' : dirty || companionDirty ? 'Your thinking or companion message has unsaved changes. Save or send it before leaving, or discard this draft.' : 'Your message has finished sending. You can leave this thinking space.'" @close="decide(false)"><template #footer><button type="button" @click="decide(false)">Keep editing</button><button type="button" :disabled="companionSending || answerBusy" @click="leave">{{ dirty || companionDirty ? 'Discard draft and leave' : 'Leave thinking space' }}</button></template></TdDialog>
   </div>
 </template>
 

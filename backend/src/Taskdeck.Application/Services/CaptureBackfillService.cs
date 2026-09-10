@@ -281,7 +281,7 @@ public sealed class CaptureBackfillService
         // cannot accept a superseding asset once archived, so leave a mismatch outstanding and let
         // the run's normal skip path retain queue-row fallback instead of stamping stale text away.
         if (capture.Disposition == CaptureUserDisposition.Archived &&
-            !string.Equals(capture.CurrentText, payload.Text, StringComparison.Ordinal))
+            !CaptureTextComparison.Equivalent(capture.CurrentText, payload.Text))
         {
             throw new DomainException(
                 ErrorCodes.ValidationError,
@@ -293,7 +293,7 @@ public sealed class CaptureBackfillService
         if (capture.Disposition != CaptureUserDisposition.Archived)
         {
             if (!string.IsNullOrWhiteSpace(payload.Text) &&
-                !string.Equals(capture.CurrentText, payload.Text, StringComparison.Ordinal))
+                !CaptureTextComparison.Equivalent(capture.CurrentText, payload.Text))
             {
                 capture.SupersedeInlineTextSource(payload.Text);
             }

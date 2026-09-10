@@ -40,7 +40,9 @@ public class AccountDeletionService : IAccountDeletionService
         IWorkspaceInsightRepository workspaceInsights,
         IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null,
-        ICaptureStore? captureStore = null)
+        ICaptureStore? captureStore = null,
+        IBlobStore? blobStore = null,
+        IAudioTranscriptionStore? audioTranscription = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -50,9 +52,13 @@ public class AccountDeletionService : IAccountDeletionService
         _transcripts = transcripts;
         _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
+        _blobStore = blobStore;
+        _audioTranscription = audioTranscription;
     }
 
     private readonly ICaptureStore? _captureStore;
+    private readonly IBlobStore? _blobStore;
+    private readonly IAudioTranscriptionStore? _audioTranscription;
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
         Guid userId,
@@ -129,9 +135,13 @@ public class AccountDeletionService : IAccountDeletionService
             // 3b. Delete the durable Capture mirrors (ADR-0065). Rows exist only when
             //     ContextFabric:DualWriteCaptures was ever on; they carry user-authored titles and
             //     their FK to User is Restrict, so they must go inside this same transaction.
+            if (_audioTranscription is not null)
+                await _audioTranscription.DeleteOwnerAsync(userId, cancellationToken);
             var durableCapturesDeleted = _captureStore is null
                 ? 0
                 : await _captureStore.DeleteByUserAsync(userId, cancellationToken);
+            if (_blobStore is not null)
+                await _blobStore.DeleteOwnerAsync(userId, cancellationToken);
 
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.

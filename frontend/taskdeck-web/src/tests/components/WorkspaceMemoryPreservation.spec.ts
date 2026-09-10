@@ -13,6 +13,14 @@ const saved = (id = 'm1'): Memory => ({ ...memory(id), revision: 2, sources: { c
 
 describe('preserve older memory originals', () => {
   beforeEach(() => { vi.clearAllMocks(); session.userId = 'u1'; session.token = 'token'; mocks.preserve.mockResolvedValue([saved()]) })
+  it('accepts the preservation receipt through same-user token refresh', async () => {
+    let resolve!: (value: Memory[]) => void
+    mocks.preserve.mockReturnValueOnce(new Promise<Memory[]>(done => { resolve = done }))
+    const wrapper = mount(WorkspaceMemoryPreservation, { props: { boardId: 'b1', memories: [memory()] } })
+    await wrapper.get('button').trigger('click'); session.token = 'refreshed'
+    resolve([saved()]); await flushPromises()
+    expect(wrapper.emitted('preserved')?.[0]?.[0]).toEqual([saved()]); wrapper.unmount()
+  })
   it('requires an explicit action and sends at most 50 visible unlinked memories with their revisions', async () => {
     const memories = Array.from({ length: 51 }, (_, index) => memory(`m${index}`))
     mocks.preserve.mockResolvedValue(memories.slice(0, 50).map(x => saved(x.id)))

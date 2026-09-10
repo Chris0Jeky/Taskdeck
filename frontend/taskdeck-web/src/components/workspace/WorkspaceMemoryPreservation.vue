@@ -11,7 +11,7 @@ const pending = computed(() => props.memories.filter(memory => memory.boardId ==
 const loading = ref(false)
 const error = ref<string | null>(null)
 let generation = 0
-const identity = computed(() => JSON.stringify([session.userId, session.token, props.boardId, props.memories.map(x => [x.id, x.revision])]))
+const identity = computed(() => JSON.stringify([session.userId, !!session.token, props.boardId, props.memories.map(x => [x.id, x.revision])]))
 watch(identity, () => { generation++; loading.value = false; error.value = null }, { flush: 'sync' })
 onScopeDispose(() => { generation++ })
 

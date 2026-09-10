@@ -47,8 +47,8 @@ describe('chatApi', () => {
     const failure = new Error('Refresh unavailable')
     vi.mocked(http.get).mockRejectedValue(failure)
 
-    await expect(chatApi.getSession('session/1', { skipRetry: true })).rejects.toBe(failure)
-    expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session%2F1', { skipRetry: true })
+    await expect(chatApi.getSession('session/1', { skipRetry: true, timeout: 15_000 })).rejects.toBe(failure)
+    expect(http.get).toHaveBeenCalledWith('/llm/chat/sessions/session%2F1', { skipRetry: true, timeout: 15_000 })
   })
 
   it('loads provider health', async () => {

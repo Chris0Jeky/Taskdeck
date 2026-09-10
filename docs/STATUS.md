@@ -1,6 +1,61 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+Reminder save ownership (#2896): a delayed completion from a previous account can no longer release the guard for a newer account's enable save. Both success and failure interleavings were reproduced before repair; 22 targeted component cases and the full 6,438-test frontend suite pass, with three existing skips. Typecheck, production build and scoped lint pass. This is a focused follow-up to #2895; the delivery tracker records its hosted gate and merge receipt.
+
+Final overhaul recovery follow-up (#2893/#2894, [PR #2895](https://github.com/Chris0Jeky/Taskdeck/pull/2895)): retain an unsaved hours draft across enable-only saves and confirmed validation rejections, distinguish competing question writes from source changes, and send the model exactly the previewed excerpt. Final frontend passes 6,436 tests with three existing skips; full backend passes 9,315 with 34 existing skips, followed by 17 API and 19 application tests for the final payload correction. Build/typecheck, scoped lint, browser recovery and bounded independent review pass. Required hosted runs 34458797270 and 34462673996 passed at reviewed heads f39cc6cf3 and d25edf2a5, including both operating-system suites and browser smoke. The PR records subsequent base qualification and the final merge receipt. The source and draft regressions were reproduced before repair; the validation ledger records their scope.
+
+Optional reminder hours (#2808, merged #2892): explicit weekday and time windows in an IANA zone, including overnight and daylight-saving behavior. Server checks precede question lookup and budget admission; preference edits preserve the shared UTC allowance, old-client toggles retain the window, and exports include it without a new migration. The slice passed 9,270 backend and 6,421 frontend tests, with 34/three existing skips respectively. After parent integration, 56 API tests, 56 component tests, typecheck/build and five Chromium journeys pass, including a reproduced and fixed account-erasure race. Firefox and mobile Grove/Grove Night evidence are recorded in the validation ledger. Required CI run 34453924959 passed at reviewed head 42965edde; #2892 merged as 93eab3443. [Policy](product/WORKSPACE_ATTENTION.md).
+
+Overhaul integrations #2866 and #2886 are merged at `384d8dfaa` and `f00cf1d31` respectively. Required CI passed at the reviewed #2886 head `fce97dc67`, including both operating-system API/unit suites and the final browser smoke job. The continuation delivers explicit transcription, route-exit recovery and grounded commit/account-erasure protection. Final local 6,428 frontend tests and ten browser journeys pass; the full backend's single unchanged worker-wait failure passes in the 30-case isolated/fix verification. Reminder work-hours/time-zone selection is merged in #2892. Earlier pending-delivery notes below are historical slice evidence superseded by these merge receipts. [Full evidence](product/WORKSPACE_OVERHAUL_VALIDATION.md).
+
+Grounded-question commit recovery (#2808, pending main delivery): recheck source/access inside the same serializable transaction that saves observations, and detach rejected staged questions. Settle model usage before staging; accounting failure now has a definite no-save result and cannot hide a successful question save. Seventeen application and sixteen API/reminder tests pass, including changes after the final service read. Full backend verification passes 9,240 tests with 34 existing skips; bounded independent review is clean. Hosted qualification remains separate.
+
+Thinking-route exit recovery (#2808, pending main delivery): snapshot valid board/card IDs and invalidate pending receipts before route-exit cleanup. The view no longer requests empty-board endpoints while unmounting. Full frontend verification passes 6,420 tests with three existing skips, plus six continuity tests, typecheck/build and both planning browser journeys; bounded review is clean. Hosted qualification remains separate. This closes the previously recorded readonly navigation error without changing plan or card data.
+
+Explicit audio transcription (#2808, pending main delivery): optional destination/model consent, durable attempts and daily admission, separate provisional results, reviewed-draft provenance and existing explicit answer confirmation. Four domain, 25 provider and 24 focused API/transport/export tests pass; 33 component tests, typecheck/lint and three real-API Chromium journeys pass, including a synthetic speech transport and lost receipt. Full frontend passes 6,425 tests; the full backend run finds one outbound inventory omission, corrected with 28 architecture and 22 final API checks. Migration/model checks pass; hosted qualification remains separate. [Behavior and limits](product/AUDIO_TRANSCRIPTION.md).
+
+Expanded overhaul follow-through (#2808, pending main delivery): optional reminders, audio recovery and retained previews now pass combined qualification: 9,232 backend tests, 6,418 frontend tests, eleven Chromium journeys and both migrations together. A final filename-normalization fix has eleven passing audio API tests. Independent interaction reviews are clean; hosted/base qualification remains on the delivery PRs. [Evidence and limits](product/WORKSPACE_OVERHAUL_VALIDATION.md).
+
+Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.
+
+Optional attention (#2808): default-off account reminders reuse existing revalidated questions with one shared two-per-UTC-day/two-hour budget. Board-page quiet-time, typing/dialog/Focus/Zen/visibility and identity guards suppress interruptions; no model or analysis runs automatically. Local proof and limits are in the overhaul validation ledger and attention policy; hosted qualification remains on the continuation PR.
+
+Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
+Audio confirmation recovery (#2808): retain an immutable fingerprint of the exact confirmation request and return conflicts for changed or pre-migration unprovable retries. Account exports carry the nullable receipt; isolated migration/API proof passes, with full and hosted qualification recorded on the continuation PR.
+
+Original-source conflict recovery (#2808): a pagination revision conflict retracts the displayed originals and their selection immediately, then directs the user to refresh source metadata before selecting again. The browser proof changes a memory from revision 12 to 13 between selection and pagination, refreshes, and sends only the current revision. Server permission/revision enforcement remains unchanged.
+
+Comparison appearance continuation (#2808): Auto observations retain both the selected mode and the resolved light/night appearance at submission. Existing version-2/3 files keep their original attribution; no historical appearance is invented. Frontend input fingerprints exclude repository test-only sources and build proof scripts, while runtime sources, public assets, build plugins and resolved build options remain attributed. This keeps manual comparisons coherent across proof-only edits without claiming randomized or statistical results.
+
+Accepted Focus navigation (#2808): Home and the personal plan share one navigation path that records last-worked only after the router accepts the exact thinking destination for the same account. Aborts and login redirects leave history unchanged; a delayed Focus save never navigates again. If history cannot be confirmed, the thinking page offers a direct plan-refresh path. This makes resuming work predictable while retaining uncertain-write recovery.
+
+Personal-plan recovery continuation (#2808): overlapping same-account reads share one pending request, while account transitions retain generation isolation. Uncertain plan edits or Focus responses retract cached plan metadata and require an explicit refresh before another write; action-specific guidance identifies the failure. Plan writes opt out of automatic HTTP retries, and empty Focus targets return validation errors without changing saved state. This reduces recovery friction while preserving private state and unchanged board data.
+
+Audio draft recovery continuation (#2808): unfinished written audio versions retain their recording identity and original question evidence. If a reload returns a missing, replaced or confirmed receipt, the earlier draft stays visible for copying and explicit discard, without being attached to a new source. Failed reloads make Save/Confirm unavailable. The server also revalidates the current question before adding written versions, preserving retained originals as read-only when their question changes or disappears. This reduces lost-work recovery friction while keeping confirmation explicit.
+
+Source-storage configuration continuation (#2808): all four quota values bind through validated options, and the byte store receives that same validated instance. Nonpositive settings fail API startup before a user attempts an upload, with a message naming the invalid setting. Defaults and valid large limits remain supported; runtime checks remain for directly constructed settings. This prevents a configuration mistake from appearing as a first-upload server error.
+
+Grounded observation continuation (#2808, pending main delivery): Quiet insights can preview one selected card and explicitly ask the configured model for up to three private, quoted questions. Strict bounded output, before/after source checks, shared Chat quota/kill switch, category/card deduplication and one-day expiry preserve review-first behavior. No board write, implicit private retrieval or background attention is added. See [the contract and usefulness corpus](product/GROUNDED_OBSERVATIONS.md); synthetic transport proves wiring, not live-model quality.
+
+Source upload bounds (#2808): coalesce fragmented reads into fixed 64 KiB database chunks with one final tail, preserving quota/size/hash/rollback checks. Twenty-four focused API tests pass; exact hosted repair qualification remains on the integration PR.
+
+Source-storage export continuation (#2808): buffered and streamed account exports now hold one deferred SQLite read snapshot across blob objects, references, chunks, representations and audio-answer rows. Concurrent WAL uploads can commit without reserving the writer for the duration of the export; all five sections retain the earlier view until disposal. This is source-storage consistency, not a claim of a single snapshot across every account-export section or a tested restore workflow.
+
+Planning continuity follow-through (#2808): Classic Home now offers the same private last-worked Focus resume as the other experiences, in both Paper/Grove and Legacy rendering. Personal-plan due dates use canonical calendar-day formatting; Today and tomorrow use the local calendar date without changing card deadlines. This reduces the work needed to resume a thought after switching versions.
+
+Board proposal preview continuation (#2808): Chat and both Review layouts link to a checked read-only overlay on the existing board. Effective revision, proposal status/update time and board identity must match before projecting operation targets; execution parameter IDs take precedence over display IDs. Existing cards/columns are marked across Classic, Studio, Companion and Unified, while creation/hidden objects remain in the diff. Board refresh failures, changes, route/account transitions and bounded expiry retract markers. The surface adds no approval, Apply or board mutation. Component and real-API Chromium checks prove projection, non-mutation, Review navigation and mobile rendering; the wider overhaul remains open.
+
+Original-history cursor continuation (#2808): the shared chat picker now seeks from the last displayed source ordinal through the existing capture/ordinal index, keeping ten-item pages accessible beyond 1,000 originals without progressively deeper row-offset scans. Initial ordinal zero and gaps between text sources are preserved. Existing ownership, board-access and revision checks remain mandatory. The legacy offset route accepts offsets through 1,000; clients needing deeper history use `afterOrdinal` (initially -1) and `nextAfterOrdinal`.
+
+Source upload and library query continuation (#2808): host-rejected oversized audio bodies retain the standard 413 error after transaction rollback, with no orphaned original, reference, answer or processing request. Library pages authorize their board candidates first, then retrieve up to twenty owner-scoped metadata rows in one detached SQL projection. Evidence excerpts are clipped in SQL; listing does not load capture graphs, representation histories or binary chunks. This reduces original-library maintenance cost without changing private ownership or review/apply semantics.
+
+Original-source Companion continuation (#2808):
+
+- Companion can explicitly select individual native private-memory text sources, including superseded answers. The server checks owner, active board access, memory revision, capture membership and content hash before model processing. Receipts retain the asset identity, fingerprint and supersession state; replay revalidates them. Unselected originals are not added to context.
+- Source choices load on request in pages of ten with bounded excerpts. Five combined private memories/originals and the existing total context budget apply. Context resolution reads current memory rows without historical graphs. This reduces copying and source maintenance while retaining explicit Review/Approve/Apply. Audio, transcription, broader observations and model-quality acceptance remain separate work.
+Comparison compatibility continuation (#2808): recording uses a UUID fallback available on HTTP LAN origins; version-2 file imports retain the same SHA-256-derived observation IDs when SubtleCrypto is unavailable. Frontend attribution includes resolved base, target, minification, CSS/asset and sourcemap options. These changes preserve manual comparison portability across layouts and builds without adding telemetry or changing board review/apply behavior.
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
@@ -29,6 +84,8 @@ September 8 parallel delivery wave (merged work; #2235):
 - Sentry.AspNetCore 6.10.0 and Testcontainers.PostgreSql 4.15.0 landed in PR #2772 with green hosted CI and independent review. **Authority correction:** the coordinator missed the maintainer-own-review requirement for `backend/Directory.Packages.props`, a declared CI control path. The merge is disclosed on #2772 and #2337; no retrospective approval is inferred. New npm/Vitest and CI-control PRs remain subject to that review under [OUTSTANDING_TASKS.md](../OUTSTANDING_TASKS.md).
 
 Workspace overhaul (#2800, integrated implementation; no release or working-database migration claimed):
+
+- Private audio answers under #2808 retain an explicitly saved original before a written answer exists. Owner-scoped SQLite chunk storage, immutable written representations and explicit human confirmation connect to private memory. Playback/download, uncertain-upload retry, account export and complete source erasure are integrated; no automatic transcription or real microphone/provider qualification is claimed. The [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) records local and hosted evidence separately.
 
 - The dependency continuation under #2808 adds explicit prerequisite relationships between cards on the same board, with both directions in Thinking Decks, cycle validation, revision conflicts and portable ID remapping. A transaction rechecks referenced-card existence and rolls back its audit on concurrent deletion; the existing board token guards archive. Dependency edits leave card material unchanged. Targeted API/component/browser proof is recorded in the [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md); exact hosted qualification remains on the continuation PR.
 
@@ -1231,6 +1288,26 @@ Result:
 
 ## CI Status
 
+**Evidence-preserving continuation (2026-09-10, #2336).** The continuation core, conservative
+adapters, dependency staging, separate launcher tests, protected read-only observer, reference
+admission/ledger and corrected portable export have landed through
+#2863/#2864/#2865/#2867/#2868/#2869/#2871. #2878 separates Linux and Windows API callers so E2E can start after Linux API while
+the complete Windows suite still runs and remains required for merge. No suite is removed.
+The cumulative control suite passed 512 tests after the linked-verifier correction; the immutable standalone export
+separately passed 306 overlapping tests on Node 24.13.1/Windows. The deployed observer passed run
+`34442587802`, collecting metadata with `authority:none` and unknown execution provenance explicitly
+unverified. In scheduling run `34431587587`, all 18 jobs passed in 21m54 elapsed / 4,779 runner-seconds
+with real E2E/Windows overlap. This unmatched sample proves the schedule, not a causal savings rate.
+
+Selection and reuse remain **disabled/shadow**. The reference admission API still needs complete
+producer-contract binding and protected execution-inventory completeness; merge-delivery replay
+deduplication and other bounded review follow-ups are tracked on #2336. The Sep9–Sep10 recall window
+has three omitted historical failed lanes and is **not ready** for selection. Resolve those contracts,
+prove one whole-task execution family, then connect the existing canonical gate and independent full
+audits before proposing cutover. [Operations and next steps](ci/continuation/OPERATIONS.md) distinguish
+the implemented reference mechanisms from production authority. Human actions SC-4, SC-6 and SC-7
+remain in [OUTSTANDING_TASKS](../OUTSTANDING_TASKS.md).
+
 **Smart CI Fabric programme (ADR-0066, 2026-08-30 — shadow phase, behaviour-preserving).** The
 repository goes private for the v0.3.0 release on the maintainer's personal GitHub Pro account, so CI
 is being re-planned as a policy-driven verification engine (`docs/ci/SMART_CI.md`, tracker CI-00
@@ -1275,12 +1352,15 @@ Required workflow: `.github/workflows/ci-required.yml`
   a second Claude worktree.
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
-- `api-integration` (Ubuntu/Windows)
+- `api-integration` (Ubuntu) and `api-integration-windows` (Windows), both full API suites
 - `frontend-unit` (Ubuntu/Windows)
   - lint + typecheck + build + unit tests
+  - separate `source-launcher` job (Ubuntu) in the same reusable call
 - `container-images` (Ubuntu)
 - `e2e-smoke` (Ubuntu, depends on `docs-governance`, `backend-architecture`, `backend-unit`,
-  `api-integration`, `migration-validation` and `frontend-unit`; if any one of those is killed or
+  `api-integration`, `migration-validation`, `frontend-unit`, `release-workflow-contract` and
+  `paper-color-audit`; the separate Windows API call remains required but does not delay E2E.
+  If any E2E prerequisite is killed or
   times out, `e2e-smoke` reports `skipped` and the gate produces no verdict rather than a red one)
 - `release-workflow-contract` (Ubuntu)
 - `migration-validation` (Ubuntu)
@@ -1460,8 +1540,30 @@ The nightly integration candidate adds a parallel observation job. It derives a 
 
 At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.
 
+September 9 retained-comparison continuation (#2808): version3 observation files can be imported and
+combined across releases with atomic validation, stable IDs and duplicate/conflict handling. Production
+frontend inputs receive a build fingerprint; legacy/dev observations keep unknown attribution.
+Grouped descriptive outcomes preserve scenario/layout/theme/build conditions. Notes remain manually
+retained files with no automatic telemetry. Exact local/hosted checks belong to the continuation PR.
 September 9 older-memory continuation (#2808): explicit preservation on the Memory page admits up to
 50 displayed legacy memories, with all-or-nothing revision and ownership checks. It retains exact
 originals and historical corrections through the native-source/export path without editing content,
 enqueuing processing or changing board work. Targeted API14 and frontend20 checks passed; full-suite
 and hosted qualification are recorded separately in the continuation PR.
+
+Companion continuity (#2808): unsaved thinking blocks embedded sends until saved; pending sends hold
+in-app navigation with honest cancellation wording. Failed post-send receipt reads can be retried
+without resending. Preview expiry uses server-relative receipt timestamps and elapsed request time.
+These frontend safeguards preserve successful responses and the existing review-first mutation path.
+
+September 10 original-library continuation (#2808): Memory now offers explicit owner-private discovery,
+read-only evidence/history and original playback/download for earlier audio questions. Existing-board
+access is required even when the board is archived; deleted-board originals remain owner-linked.
+Changed questions cannot be confirmed from the library. API8, targeted frontend26 and typecheck passed;
+full suites and corrected browser proof are recorded separately in the continuation PR.
+
+September 10 source-interaction follow-through (#2808): named original pickers and permission errors,
+same-user token-refresh continuity, shared retained-instruction disabled states, and bounded original
+history pages beyond 1000 address the recorded usability findings. Targeted frontend 33/API 27 and two
+Chromium journeys pass; full-suite and hosted outcomes belong to the continuation PR. Board mutation
+and model dispatch authority are unchanged.

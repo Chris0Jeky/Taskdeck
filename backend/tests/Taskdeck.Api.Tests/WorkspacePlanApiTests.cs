@@ -51,6 +51,23 @@ public sealed class WorkspacePlanApiTests(TestWebApplicationFactory factory) : I
         actual.Should().BeEquivalentTo(card, "personal planning must not mutate any card fields");
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task EmptyFocusTargetDoesNotChangeSavedPlan(bool emptyBoard)
+    {
+        using var client = factory.CreateClient();
+        var (board, card) = await Setup(client);
+        (await client.PutAsJsonAsync(Url, new SaveWorkspacePlanDto(0, [new(board.Id, card.Id, Date)]))).EnsureSuccessStatusCode();
+        (await client.PostAsJsonAsync(Url + "/focus", new FocusWorkspacePlanDto(1, board.Id, card.Id))).EnsureSuccessStatusCode();
+        var before = (await client.GetFromJsonAsync<WorkspacePlanDto>(Url))!;
+        var response = await client.PostAsJsonAsync(Url + "/focus", new FocusWorkspacePlanDto(
+            before.Revision, emptyBoard ? Guid.Empty : board.Id, emptyBoard ? card.Id : Guid.Empty));
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        JsonNode.Parse(await response.Content.ReadAsStringAsync())!["errorCode"]!.GetValue<string>().Should().Be("ValidationError");
+        (await client.GetFromJsonAsync<WorkspacePlanDto>(Url)).Should().BeEquivalentTo(before);
+    }
+
     [Fact]
     public async Task ViewerPlanIsPrivateAndForeignCardsCannotBeIntroduced()
     {

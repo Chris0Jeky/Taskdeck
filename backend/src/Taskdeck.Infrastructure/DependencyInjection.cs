@@ -2,7 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Taskdeck.Application.Connectors;
+using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Connectors;
@@ -49,12 +51,15 @@ public static class DependencyInjection
 
         services.AddScoped<IBoardRepository, BoardRepository>();
         services.AddScoped<IWorkspaceInsightRepository, WorkspaceInsightRepository>();
+        services.AddScoped<IChatSourceReader, ChatSourceReader>();
         services.AddScoped<WorkspaceInsightService>();
+        services.AddScoped<IWorkspaceObservationReader, WorkspaceObservationReader>();
         services.AddScoped<IColumnRepository, ColumnRepository>();
         services.AddScoped<ICardRepository, CardRepository>();
         services.AddScoped<IThinkingDeckRepository, ThinkingDeckRepository>();
         services.AddScoped<IBoardDependencyRepository, BoardDependencyRepository>();
         services.AddScoped<IWorkspacePlanRepository, WorkspacePlanRepository>();
+        services.AddScoped<IWorkspaceAttentionRepository, WorkspaceAttentionRepository>();
         services.AddScoped<ICardCommentRepository, CardCommentRepository>();
         services.AddScoped<ILabelRepository, LabelRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
@@ -101,6 +106,19 @@ public static class DependencyInjection
         services.AddScoped<IArtefactExtractionRepository, ArtefactExtractionRepository>();
         services.AddScoped<ITranscriptRepository, TranscriptRepository>();
         services.AddScoped<ICaptureStore, EfCaptureStore>();
+        services.AddScoped<IBlobStore, Taskdeck.Infrastructure.Storage.SqliteBlobStore>();
+        services.AddScoped<IManualRepresentationStore, EfManualRepresentationStore>();
+        services.AddScoped<IThinkingAudioRepository, ThinkingAudioRepository>();
+        services.AddScoped<IAudioTranscriptionStore, AudioTranscriptionStore>();
+        services.AddScoped<ISourcePortabilityStore, SourcePortabilityStore>();
+        services.AddOptions<BlobStorageSettings>()
+            .Bind(configuration.GetSection("SourceStorage"))
+            .Validate(value => value.MaximumUploadBytes > 0, "SourceStorage:MaximumUploadBytes must be positive.")
+            .Validate(value => value.OwnerQuotaBytes > 0, "SourceStorage:OwnerQuotaBytes must be positive.")
+            .Validate(value => value.ModalityQuotaBytes > 0, "SourceStorage:ModalityQuotaBytes must be positive.")
+            .Validate(value => value.MaximumReferencesPerOwner > 0, "SourceStorage:MaximumReferencesPerOwner must be positive.")
+            .ValidateOnStart();
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BlobStorageSettings>>().Value);
         services.AddScoped<ICaptureBackfillStore, EfCaptureBackfillStore>();
         // ADR-0065 / CF-01 (#2255): the Context Fabric switches and the ID-preserving backfill must
         // reach EVERY host that applies migrations or writes a capture -- web API, standalone MCP

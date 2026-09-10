@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { Card, Column } from '../../types/board'
@@ -175,6 +176,7 @@ function onCardDrop(card: Card, e: DragEvent) {
 function onCardDragOver(card: Card, e: DragEvent) {
   emit('card-dragover', card, e)
 }
+const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
 </script>
 
 <template>
@@ -186,12 +188,14 @@ function onCardDragOver(card: Card, e: DragEvent) {
       'paper-board-column--selected': selected,
     }"
     :data-column-id="column.id"
+    :data-proposal-change="proposalMarker ? true : undefined"
     :data-collapsed="collapsed"
     role="group"
     :aria-label="`Column ${column.name}`"
     :aria-current="selected ? 'true' : undefined"
   >
     <header class="paper-board-column__header">
+      <span v-if="proposalMarker" class="td-proposal-marker">{{ proposalMarker }}</span>
       <div
         class="paper-board-column__heading"
         data-action="drag-column-handle"
