@@ -1,5 +1,18 @@
 # Workspace overhaul validation and follow-through
 
+## Reminder save ownership follow-up (2026-09-10)
+
+Issue #2896 covers a late-review account-switch interleaving: account A's save is pending, account B
+loads settings and starts another enable save, then A settles before B. Both resolved and rejected A
+responses reproduced replacement of B's unsaved zone with its saved zone. A unique request identity
+now lets only the owning completion release the component guard. Both regressions pass within 22
+attention component tests and assert an explicit later hours save using B's returned revision.
+
+Full frontend qualification passes 6,438 tests with three existing skips across 416 files; typecheck,
+production build and scoped ESLint pass. The backend is unchanged. The deterministic component tests
+exercise the actual shared store and account-generation checks; no new physical-device or live-provider
+claim is made. The follow-up PR records its independent review and hosted delivery receipt.
+
 ## Final recovery follow-up (2026-09-10)
 
 The hours draft regression failed in both enable-toggle directions before the repair. A confirmed
