@@ -121,7 +121,7 @@ public class CardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "created", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, $"title={card.Title}");
+            await SafeLogAsync("card", card.Id, AuditAction.Created, actorUserId, $"title={card.Title}; WorkItemType={card.WorkItemType}");
 
             var createdCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(card.Id, cancellationToken);
             return Result.Success(MapToDto(createdCard!));
@@ -139,6 +139,8 @@ public class CardService
     {
         try
         {
+            var workItemType = Card.ParseWorkItemType(dto.WorkItemType ?? "Task");
+
             // Verify board and column exist
             var board = await _unitOfWork.Boards.GetByIdAsync(dto.BoardId, cancellationToken);
             if (board == null)
@@ -164,6 +166,7 @@ public class CardService
             var card = cardId.HasValue
                 ? new Card(cardId.Value, dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position)
                 : new Card(dto.BoardId, dto.ColumnId, dto.Title, dto.Description, dto.DueDate, position);
+            card.SetWorkItemType(workItemType);
             await _unitOfWork.Cards.AddAsync(card, cancellationToken);
 
             // Add labels if provided
@@ -193,6 +196,9 @@ public class CardService
     {
         try
         {
+            var workItemType = dto.WorkItemType is null ? (CardWorkItemType?)null : Card.ParseWorkItemType(dto.WorkItemType);
+            if (workItemType.HasValue && !dto.ExpectedUpdatedAt.HasValue)
+                return Result.Failure<CardDto>(ErrorCodes.ValidationError, "ExpectedUpdatedAt is required when changing WorkItemType. Refresh the card first.");
             if (dto.ClearDueDate && dto.DueDate.HasValue)
                 return Result.Failure<CardDto>(ErrorCodes.ValidationError, "DueDate and ClearDueDate cannot both be set");
 
@@ -216,12 +222,15 @@ public class CardService
             }
 
             // Capture pre-mutation state for change summary
+            var oldWorkItemType = card.WorkItemType;
             var oldTitle = card.Title;
             var oldDescription = card.Description;
             var oldDueDate = card.DueDate;
             var oldIsBlocked = card.IsBlocked;
             var oldBlockReason = card.BlockReason;
             var oldLabelIds = card.CardLabels.Select(cl => cl.LabelId).OrderBy(id => id).ToList();
+
+            if (workItemType.HasValue) card.SetWorkItemType(workItemType.Value);
 
             // Update basic fields
             if (dto.Title != null || dto.Description != null || dto.DueDate.HasValue)
@@ -253,6 +262,9 @@ public class CardService
             }
 
             var changeSummary = BuildCardChangeSummary(dto, oldTitle, oldDescription, oldDueDate, oldIsBlocked, oldBlockReason, oldLabelIds);
+            if (workItemType.HasValue && oldWorkItemType != workItemType.Value)
+                changeSummary = $"WorkItemType: {oldWorkItemType} -> {workItemType.Value}" +
+                    (changeSummary == "no fields changed" ? "" : $"; {changeSummary}");
 
             board?.RecordCardMutation();
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -550,7 +562,8 @@ public class CardService
             labels,
             card.CreatedAt,
             card.UpdatedAt,
-            card.IsArchived
+            card.IsArchived,
+            card.WorkItemType.ToString()
         );
     }
 

@@ -1085,6 +1085,29 @@ public class DataExportServiceStreamingTests
     }
 
     [Fact]
+    public async Task WorkItemType_BufferedAndStreamedAccountExportsRetainArchivedType()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var card = new Card(Guid.NewGuid(), Guid.NewGuid(), "Archived epic");
+        card.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Epic);
+        card.Archive();
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(r => r.GetExportPageByUserIdAsync(_userId, 0, 500, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cards.Object);
+        var buffered = await _service.ExportUserDataAsync(_userId);
+        buffered.IsSuccess.Should().BeTrue(buffered.ErrorMessage);
+        buffered.Value.Data.Cards!.Single().WorkItemType.Should().Be("Epic");
+        using var stream = new MemoryStream();
+        var streamed = await _service.StreamUserDataExportAsync(_userId, stream);
+        streamed.IsSuccess.Should().BeTrue(streamed.ErrorMessage);
+        using var json = System.Text.Json.JsonDocument.Parse(stream.ToArray());
+        var exported = json.RootElement.GetProperty("data").GetProperty("cards")[0];
+        exported.GetProperty("workItemType").GetString().Should().Be("Epic");
+        exported.GetProperty("isArchived").GetBoolean().Should().BeTrue();
+    }
+
+    [Fact]
     public async Task StreamUserDataExportAsync_ReturnsValidationError_WhenUserIdIsEmpty()
     {
         using var stream = new MemoryStream();
