@@ -3,14 +3,16 @@
  */
 import { cardsApi } from '../../api/cardsApi'
 import { getErrorMessage } from '../../utils/errorMessage'
-import type { CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
+import type { CardDetachPreview, CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
 export function createCardActions(state: BoardState, helpers: BoardHelpers) {
-  async function setCardArchived(boardId: string, cardId: string, archive: boolean, expectedUpdatedAt: string) {
+  async function setCardArchived(boardId: string, cardId: string, archive: boolean, expectedUpdatedAt: string, expectedChildrenFingerprint?: string) {
     helpers.guardDemoMutation()
-    const updated = await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt)
+    const updated = expectedChildrenFingerprint === undefined
+      ? await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt)
+      : await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt, expectedChildrenFingerprint)
     helpers.markBoardDetailMutation(boardId)
     if (state.currentBoard.value?.id === boardId) {
       const existed = state.currentBoardCards.value.some(card => card.id === cardId)
@@ -19,6 +21,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
       if (archive && existed) helpers.updateColumnCardCount(updated.columnId, -1)
       if (!archive && !existed) helpers.updateColumnCardCount(updated.columnId, 1)
     }
+    if (archive && state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)) await fetchCards(boardId)
     return updated
   }
   async function fetchCards(
@@ -98,13 +101,13 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
     }
   }
 
-  async function deleteCard(boardId: string, cardId: string) {
+  async function deleteCard(boardId: string, cardId: string, confirmation?: CardDetachPreview) {
     helpers.guardDemoMutation()
     try {
       state.loading.value = true
       state.error.value = null
       const existingCard = state.currentBoardCards.value.find((card) => card.id === cardId)
-      await cardsApi.deleteCard(boardId, cardId)
+      await cardsApi.deleteCard(boardId, cardId, confirmation)
       helpers.markBoardDetailMutation(boardId)
 
       // Remove the card from the store
@@ -118,6 +121,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
         helpers.updateColumnCardCount(existingCard.columnId, -1)
       }
 
+      if (state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)) await fetchCards(boardId)
       helpers.toast.success('Card deleted successfully')
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to delete card')

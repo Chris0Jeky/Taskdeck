@@ -27,6 +27,11 @@ const mockSessionStore = {
   userId: 'user-1',
 }
 
+vi.mock('../../api/cardsApi', () => ({ cardsApi: {
+  getCards: vi.fn().mockResolvedValue([]),
+  previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
+} }))
+
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
 }))
@@ -703,9 +708,10 @@ describe('useCardModal', () => {
       const ctx = mountComposable()
       await nextTick()
 
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
-      expect(mockBoardStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1')
+      expect(mockBoardStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({ expectedChildrenFingerprint: 'v1:fixed' }))
       expect(ctx.result.showDeleteConfirm.value).toBe(false)
       expect(ctx.onUpdated).toHaveBeenCalled()
       expect(ctx.onClose).toHaveBeenCalled()
@@ -717,6 +723,7 @@ describe('useCardModal', () => {
       await nextTick()
 
       ctx.result.isDeleting.value = true
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
       expect(mockBoardStore.deleteCard).not.toHaveBeenCalled()
@@ -729,6 +736,7 @@ describe('useCardModal', () => {
       const ctx = mountComposable()
       await nextTick()
 
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
       expect(consoleSpy).toHaveBeenCalledWith('Failed to delete card:', expect.any(Error))

@@ -18,6 +18,11 @@ function createDeferred<T>() {
   return { promise, resolve, reject }
 }
 
+vi.mock('../../api/cardsApi', () => ({ cardsApi: {
+  getCards: vi.fn().mockResolvedValue([]),
+  previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
+} }))
+
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: vi.fn(),
 }))
@@ -827,7 +832,7 @@ describe('CardModal', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    expect(mockStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1')
+    expect(mockStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({ expectedChildrenFingerprint: 'v1:fixed' }))
     expect(wrapper.emitted('close')).toBeTruthy()
 
     wrapper.unmount()

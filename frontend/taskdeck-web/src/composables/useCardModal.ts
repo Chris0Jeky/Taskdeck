@@ -1,7 +1,8 @@
 import { onBeforeUnmount, ref, computed, watch } from 'vue'
+import { cardsApi } from '../api/cardsApi'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
-import type { CardWorkItemType, Card, CardCaptureProvenance, Label, UpdateCardDto } from '../types/board'
+import type { CardDetachPreview, CardWorkItemType, Card, CardCaptureProvenance, Label, UpdateCardDto } from '../types/board'
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
@@ -26,6 +27,10 @@ export function useCardModal(options: UseCardModalOptions) {
   const toast = useToastStore()
 
   // Form state
+  const parentCardId = ref<string | null>(null)
+  const detachPreview = ref<CardDetachPreview | null>(null)
+  const deletePreviewError = ref<string | null>(null)
+  const deletePreviewLoading = ref(false)
   const workItemType = ref<CardWorkItemType>('Task')
   const isSaving = ref(false)
   const saveError = ref<string | null>(null)
@@ -92,6 +97,7 @@ export function useCardModal(options: UseCardModalOptions) {
   const hasUnsavedChanges = computed(() => {
     const currentCard = card.value
     return (
+      parentCardId.value !== (currentCard.parentCardId ?? null) ||
       workItemType.value !== (currentCard.workItemType ?? 'Task') ||
       title.value !== currentCard.title ||
       description.value !== (currentCard.description || '') ||
@@ -115,6 +121,9 @@ export function useCardModal(options: UseCardModalOptions) {
         saveError.value = null
         cardSessionVersion += 1
       }
+      parentCardId.value = newCard.parentCardId ?? null
+      detachPreview.value = null
+      deletePreviewError.value = null
       workItemType.value = newCard.workItemType ?? 'Task'
       title.value = newCard.title
       description.value = newCard.description || ''
@@ -241,6 +250,10 @@ export function useCardModal(options: UseCardModalOptions) {
       labelIds: selectedLabelIds.value,
       expectedUpdatedAt: expectedUpdatedAt.value,
     }
+    if (parentCardId.value !== (targetCard.parentCardId ?? null)) {
+      if (parentCardId.value) update.parentCardId = parentCardId.value
+      else update.clearParent = true
+    }
     if (workItemType.value !== (targetCard.workItemType ?? 'Task')) update.workItemType = workItemType.value
     if (dueDateChanged) {
       update.dueDate = dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null
@@ -270,8 +283,21 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   // Delete
-  function handleDeleteClick() {
+  async function handleDeleteClick() {
+    const target = card.value
+    const session = cardSessionVersion
     showDeleteConfirm.value = true
+    detachPreview.value = null
+    deletePreviewError.value = null
+    deletePreviewLoading.value = true
+    try {
+      const preview = await cardsApi.previewDetach(target.boardId, target.id)
+      if (isCurrentCardSession(target.id, session) && showDeleteConfirm.value) detachPreview.value = preview
+    } catch {
+      if (isCurrentCardSession(target.id, session)) deletePreviewError.value = 'Could not load the full child list. Close and refresh before deleting.'
+    } finally {
+      if (isCurrentCardSession(target.id, session)) deletePreviewLoading.value = false
+    }
   }
 
   function handleDeleteCancel() {
@@ -279,16 +305,17 @@ export function useCardModal(options: UseCardModalOptions) {
   }
 
   async function handleDeleteConfirm() {
-    if (isDeleting.value) return
+    if (isDeleting.value || !detachPreview.value || deletePreviewError.value) return
     isDeleting.value = true
     try {
-      await boardStore.deleteCard(card.value.boardId, card.value.id)
+      await boardStore.deleteCard(card.value.boardId, card.value.id, detachPreview.value)
       showDeleteConfirm.value = false
       options.onUpdated()
       options.onClose()
     } catch (error) {
       logError('Failed to delete card:', error)
-      toast.error('Failed to delete card. Please try again.')
+      deletePreviewError.value = 'Card or children changed, or deletion could not be confirmed. Close and refresh before confirming again.'
+      toast.error(deletePreviewError.value)
     } finally {
       isDeleting.value = false
     }
@@ -453,6 +480,10 @@ export function useCardModal(options: UseCardModalOptions) {
 
   return {
     // Form state
+    parentCardId,
+    detachPreview,
+    deletePreviewError,
+    deletePreviewLoading,
     workItemType,
     title,
     description,

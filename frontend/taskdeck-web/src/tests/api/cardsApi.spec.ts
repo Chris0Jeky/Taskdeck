@@ -115,7 +115,7 @@ describe('cardsApi', () => {
 
       await cardsApi.deleteCard('board-1', 'card-1')
 
-      expect(http.delete).toHaveBeenCalledWith('/boards/board-1/cards/card-1')
+      expect(http.delete).toHaveBeenCalledWith('/boards/board-1/cards/card-1', { params: undefined, skipRetry: true })
     })
   })
 
