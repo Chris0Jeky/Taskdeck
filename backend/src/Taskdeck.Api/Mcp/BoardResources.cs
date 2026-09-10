@@ -174,6 +174,8 @@ public class BoardResources
         {
             id = c.Id,
             title = c.Title,
+            workItemType = c.WorkItemType,
+            updatedAt = c.UpdatedAt,
             position = c.Position,
             labels = c.Labels.Select(l => l.Name),
             hasDescription = !string.IsNullOrWhiteSpace(c.Description),
@@ -231,6 +233,7 @@ public class BoardResources
             position = card.Position,
             isBlocked = card.IsBlocked,
             isArchived = card.IsArchived,
+            workItemType = card.WorkItemType.ToString(),
             blockReason = card.BlockReason,
             dueDate = card.DueDate,
             labels = card.Labels.Select(l => new { id = l.Id, name = l.Name, color = l.ColorHex }),

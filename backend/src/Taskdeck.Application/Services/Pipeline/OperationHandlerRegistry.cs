@@ -118,6 +118,8 @@ public class OperationHandlerRegistry
             return Result.Failure(ErrorCodes.ValidationError, titleError);
 
         var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+            return Result.Failure(ErrorCodes.ValidationError, typeError);
 
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 parameters, "dueDate", out _, out var dueDate, out var dueDateError))
@@ -155,7 +157,7 @@ public class OperationHandlerRegistry
         if (!labelResolution.IsSuccess)
             return Result.Failure(labelResolution.ErrorCode, labelResolution.ErrorMessage);
 
-        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value);
+        var dto = new CreateCardDto(boardId, columnId, title, description, dueDate, labelResolution.Value, workItemType);
         var result = await _cardService.CreateCardAsync(dto, cardId, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
@@ -168,6 +170,8 @@ public class OperationHandlerRegistry
 
         var title = OperationParameterParser.GetOptionalString(parameters, "title");
         var description = OperationParameterParser.GetOptionalString(parameters, "description");
+        if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+            return Result.Failure(ErrorCodes.ValidationError, typeError);
 
         if (!OperationParameterParser.TryGetOptionalDateTimeOffset(
                 parameters, "dueDate", out var dueDateProvided, out var dueDate, out var dueDateError))
@@ -188,10 +192,10 @@ public class OperationHandlerRegistry
             return Result.Failure(ErrorCodes.ValidationError, labelIdsError);
 
         var shouldClearDueDate = clearDueDate || (dueDateProvided && !dueDate.HasValue);
-        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided)
+        if (title == null && description == null && !dueDateProvided && !clearDueDate && !labelsProvided && !labelIdsProvided && workItemType is null)
             return Result.Failure(
                 ErrorCodes.ValidationError,
-                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+                "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
 
         List<Guid>? labelIds = null;
         if (labelsProvided || labelIdsProvided)
@@ -213,6 +217,14 @@ public class OperationHandlerRegistry
             labelIds = labelResolution.Value;
         }
 
+        DateTimeOffset? expectedUpdatedAt = null;
+        if (workItemType is not null)
+        {
+            if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+                timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+                return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+            expectedUpdatedAt = expected;
+        }
         var dto = new UpdateCardDto(
             title,
             description,
@@ -220,7 +232,7 @@ public class OperationHandlerRegistry
             null,
             null,
             labelIds,
-            ClearDueDate: shouldClearDueDate);
+            ExpectedUpdatedAt: expectedUpdatedAt, ClearDueDate: shouldClearDueDate, WorkItemType: workItemType);
         var result = await _cardService.UpdateCardAsync(cardId, dto, cancellationToken);
 
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
