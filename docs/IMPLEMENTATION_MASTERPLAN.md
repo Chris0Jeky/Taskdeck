@@ -4,7 +4,13 @@ Last Updated: 2026-09-10
 
 Finish the source-backed reminder-hours gap under #2808: optional named-zone weekly windows, explicit save/recovery, existing shared budgets and server-side eligibility. Preserve unrestricted behavior for old opted-in users and keep reminders default off. Local feature and cross-browser proof passes; finish full backend and exact-head hosted qualification, then integrate with the already-reviewed overhaul continuation. No new scheduling service or model work is introduced.
 
+Overhaul closeout (#2808): #2866 is merged. Carry the combined #2886 transcription/grounded/navigation continuation through exact-head CI, then finish the source-backed reminder-hours/time-zone behavior. Scope reconciliation keeps generic processor hosting (#2258), historical representation migration (#2260) and undefined source-storage restore outside the requested prototype delivery. Retain live-provider/device/usefulness acceptance as unverified rather than inferring it from synthetic tests.
+
 Grounded-question commit recovery (#2808): close the final source-read/save interval and settle accounting before staging questions. Keep short transaction ownership in the insight repository, preserve source/access and insight concurrency checks, and prove no rejected staged state can leak into subsequent saves. This completes the two previously tracked observation consistency gaps; general semantic processing and recall remain separate.
+
+Thinking-route exit recovery (#2808): finish the last observed planning navigation error by treating cleared route params as exit state, with no network read. Preserve request generations and validate route reentry and late responses. Backend planning/accounting behavior remains unchanged; record full frontend and hosted qualification with the continuation.
+
+Audio transcription continuation (#2808): deliver explicit original-to-provisional-transcript-to-reviewed-answer behavior in Thinking Decks and the retained library. Keep provider transport default off, admission durable, privacy/erasure/export covered and all experiences switchable. Complete full-suite and hosted qualification; generic worker supervision, richer processing/recall, duration/currency budgets and source import remain separate follow-through.
 
 Expanded overhaul follow-through (#2808): preserve the qualified combined reminder/audio/preview delivery while the unrelated main CI stack settles. Full backend/frontend, eleven browser journeys, combined migrations and bounded interaction review pass. Finish exact-head delivery before marking tracker capabilities shipped; automatic transcription and broader source processing/portability remain separate work.
 

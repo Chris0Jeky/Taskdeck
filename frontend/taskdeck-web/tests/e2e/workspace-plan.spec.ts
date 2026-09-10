@@ -1,7 +1,17 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { API_BASE_URL, registerAndAttachSession } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
+
+const incompleteBoardReads = new WeakMap<Page, string[]>()
+test.beforeEach(async ({ page }) => {
+  const requests: string[] = []; incompleteBoardReads.set(page, requests)
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (path === '/api/boards/' || path.startsWith('/api/boards//')) requests.push(path)
+  })
+})
+test.afterEach(async ({ page }) => { expect(incompleteBoardReads.get(page)).toEqual([]) })
 import { assertOk } from './support/httpAsserts'
 
 test.use({ timezoneId: 'America/Los_Angeles', locale: 'en-US' })

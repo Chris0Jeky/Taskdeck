@@ -28,11 +28,59 @@ API 3,052, CLI 243, Architecture 28 and Integration 7. This qualifies the remind
 parent refresh; the larger transcription/grounded continuation has its separate proof below. Hosted
 qualification remains the final merge gate.
 
+## Final integrated continuation qualification (2026-09-10)
+
+The continuation combines grounded commit recovery, thinking-route exit and explicit transcription,
+including destination-bound consent. A real SQLite write-lock regression distinguishes storage
+contention from changed evidence, detaches rejected candidates and preserves accounted model usage;
+18 application and 17 API/reminder cases pass for that slice.
+
+The full backend run at `ea8c0cbe6` passes 9,281 tests with 34 existing skips and one worker-wait
+failure: its bounded queue read was not observed within the test's waiting period. The worker and
+test are unchanged from the baseline. The final 30 API/worker cases pass in isolation, including
+that case and the reviewed account-erasure repair. Full-run per-project passes are Domain 1,645,
+Application 4,301, API 3,057, CLI 243, Architecture 28 and Integration 7. The initial run is not
+claimed green.
+
+The first full frontend run passes 6,427 tests and exceeds a five-second startup-test timeout.
+That unchanged test passes in isolation; the complete rerun with four workers passes all 6,428
+tests with three existing skips across 416 files. Typecheck and production build pass. Ten combined
+Chromium journeys pass in 1.3 minutes using an isolated database and actual synthetic speech HTTP
+transport: transcription/recovery, manual audio, retained originals, both planning journeys,
+attention, grounded evidence, Companion continuity, contextual companion and board previews.
+
+The bounded combined review identified a HIGH account-erasure race: a surviving board owner ID
+could authorize a late grounded-analysis save after the user's account was deactivated. Commit
+`948751cab` adds the active-user predicate to every source read, including the transaction's final
+check. The real regression deletes an account after the final service read while a co-owner retains
+the board; the response conflicts and no insight is recreated. The independent fix review confirms
+resolution with no remaining HIGH/CRITICAL. Hosted exact-head qualification remains separate.
+
 ## Grounded-question commit recovery (2026-09-10)
 
 The source/access fingerprint is checked again inside the serializable transaction that persists staged observations. Four real API races change evidence, archive/delete the source or revoke membership just after the final service read; all return conflicts and persist no candidates. A separate repository test rejects staged questions and then performs another save, proving rejected state cannot leak through the scoped context.
 
 Usage settlement precedes question staging. A failed commit produces a known no-save result without retrying usage; a failed release does not replace the provider's original cancellation. Seventeen application tests and sixteen API/reminder tests pass. The first application-test compile used the wrong mock argument type for the existing quota method; correcting the fixture to its integer signature resolved compilation. Full backend verification passes 9,240 tests with 34 existing skips: Domain 1,641, Application 4,275, API 3,046, CLI 243, Architecture 28 and Integration 7. Bounded independent review is CLEAN; documentation links/governance and diff checks pass. Hosted qualification remains separate. No frontend, migration or external-provider change is included.
+
+## Thinking route exit recovery (2026-09-10)
+
+Leaving a thinking route invalidates pending receipts and clears view state before checking route IDs. Incomplete params no longer request an empty board endpoint; complete reentry loads normally. Six continuity component tests and typecheck pass, including delayed responses after route exit. Both full personal-plan Chromium journeys pass in 47.2 seconds with per-page assertions that no empty-board request occurs, plus existing Focus, recovery, four-experience, calendar, mobile and accessibility checks. Full frontend verification passes 6,420 tests with three existing skips across 415 files. Production build, typecheck, scoped ESLint and bounded independent review pass. Hosted qualification remains separate. Backend behavior is unchanged.
+
+## Explicit audio transcription (2026-09-10)
+
+Four domain cases cover attempt deadlines and UTC admission. Twenty-five application cases cover accepted formats, single multipart dispatch, bounded output, invalid responses, cancellation and disabled/unsafe configuration. Eight real API cases cover separate provisional results, exact retries, competing requests, expired output, erasure during processing, deactivation, retained originals, both exports, account erasure and kill/configuration gates. Three actual localhost transport cases cover multipart bytes, disclosure/trace suppression, blocked redirects and the shared circuit; existing audio/export cases bring the focused run to 24 passes. A later reviewed-draft provenance extension passes 22 API/transport/audio cases.
+
+The first API compile exposed the snapshot-export test decorator's missing new interface methods; forwarding them fixed compilation. The first transport run exposed an unclassified egress redirect rejection; the adapter now returns a content-free failure receipt, and all 24 cases pass. The application fixture needed an explicit Xunit import. No live provider or paid request was involved.
+
+Thirty-three component tests, typecheck and scoped ESLint pass. Two old library text assertions were updated for the new ability to request a transcript from retained originals while keeping them separate from answers. The three real-API Chromium journeys pass in 41.8 seconds: automatic transcription through actual synthetic HTTP transport, existing audio upload/confirmation recovery, and the retained original library. The new journey proves provider failure, explicit retry, lost success response/reload, reviewed draft provenance and confirmation, all four experiences, 375px overflow and scoped accessibility. The mobile screenshot was inspected; temporary listeners 5244,5346,5349 are stopped. Full-suite, migration and independent/hosted outcomes remain pending here.
+
+Full frontend qualification passes 6,425 tests with three existing skips across 416 files; production build passes. The full backend run passes 9,272 tests with 34 existing skips and catches one architecture inventory failure: the new protected speech client/registration were not listed among known outbound sites. Their direct transport/envelope proof already passes; adding those two legitimate entries resolves the inventory seam. Domain 1,645, Application 4,298, API 3,052, CLI 243 and Integration 7 all pass in that full run; 27 architecture tests pass before the inventory correction. This records a corrected full-run failure rather than claiming the original run was green. The new migration applies to an isolated empty SQLite database and EF reports no pending model changes. Bounded backend review finds no HIGH/CRITICAL; its two MEDIUM limits are recorded in [AUDIO_TRANSCRIPTION.md](AUDIO_TRANSCRIPTION.md). Final scoped fix and frontend review evidence follow on the PR.
+
+Final backend correction passes all 28 architecture tests (one existing skip) plus 22 transcription/audio/transport API cases. Confirmation warnings now retain truthful transcription provenance and point to the reviewed-parent lineage instead of claiming no automated transcription occurred. No behavior change to consent, provider dispatch or frontend follows its full run. Hosted qualification and physical/live-provider usefulness remain separate.
+
+The separately configured disabled-provider Chromium run also passes (one journey, 23.4 seconds including startup), proving default-off options across all four experiences without a speech fixture or external request. This is additional to the three configured-provider/audio/library journeys above.
+
+The frontend review found a HIGH consent defect: refreshing options after a provider configuration change preserved a checked checkbox. The final fix binds consent to the displayed configuration hash and clears it on any change, including A→B→A. The regression proves dispatch remains blocked until fresh consent and an unchanged configuration can retain deliberate consent. All 34 affected components, typecheck and scoped ESLint pass after the fix; the bounded independent fix review confirms resolution with no remaining HIGH/CRITICAL. This later change supersedes the earlier statement that frontend consent was unchanged after the full run.
 
 ## Expanded follow-through qualification (2026-09-10)
 

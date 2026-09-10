@@ -52,8 +52,10 @@ public sealed class SourcePortabilityStore(TaskdeckDbContext db) : ISourcePortab
         var references = await db.StoredBlobReferences.CountAsync(x => x.OwnerUserId == userId, ct);
         var representations = await db.Representations.CountAsync(x => x.UserId == userId, ct);
         var answers = await db.ThinkingAudioAnswers.CountAsync(x => x.UserId == userId, ct);
+        var attempts = await db.AudioTranscriptionAttempts.CountAsync(x => x.UserId == userId, ct);
+        var budgets = await db.AudioTranscriptionBudgets.CountAsync(x => x.UserId == userId, ct);
         // Conservative budget includes base64 + UTF-16 JSON buffers and bounded metadata per row.
-        return checked(bytes * 4 + (long)(objects + references + representations + answers) * 4096);
+        return checked(bytes * 4 + (long)(objects + references + representations + answers + attempts + budgets) * 4096);
     }
     public async IAsyncEnumerable<SourceBlobObjectExportDto> ObjectsAsync(Guid userId, [EnumeratorCancellation] CancellationToken ct)
     {
@@ -89,5 +91,17 @@ public sealed class SourcePortabilityStore(TaskdeckDbContext db) : ISourcePortab
         await foreach (var row in db.ThinkingAudioAnswers.AsNoTracking().Where(x => x.UserId == userId).OrderBy(x => x.Id).AsAsyncEnumerable().WithCancellation(ct))
             yield return new(row.Id, row.BoardId, row.CardId, row.LayerId, row.QuestionHash, row.CaptureId, row.SourceAssetId,
                 row.UploadId, row.Revision, row.RepresentationId, row.ConfirmedMemoryId, row.CreatedAt, row.UpdatedAt, row.ConfirmationRequestHash);
+    }
+
+    public async IAsyncEnumerable<AudioTranscriptionAttemptExportDto> AudioTranscriptionAttemptsAsync(Guid userId, [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var row in db.AudioTranscriptionAttempts.AsNoTracking().Where(x => x.UserId == userId).OrderBy(x => x.Id).AsAsyncEnumerable().WithCancellation(ct))
+            yield return new(row.Id, row.UserId, row.AudioAnswerId, row.CaptureId, row.SourceAssetId, row.RequestId, row.RequestHash,
+                row.ConfigurationHash, row.Provider, row.Model, row.StartedAt, row.Deadline, row.FinishedAt, row.State.ToString(), row.FailureCode, row.RepresentationId, row.Revision);
+    }
+    public async IAsyncEnumerable<AudioTranscriptionBudgetExportDto> AudioTranscriptionBudgetsAsync(Guid userId, [EnumeratorCancellation] CancellationToken ct)
+    {
+        await foreach (var row in db.AudioTranscriptionBudgets.AsNoTracking().Where(x => x.UserId == userId).AsAsyncEnumerable().WithCancellation(ct))
+            yield return new(row.UserId, row.UtcDay, row.Attempts, row.InputBytes, row.Revision);
     }
 }

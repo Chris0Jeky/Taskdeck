@@ -34,7 +34,7 @@ describe('private original library', () => {
     const wrapper = render(); expect(api.library).not.toHaveBeenCalled()
     await button(wrapper, 'Browse original recordings').trigger('click'); await flushPromises()
     expect(api.library).toHaveBeenCalledWith(0)
-    expect(wrapper.text()).toContain('Untranscribed original')
+    expect(wrapper.text()).toContain('Original without a written answer')
     await button(wrapper, 'Inspect recording').trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('Exact original question')
     expect(wrapper.get('a').attributes('href')).toBe('/workspace/boards/b1/cards/c1/thinking')
@@ -43,12 +43,12 @@ describe('private original library', () => {
     expect(wrapper.get('audio').attributes('src')).toBe('blob:original')
     wrapper.unmount(); expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
   })
-  it('keeps deleted-board originals read-only with visible written alternatives', async () => {
+  it('keeps deleted-board originals separate from answers with visible written alternatives', async () => {
     api.library.mockResolvedValue({ items: [{ ...item, boardRemoved: true, hasWrittenVersion: true }], nextOffset: null })
     api.libraryDetail.mockResolvedValue({ ...receipt, currentBoardId: null, currentCardId: null, recording: { ...receipt.recording, writtenVersions: [{ id: 'v1', text: 'Earlier words', quality: 'Superseded', supersededById: 'v2' }] } })
     const wrapper = render(); await button(wrapper, 'Browse original recordings').trigger('click'); await flushPromises()
     await button(wrapper, 'Inspect recording').trigger('click'); await flushPromises()
-    expect(wrapper.text()).toContain('Board removed'); expect(wrapper.text()).toContain('read-only')
+    expect(wrapper.text()).toContain('Board removed'); expect(wrapper.text()).toContain('it cannot answer a different question')
     expect(wrapper.text()).toContain('Earlier words'); expect(wrapper.find('a').exists()).toBe(false)
     expect(wrapper.find('textarea').exists()).toBe(false)
   })
