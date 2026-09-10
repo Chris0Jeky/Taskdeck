@@ -32,7 +32,7 @@ function clear() {
   selectedMemories.value = []; selectedAssets.value = []; ready.value = false; loading.value = false; error.value = ''
   emit('change', null)
 }
-watch(() => [props.boardId, session.userId, session.token, available.value], () => {
+watch([() => props.boardId, () => session.userId, () => !!session.token, available], () => {
   clear(); expanded.value = false
 }, { flush: 'sync' })
 watch([cardId, includeThinking, selectedMemories, selectedAssets], () => {
@@ -98,7 +98,7 @@ onScopeDispose(clear)
           <input v-model="selectedMemories" type="checkbox" :value="memory.id" :disabled="privateCount >= 5 && !selectedMemories.includes(memory.id)" />
           <span>{{ memory.title }} · {{ memory.status }} · version {{ memory.revision }}<small>{{ memory.text }}</small></span>
         </label>
-        <ChatOriginalSourcePicker :key="`${memory.id}:${memory.revision}`" :memory-id="memory.id" :board-id="boardId!"
+        <ChatOriginalSourcePicker :key="`${memory.id}:${memory.revision}`" :memory-id="memory.id" :memory-title="memory.title" :board-id="boardId!"
           :revision="memory.revision" :disabled="disabled" :selected="selectedAssets.filter(asset => asset.memoryId === memory.id)"
           :selected-count="privateCount" @change="selectAssets(memory.id, $event)" />
         </div>

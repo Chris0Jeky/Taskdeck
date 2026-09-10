@@ -2,6 +2,7 @@
 import { computed, defineAsyncComponent, defineComponent, h, onActivated, onMounted, ref, watch } from 'vue'
 import WorkspaceSetupModal from '../components/workspace/WorkspaceSetupModal.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
+import PersonalPlanResume from '../components/workspace/PersonalPlanResume.vue'
 import { TdSkeleton } from '../components/ui'
 import { useWorkspaceOnboardingActions } from '../composables/useWorkspaceOnboardingActions'
 import { useWorkspaceStore } from '../store/workspaceStore'
@@ -175,6 +176,7 @@ onActivated(refreshHomeSummary)
 
 <template>
   <OverhaulWorkspaceHome v-if="overhaulActivated" v-show="layout.experience !== 'classic'" />
+  <PersonalPlanResume v-if="layout.experience === 'classic'" />
   <PaperHomeView v-if="paperTheme.isOn" v-show="layout.experience === 'classic'" />
   <div v-else v-show="layout.experience === 'classic'" class="td-home" role="region" aria-label="Home workspace">
     <header class="td-home__hero td-panel">

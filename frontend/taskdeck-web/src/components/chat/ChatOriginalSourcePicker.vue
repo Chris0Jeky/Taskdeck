@@ -5,7 +5,7 @@ import { useSessionStore } from '../../store/sessionStore'
 import type { ChatAssetOption, ChatAssetReference } from '../../types/chat'
 
 const props = defineProps<{
-  memoryId: string; boardId: string; revision: number; disabled?: boolean
+  memoryId: string; memoryTitle?: string; boardId: string; revision: number; disabled?: boolean
   selected: ChatAssetReference[]; selectedCount: number
 }>()
 const emit = defineEmits<{ change: [selection: ChatAssetReference[]] }>()
@@ -16,7 +16,7 @@ const loading = ref(false)
 const error = ref('')
 const nextOffset = ref<number | null>(0)
 let generation = 0
-watch([() => props.memoryId, () => props.boardId, () => props.revision, () => session.userId, () => session.token], () => {
+watch([() => props.memoryId, () => props.boardId, () => props.revision, () => session.userId, () => !!session.token], () => {
   generation++; items.value = []; loaded.value = false; loading.value = false; error.value = ''; nextOffset.value = 0
   emit('change', [])
 }, { flush: 'sync' })
@@ -34,8 +34,14 @@ async function load() {
       (page.nextOffset !== null && page.nextOffset !== nextOffset.value + 10)) throw new Error('Source identity changed')
     items.value = [...items.value, ...page.items.filter(item => !items.value.some(current => current.id === item.id))]
     nextOffset.value = page.nextOffset; loaded.value = true
-  } catch {
-    if (request === generation) error.value = 'Originals could not be checked. Retry, or refresh all sources if this memory changed.'
+  } catch (cause) {
+    if (request === generation) {
+      const status = (cause as { response?: { status?: number } }).response?.status
+      if (status === 403 || status === 404) {
+        items.value = []; loaded.value = false; nextOffset.value = 0; emit('change', [])
+        error.value = 'You no longer have access to these private originals. Check board access before retrying.'
+      } else error.value = 'Originals could not be checked. Retry, or refresh all sources if this memory changed.'
+    }
   } finally { if (request === generation) loading.value = false }
 }
 function toggle(asset: ChatAssetOption, checked: boolean) {
@@ -47,7 +53,8 @@ function toggle(asset: ChatAssetOption, checked: boolean) {
 
 <template>
   <div class="original-choices">
-    <button v-if="!loaded || nextOffset !== null" type="button" :disabled="disabled || loading" @click="load">
+    <button v-if="!loaded || nextOffset !== null" type="button" :disabled="disabled || loading"
+      :aria-label="`${loading ? 'Checking originals' : loaded ? 'Load more originals' : 'Choose original sources'} for ${memoryTitle || 'this memory'}`" @click="load">
       {{ loading ? 'Checking originals…' : loaded ? 'Load more originals' : 'Choose original sources' }}
     </button>
     <p v-if="error" role="alert">{{ error }}</p>

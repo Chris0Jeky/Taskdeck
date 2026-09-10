@@ -1,10 +1,17 @@
 # Workspace overhaul validation and follow-through
 
+## Board-object proposal overlays (2026-09-10)
+
+`BoardProposalPreview.spec.ts` covers matched effective revisions, approved pins, mismatched board/revision/status/update receipts, parameter-ID precedence, immutable board inputs, permission/board refresh failure, stale in-flight results, logout, same-user token refresh, server-clock expiry and both card renderers. Existing Chat preview and Board view regressions also pass. Full frontend: 6,368 passed and three existing skips; subsequent projection/access changes have 49 focused passing tests plus typecheck. Exact final evidence is retained with the continuation PR.
+
+`board-proposal-overlays.spec.ts` creates a real update/reorder/create proposal and checks both board renderers across all four experiences. It proves visible markers, saved titles, explicit close, unchanged saved cards/columns, no browser mutation requests, Review-to-board navigation, access refusal and 375 px/no serious-critical axe findings. The final journey passed in 15.8 seconds. Initial fixture failures omitted required operation parameters, requested an unsupported column action, and captured column card counts before seeding the card; each was corrected without relaxing product assertions. New objects remain described by the checked diff rather than simulated board state. No actual board Apply, production deployment or provider-quality acceptance is claimed.
+
 ## Audio review repairs (2026-09-10)
 
 Audio drafts now bind to the board, card, question and revision present when file selection or microphone acquisition starts. Editing that question retains the local file for replay/download but prevents uploading it under new question evidence. A new draft receives the current binding. Two regressions cover edits before upload and while recording.
 
 Production CSPs permit only same-origin and local `blob:` media; nginx and its AWS template permit same-origin microphone requests while continuing to deny camera and geolocation. API header checks, proxy policy contracts and Chromium probes exercise these exact policy strings. The probes load a local WAV and inspect effective microphone policy; they do not claim real microphone hardware acceptance. The retained-original library browser journey also passes.
+
 
 ## Original-source context continuation (2026-09-09)
 
@@ -316,3 +323,21 @@ This is an implementation checkpoint for #2808, not completion of the entire pro
 Hosted smoke on head 9bac8e647 passed 207 journeys, skipped thirteen existing opt-ins, and failed two old locators expecting the retired Leave unsaved thinking? dialog title. Both now target the actual Leave this thinking space? dialog; the recovered seven-test contextual/overhaul browser batch passes against an isolated real API. Assertions still verify draft preservation, explicit discard, review/apply and cross-experience behavior.
 
 Question-layer removal now stays disabled while that question holds a private text/audio draft, including when the removal prompt was opened before the draft began. The user receives guidance to keep or explicitly discard it first. Eighteen targeted component tests and typecheck pass; the focused regression proves the child remains mounted until its draft clears. This closes the direct browser-only recording loss found in hosted comment3974598891. Physical microphone acceptance remains separate.
+## Source interaction follow-through (2026-09-10)
+
+The recorded permission/accessibility/session-refresh/retained-control findings are addressed without
+changing chat dispatch or board-write authority. ChatOriginalContextApiTests now seeds 1,012 immutable
+source versions and follows 1000 -> 1010 -> end through real HTTP/SQLite reads; pages remain ten entries
+with 1,500-character excerpts. ChatOriginalSourcePicker, ChatContextPicker, ChatMessageList and
+WorkspaceMemoryPreservation component tests exercise permissions, distinct names, same-owner refresh,
+logout and blocked continuation. The updated original-source-context browser journey creates two
+memories, selects one by its accessible name, checks 403 explanation/recovery, replays exact receipts
+across all four experiences and checks 375 px accessibility. Companion continuity is rerun alongside it.
+Exact results are recorded with the continuation PR; live providers and physical-device acceptance are
+not inferred from this deterministic scope.
+
+## Calendar-day planning and Classic resume (2026-09-10)
+
+The workspace-plan Chromium journey now runs in America/Los_Angeles with an en-US locale. It asserts a midnight-UTC October20 card deadline remains October20, the Today filter selects the browser-local calendar date, and saved thinking resumes through Classic Home in both Grove and Legacy. The existing List/Board/Horizon, Focus, Make Room, four-experience,375px/no-overflow and accessibility checks remain, including unchanged card data. The final journey passed in17.6seconds. Home/date/store targeted tests passed25cases; full frontend, typecheck/build and scopedESLint results accompany the continuation PR.
+
+An initial typecheck caught a remaining Today reference to the removed local helper; it was replaced with the shared utility. The new Today browser assertion initially matched both navigation and plan controls; its final locator is scoped to the personal plan. Failed evidence is retained, and behavior assertions remain strict. This does not change card deadlines or the server Focus contract, and does not claim physical-device acceptance.

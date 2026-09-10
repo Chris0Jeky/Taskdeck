@@ -13,6 +13,7 @@ import ChatProposalPreview from './ChatProposalPreview.vue'
 const props = defineProps<{
   messages: ChatMessage[]
   sendingMessage: boolean
+  sendBlocked?: boolean
   eligibleBoards: Board[]
   loadingBoards: boolean
   selectedSessionBoardId: string | null
@@ -255,7 +256,7 @@ function bindSelectedBoard(messageId: string) {
           </p>
           <button
             class="td-btn td-btn--primary td-btn--sm"
-            :disabled="sendingMessage"
+            :disabled="sendingMessage || sendBlocked"
             @click="emit('continue-instruction', message.id)"
           >
             {{ sendingMessage ? 'Continuing...' : 'Continue retained instruction' }}

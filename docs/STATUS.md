@@ -1,6 +1,10 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+Planning continuity follow-through (#2808): Classic Home now offers the same private last-worked Focus resume as the other experiences, in both Paper/Grove and Legacy rendering. Personal-plan due dates use canonical calendar-day formatting; Today and tomorrow use the local calendar date without changing card deadlines. This reduces the work needed to resume a thought after switching versions.
+
+Board proposal preview continuation (#2808): Chat and both Review layouts link to a checked read-only overlay on the existing board. Effective revision, proposal status/update time and board identity must match before projecting operation targets; execution parameter IDs take precedence over display IDs. Existing cards/columns are marked across Classic, Studio, Companion and Unified, while creation/hidden objects remain in the diff. Board refresh failures, changes, route/account transitions and bounded expiry retract markers. The surface adds no approval, Apply or board mutation. Component and real-API Chromium checks prove projection, non-mutation, Review navigation and mobile rendering; the wider overhaul remains open.
 
 Original-source Companion continuation (#2808):
 
@@ -1489,3 +1493,9 @@ read-only evidence/history and original playback/download for earlier audio ques
 access is required even when the board is archived; deleted-board originals remain owner-linked.
 Changed questions cannot be confirmed from the library. API8, targeted frontend26 and typecheck passed;
 full suites and corrected browser proof are recorded separately in the continuation PR.
+
+September 10 source-interaction follow-through (#2808): named original pickers and permission errors,
+same-user token-refresh continuity, shared retained-instruction disabled states, and bounded original
+history pages beyond 1000 address the recorded usability findings. Targeted frontend 33/API 27 and two
+Chromium journeys pass; full-suite and hosted outcomes belong to the continuation PR. Board mutation
+and model dispatch authority are unchanged.

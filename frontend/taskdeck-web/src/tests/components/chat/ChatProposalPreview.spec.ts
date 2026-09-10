@@ -9,7 +9,7 @@ vi.mock('../../../api/automationApi', () => ({ automationApi: { getProposalPrevi
 const snapshot = (): ProposalPreview => ({ proposalId: 'p1', boardId: 'b1', status: 'PendingReview', effectiveRevisionId: 'r2', effectiveRevisionNumber: 2, proposalUpdatedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60000).toISOString(), checkedAt: new Date().toISOString(), diff: 'Update card: revised title <script>unsafe</script>' })
 function setup() {
   const pinia = createPinia(); setActivePinia(pinia)
-  return { session: useSessionStore(), wrapper: mount(ChatProposalPreview, { props: { proposalId: 'p1', boardId: 'b1' }, global: { plugins: [pinia] } }) }
+  return { session: useSessionStore(), wrapper: mount(ChatProposalPreview, { props: { proposalId: 'p1', boardId: 'b1' }, global: { plugins: [pinia], stubs: { RouterLink: true } } }) }
 }
 describe('contextual proposal preview', () => {
   beforeEach(() => { vi.clearAllMocks(); api.preview.mockResolvedValue(snapshot()) })

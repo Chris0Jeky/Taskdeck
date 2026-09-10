@@ -1,6 +1,8 @@
 # Switchable workspace overhaul
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+**Preview on board** opens a read-only proposal layer from Chat or Review. Choose **Refresh board preview** to check the current proposal revision and highlight saved cards/columns affected by its operations in either board renderer. The checked diff also describes new or hidden objects. The board continues to show saved data; **Open Review** returns to that exact proposal for approval and explicit Apply. Closing the preview, changing board data, losing access or reaching the short freshness limit removes its markers. This reduces the need to mentally match proposal changes to board objects while preserving review-first trust.
 
 Companion's source picker also offers individual preserved originals beside each private memory.
 Open **Choose original sources**, inspect the saved excerpt, then select the exact answer or evidence
@@ -252,3 +254,13 @@ defaults are `MaximumUploadBytes=67108864`, `OwnerQuotaBytes=268435456`, `Modali
 An unknown duplicate can be refused at quota before its hash is known; an accepted upload's retry
 does not reacquire quota. Existing artefact storage is unchanged. New manual representation headers
 cover this audio path; legacy representation backfill and automated processing remain unclaimed.
+
+### Source interaction recovery
+
+Original-source pickers name the memory they belong to and distinguish revoked access from a transient
+read failure. A permission failure removes displayed original choices and their selection. Source
+selection and older-memory preservation survive a same-person token refresh; logout, account changes,
+board changes and source revisions still clear stale private state. Retained-instruction continuation
+uses the same disabled state as the composer while shared thinking is unsaved or a receipt is loading.
+Original text history continues beyond offset 1000 in bounded pages of ten; every emitted continuation
+is accepted, and a large empty offset cannot overflow the next-page calculation.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onScopeDispose, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
@@ -48,6 +49,7 @@ onScopeDispose(clear)
     <template v-if="preview">
       <p>{{ normalizeProposalStatus(preview.status) }} · {{ preview.effectiveRevisionNumber === null ? 'Original proposal' : `Revision ${preview.effectiveRevisionNumber}` }} · checked {{ new Date(preview.checkedAt).toLocaleTimeString() }}</p>
       <pre>{{ preview.diff }}</pre>
+      <RouterLink v-if="boardId" :to="{ path: `/workspace/boards/${boardId}`, query: { proposalId } }">Preview on board</RouterLink>
       <p>This is a checked preview, not an applied change. Open Review to inspect, approve and explicitly apply. Review checks the proposal again.</p>
     </template>
   </section>
