@@ -14,6 +14,13 @@
  * invariabile e non richiede una forma propria.
  */
 export default {
+  polling: {
+    waiting: "Smistamento in corso. I risultati appariranno qui quando saranno pronti.",
+    retrying: "Aggiornamento dello stato in ritardo. Nuovo tentativo automatico; la richiesta è stata accettata.",
+    unavailable: "Una cattura non è più disponibile per il controllo. Aggiorna lo stato per riprovare.",
+    paused: "Controlli dello stato in pausa: la sessione richiede attenzione. Accedi di nuovo per continuare.",
+    refresh: "Aggiorna stato",
+  },
   eyebrow:
     'Inbox · superficie di cattura · {pending} da smistare · {total} catturato | Inbox · superficie di cattura · {pending} da smistare · {total} catturati',
   // Mostrato AL POSTO di `eyebrow` durante la sostituzione dell'ambito (#2501):

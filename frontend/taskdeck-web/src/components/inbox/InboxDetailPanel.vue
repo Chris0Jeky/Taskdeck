@@ -9,7 +9,9 @@ const props = withDefaults(defineProps<{
   hashLoadFailedItemId: string | null
   loadingDetail: boolean
   actionBusyItemId: string | null
-  triagePollingItemId: string | null
+  triagePollingItemId?: string | null
+  triagePollingItemIds?: Set<string>
+  triagePollingProblems?: Record<string, 'retrying' | 'unavailable'>
   isEditingSuggestion: boolean
   editedText: string
   editedTitleHint: string
@@ -198,6 +200,9 @@ const degradedReviewKey = triageDegradedReviewKey
         <p class="td-inbox-detail__degraded-msg">{{ $t('inbox.degraded.action') }}</p>
       </div>
 
+      <p v-if="triagePollingProblems?.[selectedItem.id]" role="status" data-testid="capture-polling-problem">
+        {{ $t(`inbox.polling.${triagePollingProblems[selectedItem.id]}`) }}
+      </p>
       <TdInlineAlert
         v-if="selectedItem.status === 6 || selectedItem.status === 'Failed'"
         variant="error"
@@ -242,9 +247,9 @@ const degradedReviewKey = triageDegradedReviewKey
           v-if="!props.readOnly"
           class="td-btn td-btn--primary"
           @click="emit('triage-selected')"
-          :disabled="actionBusyItemId === selectedItem.id || !canTriageSelection(selectedItem.status)"
+          :disabled="actionBusyItemId === selectedItem.id || triagePollingItemIds?.has(selectedItem.id) || !canTriageSelection(selectedItem.status)"
         >
-          {{ actionBusyItemId === selectedItem.id ? 'Working...' : triageButtonLabel(selectedItem.status, triagePollingItemId, selectedItemId) }}
+          {{ actionBusyItemId === selectedItem.id ? 'Working...' : triagePollingItemIds?.has(selectedItem.id) ? 'Triaging...' : triageButtonLabel(selectedItem.status, triagePollingItemId ?? null, selectedItemId) }}
         </button>
         <button
           v-if="!props.readOnly"

@@ -63,6 +63,8 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.GetAsync($"/api/capture/items/{itemId}"));
+        await ApiTestHarness.AssertUnauthorizedAsync(
+            await _client.GetAsync($"/api/capture/items/{itemId}/status"));
 
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PostAsync($"/api/capture/items/{itemId}/keep", null));
@@ -87,6 +89,25 @@ public class CaptureApiTests : IClassFixture<TestWebApplicationFactory>
         await ApiTestHarness.AssertUnauthorizedAsync(
             await _client.PutAsJsonAsync($"/api/capture/items/{itemId}/suggestion",
                 new UpdateCaptureSuggestionDto("edited")));
+    }
+
+    [Fact]
+    public async Task Status_ShouldReturnOnlyPollingFields_AndEnforceOwnership()
+    {
+        await AuthenticateAsAsync("capture-status-owner");
+        var created = await _client.PostAsJsonAsync("/api/capture/items",
+            new CreateCaptureItemDto(null, "private source sentinel", "paste"));
+        var item = (await created.Content.ReadFromJsonAsync<CaptureItemDto>())!;
+        var response = await _client.GetAsync($"/api/capture/items/{item.Id}/status");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+        body.EnumerateObject().Select(property => property.Name).Should().BeEquivalentTo(
+            "id", "status", "processedAt", "errorMessage", "disposition", "canEditSuggestion");
+        body.GetProperty("id").GetGuid().Should().Be(item.Id);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("private source sentinel");
+        await AuthenticateAsAsync("capture-status-other");
+        (await _client.GetAsync($"/api/capture/items/{item.Id}/status")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await _client.GetAsync($"/api/capture/items/{Guid.NewGuid()}/status")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [Fact]
