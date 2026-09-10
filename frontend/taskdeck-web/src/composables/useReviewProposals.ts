@@ -638,7 +638,7 @@ export function useReviewProposals() {
    * An empty filter is the unscoped live queue, exactly as
    * `boardId: activeBoardFilter.value || undefined` sends it.
    */
-  function queueScopeOf(boardId: string | null | undefined): string | null {
+  function queueScopeOf(boardId: string | null | undefined): string {
     const boardScope = boardId ? boardId.toLowerCase() : '<unscoped>'
     return `${boardScope}:${isArchivedHistory.value ? 'archived' : 'live'}`
   }
@@ -1024,9 +1024,9 @@ export function useReviewProposals() {
   // LANDED is what stops the opposite failure, a known-degraded queue that is
   // still on screen losing its disclosure the moment a wider or narrower scope
   // is asked for (#2214).
-  let queueRefreshScope: string | null | undefined
+  let queueRefreshScope: string | undefined
   type QueueRefreshHealthSnapshot = {
-    scope: string | null
+    scope: string
     stale: boolean
     refused: boolean
     consecutiveFailures: number
@@ -1112,8 +1112,8 @@ export function useReviewProposals() {
    * are not a queue anyone is being misled by.
    */
   function queueRefreshHealthStillDescribesScreen(
-    scope: string | null,
-    healthScope: string | null | undefined,
+    scope: string,
+    healthScope: string | undefined,
   ): boolean {
     // No read has landed for the health's owner, so nothing it describes is on
     // screen. A 403 takes this branch by construction: `recordQueueAccessRevoked`
@@ -1121,12 +1121,17 @@ export function useReviewProposals() {
     // that fact's single owner.
     if (healthScope === undefined) return false
     if (landedQueueScope.value !== healthScope) return false
+    // An empty queue can itself be stale. For its own scope, keep the warning
+    // even when filters hide every row; only a successful read proves recovery.
     if (healthScope === scope) return true
     return visibleProposals.value.length > 0
   }
 
-  function resetQueueRefreshHealthForScope(scope: string | null) {
+  function resetQueueRefreshHealthForScope(scope: string) {
     if (queueRefreshScope === scope) return
+    // Recovery described the previous requested scope, even when its retained
+    // rows still justify keeping the health owner below.
+    retireQueueRecovery()
 
     const hasHealth =
       queueRefreshStale.value ||
@@ -1161,14 +1166,20 @@ export function useReviewProposals() {
     queueRefreshRefused.value = false
     retireQueueRecovery()
 
+    restoreRetainedQueueRefreshHealth(scope)
+  }
+
+  function restoreRetainedQueueRefreshHealth(scope: string) {
     if (
       retainedQueueRefreshHealth &&
       queueRefreshHealthStillDescribesScreen(scope, retainedQueueRefreshHealth.scope)
     ) {
       consecutiveQueueRefreshFailures = retainedQueueRefreshHealth.consecutiveFailures
       consecutiveQueueRefreshRefusals = retainedQueueRefreshHealth.consecutiveRefusals
-      queueRefreshStale.value = retainedQueueRefreshHealth.stale
-      queueRefreshRefused.value = retainedQueueRefreshHealth.refused
+      // Restoring an older disclosure is not a successful read and cannot
+      // retract a warning raised while the wider scope was failing.
+      queueRefreshStale.value ||= retainedQueueRefreshHealth.stale
+      queueRefreshRefused.value ||= retainedQueueRefreshHealth.refused
       // The restored health is live again and belongs to the queue that landed
       // for it, which may not be the scope being requested -- returning to a
       // retained board B queue by widening to All boards restores B's warning
@@ -1791,6 +1802,13 @@ export function useReviewProposals() {
   }
 
   // --- Watchers ---
+
+  // Visibility also changes without a read: completed filtering, snooze expiry,
+  // and hash navigation can reveal retained rows after their health was parked.
+  watch(
+    () => visibleProposals.value.length,
+    () => restoreRetainedQueueRefreshHealth(queueScopeOf(activeBoardFilter.value)),
+  )
 
   watch(
     () => route.hash,
