@@ -1,5 +1,11 @@
 # Workspace overhaul validation and follow-through
 
+## Fragmented upload bounds (2026-09-10)
+
+The byte store fills its existing 64 KiB buffer before inserting a chunk, except for the final short tail. This prevents tiny network fragments from creating a database row each while retaining bounded memory, size validation, content hashing and savepoint rollback. Four new fragment/mismatch cases and all selected blob, audio and source-export regressions pass: 24 API tests. This scoped repair follows the earlier full backend qualification; exact-head hosted checks remain required.
+
+
+
 ## Board-object proposal overlays (2026-09-10)
 
 `BoardProposalPreview.spec.ts` covers matched effective revisions, approved pins, mismatched board/revision/status/update receipts, parameter-ID precedence, immutable board inputs, permission/board refresh failure, stale in-flight results, logout, same-user token refresh, server-clock expiry and both card renderers. Existing Chat preview and Board view regressions also pass. Full frontend: 6,368 passed and three existing skips; subsequent projection/access changes have 49 focused passing tests plus typecheck. Exact final evidence is retained with the continuation PR.

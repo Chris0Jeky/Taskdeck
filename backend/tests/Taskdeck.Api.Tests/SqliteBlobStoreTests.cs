@@ -18,6 +18,43 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class SqliteBlobStoreTests
 {
+    private sealed class FragmentedStream(byte[] bytes, int fragmentSize) : MemoryStream(bytes)
+    {
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            base.ReadAsync(buffer[..Math.Min(buffer.Length, fragmentSize)], cancellationToken);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(97)]
+    public async Task FragmentedInputUsesFullDatabaseChunksExceptTheFinalTail(int fragmentSize)
+    {
+        await using var h = await Harness.Create();
+        var bytes = RandomNumberGenerator.GetBytes(StoredBlobChunk.MaximumSize * 2 + 13);
+        await using var tx = await h.Db.Database.BeginTransactionAsync();
+        var saved = await h.Store.AcquireAsync(h.Request(bytes.Length), new FragmentedStream(bytes, fragmentSize));
+        await tx.CommitAsync();
+        var chunks = await h.Db.StoredBlobChunks.OrderBy(x => x.Ordinal).Select(x => x.Content).ToListAsync();
+        chunks.Select(x => x.Length).Should().Equal(StoredBlobChunk.MaximumSize, StoredBlobChunk.MaximumSize, 13);
+        chunks.SelectMany(x => x).Should().Equal(bytes);
+        saved.ContentHash.Should().Be(Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant());
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public async Task FragmentedSizeMismatchRollsBackFullAndPartialChunks(int declaredOffset)
+    {
+        await using var h = await Harness.Create();
+        var bytes = new byte[StoredBlobChunk.MaximumSize + 13];
+        await using var tx = await h.Db.Database.BeginTransactionAsync();
+        var act = () => h.Store.AcquireAsync(h.Request(bytes.Length + declaredOffset), new FragmentedStream(bytes, 7));
+        await act.Should().ThrowAsync<DomainException>();
+        (await h.Db.StoredBlobChunks.CountAsync()).Should().Be(0);
+        (await h.Db.StoredBlobs.CountAsync()).Should().Be(0);
+        (await h.Db.StoredBlobReferences.CountAsync()).Should().Be(0);
+    }
+
     private sealed class Harness : IAsyncDisposable
     {
         public SqliteConnection Connection { get; } = new("Data Source=:memory:");

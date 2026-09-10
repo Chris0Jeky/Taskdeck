@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Source upload bounds (#2808): coalesce fragmented reads into fixed 64 KiB database chunks with one final tail, preserving quota/size/hash/rollback checks. Twenty-four focused API tests pass; exact hosted repair qualification remains on the integration PR.
+
 Original-source portability continuation (#2808): hold a store-owned read snapshot across the five source-storage export sections, with deferred SQLite transactions and scoped disposal before later export writes. Prove both account-export routes against a concurrent committed upload and written version. Whole-account point-in-time consistency and restore acceptance remain separate.
 
 Studio/Classic planning continuity (#2808): share existing Focus resume on Classic Home and use the existing calendar-day utilities for plan date controls and card deadlines. Browser acceptance includes a western timezone, Today filtering, both Classic renderers and unchanged board-card data. Failed-plan metadata and accepted-navigation focus timestamps remain separate follow-through.

@@ -58,7 +58,10 @@ public sealed class SqliteBlobStore(TaskdeckDbContext db, BlobStorageSettings se
             var ordinal = 0;
             while (true)
             {
-                var count = await content.ReadAsync(buffer.AsMemory(), cancellationToken);
+                // Network reads may contain a single byte. Bound database rows by payload size,
+                // not by the number of fragments delivered by the caller.
+                var count = await content.ReadAtLeastAsync(buffer.AsMemory(), buffer.Length,
+                    throwOnEndOfStream: false, cancellationToken: cancellationToken);
                 if (count == 0) break;
                 if (count > acquisition.ExpectedByteSize - received)
                     throw new DomainException(ErrorCodes.PayloadTooLarge, "The upload exceeded its declared size.");
