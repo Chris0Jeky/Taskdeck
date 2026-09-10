@@ -293,3 +293,14 @@ uses a real synthetic WAV, removes its question, downloads exact bytes, invokes 
 Hard-delete retention is exercised in SQLite API tests, not falsely attributed to the public Delete
 button. Unsaved local audio survives the saved-recording reload action only while the page is open;
 a browser refresh is not durable draft storage. Exact suite and hosted results are recorded in the PR.
+
+## Combined source, continuity and comparison checkpoint (2026-09-10)
+
+The integration branch preserves the separate commits and review records for #2855 (original source
+selection), #2857 (Companion continuity), #2861 (audio originals), #2852/#2856 (retained comparisons and
+LAN/build compatibility), and the subsequent original-library slice. One final main-based head checks
+their combined behavior, avoiding repeated sibling-base qualification as these independent features
+land. Only append-only planning/status/validation text conflicted; runtime files merged automatically.
+The backend tree is byte-identical to the original-library branch, whose full solution command is the
+backend proof; the combined frontend/build and four browser journeys are run in the integration tree.
+This is an implementation checkpoint for #2808, not completion of the entire prototype expansion.
