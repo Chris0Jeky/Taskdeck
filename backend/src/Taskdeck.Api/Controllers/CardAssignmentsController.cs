@@ -10,7 +10,7 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/boards/{boardId:guid}")]
-public sealed class CardAssignmentsController : AuthenticatedControllerBase
+public class CardAssignmentsController : AuthenticatedControllerBase
 {
     private readonly CardAssignmentService assignments;
 

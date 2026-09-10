@@ -10,7 +10,7 @@ namespace Taskdeck.Api.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/import/boards/preview")]
-public sealed class BoardImportPreviewController : AuthenticatedControllerBase
+public class BoardImportPreviewController : AuthenticatedControllerBase
 {
     private readonly IBoardJsonExportImportService imports;
 
