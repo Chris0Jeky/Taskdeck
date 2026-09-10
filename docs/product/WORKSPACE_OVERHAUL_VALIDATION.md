@@ -1,5 +1,15 @@
 # Workspace overhaul validation and follow-through
 
+## Hosted delivery receipts (2026-09-10)
+
+The source manifest was rechecked against the original local pack: all 20 paths, byte lengths and
+SHA-256 values match, with no additional or missing files. PR #2866 merged as `384d8dfaa` after its
+required gate. PR #2886 merged as `f00cf1d31` at 08:10 UTC after required run `34450719109` passed
+at reviewed head `fce97dc67`, including Ubuntu/Windows API and unit suites and final browser smoke.
+All prior continuation heads are included. The #2886 merge receipt has the same tree as that tested
+head; integrating it into #2892 changes no runtime files. Reminder hours remain subject to their own
+final exact-head hosted gate. These receipts supersede earlier pending-hosted notes for #2886.
+
 ## Reminder work-hours and time zones (2026-09-10)
 
 After integrating the final transcription and grounded-question continuation, 56 targeted API tests
