@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Infrastructure.Persistence;
@@ -8,6 +10,41 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public sealed class SourcePortabilityStore(TaskdeckDbContext db) : ISourcePortabilityStore
 {
+    public async Task<IAsyncDisposable> OpenReadSnapshotAsync(CancellationToken ct)
+    {
+        if (db.Database.CurrentTransaction is not null)
+            throw new InvalidOperationException("Source export must open its own read snapshot before reading storage sections.");
+        await db.Database.OpenConnectionAsync(ct);
+        SqliteTransaction? transaction = null;
+        try
+        {
+            // Deferred reads do not reserve the writer. WAL writers may commit while
+            // a streamed export retains the snapshot established by its first query.
+            transaction = ((SqliteConnection)db.Database.GetDbConnection()).BeginTransaction(deferred: true);
+            var enlisted = (await db.Database.UseTransactionAsync(transaction, ct))!;
+            return new ReadSnapshot(db, transaction, enlisted);
+        }
+        catch
+        {
+            if (transaction is not null) await transaction.DisposeAsync();
+            await db.Database.CloseConnectionAsync();
+            throw;
+        }
+    }
+
+    private sealed class ReadSnapshot(TaskdeckDbContext context, SqliteTransaction transaction, IDbContextTransaction enlisted) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            try { await enlisted.DisposeAsync(); }
+            finally
+            {
+                try { await transaction.DisposeAsync(); }
+                finally { await context.Database.CloseConnectionAsync(); }
+            }
+        }
+    }
+
     public async Task<long> EstimateBufferedBytesAsync(Guid userId, CancellationToken ct)
     {
         var bytes = await db.StoredBlobs.Where(x => x.OwnerUserId == userId).SumAsync(x => (long?)x.ByteSize, ct) ?? 0;

@@ -671,6 +671,7 @@ public class DataExportService : IDataExportService
             else
             {
                 writer.WriteStartObject("sourceStorage");
+                await using var sourceSnapshot = await _sourceStorage.OpenReadSnapshotAsync(cancellationToken);
                 await WriteSourceRowsAsync(writer, "objects", _sourceStorage.ObjectsAsync(userId, cancellationToken), cancellationToken);
                 await WriteSourceRowsAsync(writer, "references", _sourceStorage.ReferencesAsync(userId, cancellationToken), cancellationToken);
                 await WriteSourceRowsAsync(writer, "chunks", _sourceStorage.ChunksAsync(userId, cancellationToken), cancellationToken);
@@ -1210,6 +1211,7 @@ public class DataExportService : IDataExportService
     private async Task<SourceStorageExportDto?> BufferSourceStorageAsync(Guid userId, CancellationToken ct)
     {
         if (_sourceStorage is null) return null;
+        await using var sourceSnapshot = await _sourceStorage.OpenReadSnapshotAsync(ct);
         long consumed = 0;
         async Task<List<T>> Collect<T>(IAsyncEnumerable<T> rows)
         {

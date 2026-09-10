@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Source-storage export continuation (#2808): buffered and streamed account exports now hold one deferred SQLite read snapshot across blob objects, references, chunks, representations and audio-answer rows. Concurrent WAL uploads can commit without reserving the writer for the duration of the export; all five sections retain the earlier view until disposal. This is source-storage consistency, not a claim of a single snapshot across every account-export section or a tested restore workflow.
+
 Source upload and library query continuation (#2808): host-rejected oversized audio bodies retain the standard 413 error after transaction rollback, with no orphaned original, reference, answer or processing request. Library pages authorize their board candidates first, then retrieve up to twenty owner-scoped metadata rows in one detached SQL projection. Evidence excerpts are clipped in SQL; listing does not load capture graphs, representation histories or binary chunks. This reduces original-library maintenance cost without changing private ownership or review/apply semantics. Long-history cursor pagination remains separate follow-through.
 
 Original-source Companion continuation (#2808):

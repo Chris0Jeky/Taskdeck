@@ -329,3 +329,9 @@ memories, selects one by its accessible name, checks 403 explanation/recovery, r
 across all four experiences and checks 375 px accessibility. Companion continuity is rerun alongside it.
 Exact results are recorded with the continuation PR; live providers and physical-device acceptance are
 not inferred from this deterministic scope.
+
+## Source-storage export snapshot (2026-09-10)
+
+SourceExportSnapshotApiTests runs both account-export routes against a real SQLite WAL database. After the objects query has finished, a second authenticated HTTP request commits a complete audio upload and written version before the export reads the remaining sections. The active export contains none of that later graph across all five source-storage sections; a subsequent export contains the complete graph. Existing ThinkingAudioApiTests retain owner/access, source byte, correction, confirmation, export/erasure and library proof. Eleven targeted API tests pass; full backend results belong to the continuation PR.
+
+The deferred transaction belongs to SourcePortabilityStore and is disposed before subsequent export sections or audit writes. Buffered source byte checks remain active inside the snapshot. This does not assert a single snapshot across unrelated account sections, external object stores, production providers, physical-device workflows or restoration.

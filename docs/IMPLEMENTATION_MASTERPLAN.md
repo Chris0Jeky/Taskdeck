@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Original-source portability continuation (#2808): hold a store-owned read snapshot across the five source-storage export sections, with deferred SQLite transactions and scoped disposal before later export writes. Prove both account-export routes against a concurrent committed upload and written version. Whole-account point-in-time consistency and restore acceptance remain separate.
+
 Source reliability/scalability continuation (#2808): preserve the payload-too-large HTTP contract through streamed audio storage rollback and replace original-library per-entry capture reads with one bounded owner-scoped metadata projection. The existing API/card/question/confirmation contracts are retained. Indexed long-history cursors remain the next distinct source scalability seam.
 
 Private audio continuation (#2808): retain an original recording first, add manual written representations separately, then explicitly confirm into private memory. The vertical uses native source assets, bounded SQLite chunks, owner-scoped playback, idempotent upload retry, version conflicts and account portability/erasure. All four experiences share the question UI; automated transcription, real-device qualification and the wider source/attention work remain separate. This is a prototype delivery path with executable evidence, not a provider or release acceptance decision.
