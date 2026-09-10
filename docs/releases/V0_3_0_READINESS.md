@@ -1,6 +1,6 @@
 # v0.3.0 release readiness
 
-Last Updated: 2026-09-05 (measured against `main` `42d3007f0` at 2026-09-05 15:15Z)
+Last Updated: 2026-09-10 (clauses 2, 4 and 5, section 3's branch-protection read and section 5 re-measured against `main` `a1f797913` on 2026-09-10; sections 2 and 4 still carry their 2026-09-05 measurement and say so)
 
 **What this file is.** A standing view of what actually stands between `main` and the final `v0.3.0`
 tag, so the open v0.3 milestone count is never mistaken for the blocker count. It classifies work into
@@ -18,10 +18,10 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Clause 2 and the 
 | # | Gate clause | State | What it waits on |
 |---|---|---|---|
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
-| 2 | Milestone closed or explicitly re-ruled | **Not met.** 44 open (re-measured 2026-09-05 15:15Z against `main` `42d3007f0`; the total is unchanged since the 04:00Z measurement at `1e234a011` while two lists moved: `#1961` closed on PR `#2681` (merge `8d6e6355f`, 11:54Z) and `#2691` was seeded at 13:56Z from PR `#2627`'s unrelated 03:26Z Windows Backend Unit red, so the §5 split is now 10 `dogfooding` / 21 `ci` / 13 other; the earlier history: since the 22:50Z count of 48, six closed on evidence (`#2460`, `#2501`, `#2524`, `#2563`, `#2570`, `#2572`), two seeded and still open (`#2582`, `#2588`), two seeded and closed the same night (`#2583`, `#2604`); at 08:50Z the split was 11 `dogfooding` / 20 `ci` / 13 other). `#2639` entered and left the milestone between measurements: seeded at 04:19Z as Priority I security, re-read by the beta lane at 06:55Z on an unmodified build (the PR `#2416` activate-time sweep does fire, 3 of 3 lifecycle paths; the earlier red was an observation race inside the `#2475` test case, so the `#2411` re-poisoning window has been closed since that PR merged), and closed at 07:37Z on PR `#2660` (merge `58c5a3bfe`) as hardening. **Ruled 2026-09-03: nothing else is re-ruled out; the one exception is `#1972`, moved to v0.5 with CF-21** | Every open issue closing on evidence, sections 2 to 5 below |
+| 2 | Milestone closed or explicitly re-ruled | **Not met.** **32 open**, re-measured 2026-09-10 against `main` `a1f797913`, down from the 44 recorded on 2026-09-05. Today's split is 17 `ci` / 5 `dogfooding` / 10 other; section 5 lists all three. **Ruled 2026-09-03: nothing else is re-ruled out; the one exception is `#1972`, moved to v0.5 with CF-21.** The per-issue movement between the two measurements is not reconstructed here; the 2026-09-05 history it replaced is in this file's git history | Every open issue closing on evidence, sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
-| 4 | `main` green | **Green at `42d3007f0`** (`ci-required` run `33974150710`, completed 2026-09-05 15:37Z: 16 of 17 jobs success, `Secret Scan` skipped by design; read 18:16Z, when the file was last written the run was still in progress). The wave's last-merge run at `6cf9ef7a1` (run `33972125374`) had 15 of 17 jobs green, `Secret Scan` skipped by design, and was cancelled inside `E2E Smoke` at 15:14Z when PR `#2693` merged. Before it, the previous green stood at `140213288` (run `33954576258`, 08:36Z); between the two, the D-12 merge wave landed thirty-one PRs in about fifty minutes and the workflow's own concurrency group cancelled every intermediate `main` run as the next merge landed (`794fef74f` through `5d9f3c1ca`), which is the `#2582` shape and the reason a green tip run exists only when the queue drains: `#2582` (its PR `#2610` parked under SC-10) ends the cancellation and `#2378` the timeout. Ten cancelled runs (`bb59aa97a` through `540bc2abb`) and the `1e234a011` `#2378` red (a docs-only merge, run `33942989127`) sat between the `330ccb4de` green (2026-09-04 23:19Z) and the `140213288` green (16 of 17 jobs success, `Secret Scan` skipped by design) earlier the same day, recorded on `#2378` | `#2378` and `#2610`, section 2 and SC-10 |
-| 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met** | Section 3, and the section 2 chain below it |
+| 4 | `main` green | **Green at the tip `a1f797913`** (`CI` run `34494959248`, completed 2026-09-10T15:55:39Z, 17 jobs success and 1 skipped). Re-measured 2026-09-10; this is a tip reading, not a claim that every intermediate head was green. Three of the eight most recent `main` runs were `cancelled` by the workflow's own concurrency group as the next merge landed (`46ac59930`, `43f918050`, `63e639cb2`), so a green tip run still only exists when the merge queue drains. `#2582`, which ended that cancellation for `main`, closed 2026-09-06 | `#2378`, and section 2 |
+| 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met.** Branch protection re-read live 2026-09-10: `main` still requires exactly the three security contexts (`Dependency Security / Dependency Security Signals`, `SAST Scan / SAST Scan (Semgrep)`, `Secret Scan / Gitleaks Scan`), with `strict: false`, `enforce_admins: false` and `required_approving_review_count: 0`. Unchanged since 2026-09-05 | Section 3, and the section 2 chain below it |
 
 Clause 2 does not by itself require every open issue to close. "Explicitly re-ruled" means each one
 either closes on evidence or carries a recorded decision moving it out of v0.3. **The maintainer ruled
@@ -176,76 +176,36 @@ Trackers do not close by doing work; they close when their children do, or by a 
 - **`#2235`** v0.3 spring cleaning. This is the reconciliation pass that clause 2 depends on, and this
   readiness file is one of its outputs.
 
-## 5. Where the 44 open issues actually sit
+## 5. Where the 32 open issues actually sit
 
 Clause 2's content is deciding which of these ship inside v0.3.0 and which are re-ruled out, and that
 split is a maintainer ruling, not an agent decision. The useful thing this section does is separate
-the ones that already have a gate clause behind them from the ones that do not. Measured 2026-09-05
-15:15Z against `main` `42d3007f0`:
+the ones that already have a gate clause behind them from the ones that do not. Re-measured 2026-09-10
+against `main` `a1f797913`, replacing the 2026-09-05 count of 44:
 
-- 10 carry `dogfooding`, the product-polish family seeded from real use: `#2141`, `#2090`,
-  `#2009`, `#2007`, `#2004`, `#1999`, `#1984`, `#1968`, `#1949`, `#1940` (`#1961` closed on PR
-  `#2681`, 2026-09-05). Three of these
-  are Priority I (`#2004`, `#1949`, `#1940`). None of them carries `decision`: `#1936` closed on
-  2026-09-03 and `#2004` no longer carries the label. The open v0.3 issues labelled `decision` are
-  `#2324` and `#1772`, both accounted for below, and `#2240` (the A/B fork the 2026-09-03 ruling did
-  not name; coordinator note on the issue, 2026-09-04). (`#1972` was on this list until the
-  2026-09-03 exception moved it to v0.5; `#2193` closed on evidence 2026-09-04.)
-- 21 carry `ci`, and almost none of them are residuals; they split across this file:
-  - 15 are section 2: the clause-5 chain `#2327` and `#2326` with the CI-03 residual `#2508`, the
-    stacked-base planner defect `#2562` and the `main` concurrency gap `#2582`, the cutover-checklist
-    owners `#2333` (B), `#2329`, `#2331`, `#2332` (E), `#2335` (G) and `#2334` (H, moved in from v0.4
-    on the Q1 ruling), plus the clause-4 intermittent reds `#2378`, `#2561`, `#2588` and `#2691`. (`#2401` was
-    one of them until PR `#2440` closed it, `#2425` until PR `#2447` did, `#2489` until PR `#2566`
-    did, and `#2572` until PR `#2592` did.)
-  - 2 more are section 3 human gates in their own right: `#2337` and `#2328` (checklist F).
-    (`#2333`, `#2335` and `#2327` also hand off to SC-2, SC-5 and SC-4, but are counted above.)
-  - 1 is the section 4 tracker `#2324` (checklist A).
-  - 1 is CI-16 `#2439`, which implements the 2026-09-03 SC-8 ruling and also serves checklist
-    section A, so it is gate work rather than backlog.
-  - **2** have no v0.3.0 gate clause behind them: `#2250`, the release-composer follow-ups, and
-    `#2504`, registering the Paper colour-audit scanner test in a CI lane.
-- 13 carry neither label. Two of them appear earlier in this file: `#2235` is the section 4 tracker
-  and `#1772` is the section 3 human gate. (`#2399`, the section 2 clause-4 flake, was a third until
-  PR `#2454` closed it.) The other 11 are ordinary backend, frontend and security backlog with no
-  gate clause behind them: `#2520`, `#2499`, `#2391`, `#2315`, `#2240`, `#2215`, `#2214`, `#1309`,
-  `#1307`, `#1284`, `#1131`.
+- **5 carry `dogfooding`**, the product-polish family seeded from real use: `#2009`, `#2004`, `#1999`,
+  `#1949`, `#1940`. Three of the five are Priority I (`#2004`, `#1949`, `#1940`). Five left this group
+  since 2026-09-05, all closed on evidence: `#2141` (09-06), `#1984` (09-07), `#2007` (09-09),
+  `#1968` (09-09), `#2090` (09-09).
+- **17 carry `ci`**, and almost none of them are residuals:
+  - the clause-5 chain `#2327` and `#2326`, with the CI-03 residual `#2508`;
+  - the stacked-base planner defect `#2562`;
+  - the cutover-checklist owners `#2333` (B), `#2329`, `#2331`, `#2332` (E), `#2335` (G) and `#2334`
+    (H, moved in from v0.4 on the 2026-09-03 Q1 ruling);
+  - the tracker `#2324` and the two human gates `#2337` and `#2328`;
+  - the public mirror `#2439` (SC-8 ruling);
+  - the clause-4 intermittent reds `#2378`, `#2561` and `#2588`.
+  Two left this group since 2026-09-05: `#2582` closed 2026-09-06 and `#2691` closed 2026-09-07.
+- **10 carry neither**: `#2499`, `#2391`, `#2315`, `#2235`, `#2215`, `#2214`, `#1772`, `#1309`,
+  `#1307`, `#1131`. `#1772` is the human gate in section 3; `#2235` is the spring-cleaning tracker;
+  the rest are review residuals and revival slices with no gate clause behind them.
 
-The three label sets are disjoint and closed: 10 + 21 + 13 = 44. If that arithmetic stops holding,
-this section is stale and the milestone should be re-counted before the file is trusted. It has
-already moved five times since this file was drafted: `#2230` closed on PR `#2421` and CI-16 `#2439`
-was seeded the same afternoon, `#2401` closed on PR `#2440`, `#2460`/`#2461` were seeded from PR
-`#2456`'s review, `#2334` moved in on the Q1 ruling, and `#1972` moved out to v0.5. It moved again
-between the 2026-09-03 split and the 2026-09-04 morning re-measurement: eight counted issues closed
-(`#1936`, `#2302`, `#2399`, `#2425`, `#1987`, `#1640`, `#1866`, `#2008`) and eight were seeded and
-were still open at the morning count (`#2489`, `#2524`, `#2520`, `#2519`, `#2508`, `#2504`, `#2501`,
-`#2499`), which is why the total held at 51 while every sub-count moved. Between that count and the
-22:50Z one it moved again: eight closed on evidence (`#2193` with its residuals recorded on `#2210`,
-the Inbox poll family `#2301`, `#2303`, `#2304`, `#2305` on PR `#2567`, `#2489` on PR `#2566`,
-`#2519` on PR `#2569`, `#2461` on PR `#2568`) and five were seeded from the same day's PR reviews
-and runs (`#2561`, `#2562`, `#2572` on the `ci` side; `#2563`, `#2570` on the product side), so the
-total was 48. By 04:00Z on 2026-09-05 it moved again: six of the 48 closed on evidence (`#2460` on PR
-`#2576`, `#2501` on PR `#2584`, `#2524` at PR `#2565`'s merge, `#2563` on PR `#2609`, `#2570` on PR
-`#2614`, `#2572` on PR `#2592`), two were seeded and closed the same night (`#2583` on PR `#2600`,
-`#2604` on PR `#2611`), and two were seeded and are open (`#2582`, `#2588`), so the total was 44. `#2639` was seeded at 04:19Z and closed at 07:37Z on PR `#2660`, so it appears in no measured list. By 15:15Z it moved once more with the total unchanged: `#1961` closed on PR `#2681` and `#2691` was seeded, so the total is 44.
+**Priority I across the whole milestone (9):** `#2378`, `#2337`, `#2334`, `#2327`, `#2326`, `#2324`,
+`#2004`, `#1949`, `#1940`. **Carrying `human-action` (3):** `#2337`, `#2328`, `#1772`, all in section 3.
 
-**The split that matters.** 21 of the 44 have a gate clause behind them and are not re-ruling
-candidates at all: the 19 `ci` issues above other than `#2250` and `#2504`, plus `#2235` and `#1772`.
-The other **23** have no gate clause: the 10 `dogfooding` issues, the 11 ordinary backlog issues,
-`#2250` and `#2504`.
-
-The question this section put to the maintainer was one question about the then 35 un-gated issues,
-not fifty-two: which of them ship inside v0.3.0 and which are re-ruled to v0.4? **Ruled 2026-09-03:
-all 35 stay, then one exception in the same reply: `#1972` moves to v0.5 with CF-21 `#2274`** (its 2026-08-30
-resolution is the presentation-profile migration, which is v0.5 work; the recorded middle option of
-dropping the selector now was declined, as was pulling CF-21 forward). The options declined for the
-rest were gate-work-only (all 35 to v0.4), Priority I plus security-labelled only (`#2004`, `#1949`,
-`#1940`, `#1866`, `#1131`, `#1987`, `#1309` stay, 28 move), and dogfooding-only (16 stay, 19 move).
-After the exception the milestone held 51 on 2026-09-03 (15 `dogfooding`, 15 `ci`, 21 other; 34
-un-gated); the morning 2026-09-04 re-measurement still totalled 51 with 34 un-gated, the 22:50Z
-one totalled 48 with 29 un-gated, the 2026-09-05 04:00Z one 44 with 24 un-gated, and the 15:15Z one 44 with 23 un-gated. Agents keep finishing the un-gated set in dependency order; neither of the two that carried `decision` does now
-(`#1936` closed 2026-09-03, `#2004` no longer carries the label), and the milestone count is the
-blocker count until it reaches zero.
+This is a count and a classification. It is not a claim that the issues which closed between the
+two measurements each closed correctly; each one's evidence is on its own issue and in the
+`docs/STATUS.md` blocks for that range.
 
 ## 6. Keeping this current
 
