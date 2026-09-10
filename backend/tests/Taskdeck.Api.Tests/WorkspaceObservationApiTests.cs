@@ -8,16 +8,81 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
+using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    private sealed class LateReadRace { public Func<Task>? Change; }
+    private sealed class LateReader(WorkspaceObservationReader inner, LateReadRace race) : IWorkspaceObservationReader
+    {
+        private int reads;
+        public async Task<ObservationSourceDto?> SourceAsync(Guid userId, Guid boardId, Guid cardId, CancellationToken ct)
+        {
+            var source = await inner.SourceAsync(userId, boardId, cardId, ct);
+            if (++reads == 3 && race.Change != null) await race.Change();
+            return source;
+        }
+    }
+
+    [Theory]
+    [InlineData("edit")]
+    [InlineData("archive")]
+    [InlineData("delete")]
+    [InlineData("revoke")]
+    public async Task ChangeAfterFinalServiceRead_IsRejectedAtCommit(string change)
+    {
+        var provider = new Provider(); var race = new LateReadRace();
+        using var configured = WithProvider(provider);
+        using var app = configured.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IWorkspaceObservationReader>();
+            services.AddScoped<IWorkspaceObservationReader>(sp => new LateReader(new WorkspaceObservationReader(sp.GetRequiredService<TaskdeckDbContext>()), race));
+        }));
+        var (client, board, cardId, source) = await Setup(app);
+        Guid? viewerId = null;
+        if (change == "revoke")
+        {
+            client = app.CreateClient(); viewerId = (await ApiTestHarness.AuthenticateAsync(client, "late-viewer")).UserId;
+            using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var owner = await db.Boards.Where(x => x.Id == board).Select(x => x.OwnerId).SingleAsync();
+            db.BoardAccesses.Add(new BoardAccess(board, viewerId.Value, UserRole.Viewer, owner!.Value));
+            await db.SaveChangesAsync();
+        }
+        race.Change = async () =>
+        {
+            using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            if (change == "archive") await db.Boards.Where(x => x.Id == board).ExecuteUpdateAsync(set => set.SetProperty(x => x.IsArchived, true));
+            else if (change == "delete") await db.Cards.Where(x => x.Id == cardId).ExecuteDeleteAsync();
+            else if (change == "revoke") await db.BoardAccesses.Where(x => x.BoardId == board && x.UserId == viewerId).ExecuteDeleteAsync();
+            else await db.Cards.Where(x => x.Id == cardId).ExecuteUpdateAsync(set => set.SetProperty(x => x.Title, "Later committed evidence"));
+        };
+        (await Generate(client, board, source)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        provider.Calls.Should().Be(1);
+        using var verify = app.Services.CreateScope();
+        (await verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>().Set<QuietInsight>().CountAsync(x => x.BoardId == board)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task RejectedCommitDetachesStagedQuestionsFromLaterSaves()
+    {
+        using var app = WithProvider(new Provider()); var (_, board, card, source) = await Setup(app);
+        using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var user = (await db.Boards.FindAsync(board))!.OwnerId!.Value;
+        var repository = scope.ServiceProvider.GetRequiredService<IWorkspaceInsightRepository>();
+        repository.Add(new QuietInsight(user, board, "model:next-step", card.ToString(), card, null));
+        (await repository.SaveObservationAsync(user, board, card, "changed-fingerprint", default)).Should().BeFalse();
+        await db.SaveChangesAsync();
+        (await db.Set<QuietInsight>().CountAsync(x => x.BoardId == board)).Should().Be(0);
+    }
+
     private sealed class Provider : ILlmProvider
     {
         public int Calls;

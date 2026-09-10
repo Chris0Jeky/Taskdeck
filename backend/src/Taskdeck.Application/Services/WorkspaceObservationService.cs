@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -10,7 +11,8 @@ namespace Taskdeck.Application.Services;
 
 /// <summary>One explicit, evidence-bound model call. Shares the user's Chat quota and kill switch.</summary>
 public sealed class WorkspaceObservationService(IWorkspaceObservationReader reader, IWorkspaceInsightRepository repository,
-    ILlmProvider provider, ILlmQuotaService quota, ILlmKillSwitchService killSwitch)
+    ILlmProvider provider, ILlmQuotaService quota, ILlmKillSwitchService killSwitch,
+    ILogger<WorkspaceObservationService>? logger = null)
 {
     public async Task<Result<ObservationSourceDto>> SourceAsync(Guid userId, Guid boardId, Guid cardId, CancellationToken ct)
     {
@@ -38,6 +40,7 @@ public sealed class WorkspaceObservationService(IWorkspaceObservationReader read
         if (!reservation.Allowed || reservation.ReservationId is not Guid reservationId)
             return Result.Failure<List<QuietInsightDto>>(ErrorCodes.LlmQuotaExceeded, reservation.DeniedReason ?? "Model budget is exhausted.");
         LlmCompletionResult? completion = null;
+        var settlementAttempted = false;
         try
         {
             // Re-read after quota admission too; do not dispatch stale or newly inaccessible evidence.
@@ -53,6 +56,15 @@ public sealed class WorkspaceObservationService(IWorkspaceObservationReader read
             var current = await reader.SourceAsync(userId, dto.BoardId, dto.CardId, ct);
             if (current == null) return Missing<List<QuietInsightDto>>();
             if (current.Fingerprint != source.Fingerprint) return Changed();
+            // Usage is independent of whether the source remains saveable. Settle before
+            // staging questions so a storage failure cannot turn a successful save into an error.
+            try { await SettleAsync(); }
+            catch (Exception failure)
+            {
+                LogSettlementFailure(failure);
+                return Result.Failure<List<QuietInsightDto>>(ErrorCodes.UnexpectedError,
+                    "Usage accounting could not be confirmed. No observations were saved. Check usage before retrying.");
+            }
             var items = await repository.InsightsAsync(userId, dto.BoardId, ct);
             var memories = await repository.MemoriesAsync(userId, dto.BoardId, ct);
             var now = DateTimeOffset.UtcNow;
@@ -74,10 +86,25 @@ public sealed class WorkspaceObservationService(IWorkspaceObservationReader read
                 result.Add(new(item.Id, item.BoardId, item.CardId, null, item.Rule, item.Title, item.Detail, item.State,
                     item.Evidence, item.CheckedAt, item.SnoozeUntil));
             }
-            return await repository.SaveAsync(ct) ? Result.Success(result) : Changed();
+            return await repository.SaveObservationAsync(userId, dto.BoardId, dto.CardId, source.Fingerprint, ct)
+                ? Result.Success(result) : Changed();
         }
         finally
         {
+            if (!settlementAttempted)
+            {
+                try { await SettleAsync(); }
+                catch (Exception failure) { LogSettlementFailure(failure); }
+            }
+        }
+
+        void LogSettlementFailure(Exception failure) => logger?.LogError(
+            "Observation quota settlement failed ({FailureType}) for reservation {ReservationId}; no observation save follows this failure.",
+            failure.GetType().Name, reservationId);
+
+        async Task SettleAsync()
+        {
+            settlementAttempted = true;
             // A cancelled/failed response can still have incurred upstream usage. Preserve the
             // existing dispatch-aware accounting contract rather than releasing billed work.
             var dispatch = request.DispatchContext.ReadSnapshot();
