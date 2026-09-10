@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Personal-plan recovery continuation (#2808): overlapping same-account reads share one pending request, while account transitions retain generation isolation. Uncertain plan edits or Focus responses retract cached plan metadata and require an explicit refresh before another write; action-specific guidance identifies the failure. Plan writes opt out of automatic HTTP retries, and empty Focus targets return validation errors without changing saved state. This reduces recovery friction while preserving private state and unchanged board data.
+
 Source-storage export continuation (#2808): buffered and streamed account exports now hold one deferred SQLite read snapshot across blob objects, references, chunks, representations and audio-answer rows. Concurrent WAL uploads can commit without reserving the writer for the duration of the export; all five sections retain the earlier view until disposal. This is source-storage consistency, not a claim of a single snapshot across every account-export section or a tested restore workflow.
 
 Planning continuity follow-through (#2808): Classic Home now offers the same private last-worked Focus resume as the other experiences, in both Paper/Grove and Legacy rendering. Personal-plan due dates use canonical calendar-day formatting; Today and tomorrow use the local calendar date without changing card deadlines. This reduces the work needed to resume a thought after switching versions.
