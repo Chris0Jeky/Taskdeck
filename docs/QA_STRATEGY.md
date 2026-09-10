@@ -1,5 +1,10 @@
 # Taskdeck QA Strategy
 
+For current v0.4 session planning, use the [qualification programme](testing/V04_QUALIFICATION_PLAN.md)
+and [feature capability contracts](product/FEATURE_CAPABILITIES.md). The dated counts and maturity
+assessment below are historical snapshots, not current release evidence; the programme records
+candidate-specific results and explicitly separates unrun, blocked and passed cases.
+
 **Date:** 2026-04-16
 **Last Updated:** 2026-08-01
 **Scope:** Comprehensive quality assurance plan covering the full test pyramid, regression strategy, release gating, and continuous quality improvement
