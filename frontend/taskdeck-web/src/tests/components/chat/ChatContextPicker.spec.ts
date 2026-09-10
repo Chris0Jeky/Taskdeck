@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import ChatContextPicker from '../../../components/chat/ChatContextPicker.vue'
 import { useSessionStore } from '../../../store/sessionStore'
 import type { Memory } from '../../../types/workspaceInsights'
+import ChatOriginalSourcePicker from '../../../components/chat/ChatOriginalSourcePicker.vue'
 
 const api = vi.hoisted(() => ({ cards: vi.fn(), memories: vi.fn() }))
 vi.mock('../../../api/cardsApi', () => ({ cardsApi: { getCards: api.cards } }))
@@ -69,5 +70,27 @@ describe('explicit chat context', () => {
     const { wrapper, session } = setup(); session.isDemo = true; await flushPromises()
     expect(wrapper.find('button').exists()).toBe(false)
     expect(api.cards).not.toHaveBeenCalled(); expect(api.memories).not.toHaveBeenCalled()
+  })
+  it('combines original references with memory choices and clears both on refresh', async () => {
+    const { wrapper } = setup(); await open(wrapper)
+    const original = { memoryId: 'm1', revision: 3, assetId: 'a1', contentHash: 'a'.repeat(64) }
+    wrapper.getComponent(ChatOriginalSourcePicker).vm.$emit('change', [original]); await flushPromises()
+    expect(wrapper.emitted('change')?.at(-1)).toEqual([{ cardId: null, includeThinking: false, memories: [], assets: [original] }])
+    await wrapper.findAll('input')[1]!.setValue(true)
+    expect(wrapper.text()).toContain('(2/5)')
+    await wrapper.findAll('button').at(-1)!.trigger('click'); await flushPromises()
+    expect(wrapper.emitted('change')?.at(-1)).toEqual([null])
+    expect(wrapper.getComponent(ChatOriginalSourcePicker).props('selected')).toEqual([])
+  })
+  it('retains chosen context across token refresh and associates originals with the memory title', async () => {
+    const { wrapper, session } = setup(); await open(wrapper)
+    await wrapper.get('select').setValue('c1')
+    await wrapper.findAll('input')[1]!.setValue(true)
+    const selection = wrapper.emitted('change')?.at(-1)
+    expect(wrapper.getComponent(ChatOriginalSourcePicker).props('memoryTitle')).toBe('Private m1')
+    session.token = 'refreshed'; await flushPromises()
+    expect(wrapper.get('select').element.value).toBe('c1')
+    expect(wrapper.emitted('change')?.at(-1)).toEqual(selection)
+    session.token = ''; await flushPromises(); expect(wrapper.emitted('change')?.at(-1)).toEqual([null])
   })
 })

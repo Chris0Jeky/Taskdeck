@@ -42,6 +42,25 @@ public sealed class CaptureIntakeService
     /// <summary>True when the durable aggregate is written; false leaves shipped behaviour byte-identical.</summary>
     public bool DualWriteEnabled => _settings.DualWriteCaptures && _captureStore is not null;
 
+    /// <summary>Retains an explicit private audio original and its question; does not schedule transcription.</summary>
+    public async Task<(Capture Capture, SourceAsset Audio)> StageAudioAnswerAsync(Guid ownerId, Guid boardId,
+        string title, string evidence, BlobReference blob, string mediaType, string fileName, CancellationToken ct)
+    {
+        var store = _captureStore ?? throw new InvalidOperationException("Audio originals require a capture store.");
+        if (blob.OwnerUserId != ownerId || blob.AssetModality != CaptureModality.Audio)
+            throw new DomainException(ErrorCodes.ValidationError, "The recording belongs to a different source.");
+        var capture = new Capture(Guid.NewGuid(), ownerId, CaptureModality.Audio, CaptureOriginAdapter.WebComposer,
+            CaptureProducerKind.Human, CaptureIntentMode.Remember, CaptureSource.Voice,
+            contextBoardId: boardId, userTitle: title, userNote: "Private audio original. No transcription has been requested.");
+        var audio = SourceAsset.FromBlobReference(capture.Id, 0, CaptureModality.Audio, mediaType, blob.ContentHash,
+            blob.ByteSize, blob.ReferenceId, fileName);
+        capture.AddSourceAsset(audio);
+        capture.AddInlineTextSource(evidence, originalName: "original-question-evidence.txt");
+        capture.Keep();
+        await store.AddAsync(capture, ct);
+        return (capture, audio);
+    }
+
     /// <summary>
     /// Stages native private memory sources in the memory's unit of work. This is not a legacy
     /// queue mirror and never schedules processing. Historical rows are admitted on their next

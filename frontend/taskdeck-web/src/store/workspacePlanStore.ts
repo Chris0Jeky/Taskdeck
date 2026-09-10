@@ -15,8 +15,10 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
   const ready = ref(false)
   const error = ref<string | null>(null)
   let generation = 0
+  let loadingRequest: Promise<void> | null = null
   watch(() => session.userId, () => {
     generation++
+    loadingRequest = null
     plan.value = null
     ready.value = false
     loading.value = saving.value = false
@@ -25,6 +27,15 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
 
   async function load() {
     if (!available.value || !session.userId || saving.value) return
+    if (loadingRequest) return loadingRequest
+    const request = loadFresh().finally(() => {
+      if (loadingRequest === request) loadingRequest = null
+    })
+    loadingRequest = request
+    return request
+  }
+
+  async function loadFresh() {
     const current = ++generation
     loading.value = true
     ready.value = false
@@ -41,7 +52,7 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
     } finally { if (current === generation) loading.value = false }
   }
 
-  async function mutate(action: (revision: number) => Promise<WorkspacePlan>) {
+  async function mutate(operation: 'Plan change' | 'Focus', action: (revision: number) => Promise<WorkspacePlan>) {
     if (!available.value || !session.userId || !ready.value || !plan.value || loading.value || saving.value) return false
     const current = ++generation
     saving.value = true
@@ -55,7 +66,8 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
       if (current === generation) {
         // A response may be lost after commit. Reload before issuing another write.
         ready.value = false
-        error.value = getErrorDisplay(failure, 'The plan could not be confirmed. Refresh your plan before trying again.').message
+        plan.value = null
+        error.value = `${operation} could not be confirmed. Refresh your plan before trying again. ${getErrorDisplay(failure, 'The request failed.').message}`
       }
       return false
     } finally { if (current === generation) saving.value = false }
@@ -63,10 +75,10 @@ export const useWorkspacePlanStore = defineStore('workspacePlan', () => {
 
   function save(entries: PlanReference[]) {
     const material = entries.map(({ boardId, cardId, plannedDate }) => ({ boardId, cardId, plannedDate }))
-    return mutate(revision => workspacePlanApi.save(revision, material))
+    return mutate('Plan change', revision => workspacePlanApi.save(revision, material))
   }
   function focus(boardId: string, cardId: string) {
-    return mutate(revision => workspacePlanApi.focus(revision, boardId, cardId))
+    return mutate('Focus', revision => workspacePlanApi.focus(revision, boardId, cardId))
   }
   return { available, plan, loading, saving, ready, error, load, save, focus }
 })

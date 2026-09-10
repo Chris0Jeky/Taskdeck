@@ -31,7 +31,8 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportTranscriptDto>? Transcripts = null,
     IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
     IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
-    IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null);
+    IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null,
+    SourceStorageExportDto? SourceStorage = null);
 
 public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
 
@@ -153,7 +154,8 @@ public record UserDataExportSourceAssetDto(
     string? OriginalName,
     Guid? SupersedesAssetId,
     Guid? SupersededByAssetId,
-    string? Text);
+    string? Text,
+    Guid? BlobReferenceId = null);
 
 public record UserDataExportCaptureDispositionDto(
     string Kind,
@@ -198,7 +200,9 @@ public record UserDataExportPreferencesDto(
     string WorkspaceMode,
     DateTimeOffset CreatedAt,
     Taskdeck.Domain.Entities.PersonalPlan? PersonalPlan = null,
-    long PersonalPlanRevision = 0);
+    long PersonalPlanRevision = 0,
+    Taskdeck.Domain.Entities.WorkspaceAttention? Attention = null,
+    long AttentionRevision = 0);
 
 public record UserDataExportNotificationPreferencesDto(
     bool InAppChannelEnabled,

@@ -20,7 +20,7 @@ using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
-public sealed class ChatContextApiTests(TestWebApplicationFactory baseFactory) : IClassFixture<TestWebApplicationFactory>
+public sealed partial class ChatContextApiTests(TestWebApplicationFactory baseFactory) : IClassFixture<TestWebApplicationFactory>
 {
     [Theory]
     [InlineData(true)]

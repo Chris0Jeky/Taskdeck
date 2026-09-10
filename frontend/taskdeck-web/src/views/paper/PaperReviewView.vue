@@ -2876,6 +2876,11 @@ async function onClearBoardScope() {
       >
         {{ revisionReviewUnavailableNote }}
       </p>
+      <router-link
+        v-if="activeProposal.boardId && !isArchivedHistory && ['PendingReview', 'Approved'].includes(normalizeProposalStatus(activeProposal.status))"
+        class="tk-meta"
+        :to="{ path: `/workspace/boards/${activeProposal.boardId}`, query: { proposalId: activeProposal.id } }"
+      >Preview on board</router-link>
       <ReviewMain
         ref="reviewMainRef"
         :key="activeProposal.id"

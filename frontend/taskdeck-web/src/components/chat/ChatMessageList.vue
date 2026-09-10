@@ -13,6 +13,7 @@ import ChatProposalPreview from './ChatProposalPreview.vue'
 const props = defineProps<{
   messages: ChatMessage[]
   sendingMessage: boolean
+  sendBlocked?: boolean
   eligibleBoards: Board[]
   loadingBoards: boolean
   selectedSessionBoardId: string | null
@@ -214,9 +215,11 @@ function bindSelectedBoard(messageId: string) {
         <summary>Sources included in this turn ({{ message.contextSources.length }})</summary>
         <ul>
           <li v-for="source in message.contextSources" :key="`${source.kind}:${source.id}`">
-            {{ source.title }} — {{ source.kind === 'private-memory' ? 'Private memory' : source.kind === 'thinking' ? 'Shared thinking' : 'Card' }}
+            {{ source.title }} — {{ source.kind === 'private-source' ? 'Private original' : source.kind === 'private-memory' ? 'Private memory' : source.kind === 'thinking' ? 'Shared thinking' : 'Card' }}
             <span v-if="source.kind !== 'card' && source.revision !== null"> · version {{ source.revision }}</span>
             <span v-if="source.truncated"> · excerpt</span>
+            <span v-if="source.supersededByAssetId"> · superseded historical source</span>
+            <details v-if="source.contentHash"><summary>Source fingerprint</summary><code style="overflow-wrap: anywhere">{{ source.contentHash }}</code></details>
           </li>
         </ul>
         <p>These sources were checked when this message was sent. Answers can remain in this private conversation after a source changes.</p>
@@ -253,7 +256,7 @@ function bindSelectedBoard(messageId: string) {
           </p>
           <button
             class="td-btn td-btn--primary td-btn--sm"
-            :disabled="sendingMessage"
+            :disabled="sendingMessage || sendBlocked"
             @click="emit('continue-instruction', message.id)"
           >
             {{ sendingMessage ? 'Continuing...' : 'Continue retained instruction' }}

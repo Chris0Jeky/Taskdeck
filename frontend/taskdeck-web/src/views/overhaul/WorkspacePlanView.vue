@@ -1,21 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { usePersonalPlanFocus } from '../../composables/usePersonalPlanFocus'
 import { useWorkspacePlanStore } from '../../store/workspacePlanStore'
 import { usePlanCardPicker } from '../../composables/usePlanCardPicker'
 import type { PlanEntry, PlanCard } from '../../api/workspacePlanApi'
+import { addCalendarDays, formatCalendarDate, localCalendarDateKey } from '../../utils/dueDates'
 
-const router = useRouter()
+const { openFocus, opening, navigationError } = usePersonalPlanFocus()
 const store = useWorkspacePlanStore()
 const { boards, cards, boardId, cardId, loadingBoards, loadingCards, error: pickerError, loadBoards, loadCards } = usePlanCardPicker()
-function localDate(date = new Date()) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-const plannedDate = ref(localDate())
+const plannedDate = ref(localCalendarDateKey())
 const view = ref<'list' | 'board' | 'horizon'>('list')
 const day = ref('')
 const message = ref('')
-const disabled = computed(() => !store.ready || store.loading || store.saving)
+const disabled = computed(() => !store.ready || store.loading || store.saving || opening.value)
 const entries = computed(() => (store.plan?.entries ?? []).filter(entry => !day.value || entry.plannedDate === day.value))
 const groups = computed(() => {
   const result = new Map<string, PlanEntry[]>()
@@ -42,19 +40,16 @@ async function makeRoom(entry: PlanEntry) {
     message.value = 'Removed from your plan. The card and its due date stay the same.'
 }
 async function tomorrow(entry: PlanEntry) {
-  const date = new Date()
-  date.setDate(date.getDate() + 1)
+  const date = addCalendarDays(localCalendarDateKey(), 1)!
   message.value = ''
-  if (await store.save((store.plan?.entries ?? []).map(item => item.cardId === entry.cardId ? { ...item, plannedDate: localDate(date) } : item)))
+  if (await store.save((store.plan?.entries ?? []).map(item => item.cardId === entry.cardId ? { ...item, plannedDate: date } : item)))
     message.value = 'Planned for tomorrow. The card’s due date stays the same.'
 }
 async function focus(card: PlanCard) {
   if (!card.available) return
   message.value = ''
-  if (await store.focus(card.boardId, card.cardId))
-    await router.push({ path: `/workspace/boards/${card.boardId}/cards/${card.cardId}/thinking`, query: { focus: '1' } })
+  await openFocus(card)
 }
-function dueDate(value: string) { return new Date(value).toLocaleDateString() }
 async function retryChoices() { await loadBoards(); if (!pickerError.value && boardId.value) await loadCards() }
 onMounted(() => { if (store.available) { void store.load(); void loadBoards() } })
 </script>
@@ -64,6 +59,7 @@ onMounted(() => { if (store.available) { void store.load(); void loadBoards() } 
     <header><p class="personal-plan__eyebrow">A LITTLE ROOM FOR TODAY</p><h1>Your personal plan</h1><p>Choose work you want to spend time on. This private plan keeps your choices separate from the board’s due dates.</p></header>
     <p v-if="!store.available" role="status">Personal planning needs a connected Taskdeck workspace. This preview has no backend. <RouterLink to="/workspace/boards">Explore the demo boards</RouterLink>.</p>
     <template v-else>
+    <p v-if="navigationError" role="alert">{{ navigationError }}</p>
     <div v-if="store.error" role="alert"><p>{{ store.error }}</p><button type="button" :disabled="store.loading || store.saving" @click="store.load">Refresh personal plan</button></div>
     <p v-if="store.loading" role="status">Loading your plan…</p>
     <section v-if="store.plan?.lastWorked" class="personal-plan__resume" aria-label="Last worked on">
@@ -84,7 +80,7 @@ onMounted(() => { if (store.available) { void store.load(); void loadBoards() } 
     <p v-if="message" role="status">{{ message }}</p>
     <div class="personal-plan__toolbar">
       <div role="group" aria-label="Plan representation"><button v-for="option in (['list', 'board', 'horizon'] as const)" :key="option" type="button" :aria-pressed="view === option" @click="view = option">{{ option[0]!.toUpperCase() + option.slice(1) }}</button></div>
-      <label>Show planned date<input v-model="day" type="date" /></label><button type="button" @click="day = localDate()">Today</button><button type="button" @click="day = ''">All dates</button>
+      <label>Show planned date<input v-model="day" type="date" /></label><button type="button" @click="day = localCalendarDateKey()">Today</button><button type="button" @click="day = ''">All dates</button>
       <button type="button" :disabled="store.loading || store.saving" @click="store.load">Refresh card status</button>
     </div>
     <p v-if="view === 'horizon'">Horizon groups work by your chosen plan date. Card deadlines are shown separately.</p>
@@ -96,7 +92,7 @@ onMounted(() => { if (store.available) { void store.load(); void loadBoards() } 
         <article v-for="entry in items" :key="entry.cardId" class="personal-plan__card">
           <h3>{{ entry.available ? entry.title : 'Card unavailable' }}</h3>
           <p v-if="entry.available">{{ entry.boardName }} · {{ entry.columnName }}</p>
-          <p>Planned for {{ entry.plannedDate }}<span v-if="entry.dueDate"> · Card due {{ dueDate(entry.dueDate) }}</span></p>
+          <p>Planned for {{ entry.plannedDate }}<span v-if="entry.dueDate"> · Card due {{ formatCalendarDate(entry.dueDate) }}</span></p>
           <p v-if="entry.isBlocked" class="personal-plan__blocked">Blocked: {{ entry.blockReason || 'No reason recorded' }}</p>
           <p v-if="!entry.available">It may be archived, removed, or no longer shared with you. You can make room in your plan.</p>
           <div class="personal-plan__actions"><button type="button" :disabled="disabled || !entry.available" @click="focus(entry)">Focus</button><button type="button" :disabled="disabled || !entry.available" @click="tomorrow(entry)">Plan tomorrow</button><button type="button" :disabled="disabled" @click="makeRoom(entry)">Make room</button><RouterLink v-if="entry.available" :to="`/workspace/boards/${entry.boardId}`">Open board</RouterLink></div>

@@ -6,11 +6,34 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Application.Services;
 
 public sealed record ResolvedChatContext(string Prompt, IReadOnlyList<ChatContextSource> Sources);
+public sealed record ChatAssetPage(Guid MemoryId, int Revision, IReadOnlyList<ChatAssetSnapshot> Items, int? NextOffset, int? NextAfterOrdinal = null);
 
 /// <summary>Explicit, bounded per-turn source selection. Never searches private memory implicitly.</summary>
 public sealed class ChatContextResolver(IUnitOfWork unit, IAuthorizationService authorization,
-    IThinkingDeckRepository thinking, IWorkspaceInsightRepository memory)
+    IThinkingDeckRepository thinking, IChatSourceReader memory)
 {
+    public async Task<Result<ChatAssetPage>> ListSourcesAsync(Guid actorId, Guid boardId, Guid memoryId, int revision, int offset, CancellationToken ct, int? afterOrdinal = null)
+    {
+        if (boardId == Guid.Empty || memoryId == Guid.Empty || revision < 1 || offset < 0 || offset > 1000
+            || afterOrdinal < -1 || (afterOrdinal.HasValue && offset != 0))
+            return Result.Failure<ChatAssetPage>(ErrorCodes.ValidationError, "Choose a saved memory version and a valid page.");
+        var access = await authorization.CanReadBoardAsync(actorId, boardId);
+        var board = access.IsSuccess && access.Value ? await unit.Boards.GetByIdAsync(boardId, ct) : null;
+        var record = board is { IsArchived: false } ? await memory.MemoryAsync(actorId, memoryId, ct) : null;
+        if (record is null || record.BoardId != boardId || record.Archived)
+            return Result.Failure<ChatAssetPage>(ErrorCodes.Forbidden, "This private source is unavailable. Check board access and refresh your selection.");
+        if (record.Revision != revision)
+            return Result.Failure<ChatAssetPage>(ErrorCodes.Conflict, "This memory changed. Refresh sources before selecting an original.");
+        var assets = record.CaptureId.HasValue
+            ? afterOrdinal.HasValue
+                ? await memory.AssetsAfterAsync(actorId, boardId, record.CaptureId.Value, afterOrdinal.Value, ct)
+                : await memory.AssetsAsync(actorId, boardId, record.CaptureId.Value, offset, ct)
+            : [];
+        return Result.Success(new ChatAssetPage(record.Id, record.Revision, assets.Take(10).ToArray(),
+            !afterOrdinal.HasValue && offset <= 990 && assets.Count > 10 ? offset + 10 : null,
+            assets.Count > 10 ? assets[9].Ordinal : null));
+    }
+
     public async Task<Result<ResolvedChatContext>> ResolveAsync(Guid actorId, Guid? boardId, ChatContextSelection selection, CancellationToken ct)
     {
         try { selection.Validate(); }
@@ -46,12 +69,29 @@ public sealed class ChatContextResolver(IUnitOfWork unit, IAuthorizationService 
         foreach (var reference in selection.Memories)
         {
             var record = await memory.MemoryAsync(actorId, reference.Id, ct);
-            if (record is null || record.UserId != actorId || record.BoardId != boardId || record.Archived) return Unavailable();
+            if (record is null || record.BoardId != boardId || record.Archived) return Unavailable();
             if (record.Revision != reference.Revision)
                 return Result.Failure<ResolvedChatContext>(ErrorCodes.Conflict, "A selected private memory changed. Review it and select its current version before sending.");
             sources.Add(new("private-memory", record.Id, record.Title, record.Revision, record.Text.Length > 1500));
             material.Add(new { kind = "private-memory", id = record.Id, title = record.Title, status = record.Status,
                 revision = record.Revision, text = Clip(record.Text, 1500) });
+        }
+        foreach (var reference in selection.Assets ?? [])
+        {
+            var record = await memory.MemoryAsync(actorId, reference.MemoryId, ct);
+            if (record is null || record.BoardId != boardId || record.Archived || !record.CaptureId.HasValue) return Unavailable();
+            if (record.Revision != reference.Revision)
+                return Result.Failure<ResolvedChatContext>(ErrorCodes.Conflict, "A selected original's memory changed. Refresh sources and select its current version.");
+            var asset = await memory.AssetAsync(actorId, boardId.Value, record.CaptureId.Value, reference.AssetId, ct);
+            if (asset is null) return Unavailable();
+            if (!string.Equals(asset.ContentHash, reference.ContentHash, StringComparison.OrdinalIgnoreCase))
+                return Result.Failure<ResolvedChatContext>(ErrorCodes.Conflict, "The selected original does not match its saved content fingerprint. Refresh sources.");
+            sources.Add(new("private-source", asset.Id, $"{record.Title} / {asset.Name}", record.Revision, asset.Truncated,
+                record.Id, asset.ContentHash, asset.SupersededByAssetId));
+            material.Add(new { kind = "private-source", memoryId = record.Id, memoryTitle = record.Title, memoryStatus = record.Status,
+                memoryRevision = record.Revision, assetId = asset.Id, asset.Name, asset.ContentHash, asset.SupersededByAssetId,
+                sourceStatus = asset.SupersededByAssetId.HasValue ? "superseded historical source; not the current answer" : "saved original source; not independently verified",
+                text = asset.Excerpt + (asset.Truncated ? " [excerpt]" : "") });
         }
         var json = JsonSerializer.Serialize(material);
         if (json.Length > 20000)

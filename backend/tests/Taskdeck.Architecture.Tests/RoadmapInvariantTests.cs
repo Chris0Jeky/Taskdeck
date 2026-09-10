@@ -383,6 +383,8 @@ public class RoadmapInvariantTests
             "WorkerRegistration",
             "DependencyInjection",
             "LlmProviderRegistration",
+            "HttpAudioTranscriptionProvider", // explicit speech; registered envelope/DNS/telemetry/circuit transport
+            "SpeechTranscriptionRegistration",
             "GitHubConnectorProvider",     // typed-client for GitHub API health check
             "Program",
         };
