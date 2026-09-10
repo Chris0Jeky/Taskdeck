@@ -4,6 +4,7 @@ import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.v
 import CaptureModal from '../components/common/CaptureModal.vue'
 import InboxListPanel from '../components/inbox/InboxListPanel.vue'
 import InboxDetailPanel from '../components/inbox/InboxDetailPanel.vue'
+import InboxPollingNotice from '../components/inbox/InboxPollingNotice.vue'
 import { useInboxOrchestrator } from '../composables/useInboxOrchestrator'
 
 const listPanelRef = ref<InstanceType<typeof InboxListPanel> | null>(null)
@@ -91,6 +92,13 @@ const {
       </template>
     </WorkspaceHelpCallout>
 
+    <InboxPollingNotice
+      :problems="captureStore.triagePollingProblems"
+      :paused="captureStore.triagePollingPaused"
+      :watched-ids="captureStore.triagePollingItemIds"
+      @refresh="captureStore.retryTriagePolling()"
+    />
+
     <div class="td-inbox__layout">
       <InboxListPanel
         ref="listPanelRef"
@@ -123,7 +131,8 @@ const {
         :hash-load-failed-item-id="hashLoadFailedItemId"
         :loading-detail="captureStore.loadingDetail"
         :action-busy-item-id="captureStore.actionBusyItemId"
-        :triage-polling-item-id="captureStore.triagePollingItemId"
+        :triage-polling-item-ids="captureStore.triagePollingItemIds"
+      :triage-polling-problems="captureStore.triagePollingProblems"
         :is-editing-suggestion="isEditingSuggestion"
         :edited-text="editedText"
         :edited-title-hint="editedTitleHint"
