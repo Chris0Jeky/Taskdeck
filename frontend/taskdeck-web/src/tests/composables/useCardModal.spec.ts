@@ -881,6 +881,37 @@ describe('useCardModal', () => {
   })
 
   describe('handleSaveEditComment', () => {
+    it.each(['success', 'failure'] as const)(
+      'keeps card-save recovery usable after comment update %s',
+      async (outcome) => {
+        const ctx = mountComposable()
+        await nextTick()
+        ctx.result.workItemType.value = 'Epic'
+        mockBoardStore.updateCard.mockRejectedValueOnce(new Error('card save unavailable'))
+        await ctx.result.handleSave()
+        const cardSaveError = ctx.result.saveError.value
+        expect(cardSaveError).toBeTruthy()
+
+        ctx.result.editingCommentId.value = 'c-1'
+        ctx.result.editingCommentContent.value = 'Edited comment'
+        if (outcome === 'failure') {
+          mockBoardStore.updateCardComment.mockRejectedValueOnce(new Error('comment save unavailable'))
+        }
+        await ctx.result.handleSaveEditComment('c-1')
+
+        expect(ctx.result.isSaving.value).toBe(false)
+        expect(ctx.result.saveError.value).toBe(cardSaveError)
+        expect(ctx.result.workItemType.value).toBe('Epic')
+        await ctx.result.handleSave()
+        expect(mockBoardStore.updateCard).toHaveBeenCalledTimes(2)
+        expect(mockBoardStore.updateCard).toHaveBeenLastCalledWith(
+          'board-1', 'card-1', expect.objectContaining({ workItemType: 'Epic' }),
+        )
+        expect(ctx.onClose).toHaveBeenCalledOnce()
+        ctx.wrapper.unmount()
+      },
+    )
+
     it('updates the comment and clears editing state', async () => {
       const ctx = mountComposable()
       await nextTick()
