@@ -3,10 +3,29 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { CONTROL_FLOOR, validateManifest, starterManifest, adviseRepository, inspectRepository, readJsonBlob } from '../adapters/repository.mjs';
 import { options, runCli } from '../cli.mjs';
 import { graph, state, oid } from './fixtures.mjs';
+
+test('missing policy blobs never trigger a promisor fetch', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ci-promisor-')), source = join(dir, 'source'), repo = join(dir, 'partial');
+  const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try {
+    mkdirSync(source); git(source, 'init'); git(source, 'config', 'user.name', 'Fixture'); git(source, 'config', 'user.email', 'fixture@example.invalid');
+    writeFileSync(join(source, 'policy.json'), '{"fixture":true}'); git(source, 'add', '.'); git(source, 'commit', '-m', 'fixture');
+    git(source, 'config', 'uploadpack.allowFilter', 'true');
+    execFileSync('git', ['clone', '--no-checkout', '--filter=blob:none', pathToFileURL(source).href, repo], { stdio: 'pipe' });
+    const sha = git(repo, 'rev-parse', 'HEAD'), blob = git(source, 'rev-parse', 'HEAD:policy.json');
+    assert.ok(git(repo, 'rev-list', '--objects', '--missing=print', 'HEAD').includes(`?${blob}`));
+    assert.throws(() => readJsonBlob(repo, sha, 'policy.json'));
+    assert.ok(git(repo, 'rev-list', '--objects', '--missing=print', 'HEAD').includes(`?${blob}`));
+    // Successful control proves the local promisor can provide the object.
+    assert.equal(git(repo, 'cat-file', 'blob', blob), '{"fixture":true}');
+    assert.deepEqual(readJsonBlob(repo, sha, 'policy.json').value, { fixture: true });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 function manifest() {
   return { format: 'ci.repository-adapter.v1', repositoryId: '1234', description: 'Fictional polyglot fixture', contracts: graph(),
     policy: { alwaysTasks: ['docs'], controlPaths: [...CONTROL_FLOOR], rules: [
