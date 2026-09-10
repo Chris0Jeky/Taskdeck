@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Moq;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -35,6 +36,7 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
     [Theory]
     [InlineData("edit")]
     [InlineData("archive")]
+    [InlineData("archive-card")]
     [InlineData("delete")]
     [InlineData("revoke")]
     [InlineData("erase-account")]
@@ -68,6 +70,8 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
         {
             using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             if (change == "archive") await db.Boards.Where(x => x.Id == board).ExecuteUpdateAsync(set => set.SetProperty(x => x.IsArchived, true));
+            // Keep the fingerprint stable to prove archive eligibility is checked independently.
+            else if (change == "archive-card") await db.Cards.Where(x => x.Id == cardId).ExecuteUpdateAsync(set => set.SetProperty(x => x.IsArchived, true));
             else if (change == "delete") await db.Cards.Where(x => x.Id == cardId).ExecuteDeleteAsync();
             else if (change == "revoke") await db.BoardAccesses.Where(x => x.BoardId == board && x.UserId == viewerId).ExecuteDeleteAsync();
             else if (change == "erase-account")
@@ -189,6 +193,57 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
         client.PostAsJsonAsync("/api/workspace-insights/model-analysis", new GenerateObservationsDto(board, source.CardId, source.Fingerprint));
 
     [Fact]
+    public async Task ArchivedCard_RejectsFreshPreviewAndAnalysisBeforeQuotaOrProviderAdmission()
+    {
+        var provider = new Provider();
+        var quota = new Mock<ILlmQuotaService>(MockBehavior.Strict);
+        using var configured = WithProvider(provider);
+        using var app = configured.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<ILlmQuotaService>(); services.AddScoped<ILlmQuotaService>(_ => quota.Object);
+        }));
+        var (client, board, cardId, previous) = await Setup(app);
+        ObservationSourceDto archived;
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var card = (await db.Cards.FindAsync(cardId))!;
+            card.Archive(); await db.SaveChangesAsync();
+            // Supply the current fingerprint too: rejecting only an old preview is insufficient.
+            archived = WorkspaceObservationContract.Source(card);
+        }
+        (await client.GetAsync($"/api/workspace-insights/observation-source?boardId={board}&cardId={cardId}"))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await Generate(client, board, previous)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await Generate(client, board, archived)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        provider.Calls.Should().Be(0);
+        quota.VerifyNoOtherCalls();
+        using var verify = app.Services.CreateScope();
+        (await verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>().Set<QuietInsight>().CountAsync(x => x.BoardId == board)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ArchivedCard_PreservesAuthorizedCardAndObservationHistory()
+    {
+        var provider = new Provider(); using var app = WithProvider(provider);
+        var (client, board, cardId, source) = await Setup(app);
+        var response = await Generate(client, board, source); response.EnsureSuccessStatusCode();
+        var original = (await response.Content.ReadFromJsonAsync<List<QuietInsightDto>>())!.Single();
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            (await db.Cards.FindAsync(cardId))!.Archive(); await db.SaveChangesAsync();
+        }
+        var retainedCard = await client.GetFromJsonAsync<CardDto>($"/api/boards/{board}/cards/{cardId}");
+        retainedCard!.Id.Should().Be(cardId); retainedCard.IsArchived.Should().BeTrue();
+        var retained = (await client.GetFromJsonAsync<List<QuietInsightDto>>($"/api/workspace-insights?boardId={board}"))!.Single();
+        retained.Id.Should().Be(original.Id); retained.Evidence.Should().Be(original.Evidence);
+        retained.State.Should().Be("resolved"); provider.Calls.Should().Be(1);
+        var outsider = app.CreateClient(); await ApiTestHarness.AuthenticateAsync(outsider, "archived-observation-outsider");
+        (await outsider.GetAsync($"/api/workspace-insights?boardId={board}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task QuotedQuestions_ArePrivateDeduplicatedAndDoNotChangeBoard()
     {
         var provider = new Provider(); using var app = WithProvider(provider);
@@ -214,6 +269,7 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
     [Theory]
     [InlineData("edit")]
     [InlineData("archive")]
+    [InlineData("archive-card")]
     [InlineData("delete")]
     public async Task SourceChangeDuringModelCall_DiscardsAllCandidates(string change)
     {
@@ -223,6 +279,8 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
         {
             using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             if (change == "archive") await db.Boards.Where(x => x.Id == board).ExecuteUpdateAsync(set => set.SetProperty(x => x.IsArchived, true));
+            // Keep the fingerprint stable to prove archive eligibility is checked independently.
+            else if (change == "archive-card") await db.Cards.Where(x => x.Id == cardId).ExecuteUpdateAsync(set => set.SetProperty(x => x.IsArchived, true));
             else if (change == "delete") await db.Cards.Where(x => x.Id == cardId).ExecuteDeleteAsync();
             else await db.Cards.Where(x => x.Id == cardId).ExecuteUpdateAsync(set => set.SetProperty(x => x.Title, "Updated evidence"));
         };

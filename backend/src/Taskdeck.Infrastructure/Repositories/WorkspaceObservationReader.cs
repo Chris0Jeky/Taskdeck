@@ -11,8 +11,8 @@ public sealed class WorkspaceObservationReader(TaskdeckDbContext db) : IWorkspac
     public async Task<ObservationSourceDto?> SourceAsync(Guid userId, Guid boardId, Guid cardId, CancellationToken ct)
     {
         // BoardAccess.CanRead permits every membership role. No tracked board/membership can
-        // carry an earlier permission or archive state across the model await.
-        var card = await db.Cards.AsNoTracking().Where(card => card.Id == cardId && card.BoardId == boardId &&
+        // carry an earlier permission or board/card archive state across the model await.
+        var card = await db.Cards.AsNoTracking().Where(card => card.Id == cardId && card.BoardId == boardId && !card.IsArchived &&
             db.Users.Any(user => user.Id == userId && user.IsActive) &&
             db.Boards.Any(board => board.Id == boardId && !board.IsArchived && (board.OwnerId == userId ||
                 db.BoardAccesses.Any(access => access.BoardId == boardId && access.UserId == userId))))
