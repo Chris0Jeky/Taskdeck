@@ -389,7 +389,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             {
                 var envelope = JsonSerializer.Deserialize<BoardExportEnvelope>(json, JsonOptions);
                 if (envelope is not { Format: "taskdeck-board", Version: 2 or 3 or 4, Payload: not null }) return null;
-                if (envelope.Version < 4 && envelope.Payload.Cards.Any(c => c.Assignments is { Count: > 0 })) return null;
+                if (envelope.Version < 4 && (envelope.Payload.Cards ?? []).Any(c => c.Assignments is { Count: > 0 })) return null;
                 return ConvertExportToImportDto(envelope.Payload);
             }
         }

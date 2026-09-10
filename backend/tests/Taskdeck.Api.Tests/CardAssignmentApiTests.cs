@@ -194,6 +194,15 @@ public class CardAssignmentApiTests(TestWebApplicationFactory factory) : IClassF
             var other = await outsider.GetFromJsonAsync<JsonElement>(path);
             other.GetProperty("data").GetProperty("cards").EnumerateArray().Should().NotContain(c => c.GetProperty("id").GetGuid() == card.Id);
         }
+        var deletion = await client.PostAsJsonAsync("/api/account/delete", new AccountDeletionRequest("password123", "DELETE MY ACCOUNT"));
+        deletion.EnsureSuccessStatusCode();
+        (await deletion.Content.ReadFromJsonAsync<AccountDeletionResultDto>())!.CardAssignmentsRemoved.Should().Be(1);
+        using var verification = factory.Services.CreateScope();
+        var database = verification.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await database.Set<CardAssignment>().AnyAsync(a => a.UserId == actor.UserId)).Should().BeFalse();
+        (await database.Cards.SingleAsync(c => c.Id == card.Id)).IsArchived.Should().BeTrue();
+        (await database.Users.SingleAsync(u => u.Id == actor.UserId)).IsActive.Should().BeFalse();
+        (await database.AuditLogs.AnyAsync(a => a.EntityId == card.Id && a.Changes != null && a.Changes.Contains("account-erased"))).Should().BeTrue();
     }
 
     [Fact]
@@ -350,6 +359,13 @@ public class CardAssignmentApiTests(TestWebApplicationFactory factory) : IClassF
         var unassigned = await client.PostAsJsonAsync("/api/import/boards/json", raw); unassigned.EnsureSuccessStatusCode();
         var empty = (await unassigned.Content.ReadFromJsonAsync<ImportResultDto>())!;
         (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{empty.BoardId}/cards"))![0].Assignments.Should().BeEmpty();
+        foreach (var version in new[] { 2, 3 })
+        {
+            var legacyEmpty = new { format = "taskdeck-board", version, payload = new {
+                board = new { id = Guid.NewGuid(), name = "Legacy empty board" }, cards = (object?)null,
+                columns = Array.Empty<object>(), labels = Array.Empty<object>() } };
+            (await client.PostAsJsonAsync("/api/import/boards/preview", legacyEmpty)).EnsureSuccessStatusCode();
+        }
     }
 
     [Fact]
