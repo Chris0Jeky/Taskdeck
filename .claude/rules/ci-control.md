@@ -13,6 +13,16 @@ no `CLAUDE.md` covers by directory, so these rules load by path.
 - **Risk class R4** (ADR-0066 Smart CI Fabric, tracker CI-00 `#2324`). CI-control changes qualify
   **hosted-only**: the proving check is the hosted run on the exact PR head, never a local approximation.
   Local checks are additive.
+- **A green control-plane PR is not a mergeable one.** Under the ADR-0066 amendment of 2026-09-03, a
+  change to a `ci/policy.v1.json` control path merges only after **the maintainer's own review plus one
+  fresh-context review**. Passing `ci-required` satisfies the evidence gate, not the authority gate.
+  A batch is delegated only by an explicit ruling naming its PRs, as on 2026-09-06 (twelve named PRs)
+  and 2026-09-09 (four named PRs); neither generalises. Open the PR ready-for-review, record it on
+  `OUTSTANDING_TASKS.md` §J.2, and read §J.3 first: whether this rule should stay as written is an open
+  question there, raised because it has now been merged past three times (`#2772` and `#2787` on
+  2026-09-08, the CI-continuation train on 2026-09-10). Until §J.3 (b) is answered the rule stands.
+  If you write "do not auto-merge" in your own PR body, that is a promise to the next reader; do not
+  merge past it without a ruling that names the PR.
 - **`ci-required.yml` is the required merge gate.** CI Extended is an optional, non-blocking lane
   (several jobs are label-gated). Read its results; it does not gate the merge.
 - **`smart-ci-shadow.yml` is observation-only** (ADR-0066, CI-02 `#2326`) until the maintainer registers
