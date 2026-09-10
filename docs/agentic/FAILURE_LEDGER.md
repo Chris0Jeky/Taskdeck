@@ -55,6 +55,8 @@ Rows sharing a surface and first tracking issue in `future_fix` show only their 
 | 2026-09-07 | invalid_signal | frontend/vitest-api-base-override | The #2215 full Vitest run used VITE_API_BASE_URL=http://127.0.0.1:5022 and failed three intentional default-root assertions in apiRoot/versionApi (6123 passed).... | At exact head 1d5e404281a5874da107db232d5bb955acafa933, remove the override from the test process and run npx vitest --run --maxWorkers=2. With no port-5000 lis... | Real health-request noise remains tracked in #2775; this bounded pass does not disprove its separate OneDrive/Middlesex fork-startup failure. Read final exit st... | resolved |
 | 2026-09-09 | non_blocking_risk | backend/extractor-loaded-suite | During the contextual full solution run, unchanged NaturalLanguageInstructionExtractorTests.Extract_CardCreate_WithSetUp_ExtractsTitle returned no instruction (... | The complete extractor class passed 38/38 in a no-build isolated rerun. Its 200ms regex timeout is a plausible contention cause, not proven. Preserve the initia... | #2808: inspect repeatability and timeout evidence if this failure recurs; do not weaken parsing or inflate the timeout without proof. | open |
 | 2026-09-09 | non_blocking_risk | ci/dev-up-free-port-fixture | PR2844 required run34395033473 job102612507503 failed the unchanged dev-up success fixture: selected API port45951 was already owned by PID2290 MainThrea. Launc... | Inspect getFreePort followed by listenForeign in the fixture. Neither launcher nor test changed in this PR. Rerun only the failed job after the active workflow ... | #2808: retain bounded recovery evidence; stabilize simultaneous fixture port reservations in a separate scoped follow-up if collision repeats. | open |
+| 2026-09-10 | blocker | overhaul/integration-browser-title | PR2866 run34424282948:207 passed,13 skipped,2 browser tests expected retired Leave unsaved thinking? title. | Use actual Leave this thinking space? dialog; both complete specs pass locally (7 Chromium journeys). | #2808 PR2866 head75f92c71e contains the repair; exact-head hosted requalification remains pending. | awaiting_ci |
+| 2026-09-10 | blocker | overhaul/failure-ledger-projection | PR2866 run34427490282 docs governance rejected a manually appended entry in the generated FAILURE_LEDGER.md. | Record entries in failure_ledger.jsonl and regenerate the Markdown projection; run the projection test. | #2808 bounded correction in PR2866; no generator or gate change. | awaiting_ci |
 
 ## Classification
 
@@ -67,9 +69,3 @@ Rows sharing a surface and first tracking issue in `future_fix` show only their 
 
 A ledger entry should become a guide or skill update only when it is reproducible, project-specific, and likely to recur.
 Use `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`; do not mutate root instructions after a single ambiguous failure.
-
-### 2026-09-10 — overhaul integration browser title drift
-
-- Scope: PR2866 required run34424282948, head9bac8e647, E2E Smoke. 207 passed/13 skipped/2 failed.
-- Cause: contextual-companion and workspace-overhaul still selected the retired Leave unsaved thinking? title after the continuation UI renamed that dialog Leave this thinking space?. No retry or relaxed assertion was used.
-- Recovery: update the two exact accessible-name locators and rerun both complete specs against the isolated real API: seven passed. Hosted requalification is attached to the repaired head. Evidence: integration-ci-smoke-failure.log and integration-final-ci-browser.log in the local overhaul evidence folder.
