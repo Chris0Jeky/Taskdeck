@@ -60,6 +60,15 @@ public class WorkspaceInsightService(IWorkspaceInsightRepository repository, IUn
             Keep("memory-review", memory.Id.ToString(), null, memory.Id, $"Revisit “{memory.Title}”",
                 memory.Status == "unknown" ? "This is an explicitly recorded unknown. Has anything become clearer?" : "You marked this memory for review. Confirm or correct it before relying on it.",
                 $"Memory revision {memory.Revision}: {memory.Text}");
+        foreach (var item in items.Where(x => x.Rule.StartsWith(WorkspaceObservationContract.RulePrefix, StringComparison.Ordinal)))
+        {
+            if (WorkspaceObservationContract.IsFresh(item, cards.FirstOrDefault(x => x.Id == item.CardId), now) &&
+                !memories.Any(m => m.InsightId == item.Id && m.OriginalEvidence == item.Evidence && !m.Archived && m.Status == "statement"))
+            {
+                item.Refresh(item.Title, item.Detail, item.Evidence, now);
+                seen.Add(item.Id);
+            }
+        }
         foreach (var item in items.Where(x => !seen.Contains(x.Id))) item.Resolve(now);
         return items;
     }
