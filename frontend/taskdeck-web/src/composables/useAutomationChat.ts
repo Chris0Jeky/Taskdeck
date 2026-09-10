@@ -6,6 +6,7 @@ import { useToastStore } from '../store/toastStore'
 import type { ChatContextSelection, ChatMessage, ChatProviderHealth, ChatSession } from '../types/chat'
 import type { Board } from '../types/board'
 import { normalizeChatRole } from '../utils/chat'
+import { createLocalUserMessage, mergeLocalMessages, retainLocalMessages } from '../utils/chatTranscript'
 import { getErrorDisplay } from './useErrorMapper'
 import { buildInputAssistOptions } from '../utils/inputAssist'
 import type { InputAssistOption } from '../utils/inputAssist'
@@ -147,47 +148,6 @@ export function useAutomationChat(options: { boardId?: () => string | undefined;
   })
 
   const queryBoardId = computed(() => normalizeBoardIdQueryParam(options.boardId?.() ?? route.query.boardId))
-
-  function createLocalUserMessage(sessionId: string, content: string, assistantCreatedAt: string): ChatMessage {
-    const assistantTimestamp = Date.parse(assistantCreatedAt)
-    const createdAt = Number.isFinite(assistantTimestamp)
-      ? new Date(assistantTimestamp - 1).toISOString()
-      : new Date().toISOString()
-
-    // Local-only identity: this message is merged into the visible transcript,
-    // never sent back through the chat API. The sequence keeps IDs unique within
-    // this composable while the timestamp fixes the user/reply ordering.
-    localMessageSequence += 1
-    return {
-      id: `local-user-${sessionId}-${localMessageSequence}`,
-      sessionId,
-      role: 'User',
-      content,
-      messageType: 'text',
-      proposalId: null,
-      tokenUsage: null,
-      createdAt,
-    }
-  }
-
-  function retainLocalMessages(sessionId: string, messages: ChatMessage[]): ChatMessage[] {
-    const existing = localMessagesBySession.get(sessionId) ?? []
-    const byId = new Map(existing.map((message) => [message.id, message]))
-    for (const message of messages) {
-      byId.set(message.id, message)
-    }
-    const retained = [...byId.values()]
-    localMessagesBySession.set(sessionId, retained)
-    return retained
-  }
-
-  function mergeLocalMessages(messages: ChatMessage[], localMessages: ChatMessage[]): ChatMessage[] {
-    const knownIds = new Set(messages.map((message) => message.id))
-    return [
-      ...messages,
-      ...localMessages.filter((message) => !knownIds.has(message.id)),
-    ]
-  }
 
   function normalizeSelectedBoardId(rawValue: string): string | null {
     const trimmed = rawValue.trim()
@@ -403,9 +363,22 @@ export function useAutomationChat(options: { boardId?: () => string | undefined;
       if (requestedSessionId === sessionId && selectedSession.value?.id === sessionId) {
         messageContent.value = ''
         const currentSession = selectedSession.value
-        const localUserMessage = createLocalUserMessage(sessionId, content, sentMessage.createdAt)
+        // Local-only identity: this message is merged into the visible transcript,
+        // never sent back through the chat API. The sequence keeps IDs unique within
+        // this composable while the utility fixes the user/reply ordering.
+        localMessageSequence += 1
+        const localUserMessage = createLocalUserMessage(
+          sessionId,
+          content,
+          sentMessage.createdAt,
+          localMessageSequence,
+        )
         sessionWriteGenerations.set(sessionId, (sessionWriteGenerations.get(sessionId) ?? 0) + 1)
-        const retainedLocalMessages = retainLocalMessages(sessionId, [localUserMessage, sentMessage])
+        const retainedLocalMessages = retainLocalMessages(
+          localMessagesBySession.get(sessionId) ?? [],
+          [localUserMessage, sentMessage],
+        )
+        localMessagesBySession.set(sessionId, retainedLocalMessages)
         selectedSession.value = {
           ...currentSession,
           recentMessages: mergeLocalMessages(currentSession.recentMessages, retainedLocalMessages),
