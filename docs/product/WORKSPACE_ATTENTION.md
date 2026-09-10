@@ -12,7 +12,10 @@ Optional **Reminder hours** restricts new reminders to selected weekdays and loc
 IANA time zone, such as `Europe/London`. The default is unrestricted for existing opted-in accounts;
 reminders themselves remain off by default. **Use this device's time zone** fills the field, and
 **Save reminder hours** explicitly persists the choice across devices. Toggling reminders off/on
-preserves the window. Clearing the restriction requires an explicit hours save.
+preserves the saved window and any unsaved hours draft in the same account. Clearing the restriction
+requires an explicit hours save. Confirmed validation rejections retain the draft for correction.
+Account changes and uncertain saves clear the local form; reload
+the server preference before continuing.
 
 The start is included and the end excluded. An overnight window belongs to each selected starting
 day: Monday 22:00–02:00 includes early Tuesday. Equal start/end times and invalid zones/days are
