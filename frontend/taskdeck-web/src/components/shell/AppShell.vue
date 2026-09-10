@@ -18,9 +18,13 @@ import {
   APP_SHELL_SHORTCUT_BINDINGS,
   shortcutBindingIsAvailable,
   strokeMatches,
-  type AppShellShortcutAction,
   type AppShellShortcutBinding,
 } from '../../utils/keyboardShortcuts'
+import {
+  activeKeyboardOwningSurfaces,
+  isTextEntryTarget,
+  shellSurfaceOwnsAction,
+} from '../../utils/appShellKeyboard'
 import CaptureModal from '../common/CaptureModal.vue'
 import OfflineBanner from './OfflineBanner.vue'
 import SwUpdatePrompt from './SwUpdatePrompt.vue'
@@ -154,46 +158,6 @@ function handleNavigateToCard(boardId: string, _cardId: string) {
 
 // ── Keyboard shortcuts ──
 
-function isTextEntryTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof Element)) return false
-
-  const selector = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
-  return target.matches(selector) || target.closest(selector) !== null
-}
-
-/**
- * Only a surface that declares itself MODAL owns the keyboard (#1968).
- *
- * A bare `[role="dialog"]` is not enough, and matching it was a live defect:
- * `CardModal` keeps `role="dialog"` in both presentations but sets
- * `aria-modal` only outside the inspector, so the Paper desktop card inspector
- * -- a sticky side panel that traps nothing and leaves the board usable --
- * counted as a keyboard-owning surface. That made `?`, `mod+k` and
- * `mod+shift+c` dead for as long as a card was open for reading, and stopped
- * every non-Escape key pressed outside the panel.
- *
- * `dialog[open]` and `[role="alertdialog"]` stay: a native open `<dialog>` is
- * modal when shown as one and an alertdialog is modal by definition.
- */
-const KEYBOARD_OWNING_SURFACE_SELECTOR = [
-  'dialog[open]',
-  '[role="alertdialog"]',
-  '[aria-modal="true"]',
-].join(', ')
-
-function activeKeyboardOwningSurfaces(): HTMLElement[] {
-  if (typeof document === 'undefined') return []
-
-  return Array.from(document.querySelectorAll<HTMLElement>(KEYBOARD_OWNING_SURFACE_SELECTOR))
-    .filter((surface) => {
-      if (!surface.isConnected) return false
-      if (surface.closest('[hidden], [aria-hidden="true"], [inert]')) return false
-
-      const style = window.getComputedStyle(surface)
-      return style.display !== 'none' && style.visibility !== 'hidden'
-    })
-}
-
 /**
  * One surface scan per keydown, shared by the two guards below (#2636).
  *
@@ -220,31 +184,6 @@ function keyboardOwningSurfacesFor(event: KeyboardEvent): HTMLElement[] {
     scannedSurfaces = activeKeyboardOwningSurfaces()
   }
   return scannedSurfaces
-}
-
-/**
- * True when this action's own surface is among the active ones and every active
- * surface belongs to the shell. That is what makes `?` and `mod+k` toggles
- * rather than one-way openers: the help dialog owns `?`, the command palette
- * owns `mod+k`, and neither opens over the other or over anything else (#1968).
- *
- * Deliberately not "the topmost surface owns it". Stack order is not readable
- * here: both help twins and both palettes teleport to `body`, and a `<Teleport>`
- * places its anchor when the SHELL mounts, not when the surface opens, so
- * document order is AppShell's template order whatever the user opened first.
- * Asking every surface instead would deadlock a stack -- open the help dialog,
- * then the topbar Search control, and neither key could close its own surface
- * again.
- *
- * `navigate` and `quick-capture` name no surface, so an active surface always
- * wins over them: nothing behind a modal should move the route, and quick
- * capture would stack a second modal on the first (the #1959 class).
- */
-function shellSurfaceOwnsAction(surfaces: readonly HTMLElement[], action: AppShellShortcutAction): boolean {
-  if (surfaces.length === 0) return true
-
-  return surfaces.some((surface) => surface.dataset.shellSurface === action.type) &&
-    surfaces.every((surface) => surface.dataset.shellSurface !== undefined)
 }
 
 const CHORD_TIMEOUT_MS = 1_000
