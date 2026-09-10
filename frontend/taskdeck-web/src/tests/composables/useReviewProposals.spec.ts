@@ -70,10 +70,6 @@ vi.mock('../../utils/inputAssist', () => ({
     seeds.map((s) => ({ value: s.value, label: s.label })),
 }))
 
-vi.mock('../../utils/navigation', () => ({
-  normalizeBoardIdQueryParam: (v: unknown) => v ?? null,
-}))
-
 vi.mock('../../composables/usePerformanceMark', () => ({
   usePerformanceMark: () => ({ start: vi.fn(), end: vi.fn() }),
 }))
