@@ -65,6 +65,14 @@ public class TaskdeckDbContext : DbContext
     public DbSet<Capture> Captures => Set<Capture>();
     public DbSet<SourceAsset> SourceAssets => Set<SourceAsset>();
     public DbSet<SourceAssetTextPayload> SourceAssetTextPayloads => Set<SourceAssetTextPayload>();
+    public DbSet<StoredBlob> StoredBlobs => Set<StoredBlob>();
+    public DbSet<StoredBlobChunk> StoredBlobChunks => Set<StoredBlobChunk>();
+    public DbSet<StoredBlobReference> StoredBlobReferences => Set<StoredBlobReference>();
+    public DbSet<Representation> Representations => Set<Representation>();
+    public DbSet<RepresentationSupersession> RepresentationSupersessions => Set<RepresentationSupersession>();
+    public DbSet<ThinkingAudioAnswer> ThinkingAudioAnswers => Set<ThinkingAudioAnswer>();
+    public DbSet<AudioTranscriptionAttempt> AudioTranscriptionAttempts => Set<AudioTranscriptionAttempt>();
+    public DbSet<AudioTranscriptionBudget> AudioTranscriptionBudgets => Set<AudioTranscriptionBudget>();
     public DbSet<CaptureBackfillState> CaptureBackfillStates => Set<CaptureBackfillState>();
 
     /// <summary>

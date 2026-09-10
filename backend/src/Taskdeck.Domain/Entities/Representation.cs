@@ -6,28 +6,30 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Domain.Entities;
 
 /// <summary>
-/// Immutable derived-content header. It contains no payload and is not yet mapped to persistence.
+/// Immutable derived-content header. It contains no payload; transcript payloads retain their separate durable store.
 /// Parent existence, authorization and transaction integrity remain the store's responsibility.
 /// </summary>
 public sealed class Representation
 {
-    public Guid Id { get; }
-    public Guid? CaptureId { get; }
-    public Guid UserId { get; }
-    public RepresentationKind Kind { get; }
-    public Guid? ParentSourceAssetId { get; }
-    public Guid? ParentRepresentationId { get; }
-    public Guid? ProcessingRunId { get; }
-    public string ProcessorId { get; }
-    public string ProcessorVersion { get; }
-    public string? ProcessorModel { get; }
-    public string ConfigurationHash { get; }
-    public int SchemaVersion { get; }
-    public string ContentHash { get; }
-    public string? Language { get; }
-    public RepresentationQualityState QualityState { get; }
-    public IReadOnlyList<string> Warnings { get; }
-    public DateTimeOffset CreatedAt { get; }
+    public Guid Id { get; private set; }
+    public Guid? CaptureId { get; private set; }
+    public Guid UserId { get; private set; }
+    public RepresentationKind Kind { get; private set; }
+    public Guid? ParentSourceAssetId { get; private set; }
+    public Guid? ParentRepresentationId { get; private set; }
+    public Guid? ProcessingRunId { get; private set; }
+    public string ProcessorId { get; private set; }
+    public string ProcessorVersion { get; private set; }
+    public string? ProcessorModel { get; private set; }
+    public string ConfigurationHash { get; private set; }
+    public int SchemaVersion { get; private set; }
+    public string ContentHash { get; private set; }
+    public string? Language { get; private set; }
+    public RepresentationQualityState QualityState { get; private set; }
+    public IReadOnlyList<string> Warnings { get; private set; }
+    public DateTimeOffset CreatedAt { get; private set; }
+
+    private Representation() { ProcessorId = string.Empty; ProcessorVersion = string.Empty; ConfigurationHash = string.Empty; ContentHash = string.Empty; Warnings = Array.Empty<string>(); }
 
     public Representation(
         Guid id, Guid? captureId, Guid userId, RepresentationKind kind,
@@ -149,8 +151,10 @@ public sealed class Representation
 /// </summary>
 public sealed class RepresentationSupersession
 {
-    public Guid RepresentationId { get; }
-    public Guid SupersededByRepresentationId { get; }
+    public Guid RepresentationId { get; private set; }
+    public Guid SupersededByRepresentationId { get; private set; }
+
+    private RepresentationSupersession() { }
 
     public RepresentationSupersession(Representation previous, Representation replacement)
     {

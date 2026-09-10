@@ -152,4 +152,13 @@ describe('ChatMessageList board recovery', () => {
     await wrapper.get('button.td-btn--primary').trigger('click')
     expect(wrapper.emitted('continue-instruction')).toEqual([['assistant-1']])
   })
+  it('disables retained continuation while shared thinking or receipt refresh blocks sending', async () => {
+    const wrapper = mountList({ selectedSessionBoardId: 'board-1', sendBlocked: true })
+    expect(wrapper.get('button.td-btn--primary').attributes('disabled')).toBeDefined()
+    await wrapper.get('button.td-btn--primary').trigger('click')
+    expect(wrapper.emitted('continue-instruction')).toBeUndefined()
+    await wrapper.setProps({ sendBlocked: false })
+    await wrapper.get('button.td-btn--primary').trigger('click')
+    expect(wrapper.emitted('continue-instruction')).toEqual([['assistant-1']])
+  })
 })

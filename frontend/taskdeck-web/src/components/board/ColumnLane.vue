@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue'
+import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
 import { useBoardStore } from '../../store/boardStore'
 import { useToastStore } from '../../store/toastStore'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
@@ -185,12 +186,14 @@ function handleCardDragOver(event: DragEvent) {
     event.dataTransfer.dropEffect = 'move'
   }
 }
+const proposalMarker = useBoardProposalMarker('column', () => props.column.id)
 </script>
 
 <template>
   <!-- eslint-disable-next-line vuejs-accessibility/no-static-element-interactions -- drag-and-drop column drop zone; group role + drag events are intentional for kanban DnD -->
   <div
     :data-column-id="column.id"
+    :data-proposal-change="proposalMarker ? true : undefined"
     role="group"
     :aria-label="`${column.name} column`"
     :class="[
@@ -202,6 +205,7 @@ function handleCardDragOver(event: DragEvent) {
     @drop="handleDrop"
   >
     <!-- Column Header -->
+    <span v-if="proposalMarker" class="td-proposal-marker">{{ proposalMarker }}</span>
     <div class="td-column-lane__header">
       <div class="td-column-lane__header-row">
         <h3 class="td-column-lane__title"><span class="td-column-lane__title-dot"></span>{{ column.name }}</h3>

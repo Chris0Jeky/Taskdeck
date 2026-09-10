@@ -22,9 +22,9 @@ export interface WorkspacePlan {
 export const workspacePlanApi = {
   async get(): Promise<WorkspacePlan> { return (await http.get<WorkspacePlan>('/workspace/plan')).data },
   async save(expectedRevision: number, entries: PlanReference[]): Promise<WorkspacePlan> {
-    return (await http.put<WorkspacePlan>('/workspace/plan', { expectedRevision, entries })).data
+    return (await http.put<WorkspacePlan>('/workspace/plan', { expectedRevision, entries }, { skipRetry: true })).data
   },
   async focus(expectedRevision: number, boardId: string, cardId: string): Promise<WorkspacePlan> {
-    return (await http.post<WorkspacePlan>('/workspace/plan/focus', { expectedRevision, boardId, cardId })).data
+    return (await http.post<WorkspacePlan>('/workspace/plan/focus', { expectedRevision, boardId, cardId }, { skipRetry: true })).data
   },
 }

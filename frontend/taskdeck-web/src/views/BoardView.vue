@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, computed, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, computed, watch, provide, readonly } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
@@ -13,6 +13,8 @@ import { usePerformanceMark } from '../composables/usePerformanceMark'
 import BoardToolbar from '../components/board/BoardToolbar.vue'
 import BoardActionRail from '../components/board/BoardActionRail.vue'
 import BoardCanvas from '../components/board/BoardCanvas.vue'
+import BoardProposalPreview from '../components/board/BoardProposalPreview.vue'
+import { BOARD_PROPOSAL_MARKERS, type BoardProposalMarkers } from '../composables/useBoardProposalMarker'
 import BoardDialogHost from '../components/board/BoardDialogHost.vue'
 import FilterPanel from '../components/board/FilterPanel.vue'
 import WorkspaceHelpCallout from '../components/workspace/WorkspaceHelpCallout.vue'
@@ -72,6 +74,16 @@ function normalizePresenceMembers(members: BoardPresenceMember[]): BoardPresence
 }
 
 const boardId = ref(route.params.id as string)
+const previewProposalId = computed(() => typeof route.query?.proposalId === 'string' ? route.query.proposalId : null)
+const proposalMarkers = ref<BoardProposalMarkers>({})
+provide(BOARD_PROPOSAL_MARKERS, readonly(proposalMarkers))
+watch([boardId, previewProposalId], () => { proposalMarkers.value = {} }, { flush: 'sync' })
+function closeProposalPreview() {
+  proposalMarkers.value = {}
+  const query = { ...route.query }
+  delete query.proposalId
+  void router.replace({ query })
+}
 const boardLoadRetryInFlight = ref(false)
 const boardLoadError = ref<string | null>(null)
 const routedBoard = computed(() => boardStore.currentBoard?.id === boardId.value
@@ -523,6 +535,15 @@ useKeyboardShortcuts([
 </script>
 
 <template>
+  <BoardProposalPreview
+    v-if="previewProposalId && routedBoard"
+    :proposal-id="previewProposalId"
+    :board="routedBoard"
+    :cards="boardStore.currentBoardCards"
+    :available="!boardLoadError && !boardStore.error"
+    @markers="proposalMarkers = $event"
+    @close="closeProposalPreview"
+  />
   <PaperBoardView
     v-if="paperOn"
     :selected-card-id="selectedCardId"
