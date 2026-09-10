@@ -9,6 +9,7 @@ import { useBoardStore } from '../../store/boardStore'
 import { usePaperThemeStore } from '../../store/paperThemeStore'
 import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
 import WorkspaceExperienceSwitcher from '../workspace/WorkspaceExperienceSwitcher.vue'
+import WorkspaceAttentionReminder from '../workspace/WorkspaceAttentionReminder.vue'
 import { useCaptureQueueSync } from '../../composables/useCaptureQueueSync'
 import { registerEscapeHandler } from '../../composables/useEscapeStack'
 import { useViewportMode } from '../../composables/useViewportMode'
@@ -606,6 +607,7 @@ onUnmounted(() => {
           the last-resort backstop for crashes in AppShell itself.
         -->
         <ErrorBoundary>
+          <WorkspaceAttentionReminder />
           <router-view />
         </ErrorBoundary>
       </main>

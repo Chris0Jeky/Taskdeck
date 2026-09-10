@@ -7,6 +7,7 @@ import { workspaceInsightsApi } from '../api/workspaceInsights'
 import { useBoardStore } from '../store/boardStore'
 import TdDialog from '../components/ui/TdDialog.vue'
 import GroundedObservationsPanel from '../components/workspace/GroundedObservationsPanel.vue'
+import WorkspaceAttentionSettings from '../components/workspace/WorkspaceAttentionSettings.vue'
 import { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspaceNavigation'
 import type { Board } from '../types/board'
 import type {
@@ -266,6 +267,7 @@ watch(queryBoardId, () => {
       </div>
       <div class="paper-insights__hero-mark" aria-hidden="true">◎</div>
     </header>
+    <WorkspaceAttentionSettings />
 
     <section class="paper-insights__panel paper-insights__controls" aria-label="Insight controls">
       <label class="paper-insights__field" for="insights-board-select">
