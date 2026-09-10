@@ -86,6 +86,40 @@ describe('optional quiet reminders', () => {
     expect(useWorkspaceAttentionStore().settings?.enabled).toBe(true)
   })
 
+  it.each(['resolve', 'reject'])('keeps the newer account save guarded when the old save settles by %s', async outcome => {
+    wrapper = mount(WorkspaceAttentionSettings); await flushPromises()
+    let completeOld!: (value: typeof settings) => void
+    let rejectOld!: (reason: Error) => void
+    vi.mocked(workspaceAttentionApi.save).mockReturnValueOnce(new Promise((resolve, reject) => {
+      completeOld = resolve; rejectOld = reject
+    }))
+    await wrapper.get('input').setValue(false); await flushPromises()
+    session.userId = 'different-owner'; await flushPromises()
+    const savedWindow = { timeZoneId: 'Europe/London', daysMask: 62, startMinute: 540, endMinute: 1020 }
+    vi.mocked(workspaceAttentionApi.get).mockResolvedValueOnce({ ...settings, revision: 10, window: savedWindow })
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    await wrapper.get('input[type=text]').setValue('America/New_York')
+    await wrapper.findAll('input[type=time]')[0]!.setValue('22:00')
+    await wrapper.findAll('input[type=time]')[1]!.setValue('02:00')
+    let completeNew!: (value: typeof settings & { window: typeof savedWindow }) => void
+    vi.mocked(workspaceAttentionApi.save).mockReturnValueOnce(new Promise(resolve => { completeNew = resolve }))
+    await wrapper.get('input').setValue(false); await flushPromises()
+    if (outcome === 'resolve') completeOld({ ...settings, enabled: false, revision: 2 })
+    else rejectOld(new Error('Old account save response was lost'))
+    await flushPromises()
+    expect(useWorkspaceAttentionStore().busy).toBe(true)
+    expect(useWorkspaceAttentionStore().settings?.revision).toBe(10)
+    completeNew({ ...settings, enabled: false, revision: 11, window: savedWindow }); await flushPromises()
+    expect((wrapper.get('input[type=text]').element as HTMLInputElement).value).toBe('America/New_York')
+    expect((wrapper.findAll('input[type=time]')[0]!.element as HTMLInputElement).value).toBe('22:00')
+    expect((wrapper.findAll('input[type=time]')[1]!.element as HTMLInputElement).value).toBe('02:00')
+    const window = { timeZoneId: 'America/New_York', daysMask: 62, startMinute: 1320, endMinute: 120 }
+    vi.mocked(workspaceAttentionApi.save).mockResolvedValueOnce({ ...settings, enabled: false, revision: 12, window })
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(workspaceAttentionApi.save).toHaveBeenCalledTimes(3)
+    expect(workspaceAttentionApi.save).toHaveBeenLastCalledWith(11, false, window)
+  })
+
   it('saves an explicit weekly window and disables controls until its receipt arrives', async () => {
     wrapper = mount(WorkspaceAttentionSettings); await flushPromises()
     const restrict = wrapper.findAll('input[type=checkbox]')[1]!
