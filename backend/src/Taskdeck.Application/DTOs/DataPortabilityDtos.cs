@@ -200,7 +200,9 @@ public record UserDataExportPreferencesDto(
     string WorkspaceMode,
     DateTimeOffset CreatedAt,
     Taskdeck.Domain.Entities.PersonalPlan? PersonalPlan = null,
-    long PersonalPlanRevision = 0);
+    long PersonalPlanRevision = 0,
+    Taskdeck.Domain.Entities.WorkspaceAttention? Attention = null,
+    long AttentionRevision = 0);
 
 public record UserDataExportNotificationPreferencesDto(
     bool InAppChannelEnabled,
