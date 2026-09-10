@@ -4,13 +4,22 @@ Date: 2026-09-10. Related: #2327, #2336 and #2339. Parent: [engineering contract
 
 ## Auxiliary decision, not a second required gate
 
-`core/admission.mjs` recomputes the continuation plan from protected inputs rather than trusting an uploaded selected list or digest. The entire claimed plan must match. Every task is accounted for once: fresh verified execution, still-valid signed reuse, or explicitly qualified unaffected selection. Missing, duplicate, unknown, failed, skipped, cancelled, wrong-candidate, wrong-policy, empty-test and retry-erased outcomes reject admission.
+`core/admission.mjs` recomputes the continuation plan from protected inputs rather than trusting an uploaded selected list or digest. The entire claimed plan must match. Every task is accounted for once: fresh verified execution, reuse accepted by the current fingerprint/signature checks, or explicitly qualified unaffected selection. Missing, duplicate, unknown, failed, skipped, cancelled, wrong-candidate, wrong-policy, empty-test and retry-erased fresh outcomes reject admission.
 
 Output is `authority:none`, not a ci-run.v1 replacement, and is never posted as a required GitHub check. Taskdeck's canonical gate remains authoritative; shadow mode is unchanged.
 
 `verifyFresh` is a protected-controller callback, not a JSON field. Its default refuses proof. Expected command/environment/input identities are recomputed; producer contracts bind reviewed workflow revision/path/ID and run/job IDs must be present. The callback must authenticate actual execution independently. The fixture's callback returning true simulates that verifier; it is not production provenance.
 
 Omission also requires explicit selection qualification and reviewed contracts. The package cannot grant those approvals itself. Taskdeck contracts remain unreviewed and production reuse disabled. Full qualification bypasses reuse; reused proof retains its original completion/expiry.
+
+**Known pre-activation gap:** the reuse branch does not revalidate current `producerContracts`.
+A synthetic reproduction accepts signed non-test evidence after changing the producer workflow
+revision and setting `requiresTests: true`, because those contract changes are not independently
+bound by this branch. Before authoritative integration, bind the complete producer contract into
+versioned evidence identity or revalidate it at admission, including changed workflow paths/revisions
+and added test requirements. Keep an unchanged-contract positive control. This is tracked on
+[#2336](https://github.com/Chris0Jeky/Taskdeck/issues/2336#issuecomment-5615579153);
+`admissible: true` is not a production qualification claim, even with library mode `enforce`.
 
 ## Durable reference ledger
 
