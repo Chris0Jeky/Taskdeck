@@ -78,6 +78,8 @@ Issue: [#2899](https://github.com/Chris0Jeky/Taskdeck/issues/2899).
 
 #### Session design and limits
 
+Current verified stub to catalogue: /workspace/metrics/cohorts (newAutomation enabled by default) calls AutomationMetricsController.GetCohortMetrics, which validates date ranges but returns an empty cohort list until the service exists (source owner #1142; dead-surface disposition #1276). Do not treat that empty list as actual measured inactivity.
+
 Deliver docs/product/FEATURE_CAPABILITIES.md with user entry points, examples, expected state changes, permission/privacy boundaries, persistence/export behavior, errors/recovery, limits, confidence/evidence, dependencies and planned/not-planned disposition. Audit current documentation claims without copying historical suite counts or QA maturity scores as present evidence. “Not planned” means no current committed scope, not a permanent product rejection.
 
 Use the parent’s synthetic A/B/C/D account fixture and evidence contract. Record exact candidate/configuration, baseline counts/revisions, ordered actions, actual UI/request/persisted effects and the case result. Expected values above are acceptance targets grounded in named contracts; revalidate constants against the candidate and explicitly document any approved contract change.
@@ -91,14 +93,14 @@ Issue: [#2900](https://github.com/Chris0Jeky/Taskdeck/issues/2900).
 
 | Case | Setup and action | Expected outcome |
 | --- | --- | --- |
-| CORE-01 | Capture one known task and request a proposal | Capture is durable; proposal is reviewable; board card count remains N until explicit Apply. |
-| CORE-02 | Preview, approve, then apply the one-create proposal | Preview and approval leave N cards; successful explicit Apply gives N+1 with correct text/destination and linked audit/provenance. |
+| CORE-01 | Capture one known task through the UI/API proposal flow and request a proposal | Capture is durable; proposal is reviewable; board card count remains N until explicit Apply. |
+| CORE-02 | In UI/API, preview, approve, then explicitly apply the one-create proposal | Preview and approval leave N cards; successful explicit Apply gives N+1 with correct text/destination and linked audit/provenance. |
 | CORE-03 | Reject, lose permission, archive board or change proposal revision before apply | No unauthorized/stale board mutation; visible recovery explains refresh/review; no silent reapproval or resend. |
-| CORE-04 | Repeat apply after a lost receipt through supported UI/CLI/MCP routes | Resolve the saved outcome using the documented idempotency contract; no second created card; record actual error/receipt shape. |
+| CORE-04 | Repeat UI/API apply after a lost receipt; inspect the available CLI and MCP commands separately | UI/API retry resolves the saved outcome without a second created card. MCP proposal tools expose get/list/dismiss, not approve/apply. CLI card add/move directly call application services and require their own permission/retry expectations; do not replay an invented Apply operation. |
 
 #### Session design and limits
 
-Use the same synthetic input and proposal operations across interfaces; include credential absent/invalid/expired and scoped-key read/write boundaries. Check keyboard review focus, stale deep links, readable decision feedback and return to the exact proposal. Inventory actual command names from the current CLI/MCP docs rather than inventing parallel APIs. Consumption of #1940/#2215 fixes is a dependency, not duplicate implementation.
+Use the same synthetic task where interfaces support it, with separate expected side effects: UI/API proposal approval and apply; MCP proposal reads/dismiss and supported proposal-producing tools with UI/API review handoff; CLI card add/move direct mutations, with claims-first/fresh-machine hardening tracked in #1131. Do not describe CLI authority parity as already proven; include credential absent/invalid/expired and scoped-key read/write boundaries. Check keyboard review focus, stale deep links, readable decision feedback and return to the exact proposal. Inventory actual command names from the current CLI/MCP docs rather than inventing parallel APIs. Consumption of #1940/#2215 fixes is a dependency, not duplicate implementation.
 
 Use the parent’s synthetic A/B/C/D account fixture and evidence contract. Record exact candidate/configuration, baseline counts/revisions, ordered actions, actual UI/request/persisted effects and the case result. Expected values above are acceptance targets grounded in named contracts; revalidate constants against the candidate and explicitly document any approved contract change.
 
@@ -198,7 +200,7 @@ Issue: [#2905](https://github.com/Chris0Jeky/Taskdeck/issues/2905).
 
 #### Session design and limits
 
-Include silence/noise, short/long supported clips, unsupported size/type, provider unavailable, timeout, cancellation, reload and account erasure interleavings. Read upload/duration/model-budget limits from current policy/config and record exact boundary values before execution. Grounded analysis currently produces up to three questions with one-day freshness; include 0/1/3/over-limit and stale cases. No credentials, purchases or private recordings are assumed. General local STT/WhisperX/semantic recall/cloud benchmark roadmap stays with its v0.5/v0.6 owners; existing optional remote transcription is not a stub for those broader promises.
+Include silence/noise, short/long supported clips, unsupported size/type, provider unavailable, timeout, cancellation, reload and account erasure interleavings. The browser microphone recorder stops at 60 seconds; selected files have supported-MIME and 2 MiB bounds but no server duration check. A valid longer low-bitrate upload is not a duration defect. Read the remaining model-budget/configuration limits from the candidate and record exact boundary values before execution. Grounded analysis currently produces up to three questions with one-day freshness; include 0/1/3/over-limit and stale cases. No credentials, purchases or private recordings are assumed. General local STT/WhisperX/semantic recall/cloud benchmark roadmap stays with its v0.5/v0.6 owners; existing optional remote transcription is not a stub for those broader promises.
 
 Use the parent’s synthetic A/B/C/D account fixture and evidence contract. Record exact candidate/configuration, baseline counts/revisions, ordered actions, actual UI/request/persisted effects and the case result. Expected values above are acceptance targets grounded in named contracts; revalidate constants against the candidate and explicitly document any approved contract change.
 

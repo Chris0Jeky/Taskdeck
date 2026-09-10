@@ -27,7 +27,9 @@ limits live in the [validation ledger](WORKSPACE_OVERHAUL_VALIDATION.md).
 
 | Feature and entry point | What to expect | Limits and interactions | Status / QA |
 | --- | --- | --- | --- |
-| Capture → Review → Apply | Saved input leads to a reviewable proposal. Inspect evidence, approve, then explicitly apply. The board changes at Apply. | Preview, experience changes and approval alone do not apply changes. Stale revisions and missing authority require recovery. UI, CLI and MCP must retain the same authority boundary. | Implemented; [QA-02](https://github.com/Chris0Jeky/Taskdeck/issues/2900). |
+| UI/API Capture → Review → Apply | Saved input leads to a reviewable proposal. Inspect evidence, approve, then explicitly apply. The board changes at Apply. | Preview, experience changes and approval alone do not apply changes. Stale revisions and missing authority require recovery. This describes the UI/API proposal flow, not every CLI or MCP command. | Implemented; [QA-02](https://github.com/Chris0Jeky/Taskdeck/issues/2900). |
+| CLI card commands | Card add/move/list commands use application services directly; an add is a direct mutation, not a pending proposal. | Do not assume UI review-first sequencing or authorization parity. Fresh-machine and claims-first hardening remains tracked in [#1131](https://github.com/Chris0Jeky/Taskdeck/issues/1131). Inspect the [handler](../../backend/src/Taskdeck.Cli/Commands/CardsCommandHandler.cs) and run against isolated data. | Implemented direct-command surface with known hardening work; [QA-02](https://github.com/Chris0Jeky/Taskdeck/issues/2900). |
+| MCP proposal tools | Get/list proposal state and dismiss eligible proposals; use the supported proposing tools and hand off to UI/API review. | [ProposalTools](../../backend/src/Taskdeck.Api/Mcp/ProposalTools.cs) deliberately exposes no approve or apply operation. Test each tool's actual side effects; do not invent an MCP Apply retry. | Implemented bounded tool surface; [QA-02](https://github.com/Chris0Jeky/Taskdeck/issues/2900). |
 | Experience selector | Classic, Studio, Companion and Unified offer different entry points and navigation over the same task data. | Classic remains the default. Switches preserve the mounted route/open card and appropriate drafts; they do not change permissions, provider policy or proposal authority. | Implemented experiment; [QA-03](https://github.com/Chris0Jeky/Taskdeck/issues/2901). |
 | Presentation and Appearance | Zen/Studio/Control adjust disclosure independently of experience. Grove/Grove Night add prototype-inspired palettes alongside Paper/Legacy and Auto. | Detail called Studio is separate from the Studio experience. Due/blocker/trust information must remain available. Visual preference and accessibility require direct evaluation. | Implemented; [QA-03](https://github.com/Chris0Jeky/Taskdeck/issues/2901), [QA-04](https://github.com/Chris0Jeky/Taskdeck/issues/2902). |
 | Card → Open thinking deck | Ordered note, question, options, steps and thread layers, viewed as Stack or Path. | Shared board thinking is distinct from private answers. Saves use revisions. Creating real work from a step is an explicit action. | Implemented; [QA-05](https://github.com/Chris0Jeky/Taskdeck/issues/2903). |
@@ -55,7 +57,7 @@ Record the effective value in the session before testing the boundary and one va
 | Private plan | 40 cards | [PersonalPlan](../../backend/src/Taskdeck.Domain/Entities/PersonalPlan.cs) |
 | Dependencies | 500 same-board edges | [overhaul dependency contract](WORKSPACE_OVERHAUL.md) |
 | Companion private sources | Five combined memories/originals | [overhaul source contract](WORKSPACE_OVERHAUL.md) |
-| Audio originals | 60 seconds; 2 MiB; WebM/Ogg/WAV/MP3/MP4/M4A; up to 50 written versions per recording | [overhaul audio contract](WORKSPACE_OVERHAUL.md) |
+| Audio originals | Browser microphone recording stops at 60 seconds. Selected uploads are bounded by 2 MiB and supported MIME type, with no server duration check; a valid longer low-bitrate upload is not a duration failure. WebM/Ogg/WAV/MP3/MP4/M4A; up to 50 written versions per recording. | [recorder](../../frontend/taskdeck-web/src/components/thinking/AudioAnswerRecorder.vue), [upload service](../../backend/src/Taskdeck.Application/Services/ThinkingAudioService.cs) |
 | Transcription defaults | Five attempts and 10 MiB per owner/UTC day; 20 receipts per recording; two-minute publication deadline; 64 KiB response / 8,000 text characters | [settings](../../backend/src/Taskdeck.Application/Services/SpeechTranscriptionSettings.cs), [policy](AUDIO_TRANSCRIPTION.md) |
 | Grounded questions | Up to three; categories next-step/outcome/dependency, at most one each; exact quote at most 400 characters; one-day freshness | [contract](../../backend/src/Taskdeck.Application/Services/WorkspaceObservationContract.cs), [policy](GROUNDED_OBSERVATIONS.md) |
 | Reminder allowance | At most two claims per UTC day, at least two hours apart; visible/focused board polling no more often than five minutes | [attention policy](WORKSPACE_ATTENTION.md) |
@@ -76,12 +78,22 @@ Record the effective value in the session before testing the boundary and one va
 | Autonomous Apply / silent private retrieval / background question generation | Deliberately absent from these features. User intent and review-first authority remain explicit. | Delegated authority has its own separately gated [#2275](https://github.com/Chris0Jeky/Taskdeck/issues/2275); presentation controls do not enable it. |
 | Randomized A/B platform, statistical winner, push reminders while closed | Not implemented or promised by the current comparison/reminder features. | Outside their current contract. |
 
+## Verified stub and simulated surfaces
+
+The authenticated `/workspace/metrics/cohorts` route loads the cohort dashboard when the
+`newAutomation` feature is enabled (enabled by default). Its
+[metrics endpoint](../../backend/src/Taskdeck.Api/Controllers/AutomationMetricsController.cs)
+explicitly returns an empty cohort list until the metrics service exists. Date validation is real;
+the empty result does not establish that there is no cohort activity. **Status: Stubbed**.
+The source names #1142; current dead-surface disposition is also tracked in
+[#1276](https://github.com/Chris0Jeky/Taskdeck/issues/1276). QA-01 must preserve an honest explanation
+or record the owning implementation/removal decision before treating it as working analytics.
+
 The supplied HTML prototypes simulate local state and model interactions. Repository mock providers
-and synthetic browser fixtures are also simulations. Neither is evidence of a hidden production
-stub. This inventory has not established a product stub in the integrated overhaul; the broader
-route audit in [QA-01](https://github.com/Chris0Jeky/Taskdeck/issues/2899) must name any actual stub
-with its exact code and visible consequence. Existing cohort/Ollama and dead-surface questions in
-[OUTSTANDING_TASKS](../../OUTSTANDING_TASKS.md) require current verification, not inference from old titles.
+and synthetic browser fixtures are also simulations, distinct from this reachable product stub.
+The broader route audit in [QA-01](https://github.com/Chris0Jeky/Taskdeck/issues/2899) must name any
+additional stub with exact code and visible consequence. Remaining Ollama/dead-surface questions in
+[OUTSTANDING_TASKS](../../OUTSTANDING_TASKS.md) still require current verification.
 
 ## What still needs actual use
 
