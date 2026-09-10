@@ -1284,6 +1284,26 @@ Result:
 
 ## CI Status
 
+**Evidence-preserving continuation (2026-09-10, #2336).** The continuation core, conservative
+adapters, dependency staging, separate launcher tests, protected read-only observer, reference
+admission/ledger and corrected portable export have landed through
+#2863/#2864/#2865/#2867/#2868/#2869/#2871. #2878 separates Linux and Windows API callers so E2E can start after Linux API while
+the complete Windows suite still runs and remains required for merge. No suite is removed.
+The cumulative control suite passed 512 tests after the linked-verifier correction; the immutable standalone export
+separately passed 306 overlapping tests on Node 24.13.1/Windows. The deployed observer passed run
+`34442587802`, collecting metadata with `authority:none` and unknown execution provenance explicitly
+unverified. In scheduling run `34431587587`, all 18 jobs passed in 21m54 elapsed / 4,779 runner-seconds
+with real E2E/Windows overlap. This unmatched sample proves the schedule, not a causal savings rate.
+
+Selection and reuse remain **disabled/shadow**. The reference admission API still needs complete
+producer-contract binding and protected execution-inventory completeness; merge-delivery replay
+deduplication and other bounded review follow-ups are tracked on #2336. The Sep9–Sep10 recall window
+has three omitted historical failed lanes and is **not ready** for selection. Resolve those contracts,
+prove one whole-task execution family, then connect the existing canonical gate and independent full
+audits before proposing cutover. [Operations and next steps](ci/continuation/OPERATIONS.md) distinguish
+the implemented reference mechanisms from production authority. Human actions SC-4, SC-6 and SC-7
+remain in [OUTSTANDING_TASKS](../OUTSTANDING_TASKS.md).
+
 **Smart CI Fabric programme (ADR-0066, 2026-08-30 — shadow phase, behaviour-preserving).** The
 repository goes private for the v0.3.0 release on the maintainer's personal GitHub Pro account, so CI
 is being re-planned as a policy-driven verification engine (`docs/ci/SMART_CI.md`, tracker CI-00
@@ -1328,12 +1348,15 @@ Required workflow: `.github/workflows/ci-required.yml`
   a second Claude worktree.
 - `backend-architecture` (Ubuntu)
 - `backend-unit` (Ubuntu/Windows)
-- `api-integration` (Ubuntu/Windows)
+- `api-integration` (Ubuntu) and `api-integration-windows` (Windows), both full API suites
 - `frontend-unit` (Ubuntu/Windows)
   - lint + typecheck + build + unit tests
+  - separate `source-launcher` job (Ubuntu) in the same reusable call
 - `container-images` (Ubuntu)
 - `e2e-smoke` (Ubuntu, depends on `docs-governance`, `backend-architecture`, `backend-unit`,
-  `api-integration`, `migration-validation` and `frontend-unit`; if any one of those is killed or
+  `api-integration`, `migration-validation`, `frontend-unit`, `release-workflow-contract` and
+  `paper-color-audit`; the separate Windows API call remains required but does not delay E2E.
+  If any E2E prerequisite is killed or
   times out, `e2e-smoke` reports `skipped` and the gate produces no verdict rather than a red one)
 - `release-workflow-contract` (Ubuntu)
 - `migration-validation` (Ubuntu)

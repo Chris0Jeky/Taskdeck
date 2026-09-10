@@ -38,8 +38,16 @@ The exported GitHub collector is metadata-only and read-only. Admission requires
 
 ## Validation
 
-Final local repository-overlay suite: **357 passed, zero failed/skipped/cancelled**, Node 22.16.0/Linux. The portable export independently runs **309 tests**, also zero failures/skips/cancellations, without Taskdeck files. The manifest verifier reports 27 payload files. A standalone local smoke used an explicitly labelled temporary Git validation snapshot, not a claimed GitHub/release commit. The copied licence bytes match the existing repository's Git blob.
+The corrected 2026-09-10 export from `cdc6d8e9fa801d0b90d152935e14c540dba6c835` supersedes the
+earlier export below. Its independent verifier accepts 27 payload files and its standalone suite
+passes 306 tests on Node 24.13.1/Windows. The correction prevents linked verifier entry paths from
+silently skipping validation: the module and invocation paths are both canonicalized. Seven export
+tests pass, including valid, missing and tampered exports under default Node resolution and
+`--preserve-symlinks-main`. Obtain the corrected verifier independently; the earlier export's verifier
+must not be treated as cleared for linked invocation.
+
+The original source-overlay report recorded 357 repository tests and 309 portable tests on Node 22.16.0/Linux; those historical totals are not the current export's inventory. On 2026-09-10, the immutable export from reviewed commit `de0f50b8820e52f0b976420d292edb773f2ee533` independently passed **306 tests**, with zero failures/skips/cancellations, on Node 24.13.1/Windows. The separately obtained verifier accepted all 27 payload files, and the copied licence bytes match the source Git blob. The cumulative Taskdeck control suite, including the subsequent API scheduling slice, passed 511 tests; these scopes overlap and must not be added together.
 
 Export regressions cover byte reproducibility, ignored dirty sources, preserved licence bytes, source/output containment, overwrite refusal, symbolic refs, missing/symlink source, tampering/extra output and independent exported execution. The first nested-suite test inherited Node's parent test-runner IPC environment and produced no TAP output; it was corrected to isolate that environment and use an explicit TAP reporter. Initial failure and successful rerun are retained separately.
 
-No Windows export trial, real second-repository rollout, signing, publication or after-deployment performance gain is claimed. Hosted configured-Node and independent/maintainer review remain required before merging the stack.
+The Windows trial also ran the synthetic continuation demo. No real second-repository rollout, signing, publication or production reuse gain is claimed. Hosted exact-head qualification remains a separate merge requirement; export tests do not replace it.
