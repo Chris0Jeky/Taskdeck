@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import type { Card } from '../../../types/board'
+import { useI18n } from 'vue-i18n'
+import type { CardWorkItemType, Card } from '../../../types/board'
 import { TdDateField } from '../../ui'
 
 defineProps<{
   card: Card
+  canEditType: boolean
   formattedDueDate: string
   isOverdue: boolean
 }>()
 
+const { t } = useI18n()
+const workItemType = defineModel<CardWorkItemType>('workItemType', { required: true })
 const title = defineModel<string>('title', { required: true })
 const description = defineModel<string>('description', { required: true })
 const dueDate = defineModel<string>('dueDate', { required: true })
@@ -33,6 +37,18 @@ defineEmits<{
       class="w-full px-3 py-2 bg-surface-container-high border border-outline-variant/40 rounded-md text-on-surface placeholder-on-surface-variant/50 focus:outline-none focus:ring-2 focus:ring-primary"
       placeholder="Card title"
     />
+  </div>
+
+  <div>
+    <label for="card-work-item-type" class="block text-sm font-medium text-on-surface-variant mb-1">
+      {{ t('cardModal.workItemType.label') }}
+    </label>
+    <select id="card-work-item-type" v-model="workItemType" :disabled="!canEditType"
+      class="w-full rounded-md border border-outline-variant/40 bg-surface-container-high px-3 py-2 text-on-surface focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-70">
+      <option value="Task">{{ t('cardModal.workItemType.task') }}</option>
+      <option value="Epic">{{ t('cardModal.workItemType.epic') }}</option>
+      <option value="Spike">{{ t('cardModal.workItemType.spike') }}</option>
+    </select>
   </div>
 
   <!-- Description -->

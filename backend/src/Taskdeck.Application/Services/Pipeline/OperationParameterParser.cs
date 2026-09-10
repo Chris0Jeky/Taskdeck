@@ -9,6 +9,20 @@ namespace Taskdeck.Application.Services.Pipeline;
 /// </summary>
 public static class OperationParameterParser
 {
+    public static bool TryGetWorkItemType(JsonElement parameters, out string? workItemType, out string error)
+    {
+        workItemType = null;
+        error = string.Empty;
+        if (!parameters.TryGetProperty("workItemType", out var property)) return true;
+        if (property.ValueKind != JsonValueKind.String || property.GetString() is not ("Task" or "Epic" or "Spike"))
+        {
+            error = "workItemType must be Task, Epic, or Spike";
+            return false;
+        }
+        workItemType = property.GetString();
+        return true;
+    }
+
     public static bool TryDeserializeParameters(string rawParameters, out JsonElement parameters, out string error)
     {
         parameters = default;

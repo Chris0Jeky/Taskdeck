@@ -4,6 +4,7 @@
  * This catalog is machine-translated and awaits native-speaker review (#1770).
  */
 export default {
+  workItemType: { label: 'Tipo di elemento di lavoro', task: 'Task', epic: 'Epic', spike: 'Spike' },
   commentDelete: {
     title: 'Eliminare il commento?',
     description: 'Questo commento verrà eliminato. Non è possibile annullare questa azione.',

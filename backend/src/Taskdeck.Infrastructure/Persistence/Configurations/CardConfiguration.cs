@@ -32,6 +32,10 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
             .HasDefaultValue(false)
             .IsRequired();
 
+        builder.Property(c => c.WorkItemType)
+            .HasDefaultValue(Taskdeck.Domain.Enums.CardWorkItemType.Task)
+            .IsRequired();
+
         builder.Property(c => c.BlockReason)
             .HasMaxLength(500);
 

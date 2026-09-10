@@ -11,6 +11,34 @@ public class CardTests
     private readonly Guid _columnId = Guid.NewGuid();
 
     [Fact]
+    public void WorkItemType_DefaultsToTask_ChangesInPlace_AndArchivePreservesIt()
+    {
+        var card = new Card(_boardId, _columnId, "Type", "Details", position: 3);
+        var id = card.Id;
+        var label = new CardLabel(card.Id, Guid.NewGuid());
+        card.AddLabel(label);
+        card.Block("Waiting");
+        card.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Task);
+        foreach (var type in Enum.GetValues<Taskdeck.Domain.Enums.CardWorkItemType>())
+        {
+            card.SetWorkItemType(type);
+            card.WorkItemType.Should().Be(type);
+            card.Id.Should().Be(id);
+            card.Position.Should().Be(3);
+            card.ColumnId.Should().Be(_columnId);
+            card.CardLabels.Should().ContainSingle().Which.Should().Be(label);
+            card.BlockReason.Should().Be("Waiting");
+        }
+        Action invalid = () => card.SetWorkItemType((Taskdeck.Domain.Enums.CardWorkItemType)99);
+        invalid.Should().Throw<DomainException>();
+        card.Archive();
+        Action archived = () => card.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Task);
+        archived.Should().Throw<DomainException>();
+        card.Restore();
+        card.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Spike);
+    }
+
+    [Fact]
     public void Archive_RetainsIdentityPlacementLabelsAndBlock_AndRejectsOrdinaryWrites()
     {
         var card = new Card(_boardId, _columnId, "Keep", "Evidence", DateTimeOffset.UtcNow, 3);
