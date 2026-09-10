@@ -11,6 +11,24 @@ beforeEach(() => {
 })
 
 describe('ThinkingDeckPanel', () => {
+  it('retains private drafts if removal was opened before the draft began', async () => {
+    const wrapper = mount(ThinkingDeckPanel, { props, global: { stubs: { ThinkingQuestionAnswer: true, CardDependencies: true } } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === '+ question')!.trigger('click')
+    await wrapper.get('[aria-label="Remove layer 1"]').trigger('click')
+    const answer = wrapper.getComponent({ name: 'ThinkingQuestionAnswer' })
+    answer.vm.$emit('dirty-change', true); await flushPromises()
+    expect(wrapper.get('[aria-label="Remove layer 1"]').attributes('disabled')).toBeDefined()
+    const confirm = wrapper.findAll('button').find(button => button.text() === 'Remove layer')!
+    expect(confirm.attributes('disabled')).toBeDefined()
+    await confirm.trigger('click')
+    expect(wrapper.findComponent({ name: 'ThinkingQuestionAnswer' }).exists()).toBe(true)
+    expect(wrapper.text()).toContain('Keep or explicitly discard your private answer and audio draft')
+    answer.vm.$emit('dirty-change', false); await flushPromises()
+    await confirm.trigger('click')
+    expect(wrapper.findComponent({ name: 'ThinkingQuestionAnswer' }).exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('shows viewer read-only state while retaining presentation controls', async () => {
     vi.mocked(thinkingApi.get).mockResolvedValue({ cardId: 'card-a', revision: 0, schemaVersion: 1, canWrite: false, layers: [] })
     const wrapper = mount(ThinkingDeckPanel, { props })

@@ -64,16 +64,17 @@ function reload() { confirmReload.value = false; void load() }
             <div class="layer-tools">
               <button type="button" :disabled="index === 0" :aria-label="`Move layer ${index + 1} up`" @click="move(index, -1)">↑</button>
               <button type="button" :disabled="index === layers.length - 1" :aria-label="`Move layer ${index + 1} down`" @click="move(index, 1)">↓</button>
-              <button type="button" :aria-label="`Remove layer ${index + 1}`" @click="pendingRemoval = layer.id">Remove</button>
+              <button type="button" :disabled="!!privateDrafts[layer.id]" :aria-label="`Remove layer ${index + 1}`" @click="pendingRemoval = layer.id">Remove</button>
             </div>
           </div>
           <div v-if="pendingRemoval === layer.id" class="deck-confirm">
             <span>Remove this layer from the draft? Linked cards will remain on the board.</span>
             <button type="button" @click="pendingRemoval = null">Keep</button>
-            <button type="button" @click="layers.splice(index, 1); pendingRemoval = null">Remove layer</button>
+            <button type="button" :disabled="!!privateDrafts[layer.id]" @click="layers.splice(index, 1); pendingRemoval = null">Remove layer</button>
           </div>
           <input v-model="layer.title" :aria-label="`Layer ${index + 1} title`" class="layer-title" maxlength="200" :placeholder="layer.kind === 'question' ? 'What is still unknown?' : 'Give this thought a title'">
           <textarea v-model="layer.body" :aria-label="`Layer ${index + 1} details`" maxlength="8000" rows="3" :placeholder="layer.kind === 'question' ? 'Add context or your working answer…' : 'Write a little, or leave this open…'" />
+          <p v-if="privateDrafts[layer.id]" class="hint">Keep or explicitly discard your private answer and audio draft before removing this question.</p>
           <ul v-if="['options', 'steps', 'thread'].includes(layer.kind)" class="items">
             <li v-for="(item, itemIndex) in layer.items" :key="item.id">
               <input v-if="layer.kind === 'steps'" v-model="item.completed" :disabled="!!item.linkedCardId" type="checkbox" :aria-label="`Complete step ${itemIndex + 1}`">

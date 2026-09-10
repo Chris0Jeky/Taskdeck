@@ -310,3 +310,9 @@ land. Only append-only planning/status/validation text conflicted; runtime files
 The backend tree is byte-identical to the original-library branch, whose full solution command is the
 backend proof; the combined frontend/build and four browser journeys are run in the integration tree.
 This is an implementation checkpoint for #2808, not completion of the entire prototype expansion.
+
+## Final integration recovery (2026-09-10)
+
+Hosted smoke on head 9bac8e647 passed 207 journeys, skipped thirteen existing opt-ins, and failed two old locators expecting the retired Leave unsaved thinking? dialog title. Both now target the actual Leave this thinking space? dialog; the recovered seven-test contextual/overhaul browser batch passes against an isolated real API. Assertions still verify draft preservation, explicit discard, review/apply and cross-experience behavior.
+
+Question-layer removal now stays disabled while that question holds a private text/audio draft, including when the removal prompt was opened before the draft began. The user receives guidance to keep or explicitly discard it first. Eighteen targeted component tests and typecheck pass; the focused regression proves the child remains mounted until its draft clears. This closes the direct browser-only recording loss found in hosted comment3974598891. Physical microphone acceptance remains separate.

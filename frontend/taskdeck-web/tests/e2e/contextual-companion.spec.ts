@@ -49,7 +49,7 @@ test('card companion keeps explicit sources and revision preview beside shared t
   expect(await (await request.get(`${API_BASE_URL}/boards/${boardId}/cards`, { headers })).json()).toEqual([card])
   await companion.getByLabel('Automation instruction').fill('Keep this draft for later')
   await page.getByRole('link', { name: 'Choose work for your personal plan' }).click()
-  await expect(page.getByRole('dialog', { name: 'Leave unsaved thinking?' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Leave this thinking space?' })).toBeVisible()
   await page.getByRole('button', { name: 'Keep editing', exact: true }).click()
   await expect(companion.getByLabel('Automation instruction')).toHaveValue('Keep this draft for later')
   await companion.getByLabel('Automation instruction').fill('')

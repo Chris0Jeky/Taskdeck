@@ -67,3 +67,9 @@ Rows sharing a surface and first tracking issue in `future_fix` show only their 
 
 A ledger entry should become a guide or skill update only when it is reproducible, project-specific, and likely to recur.
 Use `docs/agentic/GUIDE_UPDATE_PROTOCOL.md`; do not mutate root instructions after a single ambiguous failure.
+
+### 2026-09-10 — overhaul integration browser title drift
+
+- Scope: PR2866 required run34424282948, head9bac8e647, E2E Smoke. 207 passed/13 skipped/2 failed.
+- Cause: contextual-companion and workspace-overhaul still selected the retired Leave unsaved thinking? title after the continuation UI renamed that dialog Leave this thinking space?. No retry or relaxed assertion was used.
+- Recovery: update the two exact accessible-name locators and rerun both complete specs against the isolated real API: seven passed. Hosted requalification is attached to the repaired head. Evidence: integration-ci-smoke-failure.log and integration-final-ci-browser.log in the local overhaul evidence folder.

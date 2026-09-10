@@ -106,7 +106,7 @@ test('keeps Home capture and saved thinking across all experience combinations',
   await expect(page.getByRole('alert')).toContainText('Someone saved a newer version')
   await expect(title).toHaveValue('My unsaved continuation')
   await page.getByRole('navigation', { name: 'Card context' }).getByRole('link', { name: 'Memory', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Leave unsaved thinking?' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Leave this thinking space?' })).toBeVisible()
   await page.getByRole('button', { name: 'Keep editing', exact: true }).click()
   await expect(title).toHaveValue('My unsaved continuation')
   await page.getByRole('button', { name: 'Load saved version…', exact: true }).click()
