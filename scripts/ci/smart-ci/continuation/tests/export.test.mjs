@@ -49,6 +49,21 @@ test('verification rejects tampering, extra files and output symlinks', () => fi
   assert.throws(() => verifyExport(f.out));
 }));
 
+test('trusted verifier checks exports through linked entry paths with either Node resolution mode', () => fixture(f => {
+  exportKit(f);
+  const trusted = join(f.dir, 'trusted'), alias = join(f.dir, 'alias');
+  mkdirSync(trusted);
+  writeFileSync(join(trusted, 'verify.mjs'), readFileSync(join(kit, 'tools/verify-export.mjs')));
+  symlinkSync(trusted, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  for (const flags of [[], ['--preserve-symlinks-main']]) {
+    const invoke = directory => execFileSync(process.execPath, [...flags, join(alias, 'verify.mjs'), '--dir', directory], { encoding: 'utf8', stdio: 'pipe' });
+    assert.equal(JSON.parse(invoke(f.out)).valid, true);
+    assert.throws(() => invoke(join(f.dir, 'missing')));
+    writeFileSync(join(f.out, 'unexpected'), 'tampered');
+    assert.throws(() => invoke(f.out));
+    rmSync(join(f.out, 'unexpected'));
+  }
+}));
 test('trusted standalone verifier never executes altered export modules', () => fixture(f => {
   exportKit(f);
   const marker = join(f.dir, 'executed'), trusted = join(f.dir, 'trusted-verifier.mjs');

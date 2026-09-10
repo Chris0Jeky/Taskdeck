@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 // Self-contained: run from independently trusted tooling, never from an untrusted export.
 const invariant = (condition, message) => { if (!condition) throw new Error(message); };
@@ -44,7 +44,7 @@ export function verifyExport(directory) {
   invariant(actual.length === seen.size + 1 && actual.every(p => p === 'export-manifest.json' || seen.has(p)), 'unexpected export files');
   return { valid: true, authority: 'checksums-only', sourceCommit: manifest.sourceCommit, files: seen.size };
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(resolve(process.argv[1]))) {
   try {
     const args = process.argv.slice(2);
     invariant(args.length === 2 && args[0] === '--dir' && args[1] && !args[1].startsWith('--'), 'usage: trusted-verify-export.mjs --dir DIRECTORY');
