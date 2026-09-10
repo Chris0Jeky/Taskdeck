@@ -45,7 +45,15 @@ The original Node 22.16.0/Linux source-overlay report recorded 309 passing combi
 
 On 2026-09-10 the reviewed collector read actual required-CI runs `34420380277`, `34423790319` and `34431587587`. Unknown setup, test and inventory measurements remained null. These authenticated metadata reads validate collection against the live API, not actual-execution provenance or default-branch workflow deployment. See [the scheduling measurement](STAGING.md#measurement-and-rollback) for the completed sample.
 
-Configured-Node hosted checks and independent/maintainer reviews remain required. After merging, inspect a real observer run before claiming deployed validation. Rollback this observer/new modules only; required CI/canonical policy are unaffected. Observer absence is never product success.
+Deployed workflow run `34442587802` passed on 2026-09-10 after PR #2868 merged. Its checkout log
+confirms protected tooling revision `f0d4ebfa5e1ea889224d44166a5ce8174405d845`. The retained report
+binds required-CI run `34440388603`, workflow `236855317`, and source head
+`320acd7edd92a97fa00585f1fd94775aa883e9ef`, independently checked against the API. It contains one
+successful attempt and 18 jobs, reports `complete: true` and `authority: none`, and retains null
+setup/test/inventory measurements with `checkoutVerified: false` for the observed source execution.
+This proves deployed metadata collection, not reusable execution evidence.
+
+Rollback this observer/new modules only; required CI/canonical policy are unaffected. Observer absence is never product success.
 
 ## Primary references
 
