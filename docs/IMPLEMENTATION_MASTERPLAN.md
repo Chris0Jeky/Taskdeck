@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Finish the source-backed reminder-hours gap under #2808: optional named-zone weekly windows, explicit save/recovery, existing shared budgets and server-side eligibility. Preserve unrestricted behavior for old opted-in users and keep reminders default off. Local feature and cross-browser proof passes; finish full backend and exact-head hosted qualification, then integrate with the already-reviewed overhaul continuation. No new scheduling service or model work is introduced.
+
 Grounded-question commit recovery (#2808): close the final source-read/save interval and settle accounting before staging questions. Keep short transaction ownership in the insight repository, preserve source/access and insight concurrency checks, and prove no rejected staged state can leak into subsequent saves. This completes the two previously tracked observation consistency gaps; general semantic processing and recall remain separate.
 
 Expanded overhaul follow-through (#2808): preserve the qualified combined reminder/audio/preview delivery while the unrelated main CI stack settles. Full backend/frontend, eleven browser journeys, combined migrations and bounded interaction review pass. Finish exact-head delivery before marking tracker capabilities shipped; automatic transcription and broader source processing/portability remain separate work.

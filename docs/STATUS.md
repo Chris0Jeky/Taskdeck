@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Optional reminder hours (#2808, pending delivery): explicit weekday and time windows in an IANA zone, including overnight and daylight-saving behavior. Server checks precede question lookup and budget admission; preference edits preserve the shared UTC allowance, old-client toggles retain the window, and exports include it without a new migration. All 9,270 backend and 6,421 frontend tests pass, with 34/three existing skips respectively; targeted domain/API/component, typecheck/build, Chromium and Firefox journeys pass. Independent review is clean; exact-head hosted qualification remains pending. [Policy](product/WORKSPACE_ATTENTION.md).
+
 Grounded-question commit recovery (#2808, pending main delivery): recheck source/access inside the same serializable transaction that saves observations, and detach rejected staged questions. Settle model usage before staging; accounting failure now has a definite no-save result and cannot hide a successful question save. Seventeen application and sixteen API/reminder tests pass, including changes after the final service read. Full backend verification passes 9,240 tests with 34 existing skips; bounded independent review is clean. Hosted qualification remains separate.
 
 Expanded overhaul follow-through (#2808, pending main delivery): optional reminders, audio recovery and retained previews now pass combined qualification: 9,232 backend tests, 6,418 frontend tests, eleven Chromium journeys and both migrations together. A final filename-normalization fix has eleven passing audio API tests. Independent interaction reviews are clean; hosted/base qualification remains on the delivery PRs. [Evidence and limits](product/WORKSPACE_OVERHAUL_VALIDATION.md).
