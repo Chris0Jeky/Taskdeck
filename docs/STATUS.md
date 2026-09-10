@@ -6,6 +6,7 @@ Original-source Companion continuation (#2808):
 
 - Companion can explicitly select individual native private-memory text sources, including superseded answers. The server checks owner, active board access, memory revision, capture membership and content hash before model processing. Receipts retain the asset identity, fingerprint and supersession state; replay revalidates them. Unselected originals are not added to context.
 - Source choices load on request in pages of ten with bounded excerpts. Five combined private memories/originals and the existing total context budget apply. Context resolution reads current memory rows without historical graphs. This reduces copying and source maintenance while retaining explicit Review/Approve/Apply. Audio, transcription, broader observations and model-quality acceptance remain separate work.
+Comparison compatibility continuation (#2808): recording uses a UUID fallback available on HTTP LAN origins; version-2 file imports retain the same SHA-256-derived observation IDs when SubtleCrypto is unavailable. Frontend attribution includes resolved base, target, minification, CSS/asset and sourcemap options. These changes preserve manual comparison portability across layouts and builds without adding telemetry or changing board review/apply behavior.
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
@@ -1467,6 +1468,11 @@ The nightly integration candidate adds a parallel observation job. It derives a 
 
 At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.
 
+September 9 retained-comparison continuation (#2808): version3 observation files can be imported and
+combined across releases with atomic validation, stable IDs and duplicate/conflict handling. Production
+frontend inputs receive a build fingerprint; legacy/dev observations keep unknown attribution.
+Grouped descriptive outcomes preserve scenario/layout/theme/build conditions. Notes remain manually
+retained files with no automatic telemetry. Exact local/hosted checks belong to the continuation PR.
 September 9 older-memory continuation (#2808): explicit preservation on the Memory page admits up to
 50 displayed legacy memories, with all-or-nothing revision and ownership checks. It retains exact
 originals and historical corrections through the native-source/export path without editing content,

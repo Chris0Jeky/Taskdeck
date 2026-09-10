@@ -5,6 +5,7 @@ Last Updated: 2026-09-10
 Private audio continuation (#2808): retain an original recording first, add manual written representations separately, then explicitly confirm into private memory. The vertical uses native source assets, bounded SQLite chunks, owner-scoped playback, idempotent upload retry, version conflicts and account portability/erasure. All four experiences share the question UI; automated transcription, real-device qualification and the wider source/attention work remain separate. This is a prototype delivery path with executable evidence, not a provider or release acceptance decision.
 
 Original-source Companion continuation (#2808): explicit per-asset source selection builds on native private-memory preservation. Bounded owner-scoped source queries, expected revisions and content hashes connect historical originals to chat receipts without implicit retrieval. All four experiences share the same picker and source contract. Execution evidence belongs to the continuation PR; hosted qualification and the wider overhaul remain separate.
+Comparison compatibility continuation (#2808): finish the retained-comparison LAN API and build-attribution follow-through with portable ID/hash paths and resolved Vite build options. Cross-platform checksum vectors, secure-API-unavailable store/browser checks and distinct default/Pages-base production bundles provide the proving paths. Physical-device LAN acceptance remains separate.
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -2239,6 +2240,11 @@ PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal a
 ## CI10-2 remaining acceptance (2026-09-08)
 
 PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
+
+Across-release comparison continuation (#2808): portable observation import/export, build attribution,
+predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
+sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
+selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.
 
 ## Contextual companion continuation (#2808, 2026-09-09)
 

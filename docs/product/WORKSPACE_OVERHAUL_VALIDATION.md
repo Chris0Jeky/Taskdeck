@@ -15,6 +15,21 @@ inspect the receipt at 375px with an accessibility scan. Execute with a dedicate
 
 These checks prove selection and source transport with the test/Mock provider. They do not establish
 live model answer quality, audio/transcription quality, release deployment or physical-device acceptance.
+## Comparison compatibility follow-through (2026-09-09)
+
+The observation UUID fallback uses the [browser API available on insecure origins](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues).
+Legacy import checksums retain SHA-256 compatibility using a local fallback solely for observation
+deduplication. The standalone `node --test build/comparisonIdentity.node-check.mjs` check compares
+Unicode, block-boundary and long inputs against Node's SHA-256. Store and
+`comparison-compatibility.spec.ts` browser tests remove `randomUUID` and `subtle` while retaining
+`getRandomValues`, then prove record/export/import and cross-path duplicate handling. This simulates
+the relevant LAN API availability; it is not a physical LAN-device acceptance claim.
+
+The frontend identity plugin reads [Vite's resolved configuration](https://vite.dev/guide/api-plugin.html#configresolved)
+and stamps the identity module at build time. Base path, production mode, target, minification,
+CSS/asset options, sourcemaps and public environment join the existing source/config input hash.
+The default production build and a `/Taskdeck/` base-path build must emit distinct stamps.
+The fingerprint remains input attribution, not a signed artifact or deployment assertion.
 
 Date: 2026-09-08 · Delivery tracker: [#2800](https://github.com/Chris0Jeky/Taskdeck/issues/2800)
 
@@ -189,6 +204,26 @@ and identity reset. The insight/memory follow-through uses delayed-response comp
 prove that analysis settles across route changes, conflicting actions are disabled, initial memory reads
 finish before creation, and Retry returns to failed board discovery. These are fixes from #2808's
 recorded review residuals, not changes to approval/apply authority.
+
+## Comparison files across releases (2026-09-09)
+
+Comparison exports now use version3 with stable observation IDs and frontend input fingerprints.
+The comparison page imports version2/3 files locally, validates the full batch before accepting it,
+skips identical IDs, rejects conflicting IDs and enforces 500 observations / 2 MiB per file. Legacy
+version2 entries receive deterministic content-based IDs and retain unknown frontend attribution.
+Import is manual; notes remain in memory until explicitly exported, and identity changes clear them.
+No notes are sent to a server or assigned automatically. The grouped table keeps scenario, experience,
+presentation, theme, backend version and frontend fingerprint separate; ratings exclude unrated
+entries. This is descriptive personal evidence, not a randomized/statistical A/B result.
+
+Production Vite builds embed a SHA256 fingerprint over frontend source/public/build inputs, locked
+packages/configuration, Node version, mode and public Vite environment values. Only the digest is
+embedded. Development has no fixed frontend identity and records null. This fingerprint identifies
+build inputs, not a signed release or an external deployment's contents.
+
+Proving seams: workspaceExperimentStore.spec.ts, WorkspaceComparisonFiles.spec.ts and
+`node --test build/frontendIdentity.node-check.mjs`; the extended comparison/Grove browser journey exports,
+reloads, imports, skips duplicates and checks all four experiences at desktop/tablet/375px widths.
 
 ## Preserve older memory originals (2026-09-09)
 
