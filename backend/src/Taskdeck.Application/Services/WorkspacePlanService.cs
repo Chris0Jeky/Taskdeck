@@ -35,6 +35,8 @@ public sealed class WorkspacePlanService(IWorkspacePlanRepository plans, IAuthor
 
     public async Task<Result<WorkspacePlanDto>> FocusAsync(Guid actorId, FocusWorkspacePlanDto dto, CancellationToken ct)
     {
+        if (dto.BoardId == Guid.Empty || dto.CardId == Guid.Empty)
+            return Result.Failure<WorkspacePlanDto>(ErrorCodes.ValidationError, "Focus requires a board and card.");
         var preference = await plans.GetAsync(actorId, ct);
         if (preference.PersonalPlanRevision != dto.ExpectedRevision) return Conflict();
         if (!(await ReadCardAsync(actorId, dto.BoardId, dto.CardId, ct)).Available) return Unavailable();
