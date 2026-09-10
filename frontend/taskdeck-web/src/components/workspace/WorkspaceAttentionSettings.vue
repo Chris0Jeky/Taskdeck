@@ -64,7 +64,11 @@ onMounted(() => { void attention.load() })
 
 <style scoped>
 .attention-settings { display: grid; gap: .65rem; padding: 1rem; border: 1px solid var(--td-border-default); border-radius: .6rem; background: var(--td-surface-container); color: var(--td-text-primary); }
-h2,p { margin: 0; } label { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; } input[type=checkbox] { width: 1.2rem; height: 1.2rem; } button { justify-self: start; }
+h2,p { margin: 0; } label { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+label:has(input[type=checkbox]) { flex-wrap: nowrap; align-items: start; }
+input[type=checkbox] { width: 1.2rem; height: 1.2rem; margin-top: .1rem; flex-shrink: 0; accent-color: var(--td-text-primary); }
+button { justify-self: start; min-height: 2.75rem; padding: .55rem .75rem; text-align: left; color: var(--td-text-primary); background: var(--td-surface-raised); border: 1px solid var(--td-border-default); border-radius: .4rem; }
+button:disabled { opacity: .5; }
 fieldset { display: grid; gap: .7rem; min-width: 0; padding: .8rem; border: 1px solid var(--td-border-default); }
 input[type=text], input[type=time] { max-width: 100%; min-width: 0; padding: .4rem; color: var(--td-text-primary); background: var(--td-surface-container); border: 1px solid var(--td-border-default); }
 .days { display: flex; flex-wrap: wrap; gap: .6rem; }
