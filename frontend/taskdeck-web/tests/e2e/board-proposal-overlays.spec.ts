@@ -51,9 +51,12 @@ test('a checked proposal highlights saved objects across board experiences witho
   expect(writes).toEqual([])
   expect(await (await request.get(`${API_BASE_URL}/boards/${boardId}/cards`, { headers })).json()).toEqual([card])
   expect((await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()).columns).toEqual(savedBoard.columns)
-  await page.goto(`/workspace/review?boardId=${boardId}`)
-  await page.getByRole('link', { name: 'Preview on board', exact: true }).click()
-  await expect(panel).toBeVisible()
+  for (const theme of ['off', 'grove']) {
+    await page.evaluate(value => localStorage.setItem('td.paper.mode.v2', value), theme)
+    await page.goto(`/workspace/review?boardId=${boardId}`)
+    await page.getByRole('link', { name: 'Preview on board', exact: true }).click()
+    await expect(panel).toBeVisible()
+  }
   await page.route(`**/automation/proposals/${proposal.id}/preview`, route => route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ message: 'Synthetic revoked access' }) }))
   await panel.getByRole('button', { name: 'Refresh board preview', exact: true }).click()
   await expect(panel.getByRole('status')).toBeVisible()

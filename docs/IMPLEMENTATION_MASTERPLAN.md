@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
+
 Comparison attribution follow-through (#2808): retain the resolved Auto appearance in the existing portable theme label and exclude known non-shipped test inputs from the frontend fingerprint. Preserve legacy checksums/file semantics and prove live light/night switching, export/import and HTTP LAN compatibility together.
 
 Audio lifecycle recovery (#2808): keep stale written drafts visible with their original evidence, require valid reload state for mutations, and enforce current-question hashes before staging a written representation. Prove changed/missing/confirmed receipts, explicit discard, failed reload and unchanged original/representation history. Automated processing and broader source configuration/picker follow-through remain separate.

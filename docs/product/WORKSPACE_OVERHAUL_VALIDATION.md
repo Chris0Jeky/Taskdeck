@@ -1,5 +1,13 @@
 # Workspace overhaul validation and follow-through
 
+## Receipt and Review recovery (2026-09-10)
+
+Post-send receipt reconciliation has a 15-second HTTP timeout and disables automatic retries. A timeout preserves the successful message and offers an explicit GET-only Retry. Legacy Review exposes eligible board previews for Chat and Manual proposals even without capture provenance; status and read-only guards remain enforced.
+
+Validation: production build and typecheck passed. Full Vitest ran 6,399 passing tests, three existing skips and one stale request-options assertion; the assertion was updated for the new timeout, then all 73 tests across the four affected suites passed. Scoped ESLint passed. Two Chromium journeys passed in 49.5 seconds, including a genuinely stalled receipt request, exactly one message POST, explicit read recovery, both Review renderers and narrow-screen accessibility. Bounded independent review found no HIGH/CRITICAL defect. No backend behavior changed; hosted qualification remains pending on the continuation PR.
+
+
+
 ## Board-object proposal overlays (2026-09-10)
 
 `BoardProposalPreview.spec.ts` covers matched effective revisions, approved pins, mismatched board/revision/status/update receipts, parameter-ID precedence, immutable board inputs, permission/board refresh failure, stale in-flight results, logout, same-user token refresh, server-clock expiry and both card renderers. Existing Chat preview and Board view regressions also pass. Full frontend: 6,368 passed and three existing skips; subsequent projection/access changes have 49 focused passing tests plus typecheck. Exact final evidence is retained with the continuation PR.
