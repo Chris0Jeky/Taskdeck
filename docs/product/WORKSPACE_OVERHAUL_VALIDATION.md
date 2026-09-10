@@ -6,6 +6,12 @@ Playback responses are bound to the original recording ID and both source/reques
 
 Sixteen component tests, typecheck, production build and scoped ESLint passed. Full frontend: 6,403 passed, three existing skips, 414 files. The Chromium audio journey passed in 17.1 seconds, including a controlled stalled original response, question edit, discarded old playback, restored question, playback recovery, lost-upload receipt retry, explicit written confirmation, all four experiences and narrow-screen accessibility. A bounded independent review found no HIGH/CRITICAL defect. Backend behavior is unchanged; no hardware microphone or provider acceptance is claimed.
 
+## Optional reminders (2026-09-10)
+
+The default-off account preference and shared server budget permit quiet board-page links to existing revalidated questions. No implicit analysis/model call is added. Two domain and three API tests pass; initial API compilation caught an incorrect test DbSet name, corrected before the three API cases passed. Thirteen component tests, typecheck/build and the 8.5-second Chromium consent/Zen/budget/mobile/accessibility journey pass. The first browser fixture had an automatic-semicolon-insertion error, corrected without changing runtime assertions. Screenshot inspected.
+
+The full frontend run passed 6,382 tests with three existing skips and exposed 31 failures in an old shell fixture with incomplete mocked route data. Isolating the independently tested reminder child in existing shell/view fixtures restores their intended seam; all 102 tests across the four affected suites pass. No product logic was changed for that fixture repair. The full backend passed 9,224 tests with 34 existing skips and exposed three architecture-parser failures on the new controller declaration. Using the repository's conventional controller constructor/declaration preserves authorization and resolves all three: final architecture tests pass 28 with one existing skip and all three reminder API tests pass. A temporary browser API initially locked rebuild outputs; stopping that synthetic service permitted the final API rebuild. Bounded independent review found no HIGH/CRITICAL defect. Hosted outcomes remain separate. See [attention policy](WORKSPACE_ATTENTION.md) for limits and subjective acceptance boundaries.
+
 
 
 ## Combined continuation qualification (2026-09-10)

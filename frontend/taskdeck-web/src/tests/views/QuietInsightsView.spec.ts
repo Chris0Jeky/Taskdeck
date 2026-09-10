@@ -83,7 +83,7 @@ async function settle() {
 }
 
 function mountView() {
-  return mount(QuietInsightsView, { global: { stubs: { GroundedObservationsPanel: true } } })
+  return mount(QuietInsightsView, { global: { stubs: { GroundedObservationsPanel: true, WorkspaceAttentionSettings: true } } })
 }
 
 describe('QuietInsightsView', () => {

@@ -302,7 +302,8 @@ public class DataExportService : IDataExportService
                     preferences.WorkspaceMode.ToString(),
                     preferences.CreatedAt,
                     preferences.ReadPersonalPlan(),
-                    preferences.PersonalPlanRevision)
+                    preferences.PersonalPlanRevision,
+                    preferences.ReadAttention(), preferences.AttentionRevision)
                 : null;
 
             var exportNotificationPrefs = notificationPrefs is not null
@@ -637,6 +638,9 @@ public class DataExportService : IDataExportService
                 // flushes synchronously, which ASP.NET rejects on this streaming endpoint.
                 JsonSerializer.SerializeToElement(preferences.ReadPersonalPlan(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }).WriteTo(writer);
                 writer.WriteNumber("personalPlanRevision", preferences.PersonalPlanRevision);
+                writer.WritePropertyName("attention");
+                JsonSerializer.SerializeToElement(preferences.ReadAttention(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }).WriteTo(writer);
+                writer.WriteNumber("attentionRevision", preferences.AttentionRevision);
                 writer.WriteEndObject();
             }
             else

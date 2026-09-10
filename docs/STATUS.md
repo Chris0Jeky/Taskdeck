@@ -4,6 +4,8 @@ Last Updated: 2026-09-10
 
 Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.
 
+Optional attention (#2808): default-off account reminders reuse existing revalidated questions with one shared two-per-UTC-day/two-hour budget. Board-page quiet-time, typing/dialog/Focus/Zen/visibility and identity guards suppress interruptions; no model or analysis runs automatically. Local proof and limits are in the overhaul validation ledger and attention policy; hosted qualification remains on the continuation PR.
+
 Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
 Audio confirmation recovery (#2808): retain an immutable fingerprint of the exact confirmation request and return conflicts for changed or pre-migration unprovable retries. Account exports carry the nullable receipt; isolated migration/API proof passes, with full and hosted qualification recorded on the continuation PR.
 
