@@ -1285,9 +1285,9 @@ Result:
 ## CI Status
 
 **Evidence-preserving continuation (2026-09-10, #2336).** The continuation core, conservative
-adapters, dependency staging, separate launcher tests and protected read-only observer have landed
-through #2863/#2864/#2865/#2867/#2868. The admission/reference ledger and portable export follow in
-#2869/#2871; #2878 separates Linux and Windows API callers so E2E can start after Linux API while
+adapters, dependency staging, separate launcher tests, protected read-only observer, reference
+admission/ledger and corrected portable export have landed through
+#2863/#2864/#2865/#2867/#2868/#2869/#2871. #2878 separates Linux and Windows API callers so E2E can start after Linux API while
 the complete Windows suite still runs and remains required for merge. No suite is removed.
 The cumulative control suite passed 512 tests after the linked-verifier correction; the immutable standalone export
 separately passed 306 overlapping tests on Node 24.13.1/Windows. The deployed observer passed run
