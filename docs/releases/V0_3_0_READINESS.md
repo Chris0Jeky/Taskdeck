@@ -20,7 +20,7 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Per-clause proven
 | Clause 2 and the section 5 split | 2026-09-10 | `main` `a1f797913` |
 | Clause 4 (`main` green) | 2026-09-10 | `CI` run `34494959248` at `a1f797913` |
 | Clause 5's branch-protection read | 2026-09-10 | live branch protection on `main` |
-| Section 3, the human-gate table | 2026-09-05 04:00Z, re-checked 08:50Z and 15:15Z | `main` `42d3007f0`; the SC-10 row counts twelve |
+| Section 3, the human-gate table | rows re-read 2026-09-10; the rest 2026-09-05 04:00Z | `main` `a1f797913` for the SC-9 and SC-10 rows, `42d3007f0` for the others |
 | Section 2, the clause-5 chain | 2026-09-04 | not re-measured since |
 | Clauses 1 and 3 | 2026-09-03 | not re-measured since |
 | Section 4, trackers | 2026-09-05 | not re-measured since |
@@ -157,8 +157,8 @@ Clause 5 is entirely human. The named items live in `OUTSTANDING_TASKS.md` and m
 | SC-6 change repository visibility to private | `#2337` | The release-defining action |
 | SC-7 register the isolated runners after cutover | `#2328`, `#2337` | Post-cutover |
 | SC-8 public-asset and launch-kit decision | `#2337`, `#2242` | **Ruled 2026-09-03**, see below |
-| SC-9 top up Codex review credits or accept the fresh-context fallback | `#2337` | Open. Maintainer billing; the credits were exhausted 2026-09-03 |
-| SC-10 review the queued control-plane PRs (ADR-0066 amendment 2026-09-03) | `#2324`, `#2331` | Open. Twelve parked at 15:15Z on 2026-09-05: the ten below plus `#2684` (release-composer fence-aware extraction and the composer suite in `ci-required.yml`, 11:19Z) and `#2687` (release rehearsal input, workflow-revision tooling for legacy tags, semver changelog base, 12:00Z), both with two SHIP rounds and parked unmerged; the D-12 sweep touched none of the twelve. Ten control-plane PRs parked when measured 2026-09-05 04:00Z: `#2502`, `#2506`, `#2532`, `#2550` (reviewed clean; each needs `gh pr update-branch` and a fresh hosted run before merge), `#2522` (conflict resolved at head `18d214ba2`; its two Windows reds were `#2378` and `#2572`, neither from the PR; needs the same update-branch and fresh run), `#2531` (stacked on `#2522`, review verdict FIX-FIRST), `#2535` (review verdict SHIP, parked as T2), and three from the beta lane on 2026-09-05, each with a SHIP review: `#2587` (CI-10 slice 1, the nightly coordinator), `#2608` (CI-07 slice, launcher suite Linux-only) and `#2610` (`#2582`, `main` runs no longer cancel). Five post-hoc disclosures sit on the item: `#2479`, `#2529`, `#2548`, `#2549`, `#2556` |
+| SC-9 top up Codex review credits or accept the fresh-context fallback | `#2337` | **Closed 2026-09-06** (walkthrough q-4 = A). The connector was reviewing normally when last observed, 2026-09-10 |
+| SC-10 review the queued control-plane PRs (ADR-0066 amendment 2026-09-03) | `#2324`, `#2331` | **Closed 2026-09-06**, all twelve merged under the q-1 = A delegation. That delegation covered those twelve named PRs only; the amendment still binds a new control-plane PR, and whether it should is the open question in `OUTSTANDING_TASKS.md` §J.3. Parked control-plane PRs are now recorded on §J.2, which holds `#2838` |
 | SC-11 enable `delete_branch_on_merge`, then decide the one-time merged-branch sweep | none | Open, seeded 2026-09-04 by PR `#2564` (merge `7155f1042`). Repository setting and a destructive sweep, both maintainer-only; not a v0.3.0 gate item |
 
 **SC-8 is answered.** The maintainer ruled on 2026-09-03: a **private development repository plus a
