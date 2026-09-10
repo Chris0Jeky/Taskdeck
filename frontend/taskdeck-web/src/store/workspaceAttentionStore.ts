@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { useSessionStore } from './sessionStore'
 import { workspaceAttentionApi, type AttentionSettings, type AttentionWindow } from '../api/workspaceAttentionApi'
 import { isDemoMode } from '../utils/demoMode'
+import { getErrorDisplay } from '../composables/useErrorMapper'
 
 export const useWorkspaceAttentionStore = defineStore('workspaceAttention', () => {
   const session = useSessionStore()
@@ -20,8 +21,14 @@ export const useWorkspaceAttentionStore = defineStore('workspaceAttention', () =
         : window === undefined ? await workspaceAttentionApi.save(settings.value!.revision, enabled)
           : await workspaceAttentionApi.save(settings.value!.revision, enabled, window)
       if (current === generation && owner === session.userId) settings.value = next
-    } catch {
+    } catch (failure) {
       if (current === generation && owner === session.userId) {
+        const display = getErrorDisplay(failure, '')
+        const status = (failure as { response?: { status?: number } } | null)?.response?.status
+        if (enabled !== undefined && status === 400 && display.code === 'ValidationError') {
+          error.value = display.message
+          return
+        }
         settings.value = null
         error.value = 'Your reminder preference could not be confirmed. Reload it before continuing.'
       }
