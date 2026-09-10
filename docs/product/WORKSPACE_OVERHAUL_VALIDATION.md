@@ -1,5 +1,11 @@
 # Workspace overhaul validation and follow-through
 
+## Audio review repairs (2026-09-10)
+
+Audio drafts now bind to the board, card, question and revision present when file selection or microphone acquisition starts. Editing that question retains the local file for replay/download but prevents uploading it under new question evidence. A new draft receives the current binding. Two regressions cover edits before upload and while recording.
+
+Production CSPs permit only same-origin and local `blob:` media; nginx and its AWS template permit same-origin microphone requests while continuing to deny camera and geolocation. API header checks, proxy policy contracts and Chromium probes exercise these exact policy strings. The probes load a local WAV and inspect effective microphone policy; they do not claim real microphone hardware acceptance. The retained-original library browser journey also passes.
+
 ## Original-source context continuation (2026-09-09)
 
 `ChatOriginalContextApiTests.cs` extends the context API suite with original-only dispatch, exact
