@@ -1,24 +1,24 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { usePersonalPlanFocus } from '../../composables/usePersonalPlanFocus'
 import { useWorkspacePlanStore } from '../../store/workspacePlanStore'
 const plan = useWorkspacePlanStore()
-const router = useRouter()
+const { openFocus, opening, navigationError } = usePersonalPlanFocus()
 async function resume() {
   const card = plan.plan?.lastWorked
-  if (card?.available && await plan.focus(card.boardId, card.cardId))
-    await router.push({ path: `/workspace/boards/${card.boardId}/cards/${card.cardId}/thinking`, query: { focus: '1' } })
+  if (card) await openFocus(card)
 }
 onMounted(() => { void plan.load() })
 </script>
 
 <template>
   <section v-if="plan.available" class="plan-resume" aria-label="Personal continuity">
+    <p v-if="navigationError" role="alert">{{ navigationError }}</p>
     <p v-if="plan.loading" role="status">Finding your last focus…</p>
     <div v-else-if="plan.error" role="alert">{{ plan.error }} <button type="button" @click="plan.load">Retry personal plan</button></div>
     <template v-else-if="plan.plan?.lastWorked?.available">
       <div><p>LAST WORKED ON · {{ plan.plan.lastWorked.boardName }}</p><h2>{{ plan.plan.lastWorked.title }}</h2></div>
-      <button type="button" :disabled="!plan.ready || plan.saving" @click="resume">Resume focus</button>
+      <button type="button" :disabled="!plan.ready || plan.saving || opening" @click="resume">Resume focus</button>
     </template>
     <p v-else>{{ plan.plan?.lastWorked ? 'Your previous focus is no longer available.' : 'Choose a focus and leave yourself a place to return.' }}</p>
     <RouterLink to="/workspace/plan">Your personal plan</RouterLink>

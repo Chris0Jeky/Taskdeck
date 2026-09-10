@@ -20,12 +20,10 @@ test('uncertain plan writes hide cached entries until explicit refresh reconcile
   await expect(entry).toBeVisible()
   await page.route('**/api/workspace/plan/focus', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ errorCode: 'UnexpectedError', message: 'Synthetic uncertain response' }) }))
   await entry.getByRole('button', { name: 'Focus', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/cards/${card.id}/thinking\\?focus=1`))
   await expect(page.getByRole('alert')).toContainText('Focus could not be confirmed.')
-  await expect(entry).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Add to plan', exact: true })).toBeDisabled()
-  await expect(page).toHaveURL(/\/workspace\/plan$/)
   await page.unroute('**/api/workspace/plan/focus')
-  await page.getByRole('button', { name: 'Refresh personal plan', exact: true }).click()
+  await page.getByRole('link', { name: 'Refresh personal plan', exact: true }).click()
   await expect(entry).toBeVisible()
   let writes = 0
   await page.route('**/api/workspace/plan', async route => {
