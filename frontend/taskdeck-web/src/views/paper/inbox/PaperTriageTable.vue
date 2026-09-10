@@ -61,6 +61,8 @@ const props = withDefaults(defineProps<{
   scopeReplacement?: boolean
   actionBusyItemId?: string | null
   triagePollingItemId?: string | null
+  triagePollingItemIds?: Set<string>
+  triagePollingProblems?: Record<string, 'retrying' | 'unavailable'>
   scopeLabel?: string
   scopeClearLabel?: string
   readOnly?: boolean
@@ -550,6 +552,7 @@ function isActionDisabled(
 
   return props.readOnly ||
     hasMutationInFlight.value ||
+    props.triagePollingItemIds?.has(item.id) ||
     props.triagePollingItemId === item.id ||
     !actionPermitted ||
     isEditing(item) ||
@@ -715,6 +718,7 @@ type TriageRowState = CaptureRowState | 'keeping' | 'archiving' | 'kept' | 'arch
  * honest failure mode; the row simply stays quiet until the refresh lands.
  */
 function rowState(item: CaptureItemSummary): TriageRowState {
+  if (props.triagePollingItemIds?.has(item.id)) return 'sending'
   const pending = pendingAction.value
   if (props.actionBusyItemId === item.id && pending?.itemId === item.id) {
     if (pending.kind === 'keep') return 'keeping'
@@ -732,6 +736,7 @@ function rowState(item: CaptureItemSummary): TriageRowState {
  * row is genuinely still waiting on the user.
  */
 function decisionLine(item: CaptureItemSummary): string | null {
+  if (props.triagePollingItemIds?.has(item.id)) return t('inbox.polling.waiting')
   const state = rowState(item)
   if (state === 'undecided' || state === 'unknown') return null
   if (state === 'nothingToPropose' && item.canEditSuggestion === false) {
@@ -1279,6 +1284,9 @@ function recordedOr(value: string | null | undefined): string {
           />
         </div>
 
+        <p v-if="triagePollingProblems?.[item.id]" role="status" data-testid="capture-polling-problem">
+          {{ t(`inbox.polling.${triagePollingProblems[item.id]}`) }}
+        </p>
         <p
           v-if="decisionLine(item)"
           class="paper-triage__decision"
