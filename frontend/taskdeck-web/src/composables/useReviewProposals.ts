@@ -1174,6 +1174,9 @@ export function useReviewProposals() {
       retainedQueueRefreshHealth &&
       queueRefreshHealthStillDescribesScreen(scope, retainedQueueRefreshHealth.scope)
     ) {
+      if (retainedQueueRefreshHealth.stale || retainedQueueRefreshHealth.refused) {
+        retireQueueRecovery()
+      }
       consecutiveQueueRefreshFailures = retainedQueueRefreshHealth.consecutiveFailures
       consecutiveQueueRefreshRefusals = retainedQueueRefreshHealth.consecutiveRefusals
       // Restoring an older disclosure is not a successful read and cannot
