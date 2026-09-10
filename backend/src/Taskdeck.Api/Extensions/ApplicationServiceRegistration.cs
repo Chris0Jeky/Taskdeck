@@ -34,6 +34,7 @@ public static class ApplicationServiceRegistration
         services.AddScoped<ChatContextResolver>();
         services.AddScoped<ThinkingStepService>();
         services.AddScoped<ThinkingAnswerService>();
+        services.AddScoped<ThinkingAudioService>();
         services.AddScoped<LabelService>();
         services.AddSingleton<IPasswordHasher, BcryptPasswordHasher>();
         services.AddScoped<AuthenticationService>();

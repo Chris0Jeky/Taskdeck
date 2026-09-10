@@ -1,6 +1,24 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+Source upload bounds (#2808): coalesce fragmented reads into fixed 64 KiB database chunks with one final tail, preserving quota/size/hash/rollback checks. Twenty-four focused API tests pass; exact hosted repair qualification remains on the integration PR.
+
+Source-storage export continuation (#2808): buffered and streamed account exports now hold one deferred SQLite read snapshot across blob objects, references, chunks, representations and audio-answer rows. Concurrent WAL uploads can commit without reserving the writer for the duration of the export; all five sections retain the earlier view until disposal. This is source-storage consistency, not a claim of a single snapshot across every account-export section or a tested restore workflow.
+
+Planning continuity follow-through (#2808): Classic Home now offers the same private last-worked Focus resume as the other experiences, in both Paper/Grove and Legacy rendering. Personal-plan due dates use canonical calendar-day formatting; Today and tomorrow use the local calendar date without changing card deadlines. This reduces the work needed to resume a thought after switching versions.
+
+Board proposal preview continuation (#2808): Chat and both Review layouts link to a checked read-only overlay on the existing board. Effective revision, proposal status/update time and board identity must match before projecting operation targets; execution parameter IDs take precedence over display IDs. Existing cards/columns are marked across Classic, Studio, Companion and Unified, while creation/hidden objects remain in the diff. Board refresh failures, changes, route/account transitions and bounded expiry retract markers. The surface adds no approval, Apply or board mutation. Component and real-API Chromium checks prove projection, non-mutation, Review navigation and mobile rendering; the wider overhaul remains open.
+
+Original-history cursor continuation (#2808): the shared chat picker now seeks from the last displayed source ordinal through the existing capture/ordinal index, keeping ten-item pages accessible beyond 1,000 originals without progressively deeper row-offset scans. Initial ordinal zero and gaps between text sources are preserved. Existing ownership, board-access and revision checks remain mandatory. The legacy offset route accepts offsets through 1,000; clients needing deeper history use `afterOrdinal` (initially -1) and `nextAfterOrdinal`.
+
+Source upload and library query continuation (#2808): host-rejected oversized audio bodies retain the standard 413 error after transaction rollback, with no orphaned original, reference, answer or processing request. Library pages authorize their board candidates first, then retrieve up to twenty owner-scoped metadata rows in one detached SQL projection. Evidence excerpts are clipped in SQL; listing does not load capture graphs, representation histories or binary chunks. This reduces original-library maintenance cost without changing private ownership or review/apply semantics.
+
+Original-source Companion continuation (#2808):
+
+- Companion can explicitly select individual native private-memory text sources, including superseded answers. The server checks owner, active board access, memory revision, capture membership and content hash before model processing. Receipts retain the asset identity, fingerprint and supersession state; replay revalidates them. Unselected originals are not added to context.
+- Source choices load on request in pages of ten with bounded excerpts. Five combined private memories/originals and the existing total context budget apply. Context resolution reads current memory rows without historical graphs. This reduces copying and source maintenance while retaining explicit Review/Approve/Apply. Audio, transcription, broader observations and model-quality acceptance remain separate work.
+Comparison compatibility continuation (#2808): recording uses a UUID fallback available on HTTP LAN origins; version-2 file imports retain the same SHA-256-derived observation IDs when SubtleCrypto is unavailable. Frontend attribution includes resolved base, target, minification, CSS/asset and sourcemap options. These changes preserve manual comparison portability across layouts and builds without adding telemetry or changing board review/apply behavior.
 
 **Authority.** This file owns *shipped reality* - what is built, verified, and running today.
 **Evidence and authority:** reconcile shipped-state claims against code, tests and current execution evidence. Applicable instructions and `.agent-harness/tier.json` govern authority; this file cannot grant or override it.
@@ -29,6 +47,8 @@ September 8 parallel delivery wave (merged work; #2235):
 - Sentry.AspNetCore 6.10.0 and Testcontainers.PostgreSql 4.15.0 landed in PR #2772 with green hosted CI and independent review. **Authority correction:** the coordinator missed the maintainer-own-review requirement for `backend/Directory.Packages.props`, a declared CI control path. The merge is disclosed on #2772 and #2337; no retrospective approval is inferred. New npm/Vitest and CI-control PRs remain subject to that review under [OUTSTANDING_TASKS.md](../OUTSTANDING_TASKS.md).
 
 Workspace overhaul (#2800, integrated implementation; no release or working-database migration claimed):
+
+- Private audio answers under #2808 retain an explicitly saved original before a written answer exists. Owner-scoped SQLite chunk storage, immutable written representations and explicit human confirmation connect to private memory. Playback/download, uncertain-upload retry, account export and complete source erasure are integrated; no automatic transcription or real microphone/provider qualification is claimed. The [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md) records local and hosted evidence separately.
 
 - The dependency continuation under #2808 adds explicit prerequisite relationships between cards on the same board, with both directions in Thinking Decks, cycle validation, revision conflicts and portable ID remapping. A transaction rechecks referenced-card existence and rolls back its audit on concurrent deletion; the existing board token guards archive. Dependency edits leave card material unchanged. Targeted API/component/browser proof is recorded in the [validation ledger](product/WORKSPACE_OVERHAUL_VALIDATION.md); exact hosted qualification remains on the continuation PR.
 
@@ -1460,8 +1480,30 @@ The nightly integration candidate adds a parallel observation job. It derives a 
 
 At source head `1493089ce`, local Smart CI tests passed 144/144, static Actionlint bootstrap checks passed 5/5, and all 156 action references were pinned. Hosted exact-head qualification and independent review remain pending in this candidate record. A real paired baseline download, quiet-night/week observation, release qualification, and full #2334 acceptance are not yet proven. The ADR-0066 maintainer-review gate still applies to this new control-plane PR; the previous SC-10 delegation covered twelve named PRs.
 
+September 9 retained-comparison continuation (#2808): version3 observation files can be imported and
+combined across releases with atomic validation, stable IDs and duplicate/conflict handling. Production
+frontend inputs receive a build fingerprint; legacy/dev observations keep unknown attribution.
+Grouped descriptive outcomes preserve scenario/layout/theme/build conditions. Notes remain manually
+retained files with no automatic telemetry. Exact local/hosted checks belong to the continuation PR.
 September 9 older-memory continuation (#2808): explicit preservation on the Memory page admits up to
 50 displayed legacy memories, with all-or-nothing revision and ownership checks. It retains exact
 originals and historical corrections through the native-source/export path without editing content,
 enqueuing processing or changing board work. Targeted API14 and frontend20 checks passed; full-suite
 and hosted qualification are recorded separately in the continuation PR.
+
+Companion continuity (#2808): unsaved thinking blocks embedded sends until saved; pending sends hold
+in-app navigation with honest cancellation wording. Failed post-send receipt reads can be retried
+without resending. Preview expiry uses server-relative receipt timestamps and elapsed request time.
+These frontend safeguards preserve successful responses and the existing review-first mutation path.
+
+September 10 original-library continuation (#2808): Memory now offers explicit owner-private discovery,
+read-only evidence/history and original playback/download for earlier audio questions. Existing-board
+access is required even when the board is archived; deleted-board originals remain owner-linked.
+Changed questions cannot be confirmed from the library. API8, targeted frontend26 and typecheck passed;
+full suites and corrected browser proof are recorded separately in the continuation PR.
+
+September 10 source-interaction follow-through (#2808): named original pickers and permission errors,
+same-user token-refresh continuity, shared retained-instruction disabled states, and bounded original
+history pages beyond 1000 address the recorded usability findings. Targeted frontend 33/API 27 and two
+Chromium journeys pass; full-suite and hosted outcomes belong to the continuation PR. Board mutation
+and model dispatch authority are unchanged.

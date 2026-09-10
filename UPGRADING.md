@@ -14,6 +14,15 @@ changes.
 
 ## Unreleased workspace overhaul
 
+Private audio answers add `StoredBlobs`, `StoredBlobChunks`, `StoredBlobReferences`, `Representations`,
+`RepresentationSupersessions` and `ThinkingAudioAnswers`. Three additive migrations introduce these
+tables; existing audio/artefact bytes and legacy transcript rows are not rewritten or backfilled.
+**BREAKING: none.** New account exports include `sourceStorage` and blob-reference IDs on source assets.
+Back up the database before upgrading. Rolling these migrations back removes the new recordings and
+representation history; preserve an account export first. Export is archival, not an automatic restore.
+Originals survive board deletion for owner export and are erased by account deletion. The new question
+audio path accepts 2 MiB originals and never enables a transcription provider automatically.
+
 Private memory sources add four nullable reference columns across `WorkspaceMemories` and its
 history. New answers and corrections stage native Context Fabric captures in the same transaction;
 older memories preserve their saved history and acquire sources on their next explicit write.

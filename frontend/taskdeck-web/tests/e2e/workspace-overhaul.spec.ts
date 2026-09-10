@@ -106,7 +106,7 @@ test('keeps Home capture and saved thinking across all experience combinations',
   await expect(page.getByRole('alert')).toContainText('Someone saved a newer version')
   await expect(title).toHaveValue('My unsaved continuation')
   await page.getByRole('navigation', { name: 'Card context' }).getByRole('link', { name: 'Memory', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Leave unsaved thinking?' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: 'Leave this thinking space?' })).toBeVisible()
   await page.getByRole('button', { name: 'Keep editing', exact: true }).click()
   await expect(title).toHaveValue('My unsaved continuation')
   await page.getByRole('button', { name: 'Load saved version…', exact: true }).click()
@@ -220,9 +220,17 @@ test('makes comparison and Grove themes usable on desktop and narrow screens', a
   let comparisonText = ''
   for await (const chunk of comparisonStream!) comparisonText += chunk.toString()
   const comparison = JSON.parse(comparisonText)
-  expect(comparison.version).toBe(2)
+  expect(comparison.version).toBe(3)
   expect(comparison.trials[0]).toMatchObject({ scenario: 'resume-thinking', completionOutcome: 'completed', ease: 4 })
   expect(comparison.trials[0]).toHaveProperty('build')
+  expect(comparison.trials[0]).toHaveProperty('frontendBuild')
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'Your observations', exact: true })).toHaveCount(0)
+  await page.getByLabel('Import saved observations', { exact: true }).setInputFiles({ name: 'retained-comparison.json', mimeType: 'application/json', buffer: Buffer.from(comparisonText) })
+  await expect(page.getByText('Imported 1 observation. Exact duplicates were skipped.', { exact: true })).toBeVisible()
+  await expect(page.getByRole('table')).toContainText('1 completed')
+  await page.getByLabel('Import saved observations', { exact: true }).setInputFiles({ name: 'retained-comparison.json', mimeType: 'application/json', buffer: Buffer.from(comparisonText) })
+  await expect(page.getByText('Imported 0 observations. Exact duplicates were skipped.', { exact: true })).toBeVisible()
   for (const width of [1440, 768, 375]) {
     await page.setViewportSize({ width, height: 900 })
     for (const experience of ['classic', 'studio', 'companion', 'unified']) {
@@ -231,6 +239,8 @@ test('makes comparison and Grove themes usable on desktop and narrow screens', a
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     }
   }
+  await page.screenshot({ path: '../../artifacts/overhaul/retained-comparison-mobile.png', fullPage: true })
+  expect((await new AxeBuilder({ page }).include('.comparison-files').analyze()).violations.filter(item => ['serious', 'critical'].includes(item.impact ?? ''))).toEqual([])
   await page.goto(`/workspace/memory?boardId=${boardId}`)
   await page.getByRole('button', { name: 'Add memory', exact: true }).click()
   await page.getByLabel('Title', { exact: true }).fill('A question for the next visit')

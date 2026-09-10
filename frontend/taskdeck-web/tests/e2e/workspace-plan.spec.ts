@@ -4,12 +4,14 @@ import { API_BASE_URL, registerAndAttachSession } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
 import { assertOk } from './support/httpAsserts'
 
+test.use({ timezoneId: 'America/Los_Angeles', locale: 'en-US' })
+
 test('personal plan persists, resumes focus and makes room without rescheduling a card', async ({ page, request }) => {
   const auth = await registerAndAttachSession(page, request, 'personal-plan')
   const headers = { Authorization: `Bearer ${auth.token}` }
   await page.addInitScript(() => {
     if (!localStorage.getItem('td.workspace.layout.v1')) localStorage.setItem('td.workspace.layout.v1', JSON.stringify({ experience: 'studio', presentation: 'studio' }))
-    localStorage.setItem('td.paper.mode.v2', 'grove')
+    if (!localStorage.getItem('td.paper.mode.v2')) localStorage.setItem('td.paper.mode.v2', 'grove')
   })
   const boardId = await createBoardWithColumn(request, auth, String(Date.now()), { boardNamePrefix: 'Personal continuity', columnNamePrefix: 'Next' })
   const board = await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()
@@ -26,6 +28,14 @@ test('personal plan persists, resumes focus and makes room without rescheduling 
   await page.reload()
   const entry = page.locator('article').filter({ has: page.getByRole('heading', { name: 'One meaningful thread' }) })
   await expect(entry).toContainText('2026-09-10')
+  await expect(entry).toContainText('Card due 10/20/2026')
+  await page.locator('.personal-plan').getByRole('button', { name: 'Today', exact: true }).click()
+  const today = await page.evaluate(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  })
+  await expect(page.getByLabel('Show planned date', { exact: true })).toHaveValue(today)
+  await page.getByRole('button', { name: 'All dates', exact: true }).click()
   await page.getByRole('button', { name: 'Horizon', exact: true }).click()
   await expect(page.getByRole('heading', { name: '2026-09-10', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Board', exact: true }).click()
@@ -47,7 +57,20 @@ test('personal plan persists, resumes focus and makes room without rescheduling 
   await page.getByRole('button', { name: 'Resume focus', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/cards/${card.id}/thinking\\?focus=1`))
   await expect(page.getByLabel('Layer 1 details', { exact: true })).toHaveValue('Next time: check the unresolved edge case.')
-  await page.getByRole('link', { name: 'Return to your plan', exact: true }).click()
+  await page.goto('/workspace/home')
+  await page.getByRole('combobox', { name: 'Workspace experience' }).selectOption('classic')
+  for (const mode of ['grove', 'off']) {
+    await page.evaluate(value => localStorage.setItem('td.paper.mode.v2', value), mode)
+    await page.reload()
+    const continuity = page.getByRole('region', { name: 'Personal continuity' })
+    await expect(continuity).toContainText('One meaningful thread')
+    await expect(continuity.getByRole('button', { name: 'Resume focus', exact: true })).toBeEnabled()
+    await continuity.getByRole('button', { name: 'Resume focus', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`/cards/${card.id}/thinking\\?focus=1`))
+    await expect(page.getByLabel('Layer 1 details', { exact: true })).toHaveValue('Next time: check the unresolved edge case.')
+    await page.goto('/workspace/home')
+  }
+  await page.goto('/workspace/plan')
   await entry.getByRole('button', { name: 'Plan tomorrow', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Planned for tomorrow' })).toBeVisible()
   const planned = await (await request.get(`${API_BASE_URL}/workspace/plan`, { headers })).json()

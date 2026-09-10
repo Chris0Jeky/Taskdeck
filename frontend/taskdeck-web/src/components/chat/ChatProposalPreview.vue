@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onScopeDispose, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { automationApi } from '../../api/automationApi'
 import { useSessionStore } from '../../store/sessionStore'
 import { getErrorDisplay } from '../../composables/useErrorMapper'
@@ -20,13 +21,17 @@ watch(() => [props.proposalId, props.boardId, session.userId, session.token], cl
 async function load() {
   clear()
   const request = generation
+  const startedAt = performance.now()
   loading.value = true
   try {
     const result = await automationApi.getProposalPreview(props.proposalId)
     if (request !== generation) return
     if (result.proposalId !== props.proposalId || result.boardId !== props.boardId)
       throw new Error('This preview does not belong to the current conversation board.')
-    const lifetime = Math.min(30000, Date.parse(result.expiresAt) - Date.now())
+    // Both receipt timestamps use the server clock. Subtract the full round
+    // trip conservatively; the client's wall clock may be hours out of sync.
+    const lifetime = Math.min(30000, Date.parse(result.expiresAt) - Date.parse(result.checkedAt))
+      - (performance.now() - startedAt)
     if (!Number.isFinite(lifetime) || lifetime <= 0) throw new Error('This proposal has expired. Open Review for its history.')
     preview.value = result
     timer = setTimeout(() => { clear(); error.value = 'Refresh the preview to check the latest changes.' }, lifetime)
@@ -44,6 +49,7 @@ onScopeDispose(clear)
     <template v-if="preview">
       <p>{{ normalizeProposalStatus(preview.status) }} · {{ preview.effectiveRevisionNumber === null ? 'Original proposal' : `Revision ${preview.effectiveRevisionNumber}` }} · checked {{ new Date(preview.checkedAt).toLocaleTimeString() }}</p>
       <pre>{{ preview.diff }}</pre>
+      <RouterLink v-if="boardId" :to="{ path: `/workspace/boards/${boardId}`, query: { proposalId } }">Preview on board</RouterLink>
       <p>This is a checked preview, not an applied change. Open Review to inspect, approve and explicitly apply. Review checks the proposal again.</p>
     </template>
   </section>

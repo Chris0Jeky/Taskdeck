@@ -154,6 +154,13 @@ public sealed class EfCaptureStore : ICaptureStore
 
     public async Task<int> DeleteByUserAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        // Native audio receipts and representation lineage hold source-asset FKs. Erase these
+        // owned dependants before the existing explicit source-child deletion below.
+        var ownedCaptureIds = _context.Captures.Where(x => x.UserId == userId).Select(x => x.Id);
+        var ownedRepresentationIds = _context.Representations.Where(x => x.UserId == userId && x.CaptureId.HasValue && ownedCaptureIds.Contains(x.CaptureId.Value)).Select(x => x.Id);
+        await _context.ThinkingAudioAnswers.Where(x => x.UserId == userId && ownedCaptureIds.Contains(x.CaptureId)).ExecuteDeleteAsync(cancellationToken);
+        await _context.RepresentationSupersessions.Where(x => ownedRepresentationIds.Contains(x.RepresentationId)).ExecuteDeleteAsync(cancellationToken);
+        await _context.Representations.Where(x => ownedRepresentationIds.Contains(x.Id)).ExecuteDeleteAsync(cancellationToken);
         // Set-based, children first: explicit rather than relying on the database honouring the
         // cascade, so the erasure is the same on every provider the store may run on.
         var ownedAssets = _context.SourceAssets
