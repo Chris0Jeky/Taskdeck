@@ -27,11 +27,20 @@ public sealed class BoardDependencyService(IBoardDependencyRepository graphs, IU
         if (!access.IsSuccess) return Result.Failure<BoardDependencyDto>(access.ErrorCode, access.ErrorMessage);
         var graph = await graphs.GetAsync(boardId, ct) ?? new BoardDependencies(boardId);
         if (dto.ExpectedRevision != graph.Revision) return Conflict();
-        try { graph.Replace(dto.Edges); }
-        catch (DomainException ex) { return Result.Failure<BoardDependencyDto>(ex.ErrorCode, ex.Message); }
         var ids = (await unit.Cards.GetByBoardIdAsync(boardId, ct)).Select(card => card.Id).ToHashSet();
-        if (dto.Edges.Any(e => !ids.Contains(e.CardId) || !ids.Contains(e.DependsOnCardId)))
+        if (dto.Edges is null)
+            return Result.Failure<BoardDependencyDto>(ErrorCodes.ValidationError, "Dependencies are required.");
+        if (dto.Edges.Any(e => e is null || !ids.Contains(e.CardId) || !ids.Contains(e.DependsOnCardId)))
             return Result.Failure<BoardDependencyDto>(ErrorCodes.ValidationError, "Every dependency must reference an existing card on this board.");
+        var archivedIds = (await unit.Cards.GetArchivedByBoardIdAsync(boardId, ct)).Select(card => card.Id).ToHashSet();
+        var existingIds = ids.Concat(archivedIds).ToHashSet();
+        // The editor submits only active edges. Retain hidden archive history until its
+        // endpoints are restored; deleted endpoints remain removable as before.
+        var retained = graph.ReadEdges().Where(edge =>
+            existingIds.Contains(edge.CardId) && existingIds.Contains(edge.DependsOnCardId) &&
+            (archivedIds.Contains(edge.CardId) || archivedIds.Contains(edge.DependsOnCardId)));
+        try { graph.Replace([.. dto.Edges, .. retained]); }
+        catch (DomainException ex) { return Result.Failure<BoardDependencyDto>(ex.ErrorCode, ex.Message); }
         access.Value.RecordDependentMutation();
         await unit.AuditLogs.AddAsync(new AuditLog("board", boardId, AuditAction.Updated, actorId,
             $"Updated explicit card dependencies; edges={dto.Edges.Count}"), ct);
@@ -39,7 +48,8 @@ public sealed class BoardDependencyService(IBoardDependencyRepository graphs, IU
         // inside the write transaction so deletion cannot introduce a dangling link.
         if (!await graphs.SaveAsync(graph, dto.ExpectedRevision, ct)) return Conflict();
         await notifier.NotifyBoardMutationAsync(new BoardRealtimeEvent(boardId, "board", "updated", boardId, DateTimeOffset.UtcNow), ct);
-        return Result.Success(new BoardDependencyDto(boardId, graph.Revision, graph.ReadEdges(), true));
+        return Result.Success(new BoardDependencyDto(boardId, graph.Revision,
+            graph.ReadEdges().Where(edge => ids.Contains(edge.CardId) && ids.Contains(edge.DependsOnCardId)).ToArray(), true));
     }
 
     private async Task<Result<Board>> CheckAsync(Guid actorId, Guid boardId, bool write, CancellationToken ct)

@@ -2,6 +2,23 @@ import http, { type BoardReadOptions } from './http'
 import type { Card, CardCaptureProvenance, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
 
 export const cardsApi = {
+  async getCard(boardId: string, cardId: string): Promise<Card> {
+    const { data } = await http.get<Card>(`/boards/${boardId}/cards/${cardId}`, { skipRetry: true })
+    return data
+  },
+  async getArchivedCards(boardId: string): Promise<Card[]> {
+    const { data } = await http.get<Card[]>(`/boards/${boardId}/cards/archived`, { skipRetry: true })
+    return data
+  },
+
+  async setArchived(boardId: string, cardId: string, archived: boolean, expectedUpdatedAt: string): Promise<Card> {
+    const { data } = await http.post<Card>(
+      `/boards/${boardId}/cards/${cardId}/${archived ? 'archive' : 'restore'}`,
+      { expectedUpdatedAt }, { skipRetry: true },
+    )
+    return data
+  },
+
   async getCards(
     boardId: string,
     params?: { search?: string; labelId?: string; columnId?: string },

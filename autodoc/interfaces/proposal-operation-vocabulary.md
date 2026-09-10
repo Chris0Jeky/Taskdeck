@@ -14,7 +14,8 @@ Card operations:
 - `create`: `boardId`, `columnId`, `title`; optional `description`, `dueDate`, and exactly one replacement-label representation: name array `labels` or UUID-string array `labelIds`.
 - `update`: `cardId`; at least one of `title`, `description`, `dueDate`, `clearDueDate`, `labels`, or `labelIds`. At the operation-payload layer, an explicit null `dueDate` clears it. The chat tool treats `due_date: null` as omitted and emits clearing only for `clear_due_date: true`. `dueDate` and a true `clearDueDate` are mutually exclusive.
 - `move`: `cardId`, `columnId`.
-- `archive`: `cardId`. Cards do not have a separate archived state; applying this operation marks the card blocked with the generated reason `Archived by an approved proposal.` The preview shows that exact blocked-state transition before approval.
+- `archive`: `cardId`. This legacy identity permanently retains Block semantics: applying it marks the card blocked with the generated reason `Archived by an approved proposal.` The preview shows that exact blocked-state transition before approval. Existing approvals and the legacy MCP `archive_card` and chat `propose_archive_card` tools keep this contract.
+- `archive-lifecycle` / `restore-lifecycle`: `cardId`, `expectedUpdatedAt` (the displayed card timestamp). Archive hides the retained card from active work; restore returns it to its original column/position, subject to the current column WIP limit. Preview and Apply reject stale timestamps, wrong archive state, unavailable columns, and another operation on the same card in the same proposal. The separate MCP `archive_card_lifecycle` / `restore_archived_card` tools only create proposals; explicit approval and Apply remain required.
 - `add-label` / `remove-label`: `cardId` plus exactly one of board-scoped `labelId` or `labelName`. Separator-free and underscore aliases remain accepted at apply time for existing callers.
 
 Invariants:

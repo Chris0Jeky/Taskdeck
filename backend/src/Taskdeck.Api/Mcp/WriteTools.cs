@@ -383,6 +383,32 @@ public class WriteTools
             "Proposal created. Review and approve in Taskdeck; Apply will mark the card blocked with reason 'Archived by an approved proposal.'");
     }
 
+    [McpServerTool(Name = "archive_card_lifecycle"), Description(
+        "Creates a PROPOSAL to archive a card in place, hiding it from active work while retaining its ID, labels and history. Requires the current card updatedAt. Explicit review, approval and Apply are required; nothing changes immediately.")]
+    public Task<string> ArchiveCardLifecycle(string board_id, string card_id, string expected_updated_at)
+        => ProposeCardLifecycle(board_id, card_id, expected_updated_at, true);
+
+    [McpServerTool(Name = "restore_archived_card"), Description(
+        "Creates a PROPOSAL to restore an archived card to its original column and position. Requires the archived card updatedAt. Explicit review, approval and Apply are required; nothing changes immediately.")]
+    public Task<string> RestoreArchivedCard(string board_id, string card_id, string expected_updated_at)
+        => ProposeCardLifecycle(board_id, card_id, expected_updated_at, false);
+
+    private async Task<string> ProposeCardLifecycle(string boardId, string cardId, string timestamp, bool archive)
+    {
+        var userId = await _userContext.GetCurrentUserIdAsync();
+        if (!Guid.TryParse(boardId, out var boardGuid) || !Guid.TryParse(cardId, out var cardGuid))
+            return Error("Invalid board_id or card_id format");
+        if (!DateTimeOffset.TryParse(timestamp, out var expected)) return Error("Invalid expected_updated_at timestamp");
+        var parameters = JsonSerializer.Serialize(new { boardId = boardGuid, cardId = cardGuid, expectedUpdatedAt = expected });
+        var result = await _proposalService.CreateProposalAsync(new CreateProposalDto(
+            SourceType: ProposalSourceType.Manual, RequestedByUserId: userId,
+            Summary: archive ? "Archive card" : "Restore card", RiskLevel: RiskLevel.High,
+            CorrelationId: Guid.NewGuid().ToString(), BoardId: boardGuid,
+            Operations: new List<CreateProposalOperationDto> { new(0, archive ? "archive-lifecycle" : "restore-lifecycle",
+                "card", parameters, Guid.NewGuid().ToString(), cardGuid.ToString()) }));
+        return result.IsSuccess ? ProposalCreated(result.Value.Id, "Proposal created. Review, approve and Apply explicitly in Taskdeck.") : Error(result);
+    }
+
     /// <summary>
     /// Captures a new item into the inbox. This is a low-risk operation -- the item is
     /// added to the inbox immediately (no proposal needed). The item can later be triaged

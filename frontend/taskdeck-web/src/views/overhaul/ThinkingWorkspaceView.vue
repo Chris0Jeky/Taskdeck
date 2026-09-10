@@ -54,7 +54,8 @@ async function load() {
   try {
     const [nextBoard, cards] = await Promise.all([boardsApi.getBoard(requestedBoardId), cardsApi.getCards(requestedBoardId)])
     if (current !== generation) return
-    const nextCard = cards.find(item => item.id === requestedCardId)
+    const nextCard = cards.find(item => item.id === requestedCardId) ?? await cardsApi.getCard(requestedBoardId, requestedCardId)
+    if (current !== generation) return
     if (!nextCard) {
       error.value = 'This card is no longer available on this board.'
       return
@@ -79,6 +80,7 @@ onUnmounted(() => { generation++ })
     <p v-if="loading" role="status">Opening your thinking space…</p>
     <section v-else-if="error" role="alert"><p>{{ error }}</p><button type="button" @click="load">Try again</button></section>
     <template v-else-if="card">
+      <p v-if="card.isArchived" role="status">This card is archived. Its thinking remains readable. Restore it from the board's Archived cards to edit.</p>
       <p v-if="route.query.focus === '1'" role="status">FOCUS · One thread at a time. <RouterLink to="/workspace/plan">Return to your plan</RouterLink></p>
       <p v-if="focused">Before you leave, add a shared <strong>thread</strong> below for next time. Save it with the card’s thinking so it is here when you return.</p>
       <header><p class="thinking-workspace__eyebrow">ROOM TO THINK · {{ board?.name }}</p><h1>{{ card.title }}</h1><RouterLink to="/workspace/plan">Choose work for your personal plan</RouterLink><p>Keep possibilities, questions and next steps close to the work. A simple card can stay simple.</p></header>

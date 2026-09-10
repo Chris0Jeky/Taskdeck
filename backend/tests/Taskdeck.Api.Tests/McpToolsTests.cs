@@ -634,6 +634,29 @@ public class McpToolsTests : IDisposable
         parameters.RootElement.GetProperty("cardId").GetGuid().Should().Be(card.Value.Id);
     }
 
+    [Theory]
+    [InlineData(true, "archive-lifecycle")]
+    [InlineData(false, "restore-lifecycle")]
+    public async Task CardLifecycleTools_CreateDistinctVersionPinnedProposal_WithoutApplying(bool archive, string action)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (user, boardId, colId) = await SetupBoardAsync(scope);
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Lifecycle", null, null, null))).Value;
+        if (!archive) card = (await service.SetArchivedAsync(boardId, card.Id, true, new(card.UpdatedAt))).Value;
+        var tools = CreateWriteTools(scope, user.Id);
+        var json = archive
+            ? await tools.ArchiveCardLifecycle(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"))
+            : await tools.RestoreArchivedCard(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"));
+        using var document = JsonDocument.Parse(json);
+        var proposalId = document.RootElement.GetProperty("proposalId").GetGuid();
+        var proposal = (await scope.ServiceProvider.GetRequiredService<IAutomationProposalService>().GetProposalByIdAsync(proposalId)).Value;
+        proposal.Operations.Should().ContainSingle().Which.ActionType.Should().Be(action);
+        using var parameters = JsonDocument.Parse(proposal.Operations[0].Parameters);
+        parameters.RootElement.GetProperty("expectedUpdatedAt").GetDateTimeOffset().Should().Be(card.UpdatedAt);
+        (await service.GetCardAsync(boardId, card.Id)).Value.IsArchived.Should().Be(!archive);
+    }
+
     [Fact]
     public void ArchiveCard_DescriptionExplainsApprovedBlockOutcome()
     {

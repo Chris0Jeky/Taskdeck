@@ -18,6 +18,98 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class BoardDependencyApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RestoringCard_InvalidatesPreviouslyReadDependencyProjection(bool hasStoredGraph)
+    {
+        using var client = factory.CreateClient();
+        var (_, board, a, b) = await Setup(client);
+        var edge = new CardDependency(a.Id, b.Id);
+        if (hasStoredGraph)
+            (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(0, [edge]))).EnsureSuccessStatusCode();
+        var archivedResponse = await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{a.Id}/archive", new CardLifecycleDto(a.UpdatedAt));
+        archivedResponse.EnsureSuccessStatusCode();
+        var archived = (await archivedResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        var oldProjection = (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!;
+        oldProjection.Edges.Should().BeEmpty();
+        (await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{a.Id}/restore", new CardLifecycleDto(archived.UpdatedAt))).EnsureSuccessStatusCode();
+        var staleSave = await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(oldProjection.Revision, oldProjection.Edges));
+        staleSave.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var fresh = (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!;
+        fresh.Revision.Should().BeGreaterThan(oldProjection.Revision);
+        fresh.Edges.Should().BeEquivalentTo(hasStoredGraph ? new[] { edge } : []);
+        (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(fresh.Revision, []))).EnsureSuccessStatusCode();
+        (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!.Edges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SavingActiveDependencies_PreservesArchivedEdges_AndAllowsActiveRemoval()
+    {
+        using var client = factory.CreateClient();
+        var (_, board, a, b) = await Setup(client);
+        async Task<CardDto> Create(string title)
+        {
+            var response = await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+                new CreateCardDto(board.Id, a.ColumnId, title, null, null, null));
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        }
+        var c = await Create("Active prerequisite");
+        var d = await Create("Active dependency");
+        var retained = new CardDependency(a.Id, b.Id);
+        var active = new CardDependency(c.Id, d.Id);
+        (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(0, [retained]))).EnsureSuccessStatusCode();
+        var archivedResponse = await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{a.Id}/archive", new CardLifecycleDto(a.UpdatedAt));
+        archivedResponse.EnsureSuccessStatusCode();
+        var archived = (await archivedResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        var visible = (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!;
+        visible.Edges.Should().BeEmpty();
+        var saved = await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(visible.Revision, [.. visible.Edges, active]));
+        saved.EnsureSuccessStatusCode();
+        (await saved.Content.ReadFromJsonAsync<BoardDependencyDto>())!.Edges.Should().Equal(active);
+        (await client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{a.Id}/restore", new CardLifecycleDto(archived.UpdatedAt))).EnsureSuccessStatusCode();
+        var restored = (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!;
+        restored.Edges.Should().BeEquivalentTo(new[] { retained, active });
+        (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(restored.Revision, [retained]))).EnsureSuccessStatusCode();
+        (await client.GetFromJsonAsync<BoardDependencyDto>(Url(board.Id)))!.Edges.Should().Equal(retained);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InterleavedGraphWrite_RollsBackLifecycleRevisionCardAndAudit(bool hasStoredGraph)
+    {
+        using var client = factory.CreateClient();
+        var (actor, board, a, b) = await Setup(client);
+        if (hasStoredGraph)
+            (await client.PutAsJsonAsync(Url(board.Id), new SaveBoardDependenciesDto(0, []))).EnsureSuccessStatusCode();
+        using var loser = factory.Services.CreateScope();
+        var unit = loser.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var card = (await unit.Cards.GetByIdAsync(a.Id))!;
+        await unit.Cards.StageDependencyProjectionInvalidationAsync(board.Id);
+        card.Archive();
+        await unit.AuditLogs.AddAsync(new AuditLog("card", card.Id, AuditAction.Archived, actor, "losing lifecycle"));
+        using (var winner = factory.Services.CreateScope())
+        {
+            var db = winner.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var graph = await db.Set<BoardDependencies>().FindAsync(board.Id);
+            if (graph is null) { graph = new BoardDependencies(board.Id); db.Add(graph); }
+            graph.Replace([new(a.Id, b.Id)]);
+            await db.SaveChangesAsync();
+        }
+        var save = () => unit.SaveChangesAsync();
+        (await save.Should().ThrowAsync<Taskdeck.Domain.Exceptions.DomainException>()).Which.ErrorCode
+            .Should().Be(Taskdeck.Domain.Exceptions.ErrorCodes.Conflict);
+        using var verify = factory.Services.CreateScope();
+        var final = verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await final.Cards.FindAsync(a.Id))!.IsArchived.Should().BeFalse();
+        var savedGraph = (await final.Set<BoardDependencies>().FindAsync(board.Id))!;
+        savedGraph.Revision.Should().Be(hasStoredGraph ? 2 : 1);
+        savedGraph.ReadEdges().Should().Equal(new CardDependency(a.Id, b.Id));
+        (await final.AuditLogs.AnyAsync(log => log.EntityId == a.Id && log.Action == AuditAction.Archived)).Should().BeFalse();
+    }
+
     [Fact]
     public async Task ExplicitLinksPersistWithoutChangingCards_AndExportRemapsThem()
     {

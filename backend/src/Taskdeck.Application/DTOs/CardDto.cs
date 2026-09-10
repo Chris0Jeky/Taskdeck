@@ -14,8 +14,11 @@ public record CardDto(
     int Position,
     List<LabelDto> Labels,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt
+    DateTimeOffset UpdatedAt,
+    bool IsArchived = false
 );
+
+public record CardLifecycleDto(DateTimeOffset? ExpectedUpdatedAt);
 
 public record CreateCardDto(
     Guid BoardId,

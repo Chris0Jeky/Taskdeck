@@ -19,6 +19,67 @@ public class CardRepositoryIntegrationTests : IClassFixture<TestWebApplicationFa
 {
     private readonly TestWebApplicationFactory _factory;
 
+    [Fact]
+    public async Task Archive_ExcludesActiveQueriesAndCounts_ButPreservesHistoryAndById()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var repo = scope.ServiceProvider.GetRequiredService<ICardRepository>();
+        var user = new User("archive-query-" + Guid.NewGuid().ToString("N"), Guid.NewGuid() + "@example.com", "hash");
+        var board = new Board("Archive query", ownerId: user.Id);
+        var column = new Column(board.Id, "Todo", 0);
+        var due = DateTimeOffset.UtcNow.AddDays(1);
+        var active = new Card(board.Id, column.Id, "Find active", dueDate: due);
+        var archived = new Card(board.Id, column.Id, "Find archived", dueDate: due);
+        active.Block("Wait"); archived.Block("Wait"); archived.Archive();
+        db.AddRange(user, board, column, active, archived);
+        await db.SaveChangesAsync();
+        var queries = new[] {
+            await repo.GetByBoardIdAsync(board.Id), await repo.GetByBoardIdsAsync([board.Id]),
+            await repo.GetAgendaByBoardIdsAsync([board.Id]), await repo.GetByColumnIdAsync(column.Id),
+            await repo.SearchAsync(board.Id, "Find", null, null),
+            await repo.SearchAcrossBoardsAsync([board.Id], "Find", 20),
+            await repo.GetForMetricsAsync(board.Id), await repo.GetBlockedByBoardIdAsync(board.Id),
+            await repo.GetByDueDateRangeAsync([board.Id], due.AddDays(-1), due.AddDays(1)) };
+        foreach (var query in queries) query.Select(c => c.Id).Should().Equal(active.Id);
+        (await repo.CountSearchAcrossBoardsAsync([board.Id], "Find")).Should().Be(1);
+        (await repo.CountCardsByColumnAsync(board.Id)).Should().ContainSingle().Which.CardCount.Should().Be(1);
+        (await repo.GetArchivedByBoardIdAsync(board.Id)).Should().ContainSingle().Which.Id.Should().Be(archived.Id);
+        (await repo.GetByIdAsync(archived.Id))!.IsArchived.Should().BeTrue();
+        (await repo.GetByIdWithLabelsAsync(archived.Id))!.IsArchived.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Archive_ConflictsWithConcurrentEdit_WithoutLosingTheWinningState()
+    {
+        Guid cardId;
+        using (var setup = _factory.Services.CreateScope())
+        {
+            var db = setup.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var user = new User("archive-race-" + Guid.NewGuid().ToString("N"), Guid.NewGuid() + "@example.com", "hash");
+            var board = new Board("Archive race", ownerId: user.Id);
+            var column = new Column(board.Id, "Todo", 0);
+            var card = new Card(board.Id, column.Id, "Original");
+            cardId = card.Id;
+            db.AddRange(user, board, column, card);
+            await db.SaveChangesAsync();
+        }
+        using var first = _factory.Services.CreateScope();
+        using var second = _factory.Services.CreateScope();
+        var a = first.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var b = second.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var stale = await a.Cards.SingleAsync(c => c.Id == cardId);
+        var winner = await b.Cards.SingleAsync(c => c.Id == cardId);
+        winner.Archive();
+        await b.SaveChangesAsync();
+        stale.Update(title: "Stale edit");
+        var save = () => a.SaveChangesAsync();
+        await save.Should().ThrowAsync<DbUpdateConcurrencyException>();
+        await a.Entry(stale).ReloadAsync();
+        stale.IsArchived.Should().BeTrue();
+        stale.Title.Should().Be("Original");
+    }
+
     public CardRepositoryIntegrationTests(TestWebApplicationFactory factory)
     {
         _factory = factory;
