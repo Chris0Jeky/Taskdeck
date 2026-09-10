@@ -5,6 +5,8 @@
  * transformation pure and must not rewrite the stored operation itself.
  */
 export function formatRecordedOperationActionLabel(actionType: string): string {
+  if (actionType.toLowerCase() === 'archive-lifecycle') return 'archive'
+  if (actionType.toLowerCase() === 'restore-lifecycle') return 'restore'
   return actionType
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[_-]+/g, ' ')

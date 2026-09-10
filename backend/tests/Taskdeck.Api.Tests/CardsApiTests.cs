@@ -17,6 +17,100 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     private readonly HttpClient _client;
     private bool _isAuthenticated;
 
+    [Fact]
+    public async Task CardLifecycle_RejectsMissingVersionArchivedWritesFullRestoreAndArchivedBoard()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "One active", wipLimit: 1);
+        var created = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Archive guard", null, null, null));
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        var path = $"/api/boards/{board.Id}/cards/{card.Id}";
+        (await _client.PostAsJsonAsync(path + "/archive", new { })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var archivedResponse = await _client.PostAsJsonAsync(path + "/archive", new { expectedUpdatedAt = card.UpdatedAt });
+        var archived = (await archivedResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        (await _client.GetFromJsonAsync<CardDto>(path))!.IsArchived.Should().BeTrue();
+        (await _client.PatchAsJsonAsync(path, new UpdateCardDto("No", null, null, null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.PatchAsJsonAsync(path, new UpdateCardDto(null, null, null, null, null, [])))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.PostAsJsonAsync(path + "/move", new MoveCardDto(column.Id, 0)))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.DeleteAsync($"/api/boards/{board.Id}/columns/{column.Id}"))
+            .StatusCode.Should().NotBe(HttpStatusCode.NoContent, "archived placement must remain recoverable");
+        (await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Active control", null, null, null)))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        var beforeFailedRestore = (await _client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{board.Id}/dependencies"))!;
+        (await _client.PostAsJsonAsync(path + "/restore", new { expectedUpdatedAt = archived.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.GetFromJsonAsync<CardDto>(path)).Should().BeEquivalentTo(archived);
+        (await _client.GetFromJsonAsync<BoardDependencyDto>($"/api/boards/{board.Id}/dependencies"))
+            .Should().BeEquivalentTo(beforeFailedRestore);
+        await _client.PutAsJsonAsync($"/api/boards/{board.Id}", new UpdateBoardDto(null, null, true));
+        (await _client.PostAsJsonAsync(path + "/restore", new { expectedUpdatedAt = archived.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task CardLifecycle_EnforcesClaimsBoardAccessAndWrongBoardIsolation()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Protected", null);
+        var created = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Private", null, null, null));
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        var secondBoard = await CreateBoardAsync();
+        var payload = new { expectedUpdatedAt = card.UpdatedAt };
+        foreach (var action in new[] { "archive", "restore" })
+        {
+            (await _client.PostAsJsonAsync($"/api/boards/{secondBoard.Id}/cards/{card.Id}/{action}", payload))
+                .StatusCode.Should().Be(HttpStatusCode.NotFound);
+            using var anonymous = _factory.CreateClient();
+            await ApiTestHarness.AssertUnauthorizedAsync(await anonymous.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/cards/{card.Id}/{action}", payload));
+        }
+        await ApiTestHarness.AuthenticateAsync(_client, "lifecycle-outsider");
+        foreach (var action in new[] { "archive", "restore" })
+            await ApiTestHarness.AssertForbiddenAsync(await _client.PostAsJsonAsync(
+                $"/api/boards/{board.Id}/cards/{card.Id}/{action}", payload));
+        await ApiTestHarness.AssertForbiddenAsync(await _client.GetAsync($"/api/boards/{board.Id}/cards/archived"));
+        await ApiTestHarness.AssertForbiddenAsync(await _client.GetAsync($"/api/boards/{board.Id}/cards/{card.Id}"));
+    }
+
+    [Fact]
+    public async Task CardLifecycle_ShouldArchiveAndRestoreInPlace_WithoutChangingLegacyBlockState()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Archive lifecycle", wipLimit: null);
+        var created = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new CreateCardDto(board.Id, column.Id, "Keep my history", "Original", null, null));
+        created.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        var response = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{card.Id}/archive",
+            new { expectedUpdatedAt = card.UpdatedAt });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var archived = await response.Content.ReadFromJsonAsync<JsonElement>();
+        archived.GetProperty("isArchived").GetBoolean().Should().BeTrue();
+        archived.GetProperty("isBlocked").GetBoolean().Should().BeFalse();
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!
+            .Should().NotContain(c => c.Id == card.Id);
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards/archived"))!
+            .Should().ContainSingle(c => c.Id == card.Id);
+        var staleRestore = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{card.Id}/restore",
+            new { expectedUpdatedAt = card.UpdatedAt });
+        staleRestore.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var restored = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards/{card.Id}/restore",
+            new { expectedUpdatedAt = archived.GetProperty("updatedAt").GetDateTimeOffset() });
+        restored.StatusCode.Should().Be(HttpStatusCode.OK);
+        var restoredCard = (await restored.Content.ReadFromJsonAsync<CardDto>())!;
+        restoredCard.Id.Should().Be(card.Id);
+        restoredCard.ColumnId.Should().Be(column.Id);
+        restoredCard.Description.Should().Be("Original");
+        (await _client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{board.Id}/cards"))!
+            .Should().ContainSingle(c => c.Id == card.Id);
+    }
+
     public CardsApiTests(TestWebApplicationFactory factory)
     {
         _factory = factory;

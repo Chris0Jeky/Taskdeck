@@ -33,6 +33,8 @@ public static class McpResourcesAndToolsRegistration
             ["move_card"] = ApiKeyScope.Propose,
             ["update_card"] = ApiKeyScope.Propose,
             ["archive_card"] = ApiKeyScope.Propose,
+            ["archive_card_lifecycle"] = ApiKeyScope.Propose,
+            ["restore_archived_card"] = ApiKeyScope.Propose,
             ["create_column"] = ApiKeyScope.Propose,
             ["dismiss_proposal"] = ApiKeyScope.Manage,
             ["create_capture"] = ApiKeyScope.Manage

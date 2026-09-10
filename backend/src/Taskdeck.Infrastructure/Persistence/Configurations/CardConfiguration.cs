@@ -28,6 +28,10 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
         builder.Property(c => c.IsBlocked)
             .IsRequired();
 
+        builder.Property(c => c.IsArchived)
+            .HasDefaultValue(false)
+            .IsRequired();
+
         builder.Property(c => c.BlockReason)
             .HasMaxLength(500);
 
@@ -38,7 +42,8 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
             .IsRequired();
 
         builder.Property(c => c.UpdatedAt)
-            .IsRequired();
+            .IsRequired()
+            .IsConcurrencyToken();
 
         builder.HasMany(c => c.CardLabels)
             .WithOne(cl => cl.Card)

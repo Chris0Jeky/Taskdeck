@@ -43,6 +43,8 @@ export interface Card {
   description: string
   dueDate: string | null
   isBlocked: boolean
+  /** Older cached card payloads default to active. */
+  isArchived?: boolean
   blockReason: string | null
   position: number
   labels: Label[]
