@@ -6,3 +6,4 @@ import './continuation/tests/execution.test.mjs';
 import './continuation/tests/planner.test.mjs';
 import './continuation/tests/adapter.test.mjs';
 import './continuation/tests/repository.test.mjs';
+import './continuation/tests/workflow.test.mjs';
