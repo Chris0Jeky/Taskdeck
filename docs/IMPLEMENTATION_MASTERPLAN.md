@@ -4,6 +4,8 @@ Last Updated: 2026-09-10
 
 Comparison attribution follow-through (#2808): retain the resolved Auto appearance in the existing portable theme label and exclude known non-shipped test inputs from the frontend fingerprint. Preserve legacy checksums/file semantics and prove live light/night switching, export/import and HTTP LAN compatibility together.
 
+Audio lifecycle recovery (#2808): keep stale written drafts visible with their original evidence, require valid reload state for mutations, and enforce current-question hashes before staging a written representation. Prove changed/missing/confirmed receipts, explicit discard, failed reload and unchanged original/representation history. Automated processing and broader source configuration/picker follow-through remain separate.
+
 Original-source portability continuation (#2808): hold a store-owned read snapshot across the five source-storage export sections, with deferred SQLite transactions and scoped disposal before later export writes. Prove both account-export routes against a concurrent committed upload and written version. Whole-account point-in-time consistency and restore acceptance remain separate.
 
 Studio/Classic planning continuity (#2808): share existing Focus resume on Classic Home and use the existing calendar-day utilities for plan date controls and card deadlines. Browser acceptance includes a western timezone, Today filtering, both Classic renderers and unchanged board-card data. Failed-plan metadata, overlapping reads and uncertain-write recovery are covered by the next continuation; accepted-navigation Focus timestamps are covered by the next shared navigation continuation.
