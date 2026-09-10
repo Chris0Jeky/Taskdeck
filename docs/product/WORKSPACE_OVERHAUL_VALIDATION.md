@@ -30,6 +30,15 @@ the merge gate. Physical-device, live-provider usefulness and production accepta
 
 ## Hosted delivery receipts (2026-09-10)
 
+Final recovery [PR #2895](https://github.com/Chris0Jeky/Taskdeck/pull/2895) passed required run
+`34458797270` at reviewed product head `f39cc6cf3`, including Windows/Ubuntu suites and browser smoke.
+After unrelated CI admission tooling landed on main, its integration passed 343 focused tooling
+tests, bounded base review and the complete required run `34462673996` at `d25edf2a5`. Another
+base update adds portable CI tooling only; no application or workflow file changed. The PR records
+the latest base qualification and final merge receipt. These successful hosted results supersede
+earlier pending-hosted notes for the recovery implementation; synthetic-provider and physical-device
+acceptance limits remain unchanged.
+
 The source manifest was rechecked against the original local pack: all 20 paths, byte lengths and
 SHA-256 values match, with no additional or missing files. PR #2866 merged as `384d8dfaa` after its
 required gate. PR #2886 merged as `f00cf1d31` at 08:10 UTC after required run `34450719109` passed
