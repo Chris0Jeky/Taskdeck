@@ -40,6 +40,28 @@ describe('explicit transcription', () => {
     expect(button(wrapper, 'Request a transcript').attributes('disabled')).toBeDefined()
   })
 
+  it('requires fresh consent when a refreshed destination changes and never restores old consent', async () => {
+    const wrapper = mount(AudioTranscriptionPanel, { props: { audio } })
+    await button(wrapper, 'Transcription options and receipts').trigger('click'); await flushPromises()
+    await wrapper.get('input').setValue(true)
+    const changed = { ...configuration, origin: 'https://another.example', model: 'another-model', configurationHash: 'b'.repeat(64) }
+    vi.mocked(audioTranscriptionApi.status).mockResolvedValue({ ...fresh(), configuration: changed })
+    await button(wrapper, 'Refresh transcription receipts').trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('https://another.example')
+    expect((wrapper.get('input').element as HTMLInputElement).checked).toBe(false)
+    expect(button(wrapper, 'Request a transcript').attributes('disabled')).toBeDefined()
+    await button(wrapper, 'Request a transcript').trigger('click')
+    expect(audioTranscriptionApi.start).not.toHaveBeenCalled()
+    vi.mocked(audioTranscriptionApi.status).mockResolvedValue(fresh())
+    await button(wrapper, 'Refresh transcription receipts').trigger('click'); await flushPromises()
+    expect((wrapper.get('input').element as HTMLInputElement).checked).toBe(false)
+    await wrapper.get('input').setValue(true)
+    await button(wrapper, 'Refresh transcription receipts').trigger('click'); await flushPromises()
+    expect((wrapper.get('input').element as HTMLInputElement).checked).toBe(true)
+    await button(wrapper, 'Request a transcript').trigger('click'); await flushPromises()
+    expect(audioTranscriptionApi.start).toHaveBeenCalledWith('recording', expect.objectContaining({ configurationHash: configuration.configurationHash }))
+  })
+
   it('recovers an uncertain request with the same ID and never retries automatically', async () => {
     vi.mocked(audioTranscriptionApi.start).mockRejectedValueOnce(new Error('lost response'))
     const wrapper = mount(AudioTranscriptionPanel, { props: { audio } })

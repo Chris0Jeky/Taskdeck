@@ -10,7 +10,11 @@ const emit = defineEmits<{ adopt: [candidate: { id: string; text: string }]; bus
 const session = useSessionStore()
 const authenticated = computed(() => !!session.userId && !!session.token)
 const status = ref<TranscriptionStatus | null>(null)
-const consent = ref(false)
+const consentedConfigurationHash = ref<string | null>(null)
+const consent = computed({
+  get: () => !!consentedConfigurationHash.value && consentedConfigurationHash.value === status.value?.configuration.configurationHash,
+  set: (value: boolean) => { consentedConfigurationHash.value = value ? status.value?.configuration.configurationHash ?? null : null },
+})
 const loading = ref(false)
 const pending = ref(false)
 const error = ref('')
@@ -45,6 +49,7 @@ async function refresh() {
     const value = await audioTranscriptionApi.status(id)
     if (request !== generation) return
     if (value.attempts.some(x => x.audioAnswerId !== id)) throw new Error('Unexpected recording receipts')
+    if (status.value?.configuration.configurationHash !== value.configuration.configurationHash) consent.value = false
     status.value = value; needsRefresh.value = false
     if (retry.value && value.attempts.some(x => x.requestId === retry.value?.requestId)) { retry.value = null; consent.value = false }
     if (!value.configuration.enabled || (retry.value && retry.value.configurationHash !== value.configuration.configurationHash)) consent.value = false
