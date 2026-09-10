@@ -11,6 +11,7 @@ const linuxBootstrap = readSource('bootstrap-linux.sh')
 const windowsBootstrap = readSource('bootstrap-windows.ps1')
 const linuxCleanup = readSource('cleanup-linux.sh')
 const windowsCleanup = readSource('cleanup-windows.ps1')
+const readme = readSource('README.md')
 
 const executableSources = [linuxBootstrap, windowsBootstrap, linuxCleanup, windowsCleanup]
 
@@ -43,6 +44,9 @@ test('bootstraps pin the supported architecture and toolchain without installing
   assert.match(linuxBootstrap, /docker buildx version/)
   assert.match(linuxBootstrap, /docker buildx prune --help/)
   assert.match(linuxBootstrap, /--max-used-space/)
+  assert.match(readme, /Playwright[\s\S]{0,200}repository dependency[\s\S]{0,160}repository job/i)
+  assert.match(readme, /browser launch/i)
+  assert.doesNotMatch(readme, /global(?:ly)? installed Playwright/i)
 })
 
 test('Linux creates only the fixed locked, unprivileged runner account', () => {
@@ -165,6 +169,32 @@ test('cleanup output is limited to stable codes and counts', () => {
   assert.doesNotMatch(linuxCleanup, /(?:printf|echo)[^\n]+\$(?:WORK|TEMP|CACHE|CONFIG|RUNNER_ACCOUNT)/)
   assert.match(windowsCleanup, /RUNNER_CLEANUP \$Text/)
   assert.doesNotMatch(windowsCleanup, /Write-(?:Output|Host)[^\n]+\$(?:.*Path|.*Root|.*Account|env:)/i)
+})
+
+test('README separates the shipped contract from later human and runtime gates', () => {
+  for (const phrase of [
+    'VM creation',
+    'checksum',
+    'private-repository cutover',
+    'runner registration',
+    'real workload',
+    'offline',
+    'ACTIONS_RUNNER_HOOK_JOB_STARTED',
+    'ACTIONS_RUNNER_HOOK_JOB_COMPLETED',
+  ]) {
+    assert.match(readme, new RegExp(phrase, 'i'))
+  }
+  assert.match(readme, /pre-job[\s\S]{0,120}prevents the\s+job/i)
+  assert.match(readme, /post-job[\s\S]{0,160}not (?:yet )?proven/i)
+  assert.match(readme, /does not clear the active Windows account profile or HKCU/i)
+  assert.match(readme, /persistent Windows VM is not a\s+security reset/i)
+  assert.match(readme, /hook clears only the enumerated fixed roots/i)
+})
+
+test('Smart CI self-test bridge imports the runner contract', () => {
+  const bridge = readFileSync(new URL('../smart-ci/runner-bootstrap-contract.test.mjs', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n')
+  assert.equal(bridge.trim(), "import '../runners/runner-bootstrap-contract.test.mjs'")
 })
 
 test('Linux runner entrypoints are tracked as executable', () => {
