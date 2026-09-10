@@ -126,6 +126,7 @@ watch(sendingMessage, value => emit('sending-change', value), { flush: 'sync' })
           <ChatMessageList
             :messages="sortedMessages"
             :sending-message="sendingMessage"
+            :send-blocked="thinkingDirty || refreshingReceipt"
             :eligible-boards="eligibleBoards"
             :loading-boards="loadingBoards"
             :selected-session-board-id="selectedSession.boardId"

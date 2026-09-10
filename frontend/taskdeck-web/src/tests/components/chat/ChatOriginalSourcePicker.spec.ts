@@ -56,4 +56,22 @@ describe('original source choice', () => {
     expect(api.list).toHaveBeenLastCalledWith('m1', 'b1', 2, 10)
     expect(wrapper.findAll('input')).toHaveLength(2)
   })
+  it('names each picker by its memory and clears prior selections after revoked access', async () => {
+    api.list.mockResolvedValueOnce({ ...page(), nextOffset: 10 }).mockRejectedValueOnce({ response: { status: 403 } })
+    const { wrapper } = setup(); await wrapper.setProps({ memoryTitle: 'Release lesson' })
+    expect(wrapper.get('button').attributes('aria-label')).toBe('Choose original sources for Release lesson')
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(wrapper.get('button').attributes('aria-label')).toBe('Load more originals for Release lesson')
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(wrapper.get('[role=alert]').text()).toContain('no longer have access')
+    expect(wrapper.find('input').exists()).toBe(false); expect(wrapper.emitted('change')?.at(-1)).toEqual([[]])
+  })
+  it('preserves a pending source read during same-user token refresh but clears on logout', async () => {
+    let resolve!: (value: ReturnType<typeof page>) => void
+    api.list.mockReturnValueOnce(new Promise(done => { resolve = done }))
+    const { wrapper, session } = setup(); await wrapper.get('button').trigger('click')
+    session.token = 'refreshed'; resolve(page()); await flushPromises()
+    expect(wrapper.find('input').exists()).toBe(true)
+    session.token = ''; await flushPromises(); expect(wrapper.find('input').exists()).toBe(false)
+  })
 })
