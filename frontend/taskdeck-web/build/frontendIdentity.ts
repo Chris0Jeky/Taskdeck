@@ -13,6 +13,8 @@ export function fingerprintFrontend(root: string, mode: string, publicEnvironmen
   function directory(relative: string) {
     for (const entry of readdirSync(join(root, relative), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, 'en'))) {
       const name = `${relative}/${entry.name}`
+      // These repository-owned proof inputs are not shipped in the frontend bundle.
+      if (name === 'src/tests' || (relative === 'build' && entry.isFile() && entry.name.endsWith('.node-check.mjs'))) continue
       if (entry.isDirectory()) directory(name)
       else if (entry.isFile()) add(name, readFileSync(join(root, name)))
       else throw new Error(`Unsupported frontend input: ${name}`)

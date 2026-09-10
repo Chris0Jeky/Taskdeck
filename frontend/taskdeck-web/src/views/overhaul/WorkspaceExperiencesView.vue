@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useWorkspaceLayoutStore } from '../../store/workspaceLayoutStore'
-import { usePaperThemeStore } from '../../store/paperThemeStore'
+import { resolveBodyClass, usePaperThemeStore } from '../../store/paperThemeStore'
 import {
   useWorkspaceExperimentStore,
   WORKSPACE_COMPARISON_SCENARIOS,
@@ -38,7 +38,7 @@ function record() {
   saved.value = experiment.record({
     experience: layout.experience,
     presentation: layout.presentation,
-    theme: theme.mode,
+    theme: theme.mode === 'auto' ? `auto (${resolveBodyClass('auto')})` : theme.mode,
     build: version.value,
     scenario: scenario.value,
     completionOutcome: completionOutcome.value,
@@ -77,6 +77,7 @@ function download() {
     <form class="experience-lab__notes" @submit.prevent="record">
       <h2>Keep an observation</h2><p>Recording {{ layout.experience }} / {{ layout.presentation }} / {{ theme.mode }} · backend version {{ displayVersion || 'unavailable' }}. Notes stay in this session; export them before reloading or signing out. Import the file later to compare releases.</p>
       <details><summary>Frontend build attribution</summary><p>{{ frontendBuildIdentity || 'Development or unstamped build: frontend attribution unavailable.' }}</p></details>
+      <p v-if="theme.mode === 'auto'">Auto records the light or night appearance when you submit. If it changed during your task, mention that in your note.</p>
       <label for="experience-scenario">What scenario did you try?</label><select id="experience-scenario" v-model="scenario" required><option :value="null" disabled>Select a scenario</option><option v-for="item in WORKSPACE_COMPARISON_SCENARIOS" :key="item.id" :value="item.id">{{ item.label }}</option></select>
       <label for="experience-outcome">What happened?</label><select id="experience-outcome" v-model="completionOutcome" required><option :value="null" disabled>Select an outcome</option><option v-for="item in WORKSPACE_COMPLETION_OUTCOMES" :key="item.id" :value="item.id">{{ item.label }}</option></select>
       <label for="experience-ease">How easy was it to continue your work? (optional)</label><select id="experience-ease" v-model="ease"><option :value="null">Leave unrated</option><option :value="1">1 — Difficult</option><option :value="2">2 — Some friction</option><option :value="3">3 — Reasonable</option><option :value="4">4 — Easy</option><option :value="5">5 — Effortless</option></select>
