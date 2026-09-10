@@ -399,6 +399,11 @@ public class WriteTools
         if (!Guid.TryParse(boardId, out var boardGuid) || !Guid.TryParse(cardId, out var cardGuid))
             return Error("Invalid board_id or card_id format");
         if (!DateTimeOffset.TryParse(timestamp, out var expected)) return Error("Invalid expected_updated_at timestamp");
+        var canWrite = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+        if (!canWrite.IsSuccess)
+            return Error(canWrite);
+        if (!canWrite.Value)
+            return Error("Not authorized to archive or restore cards on this board");
         var parameters = JsonSerializer.Serialize(new { boardId = boardGuid, cardId = cardGuid, expectedUpdatedAt = expected });
         var result = await _proposalService.CreateProposalAsync(new CreateProposalDto(
             SourceType: ProposalSourceType.Manual, RequestedByUserId: userId,

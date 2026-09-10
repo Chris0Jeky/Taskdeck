@@ -461,6 +461,14 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
 
         var knownToolFailure = GetMcpOutcomePayload(deniedKnownTool);
         knownToolFailure.Should().Contain("Access denied for this MCP operation.");
+        var lifecycleRequestId = 15;
+        foreach (var toolName in new[] { "archive_card_lifecycle", "restore_archived_card" })
+        {
+            using var deniedLifecycle = await CallToolAsync(readClient, readSession, lifecycleRequestId++, toolName,
+                new { board_id = Guid.NewGuid().ToString(), card_id = Guid.NewGuid().ToString(), expected_updated_at = "invalid" });
+            GetMcpOutcomePayload(deniedLifecycle).Should().Contain("Access denied for this MCP operation.",
+                "lifecycle tools require Propose before input validation or board lookup");
+        }
         NormalizeRequestedTarget(GetMcpOutcomePayload(deniedUnknownTool), "not_a_taskdeck_tool")
             .Should().Be(NormalizeRequestedTarget(knownToolFailure, "create_capture"),
             "scope denial must not reveal whether a tool name exists");

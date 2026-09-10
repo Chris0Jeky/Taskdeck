@@ -635,16 +635,28 @@ public class McpToolsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(true, "archive-lifecycle")]
-    [InlineData(false, "restore-lifecycle")]
-    public async Task CardLifecycleTools_CreateDistinctVersionPinnedProposal_WithoutApplying(bool archive, string action)
+    [InlineData(true, "archive-lifecycle", false)]
+    [InlineData(false, "restore-lifecycle", false)]
+    [InlineData(true, "archive-lifecycle", true)]
+    [InlineData(false, "restore-lifecycle", true)]
+    public async Task CardLifecycleTools_CreateDistinctVersionPinnedProposal_WithoutApplying(bool archive, string action, bool editor)
     {
         using var scope = _serviceProvider.CreateScope();
         var (user, boardId, colId) = await SetupBoardAsync(scope);
         var service = scope.ServiceProvider.GetRequiredService<CardService>();
         var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Lifecycle", null, null, null))).Value;
         if (!archive) card = (await service.SetArchivedAsync(boardId, card.Id, true, new(card.UpdatedAt))).Value;
-        var tools = CreateWriteTools(scope, user.Id);
+        var callerId = user.Id;
+        if (editor)
+        {
+            var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+            var caller = new User($"editor-{Guid.NewGuid():N}", $"editor-{Guid.NewGuid():N}@example.com", "Password1!");
+            await unit.Users.AddAsync(caller);
+            await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Editor, user.Id));
+            await unit.SaveChangesAsync();
+            callerId = caller.Id;
+        }
+        var tools = CreateWriteTools(scope, callerId);
         var json = archive
             ? await tools.ArchiveCardLifecycle(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"))
             : await tools.RestoreArchivedCard(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"));
@@ -655,6 +667,35 @@ public class McpToolsTests : IDisposable
         using var parameters = JsonDocument.Parse(proposal.Operations[0].Parameters);
         parameters.RootElement.GetProperty("expectedUpdatedAt").GetDateTimeOffset().Should().Be(card.UpdatedAt);
         (await service.GetCardAsync(boardId, card.Id)).Value.IsArchived.Should().Be(!archive);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    public async Task CardLifecycleTools_NonMemberOrViewer_CannotCreateProposal(bool archive, bool viewer)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var (owner, boardId, colId) = await SetupBoardAsync(scope);
+        var unit = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var caller = new User($"reader-{Guid.NewGuid():N}", $"reader-{Guid.NewGuid():N}@example.com", "Password1!");
+        await unit.Users.AddAsync(caller);
+        if (viewer)
+            await unit.BoardAccesses.AddAsync(new BoardAccess(boardId, caller.Id, Taskdeck.Domain.Enums.UserRole.Viewer, owner.Id));
+        await unit.SaveChangesAsync();
+        var service = scope.ServiceProvider.GetRequiredService<CardService>();
+        var card = (await service.CreateCardAsync(new CreateCardDto(boardId, colId, "Private card", null, null, null))).Value;
+        if (!archive) card = (await service.SetArchivedAsync(boardId, card.Id, true, new(card.UpdatedAt))).Value;
+        var tools = CreateWriteTools(scope, caller.Id);
+        var json = archive
+            ? await tools.ArchiveCardLifecycle(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"))
+            : await tools.RestoreArchivedCard(boardId.ToString(), card.Id.ToString(), card.UpdatedAt.ToString("O"));
+        (await unit.AutomationProposals.GetByBoardIdAsync(boardId)).Should().BeEmpty("board write access is required before any proposal is persisted");
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("error").GetString().Should().Contain("Not authorized");
+        document.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse();
+        (await service.GetCardAsync(boardId, card.Id)).Value.Should().BeEquivalentTo(card);
     }
 
     [Fact]
