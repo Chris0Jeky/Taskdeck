@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Explicit audio transcription (#2808, pending main delivery): optional destination/model consent, durable attempts and daily admission, separate provisional results, reviewed-draft provenance and existing explicit answer confirmation. Four domain, 25 provider and 24 focused API/transport/export tests pass; 33 component tests, typecheck/lint and three real-API Chromium journeys pass, including a synthetic speech transport and lost receipt. Full frontend passes 6,425 tests; the full backend run finds one outbound inventory omission, corrected with 28 architecture and 22 final API checks. Migration/model checks pass; hosted qualification remains separate. [Behavior and limits](product/AUDIO_TRANSCRIPTION.md).
+
 Expanded overhaul follow-through (#2808, pending main delivery): optional reminders, audio recovery and retained previews now pass combined qualification: 9,232 backend tests, 6,418 frontend tests, eleven Chromium journeys and both migrations together. A final filename-normalization fix has eleven passing audio API tests. Independent interaction reviews are clean; hosted/base qualification remains on the delivery PRs. [Evidence and limits](product/WORKSPACE_OVERHAUL_VALIDATION.md).
 
 Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.

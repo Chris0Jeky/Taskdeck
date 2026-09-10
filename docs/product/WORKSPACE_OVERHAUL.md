@@ -2,6 +2,12 @@
 
 Last Updated: 2026-09-10
 
+**Automatic transcription** is an optional, explicit step for a saved private recording. Open its
+options and receipts in Thinking Decks or the original-recording library, inspect the configured
+destination/model and consent to one request. A provisional result stays separate until reviewed as
+a written draft and explicitly confirmed as an answer. Failure and lost-response receipts survive
+reloads across all experiences. It is disabled by default; see [configuration, evidence and limits](AUDIO_TRANSCRIPTION.md).
+
 **Preview on board** opens a read-only proposal layer from Chat or Review. Choose **Refresh board preview** to check the current proposal revision and highlight saved cards/columns affected by its operations in either board renderer. The checked diff also describes new or hidden objects. The board continues to show saved data; **Open Review** returns to that exact proposal for approval and explicit Apply. Closing the preview, changing board data, losing access or reaching the short freshness limit removes its markers. This reduces the need to mentally match proposal changes to board objects while preserving review-first trust.
 
 Companion's source picker also offers individual preserved originals beside each private memory.
