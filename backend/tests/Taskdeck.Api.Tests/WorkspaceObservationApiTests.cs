@@ -37,6 +37,7 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
     [InlineData("archive")]
     [InlineData("delete")]
     [InlineData("revoke")]
+    [InlineData("erase-account")]
     public async Task ChangeAfterFinalServiceRead_IsRejectedAtCommit(string change)
     {
         var provider = new Provider(); var race = new LateReadRace();
@@ -56,12 +57,25 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
             db.BoardAccesses.Add(new BoardAccess(board, viewerId.Value, UserRole.Viewer, owner!.Value));
             await db.SaveChangesAsync();
         }
+        if (change == "erase-account")
+        {
+            var coOwner = app.CreateClient(); var account = await ApiTestHarness.AuthenticateAsync(coOwner, "remaining-owner");
+            using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            db.BoardAccesses.Add(new BoardAccess(board, account.UserId, UserRole.Owner, account.UserId));
+            await db.SaveChangesAsync();
+        }
         race.Change = async () =>
         {
             using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
             if (change == "archive") await db.Boards.Where(x => x.Id == board).ExecuteUpdateAsync(set => set.SetProperty(x => x.IsArchived, true));
             else if (change == "delete") await db.Cards.Where(x => x.Id == cardId).ExecuteDeleteAsync();
             else if (change == "revoke") await db.BoardAccesses.Where(x => x.BoardId == board && x.UserId == viewerId).ExecuteDeleteAsync();
+            else if (change == "erase-account")
+            {
+                (await client.PostAsJsonAsync("/api/account/delete", new AccountDeletionRequest("password123", "DELETE MY ACCOUNT"))).EnsureSuccessStatusCode();
+                var owner = await db.Boards.Where(x => x.Id == board).Select(x => x.OwnerId).SingleAsync();
+                (await db.Users.Where(x => x.Id == owner).Select(x => x.IsActive).SingleAsync()).Should().BeFalse();
+            }
             else await db.Cards.Where(x => x.Id == cardId).ExecuteUpdateAsync(set => set.SetProperty(x => x.Title, "Later committed evidence"));
         };
         (await Generate(client, board, source)).StatusCode.Should().Be(HttpStatusCode.Conflict);
