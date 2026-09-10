@@ -17,6 +17,18 @@ namespace Taskdeck.Application.Services;
 public class DataExportService : IDataExportService
 {
     private const string ExportVersion = "1.0";
+
+    private async IAsyncEnumerable<CardDto> StreamCardsAsync(Guid userId,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        const int pageSize = 500;
+        for (var offset = 0; ; offset += pageSize)
+        {
+            var page = await _unitOfWork.Cards.GetExportPageByUserIdAsync(userId, offset, pageSize, cancellationToken);
+            foreach (var card in page) yield return CardService.MapToDto(card);
+            if (page.Count < pageSize) yield break;
+        }
+    }
     private const long MaxBufferedArtefactBytes = ArtefactStorageSettings.DefaultMaxBytesPerArtefact;
     private const int MaxBufferedArtefactRows = 10_000;
     private const long MaxBufferedTranscriptSerializedCharacters = 1_024_000;
@@ -395,6 +407,13 @@ public class DataExportService : IDataExportService
                     return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "Too many native originals to buffer; use the streaming export endpoint.");
                 nativeCaptures.Add(capture);
             }
+            var exportCards = new List<CardDto>();
+            await foreach (var card in StreamCardsAsync(userId, cancellationToken))
+            {
+                if (exportCards.Count >= 10_000)
+                    return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "Too many cards to buffer; use the streaming export endpoint.");
+                exportCards.Add(card);
+            }
             var content = new UserDataExportContentDto(
                 exportBoards,
                 exportNotifications,
@@ -410,7 +429,7 @@ public class DataExportService : IDataExportService
                 exportMemories,
                 exportInsights,
                 nativeCaptures,
-                await BufferSourceStorageAsync(userId, cancellationToken));
+                await BufferSourceStorageAsync(userId, cancellationToken), exportCards);
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -497,6 +516,15 @@ public class DataExportService : IDataExportService
                 writer.WriteBoolean("isOwner", ba.Role == UserRole.Owner);
                 writer.WriteString("createdAt", ba.CreatedAt);
                 writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            await writer.FlushAsync(cancellationToken);
+
+            writer.WriteStartArray("cards");
+            await foreach (var card in StreamCardsAsync(userId, cancellationToken))
+            {
+                JsonSerializer.SerializeToElement(card, PortabilityJsonOptions).WriteTo(writer);
+                await writer.FlushAsync(cancellationToken);
             }
             writer.WriteEndArray();
             await writer.FlushAsync(cancellationToken);

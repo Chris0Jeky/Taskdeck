@@ -77,7 +77,8 @@ public sealed class McpStdioTransportTests
 
             var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
             tools.Select(tool => tool.Name).Should().Contain("search_cards");
-            tools.Should().HaveCount(11, StderrContext(stderr));
+            tools.Select(tool => tool.Name).Should().Contain(["archive_card", "archive_card_lifecycle", "restore_archived_card"]);
+            tools.Should().HaveCount(13, StderrContext(stderr));
 
             var searchResult = await client.CallToolAsync(
                 "search_cards",

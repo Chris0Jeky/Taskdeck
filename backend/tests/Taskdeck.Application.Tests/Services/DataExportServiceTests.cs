@@ -39,6 +39,10 @@ public class DataExportServiceTests
     public DataExportServiceTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(r => r.GetExportPageByUserIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cards.Object);
         _historyServiceMock = new Mock<IHistoryService>();
         _userRepoMock = new Mock<IUserRepository>();
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
@@ -1024,6 +1028,10 @@ public class DataExportServiceStreamingTests
     public DataExportServiceStreamingTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(r => r.GetExportPageByUserIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cards.Object);
         _historyServiceMock = new Mock<IHistoryService>();
         _userRepoMock = new Mock<IUserRepository>();
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();

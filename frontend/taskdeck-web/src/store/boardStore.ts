@@ -72,6 +72,7 @@ export const useBoardStore = defineStore('board', () => {
 
     // Actions — cards
     createCard: cards.createCard,
+    setCardArchived: cards.setCardArchived,
     updateCard: cards.updateCard,
     deleteCard: cards.deleteCard,
     fetchCards: cards.fetchCards,

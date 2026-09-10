@@ -20,7 +20,7 @@ public class CardRepository : Repository<Card>, ICardRepository
         SELECT *
         FROM Cards
         WHERE BoardId IN (SELECT value FROM json_each({0}))
-        AND DueDate IS NOT NULL
+        AND IsArchived = 0 AND DueDate IS NOT NULL
         AND (CAST(strftime('%s', substr(DueDate, 1, 19) || substr(DueDate, -6)) AS INTEGER) * 10000000
             + CASE WHEN substr(DueDate, 20, 1) = '.' THEN
                 CAST(substr(substr(DueDate, 21, length(DueDate) - 26) || '0000000', 1, 7) AS INTEGER)
@@ -40,10 +40,43 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
     }
 
+    public async Task StageDependencyProjectionInvalidationAsync(Guid boardId, CancellationToken cancellationToken = default)
+    {
+        var graph = await _context.Set<BoardDependencies>().FindAsync([boardId], cancellationToken);
+        if (graph == null)
+        {
+            graph = new BoardDependencies(boardId);
+            _context.Set<BoardDependencies>().Add(graph);
+        }
+        // The caller commits this revision together with card state and audit. A stale
+        // graph writer or lifecycle writer then loses the same optimistic-concurrency race.
+        graph.InvalidateProjection();
+    }
+
+    public async Task<IReadOnlyList<Card>> GetExportPageByUserIdAsync(Guid userId, int offset, int limit, CancellationToken cancellationToken = default)
+    {
+        // Explicit history projection: no archive filter, scoped to the same owner/member
+        // read boundary as boards. Never use the active-work methods for portability.
+        return await _dbSet.AsNoTracking()
+            .Where(c => c.Board.OwnerId == userId || c.Board.BoardAccesses.Any(a => a.UserId == userId))
+            .OrderBy(c => c.Id).Skip(offset).Take(Math.Clamp(limit, 1, 500))
+            .Include(c => c.CardLabels).ThenInclude(cl => cl.Label).AsSplitQuery()
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IEnumerable<Card>> GetArchivedByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
+    {
+        return await _dbSet.Where(c => c.BoardId == boardId && c.IsArchived)
+            .Include(c => c.CardLabels).ThenInclude(cl => cl.Label)
+            .AsSplitQuery()
+            .OrderBy(c => c.ColumnId).ThenBy(c => c.Position).ThenBy(c => c.Id)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IEnumerable<Card>> GetByBoardIdAsync(Guid boardId, CancellationToken cancellationToken = default)
     {
         return await _dbSet
-            .Where(c => c.BoardId == boardId)
+            .Where(c => c.BoardId == boardId && !c.IsArchived)
             .Include(c => c.CardLabels)
                 .ThenInclude(cl => cl.Label)
             // Split the Cards->CardLabels->Label collection fan-out into separate queries
@@ -65,7 +98,7 @@ public class CardRepository : Repository<Card>, ICardRepository
             return [];
 
         return await _dbSet
-            .Where(card => materializedBoardIds.Contains(card.BoardId))
+            .Where(card => materializedBoardIds.Contains(card.BoardId) && !card.IsArchived)
             .Include(card => card.CardLabels)
                 .ThenInclude(cardLabel => cardLabel.Label)
             // Split the collection fan-out to avoid a cartesian product across boards.
@@ -89,7 +122,7 @@ public class CardRepository : Repository<Card>, ICardRepository
         return await _dbSet
             .AsNoTracking()
             .Where(card =>
-                materializedBoardIds.Contains(card.BoardId) &&
+                materializedBoardIds.Contains(card.BoardId) && !card.IsArchived &&
                 (card.IsBlocked || card.DueDate.HasValue))
             .OrderBy(card => card.BoardId)
             .ThenBy(card => card.ColumnId)
@@ -100,7 +133,7 @@ public class CardRepository : Repository<Card>, ICardRepository
     public async Task<IEnumerable<Card>> GetByColumnIdAsync(Guid columnId, CancellationToken cancellationToken = default)
     {
         return await _dbSet
-            .Where(c => c.ColumnId == columnId)
+            .Where(c => c.ColumnId == columnId && !c.IsArchived)
             .Include(c => c.CardLabels)
                 .ThenInclude(cl => cl.Label)
             // Split the collection fan-out to avoid a cartesian product over the column's cards.
@@ -117,7 +150,7 @@ public class CardRepository : Repository<Card>, ICardRepository
         CancellationToken cancellationToken = default)
     {
         var query = _dbSet
-            .Where(c => c.BoardId == boardId)
+            .Where(c => c.BoardId == boardId && !c.IsArchived)
             .Include(c => c.CardLabels)
                 .ThenInclude(cl => cl.Label)
             .AsQueryable();
@@ -175,7 +208,7 @@ public class CardRepository : Repository<Card>, ICardRepository
 
         return await _dbSet
             .AsNoTracking()
-            .Where(c => materializedBoardIds.Contains(c.BoardId))
+            .Where(c => materializedBoardIds.Contains(c.BoardId) && !c.IsArchived)
             .Where(c => c.Title.Contains(searchText) || c.Description.Contains(searchText))
             .Include(c => c.Board)
             .Include(c => c.Column)
@@ -197,7 +230,7 @@ public class CardRepository : Repository<Card>, ICardRepository
 
         return await _dbSet
             .AsNoTracking()
-            .Where(c => materializedBoardIds.Contains(c.BoardId))
+            .Where(c => materializedBoardIds.Contains(c.BoardId) && !c.IsArchived)
             .Where(c => c.Title.Contains(searchText) || c.Description.Contains(searchText))
             .CountAsync(cancellationToken);
     }
@@ -210,7 +243,7 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
         var query = _dbSet
             .AsNoTracking()
-            .Where(c => c.BoardId == boardId);
+            .Where(c => c.BoardId == boardId && !c.IsArchived);
 
         if (labelId.HasValue)
         {
@@ -244,7 +277,7 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
         var query = _dbSet
             .AsNoTracking()
-            .Where(c => c.BoardId == boardId);
+            .Where(c => c.BoardId == boardId && !c.IsArchived);
 
         if (labelId.HasValue)
         {
@@ -266,7 +299,7 @@ public class CardRepository : Repository<Card>, ICardRepository
     {
         var query = _dbSet
             .AsNoTracking()
-            .Where(c => c.BoardId == boardId && c.IsBlocked);
+            .Where(c => c.BoardId == boardId && !c.IsArchived && c.IsBlocked);
 
         if (labelId.HasValue)
         {
@@ -325,7 +358,7 @@ public class CardRepository : Repository<Card>, ICardRepository
         return await _dbSet
             .AsNoTracking()
             .Where(c =>
-                materializedBoardIds.Contains(c.BoardId) &&
+                materializedBoardIds.Contains(c.BoardId) && !c.IsArchived &&
                 c.DueDate.HasValue &&
                 c.DueDate.Value >= from &&
                 c.DueDate.Value < to)

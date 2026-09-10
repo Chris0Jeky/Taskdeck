@@ -11,6 +11,33 @@ public class CardTests
     private readonly Guid _columnId = Guid.NewGuid();
 
     [Fact]
+    public void Archive_RetainsIdentityPlacementLabelsAndBlock_AndRejectsOrdinaryWrites()
+    {
+        var card = new Card(_boardId, _columnId, "Keep", "Evidence", DateTimeOffset.UtcNow, 3);
+        var label = new CardLabel(card.Id, Guid.NewGuid());
+        card.AddLabel(label);
+        card.Block("Waiting");
+        var id = card.Id;
+        card.IsArchived.Should().BeFalse();
+        card.Archive();
+        card.IsArchived.Should().BeTrue();
+        Action[] writes = [() => card.Update(title: "Changed"), () => card.ClearDueDate(),
+            () => card.MoveToColumn(Guid.NewGuid(), 1), () => card.SetPosition(0), () => card.Block("Other"),
+            () => card.Unblock(), () => card.AddLabel(new CardLabel(card.Id, Guid.NewGuid())),
+            () => card.RemoveLabel(label), () => card.ClearLabels()];
+        foreach (var write in writes) write.Should().Throw<DomainException>();
+        card.Id.Should().Be(id);
+        card.ColumnId.Should().Be(_columnId);
+        card.Position.Should().Be(3);
+        card.CardLabels.Should().ContainSingle().Which.Should().Be(label);
+        card.BlockReason.Should().Be("Waiting");
+        card.Restore();
+        card.IsArchived.Should().BeFalse();
+        card.Update(title: "Active again");
+        card.Title.Should().Be("Active again");
+    }
+
+    [Fact]
     public void Constructor_ShouldCreateCard_WithValidData()
     {
         // Arrange & Act

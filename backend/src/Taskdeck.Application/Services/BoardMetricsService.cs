@@ -106,6 +106,9 @@ public class BoardMetricsService : IBoardMetricsService
                     query.BoardId, query.LabelId, cancellationToken: cancellationToken)).ToList();
             }
 
+            var activeCardIds = relevantCards.Select(card => card.Id).ToHashSet();
+            cardMoveAudits = cardMoveAudits.Where(entry => activeCardIds.Contains(entry.Key))
+                .ToDictionary(entry => entry.Key, entry => entry.Value);
             var throughput = ComputeThroughput(relevantCards, doneColumn, query.From, query.To, cardMoveAudits);
             var (avgCycleTime, cycleTimeEntries) = ComputeCycleTime(relevantCards, doneColumn, query.From, query.To, cardMoveAudits);
 
