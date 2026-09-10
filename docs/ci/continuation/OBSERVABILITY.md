@@ -41,7 +41,9 @@ Deduplicate repeated observations by repository/run/attempt/job IDs before weekl
 
 ## Validation and rollback
 
-Local combined suite: **309 passed, zero failed/skipped/cancelled**, Node 22.16.0/Linux. Fixtures cover 101 jobs/two pages, failure then successful retry, altered identities, pagination/rerun races, unknown measurements, budgets and rendering. One initial fixture expectation was corrected: its mutator invalidated one duration on EACH page, giving two unknown durations rather than one. The initial failure and passing rerun are retained separately. No production provider request was made from the network-isolated local runtime.
+The original Node 22.16.0/Linux source-overlay report recorded 309 passing combined tests, including in-progress modules; it was not an isolated observer inventory. The current cumulative control suite passed 511 tests on Node 24.13.1/Windows. Fixtures cover 101 jobs/two pages, failure then successful retry, altered identities, pagination/rerun races, unknown measurements, budgets and rendering. One initial fixture expectation was corrected: its mutator invalidated one duration on EACH page, giving two unknown durations rather than one. The initial failure and passing rerun remain part of the development record.
+
+On 2026-09-10 the reviewed collector read actual required-CI runs `34420380277`, `34423790319` and `34431587587`. Unknown setup, test and inventory measurements remained null. These authenticated metadata reads validate collection against the live API, not actual-execution provenance or default-branch workflow deployment. See [the scheduling measurement](STAGING.md#measurement-and-rollback) for the completed sample.
 
 Configured-Node hosted checks and independent/maintainer reviews remain required. After merging, inspect a real observer run before claiming deployed validation. Rollback this observer/new modules only; required CI/canonical policy are unaffected. Observer absence is never product success.
 

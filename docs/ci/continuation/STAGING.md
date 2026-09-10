@@ -54,4 +54,12 @@ Compare matched change/risk strata and include failed/cancelled attempts, not ju
 
 The retained August baseline is historical and is not an after-measurement. Capture a fresh window using the existing estate measurement tool only after the topology is deployed. No numerical savings are claimed in this PR.
 
+Hosted run `34431587587` at PR #2878 head `8b3f4432880559807ad3a909207b38aafb81a19f`
+passed all 18 jobs on 2026-09-10. Linux API completed at 03:08:10 UTC; E2E ran from
+03:08:23 to 03:17:31 while Windows API continued until 03:21:37. Both original API check
+labels were retained. Total job execution was 4,779 runner-seconds and first-job start to
+last-job completion was 1,314 seconds (21m54s). The earlier staged sample `34423790319`
+used 4,651 runner-seconds over 1,772 seconds (29m32s). These unmatched runs prove the intended
+overlap, not a causal speedup or compute reduction: the later sample used 128 more runner-seconds.
+
 Rollback is the inverse of these `needs` additions. Keep every newer concurrent hardening change. Do not restore an entire old workflow file over subsequent edits. The canonical policy remains shadow and all human settings/review gates remain unchanged.
