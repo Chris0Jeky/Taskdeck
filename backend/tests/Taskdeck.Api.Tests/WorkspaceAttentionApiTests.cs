@@ -1,8 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -14,14 +16,66 @@ namespace Taskdeck.Api.Tests;
 
 public class WorkspaceAttentionApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
-    private async Task<(HttpClient Client, Guid User, Guid Board, Guid Card)> Setup()
+    private async Task<(HttpClient Client, Guid User, Guid Board, Guid Card)> Setup(WebApplicationFactory<Program>? app = null)
     {
-        var client = factory.CreateClient(); var auth = await ApiTestHarness.AuthenticateAsync(client, "attention");
+        app ??= factory;
+        var client = app.CreateClient(); var auth = await ApiTestHarness.AuthenticateAsync(client, "attention");
         var board = await ApiTestHarness.CreateBoardAsync(client);
-        using var scope = factory.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
         var column = new Column(board.Id, "Next", 0); var card = new Card(board.Id, column.Id, "Saved question");
         card.Block("A concrete dependency"); db.Columns.Add(column); db.Cards.Add(card); await db.SaveChangesAsync();
         return (client, auth.UserId, board.Id, card.Id);
+    }
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.Parse("2026-09-07T08:30:00Z");
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task HoursGateClaimsWithoutSpendingBudgetAndSurviveOldClientTogglesAndExports()
+    {
+        var clock = new Clock();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        { services.RemoveAll<TimeProvider>(); services.AddSingleton<TimeProvider>(clock); }));
+        var (client, user, board, _) = await Setup(app);
+        var original = (await client.GetFromJsonAsync<WorkspaceAttentionDto>("/api/workspace-attention"))!;
+        original.Window.Should().BeNull();
+        var window = new WorkspaceAttentionWindow("UTC", 2, 540, 1020);
+        (await client.PutAsJsonAsync("/api/workspace-attention", new SaveWorkspaceAttentionDto(original.Revision, true, true, window))).EnsureSuccessStatusCode();
+        (await client.PostAsJsonAsync("/api/workspace-insights/analyze", new AnalyzeWorkspaceDto(board))).EnsureSuccessStatusCode();
+        (await client.PostAsJsonAsync("/api/workspace-attention/claim", new ClaimWorkspaceAttentionDto(board))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        using (var scope = app.Services.CreateScope())
+            (await scope.ServiceProvider.GetRequiredService<IWorkspaceAttentionRepository>().GetAsync(user, default)).ReadAttention().Count.Should().Be(0);
+        clock.Now = clock.Now.AddMinutes(30);
+        (await client.PostAsJsonAsync("/api/workspace-attention/claim", new ClaimWorkspaceAttentionDto(board))).StatusCode.Should().Be(HttpStatusCode.OK);
+        var claimed = (await client.GetFromJsonAsync<WorkspaceAttentionDto>("/api/workspace-attention"))!;
+        var toggle = await client.PutAsJsonAsync("/api/workspace-attention", new SaveWorkspaceAttentionDto(claimed.Revision, false));
+        toggle.EnsureSuccessStatusCode();
+        var toggled = (await toggle.Content.ReadFromJsonAsync<WorkspaceAttentionDto>())!;
+        toggled.Window.Should().Be(window);
+        foreach (var route in new[] { "/api/account/export", "/api/account/export/stream" })
+        {
+            var attention = (await client.GetFromJsonAsync<UserDataExportDto>(route))!.Data.Preferences!.Attention!;
+            attention.Window.Should().Be(window); attention.Count.Should().Be(1);
+        }
+        (await client.PutAsJsonAsync("/api/workspace-attention", new SaveWorkspaceAttentionDto(claimed.Revision, true, true, null))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var cleared = await client.PutAsJsonAsync("/api/workspace-attention", new SaveWorkspaceAttentionDto(toggled.Revision, false, true, null));
+        cleared.EnsureSuccessStatusCode(); (await cleared.Content.ReadFromJsonAsync<WorkspaceAttentionDto>())!.Window.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Eastern Standard Time", 2, 540, 1020)]
+    [InlineData("Invalid/Zone", 2, 540, 1020)]
+    [InlineData("UTC", 0, 540, 1020)]
+    [InlineData("UTC", 2, 540, 540)]
+    public async Task InvalidHoursCannotReplaceThePreference(string zone, int days, int start, int end)
+    {
+        var (client, _, _, _) = await Setup();
+        var original = (await client.GetFromJsonAsync<WorkspaceAttentionDto>("/api/workspace-attention"))!;
+        (await client.PutAsJsonAsync("/api/workspace-attention", new SaveWorkspaceAttentionDto(original.Revision, true, true, new(zone, days, start, end))))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetFromJsonAsync<WorkspaceAttentionDto>("/api/workspace-attention"))!.Should().Be(original);
     }
     private static async Task<WorkspaceAttentionDto> Enable(HttpClient client)
     {

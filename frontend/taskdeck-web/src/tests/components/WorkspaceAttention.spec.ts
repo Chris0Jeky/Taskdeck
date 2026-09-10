@@ -27,6 +27,40 @@ beforeEach(() => {
 })
 afterEach(() => { wrapper?.unmount(); wrapper = undefined; document.body.innerHTML = ''; vi.useRealTimers(); vi.restoreAllMocks() })
 describe('optional quiet reminders', () => {
+  it('saves an explicit weekly window and disables controls until its receipt arrives', async () => {
+    wrapper = mount(WorkspaceAttentionSettings); await flushPromises()
+    const restrict = wrapper.findAll('input[type=checkbox]')[1]!
+    await restrict.setValue(true)
+    await wrapper.get('input[type=text]').setValue('America/New_York')
+    await wrapper.findAll('input[type=time]')[0]!.setValue('22:00')
+    await wrapper.findAll('input[type=time]')[1]!.setValue('02:00')
+    const window = { timeZoneId: 'America/New_York', daysMask: 62, startMinute: 1320, endMinute: 120 }
+    let complete!: (value: typeof settings & { window: typeof window }) => void
+    vi.mocked(workspaceAttentionApi.save).mockReturnValue(new Promise(resolve => { complete = resolve }))
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(workspaceAttentionApi.save).toHaveBeenCalledExactlyOnceWith(1, true, window)
+    expect(wrapper.get('fieldset').attributes('disabled')).toBeDefined()
+    complete({ ...settings, revision: 2, window }); await flushPromises()
+    expect(wrapper.get('fieldset').attributes('disabled')).toBeUndefined()
+    expect(useWorkspaceAttentionStore().settings?.window).toEqual(window)
+  })
+
+  it('clears a saved window explicitly and recovers uncertain completion from the server', async () => {
+    const window = { timeZoneId: 'Europe/London', daysMask: 62, startMinute: 540, endMinute: 1020 }
+    vi.mocked(workspaceAttentionApi.get).mockResolvedValue({ ...settings, window })
+    wrapper = mount(WorkspaceAttentionSettings); await flushPromises()
+    await wrapper.findAll('input[type=checkbox]')[1]!.setValue(false)
+    vi.mocked(workspaceAttentionApi.save).mockRejectedValue(new Error('lost save receipt'))
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(workspaceAttentionApi.save).toHaveBeenCalledExactlyOnceWith(1, true, null)
+    expect(wrapper.find('form').exists()).toBe(false)
+    expect(useWorkspaceAttentionStore().settings).toBeNull()
+    vi.mocked(workspaceAttentionApi.get).mockResolvedValue({ ...settings, revision: 2, window: null })
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(useWorkspaceAttentionStore().settings?.window).toBeNull()
+    expect(workspaceAttentionApi.save).toHaveBeenCalledTimes(1)
+  })
+
   it('waits for a quiet minute and keeps keyboard navigation usable', async () => {
     wrapper = mount(WorkspaceAttentionReminder, { attachTo: document.body })
     expect(workspaceAttentionApi.claim).not.toHaveBeenCalled()
@@ -52,7 +86,7 @@ describe('optional quiet reminders', () => {
     expect(workspaceAttentionApi.claim).not.toHaveBeenCalled()
     expect(wrapper.find('aside').exists()).toBe(false)
   })
-  it.each(['identity', 'board', 'typing', 'dialog'] as const)('discards a reserved response after %s changes', async change => {
+  it.each(['identity', 'board', 'typing', 'dialog', 'window'] as const)('discards a reserved response after %s changes', async change => {
     let resolve!: (value: { boardId: string; insightId: string }) => void
     vi.mocked(workspaceAttentionApi.claim).mockReturnValue(new Promise(done => { resolve = done }))
     wrapper = mount(WorkspaceAttentionReminder, { attachTo: document.body })
@@ -61,6 +95,7 @@ describe('optional quiet reminders', () => {
     if (change === 'board') route.params.id = 'other-board'
     if (change === 'typing') document.dispatchEvent(new Event('input', { bubbles: true }))
     if (change === 'dialog') document.body.append(Object.assign(document.createElement('div'), { role: 'dialog' }))
+    if (change === 'window') useWorkspaceAttentionStore().settings = { ...settings, window: { timeZoneId: 'UTC', daysMask: 2, startMinute: 540, endMinute: 1020 } }
     await flushPromises(); resolve({ boardId: 'board', insightId: 'question' }); await flushPromises()
     expect(wrapper.find('aside').exists()).toBe(false)
   })
