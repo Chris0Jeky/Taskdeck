@@ -145,6 +145,7 @@ public class ReadTools
             columnName,
             title = card.Title,
             workItemType = card.WorkItemType,
+            parentCardId = card.ParentCardId,
             updatedAt = card.UpdatedAt,
             hasDescription = !string.IsNullOrWhiteSpace(card.Description),
             labels = card.Labels.Select(l => l.Name),

@@ -373,7 +373,7 @@ describe('boardStore — integration (real API module, mocked HTTP)', () => {
 
       expect(store.currentBoardCards.some(c => c.id === 'card-del')).toBe(false)
       expect(store.currentBoardCards.some(c => c.id === 'card-keep')).toBe(true)
-      expect(http.delete).toHaveBeenCalledWith(expect.stringContaining('/boards/board-1/cards/card-del'))
+      expect(http.delete).toHaveBeenCalledWith(expect.stringContaining('/boards/board-1/cards/card-del'), { params: undefined, skipRetry: true })
     })
 
     it('does not remove a card when DELETE fails', async () => {

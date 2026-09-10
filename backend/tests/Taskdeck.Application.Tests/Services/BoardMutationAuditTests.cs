@@ -27,6 +27,7 @@ public class BoardMutationAuditTests
 
     public BoardMutationAuditTests()
     {
+
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _boardRepoMock = new Mock<IBoardRepository>();
         _columnRepoMock = new Mock<IColumnRepository>();
@@ -37,7 +38,10 @@ public class BoardMutationAuditTests
 
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
+        _columnRepoMock.Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .Returns((Guid id, CancellationToken ct) => _columnRepoMock.Object.GetByIdWithCardsAsync(id, ct));
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _cardRepoMock.Setup(r => r.GetHierarchyByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
         _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
 
@@ -143,9 +147,7 @@ public class BoardMutationAuditTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        _historyServiceMock.Verify(
-            h => h.LogActionAsync("card", card.Id, AuditAction.Deleted, null, It.Is<string?>(s => s != null && s.Contains("Card"))),
-            Times.Once);
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<AuditLog>(log => log.EntityId == card.Id && log.Action == AuditAction.Deleted && log.UserId == null && log.Changes!.Contains("Card")), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion
