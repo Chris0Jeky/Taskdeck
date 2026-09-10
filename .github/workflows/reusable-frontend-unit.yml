@@ -13,6 +13,30 @@ permissions:
   contents: read
 
 jobs:
+  source-launcher:
+    name: Source Launcher (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      # Same Linux-only launcher contract as the former frontend matrix step.
+      # A launcher failure must not erase unrelated frontend test results (#2332).
+      # Preserve #2378's step timeout and the suite's own nine-minute watchdog.
+      # PowerShell cases remain local Windows evidence under SC-3; no Windows suite is added or removed.
+      - name: Run source launcher regression suite
+        if: runner.os == 'Linux'
+        timeout-minutes: 10
+        run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
+
   frontend-unit:
     name: Frontend Unit (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -33,18 +57,6 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: npm
           cache-dependency-path: frontend/taskdeck-web/package-lock.json
-
-      # #2378: this step launches real PowerShell/Bash launchers and their API/Vite children. When
-      # it hangs it used to consume the whole job budget (cancellations observed at 25:00), taking
-      # the job's remaining steps down with it. A passed windows-latest run of this step measured
-      # 6m31s, so 10 minutes fails a hang fast while leaving ~1.5x headroom on a slow runner. The
-      # suite's own watchdog trips at 9 minutes first and logs which launcher trees leaked.
-      # CI-07 #2331 under the SC-3 re-ruling (hosted minutes are Linux-only): the PowerShell launcher
-      # cases are local Windows evidence now, while the Bash launcher cases still run on the Linux leg.
-      - name: Run source launcher regression suite
-        if: runner.os == 'Linux'
-        timeout-minutes: 10
-        run: node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs
 
       - name: Install frontend dependencies
         working-directory: frontend/taskdeck-web
