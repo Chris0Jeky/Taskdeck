@@ -92,6 +92,12 @@ public class AudioTranscriptionApiTests(TestWebApplicationFactory factory) : ICl
             new ThinkingAudioWriteDto(1, "Owner corrected the transcript", receipt.RepresentationId))).EnsureSuccessStatusCode();
         (await client.PutAsJsonAsync($"/api/thinking-audio/{audio.Id}/written-version",
             new ThinkingAudioWriteDto(2, "Forged source", written.RepresentationId))).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var confirmation = await client.PostAsJsonAsync($"/api/thinking-audio/{audio.Id}/confirm",
+            new ThinkingAudioConfirmDto(written.Revision, 1, written.RepresentationId!.Value, "needsReview"));
+        confirmation.EnsureSuccessStatusCode(); var confirmed = (await confirmation.Content.ReadFromJsonAsync<ThinkingAudioDto>())!;
+        var finalHeader = await db.Representations.AsNoTracking().SingleAsync(x => x.Id == confirmed.RepresentationId);
+        finalHeader.ParentRepresentationId.Should().Be(written.RepresentationId);
+        finalHeader.Warnings.Single().Should().Contain("transcription provenance").And.NotContain("no automated transcription");
     }
 
     [Fact]

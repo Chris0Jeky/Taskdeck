@@ -249,7 +249,9 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         new(payload.Id, answer.CaptureId, answer.UserId, RepresentationKind.Transcript, parent is null ? answer.SourceAssetId : null,
             parent?.Id, null, quality == RepresentationQualityState.Verified ? "human-confirmation" : "human-written", "1", null,
             Representation.ComputeTextContentHash("thinking-audio-manual-v1"), 1, Representation.ComputeTextContentHash(payload.Text), null,
-            quality, ["Written by the owner; no automated transcription or external verification."], DateTimeOffset.UtcNow);
+            quality, [quality == RepresentationQualityState.Verified
+                ? "Confirmed by the owner; source and transcription provenance remain in the parent lineage. This is not external verification."
+                : "Written or pasted by the owner; this action does not request transcription or external verification."], DateTimeOffset.UtcNow);
     private static string Hash(ThinkingLayer layer) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { layer.Title, layer.Body }))));
     private static async Task<string> HashUploadAsync(Stream content, long size, CancellationToken ct)
     {
