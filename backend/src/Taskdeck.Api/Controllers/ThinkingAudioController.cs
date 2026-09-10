@@ -16,6 +16,32 @@ public class ThinkingAudioController : AuthenticatedControllerBase
     public ThinkingAudioController(ThinkingAudioService service, IUserContext userContext) : base(userContext)
     { this.service = service; }
 
+    [HttpGet("library")]
+    public async Task<IActionResult> Library([FromQuery] int offset = 0, CancellationToken ct = default)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var error)) return error!;
+        Response.Headers.CacheControl = "no-store";
+        var result = await service.LibraryAsync(userId, offset, ct);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+    [HttpGet("library/{id:guid}")]
+    public async Task<IActionResult> LibraryDetail(Guid id, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var error)) return error!;
+        Response.Headers.CacheControl = "no-store";
+        var result = await service.LibraryDetailAsync(userId, id, ct);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+    [HttpGet("library/{id:guid}/original")]
+    public async Task<IActionResult> LibraryOriginal(Guid id, CancellationToken ct)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var error)) return error!;
+        Response.Headers.CacheControl = "no-store";
+        Response.Headers.XContentTypeOptions = "nosniff";
+        var result = await service.LibraryDownloadAsync(userId, id, ct);
+        return result.IsSuccess ? File(result.Value.Content, result.Value.MediaType, result.Value.FileName) : result.ToErrorActionResult();
+    }
+
     [HttpGet("questions/{boardId:guid}/{cardId:guid}/{layerId:guid}")]
     public async Task<IActionResult> Get(Guid boardId, Guid cardId, Guid layerId, CancellationToken ct)
     {

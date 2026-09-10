@@ -7,6 +7,9 @@ namespace Taskdeck.Infrastructure.Repositories;
 
 public sealed class ThinkingAudioRepository(TaskdeckDbContext db) : IThinkingAudioRepository
 {
+    public async Task<IReadOnlyList<ThinkingAudioAnswer>> ListByUserAsync(Guid userId, int offset, int limit, CancellationToken ct) =>
+        await db.ThinkingAudioAnswers.AsNoTracking().Where(x => x.UserId == userId)
+            .OrderBy(x => x.Id).Skip(offset).Take(limit).ToListAsync(ct);
     public Task<ThinkingAudioAnswer?> QuestionAsync(Guid userId, Guid cardId, Guid layerId, string hash, CancellationToken ct) =>
         db.Set<ThinkingAudioAnswer>().SingleOrDefaultAsync(x => x.UserId == userId && x.CardId == cardId && x.LayerId == layerId && x.QuestionHash == hash, ct);
     public Task<ThinkingAudioAnswer?> GetAsync(Guid userId, Guid id, CancellationToken ct) =>

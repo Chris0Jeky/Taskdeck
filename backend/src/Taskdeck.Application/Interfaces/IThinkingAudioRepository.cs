@@ -4,6 +4,7 @@ namespace Taskdeck.Application.Interfaces;
 
 public interface IThinkingAudioRepository
 {
+    Task<IReadOnlyList<ThinkingAudioAnswer>> ListByUserAsync(Guid userId, int offset, int limit, CancellationToken ct);
     Task<ThinkingAudioAnswer?> QuestionAsync(Guid userId, Guid cardId, Guid layerId, string hash, CancellationToken ct);
     Task<ThinkingAudioAnswer?> GetAsync(Guid userId, Guid id, CancellationToken ct);
     Task<ThinkingAudioAnswer?> UploadAsync(Guid userId, Guid uploadId, CancellationToken ct);

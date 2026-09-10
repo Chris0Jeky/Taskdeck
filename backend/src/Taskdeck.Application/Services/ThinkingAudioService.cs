@@ -17,6 +17,67 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
     public const long MaximumBytes = 2 * 1024 * 1024;
     private const int MaximumWrittenVersions = 50;
 
+    public async Task<Result<ThinkingAudioLibraryPage>> LibraryAsync(Guid userId, int offset, CancellationToken ct)
+    {
+        const int pageSize = 20;
+        if (offset < 0 || offset > int.MaxValue - pageSize - 1)
+            return Result.Failure<ThinkingAudioLibraryPage>(ErrorCodes.ValidationError, "The recording page is invalid.");
+        var candidates = await answers.ListByUserAsync(userId, offset, pageSize + 1, ct);
+        var allowed = await authorization.GetReadableBoardIdsAsync(userId,
+            candidates.Where(x => x.BoardId.HasValue).Select(x => x.BoardId!.Value), ct);
+        if (!allowed.IsSuccess) return Result.Failure<ThinkingAudioLibraryPage>(allowed.ErrorCode, allowed.ErrorMessage);
+        var items = new List<ThinkingAudioLibraryEntry>();
+        foreach (var answer in candidates.Take(pageSize).Where(x => x.BoardId is null || allowed.Value.Contains(x.BoardId.Value)))
+        {
+            var capture = await captures.GetByIdForUserAsync(answer.CaptureId, userId, ct);
+            var asset = capture?.SourceAssets.SingleOrDefault(x => x.Id == answer.SourceAssetId);
+            if (asset is null) continue;
+            var evidence = capture!.SourceAssets.Single(x => x.Ordinal == 1).TextPayload!.Text;
+            items.Add(new(answer.Id, asset.OriginalName ?? "original-audio", asset.ByteSize, answer.CreatedAt,
+                evidence.Length > 500 ? evidence[..500] + "…" : evidence, answer.RepresentationId.HasValue,
+                answer.ConfirmedMemoryId.HasValue, answer.BoardId is null));
+        }
+        // Advance over the bounded owner page even when revoked boards hide every candidate.
+        return Result.Success(new ThinkingAudioLibraryPage(items, candidates.Count > pageSize ? offset + pageSize : null));
+    }
+
+    public async Task<Result<ThinkingAudioLibraryDetail>> LibraryDetailAsync(Guid userId, Guid id, CancellationToken ct)
+    {
+        try
+        {
+            var answer = await LibraryOwnedAsync(userId, id, ct);
+            Guid? boardId = null; Guid? cardId = null;
+            if (answer.BoardId is { } currentBoardId)
+            {
+                try
+                {
+                    var (_, question) = await QuestionAsync(userId, currentBoardId, answer.CardId, answer.LayerId, ct);
+                    if (Hash(question) == answer.QuestionHash) { boardId = currentBoardId; cardId = answer.CardId; }
+                }
+                catch (DomainException ex) when (ex.ErrorCode == ErrorCodes.NotFound) { }
+            }
+            return Result.Success(new ThinkingAudioLibraryDetail(await MapAsync(answer, ct), boardId, cardId));
+        }
+        catch (DomainException ex) { return Result.Failure<ThinkingAudioLibraryDetail>(ex.ErrorCode, ex.Message); }
+    }
+
+    public async Task<Result<ThinkingAudioDownload>> LibraryDownloadAsync(Guid userId, Guid id, CancellationToken ct)
+    {
+        try { return Result.Success(await OpenOriginalAsync(await LibraryOwnedAsync(userId, id, ct), ct)); }
+        catch (DomainException ex) { return Result.Failure<ThinkingAudioDownload>(ex.ErrorCode, ex.Message); }
+    }
+
+    private async Task<ThinkingAudioAnswer> LibraryOwnedAsync(Guid userId, Guid id, CancellationToken ct)
+    {
+        var answer = await answers.GetAsync(userId, id, ct) ?? throw Missing();
+        if (answer.BoardId is { } boardId)
+        {
+            var allowed = await authorization.CanReadBoardAsync(userId, boardId);
+            if (!allowed.IsSuccess || !allowed.Value) throw Missing();
+        }
+        return answer;
+    }
+
     public async Task<Result<ThinkingAudioDto?>> GetQuestionAsync(Guid userId, Guid boardId, Guid cardId, Guid layerId, CancellationToken ct)
     {
         try
@@ -113,12 +174,17 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         try
         {
             var answer = await OwnedAsync(userId, id, ct);
-            var capture = await captures.GetByIdForUserAsync(answer.CaptureId, userId, ct) ?? throw Missing();
-            var asset = capture.SourceAssets.Single(x => x.Id == answer.SourceAssetId);
-            var stream = await blobs.OpenReferenceReadAsync(asset.BlobReferenceId!.Value, userId, ct) ?? throw Missing();
-            return Result.Success(new ThinkingAudioDownload(stream, asset.MediaType, asset.OriginalName ?? "original-audio"));
+            return Result.Success(await OpenOriginalAsync(answer, ct));
         }
         catch (DomainException ex) { return Result.Failure<ThinkingAudioDownload>(ex.ErrorCode, ex.Message); }
+    }
+
+    private async Task<ThinkingAudioDownload> OpenOriginalAsync(ThinkingAudioAnswer answer, CancellationToken ct)
+    {
+        var capture = await captures.GetByIdForUserAsync(answer.CaptureId, answer.UserId, ct) ?? throw Missing();
+        var asset = capture.SourceAssets.Single(x => x.Id == answer.SourceAssetId);
+        var stream = await blobs.OpenReferenceReadAsync(asset.BlobReferenceId!.Value, answer.UserId, ct) ?? throw Missing();
+        return new ThinkingAudioDownload(stream, asset.MediaType, asset.OriginalName ?? "original-audio");
     }
 
     private async Task<ThinkingAudioAnswer> OwnedAsync(Guid userId, Guid id, CancellationToken ct)

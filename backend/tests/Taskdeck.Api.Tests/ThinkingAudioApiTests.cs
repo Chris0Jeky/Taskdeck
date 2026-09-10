@@ -194,4 +194,80 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
         streamed.Data.SourceStorage.Chunks.Should().OnlyContain(x => x.Content.Length <= StoredBlobChunk.MaximumSize);
         streamed.Data.SourceStorage.Chunks.OrderBy(x => x.Ordinal).SelectMany(x => x.Content).Should().Equal(bytes);
     }
+
+    [Fact]
+    public async Task LibraryDiscoversChangedRemovedAndDeletedBoardOriginalsWithoutReactivatingQuestions()
+    {
+        var (client, _, board, card, question) = await Setup();
+        var original = await Receipt(await Upload(client, Url(board, card, question.Id)));
+        var detailUrl = $"/api/thinking-audio/library/{original.Id}";
+        var current = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>(detailUrl))!;
+        current.CurrentBoardId.Should().Be(board); current.CurrentCardId.Should().Be(card);
+        var page = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!;
+        page.Items.Single().Id.Should().Be(original.Id); page.Items.Single().HasWrittenVersion.Should().BeFalse();
+        (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(1, [question with { Body = "Changed question" }]))).EnsureSuccessStatusCode();
+        var changed = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>(detailUrl))!;
+        changed.CurrentBoardId.Should().BeNull(); changed.CurrentCardId.Should().BeNull();
+        changed.Recording.OriginalEvidence.Should().Contain("Original shared context");
+        (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(2, []))).EnsureSuccessStatusCode();
+        (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>(detailUrl))!.CurrentCardId.Should().BeNull();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var row = (await db.Boards.FindAsync(board))!; row.Archive(); await db.SaveChangesAsync();
+        }
+        (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!.Items.Should().HaveCount(1);
+        (await client.GetByteArrayAsync(detailUrl + "/original")).Should().Equal(Audio());
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            await db.Boards.Where(x => x.Id == board).ExecuteDeleteAsync();
+        }
+        (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!.Items.Single().BoardRemoved.Should().BeTrue();
+        (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>(detailUrl))!.Recording.Id.Should().Be(original.Id);
+        var download = await client.GetAsync(detailUrl + "/original");
+        download.Headers.CacheControl!.NoStore.Should().BeTrue(); download.Headers.GetValues("X-Content-Type-Options").Should().Contain("nosniff");
+        (await download.Content.ReadAsByteArrayAsync()).Should().Equal(Audio());
+        (await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version", new ThinkingAudioWriteDto(1, "No historical mutation"))).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task LibraryKeepsAnonymousForeignAndRevokedRecordingsUnavailable()
+    {
+        var (owner, _, board, card, question) = await Setup();
+        using var viewer = factory.CreateClient();
+        foreach (var path in new[] { "/api/thinking-audio/library", $"/api/thinking-audio/library/{Guid.NewGuid()}", $"/api/thinking-audio/library/{Guid.NewGuid()}/original" })
+            await ApiTestHarness.AssertUnauthorizedAsync(await viewer.GetAsync(path));
+        var identity = await ApiTestHarness.AuthenticateAsync(viewer, "audio-library-viewer");
+        (await owner.PostAsJsonAsync($"/api/boards/{board}/access", new GrantAccessDto(board, identity.UserId, UserRole.Viewer))).EnsureSuccessStatusCode();
+        var original = await Receipt(await Upload(viewer, Url(board, card, question.Id)));
+        (await owner.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!.Items.Should().BeEmpty();
+        foreach (var suffix in new[] { "", "/original" })
+            (await owner.GetAsync($"/api/thinking-audio/library/{original.Id}{suffix}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            await db.BoardAccesses.Where(x => x.BoardId == board && x.UserId == identity.UserId).ExecuteDeleteAsync();
+        }
+        (await viewer.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!.Items.Should().BeEmpty();
+        foreach (var suffix in new[] { "", "/original" })
+            (await viewer.GetAsync($"/api/thinking-audio/library/{original.Id}{suffix}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task LibraryPaginationIsBoundedAndEveryEmittedPageCanBeRead()
+    {
+        var (client, _, board, card, question) = await Setup();
+        var questions = Enumerable.Range(0, 21).Select(index => question with { Id = Guid.NewGuid(), Title = $"Question {index}" }).ToList();
+        (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(1, questions))).EnsureSuccessStatusCode();
+        foreach (var layer in questions) await Receipt(await Upload(client, Url(board, card, layer.Id), bytes: Audio(12), revision: 2));
+        var first = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!;
+        first.Items.Should().HaveCount(20); first.NextOffset.Should().Be(20);
+        var second = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>($"/api/thinking-audio/library?offset={first.NextOffset}"))!;
+        second.Items.Should().HaveCount(1); second.NextOffset.Should().BeNull();
+        first.Items.Select(x => x.Id).Intersect(second.Items.Select(x => x.Id)).Should().BeEmpty();
+        (await client.GetAsync("/api/thinking-audio/library?offset=-1")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetAsync("/api/thinking-audio/library?offset=2147483647")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetAsync("/api/thinking-audio/library?offset=1020")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 }

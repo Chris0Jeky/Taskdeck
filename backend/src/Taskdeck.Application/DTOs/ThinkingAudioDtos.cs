@@ -8,3 +8,7 @@ public sealed record ThinkingAudioDto(Guid Id, long Revision, Guid CaptureId, Gu
     string FileName, string MediaType, long ByteSize, string ContentHash, string OriginalEvidence,
     Guid? RepresentationId, Guid? ConfirmedMemoryId, IReadOnlyList<ThinkingAudioRepresentationDto> WrittenVersions);
 public sealed record ThinkingAudioDownload(Stream Content, string MediaType, string FileName);
+public sealed record ThinkingAudioLibraryEntry(Guid Id, string FileName, long ByteSize, DateTimeOffset CreatedAt,
+    string QuestionExcerpt, bool HasWrittenVersion, bool HasConfirmedAnswer, bool BoardRemoved);
+public sealed record ThinkingAudioLibraryPage(IReadOnlyList<ThinkingAudioLibraryEntry> Items, int? NextOffset);
+public sealed record ThinkingAudioLibraryDetail(ThinkingAudioDto Recording, Guid? CurrentBoardId, Guid? CurrentCardId);
