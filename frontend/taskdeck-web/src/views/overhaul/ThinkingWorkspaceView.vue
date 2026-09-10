@@ -9,10 +9,12 @@ import { useUnsavedWorkspaceNavigation } from '../../composables/useUnsavedWorks
 import { getErrorDisplay } from '../../composables/useErrorMapper'
 import type { BoardDetail, Card } from '../../types/board'
 import { useSessionStore } from '../../store/sessionStore'
+import { useWorkspacePlanStore } from '../../store/workspacePlanStore'
 import { isDemoMode } from '../../utils/demoMode'
 
 const AutomationChatView = defineAsyncComponent(() => import('../AutomationChatView.vue'))
 const session = useSessionStore()
+const plan = useWorkspacePlanStore()
 const companionOpened = ref(false)
 const companionDirty = ref(false)
 const companionSending = ref(false)
@@ -67,6 +69,7 @@ onUnmounted(() => { generation++ })
 
 <template>
   <div class="thinking-workspace">
+    <p v-if="focused && plan.error" role="alert">{{ plan.error }} <RouterLink to="/workspace/plan">Refresh personal plan</RouterLink></p>
     <nav aria-label="Card context"><RouterLink :to="`/workspace/boards/${boardId}`">← {{ board?.name || 'Back to board' }}</RouterLink><RouterLink v-if="!focused" :to="{ path: '/workspace/insights', query: { boardId } }">Quiet insights</RouterLink><RouterLink v-if="!focused" :to="{ path: '/workspace/memory', query: { boardId } }">Memory</RouterLink></nav>
     <p v-if="loading" role="status">Opening your thinking space…</p>
     <section v-else-if="error" role="alert"><p>{{ error }}</p><button type="button" @click="load">Try again</button></section>
