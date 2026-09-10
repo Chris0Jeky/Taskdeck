@@ -14,6 +14,16 @@ changes.
 
 ## Unreleased workspace overhaul
 
+Card assignments add `CardAssignments` through the
+`20260910225616_AddCardAssignments` migration. Existing cards remain unassigned and retain their
+IDs, placement, hierarchy and history. Assignment does not grant board access. Board JSON with
+assignments uses the `taskdeck-board` version-4 envelope; older importers reject it. Import creates
+a new board and requires every source assignee to be explicitly mapped to the importer or left
+unassigned. Assignment-free plain and version-2/3 files remain supported. Developer rollback drops
+assignment data while preserving cards and users; reapplying the migration does not recover those
+assignments. Back up the database before upgrading; this rollback test does not establish support
+for application downgrades. [Assignment contract](docs/product/CARD_ASSIGNMENTS.md).
+
 Card hierarchy adds nullable `Cards.ParentCardId` through the
 `20260910214635_AddCardParentHierarchy` migration. Existing cards remain parentless and keep their
 IDs and placement. A hierarchy supports three parent-child links (four levels). Archiving or deleting
