@@ -6,6 +6,13 @@
 
 `board-proposal-overlays.spec.ts` creates a real update/reorder/create proposal and checks both board renderers across all four experiences. It proves visible markers, saved titles, explicit close, unchanged saved cards/columns, no browser mutation requests, Review-to-board navigation, access refusal and 375 px/no serious-critical axe findings. The final journey passed in 15.8 seconds. Initial fixture failures omitted required operation parameters, requested an unsupported column action, and captured column card counts before seeding the card; each was corrected without relaxing product assertions. New objects remain described by the checked diff rather than simulated board state. No actual board Apply, production deployment or provider-quality acceptance is claimed.
 
+## Audio review repairs (2026-09-10)
+
+Audio drafts now bind to the board, card, question and revision present when file selection or microphone acquisition starts. Editing that question retains the local file for replay/download but prevents uploading it under new question evidence. A new draft receives the current binding. Two regressions cover edits before upload and while recording.
+
+Production CSPs permit only same-origin and local `blob:` media; nginx and its AWS template permit same-origin microphone requests while continuing to deny camera and geolocation. API header checks, proxy policy contracts and Chromium probes exercise these exact policy strings. The probes load a local WAV and inspect effective microphone policy; they do not claim real microphone hardware acceptance. The retained-original library browser journey also passes.
+
+
 ## Original-source context continuation (2026-09-09)
 
 `ChatOriginalContextApiTests.cs` extends the context API suite with original-only dispatch, exact

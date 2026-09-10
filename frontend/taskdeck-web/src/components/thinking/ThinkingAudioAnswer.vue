@@ -10,6 +10,14 @@ const props = defineProps<{ boardId: string; cardId: string; layerId: string; re
 const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; busy: [busy: boolean]; confirmed: [] }>()
 const saved = ref<ThinkingAudio | null>(null)
 const file = ref<File | null>(null)
+type DraftSource = { boardId: string; cardId: string; layerId: string; revision: number }
+const sourceNow = (): DraftSource => ({ boardId: props.boardId, cardId: props.cardId, layerId: props.layerId, revision: props.revision })
+let nextDraftSource: DraftSource | null = null
+function beginDraft() { nextDraftSource = sourceNow() }
+const draftSource = ref<DraftSource | null>(null)
+const staleDraft = computed(() => !!file.value && !!draftSource.value && (
+  draftSource.value.boardId !== props.boardId || draftSource.value.cardId !== props.cardId
+  || draftSource.value.layerId !== props.layerId || draftSource.value.revision !== props.revision))
 const recording = ref(false)
 const pending = ref(false)
 const loading = ref(false)
@@ -27,7 +35,11 @@ const dirty = computed(() => !!file.value || text.value !== (currentVersion.valu
 const busy = computed(() => pending.value || recording.value)
 watch(dirty, value => emit('dirty-change', value), { immediate: true, flush: 'sync' })
 watch(busy, value => emit('busy', value), { immediate: true, flush: 'sync' })
-watch(file, () => { uploadId = createSourceUploadId() }, { flush: 'sync' })
+watch(file, value => {
+  uploadId = createSourceUploadId()
+  draftSource.value = value ? nextDraftSource ?? sourceNow() : null
+  nextDraftSource = null
+}, { flush: 'sync' })
 function message(cause: unknown) {
   const code = (cause as { response?: { status?: number } }).response?.status
   error.value = code === 409 ? 'The question or recording changed. Your draft is kept. Reload before continuing.'
@@ -63,9 +75,10 @@ async function mutate(action: () => Promise<ThinkingAudio>, kind: 'upload' | 'wr
   finally { if (live && request === generation) pending.value = false }
 }
 function upload() {
-  const draft = file.value; if (!draft) return
+  const draft = file.value; const source = draftSource.value
+  if (!draft || !source || staleDraft.value) return
   const id = uploadId
-  void mutate(() => thinkingAudioApi.upload(props.boardId, props.cardId, props.layerId, props.revision, id, draft), 'upload')
+  void mutate(() => thinkingAudioApi.upload(source.boardId, source.cardId, source.layerId, source.revision, id, draft), 'upload')
 }
 function write() {
   const receipt = saved.value; if (!receipt || !text.value.trim()) return
@@ -99,8 +112,9 @@ onUnmounted(() => { live = false; generation++; if (playbackUrl.value) URL.revok
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" :disabled="busy || loading || !sourceReady" @click="load">Reload saved recording</button>
     <template v-if="!saved">
-      <AudioAnswerRecorder v-model="file" :disabled="pending || loading || !loaded || !sourceReady" @busy="recording = $event" />
-      <button type="button" :disabled="!file || busy || loading || !loaded || !sourceReady" @click="upload">Save original privately</button>
+      <AudioAnswerRecorder v-model="file" :disabled="pending || loading || !loaded || !sourceReady" @draft-started="beginDraft" @busy="recording = $event" />
+      <p v-if="staleDraft" role="status">The question changed after this audio draft began. Replay or download it, then discard it or record a new answer for the current question.</p>
+      <button type="button" :disabled="!file || staleDraft || busy || loading || !loaded || !sourceReady" @click="upload">Save original privately</button>
     </template>
     <template v-else>
       <p><strong>Original recording saved privately</strong> · {{ saved.fileName }} · {{ (saved.byteSize / 1024).toFixed(1) }} KiB</p>
