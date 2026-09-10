@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Taskdeck.Application.Connectors;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
@@ -107,7 +108,14 @@ public static class DependencyInjection
         services.AddScoped<IManualRepresentationStore, EfManualRepresentationStore>();
         services.AddScoped<IThinkingAudioRepository, ThinkingAudioRepository>();
         services.AddScoped<ISourcePortabilityStore, SourcePortabilityStore>();
-        services.TryAddSingleton(_ => configuration.GetSection("SourceStorage").Get<BlobStorageSettings>() ?? new BlobStorageSettings());
+        services.AddOptions<BlobStorageSettings>()
+            .Bind(configuration.GetSection("SourceStorage"))
+            .Validate(value => value.MaximumUploadBytes > 0, "SourceStorage:MaximumUploadBytes must be positive.")
+            .Validate(value => value.OwnerQuotaBytes > 0, "SourceStorage:OwnerQuotaBytes must be positive.")
+            .Validate(value => value.ModalityQuotaBytes > 0, "SourceStorage:ModalityQuotaBytes must be positive.")
+            .Validate(value => value.MaximumReferencesPerOwner > 0, "SourceStorage:MaximumReferencesPerOwner must be positive.")
+            .ValidateOnStart();
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BlobStorageSettings>>().Value);
         services.AddScoped<ICaptureBackfillStore, EfCaptureBackfillStore>();
         // ADR-0065 / CF-01 (#2255): the Context Fabric switches and the ID-preserving backfill must
         // reach EVERY host that applies migrations or writes a capture -- web API, standalone MCP
