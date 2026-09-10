@@ -1,6 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+Source upload and library query continuation (#2808): host-rejected oversized audio bodies retain the standard 413 error after transaction rollback, with no orphaned original, reference, answer or processing request. Library pages authorize their board candidates first, then retrieve up to twenty owner-scoped metadata rows in one detached SQL projection. Evidence excerpts are clipped in SQL; listing does not load capture graphs, representation histories or binary chunks. This reduces original-library maintenance cost without changing private ownership or review/apply semantics. Long-history cursor pagination remains separate follow-through.
 
 Original-source Companion continuation (#2808):
 

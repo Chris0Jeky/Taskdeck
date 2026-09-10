@@ -1,8 +1,10 @@
 using System.Net;
+using System.Data.Common;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,12 +20,24 @@ using Taskdeck.Domain.Exceptions;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    private sealed class LibraryCommandProbe : DbCommandInterceptor
+    {
+        public List<string> Commands { get; } = [];
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+            CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken ct = default)
+        {
+            Commands.Add(command.CommandText);
+            return ValueTask.FromResult(result);
+        }
+    }
+
     [Fact]
     public async Task HostRejectedOversizedBodyKeeps413AndRollsBackOriginalStorage()
     {
@@ -308,12 +322,31 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
     [Fact]
     public async Task LibraryPaginationIsBoundedAndEveryEmittedPageCanBeRead()
     {
-        var (client, _, board, card, question) = await Setup();
-        var questions = Enumerable.Range(0, 21).Select(index => question with { Id = Guid.NewGuid(), Title = $"Question {index}" }).ToList();
+        var (client, user, board, card, question) = await Setup();
+        var questions = Enumerable.Range(0, 21).Select(index => question with { Id = Guid.NewGuid(), Title = $"Question {index}", Body = new string('x', 1000) }).ToList();
         (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(1, questions))).EnsureSuccessStatusCode();
         foreach (var layer in questions) await Receipt(await Upload(client, Url(board, card, layer.Id), bytes: Audio(12), revision: 2));
         var first = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!;
         first.Items.Should().HaveCount(20); first.NextOffset.Should().Be(20);
+        first.Items.Should().OnlyContain(item => item.QuestionExcerpt.Length == 501 && item.QuestionExcerpt.EndsWith("…"));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var sharedDb = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var probe = new LibraryCommandProbe();
+            using var db = new TaskdeckDbContext(new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(sharedDb.Database.GetDbConnection()).AddInterceptors(probe).Options);
+            var repository = new ThinkingAudioRepository(db);
+            var ids = first.Items.Select(item => item.Id).ToArray();
+            (await repository.LibraryEntriesAsync(user, ids, default)).Should().BeEquivalentTo(first.Items, options => options.WithStrictOrdering());
+            probe.Commands.Should().ContainSingle();
+            probe.Commands[0].Should().Contain("substr(").And.NotContain("StoredBlobChunks");
+            (await repository.LibraryEntriesAsync(Guid.NewGuid(), ids, default)).Should().BeEmpty();
+            (await repository.LibraryEntriesAsync(user, [], default)).Should().BeEmpty();
+            probe.Commands.Should().HaveCount(2, "one bounded query per non-empty page and none for an empty page");
+            db.ChangeTracker.Entries<Taskdeck.Domain.Entities.Capture>().Should().BeEmpty();
+            db.ChangeTracker.Entries<SourceAsset>().Should().BeEmpty();
+            db.ChangeTracker.Entries<ThinkingAudioAnswer>().Should().BeEmpty();
+        }
         var second = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>($"/api/thinking-audio/library?offset={first.NextOffset}"))!;
         second.Items.Should().HaveCount(1); second.NextOffset.Should().BeNull();
         first.Items.Select(x => x.Id).Intersect(second.Items.Select(x => x.Id)).Should().BeEmpty();

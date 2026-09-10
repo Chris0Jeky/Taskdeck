@@ -1,5 +1,11 @@
 # Workspace overhaul validation and follow-through
 
+## Source upload errors and library metadata (2026-09-10)
+
+`ThinkingAudioApiTests` injects the host's 413 exception during a partially read audio stream, exercises the real application transaction through the controller, and verifies the standard error envelope plus absence of stored blobs, references, captures, audio answers and model requests. Existing owner/access, correction, export/erasure and library cases remain in the same suite.
+
+The twenty-record library fixture checks exact ordered metadata, 500-character SQL excerpt clipping with an ellipsis, foreign-owner exclusion and an empty change tracker. A SQLite command interceptor proves one joined metadata query per non-empty page and no query for an empty page; binary chunks and capture histories are not materialized. The browser library path and full backend qualification are recorded with the continuation PR. This does not claim Kestrel socket transport, live deployment or transcription-provider acceptance.
+
 ## Audio review repairs (2026-09-10)
 
 Audio drafts now bind to the board, card, question and revision present when file selection or microphone acquisition starts. Editing that question retains the local file for replay/download but prevents uploading it under new question evidence. A new draft receives the current binding. Two regressions cover edits before upload and while recording.
