@@ -69,8 +69,8 @@ type DetailLoadOptions = {
    *   that resolve from state already present, the non-forced cached early
    *   return and the demo branch: the question a caller asks is whether the
    *   store holds this detail, not whether this call did the writing.
-   * - `superseded` — the caller's own `shouldCache` said no, so a newer read
-   *   for the same id is already the authority.
+   * - `superseded` — the caller's `shouldCache` said no, or a newer detail
+   *   read for the same id is already the authority.
    * - `generation` — a successful write for this id landed mid-read. Reachable
    *   in a LIVE session, not only after a logout: a first open observes
    *   generation 0 for an uncached item and a batch triage that includes it
@@ -159,6 +159,7 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   let latestListLoadRequestId = 0
+  const latestDetailReadById = new Map<string, symbol>()
   // One monotonic clock for both guards below. A write records it to reject
   // older reads; a summary records it so an older BACKGROUND list snapshot
   // cannot regress a row that moved after that read began (#2301).
@@ -335,6 +336,8 @@ export const useCaptureStore = defineStore('capture', () => {
 
     const observedDetailWriteGeneration = detailWriteGeneration(itemId)
     const observedSessionEpoch = sessionEpoch
+    const readToken = Symbol()
+    latestDetailReadById.set(itemId, readToken)
     try {
       if (trackLoading) {
         loadingDetail.value = true
@@ -345,8 +348,8 @@ export const useCaptureStore = defineStore('capture', () => {
       const detail = requestOptions
         ? await captureApi.getItem(itemId, requestOptions)
         : await captureApi.getItem(itemId)
-      // The three drop paths, in the order they have always been checked and
-      // now named for the caller (#2640). The epoch comes before any generation
+      // Keep the caller, epoch and write-generation guards before comparing
+      // read ownership. The epoch comes before any generation
       // compare: the reset discards the generations this read observed, so
       // after a logout the compare is no longer meaningful.
       let outcome: DetailCacheOutcome = 'cached'
@@ -356,6 +359,8 @@ export const useCaptureStore = defineStore('capture', () => {
         outcome = 'epoch'
       } else if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) {
         outcome = 'generation'
+      } else if (latestDetailReadById.get(itemId) !== readToken) {
+        outcome = 'superseded'
       }
       if (outcome === 'cached') {
         cacheDetail(detail, syncSummary)
@@ -372,6 +377,9 @@ export const useCaptureStore = defineStore('capture', () => {
       }
       throw e
     } finally {
+      if (latestDetailReadById.get(itemId) === readToken) {
+        latestDetailReadById.delete(itemId)
+      }
       if (trackLoading) {
         loadingDetail.value = false
       }
@@ -559,8 +567,8 @@ export const useCaptureStore = defineStore('capture', () => {
     triageTimer = setTimeout(() => { void tickTriagePoll() }, Math.max(0, due - Date.now()))
   }
 
-  // Each read has a deadline even when a transport ignores AbortSignal. The
-  // abandoned promise never writes state: only the winning, guarded result can.
+  // Each read has a deadline even when a transport ignores AbortSignal.
+  // Terminal hydration also checks that signal before caching a late response.
   async function readTriage<T>(entry: TriageWatch, read: (options: CaptureReadOptions) => Promise<T>): Promise<T> {
     const controller = new AbortController()
     triageRequest = { entry, controller }
@@ -605,9 +613,27 @@ export const useCaptureStore = defineStore('capture', () => {
       }
       delete triagePollingProblems.value[entry.id]
       if (isTriageTerminalStatus(status.status)) {
-        const detail = await readTriage(entry, options => captureApi.getItem(entry.id, options))
-        if (!isCurrent()) return
-        cacheDetail(detail, items.value.some(item => item.id === entry.id))
+        let cached = false
+        const detail = await readTriage(entry, options => fetchDetail(entry.id, {
+          forceRefresh: true,
+          recordError: false,
+          showToast: false,
+          trackLoading: false,
+          syncSummary: false,
+          requestOptions: options,
+          shouldCache: () => isCurrent() && !options.signal?.aborted,
+          onCacheOutcome: outcome => {
+            cached = outcome === 'cached'
+            // Membership can change during the read; the poll never inserts
+            // a row that the current list no longer contains.
+            if (cached && items.value.some(item => item.id === entry.id)) {
+              upsertSummary(toSummary(detailById.value[entry.id]!))
+            }
+          },
+        }))
+        // A superseding foreground read owns the detail. Keep watching until
+        // a current terminal body has actually reached the shared cache.
+        if (!isCurrent() || !cached) return
         if (isTriageTerminalStatus(detail.status)) {
           retireTriageWatch(entry)
           notifyTriageCountChanged()
@@ -1147,6 +1173,7 @@ export const useCaptureStore = defineStore('capture', () => {
     stopTriagePolling()
     triagePollingPaused.value = false
     latestDetailWriteGenerationById.clear()
+    latestDetailReadById.clear()
     latestSummaryGenerationById.clear()
     sessionEpoch += 1
   }

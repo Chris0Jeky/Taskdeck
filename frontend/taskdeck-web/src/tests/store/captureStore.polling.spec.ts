@@ -102,6 +102,63 @@ describe('ordinary Inbox triage status polling', () => {
     expect(counts).not.toHaveBeenCalled()
   })
 
+  it('rejects older foreground detail after terminal hydration retires its watch', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A')]
+    const old = deferred<CaptureItem>()
+    const outcome = vi.fn()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(old.promise)
+    const foreground = store.fetchDetail('A', { forceRefresh: true, onCacheOutcome: outcome })
+    vi.mocked(captureApi.getStatus).mockResolvedValue(status('A', 'ProposalCreated'))
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(store.triagePollingItemIds.size).toBe(0)
+    old.resolve(detail('A'))
+    await foreground
+    expect(outcome).toHaveBeenCalledWith('superseded')
+    expect(store.detailById.A?.status).toBe('ProposalCreated')
+    expect(store.items[0]?.status).toBe('ProposalCreated')
+    expect(counts).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not reinsert a row removed while terminal hydration is pending', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A')]
+    const hydration = deferred<CaptureItem>()
+    vi.mocked(captureApi.getStatus).mockResolvedValue(status('A', 'ProposalCreated'))
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(hydration.promise)
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    store.items = []
+    hydration.resolve(detail('A', 'ProposalCreated'))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(store.items).toEqual([])
+    expect(store.detailById.A?.status).toBe('ProposalCreated')
+    expect(store.triagePollingItemIds.size).toBe(0)
+  })
+
+  it('keeps watching when newer foreground detail supersedes terminal hydration', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A')]
+    const hydration = deferred<CaptureItem>()
+    vi.mocked(captureApi.getStatus).mockResolvedValue(status('A', 'ProposalCreated'))
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(hydration.promise)
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    vi.mocked(captureApi.getItem).mockResolvedValueOnce({ ...detail('A'), rawText: 'newer detail' })
+    await store.fetchDetail('A', { forceRefresh: true })
+    hydration.resolve(detail('A', 'ProposalCreated'))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(store.detailById.A?.rawText).toBe('newer detail')
+    expect(store.items[0]?.status).toBe('Triaging')
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    expect(counts).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(store.detailById.A?.status).toBe('ProposalCreated')
+    expect(store.triagePollingItemIds.size).toBe(0)
+    expect(counts).toHaveBeenCalledTimes(1)
+  })
+
   it('invalidates an old terminal hydration when the same item is enqueued again', async () => {
     const store = useCaptureStore()
     store.detailById.A = detail('A')
