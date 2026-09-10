@@ -296,7 +296,7 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
     }
   })
 
-  it.each(['queue control', 'batch dialog'] as const)(
+  it.each(['queue control', 'batch dialog', 'batch apply dialog'] as const)(
     'preserves focus in a %s when a delayed missing lookup resolves',
     async (target) => {
       let rejectLookup!: (reason: unknown) => void
@@ -304,6 +304,7 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
         rejectLookup = reject
       }))
       const proposal = makeProposal({
+        status: target === 'batch apply dialog' ? 'Approved' : 'PendingReview',
         operations: [{ ...makeProposal().operations[0], actionType: 'create', targetType: 'card' }],
       })
       const wrapper = await mountView([proposal], [proposal], '/workspace/review')
@@ -318,7 +319,9 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
         await routerOf(wrapper).push('/workspace/review#proposal-proposal-missing')
         await flushPromises()
         expect(mocks.getProposal).toHaveBeenCalledWith('proposal-missing')
-        const selection = wrapper.get('[data-testid="queue-batch-select-proposal-active"]')
+        const selection = wrapper.get(target === 'batch apply dialog'
+          ? '[data-testid="queue-batch-execute"]'
+          : '[data-testid="queue-batch-select-proposal-active"]')
         let focused = selection.element as HTMLElement
         if (target === 'batch dialog') {
           await selection.trigger('change')
@@ -326,15 +329,22 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
           await flushPromises()
           focused = document.body.querySelector<HTMLElement>('[data-testid="batch-approve-confirm"]')!
           expect(focused).not.toBeNull()
+        } else if (target === 'batch apply dialog') {
+          await selection.trigger('click')
+          await flushPromises()
+          focused = document.body.querySelector<HTMLElement>('[data-testid="batch-execute-confirm"]')!
+          expect(focused).not.toBeNull()
         }
         focused.focus()
         expect(document.activeElement).toBe(focused)
-        const statusNode = target === 'batch dialog'
-          ? document.body.querySelector<HTMLElement>('[data-testid="batch-approve-announcement"]')!
+        const statusNode = target !== 'queue control'
+          ? document.body.querySelector<HTMLElement>(target === 'batch apply dialog'
+            ? '[data-testid="batch-execute-announcement"]'
+            : '[data-testid="batch-approve-announcement"]')!
           : announcement.element as HTMLElement
         expect(statusNode).not.toBeNull()
         expect(statusNode.textContent?.trim()).toBe('')
-        if (target === 'batch dialog') expect(statusNode.closest('[role="dialog"]')).not.toBeNull()
+        if (target !== 'queue control') expect(statusNode.closest('[role="dialog"]')).not.toBeNull()
         announcementObserver = new MutationObserver(() => {
           const text = statusNode.textContent?.trim()
           if (text) announced.push(text)
@@ -351,13 +361,15 @@ describe('PaperReviewView unavailable deep-link return focus', () => {
         const announcedText = statusNode.textContent?.trim()
         expect(announcedText).toContain('proposal-missing')
         expect(announced).toEqual([announcedText])
-        if (target === 'batch dialog') expect(announcement.text()).toBe('')
+        if (target !== 'queue control') expect(announcement.text()).toBe('')
         vi.advanceTimersByTime(REVIEW_QUEUE_REFRESH_MS)
         await flushPromises()
         expect(announced).toEqual([announcedText])
 
-        if (target === 'batch dialog') {
-          document.body.querySelector<HTMLButtonElement>('[data-testid="batch-approve-cancel"]')!.click()
+        if (target !== 'queue control') {
+          document.body.querySelector<HTMLButtonElement>(target === 'batch apply dialog'
+            ? '[data-testid="batch-execute-cancel"]'
+            : '[data-testid="batch-approve-cancel"]')!.click()
           await flushPromises()
           expect(announcement.text()).toBe('')
         }
