@@ -22,6 +22,8 @@ public class AutomationProposalService : IAutomationProposalService
         "add",
         "apply",
         "archive",
+        "archive-lifecycle",
+        "restore-lifecycle",
         "assign",
         "attach",
         "block",
@@ -1625,11 +1627,12 @@ public class AutomationProposalService : IAutomationProposalService
                 foreach (var column in columns)
                     columnNames[column.Id] = column.Name;
 
-                var cards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken);
+                var cards = (await _unitOfWork.Cards.GetByBoardIdAsync(boardId.Value, cancellationToken))
+                    .Concat(await _unitOfWork.Cards.GetArchivedByBoardIdAsync(boardId.Value, cancellationToken));
                 foreach (var card in cards)
                 {
                     cardTitles[card.Id] = card.Title;
-                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason);
+                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason, card.IsArchived);
                 }
 
                 var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
@@ -1954,7 +1957,7 @@ public class AutomationProposalService : IAutomationProposalService
         string? TargetId,
         string Parameters);
 
-    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason);
+    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason, bool IsArchived = false);
 
     private static void ApplyPreviewCreatedCardState(
         DiffOperationView operation,
@@ -2042,6 +2045,15 @@ public class AutomationProposalService : IAutomationProposalService
                     : ExtractGuidParameter(operation.Parameters, "cardId")?.ToString() ?? "(unspecified)";
             var preposition = labelAction == CardLabelOperationAction.Add ? "to" : "from";
             return $"{operation.Sequence}. {verb} label {labelDisplay} {preposition} card {cardDisplay}";
+        }
+
+        if (isCardTarget && operation.ActionType.ToLowerInvariant() is "archive-lifecycle" or "restore-lifecycle")
+        {
+            var cardId = ExtractGuidParameter(operation.Parameters, "cardId");
+            var display = cardId.HasValue && cardTitles.TryGetValue(cardId.Value, out var title) ? title : cardId?.ToString() ?? "(unspecified)";
+            return operation.ActionType.Equals("archive-lifecycle", StringComparison.OrdinalIgnoreCase)
+                ? $"{operation.Sequence}. Archive card {display}; Archived: false -> true; retain original column, labels and history."
+                : $"{operation.Sequence}. Restore card {display}; Archived: true -> false; return to its original column and position.";
         }
 
         if (isCardTarget && string.Equals(operation.ActionType, "archive", StringComparison.OrdinalIgnoreCase))

@@ -210,6 +210,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                     card.AddLabel(cardLabel);
                 }
 
+                if (importCard.IsArchived) card.Archive();
                 await _unitOfWork.Cards.AddAsync(card);
                 if (importCard.Thinking is not null)
                 {
@@ -416,7 +417,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 card.Position,
                 card.DueDate,
                 labelNames,
-                thinkingByCard.GetValueOrDefault(card.Id), card.Id));
+                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived));
         }
 
         return new ImportBoardDto(
@@ -467,6 +468,6 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             card.Position,
             labels,
             card.CreatedAt,
-            card.UpdatedAt);
+            card.UpdatedAt, card.IsArchived);
     }
 }

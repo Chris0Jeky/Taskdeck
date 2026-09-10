@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -301,7 +301,7 @@ public class ColumnService
             column.Name,
             column.Position,
             column.WipLimit,
-            column.Cards.Count,
+            column.Cards.Count(card => !card.IsArchived),
             column.CreatedAt,
             column.UpdatedAt
         );

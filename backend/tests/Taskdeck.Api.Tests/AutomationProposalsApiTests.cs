@@ -871,6 +871,47 @@ public class AutomationProposalsApiTests : IClassFixture<TestWebApplicationFacto
     }
 
     [Fact]
+    public async Task CardLifecycleProposals_PreviewAndApplyArchiveThenRestore_OnlyAfterExplicitApproval()
+    {
+        var client = _factory.CreateClient();
+        var user = await ApiTestHarness.AuthenticateAsync(client, "card-lifecycle-proposals");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "lifecycle-proposal");
+        var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var response = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, board.Columns.First().Id, "Retained card", null, null, null));
+        var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        foreach (var archive in new[] { true, false })
+        {
+            var action = archive ? "archive-lifecycle" : "restore-lifecycle";
+            var created = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(
+                ProposalSourceType.Manual, user.UserId, archive ? "Archive card" : "Restore card", RiskLevel.High,
+                Guid.NewGuid().ToString(), boardId, Operations: [new CreateProposalOperationDto(0, action, "card",
+                    JsonSerializer.Serialize(new { boardId, cardId = card.Id, expectedUpdatedAt = card.UpdatedAt }),
+                    Guid.NewGuid().ToString(), card.Id.ToString())]));
+            created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+            var proposal = (await created.Content.ReadFromJsonAsync<ProposalDto>())!;
+            var diff = await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff");
+            diff.StatusCode.Should().Be(HttpStatusCode.OK, await diff.Content.ReadAsStringAsync());
+            (await diff.Content.ReadAsStringAsync()).Should().Contain(archive ? "Archive card" : "Restore card");
+            (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{card.Id}"))!.IsArchived.Should().Be(!archive);
+            var approve = await client.PostAsync($"/api/automation/proposals/{proposal.Id}/approve", null);
+            approve.StatusCode.Should().Be(HttpStatusCode.OK, await approve.Content.ReadAsStringAsync());
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/automation/proposals/{proposal.Id}/execute");
+            request.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+            var applied = await client.SendAsync(request);
+            applied.StatusCode.Should().Be(HttpStatusCode.OK, await applied.Content.ReadAsStringAsync());
+            (await applied.Content.ReadFromJsonAsync<ProposalDto>())!.Status.Should().Be(ProposalStatus.Applied);
+            card = (await client.GetFromJsonAsync<CardDto>($"/api/boards/{boardId}/cards/{card.Id}"))!;
+            card.IsArchived.Should().Be(archive);
+            card.IsBlocked.Should().BeFalse();
+        }
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var actions = await db.AuditLogs.Where(log => log.EntityId == card.Id).Select(log => log.Action).ToListAsync();
+        actions.Should().Contain(AuditAction.Archived).And.Contain(AuditAction.Unarchived);
+    }
+
+    [Fact]
     public async Task ExecuteProposal_ArchiveCard_ShouldPersistBlockedCardAppliedReceiptAndAudit()
     {
         var client = _factory.CreateClient();

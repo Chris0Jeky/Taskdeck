@@ -53,7 +53,7 @@ public record ImportCardDto(
     int Position,
     DateTimeOffset? DueDate,
     IEnumerable<string>? Labels,
-    ThinkingMaterialDto? Thinking = null, Guid? SourceId = null);
+    ThinkingMaterialDto? Thinking = null, Guid? SourceId = null, bool IsArchived = false);
 
 public record ImportLabelDto(
     string Name,
