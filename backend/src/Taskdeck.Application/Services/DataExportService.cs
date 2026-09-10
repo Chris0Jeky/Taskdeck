@@ -681,6 +681,8 @@ public class DataExportService : IDataExportService
                 await WriteSourceRowsAsync(writer, "chunks", _sourceStorage.ChunksAsync(userId, cancellationToken), cancellationToken);
                 await WriteSourceRowsAsync(writer, "representations", _sourceStorage.RepresentationsAsync(userId, cancellationToken), cancellationToken);
                 await WriteSourceRowsAsync(writer, "audioAnswers", _sourceStorage.AudioAnswersAsync(userId, cancellationToken), cancellationToken);
+                await WriteSourceRowsAsync(writer, "audioTranscriptionAttempts", _sourceStorage.AudioTranscriptionAttemptsAsync(userId, cancellationToken), cancellationToken);
+                await WriteSourceRowsAsync(writer, "audioTranscriptionBudgets", _sourceStorage.AudioTranscriptionBudgetsAsync(userId, cancellationToken), cancellationToken);
                 writer.WriteEndObject();
             }
             writer.WriteStartArray("workspaceMemories");
@@ -1231,7 +1233,8 @@ public class DataExportService : IDataExportService
         }
         return new(await Collect(_sourceStorage.ObjectsAsync(userId, ct)), await Collect(_sourceStorage.ReferencesAsync(userId, ct)),
             await Collect(_sourceStorage.ChunksAsync(userId, ct)), await Collect(_sourceStorage.RepresentationsAsync(userId, ct)),
-            await Collect(_sourceStorage.AudioAnswersAsync(userId, ct)));
+            await Collect(_sourceStorage.AudioAnswersAsync(userId, ct)), await Collect(_sourceStorage.AudioTranscriptionAttemptsAsync(userId, ct)),
+            await Collect(_sourceStorage.AudioTranscriptionBudgetsAsync(userId, ct)));
     }
     private static async Task WriteSourceRowsAsync<T>(Utf8JsonWriter writer, string name, IAsyncEnumerable<T> rows, CancellationToken ct)
     {

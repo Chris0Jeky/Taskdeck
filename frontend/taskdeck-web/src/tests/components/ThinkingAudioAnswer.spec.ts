@@ -16,6 +16,7 @@ const confirmed: ThinkingAudio = { ...written, revision: 3, representationId: 'c
   { ...written.writtenVersions[0]!, quality: 'Superseded', supersededById: 'confirmed' }, { id: 'confirmed', text: 'My version', quality: 'Verified', supersededById: null },
 ] }
 const global = { stubs: {
+  AudioTranscriptionPanel: true,
   RouterLink: { template: '<a><slot /></a>' },
   AudioAnswerRecorder: { name: 'AudioAnswerRecorder', props: ['modelValue', 'disabled'], emits: ['update:modelValue', 'busy', 'draft-started'], template: '<div>Recorder draft: {{ modelValue?.name }}</div>' },
 } }
@@ -28,6 +29,17 @@ beforeEach(() => {
 })
 
 describe('private audio answers', () => {
+  it('keeps a selected transcript as a guarded draft and preserves its source when saved', async () => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValue(original)
+    vi.mocked(thinkingAudioApi.write).mockResolvedValue(written)
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    wrapper.findComponent({ name: 'AudioTranscriptionPanel' }).vm.$emit('adopt', { id: 'candidate', text: 'Reviewed transcript' })
+    await flushPromises()
+    expect(wrapper.get('textarea[aria-label="Written audio version"]').element).toHaveProperty('value', 'Reviewed transcript')
+    expect(thinkingAudioApi.write).not.toHaveBeenCalled(); expect(thinkingAudioApi.confirm).not.toHaveBeenCalled()
+    await button(wrapper, 'Save written version').trigger('click'); await flushPromises()
+    expect(thinkingAudioApi.write).toHaveBeenCalledWith('audio', 1, 'Reviewed transcript', 'candidate')
+  })
   it.each(['resolve', 'reject'] as const)('discards a stale playback %s without changing the newer request', async outcome => {
     vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(original)
     const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()

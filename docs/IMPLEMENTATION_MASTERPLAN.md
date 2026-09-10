@@ -6,6 +6,8 @@ Grounded-question commit recovery (#2808): close the final source-read/save inte
 
 Thinking-route exit recovery (#2808): finish the last observed planning navigation error by treating cleared route params as exit state, with no network read. Preserve request generations and validate route reentry and late responses. Backend planning/accounting behavior remains unchanged; record full frontend and hosted qualification with the continuation.
 
+Audio transcription continuation (#2808): deliver explicit original-to-provisional-transcript-to-reviewed-answer behavior in Thinking Decks and the retained library. Keep provider transport default off, admission durable, privacy/erasure/export covered and all experiences switchable. Complete full-suite and hosted qualification; generic worker supervision, richer processing/recall, duration/currency budgets and source import remain separate follow-through.
+
 Expanded overhaul follow-through (#2808): preserve the qualified combined reminder/audio/preview delivery while the unrelated main CI stack settles. Full backend/frontend, eleven browser journeys, combined migrations and bounded interaction review pass. Finish exact-head delivery before marking tracker capabilities shipped; automatic transcription and broader source processing/portability remain separate work.
 
 Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.

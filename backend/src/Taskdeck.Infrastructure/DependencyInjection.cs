@@ -109,6 +109,7 @@ public static class DependencyInjection
         services.AddScoped<IBlobStore, Taskdeck.Infrastructure.Storage.SqliteBlobStore>();
         services.AddScoped<IManualRepresentationStore, EfManualRepresentationStore>();
         services.AddScoped<IThinkingAudioRepository, ThinkingAudioRepository>();
+        services.AddScoped<IAudioTranscriptionStore, AudioTranscriptionStore>();
         services.AddScoped<ISourcePortabilityStore, SourcePortabilityStore>();
         services.AddOptions<BlobStorageSettings>()
             .Bind(configuration.GetSection("SourceStorage"))

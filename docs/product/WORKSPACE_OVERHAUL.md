@@ -2,6 +2,12 @@
 
 Last Updated: 2026-09-10
 
+**Automatic transcription** is an optional, explicit step for a saved private recording. Open its
+options and receipts in Thinking Decks or the original-recording library, inspect the configured
+destination/model and consent to one request. A provisional result stays separate until reviewed as
+a written draft and explicitly confirmed as an answer. Failure and lost-response receipts survive
+reloads across all experiences. It is disabled by default; see [configuration, evidence and limits](AUDIO_TRANSCRIPTION.md).
+
 **Preview on board** opens a read-only proposal layer from Chat or Review. Choose **Refresh board preview** to check the current proposal revision and highlight saved cards/columns affected by its operations in either board renderer. The checked diff also describes new or hidden objects. The board continues to show saved data; **Open Review** returns to that exact proposal for approval and explicit Apply. Closing the preview, changing board data, losing access or reaching the short freshness limit removes its markers. This reduces the need to mentally match proposal changes to board objects while preserving review-first trust.
 
 Companion's source picker also offers individual preserved originals beside each private memory.
@@ -72,7 +78,7 @@ explicit approve action followed by a separate apply action and the existing con
 | Personal continuity | Chosen plan, last-worked focus, List/Board/Horizon over planned cards | Implemented privately with revision checks. Home resume uses explicit focus and shows chosen threads; the separate agenda remains derived from Today. Requires a connected backend; backend-less demo builds hide these entry points |
 | Linked steps | Explicit title/destination, atomic child-card/link/audit creation, repeat-safe requests, refreshed real card status and portable links | Implemented; shares the guarded card writer and board concurrency token. Removing thinking never deletes linked cards. Explicit dependency edges are also available |
 | Dependencies | Explicit same-board prerequisite relationships with both directions, live status refresh and portable import | Implemented with cycle validation, revision conflicts, archive and deletion guards. No automatic edges or status/deadline changes |
-| Audio answers and unified source evidence | Native Capture/SourceAsset question originals, explicit older-memory preservation, original audio and separate immutable written representations | Implemented for manual question answers: explicit recording/file intake, playback/download, stable upload retry, written history and confirmation, account portability/erasure and read-only retained library. Audio alone stays untranscribed; automatic transcription/failure processing and general legacy representation backfill remain next |
+| Audio answers and unified source evidence | Native Capture/SourceAsset question originals, explicit older-memory preservation, original audio and separate immutable written representations | Implemented: recording/file intake, playback/download, stable upload retry, written history/confirmation and retained library. Optional explicit transcription has destination-bound consent, durable failure/retry receipts and provisional output; adoption preserves lineage. Account export/erasure includes storage and receipts. General legacy representation backfill and import/restore remain separate |
 | Model-generated observations and recall | Explicit one-card preview and up to three quoted private questions with shared Chat budget, category/card deduplication and one-day freshness | Experimental question producer implemented; [contract and usefulness corpus](GROUNDED_OBSERVATIONS.md). General semantic candidates, recall and live-provider usefulness acceptance remain separate |
 | Optional nudges | Explicit account opt-in, quiet links to existing questions, shared two-per-day/two-hour budget | Implemented experimentally with typing/dialog/Focus/Zen/visibility suppression and no automatic model work. [Policy and limits](WORKSPACE_ATTENTION.md); subjective usefulness/non-intrusion evaluation remains open |
 
@@ -200,13 +206,15 @@ audio answer**. Recording begins only after **Record audio** and browser permiss
 offers playback/download and remains local until **Save original privately**. Keeping audio first
 reduces capture friction without requiring immediate transcription or treating unheard audio as knowledge.
 
-The saved original remains immutable and untranscribed. **Save written version** preserves your
+The saved original remains immutable. **Save written version** preserves your
 own transcription or description as a separate transcript representation. Corrections append versions;
 **Confirm written version as my answer** creates private memory and a human-confirmed representation.
 Confirmation is not external verification. A separate existing private answer is corrected in Memory.
 The question and original evidence stay unchanged. Saving a recording, writing a version or confirming
-an answer never queues a model/transcription job or changes the card. Automatic transcription, provider
-consent, streaming recognition and model usefulness remain separate continuation work.
+an answer never queues a model/transcription job or changes the card. **Automatic transcription** is
+a separate explicit request with destination-bound consent, provisional output and recoverable receipts;
+see [Audio transcription](AUDIO_TRANSCRIPTION.md). Streaming recognition and live-provider usefulness
+remain unverified.
 
 One original is retained per person and saved question version. Retrying an uncertain upload uses the
 same upload ID and checks the original bytes and metadata; it cannot silently replace that recording.
@@ -233,8 +241,8 @@ loaded private content and playback URLs; refreshing a token for the same person
 This library explicitly extends archive access: owner-linked originals on archived boards remain
 readable with current board permission, and originals whose board was deleted remain readable under
 their owner identity. Deleted-board retention already existed in account export. Library reads do not
-restore a board, reactivate a question or authorize a write. Changed/removed questions and archived or
-deleted boards show a read-only retained copy; only an unchanged current question links back to Thinking
+restore a board, reactivate a question or authorize an answer write. Changed/removed questions and archived or
+deleted boards retain playback and explicit transcription; only an unchanged current question links back to Thinking
 for writing or confirmation. Account deletion remains the erasure boundary for these retained originals.
 An unsaved local file is held only while the current page stays open: **Reload saved recording** keeps
 that draft, but a browser refresh or closing the page loses an unuploaded file.

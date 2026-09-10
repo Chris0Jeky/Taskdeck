@@ -71,6 +71,8 @@ public class TaskdeckDbContext : DbContext
     public DbSet<Representation> Representations => Set<Representation>();
     public DbSet<RepresentationSupersession> RepresentationSupersessions => Set<RepresentationSupersession>();
     public DbSet<ThinkingAudioAnswer> ThinkingAudioAnswers => Set<ThinkingAudioAnswer>();
+    public DbSet<AudioTranscriptionAttempt> AudioTranscriptionAttempts => Set<AudioTranscriptionAttempt>();
+    public DbSet<AudioTranscriptionBudget> AudioTranscriptionBudgets => Set<AudioTranscriptionBudget>();
     public DbSet<CaptureBackfillState> CaptureBackfillStates => Set<CaptureBackfillState>();
 
     /// <summary>

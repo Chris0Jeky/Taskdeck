@@ -47,7 +47,7 @@ test('retained originals remain discoverable after question removal and board ar
   await library.getByRole('button', { name: /Inspect retained-original.wav/ }).click()
   const selected = library.getByRole('article', { name: 'Selected original recording', exact: true })
   await expect(selected).toContainText('Exact question before removal.')
-  await expect(selected).toContainText('read-only')
+  await expect(selected).toContainText('it cannot answer a different question')
   await expect(selected.getByRole('link', { name: 'Open the current question to continue' })).toHaveCount(0)
   await selected.getByRole('button', { name: 'Load selected original for playback or download' }).click()
   await expect.poll(() => selected.locator('audio').evaluate((element: HTMLAudioElement) => element.readyState)).toBeGreaterThanOrEqual(1)
