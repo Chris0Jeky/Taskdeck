@@ -1208,7 +1208,7 @@ public class CaptureService : ICaptureService
             // disposition first would make stale durable text look newer than its queue row and
             // hide it from both the read guard and reconcile backlog forever. Sources stay
             // immutable: reconciliation appends a superseding asset.
-            if (!string.Equals(capture.CurrentText, queueText, StringComparison.Ordinal))
+            if (!CaptureTextComparison.Equivalent(capture.CurrentText, queueText))
             {
                 capture.SupersedeInlineTextSource(queueText);
             }
@@ -1420,7 +1420,7 @@ public class CaptureService : ICaptureService
         // it was admitted from. Before the versioned upgrade check, a later Keep/Archive timestamp
         // can mask stale text, so disagreement must prefer the queue regardless of timestamp.
         // After that check, the ordinary newer-queue guard still covers dual-write-off windows.
-        if (!string.Equals(durable.CurrentText, payload.Text, StringComparison.Ordinal) &&
+        if (!CaptureTextComparison.Equivalent(durable.CurrentText, payload.Text) &&
             (durable.LegacyReconciliationVersion < Capture.CurrentLegacyReconciliationVersion ||
              item.UpdatedAt > durable.UpdatedAt))
         {
