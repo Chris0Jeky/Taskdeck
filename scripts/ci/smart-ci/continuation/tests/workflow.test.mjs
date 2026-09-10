@@ -22,3 +22,13 @@ test('PR-only secret scan remains independent of push and merge-group barriers',
   const text = workflow(); assert.ok(block(text, 'secret-scan').includes("if: ${{ github.event_name == 'pull_request' }}"));
   assert.ok(!text.includes('      - secret-scan\n')); assert.match(text, /^  push:/m); assert.match(text, /^  pull_request:/m); assert.match(text, /^  merge_group:/m);
 });
+
+test('checked-in observer is protected-code/read-only/no artifact download', () => {
+  const text = readFileSync(new URL('../../../../../.github/workflows/ci-continuation-observe.yml', import.meta.url), 'utf8');
+  assert.match(text, /ref: \$\{\{ github.workflow_sha \}\}/); assert.match(text, /persist-credentials: false/);
+  assert.match(text, /package-manager-cache: false/);
+  assert.match(text, /actions: read/); assert.match(text, /contents: read/); assert.match(text, /retention-days: 14/);
+  assert.ok(!/\bwrite\b|download-artifact|actions\/cache@|pull_request_target:|secrets\./.test(text));
+  assert.match(text, /--workflow-id 236855317/); assert.match(text, /--workflow-path \.github\/workflows\/ci-required.yml/);
+  assert.ok(!text.includes('ref: ${{ github.event.workflow_run.head_sha }}')); assert.match(text, /cancel-in-progress: false/);
+});
