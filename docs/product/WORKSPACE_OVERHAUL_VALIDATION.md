@@ -4,7 +4,7 @@
 
 New confirmations retain a SHA-256 fingerprint of the original expected recording revision, expected deck revision, representation ID and answer status under a versioned schema. An identical retry returns the existing result; changing any field returns a conflict before another memory or representation is written. Pre-migration confirmations have no provable request fingerprint and require a read rather than accepting an unverifiable write retry. Their retained originals and read access remain available.
 
-The nullable receipt is included in both account export routes. The additive migration was applied successfully to an isolated empty SQLite database. Ten API tests passed, including all four mismatched fields, exact retry identity, unchanged representation count, both exports and a legacy null receipt. Full backend qualification and hosted state belong to the continuation PR. Independent review found no HIGH/CRITICAL defect. No working database was migrated.
+The nullable receipt is included in both account export routes. The additive migration was applied successfully to an isolated empty SQLite database. Ten API tests passed, including all four mismatched fields, exact retry identity, unchanged representation count, both exports and a legacy null receipt. Full backend qualification passed 9,223 tests with 34 existing skips. Exact-head hosted state belongs to the continuation PR. Independent review found no HIGH/CRITICAL defect. No working database was migrated.
 
 
 
