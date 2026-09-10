@@ -42,7 +42,13 @@ const playbackUrl = ref('')
 const loadingPlayback = ref(false)
 let uploadId = createSourceUploadId()
 let generation = 0
+let playbackGeneration = 0
 let live = true
+function clearPlayback() {
+  playbackGeneration++; loadingPlayback.value = false
+  if (playbackUrl.value) URL.revokeObjectURL(playbackUrl.value)
+  playbackUrl.value = ''
+}
 const currentVersion = computed(() => saved.value?.writtenVersions.find(x => x.id === saved.value?.representationId))
 const dirty = computed(() => !!file.value || staleWrittenDraft.value || text.value !== (currentVersion.value?.text ?? ''))
 const busy = computed(() => pending.value || recording.value)
@@ -62,13 +68,13 @@ function message(cause: unknown) {
 }
 async function load() {
   if (!props.sourceReady || busy.value || loading.value) return
+  clearPlayback()
   const request = ++generation; loading.value = true; error.value = ''
   const hadDraft = dirty.value
   const initialText = text.value
   try {
     const next = await thinkingAudioApi.get(props.boardId, props.cardId, props.layerId)
     if (!live || request !== generation) return
-    if (saved.value?.id !== next?.id && playbackUrl.value) { URL.revokeObjectURL(playbackUrl.value); playbackUrl.value = '' }
     saved.value = next; loaded.value = true
     if (!hadDraft && text.value === initialText) text.value = next?.writtenVersions.find(x => x.id === next.representationId)?.text ?? ''
   } catch (cause) { if (live && request === generation) { message(cause); loaded.value = false } }
@@ -103,20 +109,24 @@ function confirm() {
   void mutate(() => thinkingAudioApi.confirm(receipt.id, receipt.revision, props.revision, receipt.representationId!, status.value), 'confirm')
 }
 async function playback() {
-  if (!saved.value || loadingPlayback.value) return
+  if (!saved.value || loadingPlayback.value || loading.value || !loaded.value || !props.sourceReady) return
+  const id = saved.value.id; const request = ++playbackGeneration; const sourceGeneration = generation
+  const current = () => live && request === playbackGeneration && sourceGeneration === generation && saved.value?.id === id
   loadingPlayback.value = true; error.value = ''
   try {
-    const blob = await thinkingAudioApi.original(saved.value.id)
-    if (!live) return
+    const blob = await thinkingAudioApi.original(id)
+    if (!current()) return
     if (playbackUrl.value) URL.revokeObjectURL(playbackUrl.value)
     playbackUrl.value = URL.createObjectURL(blob)
-  } catch (cause) { if (live) message(cause) }
-  finally { if (live) loadingPlayback.value = false }
+  } catch (cause) { if (current()) message(cause) }
+  finally { if (live && request === playbackGeneration) loadingPlayback.value = false }
 }
+watch(() => [props.boardId, props.cardId, props.layerId, props.revision, props.sourceReady], clearPlayback, { flush: 'sync' })
+watch(() => saved.value?.id, clearPlayback, { flush: 'sync' })
 watch(() => props.sourceReady, ready => { if (ready && !loaded.value) void load() })
 watch(() => props.revision, () => { loaded.value = false; if (!busy.value) void load() })
 onMounted(load)
-onUnmounted(() => { live = false; generation++; if (playbackUrl.value) URL.revokeObjectURL(playbackUrl.value) })
+onUnmounted(() => { live = false; generation++; clearPlayback() })
 </script>
 
 <template>
@@ -140,7 +150,7 @@ onUnmounted(() => { live = false; generation++; if (playbackUrl.value) URL.revok
       <p v-if="!saved.representationId">Untranscribed · {{ answerAlreadyKept ? 'A separate private answer is already kept.' : 'This question is still unanswered.' }} The original is ready to replay or download.</p>
       <p v-else-if="!saved.confirmedMemoryId">Written version saved · {{ answerAlreadyKept ? 'A separate private answer is already kept. Correct it in private memory.' : 'The question stays unanswered until you confirm it below.' }}</p>
       <p v-else>Confirmed by you and kept in private memory. Confirmation records your choice; it is not external verification.</p>
-      <button type="button" :disabled="loadingPlayback" @click="playback">{{ loadingPlayback ? 'Loading original…' : 'Load original for playback or download' }}</button>
+      <button type="button" :disabled="loadingPlayback || loading || !loaded || !sourceReady" @click="playback">{{ loadingPlayback ? 'Loading original…' : 'Load original for playback or download' }}</button>
       <template v-if="playbackUrl">
         <!-- Raw user input may have no transcription. Saved written alternatives appear below; no timed captions are fabricated. -->
         <!-- eslint-disable-next-line vuejs-accessibility/media-has-caption -->

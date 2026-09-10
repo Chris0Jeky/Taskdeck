@@ -28,6 +28,40 @@ beforeEach(() => {
 })
 
 describe('private audio answers', () => {
+  it.each(['resolve', 'reject'] as const)('discards a stale playback %s without changing the newer request', async outcome => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(original)
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    let complete!: (value: Blob) => void; let fail!: (cause: Error) => void
+    vi.mocked(thinkingAudioApi.original).mockReturnValueOnce(new Promise((resolve, reject) => { complete = resolve; fail = reject }))
+    await button(wrapper, 'Load original for playback or download').trigger('click')
+    vi.mocked(thinkingAudioApi.get).mockResolvedValue({ ...original, id: 'new-audio', fileName: 'new.wav' })
+    await wrapper.setProps({ revision: 4 }); await flushPromises()
+    let finishNew!: (value: Blob) => void
+    vi.mocked(thinkingAudioApi.original).mockReturnValueOnce(new Promise(resolve => { finishNew = resolve }))
+    await button(wrapper, 'Load original for playback or download').trigger('click')
+    if (outcome === 'resolve') complete(new Blob(['old'])); else fail(new Error('Old download failed'))
+    await flushPromises()
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(button(wrapper, 'Loading original…').attributes('disabled')).toBeDefined()
+    const nextBlob = new Blob(['new']); finishNew(nextBlob); await flushPromises()
+    expect(URL.createObjectURL).toHaveBeenCalledExactlyOnceWith(nextBlob)
+    expect(wrapper.get('a[download]').attributes('download')).toBe('new.wav')
+    wrapper.unmount()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
+  })
+  it('revokes existing playback as soon as its source is invalidated', async () => {
+    vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(original)
+    vi.mocked(thinkingAudioApi.original).mockResolvedValue(new Blob(['original']))
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    await button(wrapper, 'Load original for playback or download').trigger('click'); await flushPromises()
+    expect(wrapper.find('audio').exists()).toBe(true)
+    await wrapper.setProps({ sourceReady: false })
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original')
+    expect(wrapper.find('audio').exists()).toBe(false)
+    expect(button(wrapper, 'Load original for playback or download').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
   it.each(['missing', 'replaced', 'confirmed'] as const)('keeps a written draft visible when its receipt becomes %s', async change => {
     vi.mocked(thinkingAudioApi.get).mockResolvedValueOnce(written)
     const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
