@@ -11,6 +11,7 @@ public sealed class ThinkingAudioAnswerConfiguration : IEntityTypeConfiguration<
         builder.HasKey(x => x.Id); builder.Property(x => x.Id).ValueGeneratedNever();
         builder.Property(x => x.Revision).IsConcurrencyToken();
         builder.Property(x => x.QuestionHash).HasMaxLength(64);
+        builder.Property(x => x.ConfirmationRequestHash).HasMaxLength(64);
         builder.HasIndex(x => new { x.UserId, x.CardId, x.LayerId, x.QuestionHash }).IsUnique();
         builder.HasIndex(x => new { x.UserId, x.UploadId }).IsUnique();
         builder.HasOne<User>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);

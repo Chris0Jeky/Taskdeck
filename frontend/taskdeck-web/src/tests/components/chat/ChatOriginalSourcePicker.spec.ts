@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ChatOriginalSourcePicker from '../../../components/chat/ChatOriginalSourcePicker.vue'
 import { useSessionStore } from '../../../store/sessionStore'
+import type { ChatAssetReference } from '../../../types/chat'
 const api = vi.hoisted(() => ({ list: vi.fn() }))
 vi.mock('../../../api/chatSourcesApi', () => ({ chatSourcesApi: api }))
 const asset = { id: 'a1', name: 'answer-revision-1.txt', contentHash: 'a'.repeat(64), byteSize: 23, supersededByAssetId: 'a2', excerpt: '<script>old source</script>', truncated: false, ordinal: 0 }
@@ -66,6 +67,25 @@ describe('original source choice', () => {
     await wrapper.get('button').trigger('click'); await flushPromises()
     expect(wrapper.get('[role=alert]').text()).toContain('no longer have access')
     expect(wrapper.find('input').exists()).toBe(false); expect(wrapper.emitted('change')?.at(-1)).toEqual([[]])
+  })
+  it('retracts a selected original after a pagination conflict and resumes with the refreshed revision', async () => {
+    api.list.mockResolvedValueOnce(fullPage()).mockRejectedValueOnce({ response: { status: 409 } })
+    const { wrapper } = setup()
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    await wrapper.findAll('input')[0]!.setValue(true)
+    const selection = wrapper.emitted('change')!.at(-1)![0] as ChatAssetReference[]
+    await wrapper.setProps({ selected: selection, selectedCount: 1 })
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(wrapper.emitted('change')?.at(-1)).toEqual([[]])
+    expect(wrapper.get('[role=alert]').text()).toContain('This memory changed. Refresh sources')
+    await wrapper.setProps({ revision: 3, selected: [], selectedCount: 0 })
+    api.list.mockResolvedValueOnce({ ...page(), revision: 3 })
+    await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(api.list).toHaveBeenLastCalledWith('m1', 'b1', 3, -1)
+    await wrapper.get('input').setValue(true)
+    expect(wrapper.emitted('change')?.at(-1)).toEqual([[{ memoryId: 'm1', revision: 3, assetId: 'a1', contentHash: asset.contentHash }]])
+    wrapper.unmount()
   })
   it.each(['backwards', 'mismatched-next', 'unordered'])('rejects a malformed %s cursor page', async kind => {
     const candidate = fullPage()

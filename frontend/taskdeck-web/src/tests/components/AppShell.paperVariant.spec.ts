@@ -118,6 +118,7 @@ function mountShell() {
   return mount(AppShell, {
     global: {
       stubs: {
+        WorkspaceAttentionReminder: true,
         RouterView: true,
         Teleport: true,
         CaptureModal: { template: '<div />' },

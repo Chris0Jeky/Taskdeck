@@ -1,4 +1,5 @@
 import http from './http'
+export interface ObservationSource { cardId: string; title: string; text: string; fingerprint: string; truncated: boolean }
 import type {
   AnalyzeInsightsRequest,
   AnswerInsightRequest,
@@ -20,6 +21,15 @@ function withBoardQuery(path: string, boardId?: string, archived?: boolean): str
 }
 
 export const workspaceInsightsApi = {
+  async observationSource(boardId: string, cardId: string): Promise<ObservationSource> {
+    const { data } = await http.get<ObservationSource>('/workspace-insights/observation-source', { params: { boardId, cardId } })
+    return data
+  },
+  async generateObservations(boardId: string, source: ObservationSource): Promise<Insight[]> {
+    const { data } = await http.post<Insight[]>('/workspace-insights/model-analysis',
+      { boardId, cardId: source.cardId, fingerprint: source.fingerprint }, { skipRetry: true })
+    return data
+  },
   async getInsights(boardId?: string): Promise<Insight[]> {
     const { data } = await http.get<Insight[]>(withBoardQuery('/workspace-insights', boardId))
     return data

@@ -2,11 +2,36 @@
 
 Last Updated: 2026-09-10
 
+Overhaul closeout (#2808): #2866 is merged. Carry the combined #2886 transcription/grounded/navigation continuation through exact-head CI, then finish the source-backed reminder-hours/time-zone behavior. Scope reconciliation keeps generic processor hosting (#2258), historical representation migration (#2260) and undefined source-storage restore outside the requested prototype delivery. Retain live-provider/device/usefulness acceptance as unverified rather than inferring it from synthetic tests.
+
+Grounded-question commit recovery (#2808): close the final source-read/save interval and settle accounting before staging questions. Keep short transaction ownership in the insight repository, preserve source/access and insight concurrency checks, and prove no rejected staged state can leak into subsequent saves. This completes the two previously tracked observation consistency gaps; general semantic processing and recall remain separate.
+
+Thinking-route exit recovery (#2808): finish the last observed planning navigation error by treating cleared route params as exit state, with no network read. Preserve request generations and validate route reentry and late responses. Backend planning/accounting behavior remains unchanged; record full frontend and hosted qualification with the continuation.
+
+Audio transcription continuation (#2808): deliver explicit original-to-provisional-transcript-to-reviewed-answer behavior in Thinking Decks and the retained library. Keep provider transport default off, admission durable, privacy/erasure/export covered and all experiences switchable. Complete full-suite and hosted qualification; generic worker supervision, richer processing/recall, duration/currency budgets and source import remain separate follow-through.
+
+Expanded overhaul follow-through (#2808): preserve the qualified combined reminder/audio/preview delivery while the unrelated main CI stack settles. Full backend/frontend, eleven browser journeys, combined migrations and bounded interaction review pass. Finish exact-head delivery before marking tracker capabilities shipped; automatic transcription and broader source processing/portability remain separate work.
+
+Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.
+
+Optional attention (#2808): default-off account reminders reuse existing revalidated questions with one shared two-per-UTC-day/two-hour budget. Board-page quiet-time, typing/dialog/Focus/Zen/visibility and identity guards suppress interruptions; no model or analysis runs automatically. Local proof and limits are in the overhaul validation ledger and attention policy; hosted qualification remains on the continuation PR.
+
+Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
+Audio confirmation recovery (#2808): retain an immutable fingerprint of the exact confirmation request and return conflicts for changed or pre-migration unprovable retries. Account exports carry the nullable receipt; isolated migration/API proof passes, with full and hosted qualification recorded on the continuation PR.
+
+Comparison attribution follow-through (#2808): retain the resolved Auto appearance in the existing portable theme label and exclude known non-shipped test inputs from the frontend fingerprint. Preserve legacy checksums/file semantics and prove live light/night switching, export/import and HTTP LAN compatibility together.
+
+Audio lifecycle recovery (#2808): keep stale written drafts visible with their original evidence, require valid reload state for mutations, and enforce current-question hashes before staging a written representation. Prove changed/missing/confirmed receipts, explicit discard, failed reload and unchanged original/representation history. Automated processing and broader source configuration/picker follow-through remain separate.
+
+Source-storage startup validation (#2808): validate all positive quota bounds through shared infrastructure options and inject the validated instance into the byte store. Prove invalid API startup and standalone DI binding. The CLI currently builds without starting its host; it validates these options on resolution, so no CLI startup guarantee is claimed.
+
+Grounded observations (#2808): deliver explicit one-card evidence preview and bounded model questions over the private insight queue. Prove quote/schema rejection, request budgets, identity/source changes, expiry and preserved user decisions; keep the provider-independent reader in shared infrastructure and the model service in API setup. [Usefulness evaluation](product/GROUNDED_OBSERVATIONS.md) precedes unattended attention. General semantic candidates/recall, commit-time evidence fencing and attention budgets remain follow-through.
+
 Source upload bounds (#2808): coalesce fragmented reads into fixed 64 KiB database chunks with one final tail, preserving quota/size/hash/rollback checks. Twenty-four focused API tests pass; exact hosted repair qualification remains on the integration PR.
 
 Original-source portability continuation (#2808): hold a store-owned read snapshot across the five source-storage export sections, with deferred SQLite transactions and scoped disposal before later export writes. Prove both account-export routes against a concurrent committed upload and written version. Whole-account point-in-time consistency and restore acceptance remain separate.
 
-Studio/Classic planning continuity (#2808): share existing Focus resume on Classic Home and use the existing calendar-day utilities for plan date controls and card deadlines. Browser acceptance includes a western timezone, Today filtering, both Classic renderers and unchanged board-card data. Failed-plan metadata and accepted-navigation focus timestamps remain separate follow-through.
+Studio/Classic planning continuity (#2808): share existing Focus resume on Classic Home and use the existing calendar-day utilities for plan date controls and card deadlines. Browser acceptance includes a western timezone, Today filtering, both Classic renderers and unchanged board-card data. Failed-plan metadata, overlapping reads and uncertain-write recovery are covered by the next continuation; accepted-navigation Focus timestamps are covered by the next shared navigation continuation.
 
 Board-object proposal overlay continuation (#2808): complete the contextual preview path with a shared board-owned marker provider and one read-only checked preview panel. Cards and columns in both renderers consume presentation markers; the saved board model is unchanged. Original/pinned revision identity and short server-relative freshness are checked before display, and Review retains all decisions. General before/after board simulation and provider quality acceptance are not implied by this projection.
 

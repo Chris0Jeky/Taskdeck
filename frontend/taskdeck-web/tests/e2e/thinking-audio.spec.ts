@@ -53,6 +53,24 @@ test('a private audio original survives a lost receipt, written confirmation and
   await region.getByRole('button', { name: 'Save original privately', exact: true }).click()
   await expect(region.getByText(/This question is still unanswered/)).toBeVisible()
   expect(uploadIds).toHaveLength(2); expect(uploadIds[1]).toBe(uploadIds[0])
+  let releasePlayback!: () => void
+  const stalledPlayback = new Promise<void>(resolve => { releasePlayback = resolve })
+  let playbackStarted!: () => void
+  const startedPlayback = new Promise<void>(resolve => { playbackStarted = resolve })
+  await page.route(/\/thinking-audio\/[^/]+\/original$/, async route => {
+    const response = await route.fetch(); playbackStarted()
+    await stalledPlayback; await route.fulfill({ response })
+  }, { times: 1 })
+  await region.getByRole('button', { name: 'Load original for playback or download', exact: true }).click()
+  await startedPlayback
+  await page.getByLabel('Layer 1 details', { exact: true }).fill('A new question must not receive the old recording.')
+  await page.getByRole('button', { name: 'Save thinking', exact: true }).click()
+  await expect(region.getByLabel('Choose audio file')).toBeVisible()
+  const oldPlaybackResponse = page.waitForResponse(/\/thinking-audio\/[^/]+\/original$/)
+  releasePlayback(); await oldPlaybackResponse
+  await expect(region.locator('audio')).toHaveCount(0)
+  await page.getByLabel('Layer 1 details', { exact: true }).fill('Keep my original observation separate from the written version.')
+  await page.getByRole('button', { name: 'Save thinking', exact: true }).click()
   await region.getByRole('button', { name: 'Load original for playback or download', exact: true }).click()
   await expect.poll(() => region.locator('audio').evaluate((element: HTMLAudioElement) => element.readyState)).toBeGreaterThanOrEqual(1)
   await region.getByLabel('Written audio version', { exact: true }).fill('The smaller batch reduced interruptions, but I need another trial.')

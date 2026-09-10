@@ -48,7 +48,7 @@ describe('companion send continuity', () => {
     api.getSession.mockResolvedValueOnce({ ...session(), recentMessages: [receipt] })
     await chat.retryReceiptRefresh()
     expect(api.sendMessage).toHaveBeenCalledTimes(1)
-    expect(api.getSession).toHaveBeenLastCalledWith('s1', { skipRetry: true })
+    expect(api.getSession).toHaveBeenLastCalledWith('s1', { skipRetry: true, timeout: 15_000 })
     expect(chat.receiptRefreshError.value).toBeNull()
     expect(chat.sortedMessages.value).toEqual([receipt])
     wrapper.unmount()

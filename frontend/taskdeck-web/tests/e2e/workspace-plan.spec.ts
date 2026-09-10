@@ -1,10 +1,60 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { API_BASE_URL, registerAndAttachSession } from './support/authSession'
 import { createBoardWithColumn } from './support/boardHelpers'
+
+const incompleteBoardReads = new WeakMap<Page, string[]>()
+test.beforeEach(async ({ page }) => {
+  const requests: string[] = []; incompleteBoardReads.set(page, requests)
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (path === '/api/boards/' || path.startsWith('/api/boards//')) requests.push(path)
+  })
+})
+test.afterEach(async ({ page }) => { expect(incompleteBoardReads.get(page)).toEqual([]) })
 import { assertOk } from './support/httpAsserts'
 
 test.use({ timezoneId: 'America/Los_Angeles', locale: 'en-US' })
+
+test('uncertain plan writes hide cached entries until explicit refresh reconciles the server', async ({ page, request }) => {
+  const auth = await registerAndAttachSession(page, request, 'plan-recovery')
+  const headers = { Authorization: `Bearer ${auth.token}` }
+  const boardId = await createBoardWithColumn(request, auth, String(Date.now()), { boardNamePrefix: 'Plan recovery', columnNamePrefix: 'Next', description: 'Synthetic recovery proof' })
+  const board = await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()
+  const response = await request.post(`${API_BASE_URL}/boards/${boardId}/cards`, { headers, data: { boardId, columnId: board.columns[0].id, title: 'Recover this private thread' } })
+  await assertOk(response, 'seed recovery card')
+  const card = await response.json()
+  await assertOk(await request.put(`${API_BASE_URL}/workspace/plan`, { headers, data: { expectedRevision: 0, entries: [{ boardId, cardId: card.id, plannedDate: '2026-09-10' }] } }), 'seed recovery plan')
+  await page.goto('/workspace/plan')
+  const entry = page.locator('article').filter({ has: page.getByRole('heading', { name: card.title }) })
+  await expect(entry).toBeVisible()
+  await page.route('**/api/workspace/plan/focus', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ errorCode: 'UnexpectedError', message: 'Synthetic uncertain response' }) }))
+  await entry.getByRole('button', { name: 'Focus', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/cards/${card.id}/thinking\\?focus=1`))
+  await expect(page.getByRole('alert')).toContainText('Focus could not be confirmed.')
+  await page.unroute('**/api/workspace/plan/focus')
+  await page.getByRole('link', { name: 'Refresh personal plan', exact: true }).click()
+  await expect(entry).toBeVisible()
+  let writes = 0
+  await page.route('**/api/workspace/plan', async route => {
+    if (route.request().method() !== 'PUT') return route.continue()
+    writes++
+    const committed = await route.fetch()
+    expect(committed.ok()).toBe(true)
+    await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ errorCode: 'UnexpectedError', message: 'Synthetic response lost after commit' }) })
+  })
+  await entry.getByRole('button', { name: 'Make room', exact: true }).click()
+  await expect(page.getByRole('alert')).toContainText('Plan change could not be confirmed.')
+  await expect(entry).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Add to plan', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Refresh personal plan', exact: true }).click()
+  await expect(page.getByText('Your plan has room. Choose a card above, then focus on one thread at a time.')).toBeVisible()
+  const saved = await (await request.get(`${API_BASE_URL}/workspace/plan`, { headers })).json()
+  expect(saved.entries).toEqual([])
+  expect(saved.revision).toBe(2)
+  expect(saved.lastWorked).toBeNull()
+  expect(writes).toBe(1)
+})
 
 test('personal plan persists, resumes focus and makes room without rescheduling a card', async ({ page, request }) => {
   const auth = await registerAndAttachSession(page, request, 'personal-plan')

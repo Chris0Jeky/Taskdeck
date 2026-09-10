@@ -40,6 +40,8 @@ test('saved thinking, a pending send and receipt recovery stay coherent in the c
   let release!: () => void
   const pending = new Promise<void>(resolve => { release = resolve })
   let failReceipt = false
+  let releaseReceipt!: () => void
+  const stalledReceipt = new Promise<void>(resolve => { releaseReceipt = resolve })
   await page.route(/\/chat\/sessions\/[^/]+\/messages$/, async route => {
     if (route.request().method() !== 'POST') return route.continue()
     const savedResponse = await route.fetch()
@@ -50,7 +52,8 @@ test('saved thinking, a pending send and receipt recovery stay coherent in the c
   await page.route(/\/chat\/sessions\/[^/]+$/, async route => {
     if (route.request().method() === 'GET' && failReceipt) {
       failReceipt = false
-      return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Synthetic receipt interruption' }) })
+      await stalledReceipt
+      return route.abort().catch(() => undefined)
     }
     await route.continue()
   })
@@ -61,7 +64,8 @@ test('saved thinking, a pending send and receipt recovery stay coherent in the c
   await expect(dialog.getByRole('button', { name: 'Discard draft and leave', exact: true })).toBeDisabled()
   await dialog.getByRole('button', { name: 'Keep editing', exact: true }).click()
   release()
-  await expect(companion.getByRole('button', { name: 'Retry receipt refresh', exact: true })).toBeVisible()
+  await expect(companion.getByRole('button', { name: 'Retry receipt refresh', exact: true })).toBeVisible({ timeout: 20_000 })
+  releaseReceipt()
   await companion.getByRole('button', { name: 'Retry receipt refresh', exact: true }).click()
   await expect(companion.getByText('Sources included in this turn (2)', { exact: true })).toBeVisible()
   expect(posts).toBe(1)
