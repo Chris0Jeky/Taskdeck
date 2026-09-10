@@ -2,7 +2,9 @@
 
 Last Updated: 2026-09-10
 
-Source reliability/scalability continuation (#2808): preserve the payload-too-large HTTP contract through streamed audio storage rollback and replace original-library per-entry capture reads with one bounded owner-scoped metadata projection. The existing API/card/question/confirmation contracts are retained. Indexed long-history cursors remain the next distinct source scalability seam.
+Indexed original-history continuation (#2808): use the existing unique capture/ordinal key for bounded ten-item source pages, starting at -1 so the first zero-based original remains available. The shared picker validates increasing ordinals and the returned continuation before extending selection. This replaces the prior deep-offset approach for current clients; legacy offsets remain bounded to 1,000. No schema migration, implicit retrieval, provider call or board mutation is introduced.
+
+Source reliability/scalability continuation (#2808): preserve the payload-too-large HTTP contract through streamed audio storage rollback and replace original-library per-entry capture reads with one bounded owner-scoped metadata projection. The existing API/card/question/confirmation contracts are retained.
 
 Private audio continuation (#2808): retain an original recording first, add manual written representations separately, then explicitly confirm into private memory. The vertical uses native source assets, bounded SQLite chunks, owner-scoped playback, idempotent upload retry, version conflicts and account portability/erasure. All four experiences share the question UI; automated transcription, real-device qualification and the wider source/attention work remain separate. This is a prototype delivery path with executable evidence, not a provider or release acceptance decision.
 

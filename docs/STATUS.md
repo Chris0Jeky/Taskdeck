@@ -2,7 +2,9 @@
 
 Last Updated: 2026-09-10
 
-Source upload and library query continuation (#2808): host-rejected oversized audio bodies retain the standard 413 error after transaction rollback, with no orphaned original, reference, answer or processing request. Library pages authorize their board candidates first, then retrieve up to twenty owner-scoped metadata rows in one detached SQL projection. Evidence excerpts are clipped in SQL; listing does not load capture graphs, representation histories or binary chunks. This reduces original-library maintenance cost without changing private ownership or review/apply semantics. Long-history cursor pagination remains separate follow-through.
+Original-history cursor continuation (#2808): the shared chat picker now seeks from the last displayed source ordinal through the existing capture/ordinal index, keeping ten-item pages accessible beyond 1,000 originals without progressively deeper row-offset scans. Initial ordinal zero and gaps between text sources are preserved. Existing ownership, board-access and revision checks remain mandatory. The legacy offset route accepts offsets through 1,000; clients needing deeper history use `afterOrdinal` (initially -1) and `nextAfterOrdinal`.
+
+Source upload and library query continuation (#2808): host-rejected oversized audio bodies retain the standard 413 error after transaction rollback, with no orphaned original, reference, answer or processing request. Library pages authorize their board candidates first, then retrieve up to twenty owner-scoped metadata rows in one detached SQL projection. Evidence excerpts are clipped in SQL; listing does not load capture graphs, representation histories or binary chunks. This reduces original-library maintenance cost without changing private ownership or review/apply semantics.
 
 Original-source Companion continuation (#2808):
 

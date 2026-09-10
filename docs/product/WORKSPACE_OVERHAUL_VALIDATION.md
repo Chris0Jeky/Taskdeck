@@ -1,5 +1,13 @@
 # Workspace overhaul validation and follow-through
 
+## Indexed original-history pages (2026-09-10)
+
+Real HTTP/SQLite tests follow 1,012 immutable originals beyond the former cutoff and exercise the maximum cursor, invalid negative cursors, mixed offset/cursor requests, ordinal zero, and gaps caused by interleaved external references. The new query uses the existing unique `(CaptureId, Ordinal)` index and takes eleven rows to display ten plus continuation; ownership, active board access and expected memory revision remain checked before reading.
+
+Picker/API tests verify cursor forwarding, increasing ordinal validation, exact continuation identity, malformed pages, permissions and session changes. The Chromium original-source journey now creates twelve answer versions, loads the second page and selects the original first answer, then replays its receipt across all four experiences and checks narrow-screen accessibility. Full-suite outcomes belong to the continuation PR. The initial unrestricted-worker frontend run was stopped after a depth-token test failure; that unchanged test passed alone with two workers, and the bounded full run is recorded separately.
+
+This supersedes the earlier source-interaction offset implementation below: legacy row-offset requests are bounded to 1,000, while current clients start `afterOrdinal=-1` and follow `nextAfterOrdinal` through the complete history. No migration or provider/device acceptance is implied.
+
 ## Source upload errors and library metadata (2026-09-10)
 
 `ThinkingAudioApiTests` injects the host's 413 exception during a partially read audio stream, exercises the real application transaction through the controller, and verifies the standard error envelope plus absence of stored blobs, references, captures, audio answers and model requests. Existing owner/access, correction, export/erasure and library cases remain in the same suite.
