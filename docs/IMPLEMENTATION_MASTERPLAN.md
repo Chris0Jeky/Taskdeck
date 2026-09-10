@@ -371,6 +371,28 @@ organization control plane) is a deferred decision. Scaffolding is behaviour-pre
 observation-mode gate, measurement tool, action-pin inventory, runner broker skeleton — no job selection,
 visibility, billing, branch-protection, runner or secret changes. Human actions: `OUTSTANDING_TASKS.md` §J.
 
+## CI continuation delivery and next boundary (2026-09-10, #2336)
+
+The continuation train #2863/#2864/#2865/#2867/#2868/#2869/#2871 adds a tested reference engine,
+conservative repository adapters, cheap failure barriers, separate launcher tests, a protected
+metadata observer, admission/ledger models and immutable portable export. #2878 permits E2E to
+overlap Windows API after the Linux API prerequisite succeeds; both full API suites remain required.
+The observed scheduling sample completes in 21m54 with 4,779 runner-seconds, but unmatched samples
+do not establish production savings. The observer is deployed and verified as metadata-only.
+
+Continue through the existing Smart CI programme rather than a second gate. First repair the
+tracked producer-contract binding, protected inventory-completeness and replay/exposure edge cases.
+Then prove one deterministic whole-task family with protected execution provenance and external
+issuer/revocation/anchor storage, extend the canonical receipt writer, and reconcile authenticated
+landed events with the existing independent full-audit and recall seams. Full/release/R4 work stays
+fresh. The measured recall window has three omitted historical failed lanes and does not qualify
+selection; attribute the original input/plan discrepancy before any mapping or cutover claim.
+
+The current policy remains shadow; no production reuse, issuer deployment, second-repository
+adoption or settings change is claimed. The [operations sequence](ci/continuation/OPERATIONS.md)
+records dependencies and rollback; [OUTSTANDING_TASKS](../OUTSTANDING_TASKS.md) retains SC-4
+required-gate registration, SC-6 visibility and SC-7 runner registration.
+
 ## Delivery update (2026-08-30, batch-execute trust boundary)
 
 - **The frontend confirmation boundary is fail-closed (`#2283`, PR `#2286`, merge `c1945329b`).** Paper Review captures the exact capped proposal membership, approved-revision pins, receipt titles, and canonical board/history scope presented for confirmation; synchronous pre-click drift invalidation plus a click-boundary recheck prevent an unseen replacement from entering the request. Post-click refreshes cannot rewrite the captured payload or receipt labels. Exact-head focused/full frontend checks, typecheck, build, scoped lint, two fresh-context reviews, and hosted Required CI including E2E Smoke passed.

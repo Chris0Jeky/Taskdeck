@@ -32,7 +32,15 @@ function splitJobs(text) {
     jobs.set(match[1], rest.slice(match.index, starts[i + 1]?.index ?? rest.length));
   }
   invariant(starts[0]?.index === 0, 'unsupported jobs preamble');
-  invariant(EXPECTED.every(id => jobs.has(id)) && jobs.size === EXPECTED.length, 'job inventory changed; re-review staging contract');
+  const splitApi = jobs.has('api-integration-windows');
+  invariant(EXPECTED.every(id => jobs.has(id)) && jobs.size === EXPECTED.length + Number(splitApi), 'job inventory changed; re-review staging contract');
+  if (splitApi) {
+    for (const [id, platform] of [['api-integration', 'linux'], ['api-integration-windows', 'windows']]) {
+      const block = jobs.get(id);
+      invariant(block.includes('    uses: ./.github/workflows/reusable-api-integration.yml\n') &&
+        block.includes(`      platform: ${platform}\n`) && !/^    (if|continue-on-error):/m.test(block), 'split API qualification changed; re-review staging contract');
+    }
+  }
   return { header, jobs };
 }
 function parseNeeds(block) {
@@ -57,7 +65,9 @@ export function stageWorkflow(text, mode = 'minimal') {
   invariant(['minimal', 'compute'].includes(mode), 'mode must be minimal or compute');
   const { header, jobs } = splitJobs(text);
   const additions = structuredClone(MINIMAL);
+  if (jobs.has('api-integration-windows')) additions['api-integration-windows'] = [...MINIMAL['api-integration']];
   if (mode === 'compute') additions['api-integration'].push('backend-unit');
+  if (mode === 'compute' && additions['api-integration-windows']) additions['api-integration-windows'].push('backend-unit');
   const changes = [];
   const result = new Map(jobs);
   for (const [id, extra] of Object.entries(additions)) {

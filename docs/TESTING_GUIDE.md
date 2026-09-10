@@ -2375,8 +2375,10 @@ Required workflow: `.github/workflows/ci-required.yml`
   - Ubuntu and Windows matrix
   - Uploads JUnit + coverage artifacts (`test-results/`, `coverage/`) for triage
 
-  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs as a step of this job on
-  the **Linux leg only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
+  The source launcher regression suite (`scripts/ci/dev-up.test.mjs`) runs in the independent
+  `source-launcher` job of the reusable frontend workflow, reported as
+  `Frontend Unit / Source Launcher (Linux)` and policy lane `source-launcher-linux`.
+  It remains **Linux only** (CI-07 `#2331`, SC-3: hosted minutes are Linux-only). The Bash launcher
   cases therefore still run on every PR; the PowerShell launcher cases are local Windows evidence,
   run from the repository root on Windows with
   `node --test --test-concurrency=1 --test-timeout=30000 scripts/ci/dev-up.test.mjs`, until the

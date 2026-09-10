@@ -41,9 +41,19 @@ Deduplicate repeated observations by repository/run/attempt/job IDs before weekl
 
 ## Validation and rollback
 
-Local combined suite: **309 passed, zero failed/skipped/cancelled**, Node 22.16.0/Linux. Fixtures cover 101 jobs/two pages, failure then successful retry, altered identities, pagination/rerun races, unknown measurements, budgets and rendering. One initial fixture expectation was corrected: its mutator invalidated one duration on EACH page, giving two unknown durations rather than one. The initial failure and passing rerun are retained separately. No production provider request was made from the network-isolated local runtime.
+The original Node 22.16.0/Linux source-overlay report recorded 309 passing combined tests, including in-progress modules; it was not an isolated observer inventory. The current cumulative control suite passed 511 tests on Node 24.13.1/Windows. Fixtures cover 101 jobs/two pages, failure then successful retry, altered identities, pagination/rerun races, unknown measurements, budgets and rendering. One initial fixture expectation was corrected: its mutator invalidated one duration on EACH page, giving two unknown durations rather than one. The initial failure and passing rerun remain part of the development record.
 
-Configured-Node hosted checks and independent/maintainer reviews remain required. After merging, inspect a real observer run before claiming deployed validation. Rollback this observer/new modules only; required CI/canonical policy are unaffected. Observer absence is never product success.
+On 2026-09-10 the reviewed collector read actual required-CI runs `34420380277`, `34423790319` and `34431587587`. Unknown setup, test and inventory measurements remained null. These authenticated metadata reads validate collection against the live API, not actual-execution provenance or default-branch workflow deployment. See [the scheduling measurement](STAGING.md#measurement-and-rollback) for the completed sample.
+
+Deployed workflow run `34442587802` passed on 2026-09-10 after PR #2868 merged. Its checkout log
+confirms protected tooling revision `f0d4ebfa5e1ea889224d44166a5ce8174405d845`. The retained report
+binds required-CI run `34440388603`, workflow `236855317`, and source head
+`320acd7edd92a97fa00585f1fd94775aa883e9ef`, independently checked against the API. It contains one
+successful attempt and 18 jobs, reports `complete: true` and `authority: none`, and retains null
+setup/test/inventory measurements with `checkoutVerified: false` for the observed source execution.
+This proves deployed metadata collection, not reusable execution evidence.
+
+Rollback this observer/new modules only; required CI/canonical policy are unaffected. Observer absence is never product success.
 
 ## Primary references
 
