@@ -6,6 +6,7 @@ import { validateContracts, expandAffected, fingerprint } from '../core/contract
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { graph, state, request, entry, oid } from './fixtures.mjs';
 
@@ -99,4 +100,23 @@ test('malformed comparison base cannot imply no changes', () => {
 });
 test('nonempty commit binding required on both comparison endpoints', () => {
   const a = state(), b = state(); a.commit = 'HEAD'; assert.throws(() => changedPaths(a, b));
+});
+
+test('snapshot cannot fetch a missing tree from a configured promisor remote', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ci-missing-tree-')), remote = join(dir, 'remote');
+  const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  try {
+    mkdirSync(remote); git(remote, 'init'); git(remote, 'config', 'user.name', 'Fixture'); git(remote, 'config', 'user.email', 'fixture@example.invalid');
+    writeFileSync(join(remote, 'input'), 'fixture'); git(remote, 'add', '.'); git(remote, 'commit', '-m', 'fixture');
+    git(remote, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
+    const sha = git(remote, 'rev-parse', 'HEAD'), tree = git(remote, 'rev-parse', 'HEAD^{tree}');
+    // Use a fresh loose-object repository, copying only the commit through Git's object API.
+    const sparse = join(dir, 'sparse'); mkdirSync(sparse); git(sparse, 'init');
+    const commit = execFileSync('git', ['-C', remote, 'cat-file', 'commit', sha]);
+    execFileSync('git', ['-C', sparse, 'hash-object', '-t', 'commit', '-w', '--stdin'], { input: commit });
+    git(sparse, 'config', 'remote.origin.url', pathToFileURL(remote).href); git(sparse, 'config', 'remote.origin.promisor', 'true');
+    assert.throws(() => snapshot(sparse, sha));
+    // The remote is usable: an ordinary object read fetches the missing tree.
+    assert.equal(git(sparse, 'cat-file', '-t', tree), 'tree');
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
