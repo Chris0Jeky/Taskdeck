@@ -20,6 +20,11 @@ batch. Existing structural **Analyze now** remains available with no model confi
   A busy SQLite writer reports a storage failure rather than claiming the evidence changed. No
   candidate is saved; the message explains that model usage was already accounted for and that a
   new analysis uses budget again. The final transaction still detaches rejected candidates.
+  A competing question insert or revision update reports a concurrent write instead of a changed
+  source. This request saves no candidates; reload Quiet insights to read the current results before
+  deciding whether to spend budget on another analysis. The client preserves that specific recovery
+  message. Fingerprints and card identifiers remain server-side; the model user message contains
+  exactly the previewed excerpt.
 - The producer shares the user's Chat request/token budget and kill switch. Its conservative input
   estimate includes UTF-8 source/prompt bytes, bounded output and framing. Dispatch-aware settlement
   retains billed usage after cancellation or invalid output. For accepted output, settlement occurs

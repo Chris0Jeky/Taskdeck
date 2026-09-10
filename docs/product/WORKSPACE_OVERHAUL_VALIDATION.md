@@ -1,14 +1,52 @@
 # Workspace overhaul validation and follow-through
 
+## Final recovery follow-up (2026-09-10)
+
+The hours draft regression failed in both enable-toggle directions before the repair. A confirmed
+HTTP 400 validation rejection also discarded the draft; its regression failed before repair.
+Twenty attention component cases now cover these fixes, account changes and uncertain-save recovery.
+Final full frontend verification passes 6,436 tests with three existing skips across 416 files.
+Three Chromium journeys pass in 2.6 minutes against isolated SQLite: both reminder journeys and
+grounded stale-evidence recovery. The hours journey preserves the actual unsaved draft through both
+real enable-only HTTP saves, then saves it separately and continues through revision conflict,
+experience switching, Grove/Grove Night, mobile layout and accessibility checks.
+
+After the validation fix, both reminder journeys passed again in 1.2 minutes, including an actual
+invalid-zone HTTP 400, retained fields and correction. Final typecheck/build and scoped ESLint pass.
+The first final typecheck caught a missing error-mapper fallback argument; it was corrected before
+the successful build. Temporary browser services are stopped.
+
+Two real SQLite competing-write cases failed before the outcome repair: independently prepared
+inserts and updates both reported SourceChanged despite unchanged evidence. The repair distinguishes
+ConcurrentWrite, retains the winning question/evidence and detaches the losing staged state. Service
+and component checks cover truthful recovery copy, settled usage and no automatic retry. The final
+payload check also requires the actual model user message to equal the previewed excerpt, excluding
+the server-only fingerprint and card identifier. The full backend run passed 9,315 tests with 34
+existing skips. After the final payload correction, 17 observation API and 19 application tests pass;
+the full solution was not repeated after that narrow correction. The competing-write tests use
+deterministic repository commits, not simultaneous full HTTP model requests. One independent review
+and its final scoped validation/base follow-up are CLEAN. Hosted exact-head qualification remains
+the merge gate. Physical-device, live-provider usefulness and production acceptance remain separate.
+
 ## Hosted delivery receipts (2026-09-10)
+
+Final recovery [PR #2895](https://github.com/Chris0Jeky/Taskdeck/pull/2895) passed required run
+`34458797270` at reviewed product head `f39cc6cf3`, including Windows/Ubuntu suites and browser smoke.
+After unrelated CI admission tooling landed on main, its integration passed 343 focused tooling
+tests, bounded base review and the complete required run `34462673996` at `d25edf2a5`. Another
+base update adds portable CI tooling only; no application or workflow file changed. The PR records
+the latest base qualification and final merge receipt. These successful hosted results supersede
+earlier pending-hosted notes for the recovery implementation; synthetic-provider and physical-device
+acceptance limits remain unchanged.
 
 The source manifest was rechecked against the original local pack: all 20 paths, byte lengths and
 SHA-256 values match, with no additional or missing files. PR #2866 merged as `384d8dfaa` after its
 required gate. PR #2886 merged as `f00cf1d31` at 08:10 UTC after required run `34450719109` passed
 at reviewed head `fce97dc67`, including Ubuntu/Windows API and unit suites and final browser smoke.
 All prior continuation heads are included. The #2886 merge receipt has the same tree as that tested
-head; integrating it into #2892 changes no runtime files. Reminder hours remain subject to their own
-final exact-head hosted gate. These receipts supersede earlier pending-hosted notes for #2886.
+head; integrating it into #2892 changes no runtime files. PR #2892 merged as `93eab3443` at 08:52 UTC
+after required run `34453924959` passed at reviewed head `42965edde`. Its merge receipt has the same
+tree as that head. These receipts supersede earlier pending-hosted notes for those PRs.
 
 ## Reminder work-hours and time zones (2026-09-10)
 

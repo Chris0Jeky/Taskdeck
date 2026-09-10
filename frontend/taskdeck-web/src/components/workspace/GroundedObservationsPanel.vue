@@ -20,7 +20,7 @@ const notice = ref('')
 let generation = 0
 function message(value: unknown) {
   const display = getErrorDisplay(value, 'Analysis could not be confirmed. Refresh insights and preview the evidence before trying again.')
-  return display.code === 'Conflict' ? 'The source changed. Preview current evidence before analyzing again.' : display.message
+  return display.message
 }
 function reset() {
   generation++

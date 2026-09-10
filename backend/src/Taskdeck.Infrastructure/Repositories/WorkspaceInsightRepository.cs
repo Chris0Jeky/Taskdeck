@@ -55,7 +55,8 @@ public class WorkspaceInsightRepository(TaskdeckDbContext db) : IWorkspaceInsigh
             committed = true;
             return ObservationSaveOutcome.Saved;
         }
-        catch (DbUpdateConcurrencyException) { return ObservationSaveOutcome.SourceChanged; }
+        catch (DbUpdateConcurrencyException) { return ObservationSaveOutcome.ConcurrentWrite; }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteExtendedErrorCode: 2067 }) { return ObservationSaveOutcome.ConcurrentWrite; }
         catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 }) { return ObservationSaveOutcome.SourceChanged; }
         catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 5 or 6 }) { return ObservationSaveOutcome.StorageBusy; }
         catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode is 5 or 6) { return ObservationSaveOutcome.StorageBusy; }

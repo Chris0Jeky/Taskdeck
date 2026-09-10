@@ -12,6 +12,23 @@ namespace Taskdeck.Application.Tests.Services;
 public class WorkspaceObservationTests
 {
     [Fact]
+    public async Task ConcurrentWriteReportsCurrentResultsAndAlreadyAccountedUsageWithoutRetry()
+    {
+        var (service, _, provider, quota, _, repository, source) = Setup();
+        provider.Setup(x => x.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult("""[{"kind":"next-step","question":"What next?","reason":"Action unclear","quote":"Investigate"}]""", 77, false, Provider: "Fixture", Model: "fixture"));
+        repository.Setup(x => x.SaveObservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ObservationSaveOutcome.ConcurrentWrite);
+        var result = await service.GenerateAsync(Guid.NewGuid(), new(Guid.NewGuid(), source.CardId, source.Fingerprint), default);
+        result.IsSuccess.Should().BeFalse(); result.ErrorCode.Should().Be("Conflict");
+        result.ErrorMessage.Should().Contain("Another request").And.Contain("This request saved no observations")
+            .And.Contain("Reload Quiet insights").And.Contain("uses budget again").And.NotContain("source changed");
+        provider.Verify(x => x.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        quota.Verify(x => x.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), LlmSurface.Chat,
+            "Fixture", "fixture", 77, 0, CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
     public async Task BusyStorageReportsUnsavedOutcomeAndAlreadyAccountedUsageWithoutRetry()
     {
         var (service, _, provider, quota, _, repository, source) = Setup();

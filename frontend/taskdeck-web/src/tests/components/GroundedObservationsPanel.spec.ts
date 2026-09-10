@@ -25,6 +25,18 @@ beforeEach(() => {
 })
 
 describe('GroundedObservationsPanel', () => {
+  it('preserves the concurrent-save recovery outcome instead of claiming the source changed', async () => {
+    const wrapper = open(); await preview(wrapper)
+    const message = 'Another request changed your question results. This request saved no observations. Reload Quiet insights to read the current results. Model usage was already accounted for; analyzing again uses budget again.'
+    mocks.generate.mockRejectedValue({ response: { data: { errorCode: 'Conflict', message } } })
+    await button(wrapper, 'Analyze this evidence with model').trigger('click'); await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toBe(message)
+    expect(wrapper.text()).not.toContain('The source changed')
+    expect(mocks.generate).toHaveBeenCalledOnce()
+    expect(wrapper.find('pre').exists()).toBe(false)
+    expect(wrapper.emitted('generated')).toBeUndefined()
+  })
+
   it('waits for explicit selection and preview, then submits exactly that evidence once', async () => {
     const wrapper = open(); await flushPromises()
     expect(mocks.cards).not.toHaveBeenCalled(); expect(mocks.generate).not.toHaveBeenCalled()

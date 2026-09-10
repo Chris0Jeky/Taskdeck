@@ -2,7 +2,7 @@ using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Interfaces;
 
-public enum ObservationSaveOutcome { Saved, SourceChanged, StorageBusy }
+public enum ObservationSaveOutcome { Saved, SourceChanged, StorageBusy, ConcurrentWrite }
 
 public interface IWorkspaceInsightRepository
 {
