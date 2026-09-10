@@ -1,5 +1,11 @@
 # Workspace overhaul validation and follow-through
 
+## Board-object proposal overlays (2026-09-10)
+
+`BoardProposalPreview.spec.ts` covers matched effective revisions, approved pins, mismatched board/revision/status/update receipts, parameter-ID precedence, immutable board inputs, permission/board refresh failure, stale in-flight results, logout, same-user token refresh, server-clock expiry and both card renderers. Existing Chat preview and Board view regressions also pass. Full frontend: 6,368 passed and three existing skips; subsequent projection/access changes have 49 focused passing tests plus typecheck. Exact final evidence is retained with the continuation PR.
+
+`board-proposal-overlays.spec.ts` creates a real update/reorder/create proposal and checks both board renderers across all four experiences. It proves visible markers, saved titles, explicit close, unchanged saved cards/columns, no browser mutation requests, Review-to-board navigation, access refusal and 375 px/no serious-critical axe findings. The final journey passed in 15.8 seconds. Initial fixture failures omitted required operation parameters, requested an unsupported column action, and captured column card counts before seeding the card; each was corrected without relaxing product assertions. New objects remain described by the checked diff rather than simulated board state. No actual board Apply, production deployment or provider-quality acceptance is claimed.
+
 ## Original-source context continuation (2026-09-09)
 
 `ChatOriginalContextApiTests.cs` extends the context API suite with original-only dispatch, exact

@@ -1,6 +1,8 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+Board proposal preview continuation (#2808): Chat and both Review layouts link to a checked read-only overlay on the existing board. Effective revision, proposal status/update time and board identity must match before projecting operation targets; execution parameter IDs take precedence over display IDs. Existing cards/columns are marked across Classic, Studio, Companion and Unified, while creation/hidden objects remain in the diff. Board refresh failures, changes, route/account transitions and bounded expiry retract markers. The surface adds no approval, Apply or board mutation. Component and real-API Chromium checks prove projection, non-mutation, Review navigation and mobile rendering; the wider overhaul remains open.
 
 Original-source Companion continuation (#2808):
 

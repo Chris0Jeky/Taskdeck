@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Board-object proposal overlay continuation (#2808): complete the contextual preview path with a shared board-owned marker provider and one read-only checked preview panel. Cards and columns in both renderers consume presentation markers; the saved board model is unchanged. Original/pinned revision identity and short server-relative freshness are checked before display, and Review retains all decisions. General before/after board simulation and provider quality acceptance are not implied by this projection.
+
 Private audio continuation (#2808): retain an original recording first, add manual written representations separately, then explicitly confirm into private memory. The vertical uses native source assets, bounded SQLite chunks, owner-scoped playback, idempotent upload retry, version conflicts and account portability/erasure. All four experiences share the question UI; automated transcription, real-device qualification and the wider source/attention work remain separate. This is a prototype delivery path with executable evidence, not a provider or release acceptance decision.
 
 Original-source Companion continuation (#2808): explicit per-asset source selection builds on native private-memory preservation. Bounded owner-scoped source queries, expected revisions and content hashes connect historical originals to chat receipts without implicit retrieval. All four experiences share the same picker and source contract. Execution evidence belongs to the continuation PR; hosted qualification and the wider overhaul remain separate.

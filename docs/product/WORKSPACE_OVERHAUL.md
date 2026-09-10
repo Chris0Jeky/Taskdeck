@@ -1,6 +1,8 @@
 # Switchable workspace overhaul
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+**Preview on board** opens a read-only proposal layer from Chat or Review. Choose **Refresh board preview** to check the current proposal revision and highlight saved cards/columns affected by its operations in either board renderer. The checked diff also describes new or hidden objects. The board continues to show saved data; **Open Review** returns to that exact proposal for approval and explicit Apply. Closing the preview, changing board data, losing access or reaching the short freshness limit removes its markers. This reduces the need to mentally match proposal changes to board objects while preserving review-first trust.
 
 Companion's source picker also offers individual preserved originals beside each private memory.
 Open **Choose original sources**, inspect the saved excerpt, then select the exact answer or evidence
