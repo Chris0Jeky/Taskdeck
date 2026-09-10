@@ -145,7 +145,16 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
     public Task<Result<ThinkingAudioDto>> ConfirmAsync(Guid userId, Guid id, ThinkingAudioConfirmDto dto, CancellationToken ct) => TransactionAsync(async () =>
     {
         var answer = await OwnedAsync(userId, id, ct);
-        if (answer.ConfirmedMemoryId.HasValue) return await MapAsync(answer, ct);
+        var requestHash = Representation.ComputeTextContentHash(JsonSerializer.Serialize(new
+        {
+            Schema = 1, dto.ExpectedRevision, dto.ExpectedDeckRevision, dto.RepresentationId, dto.Status
+        }));
+        if (answer.ConfirmedMemoryId.HasValue)
+        {
+            // Older receipts cannot prove which request succeeded. Reload them without replaying a write.
+            if (answer.ConfirmationRequestHash != requestHash) throw Conflict();
+            return await MapAsync(answer, ct);
+        }
         if (answer.Revision != dto.ExpectedRevision || answer.RepresentationId != dto.RepresentationId) throw Conflict();
         var (_, layer) = await QuestionAsync(userId, answer.BoardId!.Value, answer.CardId, answer.LayerId, ct);
         if (Hash(layer) != answer.QuestionHash) throw Conflict();
@@ -157,7 +166,7 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         var payload = new Transcript(userId, CaptureSource.Typed, previousText.Text, boardId: answer.BoardId, createdFromCaptureId: answer.CaptureId);
         var header = Header(answer, payload, previous, RepresentationQualityState.Verified);
         await representations.StageTranscriptAsync(userId, header, payload, new(previous, header), ct);
-        answer.Confirm(header.Id, saved.Value.Id);
+        answer.Confirm(header.Id, saved.Value.Id, requestHash);
         (await work.Boards.GetByIdAsync(answer.BoardId.Value, ct))!.RecordDependentMutation();
         if (!await answers.SaveAsync(ct)) throw Conflict();
         return await MapAsync(answer, ct);

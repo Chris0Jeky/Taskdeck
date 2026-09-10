@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Domain.Entities;
+using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
 
 namespace Taskdeck.Infrastructure.Repositories;
@@ -22,7 +23,8 @@ public sealed class ThinkingAudioRepository(TaskdeckDbContext db) : IThinkingAud
             orderby answer.Id
             select new ThinkingAudioLibraryEntry(answer.Id, asset.OriginalName ?? "original-audio", asset.ByteSize,
                 answer.CreatedAt, evidence.TextPayload!.Text.Length > 500 ? evidence.TextPayload.Text.Substring(0, 500) + "…" : evidence.TextPayload.Text,
-                answer.RepresentationId.HasValue, answer.ConfirmedMemoryId.HasValue, answer.BoardId == null)
+                answer.RepresentationId.HasValue, answer.ConfirmedMemoryId.HasValue || db.Representations.Any(header =>
+                    header.Id == answer.RepresentationId && header.UserId == userId && header.QualityState == RepresentationQualityState.Verified), answer.BoardId == null)
         ).ToListAsync(ct);
     }
 

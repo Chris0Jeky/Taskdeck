@@ -88,6 +88,6 @@ public sealed class SourcePortabilityStore(TaskdeckDbContext db) : ISourcePortab
     {
         await foreach (var row in db.ThinkingAudioAnswers.AsNoTracking().Where(x => x.UserId == userId).OrderBy(x => x.Id).AsAsyncEnumerable().WithCancellation(ct))
             yield return new(row.Id, row.BoardId, row.CardId, row.LayerId, row.QuestionHash, row.CaptureId, row.SourceAssetId,
-                row.UploadId, row.Revision, row.RepresentationId, row.ConfirmedMemoryId, row.CreatedAt, row.UpdatedAt);
+                row.UploadId, row.Revision, row.RepresentationId, row.ConfirmedMemoryId, row.CreatedAt, row.UpdatedAt, row.ConfirmationRequestHash);
     }
 }
