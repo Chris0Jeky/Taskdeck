@@ -1,5 +1,15 @@
 # Workspace overhaul validation and follow-through
 
+## Combined continuation qualification (2026-09-10)
+
+The continuation combines comparison appearance, uncertain-plan recovery, accepted-navigation Focus, retained audio drafts, source-selection conflicts, storage startup validation, grounded questions and receipt/Review recovery. All four experiences use the same services and stored data.
+
+At combined runtime 652ee5d1a, the full backend passed 9,222 tests with 34 existing skips; the full frontend passed 6,396 with three existing skips. Typecheck/build and ten Chromium journeys passed, covering comparison, two plan flows, audio/library/history, grounded preview, companion continuity, board overlays and contextual companion. Grounded provider transport has separate synthetic-localhost proof on its input PR. The later frontend-only receipt/Review patch has the full-run and final 73-test/final two-browser proof recorded above; backend inputs remain unchanged. The subsequent main merge changes only CI scheduling, with 261 passing continuation/workflow contract tests and a clean bounded base interaction review. Combined interaction review found no HIGH/CRITICAL defect.
+
+Exact-head hosted CI and merge state remain on the delivery PR. Local proof does not imply real microphone, external model usefulness, physical-device, full restore or release acceptance.
+
+
+
 ## Receipt and Review recovery (2026-09-10)
 
 Post-send receipt reconciliation has a 15-second HTTP timeout and disables automatic retries. A timeout preserves the successful message and offers an explicit GET-only Retry. Legacy Review exposes eligible board previews for Chat and Manual proposals even without capture provenance; status and read-only guards remain enforced.
