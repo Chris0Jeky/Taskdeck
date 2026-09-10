@@ -200,4 +200,43 @@ describe('Review retained health with real Vue reactivity (#2915)', () => {
     expect(review.visibleProposals.value).toHaveLength(0)
     expect(review.queueRefreshStale.value).toBe(false)
   })
+
+  it('does not attach retained board health to a freshly fetched foreign-board hash target', async () => {
+    const review = await prime('refused', 'completed')
+    mocks.getProposals.mockRejectedValue({ response: { status: 500 } })
+    mocks.route.query = { boardId: 'board-c' }
+    await nextTick()
+    await flushPromises()
+    expect(review.visibleProposals.value).toHaveLength(0)
+    expect(review.queueRefreshRefused.value).toBe(false)
+
+    mocks.getProposal.mockResolvedValueOnce({
+      ...review.proposals.value[0], id: 'c-1', boardId: 'board-c', status: 'PendingReview',
+    })
+    mocks.route.hash = '#proposal-c-1'
+    await nextTick()
+    await flushPromises()
+
+    expect(review.visibleProposals.value.map(p => p.id)).toEqual(['c-1'])
+    expect(review.queueRefreshRefused.value).toBe(false)
+    expect(review.queueRefreshStale.value).toBe(false)
+  })
+
+  it('preserves current refusal progress when an older stale disclosure becomes visible', async () => {
+    const review = await prime('stale', 'completed')
+    await widen()
+    mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+    review.startQueueRefresh()
+    await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * (REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD - 1))
+    expect(review.queueRefreshRefused.value).toBe(false)
+
+    review.showCompleted.value = true
+    await nextTick()
+    expect(review.queueRefreshStale.value).toBe(true)
+    expect(review.queueRefreshRefused.value).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+    review.stopQueueRefresh()
+    expect(review.queueRefreshRefused.value).toBe(true)
+  })
 })
