@@ -154,6 +154,84 @@ The [closeout record](analysis/2026-09-09-codex-pr-closeout.md) retains exact he
 verification limits and deferred review findings. No release or human-action
 completion is inferred.
 
+## Delivery updates relocated from after the Risk Register (2026-09-10, coordinator)
+
+The six sections below had accumulated after `## Risk Register`, outside this file's delivery-update
+area, together with four untitled trailing paragraphs. Three of them were written as pre-merge
+"acceptance" records and described work that had already merged: PR `#2793` merged 2026-09-08T00:03Z
+(`2fd93d6e1`), PRs `#2790` and `#2791` both 2026-09-09T10:57Z (`7be107bf8`, `17481cd2d`). The prose is
+unchanged; only the six headings and this preface are new, and each retitled heading carries the merge
+facts so a reader is not left judging a candidate that has landed. Where a section names work as still
+pending, that was its state when written, not after merge. This is the masterplan half of the same pass
+PR `#2917` ran on `docs/STATUS.md`.
+
+## Delivery update (2026-09-09, contextual companion continuation) — `#2808`, delivered
+
+Card thinking and Focus now embed existing board-scoped conversations with explicit card, shared-thinking
+and private-memory source selection. The server returns per-turn source receipts and rejects changed
+replay sources. An authoritative read-only proposal preview couples its diff to the effective revision;
+Review retains the approval and Apply flow. This reduces navigation and repeated context entry while
+keeping source choice and board mutation explicit. SourceAsset/audio integration, affected-board-object
+overlays, expanded grounded observations/attention and cross-release comparison remain in the overhaul
+validation ledger. Full delivery scope is still tracked by #2808.
+
+## Delivery update (2026-09-09, private memory originals) — `#2808`, delivered
+
+The native source continuation connects saved question evidence and private answers to Context Fabric.
+Corrections append immutable superseding assets in the same transaction as memory revision checks.
+The originals viewer and private JSON download make the source history inspectable across experiences,
+reducing repeated context entry while keeping retrieval explicit and shared board state unchanged.
+Account export includes originals independently of board lifetime; account erasure removes them.
+Existing memories acquire sources on their next explicit write. Bulk historical admission, audio and
+representations, typed source selection, grounded observations and optional attention remain separate
+work in #2808. This implementation does not claim restoration/import, live-model quality or completion
+of the entire overhaul.
+
+
+Older-memory source admission (#2808) now has an explicit bounded Memory action. Current and archived
+entries are selectable through their existing list filters; batches use expected revisions and one
+atomic save, and can be resumed after reload. This completes legacy text-original admission; audio,
+representation processing, direct source selection and broader source evaluation remain open.
+
+## Delivery update (2026-09-09, companion send continuity) — `#2808`, delivered
+
+Embedded card conversations pause sends while the thinking workspace has unsaved work, with an
+explanation that only saved thinking is read. In-app navigation waits for an outstanding send;
+the dialog explains that closing the browser does not cancel an accepted server request.
+A failed post-send conversation refresh keeps the successful response and offers a guarded GET-only
+receipt retry. Proposal preview freshness uses the server receipt interval minus elapsed request time,
+so client clock skew cannot extend its lifetime. These changes reduce repeated context entry and
+accidental duplicate sends while preserving explicit source choice and Review before board changes.
+Broader source representations, object overlays, attention and usefulness evaluation remain in #2808.
+
+September 10 #2808 original-library continuation: expose retained audio originals from Memory, including
+historical questions and owner-held deleted-board recordings; retain current permissions for existing
+boards and route only unchanged questions back to Thinking. Deliver with paging, selected-only history
+and binary reads, async identity disposal, byte-exact download and archive/deletion regression evidence.
+No automatic transcription, source erasure UI or restore-import acceptance is implied by this slice.
+
+September 10 #2808 source-interaction continuation closes recorded picker permission/name, token-refresh,
+retained-instruction control and long-history paging gaps. Use bounded real source histories, private
+async lifecycle tests and shared browser journeys; continue next with read-only affected-board-object
+proposal overlays and the remaining observation/attention, Studio and source scalability work.
+
+Across-release comparison continuation (#2808): portable observation import/export, build attribution,
+predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
+sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
+selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.
+
+## Delivery update (2026-09-08, Paper board controls) — `#2090` partial, PR `#2793`, merge `2fd93d6e1`
+
+PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.
+
+## Delivery update (2026-09-08, Accountable Automation Chat) — `#2004`, PR `#2790`, merged 2026-09-09T10:57Z as `7be107bf8`
+
+PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal attempts, owned-session inline binding, grounded existing-card updates, one persisted clarification round, and durable honest outcomes. This reduces the maintenance burden of discovering that a chat instruction produced only prose while preserving explicit human Review, Approve, and Apply. The natural-update API proof covers actual card identity and an unchanged board; the Mock browser journey covers same-session context recovery and Review visibility. Complete the distinct full-stack and authorization/state review lenses, resolve any confirmed blockers in one batch, and qualify the final head before closing #2004. Repair the independently reproduced test-clock failures in #2789 separately; do not weaken the local-calendar contract or infer live-provider acceptance from Mock evidence.
+
+## Delivery update (2026-09-08, CI-10 slice 2 nightly observation) — `#2334` partial, PR `#2791`, merged 2026-09-09T10:57Z as `17481cd2d` under the maintainer's 2026-09-09 four-PR delegation on `#2337`
+
+PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
+
 ## Delivery update (2026-09-08, parallel implementation and asynchronous review)
 
 The maintainer authorized concurrent issue delivery, including v0.4/v0.5 foundations,
@@ -2297,70 +2375,3 @@ Rule:
   packaged app exit before listening, behind a generic error)
   - Mitigation: release-harness coverage of upgrade paths with inherited configuration, plus honest
     secret-free startup diagnostics (`#1876`)
-
-## Board controls residual acceptance (2026-09-08)
-
-PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.
-
-## Accountable chat acceptance (2026-09-08)
-
-PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal attempts, owned-session inline binding, grounded existing-card updates, one persisted clarification round, and durable honest outcomes. This reduces the maintenance burden of discovering that a chat instruction produced only prose while preserving explicit human Review, Approve, and Apply. The natural-update API proof covers actual card identity and an unchanged board; the Mock browser journey covers same-session context recovery and Review visibility. Complete the distinct full-stack and authorization/state review lenses, resolve any confirmed blockers in one batch, and qualify the final head before closing #2004. Repair the independently reproduced test-clock failures in #2789 separately; do not weaken the local-calendar contract or infer live-provider acceptance from Mock evidence.
-
-## CI10-2 remaining acceptance (2026-09-08)
-
-PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
-
-Across-release comparison continuation (#2808): portable observation import/export, build attribution,
-predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
-sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
-selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.
-
-## Contextual companion continuation (#2808, 2026-09-09)
-
-Card thinking and Focus now embed existing board-scoped conversations with explicit card, shared-thinking
-and private-memory source selection. The server returns per-turn source receipts and rejects changed
-replay sources. An authoritative read-only proposal preview couples its diff to the effective revision;
-Review retains the approval and Apply flow. This reduces navigation and repeated context entry while
-keeping source choice and board mutation explicit. SourceAsset/audio integration, affected-board-object
-overlays, expanded grounded observations/attention and cross-release comparison remain in the overhaul
-validation ledger. Full delivery scope is still tracked by #2808.
-
-## Private memory originals (#2808, 2026-09-09)
-
-The native source continuation connects saved question evidence and private answers to Context Fabric.
-Corrections append immutable superseding assets in the same transaction as memory revision checks.
-The originals viewer and private JSON download make the source history inspectable across experiences,
-reducing repeated context entry while keeping retrieval explicit and shared board state unchanged.
-Account export includes originals independently of board lifetime; account erasure removes them.
-Existing memories acquire sources on their next explicit write. Bulk historical admission, audio and
-representations, typed source selection, grounded observations and optional attention remain separate
-work in #2808. This implementation does not claim restoration/import, live-model quality or completion
-of the entire overhaul.
-
-
-Older-memory source admission (#2808) now has an explicit bounded Memory action. Current and archived
-entries are selectable through their existing list filters; batches use expected revisions and one
-atomic save, and can be resumed after reload. This completes legacy text-original admission; audio,
-representation processing, direct source selection and broader source evaluation remain open.
-
-## Companion send continuity (#2808, 2026-09-09)
-
-Embedded card conversations pause sends while the thinking workspace has unsaved work, with an
-explanation that only saved thinking is read. In-app navigation waits for an outstanding send;
-the dialog explains that closing the browser does not cancel an accepted server request.
-A failed post-send conversation refresh keeps the successful response and offers a guarded GET-only
-receipt retry. Proposal preview freshness uses the server receipt interval minus elapsed request time,
-so client clock skew cannot extend its lifetime. These changes reduce repeated context entry and
-accidental duplicate sends while preserving explicit source choice and Review before board changes.
-Broader source representations, object overlays, attention and usefulness evaluation remain in #2808.
-
-September 10 #2808 original-library continuation: expose retained audio originals from Memory, including
-historical questions and owner-held deleted-board recordings; retain current permissions for existing
-boards and route only unchanged questions back to Thinking. Deliver with paging, selected-only history
-and binary reads, async identity disposal, byte-exact download and archive/deletion regression evidence.
-No automatic transcription, source erasure UI or restore-import acceptance is implied by this slice.
-
-September 10 #2808 source-interaction continuation closes recorded picker permission/name, token-refresh,
-retained-instruction control and long-history paging gaps. Use bounded real source histories, private
-async lifecycle tests and shared browser journeys; continue next with read-only affected-board-object
-proposal overlays and the remaining observation/attention, Studio and source scalability work.
