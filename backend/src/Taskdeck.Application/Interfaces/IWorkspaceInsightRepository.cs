@@ -2,6 +2,8 @@ using Taskdeck.Domain.Entities;
 
 namespace Taskdeck.Application.Interfaces;
 
+public enum ObservationSaveOutcome { Saved, SourceChanged, StorageBusy }
+
 public interface IWorkspaceInsightRepository
 {
     Task<IReadOnlyList<WorkspaceMemory>> MemoriesByUserAsync(Guid userId, int limit, int offset, CancellationToken ct);
@@ -17,5 +19,5 @@ public interface IWorkspaceInsightRepository
     void GuardMemoryRevision(WorkspaceMemory memory);
     Task<bool> SaveAsync(CancellationToken ct);
     /// <summary>Revalidates source/access and saves staged observations in one transaction.</summary>
-    Task<bool> SaveObservationAsync(Guid userId, Guid boardId, Guid cardId, string fingerprint, CancellationToken ct);
+    Task<ObservationSaveOutcome> SaveObservationAsync(Guid userId, Guid boardId, Guid cardId, string fingerprint, CancellationToken ct);
 }

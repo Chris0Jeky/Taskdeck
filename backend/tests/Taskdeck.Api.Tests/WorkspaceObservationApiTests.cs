@@ -78,7 +78,27 @@ public class WorkspaceObservationApiTests(TestWebApplicationFactory factory) : I
         var user = (await db.Boards.FindAsync(board))!.OwnerId!.Value;
         var repository = scope.ServiceProvider.GetRequiredService<IWorkspaceInsightRepository>();
         repository.Add(new QuietInsight(user, board, "model:next-step", card.ToString(), card, null));
-        (await repository.SaveObservationAsync(user, board, card, "changed-fingerprint", default)).Should().BeFalse();
+        (await repository.SaveObservationAsync(user, board, card, "changed-fingerprint", default)).Should().Be(ObservationSaveOutcome.SourceChanged);
+        await db.SaveChangesAsync();
+        (await db.Set<QuietInsight>().CountAsync(x => x.BoardId == board)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task BusyWriteLockIsNotSourceChangeAndRejectedQuestionsCannotLeakIntoLaterSave()
+    {
+        using var app = WithProvider(new Provider()); var (_, board, card, source) = await Setup(app);
+        using var scope = app.Services.CreateScope(); var existing = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var user = (await existing.Boards.FindAsync(board))!.OwnerId!.Value;
+        var connectionString = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(existing.Database.GetConnectionString())
+            { DefaultTimeout = 1 }.ToString();
+        await using var lockedConnection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await lockedConnection.OpenAsync();
+        await using var writer = lockedConnection.BeginTransaction();
+        await using var db = new TaskdeckDbContext(new DbContextOptionsBuilder<TaskdeckDbContext>().UseSqlite(connectionString).Options);
+        var repository = new WorkspaceInsightRepository(db);
+        repository.Add(new QuietInsight(user, board, "model:next-step", card.ToString(), card, null));
+        (await repository.SaveObservationAsync(user, board, card, source.Fingerprint, default)).Should().Be(ObservationSaveOutcome.StorageBusy);
+        await writer.RollbackAsync();
         await db.SaveChangesAsync();
         (await db.Set<QuietInsight>().CountAsync(x => x.BoardId == board)).Should().Be(0);
     }

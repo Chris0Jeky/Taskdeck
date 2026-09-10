@@ -86,8 +86,13 @@ public sealed class WorkspaceObservationService(IWorkspaceObservationReader read
                 result.Add(new(item.Id, item.BoardId, item.CardId, null, item.Rule, item.Title, item.Detail, item.State,
                     item.Evidence, item.CheckedAt, item.SnoozeUntil));
             }
-            return await repository.SaveObservationAsync(userId, dto.BoardId, dto.CardId, source.Fingerprint, ct)
-                ? Result.Success(result) : Changed();
+            return await repository.SaveObservationAsync(userId, dto.BoardId, dto.CardId, source.Fingerprint, ct) switch
+            {
+                ObservationSaveOutcome.Saved => Result.Success(result),
+                ObservationSaveOutcome.StorageBusy => Result.Failure<List<QuietInsightDto>>(ErrorCodes.UnexpectedError,
+                    "Storage was busy. No observations were saved. Model usage was already accounted for; analyzing again uses budget again. Wait, then preview the evidence before deciding whether to retry."),
+                _ => Changed(),
+            };
         }
         finally
         {

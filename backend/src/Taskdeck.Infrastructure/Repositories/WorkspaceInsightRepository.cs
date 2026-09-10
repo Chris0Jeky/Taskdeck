@@ -39,7 +39,7 @@ public class WorkspaceInsightRepository(TaskdeckDbContext db) : IWorkspaceInsigh
         catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 }) { return false; }
     }
 
-    public async Task<bool> SaveObservationAsync(Guid userId, Guid boardId, Guid cardId, string fingerprint, CancellationToken ct)
+    public async Task<ObservationSaveOutcome> SaveObservationAsync(Guid userId, Guid boardId, Guid cardId, string fingerprint, CancellationToken ct)
     {
         Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
         var committed = false;
@@ -49,15 +49,16 @@ public class WorkspaceInsightRepository(TaskdeckDbContext db) : IWorkspaceInsigh
             // save therefore cannot straddle a concurrent card edit or membership revocation.
             transaction = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
             var source = await new WorkspaceObservationReader(db).SourceAsync(userId, boardId, cardId, ct);
-            if (source == null || source.Fingerprint != fingerprint) return false;
+            if (source == null || source.Fingerprint != fingerprint) return ObservationSaveOutcome.SourceChanged;
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
             committed = true;
-            return true;
+            return ObservationSaveOutcome.Saved;
         }
-        catch (DbUpdateConcurrencyException) { return false; }
-        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 5 or 6 or 19 }) { return false; }
-        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode is 5 or 6) { return false; }
+        catch (DbUpdateConcurrencyException) { return ObservationSaveOutcome.SourceChanged; }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 19 }) { return ObservationSaveOutcome.SourceChanged; }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException { SqliteErrorCode: 5 or 6 }) { return ObservationSaveOutcome.StorageBusy; }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode is 5 or 6) { return ObservationSaveOutcome.StorageBusy; }
         finally
         {
             if (!committed)

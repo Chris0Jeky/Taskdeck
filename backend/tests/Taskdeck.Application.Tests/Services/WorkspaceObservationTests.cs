@@ -12,6 +12,23 @@ namespace Taskdeck.Application.Tests.Services;
 public class WorkspaceObservationTests
 {
     [Fact]
+    public async Task BusyStorageReportsUnsavedOutcomeAndAlreadyAccountedUsageWithoutRetry()
+    {
+        var (service, _, provider, quota, _, repository, source) = Setup();
+        provider.Setup(x => x.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new LlmCompletionResult("""[{"kind":"next-step","question":"What next?","reason":"Action unclear","quote":"Investigate"}]""", 77, false, Provider: "Fixture", Model: "fixture"));
+        repository.Setup(x => x.SaveObservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ObservationSaveOutcome.StorageBusy);
+        var result = await service.GenerateAsync(Guid.NewGuid(), new(Guid.NewGuid(), source.CardId, source.Fingerprint), default);
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be("UnexpectedError");
+        result.ErrorMessage.Should().Contain("Storage was busy").And.Contain("No observations were saved").And.Contain("uses budget again");
+        provider.Verify(x => x.CompleteAsync(It.IsAny<ChatCompletionRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        quota.Verify(x => x.CommitReservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), LlmSurface.Chat,
+            "Fixture", "fixture", 77, 0, CancellationToken.None), Times.Once);
+    }
+
+    [Fact]
     public async Task AccountingFailureBeforeSave_ReturnsKnownUnsavedOutcomeWithoutRetryingUsage()
     {
         var (service, _, provider, quota, _, repository, source) = Setup();
@@ -119,7 +136,7 @@ public class WorkspaceObservationTests
         repository.Setup(x => x.InsightsAsync(It.IsAny<Guid>(),It.IsAny<Guid>(),It.IsAny<CancellationToken>())).ReturnsAsync(new List<QuietInsight>());
         repository.Setup(x => x.MemoriesAsync(It.IsAny<Guid>(),It.IsAny<Guid>(),It.IsAny<CancellationToken>())).ReturnsAsync(new List<WorkspaceMemory>());
         repository.Setup(x => x.SaveAsync(It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        repository.Setup(x => x.SaveObservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        repository.Setup(x => x.SaveObservationAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(ObservationSaveOutcome.Saved);
         return (new(reader.Object,repository.Object,provider.Object,quota.Object,kill.Object),reader,provider,quota,kill,repository,source);
     }
 }

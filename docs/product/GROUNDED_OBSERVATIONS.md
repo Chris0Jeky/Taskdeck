@@ -17,6 +17,9 @@ batch. Existing structural **Analyze now** remains available with no model confi
   and save share one short serializable database transaction. A changed or unavailable source discards
   the candidate batch, and rejected staged questions are detached from later saves. The client disables overlapping operations and does not retry
   the provider request automatically; uncertain responses require another explicit evidence preview.
+  A busy SQLite writer reports a storage failure rather than claiming the evidence changed. No
+  candidate is saved; the message explains that model usage was already accounted for and that a
+  new analysis uses budget again. The final transaction still detaches rejected candidates.
 - The producer shares the user's Chat request/token budget and kill switch. Its conservative input
   estimate includes UTF-8 source/prompt bytes, bounded output and framing. Dispatch-aware settlement
   retains billed usage after cancellation or invalid output. For accepted output, settlement occurs
