@@ -43,15 +43,6 @@ public class ChatService : IChatService
     private const string ArchivedBoardBindingMessage =
         "Cannot link a chat session to an archived board. Restore the board first.";
     private static readonly Regex MentionRegex = new(@"(?<![A-Za-z0-9_.-])@(?<username>[A-Za-z0-9_.-]{3,50})", RegexOptions.Compiled);
-    private static readonly string[] PromptInjectionDenylist =
-    {
-        "ignore previous instructions",
-        "reveal system prompt",
-        "rm -rf",
-        "drop table",
-        "delete every board"
-    };
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILlmProvider _llmProvider;
     private readonly IAutomationPlannerService _automationPlanner;
@@ -301,7 +292,7 @@ public class ChatService : IChatService
             if (!mentionResult.IsSuccess)
                 return Result.Failure<ChatMessageDto>(mentionResult.ErrorCode, mentionResult.ErrorMessage);
 
-            if (ContainsBlockedPromptPattern(dto.Content))
+            if (ChatPromptPolicy.ContainsBlockedPromptPattern(dto.Content))
             {
                 var blockedMessage = new ChatMessage(
                     sessionId,
@@ -335,8 +326,8 @@ public class ChatService : IChatService
                 quotaEstimatedTokens = reservation.EstimatedTokens;
             }
 
-            if (LooksLikeChecklistBootstrapRequest(actionAttemptContent)
-                && (turnRequestsAction || !StartsWithQuestion(actionAttemptContent)))
+            if (ChatPromptPolicy.LooksLikeChecklistBootstrapRequest(actionAttemptContent)
+                && (turnRequestsAction || !ChatPromptPolicy.StartsWithQuestion(actionAttemptContent)))
             {
                 if (!session.BoardId.HasValue)
                 {
@@ -1229,12 +1220,6 @@ public class ChatService : IChatService
         return new[] { actionAttemptContent };
     }
 
-    private static bool ContainsBlockedPromptPattern(string content)
-    {
-        var normalized = content.ToLowerInvariant();
-        return PromptInjectionDenylist.Any(pattern => normalized.Contains(pattern, StringComparison.Ordinal));
-    }
-
     private async Task<Result<ResolvedChatContext?>> ResolveContextAsync(Guid userId, Guid? boardId, ChatContextSelection? selection, CancellationToken ct)
     {
         if (selection is null) return Result.Success<ResolvedChatContext?>(null);
@@ -1305,22 +1290,6 @@ public class ChatService : IChatService
             LlmRequestSourceSurface.Chat,
             session.BoardId,
             session.Id);
-    }
-
-    private static bool LooksLikeChecklistBootstrapRequest(string content)
-    {
-        if (string.IsNullOrWhiteSpace(content))
-            return false;
-
-        return Regex.IsMatch(content, @"(?m)^\s*[-*]\s*\[\s\]\s+.+$");
-    }
-
-    private static bool StartsWithQuestion(string content)
-    {
-        var firstLine = content
-            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
-            .FirstOrDefault(static line => !string.IsNullOrWhiteSpace(line));
-        return firstLine?.TrimEnd().EndsWith("?", StringComparison.Ordinal) == true;
     }
 
     private static bool IsProposalToolCall(ToolCallLogEntry toolCall) =>
@@ -1425,7 +1394,7 @@ public class ChatService : IChatService
         Guid boardId,
         CancellationToken ct)
     {
-        var checklistItems = ParseChecklistItems(content);
+        var checklistItems = ChatPromptPolicy.ParseChecklistItems(content);
         if (checklistItems.Count == 0)
             return Result.Failure<ProposalDto>(ErrorCodes.ValidationError, "Could not parse checklist tasks. Use Markdown checklist lines like '- [ ] Task title'.");
 
@@ -1494,25 +1463,6 @@ public class ChatService : IChatService
             return Result.Failure<ProposalDto>(proposalResult.ErrorCode, proposalResult.ErrorMessage);
 
         return Result.Success(proposalResult.Value);
-    }
-
-    private static List<string> ParseChecklistItems(string content)
-    {
-        var items = new List<string>();
-        var lines = content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        foreach (var line in lines)
-        {
-            var match = Regex.Match(line, @"^\s*[-*]\s*\[\s\]\s+(.+?)\s*$");
-            if (!match.Success)
-                continue;
-
-            var title = match.Groups[1].Value.Trim();
-            if (!string.IsNullOrWhiteSpace(title))
-                items.Add(title);
-        }
-
-        return items;
     }
 
     private static ChatSessionDto MapSessionToDto(ChatSession session)
