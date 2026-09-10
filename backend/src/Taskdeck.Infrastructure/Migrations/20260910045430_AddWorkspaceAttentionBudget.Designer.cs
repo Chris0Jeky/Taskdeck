@@ -2685,6 +2685,10 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<Guid>("CardId")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ConfirmationRequestHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<Guid?>("ConfirmedMemoryId")
                         .HasColumnType("TEXT");
 

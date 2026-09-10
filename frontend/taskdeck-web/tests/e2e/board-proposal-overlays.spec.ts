@@ -12,15 +12,17 @@ test('a checked proposal highlights saved objects across board experiences witho
   const boardId = await createBoardWithColumn(request, auth, seed, { boardNamePrefix: 'Proposal overlays', columnNamePrefix: 'Next' })
   const board = await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()
   const columnId = board.columns[0].id
+  const createdColumn = await request.post(`${API_BASE_URL}/boards/${boardId}/columns`, { headers, data: { boardId, name: 'Proposed destination', position: 1, wipLimit: null } })
+  await assertOk(createdColumn, 'seed destination column'); const destination = await createdColumn.json()
   const createdCard = await request.post(`${API_BASE_URL}/boards/${boardId}/cards`, { headers, data: { boardId, columnId, title: 'Saved before preview' } })
   await assertOk(createdCard, 'seed saved card'); const card = await createdCard.json()
   const savedBoard = await (await request.get(`${API_BASE_URL}/boards/${boardId}`, { headers })).json()
   const created = await request.post(`${API_BASE_URL}/automation/proposals`, { headers, data: {
-    sourceType: 1, requestedByUserId: auth.user.id, boardId, summary: 'Rename a card, position its column and propose a new card', riskLevel: 1, correlationId: `overlay-${seed}`,
+    sourceType: 1, requestedByUserId: auth.user.id, boardId, summary: 'Rename and move a card, then propose a new card', riskLevel: 1, correlationId: `overlay-${seed}`,
     operations: [
       { sequence: 0, actionType: 'update', targetType: 'card', targetId: card.id, parameters: JSON.stringify({ cardId: card.id, title: 'Proposed new title' }), idempotencyKey: `overlay-${seed}-0` },
-      { sequence: 1, actionType: 'reorder', targetType: 'column', targetId: columnId, parameters: JSON.stringify({ columnId, position: 0 }), idempotencyKey: `overlay-${seed}-1` },
-      { sequence: 2, actionType: 'create', targetType: 'card', parameters: JSON.stringify({ boardId, columnId, title: 'New proposed card' }), idempotencyKey: `overlay-${seed}-2` },
+      { sequence: 1, actionType: 'move', targetType: 'card', targetId: card.id, parameters: JSON.stringify({ cardId: card.id, columnId: destination.id }), idempotencyKey: `overlay-${seed}-1` },
+      { sequence: 2, actionType: 'create', targetType: 'card', parameters: JSON.stringify({ boardId, columnId: destination.id, title: 'New proposed card' }), idempotencyKey: `overlay-${seed}-2` },
     ],
   } })
   await assertOk(created, 'seed proposal'); const proposal = await created.json()
@@ -40,6 +42,7 @@ test('a checked proposal highlights saved objects across board experiences witho
     await expect(panel.locator('pre')).toContainText('New proposed card')
     await expect(page.locator(`[data-card-id="${card.id}"]`)).toHaveAttribute('data-proposal-change', 'true')
     await expect(page.locator(`[data-column-id="${columnId}"]`)).toHaveAttribute('data-proposal-change', 'true')
+    await expect(page.locator(`[data-column-id="${destination.id}"]`)).toHaveAttribute('data-proposal-change', 'true')
     await expect(page.locator(`[data-card-id="${card.id}"]`)).toContainText('Saved before preview')
   }
   await page.setViewportSize({ width: 375, height: 812 })
