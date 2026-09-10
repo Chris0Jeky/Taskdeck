@@ -185,6 +185,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
 
                 var card = new Card(importCard.SourceId.HasValue ? cardIds[importCard.SourceId.Value] : Guid.NewGuid(),
                     board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
+                card.SetWorkItemType(Card.ParseWorkItemType(importCard.WorkItemType));
                 var uniqueCardLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var labelName in importCard.Labels ?? Enumerable.Empty<string>())
@@ -417,7 +418,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 card.Position,
                 card.DueDate,
                 labelNames,
-                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived));
+                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived, card.WorkItemType));
         }
 
         return new ImportBoardDto(
@@ -468,6 +469,6 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             card.Position,
             labels,
             card.CreatedAt,
-            card.UpdatedAt, card.IsArchived);
+            card.UpdatedAt, card.IsArchived, card.WorkItemType.ToString());
     }
 }

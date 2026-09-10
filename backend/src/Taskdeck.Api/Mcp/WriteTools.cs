@@ -94,7 +94,9 @@ public class WriteTools
         [Description("Optional. Label IDs to apply to the card (comma-separated UUIDs).")]
         string? label_ids = null,
         [Description("Optional. Due date as YYYY-MM-DD or an ISO-8601 timestamp with an explicit offset.")]
-        string? due_date = null)
+        string? due_date = null,
+        [Description("Optional. Work item type: Task, Epic, or Spike. Defaults to Task.")]
+        string? work_item_type = null)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
@@ -133,6 +135,11 @@ public class WriteTools
             ["columnId"] = column.Id
         };
 
+        if (work_item_type is not null)
+        {
+            if (work_item_type is not ("Task" or "Epic" or "Spike")) return Error("work_item_type must be Task, Epic, or Spike");
+            parameters["workItemType"] = work_item_type;
+        }
         if (!string.IsNullOrWhiteSpace(description))
             parameters["description"] = description;
 
@@ -259,7 +266,11 @@ public class WriteTools
         [Description("Optional. New due date as YYYY-MM-DD or an ISO-8601 timestamp with an explicit offset.")]
         string? due_date = null,
         [Description("Optional. Set true to remove the current due date.")]
-        bool clear_due_date = false)
+        bool clear_due_date = false,
+        [Description("Optional. Work item type: Task, Epic, or Spike.")]
+        string? work_item_type = null,
+        [Description("Required for a type change. Current card updatedAt timestamp from a fresh read.")]
+        string? expected_updated_at = null)
     {
         var userId = await _userContext.GetCurrentUserIdAsync();
 
@@ -268,7 +279,7 @@ public class WriteTools
         if (!Guid.TryParse(card_id, out var cardGuid))
             return Error("Invalid card_id format");
 
-        if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date)
+        if (title == null && description == null && label_ids == null && due_date == null && !clear_due_date && work_item_type == null)
             return Error("At least one field (title, description, due_date, clear_due_date, or label_ids) must be provided");
 
         var parameters = new Dictionary<string, object?>
@@ -277,6 +288,21 @@ public class WriteTools
             ["cardId"] = cardGuid
         };
 
+        if (work_item_type is not null)
+        {
+            var access = await _authorizationService.CanWriteBoardAsync(userId, boardGuid);
+            if (!access.IsSuccess) return Error(access);
+            if (!access.Value) return Error("Not authorized to update cards on this board");
+            if (work_item_type is not ("Task" or "Epic" or "Spike")) return Error("work_item_type must be Task, Epic, or Spike");
+            if (!DateTimeOffset.TryParse(expected_updated_at, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var expected))
+                return Error("expected_updated_at is required for a type change");
+            var card = await _unitOfWork.Cards.GetByIdAsync(cardGuid);
+            if (card is null || card.BoardId != boardGuid) return Error("Card not found on board");
+            if (card.IsArchived || card.UpdatedAt != expected) return Error("Card is archived or changed. Refresh it before proposing a type change.");
+            parameters["workItemType"] = work_item_type;
+            parameters["expectedUpdatedAt"] = expected;
+        }
         if (title != null) parameters["title"] = title;
         if (description != null) parameters["description"] = description;
         if (label_ids != null)

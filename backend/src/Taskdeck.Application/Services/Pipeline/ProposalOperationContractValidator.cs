@@ -275,6 +275,9 @@ public static class ProposalOperationContractValidator
                 return Result.Failure(ErrorCodes.ValidationError, cardIdError);
             }
 
+            if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+                return Result.Failure(ErrorCodes.ValidationError, typeError);
+
             // Enforce the Card aggregate string limits before preview so an
             // over-length title/description cannot preview successfully and then
             // fail during Apply.
@@ -316,11 +319,11 @@ public static class ProposalOperationContractValidator
                 var labelsProvided = parameters.TryGetProperty("labels", out _);
                 var labelIdsProvided = parameters.TryGetProperty("labelIds", out _);
                 if (title == null && description == null && !dueDateProvided && !clearDueDate &&
-                    !labelsProvided && !labelIdsProvided)
+                    !labelsProvided && !labelIdsProvided && workItemType is null)
                 {
                     return Result.Failure(
                         ErrorCodes.ValidationError,
-                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
                 }
             }
         }
@@ -652,22 +655,26 @@ public static class ProposalOperationContractValidator
             if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out _)) return Result.Success();
             var action = operation.ActionType.ToLowerInvariant();
             var lifecycle = action is "archive-lifecycle" or "restore-lifecycle";
+            var typeChange = action == "update" && parameters.TryGetProperty("workItemType", out _);
+            var pinned = lifecycle || typeChange;
             // A lifecycle approval pins one exact card revision. Mixing another write to that
             // card would invalidate its timestamp during Apply; reject this at Preview too.
-            if (_lifecycleCards.Contains(cardId) || (lifecycle && _mutatedCards.Contains(cardId)))
-                return Result.Failure(ErrorCodes.ValidationError, "Archive or restore must be the only operation for that card in a proposal.");
+            if (_lifecycleCards.Contains(cardId) || (pinned && _mutatedCards.Contains(cardId)))
+                return Result.Failure(ErrorCodes.ValidationError, "Archive, restore, or work-item type change must be the only operation for that card in a proposal.");
             _mutatedCards.Add(cardId);
-            if (lifecycle) _lifecycleCards.Add(cardId);
+            if (pinned) _lifecycleCards.Add(cardId);
             var card = await ReadCardAsync(cardId, ct);
-            if (card is null) return lifecycle
-                ? Result.Failure(ErrorCodes.NotFound, "Archive and restore require an existing card") : Result.Success();
-            if (!lifecycle) return card.IsArchived
+            if (card is null) return pinned
+                ? Result.Failure(ErrorCodes.NotFound, "Archive, restore, and type changes require an existing card") : Result.Success();
+            if (!pinned) return card.IsArchived
                 ? Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing.") : Result.Success();
             if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
                 timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
                 return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
             if (card.UpdatedAt != expected)
                 return Result.Failure(ErrorCodes.Conflict, "Card changed since this proposal was prepared. Refresh and create a new proposal.");
+            if (typeChange) return card.IsArchived
+                ? Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing.") : Result.Success();
             var archive = action == "archive-lifecycle";
             if (card.IsArchived == archive)
                 return Result.Failure(ErrorCodes.InvalidOperation, archive ? "Card is already archived" : "Card is already active");

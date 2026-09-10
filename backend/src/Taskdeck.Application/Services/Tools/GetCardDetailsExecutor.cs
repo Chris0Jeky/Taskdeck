@@ -63,6 +63,7 @@ public sealed class GetCardDetailsExecutor : IToolExecutor
             id = BoardContextBuilder.FormatShortId(card.Id),
             title = card.Title,
             is_archived = card.IsArchived,
+            workItemType = card.WorkItemType.ToString(),
             description = card.Description ?? "",
             column = column?.Name ?? "Unknown",
             labels = cardLabels,
