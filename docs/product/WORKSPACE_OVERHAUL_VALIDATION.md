@@ -1,5 +1,11 @@
 # Workspace overhaul validation and follow-through
 
+## Grounded-question commit recovery (2026-09-10)
+
+The source/access fingerprint is checked again inside the serializable transaction that persists staged observations. Four real API races change evidence, archive/delete the source or revoke membership just after the final service read; all return conflicts and persist no candidates. A separate repository test rejects staged questions and then performs another save, proving rejected state cannot leak through the scoped context.
+
+Usage settlement precedes question staging. A failed commit produces a known no-save result without retrying usage; a failed release does not replace the provider's original cancellation. Seventeen application tests and sixteen API/reminder tests pass. The first application-test compile used the wrong mock argument type for the existing quota method; correcting the fixture to its integer signature resolved compilation. Full backend verification passes 9,240 tests with 34 existing skips: Domain 1,641, Application 4,275, API 3,046, CLI 243, Architecture 28 and Integration 7. Bounded independent review is CLEAN; documentation links/governance and diff checks pass. Hosted qualification remains separate. No frontend, migration or external-provider change is included.
+
 ## Expanded follow-through qualification (2026-09-10)
 
 The combined runtime at 6c6a344a4 includes optional reminders, playback binding, exact confirmation receipts, retained confirmation labels, both moved-card lane markers and the fragmented-upload repair. Full backend verification passed 9,232 tests with 34 existing skips: Domain 1,641, Application 4,273, API 3,040, CLI 243, Architecture 28 and Integration 7. Full frontend passed 6,418 tests with three existing skips across 415 files; production build and typecheck passed.
