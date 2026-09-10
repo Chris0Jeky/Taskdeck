@@ -51,6 +51,12 @@ The existing landed-tree verifier, platform-reduction and ownership/sharding pro
 
 ## Verification and retained failures
 
+The owner authorized an additional scoped correction after review reproduced a silent verifier
+bypass through linked entry paths. The corrected portability head `cdc6d8e9f` passes 510 control
+tests and seven export tests with an independent fix-only review. After integration with the API
+scheduling slice, the cumulative suite passes 512 tests. The regenerated standalone kit still passes
+306 overlapping tests; see [portability](PORTABILITY.md#validation) for the corrected source identity.
+
 Original development used a connector-backed source overlay and reported 357 new/placement regressions on Node 22.16.0/Linux/Git 2.47.3. The 2026-09-10 local continuation used a full Git worktree on Windows and configured Node 24.13.1: the cumulative control suite passed 511 tests, and the standalone immutable export separately passed 306. The scopes overlap. Hosted full required CI remains separate evidence; the complete API scheduling sample is recorded in [staging](STAGING.md#measurement-and-rollback).
 
 Review found two blocking trust defects, both repaired before publication of the reviewed heads: immutable Git object reads now disable lazy fetch and all transports, and the trusted export verifier imports only Node built-ins instead of executing export modules. Real promisor-repository and hostile-export fixtures prove those rejection paths. Six Windows fixture failures were corrected through CRLF normalization at the workflow reader, Git index symlink objects and directory junction fixtures; the initial 500/506 result is not counted as a passing run.
