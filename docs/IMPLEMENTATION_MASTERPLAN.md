@@ -1,6 +1,23 @@
 # Taskdeck Implementation Masterplan
 
-Last Updated: 2026-09-09
+Last Updated: 2026-09-10
+
+Source upload bounds (#2808): coalesce fragmented reads into fixed 64 KiB database chunks with one final tail, preserving quota/size/hash/rollback checks. Twenty-four focused API tests pass; exact hosted repair qualification remains on the integration PR.
+
+Original-source portability continuation (#2808): hold a store-owned read snapshot across the five source-storage export sections, with deferred SQLite transactions and scoped disposal before later export writes. Prove both account-export routes against a concurrent committed upload and written version. Whole-account point-in-time consistency and restore acceptance remain separate.
+
+Studio/Classic planning continuity (#2808): share existing Focus resume on Classic Home and use the existing calendar-day utilities for plan date controls and card deadlines. Browser acceptance includes a western timezone, Today filtering, both Classic renderers and unchanged board-card data. Failed-plan metadata and accepted-navigation focus timestamps remain separate follow-through.
+
+Board-object proposal overlay continuation (#2808): complete the contextual preview path with a shared board-owned marker provider and one read-only checked preview panel. Cards and columns in both renderers consume presentation markers; the saved board model is unchanged. Original/pinned revision identity and short server-relative freshness are checked before display, and Review retains all decisions. General before/after board simulation and provider quality acceptance are not implied by this projection.
+
+Indexed original-history continuation (#2808): use the existing unique capture/ordinal key for bounded ten-item source pages, starting at -1 so the first zero-based original remains available. The shared picker validates increasing ordinals and the returned continuation before extending selection. This replaces the prior deep-offset approach for current clients; legacy offsets remain bounded to 1,000. No schema migration, implicit retrieval, provider call or board mutation is introduced.
+
+Source reliability/scalability continuation (#2808): preserve the payload-too-large HTTP contract through streamed audio storage rollback and replace original-library per-entry capture reads with one bounded owner-scoped metadata projection. The existing API/card/question/confirmation contracts are retained.
+
+Private audio continuation (#2808): retain an original recording first, add manual written representations separately, then explicitly confirm into private memory. The vertical uses native source assets, bounded SQLite chunks, owner-scoped playback, idempotent upload retry, version conflicts and account portability/erasure. All four experiences share the question UI; automated transcription, real-device qualification and the wider source/attention work remain separate. This is a prototype delivery path with executable evidence, not a provider or release acceptance decision.
+
+Original-source Companion continuation (#2808): explicit per-asset source selection builds on native private-memory preservation. Bounded owner-scoped source queries, expected revisions and content hashes connect historical originals to chat receipts without implicit retrieval. All four experiences share the same picker and source contract. Execution evidence belongs to the continuation PR; hosted qualification and the wider overhaul remain separate.
+Comparison compatibility continuation (#2808): finish the retained-comparison LAN API and build-attribution follow-through with portable ID/hash paths and resolved Vite build options. Cross-platform checksum vectors, secure-API-unavailable store/browser checks and distinct default/Pages-base production bundles provide the proving paths. Physical-device LAN acceptance remains separate.
 <br>
 Planning Horizon: the revival waves in `docs/REVIVAL_PLAN.md` (truth + safety → transcript engine → open-beta launch → generalist expansion [Phase 4, ADR-0046 Accepted]) plus ADR-0051's bounded autonomous backlog lane, then a maintainer checkpoint on beta traction — _(historical: 2026-06-13→2026-07-10 this was the finite archive-pivot waves; before that an open "Next 8 to 12 weeks" release horizon)_
 Companion Active Docs:
@@ -2236,6 +2253,11 @@ PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal a
 
 PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
 
+Across-release comparison continuation (#2808): portable observation import/export, build attribution,
+predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
+sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
+selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.
+
 ## Contextual companion continuation (#2808, 2026-09-09)
 
 Card thinking and Focus now embed existing board-scoped conversations with explicit card, shared-thinking
@@ -2263,3 +2285,25 @@ Older-memory source admission (#2808) now has an explicit bounded Memory action.
 entries are selectable through their existing list filters; batches use expected revisions and one
 atomic save, and can be resumed after reload. This completes legacy text-original admission; audio,
 representation processing, direct source selection and broader source evaluation remain open.
+
+## Companion send continuity (#2808, 2026-09-09)
+
+Embedded card conversations pause sends while the thinking workspace has unsaved work, with an
+explanation that only saved thinking is read. In-app navigation waits for an outstanding send;
+the dialog explains that closing the browser does not cancel an accepted server request.
+A failed post-send conversation refresh keeps the successful response and offers a guarded GET-only
+receipt retry. Proposal preview freshness uses the server receipt interval minus elapsed request time,
+so client clock skew cannot extend its lifetime. These changes reduce repeated context entry and
+accidental duplicate sends while preserving explicit source choice and Review before board changes.
+Broader source representations, object overlays, attention and usefulness evaluation remain in #2808.
+
+September 10 #2808 original-library continuation: expose retained audio originals from Memory, including
+historical questions and owner-held deleted-board recordings; retain current permissions for existing
+boards and route only unchanged questions back to Thinking. Deliver with paging, selected-only history
+and binary reads, async identity disposal, byte-exact download and archive/deletion regression evidence.
+No automatic transcription, source erasure UI or restore-import acceptance is implied by this slice.
+
+September 10 #2808 source-interaction continuation closes recorded picker permission/name, token-refresh,
+retained-instruction control and long-history paging gaps. Use bounded real source histories, private
+async lifecycle tests and shared browser journeys; continue next with read-only affected-board-object
+proposal overlays and the remaining observation/attention, Studio and source scalability work.

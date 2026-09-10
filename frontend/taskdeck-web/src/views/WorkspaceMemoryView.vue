@@ -5,6 +5,7 @@ import PaperHLBtn from '../components/paper/PaperHLBtn.vue'
 import WorkspaceMemoryExport from '../components/workspace/WorkspaceMemoryExport.vue'
 import WorkspaceMemorySources from '../components/workspace/WorkspaceMemorySources.vue'
 import WorkspaceMemoryPreservation from '../components/workspace/WorkspaceMemoryPreservation.vue'
+import OriginalAudioLibrary from '../components/workspace/OriginalAudioLibrary.vue'
 import { TdSkeleton } from '../components/ui'
 import { useBoardStore } from '../store/boardStore'
 import TdDialog from '../components/ui/TdDialog.vue'
@@ -261,6 +262,8 @@ watch(queryBoardId, () => {
       </div>
       <div class="paper-memory__hero-mark" aria-hidden="true">▤</div>
     </header>
+
+    <OriginalAudioLibrary />
 
     <section class="paper-memory__panel paper-memory__controls" aria-label="Memory controls">
       <label class="paper-memory__field" for="memory-board-select">

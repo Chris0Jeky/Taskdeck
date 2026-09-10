@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { normalizeProposalStatus } from '../../utils/automation'
 import type { Proposal, ProposalAffectedEntity } from '../../types/automation'
 
 const props = withDefaults(defineProps<{
@@ -167,6 +168,13 @@ const fullCorrelationId = computed(() => props.proposal.correlationId?.trim() ??
             >
               Review Link
             </router-link>
+            <router-link
+              v-if="proposal.boardId && !props.readOnly && ['PendingReview', 'Approved'].includes(normalizeProposalStatus(proposal.status))"
+              class="td-review-card__links-dropdown-item"
+              role="menuitem"
+              :to="{ path: `/workspace/boards/${proposal.boardId}`, query: { proposalId: proposal.id } }"
+              @mousedown.prevent
+            >Preview on board</router-link>
             <button
               v-if="proposal.boardId && !props.readOnly"
               class="td-review-card__links-dropdown-item"

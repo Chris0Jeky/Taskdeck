@@ -36,6 +36,7 @@ public class DataExportService : IDataExportService
     /// the package also carries its <c>Captures</c> row and its immutable <c>SourceAsset</c>s.
     /// </summary>
     private readonly ICaptureStore? _captureStore;
+    private readonly ISourcePortabilityStore? _sourceStorage;
 
     /// <summary>Bounds one durable-capture lookup; kept under the 900-id batch cap the repositories share.</summary>
     private const int DurableCaptureChunkSize = 500;
@@ -48,7 +49,8 @@ public class DataExportService : IDataExportService
         ITranscriptRepository transcripts,
         IWorkspaceInsightRepository workspaceInsights,
         ILogger<DataExportService>? logger = null,
-        ICaptureStore? captureStore = null)
+        ICaptureStore? captureStore = null,
+        ISourcePortabilityStore? sourceStorage = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -58,6 +60,7 @@ public class DataExportService : IDataExportService
         _transcripts = transcripts;
         _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
+        _sourceStorage = sourceStorage;
     }
 
     /// <summary>
@@ -131,7 +134,8 @@ public class DataExportService : IDataExportService
                     asset.OriginalName,
                     asset.SupersedesAssetId,
                     asset.SupersededByAssetId,
-                    asset.TextPayload?.Text))
+                    asset.TextPayload?.Text,
+                    asset.BlobReferenceId))
                 .ToList());
     }
 
@@ -146,6 +150,8 @@ public class DataExportService : IDataExportService
 
         try
         {
+            if (_sourceStorage is not null && await _sourceStorage.EstimateBufferedBytesAsync(userId, cancellationToken) > 25L * 1024 * 1024)
+                return Result.Failure<UserDataExportDto>(ErrorCodes.PayloadTooLarge, "This export contains too much original source content to buffer; use the streaming export endpoint");
             var artefactBytes = await _artefacts.GetTotalByteSizeByUserAsync(userId, cancellationToken);
             var extractionBytes = await _extractions.GetEstimatedSerializedBytesByUserAsync(
                 userId,
@@ -402,7 +408,8 @@ public class DataExportService : IDataExportService
                 exportTranscripts,
                 exportMemories,
                 exportInsights,
-                nativeCaptures);
+                nativeCaptures,
+                await BufferSourceStorageAsync(userId, cancellationToken));
 
             var export = new UserDataExportDto(
                 ExportVersion,
@@ -417,6 +424,10 @@ public class DataExportService : IDataExportService
                 "User data export requested");
 
             return Result.Success(export);
+        }
+        catch (DomainException ex) when (ex.ErrorCode == ErrorCodes.PayloadTooLarge)
+        {
+            return Result.Failure<UserDataExportDto>(ex.ErrorCode, ex.Message);
         }
         catch (Exception ex)
         {
@@ -656,6 +667,18 @@ public class DataExportService : IDataExportService
                 await writer.FlushAsync(cancellationToken);
             }
             writer.WriteEndArray();
+            if (_sourceStorage is null) writer.WriteNull("sourceStorage");
+            else
+            {
+                writer.WriteStartObject("sourceStorage");
+                await using var sourceSnapshot = await _sourceStorage.OpenReadSnapshotAsync(cancellationToken);
+                await WriteSourceRowsAsync(writer, "objects", _sourceStorage.ObjectsAsync(userId, cancellationToken), cancellationToken);
+                await WriteSourceRowsAsync(writer, "references", _sourceStorage.ReferencesAsync(userId, cancellationToken), cancellationToken);
+                await WriteSourceRowsAsync(writer, "chunks", _sourceStorage.ChunksAsync(userId, cancellationToken), cancellationToken);
+                await WriteSourceRowsAsync(writer, "representations", _sourceStorage.RepresentationsAsync(userId, cancellationToken), cancellationToken);
+                await WriteSourceRowsAsync(writer, "audioAnswers", _sourceStorage.AudioAnswersAsync(userId, cancellationToken), cancellationToken);
+                writer.WriteEndObject();
+            }
             writer.WriteStartArray("workspaceMemories");
             await foreach (var memory in StreamWorkspaceMemoriesAsync(userId, cancellationToken))
             {
@@ -893,6 +916,8 @@ public class DataExportService : IDataExportService
             WriteNullableGuid(writer, "supersedesAssetId", asset.SupersedesAssetId);
             WriteNullableGuid(writer, "supersededByAssetId", asset.SupersededByAssetId);
             writer.WriteString("text", asset.TextPayload?.Text);
+            if (asset.BlobReferenceId.HasValue) writer.WriteString("blobReferenceId", asset.BlobReferenceId.Value);
+            else writer.WriteNull("blobReferenceId");
             writer.WriteEndObject();
         }
         writer.WriteEndArray();
@@ -1182,6 +1207,38 @@ public class DataExportService : IDataExportService
         memory.History.OrderBy(x => x.Revision).Select(x => new UserDataExportWorkspaceMemoryRevisionDto(
             x.Id, x.MemoryId, x.Title, x.Text, x.Status, x.Archived, x.Revision, x.CreatedAt, x.UpdatedAt, x.AnswerSourceAssetId)).ToList(),
         memory.SourceCaptureId, memory.AnswerSourceAssetId, memory.EvidenceSourceAssetId);
+
+    private async Task<SourceStorageExportDto?> BufferSourceStorageAsync(Guid userId, CancellationToken ct)
+    {
+        if (_sourceStorage is null) return null;
+        await using var sourceSnapshot = await _sourceStorage.OpenReadSnapshotAsync(ct);
+        long consumed = 0;
+        async Task<List<T>> Collect<T>(IAsyncEnumerable<T> rows)
+        {
+            var result = new List<T>();
+            await foreach (var row in rows.WithCancellation(ct))
+            {
+                consumed += JsonSerializer.SerializeToUtf8Bytes(row, PortabilityJsonOptions).LongLength * 2;
+                if (consumed > 25L * 1024 * 1024)
+                    throw new DomainException(ErrorCodes.PayloadTooLarge, "The original source export grew beyond its buffer limit; use the streaming export endpoint");
+                result.Add(row);
+            }
+            return result;
+        }
+        return new(await Collect(_sourceStorage.ObjectsAsync(userId, ct)), await Collect(_sourceStorage.ReferencesAsync(userId, ct)),
+            await Collect(_sourceStorage.ChunksAsync(userId, ct)), await Collect(_sourceStorage.RepresentationsAsync(userId, ct)),
+            await Collect(_sourceStorage.AudioAnswersAsync(userId, ct)));
+    }
+    private static async Task WriteSourceRowsAsync<T>(Utf8JsonWriter writer, string name, IAsyncEnumerable<T> rows, CancellationToken ct)
+    {
+        writer.WriteStartArray(name);
+        await foreach (var row in rows.WithCancellation(ct))
+        {
+            writer.WriteRawValue(JsonSerializer.SerializeToUtf8Bytes(row, PortabilityJsonOptions));
+            await writer.FlushAsync(ct);
+        }
+        writer.WriteEndArray();
+    }
 
     private async IAsyncEnumerable<UserDataExportNativeCaptureDto> StreamNativeCapturesAsync(
         Guid userId, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)

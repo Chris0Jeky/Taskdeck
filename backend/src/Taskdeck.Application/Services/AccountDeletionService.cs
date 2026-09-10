@@ -40,7 +40,8 @@ public class AccountDeletionService : IAccountDeletionService
         IWorkspaceInsightRepository workspaceInsights,
         IActiveUserCache? activeUserCache = null,
         ILogger<AccountDeletionService>? logger = null,
-        ICaptureStore? captureStore = null)
+        ICaptureStore? captureStore = null,
+        IBlobStore? blobStore = null)
     {
         _unitOfWork = unitOfWork;
         _historyService = historyService;
@@ -50,9 +51,11 @@ public class AccountDeletionService : IAccountDeletionService
         _transcripts = transcripts;
         _workspaceInsights = workspaceInsights;
         _captureStore = captureStore;
+        _blobStore = blobStore;
     }
 
     private readonly ICaptureStore? _captureStore;
+    private readonly IBlobStore? _blobStore;
 
     public async Task<Result<AccountDeletionResultDto>> DeleteAccountAsync(
         Guid userId,
@@ -132,6 +135,8 @@ public class AccountDeletionService : IAccountDeletionService
             var durableCapturesDeleted = _captureStore is null
                 ? 0
                 : await _captureStore.DeleteByUserAsync(userId, cancellationToken);
+            if (_blobStore is not null)
+                await _blobStore.DeleteOwnerAsync(userId, cancellationToken);
 
             // Artefact blobs are personal data. The repository performs set-based
             // deletion of blobs followed by metadata inside this account transaction.

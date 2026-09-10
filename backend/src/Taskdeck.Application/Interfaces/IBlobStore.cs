@@ -65,7 +65,9 @@ public sealed record BlobQuotaUsage(
 /// it behind this interface does not make it streaming storage — a large-audio implementation needs
 /// SQLite incremental BLOB I/O, bounded chunk rows, or a controlled spool-then-store step; the
 /// contract tests must include an input larger than the in-memory buffer.
-/// No implementation is registered yet — CF-23 wires <c>SqliteBlobStore</c>.
+/// <c>SqliteBlobStore</c> uses bounded chunk rows in the application database. Mutations require
+/// the caller's ambient SQLite transaction; rejected acquisitions roll back their own savepoint.
+/// Short streams are rejected rather than padded. Existing artefact bytes remain on their legacy path.
 /// </para>
 /// </summary>
 public interface IBlobStore
@@ -107,6 +109,9 @@ public interface IBlobStore
         Guid ownerUserId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Resolves a holder reference and opens only its owner's bytes.</summary>
+    Task<Stream?> OpenReferenceReadAsync(Guid referenceId, Guid ownerUserId, CancellationToken cancellationToken = default);
+
     Task<BlobObjectDescriptor?> FindByHashAsync(
         Guid ownerUserId,
         string contentHash,
@@ -115,4 +120,7 @@ public interface IBlobStore
     Task<BlobQuotaUsage> GetUsageAsync(
         Guid ownerUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Account erasure only: removes this owner's references and bytes in the caller's transaction.</summary>
+    Task<int> DeleteOwnerAsync(Guid ownerUserId, CancellationToken cancellationToken = default);
 }
