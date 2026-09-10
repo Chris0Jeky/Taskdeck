@@ -143,6 +143,46 @@ describe('Review retained health with real Vue reactivity (#2915)', () => {
     expect(review.queueRefreshStale.value).toBe(true)
   })
 
+  it.each(['stale', 'refused'] as const)('retires recovery when a retained %s warning reappears (#2921)', async (health) => {
+    const review = await prime(health, 'completed')
+    await widen()
+    expect(review.visibleProposals.value).toHaveLength(0)
+
+    mocks.getProposals.mockRejectedValue({ response: { status: 400 } })
+    review.startQueueRefresh()
+    await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS * REVIEW_QUEUE_CONSECUTIVE_FAILURE_THRESHOLD)
+    review.stopQueueRefresh()
+    expect(review.queueRefreshRefused.value).toBe(true)
+
+    // A successful list cannot replace the retained rows while the pin fails.
+    mocks.getProposal.mockRejectedValue({ response: { status: 500 } })
+    mocks.route.hash = '#proposal-not-in-list'
+    await nextTick()
+    await flushPromises()
+    mocks.getProposals.mockResolvedValue([])
+    review.startQueueRefresh()
+    await vi.advanceTimersByTimeAsync(REVIEW_QUEUE_REFRESH_MS)
+    review.stopQueueRefresh()
+
+    expect(review.visibleProposals.value).toHaveLength(0)
+    expect(review.queueRefreshRefused.value).toBe(false)
+    expect(review.queueRefreshRecovered.value).toBe(true)
+    expect(review.queueRefreshRecoveredKind.value).toBe('refused')
+    const reads = mocks.getProposals.mock.calls.length
+    const pinReads = mocks.getProposal.mock.calls.length
+
+    review.showCompleted.value = true
+    await nextTick()
+
+    expect(review.visibleProposals.value.map(p => p.id)).toEqual(['b-1'])
+    expect(review.queueRefreshStale.value).toBe(health === 'stale')
+    expect(review.queueRefreshRefused.value).toBe(health === 'refused')
+    expect(review.queueRefreshRecovered.value).toBe(false)
+    expect(review.queueRefreshRecoveredKind.value).toBe(null)
+    expect(mocks.getProposals).toHaveBeenCalledTimes(reads)
+    expect(mocks.getProposal).toHaveBeenCalledTimes(pinReads)
+  })
+
   it('keeps health for an empty same-scope queue and never restores it after a fresh landing', async () => {
     const review = await prime('stale', 'completed')
     expect(review.visibleProposals.value).toHaveLength(0)
