@@ -113,7 +113,7 @@ is recorded as an amendment to this ADR — a conclusion on `#2187` alone neithe
 ruling nor authorizes the stage-5 placement migration.
 
 **hierarchy-boundaries** — A: Parent/child hierarchy is same-board only, one optional parent, a hard
-depth cap of 3, a server-side cycle check, and type-agnostic — any admitted type may parent any
+depth cap of three parent-child links (four levels), a server-side cycle check, and type-agnostic containment: any admitted type may parent any
 admitted type, per the item-type independence rule above. Cross-project hierarchy is recorded as
 "no", vacuously while no Project entity exists, to be re-decided if stage 4 is ever ratified.
 Maintainer scope note: "same as previous" — this ruling is included in the same architecture review,
@@ -124,10 +124,17 @@ clears the child's parent pointer, and children keep their IDs, board, column, h
 exports. Maintainer scope note: "with ability to cascade through a prompt" — a cascade-archive of
 the subtree is permitted only as an explicit, user-confirmed action behind a prompt that names the
 affected count, never silent and never on delete. Because detach is a derived mutation of every
-child, proposal preview, apply, and audit must list the child pointer changes. Prerequisite: the
-shipped archive-card proposal operation applies as a silent no-op today (`#2185`), so a real
-card-archive state and handler must exist and be proven before child behavior is defined on top
-of it.
+child, proposal preview, apply, and audit must list the child pointer changes. Prerequisite:
+`#2920` supplies the true card archive/restore lifecycle before `#2087` defines child behavior.
+The legacy card `archive` proposal operation was repaired by `#2185`/PR `#2410` as Block and
+retains that meaning for persisted proposals; it is not the lifecycle operation.
+
+**Maintainer clarification (2026-09-10, in-session replies recorded on `#2087`):** "Add true
+archive and restore" and "Three links, four levels" settle these two meanings. The lifecycle
+uses distinct `archive-lifecycle` and `restore-lifecycle` proposal operations. Restoring a
+parent does not silently recreate child pointers detached by its archive; later hierarchy
+changes still require their own explicit action. This records the parent-lifecycle detach
+contract and does not claim hierarchy is implemented by `#2920`.
 
 **first-item-types** — A: The first item types are Task, Epic, and Spike; all existing cards default
 to Task; Bug, Decision, and Ongoing are deferred, and ongoing remains lifecycle rather than a type.
@@ -194,6 +201,6 @@ sufficient for the expected scale and preserve the modular monolith.
   ladder and that gating.
 - The multi-board-identity and hierarchy-boundaries rulings hold as recorded until the architecture
   review seeded as `#2187` produces an amendment to this ADR; the review alone changes nothing.
-- Parent archive and delete behavior depends on a real card-archive operation, so `#2185` is a
+- Parent archive and delete behavior depends on a real card-archive operation, so `#2920` is a
   prerequisite for the `#2087` slice that defines child behavior.
 
