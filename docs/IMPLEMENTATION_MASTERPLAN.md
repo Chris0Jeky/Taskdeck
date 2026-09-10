@@ -2290,3 +2290,8 @@ historical questions and owner-held deleted-board recordings; retain current per
 boards and route only unchanged questions back to Thinking. Deliver with paging, selected-only history
 and binary reads, async identity disposal, byte-exact download and archive/deletion regression evidence.
 No automatic transcription, source erasure UI or restore-import acceptance is implied by this slice.
+
+September 10 #2808 source-interaction continuation closes recorded picker permission/name, token-refresh,
+retained-instruction control and long-history paging gaps. Use bounded real source histories, private
+async lifecycle tests and shared browser journeys; continue next with read-only affected-board-object
+proposal overlays and the remaining observation/attention, Studio and source scalability work.

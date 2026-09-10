@@ -1489,3 +1489,9 @@ read-only evidence/history and original playback/download for earlier audio ques
 access is required even when the board is archived; deleted-board originals remain owner-linked.
 Changed questions cannot be confirmed from the library. API8, targeted frontend26 and typecheck passed;
 full suites and corrected browser proof are recorded separately in the continuation PR.
+
+September 10 source-interaction follow-through (#2808): named original pickers and permission errors,
+same-user token-refresh continuity, shared retained-instruction disabled states, and bounded original
+history pages beyond 1000 address the recorded usability findings. Targeted frontend 33/API 27 and two
+Chromium journeys pass; full-suite and hosted outcomes belong to the continuation PR. Board mutation
+and model dispatch authority are unchanged.

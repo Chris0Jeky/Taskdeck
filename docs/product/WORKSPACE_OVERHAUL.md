@@ -252,3 +252,13 @@ defaults are `MaximumUploadBytes=67108864`, `OwnerQuotaBytes=268435456`, `Modali
 An unknown duplicate can be refused at quota before its hash is known; an accepted upload's retry
 does not reacquire quota. Existing artefact storage is unchanged. New manual representation headers
 cover this audio path; legacy representation backfill and automated processing remain unclaimed.
+
+### Source interaction recovery
+
+Original-source pickers name the memory they belong to and distinguish revoked access from a transient
+read failure. A permission failure removes displayed original choices and their selection. Source
+selection and older-memory preservation survive a same-person token refresh; logout, account changes,
+board changes and source revisions still clear stale private state. Retained-instruction continuation
+uses the same disabled state as the composer while shared thinking is unsaved or a receipt is loading.
+Original text history continues beyond offset 1000 in bounded pages of ten; every emitted continuation
+is accepted, and a large empty offset cannot overflow the next-page calculation.

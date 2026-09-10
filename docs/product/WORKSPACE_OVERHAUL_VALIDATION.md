@@ -304,3 +304,16 @@ land. Only append-only planning/status/validation text conflicted; runtime files
 The backend tree is byte-identical to the original-library branch, whose full solution command is the
 backend proof; the combined frontend/build and four browser journeys are run in the integration tree.
 This is an implementation checkpoint for #2808, not completion of the entire prototype expansion.
+
+## Source interaction follow-through (2026-09-10)
+
+The recorded permission/accessibility/session-refresh/retained-control findings are addressed without
+changing chat dispatch or board-write authority. ChatOriginalContextApiTests now seeds 1,012 immutable
+source versions and follows 1000 -> 1010 -> end through real HTTP/SQLite reads; pages remain ten entries
+with 1,500-character excerpts. ChatOriginalSourcePicker, ChatContextPicker, ChatMessageList and
+WorkspaceMemoryPreservation component tests exercise permissions, distinct names, same-owner refresh,
+logout and blocked continuation. The updated original-source-context browser journey creates two
+memories, selects one by its accessible name, checks 403 explanation/recovery, replays exact receipts
+across all four experiences and checks 375 px accessibility. Companion continuity is rerun alongside it.
+Exact results are recorded with the continuation PR; live providers and physical-device acceptance are
+not inferred from this deterministic scope.
