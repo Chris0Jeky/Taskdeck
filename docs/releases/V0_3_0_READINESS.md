@@ -29,7 +29,7 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Per-clause proven
 | # | Gate clause | State | What it waits on |
 |---|---|---|---|
 | 1 | RC checks green on the exact head | Not yet applicable | Measured at the final tag head, not before |
-| 2 | Milestone closed or explicitly re-ruled | **Not met.** **32 open**, re-measured 2026-09-10 against `main` `a1f797913`, down from the 44 recorded on 2026-09-05. Today's split is 17 `ci` / 5 `dogfooding` / 10 other; section 5 lists all three. **Ruled 2026-09-03: nothing else is re-ruled out; the one exception is `#1972`, moved to v0.5 with CF-21.** The per-issue movement between the two measurements is not reconstructed here; the 2026-09-05 history it replaced is in this file's git history | Every open issue closing on evidence, sections 2 to 5 below |
+| 2 | Milestone closed or explicitly re-ruled | **Not met.** **32 open**, re-measured 2026-09-10 against `main` `a1f797913`, down from the 44 recorded on 2026-09-05. Today's split is 17 `ci` / 5 `dogfooding` / 10 other; section 5 lists all three. **Ruled 2026-09-03: nothing else is re-ruled out.** Two issues have since been re-ruled out of the v0.3 count: `#1972` to v0.5 with CF-21 (the 2026-09-03 exception) and `#2240` to v0.4 with `#2093` on the 2026-09-06 walkthrough (q-6 B, `decision` label discharged). A third ruling, D-8 on 2026-09-06, left `#2315` **in** the milestone but out of the blocker set. The per-issue movement between the two measurements is not reconstructed here; the 2026-09-05 history it replaced is in this file's git history | Every open issue closing on evidence, sections 2 to 5 below |
 | 3 | Launch kit drafted (`#2242`) | **Met.** `#2242` closed | Nothing |
 | 4 | `main` green | **Green at the tip `a1f797913`** (`CI` run `34494959248`, completed 2026-09-10T15:55:39Z, 17 jobs success and 1 skipped). Re-measured 2026-09-10; this is a tip reading, not a claim that every intermediate head was green. Three of the eight most recent `main` runs were `cancelled` by the workflow's own concurrency group as the next merge landed (`46ac59930`, `43f918050`, `63e639cb2`), so a green tip run still only exists when the merge queue drains. `#2582` (closed 2026-09-06) does **not** remove that: it guarantees the in-progress `main` run completes and that the tip runs, not a run per landed commit, so *pending* intermediate runs are still superseded during a wave. These three are that surviving mode, not a regression of the fix | `#2378`, and section 2 |
 | 5 | CI-13 `#2337` cutover by the maintainer, private repository with `Smart CI / Required Gate` enforced | **Not met.** Branch protection re-read live 2026-09-10: `main` still requires exactly the three security contexts (`Dependency Security / Dependency Security Signals`, `SAST Scan / SAST Scan (Semgrep)`, `Secret Scan / Gitleaks Scan`), with `strict: false`, `enforce_admins: false` and `required_approving_review_count: 0`. Unchanged since 2026-09-05 | Section 3, and the section 2 chain below it |
@@ -210,7 +210,9 @@ against `main` `a1f797913`, replacing the 2026-09-05 count of 44:
   2026-09-06, `#2582` closed 2026-09-06, `#2250` closed 2026-09-07 and `#2691` closed 2026-09-07.
 - **10 carry neither**: `#2499`, `#2391`, `#2315`, `#2235`, `#2215`, `#2214`, `#1772`, `#1309`,
   `#1307`, `#1131`. `#1772` is the human gate in section 3; `#2235` is the spring-cleaning tracker;
-  the rest are review residuals and revival slices with no gate clause behind them.
+  `#2315` is counted here but was ruled out of the blocker set on 2026-09-06 (D-8), so it holds
+  clause 2 open without being a blocker; the rest are review residuals and revival slices with no
+  gate clause behind them.
 
 **Priority I across the whole milestone (9):** `#2378`, `#2337`, `#2334`, `#2327`, `#2326`, `#2324`,
 `#2004`, `#1949`, `#1940`. **Carrying `human-action` (3):** `#2337`, `#2328`, `#1772`, all in section 3.
