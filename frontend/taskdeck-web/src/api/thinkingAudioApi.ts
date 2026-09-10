@@ -33,8 +33,8 @@ export const thinkingAudioApi = {
       headers: { 'Content-Type': file.type }, skipRetry: true, timeout: 60000,
     })).data
   },
-  async write(id: string, expectedRevision: number, text: string): Promise<ThinkingAudio> {
-    return (await http.put<ThinkingAudio>(`/thinking-audio/${id}/written-version`, { expectedRevision, text }, { skipRetry: true, timeout: 30000 })).data
+  async write(id: string, expectedRevision: number, text: string, sourceRepresentationId?: string): Promise<ThinkingAudio> {
+    return (await http.put<ThinkingAudio>(`/thinking-audio/${id}/written-version`, { expectedRevision, text, ...(sourceRepresentationId ? { sourceRepresentationId } : {}) }, { skipRetry: true, timeout: 30000 })).data
   },
   async confirm(id: string, expectedRevision: number, expectedDeckRevision: number, representationId: string, status: MemoryStatus): Promise<ThinkingAudio> {
     return (await http.post<ThinkingAudio>(`/thinking-audio/${id}/confirm`, { expectedRevision, expectedDeckRevision, representationId, status }, { skipRetry: true, timeout: 30000 })).data
