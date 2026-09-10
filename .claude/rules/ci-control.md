@@ -19,8 +19,10 @@ no `CLAUDE.md` covers by directory, so these rules load by path.
   A batch is delegated only by an explicit ruling naming its PRs, as on 2026-09-06 (twelve named PRs)
   and 2026-09-09 (four named PRs); neither generalises. Open the PR ready-for-review, record it on
   `OUTSTANDING_TASKS.md` §J.2, and read §J.3 first: whether this rule should stay as written is an open
-  question there, raised because it has now been merged past three times (`#2772` and `#2787` on
-  2026-09-08, the CI-continuation train on 2026-09-10). Until §J.3 (b) is answered the rule stands.
+  question there. It is open because the rule keeps not holding - three disclosures still awaiting a
+  reply (`#2772` and `#2787` on 2026-09-08, the CI-continuation train on 2026-09-10), on top of five
+  earlier post-hoc merges (`#2479`, `#2529`, `#2548`, `#2549`, `#2556`) that the maintainer
+  acknowledged without revert on 2026-09-06 (q-2 = A). Until §J.3 (b) is answered the rule stands.
   If you write "do not auto-merge" in your own PR body, that is a promise to the next reader; do not
   merge past it without a ruling that names the PR.
 - **`ci-required.yml` is the required merge gate.** CI Extended is an optional, non-blocking lane
