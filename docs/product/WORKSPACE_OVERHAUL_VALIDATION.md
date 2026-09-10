@@ -12,6 +12,8 @@ Full frontend qualification passes 6,425 tests with three existing skips across 
 
 Final backend correction passes all 28 architecture tests (one existing skip) plus 22 transcription/audio/transport API cases. Confirmation warnings now retain truthful transcription provenance and point to the reviewed-parent lineage instead of claiming no automated transcription occurred. No behavior change to consent, provider dispatch or frontend follows its full run. Hosted qualification and physical/live-provider usefulness remain separate.
 
+The separately configured disabled-provider Chromium run also passes (one journey, 23.4 seconds including startup), proving default-off options across all four experiences without a speech fixture or external request. This is additional to the three configured-provider/audio/library journeys above.
+
 ## Expanded follow-through qualification (2026-09-10)
 
 The combined runtime at 6c6a344a4 includes optional reminders, playback binding, exact confirmation receipts, retained confirmation labels, both moved-card lane markers and the fragmented-upload repair. Full backend verification passed 9,232 tests with 34 existing skips: Domain 1,641, Application 4,273, API 3,040, CLI 243, Architecture 28 and Integration 7. Full frontend passed 6,418 tests with three existing skips across 415 files; production build and typecheck passed.
