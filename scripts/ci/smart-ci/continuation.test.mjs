@@ -8,3 +8,4 @@ import './continuation/tests/adapter.test.mjs';
 import './continuation/tests/repository.test.mjs';
 import './continuation/tests/workflow.test.mjs';
 import './continuation/tests/launcher-inputs.test.mjs';
+import './continuation/tests/github.test.mjs';
