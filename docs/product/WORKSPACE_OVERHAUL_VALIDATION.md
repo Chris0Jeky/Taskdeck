@@ -1,5 +1,15 @@
 # Workspace overhaul validation and follow-through
 
+## Expanded follow-through qualification (2026-09-10)
+
+The combined runtime at 6c6a344a4 includes optional reminders, playback binding, exact confirmation receipts, retained confirmation labels, both moved-card lane markers and the fragmented-upload repair. Full backend verification passed 9,232 tests with 34 existing skips: Domain 1,641, Application 4,273, API 3,040, CLI 243, Architecture 28 and Integration 7. Full frontend passed 6,418 tests with three existing skips across 415 files; production build and typecheck passed.
+
+Ten combined Chromium journeys passed in 2.1 minutes, covering reminders, both board renderers, audio/library recovery, original source conflicts, grounded questions, companion continuity and both personal-plan flows. The separate comparison compatibility journey passed in 21.4 seconds. Both additive migrations were applied together to an isolated empty SQLite database, and EF reports no pending model changes. The latest attention migration's target model retains the earlier confirmation receipt. A bounded combined interaction review found no HIGH/CRITICAL defect.
+
+The final filename-only recovery patch normalizes the raw validated name for both storage and retry comparison, rejecting whitespace-only names before storage. Eleven audio API tests and a bounded independent review pass at 66b082a8d; the merged product tree is identical to that tested input. It follows the combined full-suite pass without altering frontend or migration inputs. The retained-library hard-delete label is proved by the real SQLite API and component tests; the browser archive journey is not misreported as physical deletion.
+
+All local services are stopped and all databases are synthetic. Exact-head hosted CI and the moving main base remain delivery gates. Automated transcription, general representation backfill/recall, complete restoration, real-provider/device usefulness and OUTSTANDING_TASKS.md owner decisions remain open.
+
 ## Audio playback receipt binding (2026-09-10)
 
 Playback responses are bound to the original recording ID and both source/request generations. Changing the source invalidates the request and revokes its object URL; late success, failure and cleanup cannot overwrite a newer request. Playback is unavailable until the current receipt has loaded successfully.
