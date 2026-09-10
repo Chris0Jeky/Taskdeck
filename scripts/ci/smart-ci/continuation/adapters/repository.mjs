@@ -37,7 +37,7 @@ export function readJsonBlob(repo, commit, path, maxBytes = 1024 * 1024) {
   const state = snapshot(repo, commit), entry = state.entries.find(e => e.path === path);
   invariant(entry && ['100644', '100755'].includes(entry.mode), 'configuration must be a regular tracked blob');
   const bytes = execFileSync('git', ['--no-replace-objects', '-C', repo, 'cat-file', 'blob', entry.oid],
-    { timeout: 30000, maxBuffer: maxBytes, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' } });
+    { timeout: 30000, maxBuffer: maxBytes, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' } });
   const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
   return { value: JSON.parse(text), text, oid: entry.oid, commit, path };
 }

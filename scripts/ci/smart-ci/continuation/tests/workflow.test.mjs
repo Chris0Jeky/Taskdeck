@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { stageWorkflow } from '../tools/stage-taskdeck.mjs';
 
-const workflow = () => readFileSync(new URL('../../../../../.github/workflows/ci-required.yml', import.meta.url), 'utf8');
+const workflow = () => readFileSync(new URL('../../../../../.github/workflows/ci-required.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
 function block(text, id) {
   const start = text.indexOf(`\n  ${id}:\n`); assert.ok(start >= 0, `missing ${id}`);
   return text.slice(start + 1).split(/\n  [a-z][a-z0-9-]*:\n/)[0];
