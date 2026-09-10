@@ -2278,3 +2278,9 @@ receipt retry. Proposal preview freshness uses the server receipt interval minus
 so client clock skew cannot extend its lifetime. These changes reduce repeated context entry and
 accidental duplicate sends while preserving explicit source choice and Review before board changes.
 Broader source representations, object overlays, attention and usefulness evaluation remain in #2808.
+
+September 10 #2808 original-library continuation: expose retained audio originals from Memory, including
+historical questions and owner-held deleted-board recordings; retain current permissions for existing
+boards and route only unchanged questions back to Thinking. Deliver with paging, selected-only history
+and binary reads, async identity disposal, byte-exact download and archive/deletion regression evidence.
+No automatic transcription, source erasure UI or restore-import acceptance is implied by this slice.

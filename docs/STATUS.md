@@ -1477,3 +1477,9 @@ Companion continuity (#2808): unsaved thinking blocks embedded sends until saved
 in-app navigation with honest cancellation wording. Failed post-send receipt reads can be retried
 without resending. Preview expiry uses server-relative receipt timestamps and elapsed request time.
 These frontend safeguards preserve successful responses and the existing review-first mutation path.
+
+September 10 original-library continuation (#2808): Memory now offers explicit owner-private discovery,
+read-only evidence/history and original playback/download for earlier audio questions. Existing-board
+access is required even when the board is archived; deleted-board originals remain owner-linked.
+Changed questions cannot be confirmed from the library. API8, targeted frontend26 and typecheck passed;
+full suites and corrected browser proof are recorded separately in the continuation PR.

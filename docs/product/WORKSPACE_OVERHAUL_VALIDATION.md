@@ -239,3 +239,22 @@ Hosted qualification remains on the continuation PR.
 Actual microphone capture, mobile hardware/browser playback, external transcription quality, provider
 consent and archival restore have not been verified by these tests. All data was synthetic; no working
 database migration, external processing, telemetry or release acceptance is claimed.
+
+## Retained original library (2026-09-10)
+
+Memory offers explicit owner-only browsing of audio originals without requiring a currently selected
+board. Pages return at most 20 entries; written representation history and binary content load only
+on selection. Changed or removed questions cannot be reactivated from the library. Existing-board
+read permission is rechecked for every list/detail/download; archived-board originals are readable,
+and deleted-board originals remain owner-linked and readable. Current-question writes retain their
+active-board/revision guards. No schema migration or background backfill is introduced.
+
+Proving seams: ThinkingAudioApiTests covers changed/removed questions, archive and hard-delete
+retention, original byte identity, anonymous/foreign/revoked requests and bounded continuation.
+OriginalAudioLibrary.spec.ts covers explicit loading, empty filtered pages, errors/retry, written
+alternatives, private async disposal and same-user refresh. The original-audio-library.spec.ts journey
+uses a real synthetic WAV, removes its question, downloads exact bytes, invokes public board deletion
+(which archives), and reloads the library across all four experiences at 375 px with an axe check.
+Hard-delete retention is exercised in SQLite API tests, not falsely attributed to the public Delete
+button. Unsaved local audio survives the saved-recording reload action only while the page is open;
+a browser refresh is not durable draft storage. Exact suite and hosted results are recorded in the PR.

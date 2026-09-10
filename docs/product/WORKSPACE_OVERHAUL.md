@@ -210,10 +210,29 @@ The server rejects stale recording revisions and confirmation against changed qu
 50 written/confirmation representations are retained for one recording. Confirmed answer corrections
 belong to Memory, with its existing immutable source history.
 
-Original playback/download requires recording ownership and current access to an active board.
+Question-flow playback/download requires recording ownership and current access to an active board.
 Collaborators cannot read another person's recordings, even with board ownership. Missing, foreign and
 revoked private sources return 404; anonymous requests return 401. Deleted-board recordings remain in
 the owner's account export. Shared board exports exclude private audio and written answers.
+
+### Retained original library
+
+Memory includes an explicit **Browse original recordings** action, independent of the selected board.
+The owner can page through retained recordings, inspect the exact original question and written-version
+history, and replay/download the original bytes. Pages read at most 21 owner rows to return up to 20
+entries and a continuation; full written history loads only for the selected recording. Existing-board
+access is rechecked for listing, details and download. Revoked recordings are hidden, including their
+question excerpts; an empty filtered page can still offer the next page. Account changes/logout clear
+loaded private content and playback URLs; refreshing a token for the same person preserves the request.
+
+This library explicitly extends archive access: owner-linked originals on archived boards remain
+readable with current board permission, and originals whose board was deleted remain readable under
+their owner identity. Deleted-board retention already existed in account export. Library reads do not
+restore a board, reactivate a question or authorize a write. Changed/removed questions and archived or
+deleted boards show a read-only retained copy; only an unchanged current question links back to Thinking
+for writing or confirmation. Account deletion remains the erasure boundary for these retained originals.
+An unsaved local file is held only while the current page stays open: **Reload saved recording** keeps
+that draft, but a browser refresh or closing the page loses an unuploaded file.
 
 Both account export formats add `data.sourceStorage`: objects, references, ordered base64 chunks,
 representation headers/supersession links and audio-answer links. Transcript text remains in
