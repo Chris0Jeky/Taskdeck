@@ -330,3 +330,9 @@ memories, selects one by its accessible name, checks 403 explanation/recovery, r
 across all four experiences and checks 375 px accessibility. Companion continuity is rerun alongside it.
 Exact results are recorded with the continuation PR; live providers and physical-device acceptance are
 not inferred from this deterministic scope.
+
+## Calendar-day planning and Classic resume (2026-09-10)
+
+The workspace-plan Chromium journey now runs in America/Los_Angeles with an en-US locale. It asserts a midnight-UTC October20 card deadline remains October20, the Today filter selects the browser-local calendar date, and saved thinking resumes through Classic Home in both Grove and Legacy. The existing List/Board/Horizon, Focus, Make Room, four-experience,375px/no-overflow and accessibility checks remain, including unchanged card data. The final journey passed in17.6seconds. Home/date/store targeted tests passed25cases; full frontend, typecheck/build and scopedESLint results accompany the continuation PR.
+
+An initial typecheck caught a remaining Today reference to the removed local helper; it was replaced with the shared utility. The new Today browser assertion initially matched both navigation and plan controls; its final locator is scoped to the personal plan. Failed evidence is retained, and behavior assertions remain strict. This does not change card deadlines or the server Focus contract, and does not claim physical-device acceptance.
