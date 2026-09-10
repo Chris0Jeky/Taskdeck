@@ -14,6 +14,8 @@ Final backend correction passes all 28 architecture tests (one existing skip) pl
 
 The separately configured disabled-provider Chromium run also passes (one journey, 23.4 seconds including startup), proving default-off options across all four experiences without a speech fixture or external request. This is additional to the three configured-provider/audio/library journeys above.
 
+The frontend review found a HIGH consent defect: refreshing options after a provider configuration change preserved a checked checkbox. The final fix binds consent to the displayed configuration hash and clears it on any change, including A→B→A. The regression proves dispatch remains blocked until fresh consent and an unchanged configuration can retain deliberate consent. All 34 affected components, typecheck and scoped ESLint pass after the fix; the bounded independent fix review confirms resolution with no remaining HIGH/CRITICAL. This later change supersedes the earlier statement that frontend consent was unchanged after the full run.
+
 ## Expanded follow-through qualification (2026-09-10)
 
 The combined runtime at 6c6a344a4 includes optional reminders, playback binding, exact confirmation receipts, retained confirmation labels, both moved-card lane markers and the fragmented-upload repair. Full backend verification passed 9,232 tests with 34 existing skips: Domain 1,641, Application 4,273, API 3,040, CLI 243, Architecture 28 and Integration 7. Full frontend passed 6,418 tests with three existing skips across 415 files; production build and typecheck passed.

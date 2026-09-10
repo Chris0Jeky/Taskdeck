@@ -3,7 +3,9 @@
 This #2808 continuation adds an optional speech request to the same private originals used by
 Thinking Decks and the original-recording library. Uploading an original never queues or sends it.
 The owner opens transcription options, sees the configured destination/model and daily allowance,
-and explicitly consents to one request. Existing written answers and board cards stay unchanged.
+and explicitly consents to one request. Consent belongs to that configuration hash; refreshing to
+a different configuration clears it, even if the previous configuration is restored later.
+Existing written answers and board cards stay unchanged.
 
 ## Review and recovery
 
