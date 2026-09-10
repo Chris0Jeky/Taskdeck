@@ -6,6 +6,8 @@ import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
 import { useVisualViewport } from '../../composables/useVisualViewport'
 import TdDialog from '../ui/TdDialog.vue'
+import CardArchiveAction from './CardArchiveAction.vue'
+import { useBoardStore } from '../../store/boardStore'
 import {
   CardModalHeader,
   CardModalForm,
@@ -37,6 +39,11 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const router = useRouter()
+const boardStore = useBoardStore()
+async function refreshArchiveState() {
+  emit('close')
+  await boardStore.fetchBoard(props.card.boardId)
+}
 const pendingThinkingPath = ref<string | null>(null)
 
 const dialogRef = ref<HTMLElement | null>(null)
@@ -300,9 +307,11 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
+        <CardArchiveAction :key="card.updatedAt" :card="card" :disabled="hasUnsavedChanges"
+          @changed="emit('updated'); emit('close')" @refresh="refreshArchiveState" />
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
-        <div class="space-y-4">
+        <fieldset :disabled="card.isArchived" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
@@ -346,10 +355,10 @@ useEscapeToClose(
             :capture-href-fn="captureHref"
             :proposal-href-fn="proposalHref"
           />
-        </div>
+        </fieldset>
 
       <CardModalActions
-          :is-form-valid="isFormValid"
+          :is-form-valid="isFormValid && !card.isArchived"
           :card="card"
           @save="handleSave"
           @close="handleClose"

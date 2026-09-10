@@ -367,10 +367,10 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
 
     [Theory]
     [InlineData("read", "get_board_summary,get_proposal_status,list_proposals,search_cards", true)]
-    [InlineData("propose", "archive_card,create_card,create_column,move_card,update_card", false)]
+    [InlineData("propose", "archive_card,archive_card_lifecycle,create_card,create_column,move_card,restore_archived_card,update_card", false)]
     [InlineData("manage", "create_capture,dismiss_proposal", false)]
     [InlineData("read,manage", "create_capture,dismiss_proposal,get_board_summary,get_proposal_status,list_proposals,search_cards", true)]
-    [InlineData("read,propose,manage", "archive_card,create_capture,create_card,create_column,dismiss_proposal,get_board_summary,get_proposal_status,list_proposals,move_card,search_cards,update_card", true)]
+    [InlineData("read,propose,manage", "archive_card,archive_card_lifecycle,create_capture,create_card,create_column,dismiss_proposal,get_board_summary,get_proposal_status,list_proposals,move_card,restore_archived_card,search_cards,update_card", true)]
     public async Task McpEndpoint_Discovery_ReturnsOnlyIndependentlyGrantedCapabilities(
         string scopeCsv,
         string expectedToolCsv,
@@ -461,6 +461,14 @@ public class McpHttpTransportApiKeyTests : IClassFixture<TestWebApplicationFacto
 
         var knownToolFailure = GetMcpOutcomePayload(deniedKnownTool);
         knownToolFailure.Should().Contain("Access denied for this MCP operation.");
+        var lifecycleRequestId = 15;
+        foreach (var toolName in new[] { "archive_card_lifecycle", "restore_archived_card" })
+        {
+            using var deniedLifecycle = await CallToolAsync(readClient, readSession, lifecycleRequestId++, toolName,
+                new { board_id = Guid.NewGuid().ToString(), card_id = Guid.NewGuid().ToString(), expected_updated_at = "invalid" });
+            GetMcpOutcomePayload(deniedLifecycle).Should().Contain("Access denied for this MCP operation.",
+                "lifecycle tools require Propose before input validation or board lookup");
+        }
         NormalizeRequestedTarget(GetMcpOutcomePayload(deniedUnknownTool), "not_a_taskdeck_tool")
             .Should().Be(NormalizeRequestedTarget(knownToolFailure, "create_capture"),
             "scope denial must not reveal whether a tool name exists");

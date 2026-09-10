@@ -86,9 +86,27 @@ public class OperationHandlerRegistry
             case "archive":
                 return await ArchiveCardAsync(parameters, cancellationToken);
 
+            case "archive-lifecycle":
+            case "restore-lifecycle":
+                return await SetCardArchivedAsync(parameters, actionType == "archive-lifecycle", cancellationToken);
+
             default:
                 return Result.Failure(ErrorCodes.ValidationError, $"Unsupported card action: {actionType}");
         }
+    }
+
+    private async Task<Result> SetCardArchivedAsync(JsonElement parameters, bool archive, CancellationToken cancellationToken)
+    {
+        if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out var error))
+            return Result.Failure(ErrorCodes.ValidationError, error);
+        if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+            timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+            return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+        var card = await _unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken);
+        if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
+        var result = await _cardService.SetArchivedAsync(card.BoardId, cardId, archive,
+            new CardLifecycleDto(expected), cancellationToken: cancellationToken);
+        return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 
     private async Task<Result> CreateCardAsync(

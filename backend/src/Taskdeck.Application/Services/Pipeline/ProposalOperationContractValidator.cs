@@ -78,6 +78,9 @@ public static class ProposalOperationContractValidator
             if (!fieldResult.IsSuccess)
                 return fieldResult;
 
+            var cardStateResult = await validationContext.ValidateCardArchiveStateAsync(operation, parameters, cancellationToken);
+            if (!cardStateResult.IsSuccess) return cardStateResult;
+
             var archiveStateResult = validationContext.ValidateOperationAfterPlannedBoardArchive(operation, parameters);
             if (!archiveStateResult.IsSuccess)
                 return archiveStateResult;
@@ -359,7 +362,7 @@ public static class ProposalOperationContractValidator
         if (normalizedAction is "create" or "update")
             return Result.Success();
 
-        if (normalizedAction is "move" or "archive")
+        if (normalizedAction is "move" or "archive" or "archive-lifecycle" or "restore-lifecycle")
         {
             if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
                 return Result.Failure(ErrorCodes.ValidationError, cardIdError);
@@ -619,6 +622,17 @@ public static class ProposalOperationContractValidator
     private sealed class BoardValidationContext(IUnitOfWork unitOfWork, Guid? boardId)
     {
         private readonly Dictionary<Guid, Guid?> _cardBoardIds = [];
+        private readonly Dictionary<Guid, Taskdeck.Domain.Entities.Card?> _cards = [];
+
+        private async Task<Taskdeck.Domain.Entities.Card?> ReadCardAsync(Guid cardId, CancellationToken ct)
+        {
+            if (!_cards.TryGetValue(cardId, out var card))
+            {
+                card = await unitOfWork.Cards.GetByIdAsync(cardId, ct);
+                _cards[cardId] = card;
+            }
+            return card;
+        }
         private readonly Dictionary<Guid, Guid?> _columnBoardIds = [];
         private readonly HashSet<Guid> _plannedCardIds = [];
         private readonly HashSet<int> _plannedColumnPositions = [];
@@ -628,6 +642,45 @@ public static class ProposalOperationContractValidator
 
         public Guid? BoardId { get; } = boardId;
         private bool _isBoardArchivedInProposal;
+        private readonly HashSet<Guid> _mutatedCards = [];
+        private readonly HashSet<Guid> _lifecycleCards = [];
+
+        public async Task<Result> ValidateCardArchiveStateAsync(ProposalOperationDto operation, JsonElement parameters, CancellationToken ct)
+        {
+            if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+                operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)) return Result.Success();
+            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out _)) return Result.Success();
+            var action = operation.ActionType.ToLowerInvariant();
+            var lifecycle = action is "archive-lifecycle" or "restore-lifecycle";
+            // A lifecycle approval pins one exact card revision. Mixing another write to that
+            // card would invalidate its timestamp during Apply; reject this at Preview too.
+            if (_lifecycleCards.Contains(cardId) || (lifecycle && _mutatedCards.Contains(cardId)))
+                return Result.Failure(ErrorCodes.ValidationError, "Archive or restore must be the only operation for that card in a proposal.");
+            _mutatedCards.Add(cardId);
+            if (lifecycle) _lifecycleCards.Add(cardId);
+            var card = await ReadCardAsync(cardId, ct);
+            if (card is null) return lifecycle
+                ? Result.Failure(ErrorCodes.NotFound, "Archive and restore require an existing card") : Result.Success();
+            if (!lifecycle) return card.IsArchived
+                ? Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing.") : Result.Success();
+            if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+                timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+                return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+            if (card.UpdatedAt != expected)
+                return Result.Failure(ErrorCodes.Conflict, "Card changed since this proposal was prepared. Refresh and create a new proposal.");
+            var archive = action == "archive-lifecycle";
+            if (card.IsArchived == archive)
+                return Result.Failure(ErrorCodes.InvalidOperation, archive ? "Card is already archived" : "Card is already active");
+            if (!archive)
+            {
+                var column = await unitOfWork.Columns.GetByIdWithCardsAsync(card.ColumnId, ct);
+                if (column is null || column.BoardId != card.BoardId)
+                    return Result.Failure(ErrorCodes.InvalidOperation, "Restore the original column before restoring this card.");
+                if (column.WouldExceedWipLimitIfAdded())
+                    return Result.Failure(ErrorCodes.WipLimitExceeded, "The original column is full. Free space or adjust its WIP limit before restoring this card.");
+            }
+            return Result.Success();
+        }
 
         public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
 
@@ -674,7 +727,7 @@ public static class ProposalOperationContractValidator
 
             if (!_cardBoardIds.TryGetValue(cardId, out var existingCardBoardId))
             {
-                existingCardBoardId = (await unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken))?.BoardId;
+                existingCardBoardId = (await ReadCardAsync(cardId, cancellationToken))?.BoardId;
                 _cardBoardIds[cardId] = existingCardBoardId;
             }
 
@@ -693,7 +746,7 @@ public static class ProposalOperationContractValidator
 
             if (!_cardBoardIds.TryGetValue(cardId, out var cardBoardId))
             {
-                cardBoardId = (await unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken))?.BoardId;
+                cardBoardId = (await ReadCardAsync(cardId, cancellationToken))?.BoardId;
                 _cardBoardIds[cardId] = cardBoardId;
             }
 

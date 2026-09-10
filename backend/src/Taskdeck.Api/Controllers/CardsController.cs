@@ -32,6 +32,46 @@ public class CardsController : AuthenticatedControllerBase
         _authorizationService = authorizationService;
     }
 
+    [HttpGet("archived")]
+    public async Task<IActionResult> GetArchivedCards(Guid boardId)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult)) return errorResult!;
+        var permissionError = await EnsureBoardPermissionAsync(_authorizationService, userId, boardId,
+            static (auth, actor, board) => auth.CanReadBoardAsync(actor, board), "You do not have access to this board");
+        if (permissionError is not null) return permissionError;
+        var result = await _cardService.GetArchivedCardsAsync(boardId);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    [HttpGet("{cardId:guid}")]
+    public async Task<IActionResult> GetCard(Guid boardId, Guid cardId)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult)) return errorResult!;
+        var permissionError = await EnsureBoardPermissionAsync(_authorizationService, userId, boardId,
+            static (auth, actor, board) => auth.CanReadBoardAsync(actor, board), "You do not have access to this board");
+        if (permissionError is not null) return permissionError;
+        var result = await _cardService.GetCardAsync(boardId, cardId);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
+    [HttpPost("{cardId}/archive")]
+    public Task<IActionResult> ArchiveCard(Guid boardId, Guid cardId, [FromBody] CardLifecycleDto dto)
+        => SetArchivedAsync(boardId, cardId, dto, true);
+
+    [HttpPost("{cardId}/restore")]
+    public Task<IActionResult> RestoreCard(Guid boardId, Guid cardId, [FromBody] CardLifecycleDto dto)
+        => SetArchivedAsync(boardId, cardId, dto, false);
+
+    private async Task<IActionResult> SetArchivedAsync(Guid boardId, Guid cardId, CardLifecycleDto dto, bool archive)
+    {
+        if (!TryGetCurrentUserId(out var userId, out var errorResult)) return errorResult!;
+        var permissionError = await EnsureBoardPermissionAsync(_authorizationService, userId, boardId,
+            static (auth, actor, board) => auth.CanWriteBoardAsync(actor, board), "You do not have permission to modify this board");
+        if (permissionError is not null) return permissionError;
+        var result = await _cardService.SetArchivedAsync(boardId, cardId, archive, dto, userId);
+        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+    }
+
     /// <summary>
     /// Search cards on a board with optional filters.
     /// </summary>

@@ -54,7 +54,7 @@ public sealed class WorkspacePlanService(IWorkspacePlanRepository plans, IAuthor
         var board = await boards.GetByIdAsync(boardId, ct);
         if (board is null || board.IsArchived) return unavailable;
         var card = await cards.GetByIdAsync(cardId, ct);
-        if (card is null || card.BoardId != boardId) return unavailable;
+        if (card is null || card.IsArchived || card.BoardId != boardId) return unavailable;
         var column = await columns.GetByIdAsync(card.ColumnId, ct);
         return new(boardId, cardId, true, card.Title, board.Name, column?.Name, card.DueDate, card.IsBlocked, card.BlockReason);
     }
