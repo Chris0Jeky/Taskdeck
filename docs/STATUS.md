@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Audio draft recovery continuation (#2808): unfinished written audio versions retain their recording identity and original question evidence. If a reload returns a missing, replaced or confirmed receipt, the earlier draft stays visible for copying and explicit discard, without being attached to a new source. Failed reloads make Save/Confirm unavailable. The server also revalidates the current question before adding written versions, preserving retained originals as read-only when their question changes or disappears. This reduces lost-work recovery friction while keeping confirmation explicit.
+
 Source-storage export continuation (#2808): buffered and streamed account exports now hold one deferred SQLite read snapshot across blob objects, references, chunks, representations and audio-answer rows. Concurrent WAL uploads can commit without reserving the writer for the duration of the export; all five sections retain the earlier view until disposal. This is source-storage consistency, not a claim of a single snapshot across every account-export section or a tested restore workflow.
 
 Planning continuity follow-through (#2808): Classic Home now offers the same private last-worked Focus resume as the other experiences, in both Paper/Grove and Legacy rendering. Personal-plan due dates use canonical calendar-day formatting; Today and tomorrow use the local calendar date without changing card deadlines. This reduces the work needed to resume a thought after switching versions.
