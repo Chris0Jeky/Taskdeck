@@ -265,7 +265,7 @@ public class OperationHandlerRegistryTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
-        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+        result.ErrorMessage.Should().Contain("at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
     }
 
     [Fact]

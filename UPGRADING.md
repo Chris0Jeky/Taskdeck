@@ -14,6 +14,14 @@ changes.
 
 ## Unreleased workspace overhaul
 
+Card work-item types add a required `Cards.WorkItemType` column through the
+`20260910195339_AddCardWorkItemType` migration. Existing cards become Task; Epic and Spike
+are explicit choices in card details. **BREAKING: none.** Existing clients that omit the type
+keep the saved type on update and create Task cards. Board JSON and account exports include it.
+The migration's developer rollback drops type metadata while preserving cards; applying it again
+defaults those cards to Task, so former Epic/Spike distinctions are lost. Back up the database
+before upgrading; this rollback behavior does not establish support for application downgrades.
+
 Private audio answers add `StoredBlobs`, `StoredBlobChunks`, `StoredBlobReferences`, `Representations`,
 `RepresentationSupersessions` and `ThinkingAudioAnswers`. Three additive migrations introduce these
 tables; existing audio/artefact bytes and legacy transcript rows are not rewritten or backfilled.

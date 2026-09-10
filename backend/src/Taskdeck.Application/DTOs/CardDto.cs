@@ -15,7 +15,8 @@ public record CardDto(
     List<LabelDto> Labels,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    bool IsArchived = false
+    bool IsArchived = false,
+    string WorkItemType = "Task"
 );
 
 public record CardLifecycleDto(DateTimeOffset? ExpectedUpdatedAt);
@@ -26,7 +27,8 @@ public record CreateCardDto(
     string Title,
     string? Description,
     DateTimeOffset? DueDate,
-    List<Guid>? LabelIds
+    List<Guid>? LabelIds,
+    string? WorkItemType = null
 );
 
 public record UpdateCardDto(
@@ -37,7 +39,8 @@ public record UpdateCardDto(
     string? BlockReason,
     List<Guid>? LabelIds,
     DateTimeOffset? ExpectedUpdatedAt = null,
-    bool ClearDueDate = false
+    bool ClearDueDate = false,
+    string? WorkItemType = null
 );
 
 public record MoveCardDto(
