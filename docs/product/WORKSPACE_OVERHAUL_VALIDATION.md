@@ -1,5 +1,13 @@
 # Workspace overhaul validation and follow-through
 
+## Exact audio confirmation receipts (2026-09-10)
+
+New confirmations retain a SHA-256 fingerprint of the original expected recording revision, expected deck revision, representation ID and answer status under a versioned schema. An identical retry returns the existing result; changing any field returns a conflict before another memory or representation is written. Pre-migration confirmations have no provable request fingerprint and require a read rather than accepting an unverifiable write retry. Their retained originals and read access remain available.
+
+The nullable receipt is included in both account export routes. The additive migration was applied successfully to an isolated empty SQLite database. Ten API tests passed, including all four mismatched fields, exact retry identity, unchanged representation count, both exports and a legacy null receipt. Full backend qualification and hosted state belong to the continuation PR. Independent review found no HIGH/CRITICAL defect. No working database was migrated.
+
+
+
 ## Board-object proposal overlays (2026-09-10)
 
 `BoardProposalPreview.spec.ts` covers matched effective revisions, approved pins, mismatched board/revision/status/update receipts, parameter-ID precedence, immutable board inputs, permission/board refresh failure, stale in-flight results, logout, same-user token refresh, server-clock expiry and both card renderers. Existing Chat preview and Board view regressions also pass. Full frontend: 6,368 passed and three existing skips; subsequent projection/access changes have 49 focused passing tests plus typecheck. Exact final evidence is retained with the continuation PR.

@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Audio confirmation recovery (#2808): retain an immutable fingerprint of the exact confirmation request and return conflicts for changed or pre-migration unprovable retries. Account exports carry the nullable receipt; isolated migration/API proof passes, with full and hosted qualification recorded on the continuation PR.
+
 Original-source conflict recovery (#2808): a pagination revision conflict retracts the displayed originals and their selection immediately, then directs the user to refresh source metadata before selecting again. The browser proof changes a memory from revision 12 to 13 between selection and pagination, refreshes, and sends only the current revision. Server permission/revision enforcement remains unchanged.
 
 Comparison appearance continuation (#2808): Auto observations retain both the selected mode and the resolved light/night appearance at submission. Existing version-2/3 files keep their original attribution; no historical appearance is invented. Frontend input fingerprints exclude repository test-only sources and build proof scripts, while runtime sources, public assets, build plugins and resolved build options remain attributed. This keeps manual comparisons coherent across proof-only edits without claiming randomized or statistical results.
