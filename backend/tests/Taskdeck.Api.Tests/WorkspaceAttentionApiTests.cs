@@ -10,12 +10,50 @@ using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public class WorkspaceAttentionApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    private sealed class ErasureRace { public Func<Task>? BeforeRead; }
+    private sealed class ErasingReader(WorkspaceAttentionRepository inner, ErasureRace race) : IWorkspaceAttentionRepository
+    {
+        public async Task<UserPreference> GetAsync(Guid userId, CancellationToken ct)
+        {
+            var callback = race.BeforeRead; race.BeforeRead = null;
+            if (callback != null) await callback();
+            return await inner.GetAsync(userId, ct);
+        }
+        public Task<bool> SaveAsync(Guid userId, long revision, WorkspaceAttention state, CancellationToken ct) => inner.SaveAsync(userId, revision, state, ct);
+    }
+
+    [Fact]
+    public async Task InFlightSaveCannotRestorePrivateScheduleAfterAccountErasure()
+    {
+        var race = new ErasureRace();
+        using var app = factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IWorkspaceAttentionRepository>();
+            services.AddScoped<IWorkspaceAttentionRepository>(sp => new ErasingReader(new WorkspaceAttentionRepository(
+                sp.GetRequiredService<TaskdeckDbContext>(), sp.GetRequiredService<IUserPreferenceRepository>()), race));
+        }));
+        var client = app.CreateClient(); var user = await ApiTestHarness.AuthenticateAsync(client, "schedule-erasure");
+        var original = (await client.GetFromJsonAsync<WorkspaceAttentionDto>("/api/workspace-attention"))!;
+        race.BeforeRead = async () =>
+            (await client.PostAsJsonAsync("/api/account/delete", new AccountDeletionRequest("password123", "DELETE MY ACCOUNT"))).EnsureSuccessStatusCode();
+        var saved = await client.PutAsJsonAsync("/api/workspace-attention",
+            new SaveWorkspaceAttentionDto(original.Revision, true, true, new("Europe/London", 62, 540, 1020)));
+        saved.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        using var scope = app.Services.CreateScope(); var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.Users.FindAsync(user.UserId))!.IsActive.Should().BeFalse();
+        // A pre-existing generic preference reader may recreate defaults; it must not restore user content.
+        var preference = await db.UserPreferences.SingleAsync(x => x.UserId == user.UserId);
+        preference.ReadAttention().Window.Should().BeNull();
+        preference.ReadAttention().Enabled.Should().BeFalse();
+    }
+
     private async Task<(HttpClient Client, Guid User, Guid Board, Guid Card)> Setup(WebApplicationFactory<Program>? app = null)
     {
         app ??= factory;

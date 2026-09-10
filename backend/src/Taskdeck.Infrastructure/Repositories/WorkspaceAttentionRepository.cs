@@ -14,7 +14,8 @@ public sealed class WorkspaceAttentionRepository(TaskdeckDbContext db, IUserPref
     {
         var json = JsonSerializer.Serialize(state);
         // One conditional update is the budget boundary, including simultaneous tabs and devices.
-        return await db.UserPreferences.Where(x => x.UserId == userId && x.AttentionRevision == expectedRevision)
+        return await db.UserPreferences.Where(x => x.UserId == userId && x.AttentionRevision == expectedRevision
+                && db.Users.Any(account => account.Id == userId && account.IsActive))
             .ExecuteUpdateAsync(update => update.SetProperty(x => x.AttentionJson, json)
                 .SetProperty(x => x.AttentionRevision, expectedRevision + 1), ct) == 1;
     }
