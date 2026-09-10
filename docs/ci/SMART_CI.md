@@ -83,9 +83,10 @@ The lanes are the existing reusable workflows (ADR-0013), parameterized rather t
 | dependency-signals / sast | `reusable-dependency-security-signals.yml`, `reusable-sast-scanning.yml` | hosted Linux | required contexts (ADR-0035) |
 | architecture | `reusable-backend-architecture.yml` | hosted Linux → self-hosted Linux | |
 | backend-unit | `reusable-backend-unit.yml` (Domain/Application/CLI) | Linux semantic; Windows only via the contract | |
-| api-integration | `reusable-api-integration.yml` → behavioural shards (CI-06) | Linux semantic; Windows contract shard | |
+| api-integration | `reusable-api-integration.yml`, separate Linux/Windows callers | full hosted suite on both platforms; contract shards remain CI-06 work | E2E waits for Linux API; Windows remains required qualification |
 | migration | `reusable-migration-validation.yml` | hosted Linux | selected by persistence groups |
-| frontend | `reusable-frontend-unit.yml` | Linux once (launcher suite Linux-only since CI-07 #2331); Windows platform subset without the launcher suite | CI-08 |
+| frontend | `reusable-frontend-unit.yml` | full Linux/Windows semantic matrix | narrower Windows subset remains CI-08 work |
+| source-launcher-linux | independent `source-launcher` job in `reusable-frontend-unit.yml` | hosted Linux only under SC-3 | check: `Frontend Unit / Source Launcher (Linux)` |
 | e2e-journey | `reusable-e2e-smoke.yml` by journey | self-hosted Linux / hosted | CI-08 |
 | containers | `reusable-container-images.yml`, `reusable-container-integration.yml` | self-hosted Linux / hosted | risk-gated (CI-08) |
 | windows-compat | worktree-helper harness, launchers, dev-up, MCP host, SQLite, desktop | Windows (self-hosted after CI-04) | CI-07 |

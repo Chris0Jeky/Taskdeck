@@ -4,6 +4,26 @@ Date: 2026-09-10. Owners: #2327 and #2332. Parent: [engineering contract](README
 
 This slice applies the `minimal` transform to `.github/workflows/ci-required.yml`. It changes scheduling dependencies only. It does not select fewer checks on a healthy candidate, remove Windows coverage, alter security enforcement, change permissions, or reuse earlier test results.
 
+## Independent API platform scheduling
+
+The required caller now runs the reusable API suite twice: `api-integration` requests Linux and
+`api-integration-windows` requests Windows. Both run the complete existing suite with identical
+commands, artifacts and check labels. The reusable workflow defaults to both platforms; unknown
+platform inputs also retain both. Linux E2E waits for `api-integration` and every other existing
+prerequisite. Windows API qualification remains unconditional and must pass before merge, but it
+can overlap Linux E2E. This trades some fail-fast savings when only Windows fails for a shorter
+healthy-candidate dependency chain; it does not omit qualification.
+
+The motivation is measured, not a speedup claim: run `34423790319` took 453 seconds for Linux API,
+1,200 for Windows API, and 523 for E2E. The latter started only after the aggregate API caller
+finished. Two diagnostic original-head runs used 4,840 versus 4,651 runner-seconds and 1,710 versus
+1,772 seconds elapsed; they are unmatched observations, so no causal savings estimate follows.
+Confirm the split's emitted check names and actual overlap in hosted CI before accepting it.
+
+The transformer recognizes both the original and explicitly split API topology. It refuses a
+misrouted or conditional Windows caller. Rollback removes the Windows caller and the Linux
+platform input together, restoring the reusable workflow's full two-platform default.
+
 | Work | New prerequisite |
 | --- | --- |
 | Backend Unit and API Integration | Backend Architecture and Release Workflow Contract |

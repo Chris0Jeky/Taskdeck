@@ -166,6 +166,18 @@ jobs:
     name: API Integration
     uses: ./.github/workflows/reusable-api-integration.yml
     with:
+      platform: linux
+      dotnet-version: 8.0.x
+
+  # Windows still qualifies the same complete suite, but does not serialize Linux E2E.
+  api-integration-windows:
+    needs:
+      - backend-architecture
+      - release-workflow-contract
+    name: API Integration
+    uses: ./.github/workflows/reusable-api-integration.yml
+    with:
+      platform: windows
       dotnet-version: 8.0.x
 
   migration-validation:

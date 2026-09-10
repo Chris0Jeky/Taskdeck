@@ -4,6 +4,8 @@ import { test } from 'node:test'
 
 const requiredWorkflowUrl = new URL('../../../.github/workflows/ci-required.yml', import.meta.url)
 const reusableE2eWorkflowUrl = new URL('../../../.github/workflows/reusable-e2e-smoke.yml', import.meta.url)
+const reusableApiWorkflowUrl = new URL('../../../.github/workflows/reusable-api-integration.yml', import.meta.url)
+const policyUrl = new URL('../../../ci/policy.v1.json', import.meta.url)
 
 function extractTopLevelJob(workflow, jobName) {
   const lines = workflow.replaceAll('\r\n', '\n').split('\n')
@@ -43,4 +45,28 @@ test('reusable E2E owns its runtime setup and execution', async () => {
   assert.match(workflow, /- name: Setup Node[\s\S]*?uses: actions\/setup-node@/)
   assert.match(workflow, /- name: Install frontend dependencies[\s\S]*?working-directory: frontend\/taskdeck-web[\s\S]*?run: npm ci/)
   assert.match(workflow, /- name: Run Playwright smoke tests[\s\S]*?run: npx playwright test/)
+})
+
+test('both complete API platforms qualify while only Linux blocks Linux E2E', async () => {
+  const workflow = await readFile(requiredWorkflowUrl, 'utf8')
+  const e2e = extractTopLevelJob(workflow, 'e2e-smoke')
+  assert.ok(extractNeeds(e2e).includes('api-integration'))
+  assert.ok(!extractNeeds(e2e).includes('api-integration-windows'))
+  const policy = JSON.parse(await readFile(policyUrl, 'utf8'))
+  for (const [id, platform, os] of [['api-integration', 'linux', 'ubuntu-latest'], ['api-integration-windows', 'windows', 'windows-latest']]) {
+    const job = extractTopLevelJob(workflow, id)
+    assert.match(job, /^    name: API Integration$/m)
+    assert.match(job, /^    uses: .\/\.github\/workflows\/reusable-api-integration.yml$/m)
+    assert.ok(job.includes(`      platform: ${platform}`))
+    assert.doesNotMatch(job, /^    (if|continue-on-error):/m)
+    assert.deepEqual(extractNeeds(job).sort(), ['backend-architecture', 'release-workflow-contract'])
+    assert.equal(policy.lanes[`api-integration-${platform}`].checkName, `API Integration / API Integration (${os})`)
+  }
+  const reusable = (await readFile(reusableApiWorkflowUrl, 'utf8')).replaceAll('\r\n', '\n')
+  assert.match(reusable, /default: all\n/)
+  assert.ok(reusable.includes(`inputs.platform == 'linux' && '["ubuntu-latest"]' || inputs.platform == 'windows' && '["windows-latest"]' || '["ubuntu-latest", "windows-latest"]'`))
+  assert.match(reusable, /name: API Integration \(\$\{\{ matrix.os \}\}\)/)
+  assert.match(reusable, /fail-fast: false/)
+  assert.match(reusable, /run: dotnet test backend\/tests\/Taskdeck.Api.Tests\/Taskdeck.Api.Tests.csproj --configuration Release --no-restore/)
+  assert.doesNotMatch(reusable, /--filter|continue-on-error: \$\{\{ inputs/)
 })
