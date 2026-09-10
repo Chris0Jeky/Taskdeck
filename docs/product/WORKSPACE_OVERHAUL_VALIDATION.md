@@ -1,5 +1,9 @@
 # Workspace overhaul validation and follow-through
 
+## Thinking route exit recovery (2026-09-10)
+
+Leaving a thinking route invalidates pending receipts and clears view state before checking route IDs. Incomplete params no longer request an empty board endpoint; complete reentry loads normally. Six continuity component tests and typecheck pass, including delayed responses after route exit. Both full personal-plan Chromium journeys pass in 47.2 seconds with per-page assertions that no empty-board request occurs, plus existing Focus, recovery, four-experience, calendar, mobile and accessibility checks. Full frontend verification passes 6,420 tests with three existing skips across 415 files. Production build, typecheck, scoped ESLint and bounded independent review pass. Hosted qualification remains separate. Backend behavior is unchanged.
+
 ## Expanded follow-through qualification (2026-09-10)
 
 The combined runtime at 6c6a344a4 includes optional reminders, playback binding, exact confirmation receipts, retained confirmation labels, both moved-card lane markers and the fragmented-upload repair. Full backend verification passed 9,232 tests with 34 existing skips: Domain 1,641, Application 4,273, API 3,040, CLI 243, Architecture 28 and Integration 7. Full frontend passed 6,418 tests with three existing skips across 415 files; production build and typecheck passed.

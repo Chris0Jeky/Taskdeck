@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Thinking-route exit recovery (#2808, pending main delivery): snapshot valid board/card IDs and invalidate pending receipts before route-exit cleanup. The view no longer requests empty-board endpoints while unmounting. Full frontend verification passes 6,420 tests with three existing skips, plus six continuity tests, typecheck/build and both planning browser journeys; bounded review is clean. Hosted qualification remains separate. This closes the previously recorded readonly navigation error without changing plan or card data.
+
 Expanded overhaul follow-through (#2808, pending main delivery): optional reminders, audio recovery and retained previews now pass combined qualification: 9,232 backend tests, 6,418 frontend tests, eleven Chromium journeys and both migrations together. A final filename-normalization fix has eleven passing audio API tests. Independent interaction reviews are clean; hosted/base qualification remains on the delivery PRs. [Evidence and limits](product/WORKSPACE_OVERHAUL_VALIDATION.md).
 
 Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.
