@@ -17,6 +17,7 @@ public sealed class ThinkingAudioAnswer : Entity
     public long Revision { get; private set; } = 1;
     public Guid? RepresentationId { get; private set; }
     public Guid? ConfirmedMemoryId { get; private set; }
+    public string? ConfirmationRequestHash { get; private set; }
 
     private ThinkingAudioAnswer() { }
     public ThinkingAudioAnswer(Guid userId, Guid boardId, Guid cardId, Guid layerId, string questionHash,
@@ -34,10 +35,13 @@ public sealed class ThinkingAudioAnswer : Entity
             throw new DomainException(ErrorCodes.Conflict, "Correct confirmed answers in private memory.");
         RepresentationId = representationId; Revision++; Touch();
     }
-    public void Confirm(Guid representationId, Guid memoryId)
+    public void Confirm(Guid representationId, Guid memoryId, string requestHash)
     {
         if (representationId == Guid.Empty || memoryId == Guid.Empty || !RepresentationId.HasValue || ConfirmedMemoryId.HasValue)
             throw new DomainException(ErrorCodes.Conflict, "Save a written version before confirming the answer.");
+        if (requestHash is null || requestHash.Length != 64 || !requestHash.All(Uri.IsHexDigit))
+            throw new DomainException(ErrorCodes.ValidationError, "A confirmation receipt is required.");
+        ConfirmationRequestHash = requestHash;
         RepresentationId = representationId; ConfirmedMemoryId = memoryId; Revision++; Touch();
     }
 }

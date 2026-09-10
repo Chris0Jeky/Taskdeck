@@ -27,6 +27,43 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    [Fact]
+    public async Task ConfirmRetryRequiresTheExactOriginalRequestAndPreservesTheReceipt()
+    {
+        var (client, _, board, card, question) = await Setup();
+        var original = await Receipt(await Upload(client, Url(board, card, question.Id)));
+        var written = await Receipt(await client.PutAsJsonAsync($"/api/thinking-audio/{original.Id}/written-version",
+            new ThinkingAudioWriteDto(1, "My confirmed answer")));
+        var request = new ThinkingAudioConfirmDto(2, 1, written.RepresentationId!.Value, "statement");
+        var endpoint = $"/api/thinking-audio/{original.Id}/confirm";
+        var confirmed = await Receipt(await client.PostAsJsonAsync(endpoint, request));
+        foreach (var changed in new[]
+        {
+            request with { ExpectedRevision = 3 }, request with { ExpectedDeckRevision = 2 },
+            request with { RepresentationId = confirmed.RepresentationId!.Value }, request with { Status = "unknown" }
+        })
+            (await client.PostAsJsonAsync(endpoint, changed)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var retried = await Receipt(await client.PostAsJsonAsync(endpoint, request));
+        retried.Should().BeEquivalentTo(confirmed);
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        var answer = await db.ThinkingAudioAnswers.AsNoTracking().SingleAsync(x => x.Id == original.Id);
+        answer.ConfirmationRequestHash.Should().HaveLength(64);
+        (await db.Representations.CountAsync(x => x.CaptureId == original.CaptureId)).Should().Be(2);
+        foreach (var route in new[] { "/api/account/export", "/api/account/export/stream" })
+        {
+            var exported = (await client.GetFromJsonAsync<UserDataExportDto>(route))!.Data.SourceStorage!.AudioAnswers.Single();
+            exported.ConfirmationRequestHash.Should().Be(answer.ConfirmationRequestHash);
+        }
+        // Simulate a pre-migration confirmation: GET still works, but no exact write retry can be proven.
+        await db.ThinkingAudioAnswers.Where(x => x.Id == original.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(x => x.ConfirmationRequestHash, (string?)null));
+        (await client.PostAsJsonAsync(endpoint, request)).StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var retained = (await client.GetFromJsonAsync<ThinkingAudioLibraryDetail>($"/api/thinking-audio/library/{original.Id}"))!;
+        retained.Should().NotBeNull();
+        (await db.Representations.CountAsync(x => x.CaptureId == original.CaptureId)).Should().Be(2);
+    }
+
     private sealed class LibraryCommandProbe : DbCommandInterceptor
     {
         public List<string> Commands { get; } = [];
