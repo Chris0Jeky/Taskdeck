@@ -50,9 +50,9 @@ export interface ChatContextSelection {
 export interface ChatAssetReference { memoryId: string; revision: number; assetId: string; contentHash: string }
 export interface ChatAssetOption {
   id: string; name: string; contentHash: string; byteSize: number
-  supersededByAssetId: string | null; excerpt: string; truncated: boolean
+  supersededByAssetId: string | null; excerpt: string; truncated: boolean; ordinal: number
 }
-export interface ChatAssetPage { memoryId: string; revision: number; items: ChatAssetOption[]; nextOffset: number | null }
+export interface ChatAssetPage { memoryId: string; revision: number; items: ChatAssetOption[]; nextOffset: number | null; nextAfterOrdinal: number | null }
 
 export interface ChatContextSource {
   kind: 'card' | 'thinking' | 'private-memory' | 'private-source'

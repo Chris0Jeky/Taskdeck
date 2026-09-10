@@ -6,15 +6,16 @@ using Taskdeck.Domain.Exceptions;
 namespace Taskdeck.Application.Services;
 
 public sealed record ResolvedChatContext(string Prompt, IReadOnlyList<ChatContextSource> Sources);
-public sealed record ChatAssetPage(Guid MemoryId, int Revision, IReadOnlyList<ChatAssetSnapshot> Items, int? NextOffset);
+public sealed record ChatAssetPage(Guid MemoryId, int Revision, IReadOnlyList<ChatAssetSnapshot> Items, int? NextOffset, int? NextAfterOrdinal = null);
 
 /// <summary>Explicit, bounded per-turn source selection. Never searches private memory implicitly.</summary>
 public sealed class ChatContextResolver(IUnitOfWork unit, IAuthorizationService authorization,
     IThinkingDeckRepository thinking, IChatSourceReader memory)
 {
-    public async Task<Result<ChatAssetPage>> ListSourcesAsync(Guid actorId, Guid boardId, Guid memoryId, int revision, int offset, CancellationToken ct)
+    public async Task<Result<ChatAssetPage>> ListSourcesAsync(Guid actorId, Guid boardId, Guid memoryId, int revision, int offset, CancellationToken ct, int? afterOrdinal = null)
     {
-        if (boardId == Guid.Empty || memoryId == Guid.Empty || revision < 1 || offset < 0)
+        if (boardId == Guid.Empty || memoryId == Guid.Empty || revision < 1 || offset < 0 || offset > 1000
+            || afterOrdinal < -1 || (afterOrdinal.HasValue && offset != 0))
             return Result.Failure<ChatAssetPage>(ErrorCodes.ValidationError, "Choose a saved memory version and a valid page.");
         var access = await authorization.CanReadBoardAsync(actorId, boardId);
         var board = access.IsSuccess && access.Value ? await unit.Boards.GetByIdAsync(boardId, ct) : null;
@@ -23,9 +24,14 @@ public sealed class ChatContextResolver(IUnitOfWork unit, IAuthorizationService 
             return Result.Failure<ChatAssetPage>(ErrorCodes.Forbidden, "This private source is unavailable. Check board access and refresh your selection.");
         if (record.Revision != revision)
             return Result.Failure<ChatAssetPage>(ErrorCodes.Conflict, "This memory changed. Refresh sources before selecting an original.");
-        var assets = record.CaptureId.HasValue ? await memory.AssetsAsync(actorId, boardId, record.CaptureId.Value, offset, ct) : [];
+        var assets = record.CaptureId.HasValue
+            ? afterOrdinal.HasValue
+                ? await memory.AssetsAfterAsync(actorId, boardId, record.CaptureId.Value, afterOrdinal.Value, ct)
+                : await memory.AssetsAsync(actorId, boardId, record.CaptureId.Value, offset, ct)
+            : [];
         return Result.Success(new ChatAssetPage(record.Id, record.Revision, assets.Take(10).ToArray(),
-            assets.Count > 10 && offset <= int.MaxValue - 10 ? offset + 10 : null));
+            !afterOrdinal.HasValue && offset <= 990 && assets.Count > 10 ? offset + 10 : null,
+            assets.Count > 10 ? assets[9].Ordinal : null));
     }
 
     public async Task<Result<ResolvedChatContext>> ResolveAsync(Guid actorId, Guid? boardId, ChatContextSelection selection, CancellationToken ct)

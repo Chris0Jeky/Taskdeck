@@ -14,31 +14,32 @@ const items = ref<ChatAssetOption[]>([])
 const loaded = ref(false)
 const loading = ref(false)
 const error = ref('')
-const nextOffset = ref<number | null>(0)
+const nextAfterOrdinal = ref<number | null>(-1)
 let generation = 0
 watch([() => props.memoryId, () => props.boardId, () => props.revision, () => session.userId, () => !!session.token], () => {
-  generation++; items.value = []; loaded.value = false; loading.value = false; error.value = ''; nextOffset.value = 0
+  generation++; items.value = []; loaded.value = false; loading.value = false; error.value = ''; nextAfterOrdinal.value = -1
   emit('change', [])
 }, { flush: 'sync' })
 onScopeDispose(() => { generation++ })
 
 async function load() {
-  if (props.disabled || loading.value || nextOffset.value === null) return
+  if (props.disabled || loading.value || nextAfterOrdinal.value === null) return
   const request = generation
   loading.value = true; error.value = ''
   try {
-    const page = await chatSourcesApi.list(props.memoryId, props.boardId, props.revision, nextOffset.value)
+    const page = await chatSourcesApi.list(props.memoryId, props.boardId, props.revision, nextAfterOrdinal.value)
     if (request !== generation) return
     if (page.memoryId.toLowerCase() !== props.memoryId.toLowerCase() || page.revision !== props.revision ||
-      page.items.length > 10 || page.items.some(item => !/^[a-f0-9]{64}$/i.test(item.contentHash) || item.excerpt.length > 1500) ||
-      (page.nextOffset !== null && page.nextOffset !== nextOffset.value + 10)) throw new Error('Source identity changed')
+      page.items.length > 10 || page.items.some((item, index) => !/^[a-f0-9]{64}$/i.test(item.contentHash) || item.excerpt.length > 1500
+        || !Number.isSafeInteger(item.ordinal) || item.ordinal <= (index ? page.items[index - 1]!.ordinal : nextAfterOrdinal.value!)) ||
+      (page.nextAfterOrdinal !== null && (page.items.length !== 10 || page.nextAfterOrdinal !== page.items.at(-1)?.ordinal))) throw new Error('Source identity changed')
     items.value = [...items.value, ...page.items.filter(item => !items.value.some(current => current.id === item.id))]
-    nextOffset.value = page.nextOffset; loaded.value = true
+    nextAfterOrdinal.value = page.nextAfterOrdinal; loaded.value = true
   } catch (cause) {
     if (request === generation) {
       const status = (cause as { response?: { status?: number } }).response?.status
       if (status === 403 || status === 404) {
-        items.value = []; loaded.value = false; nextOffset.value = 0; emit('change', [])
+        items.value = []; loaded.value = false; nextAfterOrdinal.value = -1; emit('change', [])
         error.value = 'You no longer have access to these private originals. Check board access before retrying.'
       } else error.value = 'Originals could not be checked. Retry, or refresh all sources if this memory changed.'
     }
@@ -53,7 +54,7 @@ function toggle(asset: ChatAssetOption, checked: boolean) {
 
 <template>
   <div class="original-choices">
-    <button v-if="!loaded || nextOffset !== null" type="button" :disabled="disabled || loading"
+    <button v-if="!loaded || nextAfterOrdinal !== null" type="button" :disabled="disabled || loading"
       :aria-label="`${loading ? 'Checking originals' : loaded ? 'Load more originals' : 'Choose original sources'} for ${memoryTitle || 'this memory'}`" @click="load">
       {{ loading ? 'Checking originals…' : loaded ? 'Load more originals' : 'Choose original sources' }}
     </button>

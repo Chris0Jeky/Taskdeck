@@ -5,8 +5,9 @@ import ChatOriginalSourcePicker from '../../../components/chat/ChatOriginalSourc
 import { useSessionStore } from '../../../store/sessionStore'
 const api = vi.hoisted(() => ({ list: vi.fn() }))
 vi.mock('../../../api/chatSourcesApi', () => ({ chatSourcesApi: api }))
-const asset = { id: 'a1', name: 'answer-revision-1.txt', contentHash: 'a'.repeat(64), byteSize: 23, supersededByAssetId: 'a2', excerpt: '<script>old source</script>', truncated: false }
-const page = () => ({ memoryId: 'm1', revision: 2, items: [asset], nextOffset: null })
+const asset = { id: 'a1', name: 'answer-revision-1.txt', contentHash: 'a'.repeat(64), byteSize: 23, supersededByAssetId: 'a2', excerpt: '<script>old source</script>', truncated: false, ordinal: 0 }
+const page = () => ({ memoryId: 'm1', revision: 2, items: [asset], nextOffset: null, nextAfterOrdinal: null })
+const fullPage = () => ({ ...page(), items: Array.from({ length: 10 }, (_, index) => ({ ...asset, id: `item-${index}`, ordinal: index * 2 })), nextAfterOrdinal: 18 })
 function setup() {
   const pinia = createPinia(); setActivePinia(pinia)
   const session = useSessionStore(); session.userId = 'owner'; session.token = 'token'
@@ -17,7 +18,7 @@ describe('original source choice', () => {
   it('loads only on request, escapes evidence and emits identity without source text', async () => {
     const { wrapper } = setup(); expect(api.list).not.toHaveBeenCalled()
     await wrapper.get('button').trigger('click'); await flushPromises()
-    expect(api.list).toHaveBeenCalledWith('m1', 'b1', 2, 0)
+    expect(api.list).toHaveBeenCalledWith('m1', 'b1', 2, -1)
     expect(wrapper.text()).toContain('Superseded answer'); expect(wrapper.find('script').exists()).toBe(false)
     await wrapper.get('input').setValue(true)
     expect(wrapper.emitted('change')?.at(-1)).toEqual([[{ memoryId: 'm1', revision: 2, assetId: 'a1', contentHash: asset.contentHash }]])
@@ -49,15 +50,15 @@ describe('original source choice', () => {
     await wrapper.get('input').setValue(false)
     expect(wrapper.emitted('change')?.at(-1)).toEqual([[]])
   })
-  it('loads subsequent pages without duplicating sources', async () => {
-    api.list.mockResolvedValueOnce({ ...page(), nextOffset: 10 }).mockResolvedValueOnce({ ...page(), items: [asset, { ...asset, id: 'a2' }] })
+  it('seeks after the last ordinal across gaps without duplicating sources', async () => {
+    api.list.mockResolvedValueOnce(fullPage()).mockResolvedValueOnce({ ...page(), items: [{ ...asset, id: 'later', ordinal: 1001 }] })
     const { wrapper } = setup(); await wrapper.get('button').trigger('click'); await flushPromises()
     await wrapper.get('button').trigger('click'); await flushPromises()
-    expect(api.list).toHaveBeenLastCalledWith('m1', 'b1', 2, 10)
-    expect(wrapper.findAll('input')).toHaveLength(2)
+    expect(api.list).toHaveBeenLastCalledWith('m1', 'b1', 2, 18)
+    expect(wrapper.findAll('input')).toHaveLength(11)
   })
   it('names each picker by its memory and clears prior selections after revoked access', async () => {
-    api.list.mockResolvedValueOnce({ ...page(), nextOffset: 10 }).mockRejectedValueOnce({ response: { status: 403 } })
+    api.list.mockResolvedValueOnce(fullPage()).mockRejectedValueOnce({ response: { status: 403 } })
     const { wrapper } = setup(); await wrapper.setProps({ memoryTitle: 'Release lesson' })
     expect(wrapper.get('button').attributes('aria-label')).toBe('Choose original sources for Release lesson')
     await wrapper.get('button').trigger('click'); await flushPromises()
@@ -65,6 +66,17 @@ describe('original source choice', () => {
     await wrapper.get('button').trigger('click'); await flushPromises()
     expect(wrapper.get('[role=alert]').text()).toContain('no longer have access')
     expect(wrapper.find('input').exists()).toBe(false); expect(wrapper.emitted('change')?.at(-1)).toEqual([[]])
+  })
+  it.each(['backwards', 'mismatched-next', 'unordered'])('rejects a malformed %s cursor page', async kind => {
+    const candidate = fullPage()
+    if (kind === 'backwards') candidate.items[0]!.ordinal = -1
+    if (kind === 'mismatched-next') candidate.nextAfterOrdinal = 999
+    if (kind === 'unordered') candidate.items[3]!.ordinal = candidate.items[2]!.ordinal
+    api.list.mockResolvedValueOnce(candidate)
+    const { wrapper } = setup(); await wrapper.get('button').trigger('click'); await flushPromises()
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(wrapper.get('[role=alert]').text()).toContain('could not be checked')
+    wrapper.unmount()
   })
   it('preserves a pending source read during same-user token refresh but clears on logout', async () => {
     let resolve!: (value: ReturnType<typeof page>) => void
