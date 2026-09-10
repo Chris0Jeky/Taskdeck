@@ -1,5 +1,13 @@
 # Workspace overhaul validation and follow-through
 
+## Audio playback receipt binding (2026-09-10)
+
+Playback responses are bound to the original recording ID and both source/request generations. Changing the source invalidates the request and revokes its object URL; late success, failure and cleanup cannot overwrite a newer request. Playback is unavailable until the current receipt has loaded successfully.
+
+Sixteen component tests, typecheck, production build and scoped ESLint passed. Full frontend: 6,403 passed, three existing skips, 414 files. The Chromium audio journey passed in 17.1 seconds, including a controlled stalled original response, question edit, discarded old playback, restored question, playback recovery, lost-upload receipt retry, explicit written confirmation, all four experiences and narrow-screen accessibility. A bounded independent review found no HIGH/CRITICAL defect. Backend behavior is unchanged; no hardware microphone or provider acceptance is claimed.
+
+
+
 ## Combined continuation qualification (2026-09-10)
 
 The continuation combines comparison appearance, uncertain-plan recovery, accepted-navigation Focus, retained audio drafts, source-selection conflicts, storage startup validation, grounded questions and receipt/Review recovery. All four experiences use the same services and stored data.

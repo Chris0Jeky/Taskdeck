@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.
+
 Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
 
 Original-source conflict recovery (#2808): a pagination revision conflict retracts the displayed originals and their selection immediately, then directs the user to refresh source metadata before selecting again. The browser proof changes a memory from revision 12 to 13 between selection and pagination, refreshes, and sends only the current revision. Server permission/revision enforcement remains unchanged.

@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.
+
 Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
 
 Comparison attribution follow-through (#2808): retain the resolved Auto appearance in the existing portable theme label and exclude known non-shipped test inputs from the frontend fingerprint. Preserve legacy checksums/file semantics and prove live light/night switching, export/import and HTTP LAN compatibility together.
