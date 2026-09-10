@@ -1,6 +1,6 @@
 # Mutation Testing Policy
 
-Last Updated: 2026-07-27
+Last Updated: 2026-09-10
 
 ## Purpose
 
@@ -26,6 +26,7 @@ This is a **quality signal**, not a gatekeeping mechanism. Mutation testing comp
 - **Test runner**: Vitest
 - **Rationale**: These two Pinia stores are the core data flow layer for the capture-to-board pipeline. Mutations here have direct product impact on the golden path.
 - **Config**: `frontend/taskdeck-web/stryker.config.mjs`
+- **Activation smoke test**: `npm run mutation:smoke` runs four board-list deletion mutants against the focused CRUD suite with a 100% break threshold. Keep the Stryker/Vitest pair compatible; a local comparison with this repository's Stryker 10 setup produced zero per-mutant executions with Vitest 5.0.0, while the pinned Vitest 4.1.x line killed all four mutants.
 
 ## Threshold Strategy
 
@@ -74,6 +75,7 @@ Report: `backend/StrykerOutput/<timestamp>/reports/mutation-report.html`
 
 ```bash
 cd frontend/taskdeck-web
+npm run mutation:smoke
 npm run mutation:test
 ```
 
@@ -81,9 +83,7 @@ Report: `frontend/taskdeck-web/reports/mutation/mutation.html`
 
 ### CI
 
-The mutation testing workflow runs:
-- **Weekly**: Sunday 04:00 UTC (automatic)
-- **On demand**: via `workflow_dispatch` from the Actions tab
+The mutation testing workflow is manual-only via `workflow_dispatch` from the Actions tab. The frontend job runs the activation smoke test before the non-blocking full mutation report, so an incompatible test-runner upgrade fails early instead of producing an apparently valid zero-execution report.
 
 Reports are uploaded as GitHub Actions artifacts with 30-day retention.
 The backend job has a finite 180-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.
