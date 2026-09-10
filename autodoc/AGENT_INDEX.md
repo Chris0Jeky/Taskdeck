@@ -1,6 +1,6 @@
 # Agent Index - Taskdeck (seam map)
 
-Last-Verified: 2026-09-10 (private audio-answer row verified with SQLite/API/component/Chromium tests; PWA/offline row re-verified 2026-09-05 in a real Chromium under `#2639`; the frontend,
+Last-Verified: 2026-09-10 (orient-section file sizes and the region-rule list re-measured 2026-09-10 against `main` `a1f797913`; private audio-answer row verified with SQLite/API/component/Chromium tests; PWA/offline row re-verified 2026-09-05 in a real Chromium under `#2639`; the frontend,
 transcript, Smart CI and docs rows re-verified 2026-09-03 against `main` `d629129f3`; Context Fabric
 verified 2026-08-30 after CF-01 `#2255`;
 agent-inventory routing verified 2026-08-18; MCP/container and map-reduce seams remain verified
@@ -16,14 +16,16 @@ It is the Taskdeck equivalent of the harness `AGENT_MAP.md` (grandfathered name)
 ## Orient (do NOT bulk-read the big docs)
 
 - **Start here** = this file. Find your region in the seams table, jump to its entry points.
-- Region rules auto-load: each major directory has a scoped `CLAUDE.md` (`backend/`,
-  `frontend/taskdeck-web/`, `scripts/agent_hooks/`) — Claude Code loads it when you touch files
-  there. Two rule files load by path rather than directory: `.claude/rules/ci-control.md`
+- Region rules auto-load: each major directory has a scoped `CLAUDE.md` (`backend/`, `frontend/`
+  (which imports the shared `frontend/AGENTS.md` for both runtimes), `frontend/taskdeck-web/`,
+  `scripts/agent_hooks/`) — Claude Code loads it when you touch files there. Two rule files load by path rather than directory: `.claude/rules/ci-control.md`
   (`.github/**`, `ci/**`, `scripts/ci/**`) and `.claude/rules/docs.md` (`docs/**`, root `*.md`).
   Read those, not the whole repo.
 - Current shipped state: `docs/STATUS.md` (source of truth) — read the relevant section, it is
-  970 lines; do not read it end-to-end. Roadmap: `docs/IMPLEMENTATION_MASTERPLAN.md` (2068
-  lines — also section-read only, never bulk-read). Human-action file: `OUTSTANDING_TASKS.md`.
+  about 1,570 lines and still growing; do not read it end-to-end. Roadmap:
+  `docs/IMPLEMENTATION_MASTERPLAN.md` (about 2,360 lines — also section-read only, never
+  bulk-read). Both counts are approximate on purpose: they are there to tell you the file is too
+  big to bulk-read, not to be exact. Human-action file: `OUTSTANDING_TASKS.md`.
   Strategy spine: `docs/strategy/PRODUCT_DIRECTION.md` → `docs/REVIVAL_PLAN.md`. Decisions:
   `docs/decisions/INDEX.md`.
 - Contract: `AGENTS.md`. Invariants: `docs/GOLDEN_PRINCIPLES.md`. Skills: `.codex/skills/` for Codex and `.claude/skills/` for Claude.
