@@ -22,10 +22,16 @@ public sealed class ChatSourceReader(TaskdeckDbContext db) : IChatSourceReader
     private static IQueryable<ChatAssetSnapshot> Project(IQueryable<SourceAsset> assets) => assets.Select(asset =>
         new ChatAssetSnapshot(asset.Id, asset.OriginalName ?? "Original text", asset.ContentHash, asset.ByteSize,
             asset.SupersededByAssetId, asset.TextPayload!.Text.Length > 1500 ? asset.TextPayload.Text.Substring(0, 1500) : asset.TextPayload.Text,
-            asset.TextPayload.Text.Length > 1500));
+            asset.TextPayload.Text.Length > 1500, asset.Ordinal));
 
     public async Task<IReadOnlyList<ChatAssetSnapshot>> AssetsAsync(Guid actorId, Guid boardId, Guid captureId, int offset, CancellationToken ct) =>
         await Project(Sources(actorId, boardId, captureId).OrderBy(asset => asset.Ordinal).ThenBy(asset => asset.Id).Skip(offset).Take(11)).ToListAsync(ct);
+
+    public async Task<IReadOnlyList<ChatAssetSnapshot>> AssetsAfterAsync(Guid actorId, Guid boardId, Guid captureId, int afterOrdinal, CancellationToken ct) =>
+        // (CaptureId, Ordinal) already has a unique index. Seek directly past the last source;
+        // hidden modalities or superseded sources never change a saved ordinal.
+        await Project(Sources(actorId, boardId, captureId).Where(asset => asset.Ordinal > afterOrdinal)
+            .OrderBy(asset => asset.Ordinal).Take(11)).ToListAsync(ct);
 
     public Task<ChatAssetSnapshot?> AssetAsync(Guid actorId, Guid boardId, Guid captureId, Guid assetId, CancellationToken ct) =>
         Project(Sources(actorId, boardId, captureId).Where(asset => asset.Id == assetId)).SingleOrDefaultAsync(ct);

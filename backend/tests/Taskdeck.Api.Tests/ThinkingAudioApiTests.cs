@@ -1,21 +1,86 @@
 using System.Net;
+using System.Data.Common;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using Taskdeck.Api.Controllers;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
+using Taskdeck.Infrastructure.Repositories;
 using Xunit;
 
 namespace Taskdeck.Api.Tests;
 
 public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    private sealed class LibraryCommandProbe : DbCommandInterceptor
+    {
+        public List<string> Commands { get; } = [];
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command,
+            CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken ct = default)
+        {
+            Commands.Add(command.CommandText);
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    [Fact]
+    public async Task HostRejectedOversizedBodyKeeps413AndRollsBackOriginalStorage()
+    {
+        var (client, user, board, card, question) = await Setup();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var actor = new Mock<IUserContext>();
+            actor.SetupGet(x => x.IsAuthenticated).Returns(true);
+            actor.SetupGet(x => x.UserId).Returns(user.ToString());
+            var context = new DefaultHttpContext();
+            context.Request.ContentType = "audio/wav";
+            context.Request.Body = new HostRejectedAudioStream(Audio());
+            var controller = new ThinkingAudioController(scope.ServiceProvider.GetRequiredService<ThinkingAudioService>(), actor.Object)
+            { ControllerContext = new ControllerContext { HttpContext = context } };
+            var result = await controller.Upload(board, card, question.Id,
+                new ThinkingAudioUploadDto(Guid.NewGuid(), 1, 70000, "original.wav"), default);
+            var response = result.Should().BeOfType<ObjectResult>().Subject;
+            response.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+            response.Value.Should().BeOfType<ApiErrorResponse>().Which.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        }
+        using var verify = factory.Services.CreateScope();
+        var db = verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.StoredBlobs.AnyAsync(x => x.OwnerUserId == user)).Should().BeFalse();
+        (await db.StoredBlobReferences.AnyAsync(x => x.OwnerUserId == user)).Should().BeFalse();
+        (await db.Captures.AnyAsync(x => x.UserId == user)).Should().BeFalse();
+        (await db.ThinkingAudioAnswers.AnyAsync(x => x.UserId == user)).Should().BeFalse();
+        (await db.LlmRequests.AnyAsync(x => x.UserId == user)).Should().BeFalse();
+        (await client.GetAsync(Url(board, card, question.Id))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    private sealed class HostRejectedAudioStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        private bool read;
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            if (read) throw new BadHttpRequestException("Request body too large", StatusCodes.Status413PayloadTooLarge);
+            read = true;
+            return base.ReadAsync(buffer[..Math.Min(buffer.Length, 32)], ct);
+        }
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            => ReadAsync(buffer.AsMemory(offset, count), ct).AsTask();
+    }
+
     private async Task<(HttpClient Client, Guid User, Guid Board, Guid Card, ThinkingLayer Question)> Setup()
     {
         var client = factory.CreateClient(); var user = await ApiTestHarness.AuthenticateAsync(client, "audio-owner");
@@ -257,12 +322,31 @@ public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : I
     [Fact]
     public async Task LibraryPaginationIsBoundedAndEveryEmittedPageCanBeRead()
     {
-        var (client, _, board, card, question) = await Setup();
-        var questions = Enumerable.Range(0, 21).Select(index => question with { Id = Guid.NewGuid(), Title = $"Question {index}" }).ToList();
+        var (client, user, board, card, question) = await Setup();
+        var questions = Enumerable.Range(0, 21).Select(index => question with { Id = Guid.NewGuid(), Title = $"Question {index}", Body = new string('x', 1000) }).ToList();
         (await client.PutAsJsonAsync($"/api/boards/{board}/cards/{card}/thinking", new SaveThinkingDeckDto(1, questions))).EnsureSuccessStatusCode();
         foreach (var layer in questions) await Receipt(await Upload(client, Url(board, card, layer.Id), bytes: Audio(12), revision: 2));
         var first = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>("/api/thinking-audio/library"))!;
         first.Items.Should().HaveCount(20); first.NextOffset.Should().Be(20);
+        first.Items.Should().OnlyContain(item => item.QuestionExcerpt.Length == 501 && item.QuestionExcerpt.EndsWith("…"));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var sharedDb = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var probe = new LibraryCommandProbe();
+            using var db = new TaskdeckDbContext(new DbContextOptionsBuilder<TaskdeckDbContext>()
+                .UseSqlite(sharedDb.Database.GetDbConnection()).AddInterceptors(probe).Options);
+            var repository = new ThinkingAudioRepository(db);
+            var ids = first.Items.Select(item => item.Id).ToArray();
+            (await repository.LibraryEntriesAsync(user, ids, default)).Should().BeEquivalentTo(first.Items, options => options.WithStrictOrdering());
+            probe.Commands.Should().ContainSingle();
+            probe.Commands[0].Should().Contain("substr(").And.NotContain("StoredBlobChunks");
+            (await repository.LibraryEntriesAsync(Guid.NewGuid(), ids, default)).Should().BeEmpty();
+            (await repository.LibraryEntriesAsync(user, [], default)).Should().BeEmpty();
+            probe.Commands.Should().HaveCount(2, "one bounded query per non-empty page and none for an empty page");
+            db.ChangeTracker.Entries<Taskdeck.Domain.Entities.Capture>().Should().BeEmpty();
+            db.ChangeTracker.Entries<SourceAsset>().Should().BeEmpty();
+            db.ChangeTracker.Entries<ThinkingAudioAnswer>().Should().BeEmpty();
+        }
         var second = (await client.GetFromJsonAsync<ThinkingAudioLibraryPage>($"/api/thinking-audio/library?offset={first.NextOffset}"))!;
         second.Items.Should().HaveCount(1); second.NextOffset.Should().BeNull();
         first.Items.Select(x => x.Id).Intersect(second.Items.Select(x => x.Id)).Should().BeEmpty();

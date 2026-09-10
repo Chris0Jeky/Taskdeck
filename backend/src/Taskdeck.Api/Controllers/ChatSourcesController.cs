@@ -20,10 +20,10 @@ public class ChatSourcesController : AuthenticatedControllerBase
     [HttpGet("{id:guid}/sources")]
     [ResponseCache(NoStore = true)]
     public async Task<IActionResult> Sources(Guid id, [FromQuery] Guid boardId, [FromQuery] int revision,
-        [FromQuery] int offset, CancellationToken ct)
+        [FromQuery] int offset, CancellationToken ct, [FromQuery] int? afterOrdinal = null)
     {
         if (!TryGetCurrentUserId(out var actor, out var error)) return error!;
-        var result = await context.ListSourcesAsync(actor, boardId, id, revision, offset, ct);
+        var result = await context.ListSourcesAsync(actor, boardId, id, revision, offset, ct, afterOrdinal);
         return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
     }
 }

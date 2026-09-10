@@ -6,6 +6,20 @@
 
 `board-proposal-overlays.spec.ts` creates a real update/reorder/create proposal and checks both board renderers across all four experiences. It proves visible markers, saved titles, explicit close, unchanged saved cards/columns, no browser mutation requests, Review-to-board navigation, access refusal and 375 px/no serious-critical axe findings. The final journey passed in 15.8 seconds. Initial fixture failures omitted required operation parameters, requested an unsupported column action, and captured column card counts before seeding the card; each was corrected without relaxing product assertions. New objects remain described by the checked diff rather than simulated board state. No actual board Apply, production deployment or provider-quality acceptance is claimed.
 
+## Indexed original-history pages (2026-09-10)
+
+Real HTTP/SQLite tests follow 1,012 immutable originals beyond the former cutoff and exercise the maximum cursor, invalid negative cursors, mixed offset/cursor requests, ordinal zero, and gaps caused by interleaved external references. The new query uses the existing unique `(CaptureId, Ordinal)` index and takes eleven rows to display ten plus continuation; ownership, active board access and expected memory revision remain checked before reading.
+
+Picker/API tests verify cursor forwarding, increasing ordinal validation, exact continuation identity, malformed pages, permissions and session changes. The Chromium original-source journey now creates twelve answer versions, loads the second page and selects the original first answer, then replays its receipt across all four experiences and checks narrow-screen accessibility. Full-suite outcomes belong to the continuation PR. The initial unrestricted-worker frontend run was stopped after a depth-token test failure; that unchanged test passed alone with two workers, and the bounded full run is recorded separately.
+
+This supersedes the earlier source-interaction offset implementation below: legacy row-offset requests are bounded to 1,000, while current clients start `afterOrdinal=-1` and follow `nextAfterOrdinal` through the complete history. No migration or provider/device acceptance is implied.
+
+## Source upload errors and library metadata (2026-09-10)
+
+`ThinkingAudioApiTests` injects the host's 413 exception during a partially read audio stream, exercises the real application transaction through the controller, and verifies the standard error envelope plus absence of stored blobs, references, captures, audio answers and model requests. Existing owner/access, correction, export/erasure and library cases remain in the same suite.
+
+The twenty-record library fixture checks exact ordered metadata, 500-character SQL excerpt clipping with an ellipsis, foreign-owner exclusion and an empty change tracker. A SQLite command interceptor proves one joined metadata query per non-empty page and no query for an empty page; binary chunks and capture histories are not materialized. The browser library path and full backend qualification are recorded with the continuation PR. This does not claim Kestrel socket transport, live deployment or transcription-provider acceptance.
+
 ## Audio review repairs (2026-09-10)
 
 Audio drafts now bind to the board, card, question and revision present when file selection or microphone acquisition starts. Editing that question retains the local file for replay/download but prevents uploading it under new question evidence. A new draft receives the current binding. Two regressions cover edits before upload and while recording.

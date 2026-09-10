@@ -26,17 +26,9 @@ public sealed class ThinkingAudioService(IUnitOfWork work, IThinkingDeckReposito
         var allowed = await authorization.GetReadableBoardIdsAsync(userId,
             candidates.Where(x => x.BoardId.HasValue).Select(x => x.BoardId!.Value), ct);
         if (!allowed.IsSuccess) return Result.Failure<ThinkingAudioLibraryPage>(allowed.ErrorCode, allowed.ErrorMessage);
-        var items = new List<ThinkingAudioLibraryEntry>();
-        foreach (var answer in candidates.Take(pageSize).Where(x => x.BoardId is null || allowed.Value.Contains(x.BoardId.Value)))
-        {
-            var capture = await captures.GetByIdForUserAsync(answer.CaptureId, userId, ct);
-            var asset = capture?.SourceAssets.SingleOrDefault(x => x.Id == answer.SourceAssetId);
-            if (asset is null) continue;
-            var evidence = capture!.SourceAssets.Single(x => x.Ordinal == 1).TextPayload!.Text;
-            items.Add(new(answer.Id, asset.OriginalName ?? "original-audio", asset.ByteSize, answer.CreatedAt,
-                evidence.Length > 500 ? evidence[..500] + "…" : evidence, answer.RepresentationId.HasValue,
-                answer.ConfirmedMemoryId.HasValue, answer.BoardId is null));
-        }
+        var visibleIds = candidates.Take(pageSize).Where(x => x.BoardId is null || allowed.Value.Contains(x.BoardId.Value))
+            .Select(x => x.Id).ToArray();
+        var items = await answers.LibraryEntriesAsync(userId, visibleIds, ct);
         // Advance over the bounded owner page even when revoked boards hide every candidate.
         return Result.Success(new ThinkingAudioLibraryPage(items, candidates.Count > pageSize ? offset + pageSize : null));
     }

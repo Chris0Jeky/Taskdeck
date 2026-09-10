@@ -170,13 +170,48 @@ public sealed partial class ChatContextApiTests
             await db.SaveChangesAsync();
         }
         var url = SourceUrl(board.Id, memory.Id, 1);
-        var first = (await client.GetFromJsonAsync<ChatAssetPage>(url + "&offset=1000"))!;
-        first.Items.Should().HaveCount(10); first.NextOffset.Should().Be(1010);
-        var final = (await client.GetFromJsonAsync<ChatAssetPage>(url + $"&offset={first.NextOffset}"))!;
-        final.Items.Should().HaveCount(2); final.NextOffset.Should().BeNull();
+        var boundary = (await client.GetFromJsonAsync<ChatAssetPage>(url + "&offset=1000"))!;
+        boundary.Items.Should().HaveCount(10); boundary.NextOffset.Should().BeNull(); boundary.NextAfterOrdinal.Should().Be(1009);
+        var first = (await client.GetFromJsonAsync<ChatAssetPage>(url + "&afterOrdinal=999"))!;
+        first.Items.Should().HaveCount(10); first.NextAfterOrdinal.Should().Be(1009); first.NextOffset.Should().BeNull();
+        var final = (await client.GetFromJsonAsync<ChatAssetPage>(url + $"&afterOrdinal={first.NextAfterOrdinal}"))!;
+        final.Items.Should().HaveCount(2); final.NextAfterOrdinal.Should().BeNull();
         final.Items.Last().Excerpt.Should().Be("Historical correction 1011");
         first.Items.Select(x => x.Id).Intersect(final.Items.Select(x => x.Id)).Should().BeEmpty();
-        (await client.GetAsync(url + "&offset=2147483647")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync(url + "&afterOrdinal=2147483647")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync(url + "&offset=2147483647")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetAsync(url + "&afterOrdinal=-2")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetAsync(url + "&afterOrdinal=1&offset=1")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SourceCursorIncludesOrdinalZeroAndSkipsNonTextGapsWithoutLosingHistory()
+    {
+        var requests = new List<ChatCompletionRequest>(); using var factory = CreateFactory(requests);
+        using var client = factory.CreateClient(); var (actor, board, _, memory, _) = await Setup(factory, client);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+            var saved = (await db.Set<WorkspaceMemory>().FindAsync(memory.Id))!;
+            var store = scope.ServiceProvider.GetRequiredService<ICaptureStore>();
+            await new CaptureIntakeService(store, null).StageMemorySourcesAsync(saved); await db.SaveChangesAsync();
+            var capture = (await store.GetByIdForUserAsync(saved.SourceCaptureId!.Value, actor))!;
+            for (var index = 0; index < 11; index++)
+            {
+                db.Add(capture.AddExternalReferenceSource($"https://example.invalid/source-{index}"));
+                db.Add(capture.SupersedeInlineTextSource($"Correction after gap {index}"));
+            }
+            await db.SaveChangesAsync();
+        }
+        var url = SourceUrl(board.Id, memory.Id, 1);
+        var first = (await client.GetFromJsonAsync<ChatAssetPage>(url + "&afterOrdinal=-1"))!;
+        first.Items.Select(x => x.Ordinal).Should().Equal(Enumerable.Range(0, 10).Select(x => x * 2));
+        first.NextAfterOrdinal.Should().Be(18);
+        var next = (await client.GetFromJsonAsync<ChatAssetPage>(url + $"&afterOrdinal={first.NextAfterOrdinal}"))!;
+        next.Items.Select(x => x.Ordinal).Should().Equal(20, 22); next.NextAfterOrdinal.Should().BeNull();
+        first.Items.Select(x => x.Id).Intersect(next.Items.Select(x => x.Id)).Should().BeEmpty();
+        next.Items.Last().Excerpt.Should().Be("Correction after gap 10");
         requests.Should().BeEmpty();
     }
 
