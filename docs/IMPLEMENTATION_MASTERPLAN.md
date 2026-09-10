@@ -215,6 +215,11 @@ retained-instruction control and long-history paging gaps. Use bounded real sour
 async lifecycle tests and shared browser journeys; continue next with read-only affected-board-object
 proposal overlays and the remaining observation/attention, Studio and source scalability work.
 
+Across-release comparison continuation (#2808): portable observation import/export, build attribution,
+predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
+sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
+selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.
+
 ## Delivery update (2026-09-08, Paper board controls) — `#2090` partial, PR `#2793`, merge `2fd93d6e1`
 
 PR #2793 addresses #2090's remaining per-user collapse persistence, newest-navigation confirmation, selected-card focus, and measured Wide-card cap. The original width/collapse/titles-only delivery remains established; finish the independent review and current-head qualification of these residuals before closing the issue. Browser evidence covers Wide geometry, the desktop inspector, and the viewport-bounded mobile modal. The unrelated test-calendar failure is tracked in #2789 and must not be presented as a green full frontend run.
@@ -226,11 +231,6 @@ PR #2790 implements the accepted ADR-0069 contract for #2004: default proposal a
 ## Delivery update (2026-09-08, CI-10 slice 2 nightly observation) — `#2334` partial, PR `#2791`, merged 2026-09-09T10:57Z as `17481cd2d` under the maintainer's 2026-09-09 four-PR delegation on `#2337`
 
 PR #2791 implements the observation adapter for #2334. Complete independent review and exact-head hosted qualification, then obtain the maintainer's control-plane review before merge. After merge, observe real successful same-head nightly pairs and the quiet-night/week behavior before proposing selective execution. Preserve the existing schedules and unconditional deep-suite coverage throughout observation. Clean-from-tag release qualification remains separate work; no release approval or runner registration is implied.
-
-Across-release comparison continuation (#2808): portable observation import/export, build attribution,
-predefined scenarios/outcomes and grouped descriptive analysis are implemented. Manual files bridge
-sessions; no automatic persistence, randomized assignment or statistical winner is inferred. Source
-selection/audio, in-place proposal overlays and observation/attention evaluation remain separate work.
 
 ## Delivery update (2026-09-08, parallel implementation and asynchronous review)
 
