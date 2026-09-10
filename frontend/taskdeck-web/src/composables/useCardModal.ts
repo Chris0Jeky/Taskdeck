@@ -1,7 +1,7 @@
 import { onBeforeUnmount, ref, computed, watch } from 'vue'
 import { useBoardStore } from '../store/boardStore'
 import { useSessionStore } from '../store/sessionStore'
-import type { Card, CardCaptureProvenance, Label, UpdateCardDto } from '../types/board'
+import type { CardWorkItemType, Card, CardCaptureProvenance, Label, UpdateCardDto } from '../types/board'
 import type { CardComment } from '../types/comments'
 import { useToastStore } from '../store/toastStore'
 import { logError } from '../utils/errorReporting'
@@ -26,6 +26,9 @@ export function useCardModal(options: UseCardModalOptions) {
   const toast = useToastStore()
 
   // Form state
+  const workItemType = ref<CardWorkItemType>('Task')
+  const isSaving = ref(false)
+  const saveError = ref<string | null>(null)
   const title = ref('')
   const description = ref('')
   const dueDate = ref('')
@@ -89,6 +92,7 @@ export function useCardModal(options: UseCardModalOptions) {
   const hasUnsavedChanges = computed(() => {
     const currentCard = card.value
     return (
+      workItemType.value !== (currentCard.workItemType ?? 'Task') ||
       title.value !== currentCard.title ||
       description.value !== (currentCard.description || '') ||
       dueDate.value !== (toCalendarDateKey(currentCard.dueDate) ?? '') ||
@@ -107,8 +111,11 @@ export function useCardModal(options: UseCardModalOptions) {
     if (newCard) {
       const switchedCards = Boolean(previousCard && previousCard.id !== newCard.id)
       if (switchedCards) {
+        isSaving.value = false
+        saveError.value = null
         cardSessionVersion += 1
       }
+      workItemType.value = newCard.workItemType ?? 'Task'
       title.value = newCard.title
       description.value = newCard.description || ''
       dueDate.value = toCalendarDateKey(newCard.dueDate) ?? ''
@@ -148,6 +155,7 @@ export function useCardModal(options: UseCardModalOptions) {
     () => options.getIsOpen(),
     async (isOpen) => {
       if (isOpen) {
+        saveError.value = null
         expectedUpdatedAt.value = card.value.updatedAt
         void loadCardComments(card.value)
         await loadCaptureProvenance()
@@ -219,7 +227,7 @@ export function useCardModal(options: UseCardModalOptions) {
 
   // Save
   async function handleSave() {
-    if (!isFormValid.value) return
+    if (!isFormValid.value || isSaving.value) return
 
     const targetCard = card.value
     const targetSessionVersion = cardSessionVersion
@@ -233,10 +241,13 @@ export function useCardModal(options: UseCardModalOptions) {
       labelIds: selectedLabelIds.value,
       expectedUpdatedAt: expectedUpdatedAt.value,
     }
+    if (workItemType.value !== (targetCard.workItemType ?? 'Task')) update.workItemType = workItemType.value
     if (dueDateChanged) {
       update.dueDate = dueDate.value ? calendarDateKeyToMidnightUtc(dueDate.value) : null
       update.clearDueDate = Boolean(targetCard.dueDate) && !dueDate.value
     }
+    isSaving.value = true
+    saveError.value = null
     try {
       await boardStore.updateCard(targetCard.boardId, targetCard.id, update)
 
@@ -246,7 +257,15 @@ export function useCardModal(options: UseCardModalOptions) {
     } catch (error) {
       logError('Failed to update card:', error)
       if (!isCurrentCardSession(targetCard.id, targetSessionVersion)) return
-      toast.error('Failed to save card changes. Please try again.')
+      const status = (error as { response?: { status?: number } })?.response?.status
+      saveError.value = status === 409
+        ? 'The card changed or is read-only. Your draft is kept. Refresh the board and reopen the card before saving again.'
+        : status === 403
+          ? 'You no longer have permission to edit this card. Your draft is kept.'
+          : 'Could not confirm the save. Your draft is kept. Refresh the board before trying again.'
+      toast.error(saveError.value)
+    } finally {
+      if (isCurrentCardSession(targetCard.id, targetSessionVersion)) isSaving.value = false
     }
   }
 
@@ -343,6 +362,8 @@ export function useCardModal(options: UseCardModalOptions) {
       return
     }
 
+    isSaving.value = true
+    saveError.value = null
     try {
       await boardStore.updateCardComment(targetCard.boardId, targetCard.id, commentId, { content })
       if (
@@ -434,6 +455,7 @@ export function useCardModal(options: UseCardModalOptions) {
 
   return {
     // Form state
+    workItemType,
     title,
     description,
     dueDate,
@@ -484,6 +506,8 @@ export function useCardModal(options: UseCardModalOptions) {
     handleDeleteConfirm,
 
     // Save
+    isSaving,
+    saveError,
     handleSave,
   }
 }
