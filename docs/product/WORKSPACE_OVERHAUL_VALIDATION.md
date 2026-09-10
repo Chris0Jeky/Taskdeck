@@ -1,5 +1,54 @@
 # Workspace overhaul validation and follow-through
 
+## Hosted delivery receipts (2026-09-10)
+
+The source manifest was rechecked against the original local pack: all 20 paths, byte lengths and
+SHA-256 values match, with no additional or missing files. PR #2866 merged as `384d8dfaa` after its
+required gate. PR #2886 merged as `f00cf1d31` at 08:10 UTC after required run `34450719109` passed
+at reviewed head `fce97dc67`, including Ubuntu/Windows API and unit suites and final browser smoke.
+All prior continuation heads are included. The #2886 merge receipt has the same tree as that tested
+head; integrating it into #2892 changes no runtime files. Reminder hours remain subject to their own
+final exact-head hosted gate. These receipts supersede earlier pending-hosted notes for #2886.
+
+## Reminder work-hours and time zones (2026-09-10)
+
+After integrating the final transcription and grounded-question continuation, 56 targeted API tests
+and 56 component tests pass, alongside typecheck and production build. Five combined Chromium
+journeys pass in 36.3 seconds, including actual synthetic speech transport, planning and reminder
+hours. The hours journey also reloads Grove and Grove Night at mobile width and checks accessibility.
+
+A real account-erasure race first reproduced a failed expectation (HTTP 200 instead of 409): an
+in-flight request could recreate default preferences after deletion and then save private hours.
+The conditional database update now also requires an active account. The same regression passes
+within the final 56-case API run, preserving an empty, disabled default preference after erasure.
+This is a scoped repair after full-suite qualification, not a claim of another full-suite run.
+
+Twenty-five domain cases cover existing budget/spacing behavior and the new named-zone window:
+start/end boundaries, selected days, overnight carry, seasonal and repeated DST hours, invalid values
+and unchanged daily limits. Eight API cases prove save/read/export, outside-window no-budget behavior,
+inside-window claims, old-client toggle preservation, explicit clearing, stale revisions and invalid
+configuration. Sixteen component cases cover payloads, disabled saving controls, uncertain-save reload
+and invalidation of in-flight reminders when a loaded window changes.
+
+All 6,421 frontend tests pass with three existing skips across 415 files. Typecheck, production build
+and scoped ESLint pass. Both Chromium journeys pass in 40 seconds; the final control styling has a
+separate passing 26.1-second settings journey. Both Firefox journeys pass in 34.1 seconds. They cover
+opt-in/quiet-time/budget behavior and saved hours across all experiences, reload, concurrent settings
+recovery, 375px overflow and scoped accessibility. The mobile screenshot was inspected. Firefox was
+installed through the repository's existing Playwright package. The temporary override selected the
+same tests under Desktop Firefox; it is retained in local evidence, not production configuration.
+
+The first temporary Firefox config was placed beneath node_modules, where Node refuses TypeScript
+stripping. Moving the config into the frontend root resolved the runner setup; no product fix was
+needed. Temporary configs and services were removed from the active checkout after proof. The bounded
+independent review is clean. Full backend and hosted outcomes follow when complete; no schema change,
+external provider, physical-device or subjective usefulness claim is made.
+
+The complete backend run passed 9,270 tests with 34 existing skips: Domain 1,664, Application 4,276,
+API 3,052, CLI 243, Architecture 28 and Integration 7. This qualifies the reminder slice before its
+parent refresh; the larger transcription/grounded continuation has its separate proof below. Hosted
+qualification remains the final merge gate.
+
 ## Final integrated continuation qualification (2026-09-10)
 
 The continuation combines grounded commit recovery, thinking-route exit and explicit transcription,

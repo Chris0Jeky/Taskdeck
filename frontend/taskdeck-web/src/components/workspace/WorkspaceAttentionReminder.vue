@@ -32,6 +32,8 @@ function input(event: Event) {
 function focusChanged() { if (!eligible()) invalidate() }
 watch(() => [boardId.value, session.userId, session.isAuthenticated, layout.presentation, route.query.focus], invalidate, { flush: 'sync' })
 watch(() => attention.settings?.enabled, enabled => { if (!enabled) invalidate() })
+watch(() => attention.settings ? JSON.stringify(attention.settings.window ?? null) : undefined,
+  (next, previous) => { if (previous !== undefined && next !== previous) invalidate() }, { flush: 'sync' })
 async function tick() {
   if (!eligible() || running || Date.now() - lastPoll < 300_000) return
   const current = generation; const owner = session.userId; const board = boardId.value

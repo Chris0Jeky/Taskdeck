@@ -2,7 +2,9 @@
 
 Last Updated: 2026-09-10
 
-Overhaul closeout (#2808): #2866 is merged. Carry the combined #2886 transcription/grounded/navigation continuation through exact-head CI, then finish the source-backed reminder-hours/time-zone behavior. Scope reconciliation keeps generic processor hosting (#2258), historical representation migration (#2260) and undefined source-storage restore outside the requested prototype delivery. Retain live-provider/device/usefulness acceptance as unverified rather than inferring it from synthetic tests.
+Finish exact-head hosted delivery of #2892, the implemented reminder-hours slice under #2808: optional named-zone weekly windows, explicit save/recovery, existing shared budgets and server-side eligibility. Local full backend/frontend, combined privacy/recovery and cross-browser proof pass. The final active-account write condition prevents erased private hours from being restored by an in-flight request. Old opted-in users retain unrestricted behavior; reminders remain default off.
+
+Overhaul closeout (#2808): #2866 and #2886 are merged with green required CI. All earlier continuation PRs are included; #2892 is the remaining delivery. Reconcile the tracker after that final merge. Scope reconciliation keeps generic processor hosting (#2258), historical representation migration (#2260) and undefined source-storage restore outside the requested prototype delivery. Retain live-provider/device/usefulness acceptance as unverified rather than inferring it from synthetic tests. Earlier execution notes below record the completed slice sequence.
 
 Grounded-question commit recovery (#2808): close the final source-read/save interval and settle accounting before staging questions. Keep short transaction ownership in the insight repository, preserve source/access and insight concurrency checks, and prove no rejected staged state can leak into subsequent saves. This completes the two previously tracked observation consistency gaps; general semantic processing and recall remain separate.
 
