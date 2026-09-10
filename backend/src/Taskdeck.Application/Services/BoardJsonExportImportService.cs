@@ -177,6 +177,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             }
 
             // Create cards with label associations
+            var importedCards = new List<Card>();
             var cardsImported = 0;
             foreach (var importCard in cards.OrderBy(c => c.Position))
             {
@@ -186,6 +187,13 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 var card = new Card(importCard.SourceId.HasValue ? cardIds[importCard.SourceId.Value] : Guid.NewGuid(),
                     board.Id, column.Id, importCard.Title, importCard.Description, importCard.DueDate, importCard.Position);
                 card.SetWorkItemType(Card.ParseWorkItemType(importCard.WorkItemType));
+                if (importCard.ParentCardId is Guid sourceParent)
+                {
+                    if (!cardIds.TryGetValue(sourceParent, out var newParent))
+                        throw new DomainException(ErrorCodes.ValidationError, "Parent must reference a card inside this import.");
+                    card.SetParent(newParent);
+                }
+                importedCards.Add(card);
                 var uniqueCardLabelNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                 foreach (var labelName in importCard.Labels ?? Enumerable.Empty<string>())
@@ -237,6 +245,8 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 }
                 cardsImported++;
             }
+
+                CardHierarchy.Validate(importedCards);
 
                 if (dto.Dependencies is { Count: > 0 })
                 {
@@ -318,7 +328,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             if (document.RootElement.ValueKind == JsonValueKind.Object && document.RootElement.TryGetProperty("format", out _))
             {
                 var envelope = JsonSerializer.Deserialize<BoardExportEnvelope>(json, JsonOptions);
-                return envelope is { Format: "taskdeck-board", Version: 2, Payload: not null }
+                return envelope is { Format: "taskdeck-board", Version: 2 or 3, Payload: not null }
                     ? ConvertExportToImportDto(envelope.Payload) : null;
             }
         }
@@ -418,7 +428,7 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 card.Position,
                 card.DueDate,
                 labelNames,
-                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived, card.WorkItemType));
+                thinkingByCard.GetValueOrDefault(card.Id), card.Id, card.IsArchived, card.WorkItemType, card.ParentCardId));
         }
 
         return new ImportBoardDto(
@@ -430,8 +440,9 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             exportDto.Dependencies);
     }
 
-    public static object ToPortablePayload(ExportBoardDto dto) => dto.Dependencies is { Count: > 0 }
-        ? new BoardExportEnvelope("taskdeck-board", 2, dto) : dto;
+    public static object ToPortablePayload(ExportBoardDto dto) => dto.Cards.Any(card => card.ParentCardId.HasValue)
+        ? new BoardExportEnvelope("taskdeck-board", 3, dto)
+        : dto.Dependencies is { Count: > 0 } ? new BoardExportEnvelope("taskdeck-board", 2, dto) : dto;
 
     private static BoardDto MapToBoardDto(Board board)
     {
@@ -469,6 +480,6 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
             card.Position,
             labels,
             card.CreatedAt,
-            card.UpdatedAt, card.IsArchived, card.WorkItemType.ToString());
+            card.UpdatedAt, card.IsArchived, card.WorkItemType.ToString(), card.ParentCardId);
     }
 }

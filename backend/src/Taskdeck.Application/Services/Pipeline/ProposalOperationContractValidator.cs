@@ -35,12 +35,15 @@ public static class ProposalOperationContractValidator
         IEnumerable<ProposalOperationDto> operations,
         CancellationToken cancellationToken = default)
     {
+        var materializedOperations = operations.ToList();
+        var hierarchyResult = await ProposalHierarchyValidator.ValidateAsync(unitOfWork, proposalBoardId, materializedOperations, cancellationToken);
+        if (!hierarchyResult.IsSuccess) return Result.Failure(hierarchyResult.ErrorCode, hierarchyResult.ErrorMessage);
         var validationContext = new BoardValidationContext(unitOfWork, proposalBoardId);
 
         // Apply executes operations in Sequence order. Validate in that same order so
         // an operation may safely reference an entity created by an earlier step,
         // while references to not-yet-created entities still fail closed.
-        foreach (var operation in operations.OrderBy(operation => operation.Sequence))
+        foreach (var operation in materializedOperations.OrderBy(operation => operation.Sequence))
         {
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
@@ -319,7 +322,7 @@ public static class ProposalOperationContractValidator
                 var labelsProvided = parameters.TryGetProperty("labels", out _);
                 var labelIdsProvided = parameters.TryGetProperty("labelIds", out _);
                 if (title == null && description == null && !dueDateProvided && !clearDueDate &&
-                    !labelsProvided && !labelIdsProvided && workItemType is null)
+                    !labelsProvided && !labelIdsProvided && workItemType is null && !parameters.TryGetProperty("parentCardId", out _) && !parameters.TryGetProperty("clearParent", out _))
                 {
                     return Result.Failure(
                         ErrorCodes.ValidationError,
@@ -365,7 +368,7 @@ public static class ProposalOperationContractValidator
         if (normalizedAction is "create" or "update")
             return Result.Success();
 
-        if (normalizedAction is "move" or "archive" or "archive-lifecycle" or "restore-lifecycle")
+        if (normalizedAction is "move" or "archive" or "archive-lifecycle" or "restore-lifecycle" or "delete")
         {
             if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
                 return Result.Failure(ErrorCodes.ValidationError, cardIdError);
@@ -655,8 +658,8 @@ public static class ProposalOperationContractValidator
             if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out _)) return Result.Success();
             var action = operation.ActionType.ToLowerInvariant();
             var lifecycle = action is "archive-lifecycle" or "restore-lifecycle";
-            var typeChange = action == "update" && parameters.TryGetProperty("workItemType", out _);
-            var pinned = lifecycle || typeChange;
+            var typeChange = action == "update" && (parameters.TryGetProperty("workItemType", out _) || parameters.TryGetProperty("parentCardId", out _) || parameters.TryGetProperty("clearParent", out _));
+            var pinned = lifecycle || typeChange || action == "delete";
             // A lifecycle approval pins one exact card revision. Mixing another write to that
             // card would invalidate its timestamp during Apply; reject this at Preview too.
             if (_lifecycleCards.Contains(cardId) || (pinned && _mutatedCards.Contains(cardId)))
@@ -673,6 +676,7 @@ public static class ProposalOperationContractValidator
                 return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
             if (card.UpdatedAt != expected)
                 return Result.Failure(ErrorCodes.Conflict, "Card changed since this proposal was prepared. Refresh and create a new proposal.");
+            if (action == "delete") return Result.Success();
             if (typeChange) return card.IsArchived
                 ? Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing.") : Result.Success();
             var archive = action == "archive-lifecycle";

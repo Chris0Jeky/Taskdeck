@@ -1479,7 +1479,7 @@ public class AutomationProposalService : IAutomationProposalService
                 .ToList();
 
             var revisedDiff = await BuildReadableDiffAsync(proposal.BoardId, revisedViews, cancellationToken);
-            return Result.Success(revisedDiff);
+            return revisedDiff;
         }
 
         var originalOperations = proposal.Operations
@@ -1524,7 +1524,7 @@ public class AutomationProposalService : IAutomationProposalService
         if (!originalValidation.IsSuccess)
             return Result.Failure<string>(originalValidation.ErrorCode, originalValidation.ErrorMessage);
 
-        if (useStoredOriginal && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
+        if (useStoredOriginal && !originalOperations.Any(op => OperationParameterParser.TryDeserializeParameters(op.Parameters, out var p, out _) && ProposalHierarchyValidator.AffectsHierarchy(op.ActionType, op.TargetType, p)) && !string.IsNullOrWhiteSpace(proposal.DiffPreview))
             return Result.Success(proposal.DiffPreview);
 
         var orderedViews = originalOperations
@@ -1532,7 +1532,7 @@ public class AutomationProposalService : IAutomationProposalService
             .ToList();
 
         var generatedDiff = await BuildReadableDiffAsync(proposal.BoardId, orderedViews, cancellationToken);
-        return Result.Success(generatedDiff);
+        return generatedDiff;
     }
 
     public async Task<Result<string>> GetTerminalProposalStoredPreviewAsync(Guid id, CancellationToken cancellationToken = default)
@@ -1608,11 +1608,15 @@ public class AutomationProposalService : IAutomationProposalService
     /// the original-operations path and the revision-aware path so both render
     /// identically (#1235).
     /// </summary>
-    private async Task<string> BuildReadableDiffAsync(
+    private async Task<Result<string>> BuildReadableDiffAsync(
         Guid? boardId,
         IReadOnlyList<DiffOperationView> orderedOperations,
         CancellationToken cancellationToken)
     {
+        var hierarchy = await ProposalHierarchyValidator.ValidateAsync(_unitOfWork, boardId,
+            orderedOperations.Select(op => new ProposalOperationDto(Guid.Empty, Guid.Empty, op.Sequence, op.ActionType,
+                op.TargetType, op.TargetId, op.Parameters, "", null)), cancellationToken);
+        if (!hierarchy.IsSuccess) return Result.Failure<string>(hierarchy.ErrorCode, hierarchy.ErrorMessage);
         // Batch-load entity names for resolving IDs to human-readable labels
         var columnNames = new Dictionary<Guid, string>();
         var cardTitles = new Dictionary<Guid, string>();
@@ -1648,12 +1652,15 @@ public class AutomationProposalService : IAutomationProposalService
         var descriptions = new List<string>(orderedOperations.Count);
         foreach (var operation in orderedOperations)
         {
-            descriptions.Add(DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames));
+            var description = DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames);
+            if (hierarchy.Value.TryGetValue(operation.Sequence, out var hierarchyDescription))
+                description += Environment.NewLine + hierarchyDescription;
+            descriptions.Add(description);
             ApplyPreviewCreatedCardState(operation, cardTitles, cardStates);
             ApplyPreviewCardArchiveState(operation, cardStates);
         }
 
-        return string.Join(Environment.NewLine, descriptions);
+        return Result.Success(string.Join(Environment.NewLine, descriptions));
     }
 
     public async Task<Result<int>> DismissProposalsAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default)
