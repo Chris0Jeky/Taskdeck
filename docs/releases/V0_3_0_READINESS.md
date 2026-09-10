@@ -21,7 +21,7 @@ The five clauses are `docs/REVIVAL_PLAN.md` §3, the v0.3 row. Per-clause proven
 | Clause 4 (`main` green) | 2026-09-10 | `CI` run `34494959248` at `a1f797913` |
 | Clause 5's branch-protection read | 2026-09-10 | live branch protection on `main` |
 | Section 3, the human-gate table | rows re-read 2026-09-10; the rest 2026-09-05 04:00Z | `main` `a1f797913` for the SC-9 and SC-10 rows, `42d3007f0` for the others |
-| Section 2, the clause-5 chain | 2026-09-04 | not re-measured since |
+| Section 2, the clause-5 chain | preface re-measured 2026-09-10; the numbered narrative below it 2026-09-04 | `main` `a1f797913` for the preface |
 | Clauses 1 and 3 | 2026-09-03 | not re-measured since |
 | Section 4, trackers | 2026-09-05 | not re-measured since |
 
@@ -45,6 +45,17 @@ after the ruling inherit it unless their seeding says otherwise.
 
 These are the issues whose state a Codex lane can change and that a gate clause actually depends on.
 Everything else in the milestone is section 4 or section 5.
+
+**Re-measured 2026-09-10 against `main` `a1f797913`; the numbered narrative below it is the 2026-09-04 measurement, kept because its evidence is still the record of how the chain got here.** Four things have moved, and the first makes the list below misleading if read as current:
+
+- **`#2506` merged on 2026-09-06 (`79d7efdb7`).** Item 1 names it as "the first open blocker on clause 5"; it is not open. It landed as the first step of the SC-10 chain the maintainer delegated that morning.
+- **The `planner-error` class it was meant to close is still live.** It is now tracked as `#2562`, with three observed triggers rather than one: a stacked PR whose base is another PR's branch; a retained merge ref whose parent is the old base after a retarget (the lane's 2026-09-10 note on `#2897`); and a plain unstacked PR whose base simply moved under it between branch creation and the gate run, observed today on `#2925` (run `34509907288`, `CONTROL_BASE` `b3edd1ee1`, a merge that landed about twenty minutes earlier). The third needs no unusual setup at all, so this is not a stacked-PR-only defect and `#2562` has been retitled to say so.
+- **The recall report exists and reads not-ready.** The beta lane published one on `#2336` at 2026-09-10T02:57:50Z over the 2026-09-09 to 2026-09-10 window: **usable merged PRs 7 of 42 against a floor of 20**, usable revision/attempt observations 9 of 88, failed lanes observed 3, **missed 3, recall 0.0%**, ready for selection **no**. So SC-4's condition fails on two counts at once — the sample is far below the floor, and recall on the sample it does have is zero.
+- **The landed-commit verifier still does not exist.** There is no such module under `scripts/ci/smart-ci/`, which holds `plan.mjs`, `evaluate-gate.mjs`, `resolve-merge-ref.mjs`, `recall-report.mjs`, `nightly-coordinator.mjs`, `nightly-baseline.mjs`, `action-pins.mjs`, `artifact-cleanup.mjs`, `measure-ci-estate.mjs` and the `continuation/` tree. The three `landed` mentions in the tree are in tests and `ci-required.yml`, not an implementation.
+
+**What that leaves as genuinely takeable now.** `#2327`'s two halves are different shapes and only one is implementable: the landed verifier is code nobody has written, while the observation window is evidence that restarted on 2026-09-06 (a false red at 19:34Z retracted that morning's clean tally) and **cannot close before SC-6**, because while the repository is public a fork's `pull_request` run can create a job with the gate's name. A lane taking `#2327` should take the verifier and leave the window to accumulate. `#2562` is the other takeable item and it taxes every PR opened while `main` is busy.
+
+**Also measured 2026-09-10, on the cutover sections this chain depends on** (evidence on `#2337`, `#2335`, `#2327` and `#2334`; `docs/ci/PRIVATE_REPO_CUTOVER_CHECKLIST.md` is the CI region's and was not edited): §G is four-of-five done, leaving `persist-credentials: false` — PR `#2838`'s entire scope — as its only open non-maintainer item; §C's planner side is green locally at 512/512; §H's nightly coordinator exists and is wired but `ci-nightly.yml` states in its own words that the job is observation only and every deep job remains unconditional, so **selective execution is not shipped**.
 
 **The clause-5 chain, in order.** Clause 5 needs `Smart CI / Required Gate` enforced. Branch protection
 on `main` today requires exactly three contexts, all security: `Dependency Security / Dependency
