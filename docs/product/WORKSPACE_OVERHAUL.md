@@ -80,7 +80,7 @@ explicit approve action followed by a separate apply action and the existing con
 | Dependencies | Explicit same-board prerequisite relationships with both directions, live status refresh and portable import | Implemented with cycle validation, revision conflicts, archive and deletion guards. No automatic edges or status/deadline changes |
 | Audio answers and unified source evidence | Native Capture/SourceAsset question originals, explicit older-memory preservation, original audio and separate immutable written representations | Implemented: recording/file intake, playback/download, stable upload retry, written history/confirmation and retained library. Optional explicit transcription has destination-bound consent, durable failure/retry receipts and provisional output; adoption preserves lineage. Account export/erasure includes storage and receipts. General legacy representation backfill and import/restore remain separate |
 | Model-generated observations and recall | Explicit one-card preview and up to three quoted private questions with shared Chat budget, category/card deduplication and one-day freshness | Experimental question producer implemented; [contract and usefulness corpus](GROUNDED_OBSERVATIONS.md). General semantic candidates, recall and live-provider usefulness acceptance remain separate |
-| Optional nudges | Explicit account opt-in, quiet links to existing questions, shared two-per-day/two-hour budget | Implemented experimentally with typing/dialog/Focus/Zen/visibility suppression and no automatic model work. [Policy and limits](WORKSPACE_ATTENTION.md); subjective usefulness/non-intrusion evaluation remains open |
+| Optional nudges | Explicit account opt-in, quiet links to existing questions, optional named-zone weekly hours and shared two-per-day/two-hour budget | Implemented experimentally with typing/dialog/Focus/Zen/visibility suppression and no automatic model work. Overnight windows follow their selected starting day; old opt-ins remain unrestricted. [Policy and limits](WORKSPACE_ATTENTION.md); subjective usefulness/non-intrusion evaluation remains open |
 
 Insight actions wait for active analysis to settle, Memory creation waits for the initial list, and Retry repeats failed board discovery before reading content. These guards prevent overlapping operations from stranding the workspace or hiding a newly saved memory.
 
@@ -153,8 +153,8 @@ remote destination consent. Those behaviors use the integrated memory and audio 
 chat lines 34–47 describes prepared prototype transcripts, not a working speech provider.
 
 Unified `INTEGRATION_HANDOFF.md` lines 84–104 adds production speech/recovery proof and bounded model
-questions with optional interruption controls. Reminder work-hours/time-zone selection remains a
-concrete continuation item. Physical microphone, live-provider quality, subjective usefulness and
+questions with optional interruption controls. Reminder work-hours/time-zone selection now has an
+explicit saved preference with server enforcement. Physical microphone, live-provider quality, subjective usefulness and
 non-intrusion need direct acceptance; synthetic proof does not satisfy those claims.
 
 Generic processor hosting remains CF-04 [#2258](https://github.com/Chris0Jeky/Taskdeck/issues/2258), and

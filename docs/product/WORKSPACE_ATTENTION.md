@@ -6,6 +6,26 @@ A reminder is a quiet link to the current board's existing questions. It appears
 
 The client checks at most once every five minutes while eligible. The server revalidates saved questions through the existing insight service without analyzing the board or calling a model. Only an available question is eligible; answered, resolved, muted, dismissed, snoozed, stale or inaccessible questions are excluded. A reminder contains board/question identifiers and a generic link, not private question text.
 
+## Reminder hours
+
+Optional **Reminder hours** restricts new reminders to selected weekdays and local times in a saved
+IANA time zone, such as `Europe/London`. The default is unrestricted for existing opted-in accounts;
+reminders themselves remain off by default. **Use this device's time zone** fills the field, and
+**Save reminder hours** explicitly persists the choice across devices. Toggling reminders off/on
+preserves the window. Clearing the restriction requires an explicit hours save.
+
+The start is included and the end excluded. An overnight window belongs to each selected starting
+day: Monday 22:00–02:00 includes early Tuesday. Equal start/end times and invalid zones/days are
+rejected. UTC instants convert to the named zone, so daylight-saving transitions follow local time;
+the repeated autumn hour remains eligible while the normal UTC spacing/budget still applies.
+
+The server checks eligibility before looking up a question and again before claiming capacity.
+Outside-window polling returns no reminder and consumes no budget. Updating a loaded window clears
+displayed/in-flight reminders. A reminder already offered during an allowed window may remain as a
+quiet link until normal dismissal or interaction; the schedule governs new offers. No timer wakes a
+closed browser. Both account exports include the window in the existing JSON preference; erasure
+removes that preference. No schema migration or device-local authorization is introduced.
+
 ## Shared budget
 
 One conditional database update claims capacity against the user's attention revision. All boards, tabs and devices share at most two claims per UTC day and two hours between claims. Crossing midnight does not bypass spacing; toggling off/on does not reset consumed capacity. The same question cannot be claimed consecutively. Lost or discarded responses conservatively consume the claim; they never trigger automatic retry. This makes the maximum a ceiling, not a promise to display two reminders.

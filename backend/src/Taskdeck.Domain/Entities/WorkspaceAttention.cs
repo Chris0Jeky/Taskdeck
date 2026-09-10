@@ -2,11 +2,12 @@ namespace Taskdeck.Domain.Entities;
 
 /// <summary>Optional reminders share one conservative account budget across boards and clients.</summary>
 public sealed record WorkspaceAttention(bool Enabled = false, DateOnly? Day = null, int Count = 0,
-    DateTimeOffset? LastClaimedAt = null, Guid? LastInsightId = null)
+    DateTimeOffset? LastClaimedAt = null, Guid? LastInsightId = null, WorkspaceAttentionWindow? Window = null)
 {
     public const int DailyLimit = 2;
     public static readonly TimeSpan MinimumSpacing = TimeSpan.FromHours(2);
     public bool CanClaim(DateTimeOffset now) => Enabled
+        && (Window is null || Window.Contains(now))
         && (Day != DateOnly.FromDateTime(now.UtcDateTime) || Count < DailyLimit)
         && (LastClaimedAt is null || now - LastClaimedAt >= MinimumSpacing);
 
