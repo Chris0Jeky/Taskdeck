@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Domain.Common;
@@ -98,7 +98,10 @@ public class BoardService
         if (!permission.IsSuccess)
             return Result.Failure<BoardDetailDto>(permission.ErrorCode, permission.ErrorMessage);
 
-        return await GetBoardDetailAsync(id, cancellationToken);
+        var detail = await GetBoardDetailAsync(id, cancellationToken);
+        if (!detail.IsSuccess) return detail;
+        var writable = _authorizationService is null ? null : await _authorizationService.CanWriteBoardAsync(actingUserId, id);
+        return Result.Success(detail.Value with { CanWrite = writable is { IsSuccess: true, Value: true } });
     }
 
     /// <summary>
@@ -433,7 +436,7 @@ public class BoardService
                 c.Name,
                 c.Position,
                 c.WipLimit,
-                c.Cards.Count,
+                c.Cards.Count(card => !card.IsArchived),
                 c.CreatedAt,
                 c.UpdatedAt
             ))

@@ -32,6 +32,7 @@ public class Card : Entity
     public string Description { get; private set; } = string.Empty;
     public DateTimeOffset? DueDate { get; private set; }
     public bool IsBlocked { get; private set; }
+    public bool IsArchived { get; private set; }
     public string? BlockReason { get; private set; }
     public int Position { get; private set; }
 
@@ -56,6 +57,7 @@ public class Card : Entity
 
     public void Update(string? title = null, string? description = null, DateTimeOffset? dueDate = null)
     {
+        EnsureActive();
         if (title != null)
             Title = title;
 
@@ -71,6 +73,7 @@ public class Card : Entity
 
     public void ClearDueDate()
     {
+        EnsureActive();
         DueDate = null;
         Touch();
     }
@@ -85,6 +88,7 @@ public class Card : Entity
 
     public void SetPosition(int position)
     {
+        EnsureActive();
         if (position < 0)
             throw new DomainException(ErrorCodes.ValidationError, "Position cannot be negative");
 
@@ -94,12 +98,14 @@ public class Card : Entity
 
     public void MoveToColumn(Guid columnId, int position)
     {
+        EnsureActive();
         ColumnId = columnId;
         SetPosition(position);
     }
 
     public void Block(string reason)
     {
+        EnsureActive();
         if (string.IsNullOrWhiteSpace(reason))
             throw new DomainException(ErrorCodes.ValidationError, "Block reason cannot be empty");
 
@@ -110,6 +116,7 @@ public class Card : Entity
 
     public void Unblock()
     {
+        EnsureActive();
         IsBlocked = false;
         BlockReason = null;
         Touch();
@@ -118,20 +125,48 @@ public class Card : Entity
     // Label management (called by application services)
     public void AddLabel(CardLabel cardLabel)
     {
+        EnsureActive();
         if (_cardLabels.Any(cl => cl.LabelId == cardLabel.LabelId))
             throw new DomainException(ErrorCodes.ValidationError, "Label is already assigned to this card");
 
         _cardLabels.Add(cardLabel);
+        Touch();
     }
 
     public void RemoveLabel(CardLabel cardLabel)
     {
+        EnsureActive();
         _cardLabels.Remove(cardLabel);
+        Touch();
     }
 
     public void ClearLabels()
     {
+        EnsureActive();
         _cardLabels.Clear();
+        Touch();
+    }
+
+    public void Archive()
+    {
+        if (IsArchived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Card is already archived. Refresh its history.");
+        IsArchived = true;
+        Touch();
+    }
+
+    public void Restore()
+    {
+        if (!IsArchived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Card is already active. Refresh the board.");
+        IsArchived = false;
+        Touch();
+    }
+
+    private void EnsureActive()
+    {
+        if (IsArchived)
+            throw new DomainException(ErrorCodes.InvalidOperation, "Card is archived. Restore the card before editing.");
     }
 
     private void Initialize(

@@ -20,6 +20,35 @@ public class DataPortabilityApiTests : IClassFixture<TestWebApplicationFactory>
 {
     private readonly TestWebApplicationFactory _factory;
 
+    [Fact]
+    public async Task AccountCardExport_IncludesArchiveStateWithBufferedStreamParity_AndExcludesOtherUsersBoards()
+    {
+        using var owner = _factory.CreateClient();
+        using var outsider = _factory.CreateClient();
+        await ApiTestHarness.AuthenticateAsync(owner, "archive-export-owner");
+        await ApiTestHarness.AuthenticateAsync(outsider, "archive-export-outsider");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(owner, "Card export owner");
+        var board = (await owner.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var created = await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards",
+            new CreateCardDto(boardId, board.Columns[0].Id, "Export retained card", "Public board evidence", null, null));
+        var card = (await created.Content.ReadFromJsonAsync<CardDto>())!;
+        (await owner.PostAsJsonAsync($"/api/boards/{boardId}/cards/{card.Id}/archive", new CardLifecycleDto(card.UpdatedAt)))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        var buffered = await owner.GetFromJsonAsync<JsonElement>("/api/account/export");
+        var streamed = await owner.GetFromJsonAsync<JsonElement>("/api/account/export/stream");
+        var bufferedCards = buffered.GetProperty("data").GetProperty("cards");
+        var streamedCards = streamed.GetProperty("data").GetProperty("cards");
+        JsonNode.DeepEquals(JsonNode.Parse(bufferedCards.GetRawText()), JsonNode.Parse(streamedCards.GetRawText())).Should().BeTrue();
+        var exported = bufferedCards.EnumerateArray().Single(c => c.GetProperty("id").GetGuid() == card.Id);
+        exported.GetProperty("isArchived").GetBoolean().Should().BeTrue();
+        exported.GetProperty("columnId").GetGuid().Should().Be(card.ColumnId);
+        foreach (var path in new[] { "/api/account/export", "/api/account/export/stream" })
+        {
+            var other = await outsider.GetFromJsonAsync<JsonElement>(path);
+            other.GetProperty("data").GetProperty("cards").EnumerateArray().Should().NotContain(c => c.GetProperty("id").GetGuid() == card.Id);
+        }
+    }
+
     public DataPortabilityApiTests(TestWebApplicationFactory factory)
     {
         _factory = factory;
