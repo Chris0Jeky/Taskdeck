@@ -37,6 +37,8 @@ function leave() {
 
 async function load() {
   const current = ++generation
+  const requestedBoardId = boardId.value
+  const requestedCardId = cardId.value
   board.value = null
   card.value = null
   dirty.value = false
@@ -46,10 +48,13 @@ async function load() {
   answerBusy.value = false
   loading.value = true
   error.value = null
+  // Route params clear before the leaving view is unmounted. Invalidate old receipts
+  // above, but never turn that transition into an empty-board network request.
+  if (!requestedBoardId || !requestedCardId) { loading.value = false; return }
   try {
-    const [nextBoard, cards] = await Promise.all([boardsApi.getBoard(boardId.value), cardsApi.getCards(boardId.value)])
+    const [nextBoard, cards] = await Promise.all([boardsApi.getBoard(requestedBoardId), cardsApi.getCards(requestedBoardId)])
     if (current !== generation) return
-    const nextCard = cards.find(item => item.id === cardId.value)
+    const nextCard = cards.find(item => item.id === requestedCardId)
     if (!nextCard) {
       error.value = 'This card is no longer available on this board.'
       return
