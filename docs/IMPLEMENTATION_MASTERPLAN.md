@@ -2263,3 +2263,8 @@ representations, typed source selection, grounded observations and optional atte
 work in #2808. This implementation does not claim restoration/import, live-model quality or completion
 of the entire overhaul.
 
+
+Older-memory source admission (#2808) now has an explicit bounded Memory action. Current and archived
+entries are selectable through their existing list filters; batches use expected revisions and one
+atomic save, and can be resumed after reload. This completes legacy text-original admission; audio,
+representation processing, direct source selection and broader source evaluation remain open.
