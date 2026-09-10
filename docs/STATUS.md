@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Grounded-question commit recovery (#2808, pending main delivery): recheck source/access inside the same serializable transaction that saves observations, and detach rejected staged questions. Settle model usage before staging; accounting failure now has a definite no-save result and cannot hide a successful question save. Seventeen application and sixteen API/reminder tests pass, including changes after the final service read. Full backend verification passes 9,240 tests with 34 existing skips; bounded independent review is clean. Hosted qualification remains separate.
+
 Expanded overhaul follow-through (#2808, pending main delivery): optional reminders, audio recovery and retained previews now pass combined qualification: 9,232 backend tests, 6,418 frontend tests, eleven Chromium journeys and both migrations together. A final filename-normalization fix has eleven passing audio API tests. Independent interaction reviews are clean; hosted/base qualification remains on the delivery PRs. [Evidence and limits](product/WORKSPACE_OVERHAUL_VALIDATION.md).
 
 Audio playback continuity (#2808): bind downloaded originals to the current recording and source/request generations, revoke stale URLs and discard late errors. Full frontend, focused and browser recovery proof passes; hosted state remains on the continuation PR.

@@ -13,12 +13,20 @@ batch. Existing structural **Analyze now** remains available with no model confi
 
 - `GET /api/workspace-insights/observation-source` discloses one authorized active-board card excerpt.
 - `POST /api/workspace-insights/model-analysis` requires that exact card and fingerprint. The server
-  rechecks access and source content before dispatch and after completion. A changed or unavailable
-  source discards the candidate batch. The client disables overlapping operations and does not retry
+  rechecks access and source content before dispatch and after completion. A final source/access read
+  and save share one short serializable database transaction. A changed or unavailable source discards
+  the candidate batch, and rejected staged questions are detached from later saves. The client disables overlapping operations and does not retry
   the provider request automatically; uncertain responses require another explicit evidence preview.
+  A busy SQLite writer reports a storage failure rather than claiming the evidence changed. No
+  candidate is saved; the message explains that model usage was already accounted for and that a
+  new analysis uses budget again. The final transaction still detaches rejected candidates.
 - The producer shares the user's Chat request/token budget and kill switch. Its conservative input
   estimate includes UTF-8 source/prompt bytes, bounded output and framing. Dispatch-aware settlement
-  retains billed usage after cancellation or invalid output. Mock/unavailable providers do not run.
+  retains billed usage after cancellation or invalid output. For accepted output, settlement occurs
+  before staging questions: if accounting cannot be confirmed, the response states that no questions
+  were saved. A failed cleanup does not replace the original cancellation or rejection. Failures are
+  logged without source/provider text; existing quota reservation recovery remains responsible for
+  unsettled usage. Mock/unavailable providers do not run.
 - The strict output contract admits only `next-step`, `outcome` and `dependency` question categories,
   each at most once, with bounded question/reason/quote fields and an exact quote in the excerpt.
   Category plus card identity collapses paraphrases; this is bounded category deduplication, not
@@ -72,8 +80,10 @@ questions, reload and private answering. Default hosted runs require no live mod
 375 px overflow and an automated accessibility check. Synthetic transport proves wiring, not model
 usefulness, production-provider availability or physical-device acceptance.
 
-Two non-blocking review findings remain tracked under #2808: a card edit in the small interval between
-the final source read and persistence is resolved on the next insights read, rather than guarded by
-a commit-time fingerprint; quota settlement storage errors can surface an uncertain HTTP error after
-the question save. These do not authorize board changes or expose another user's questions. They
-remain targeted follow-through rather than claims of atomic source/save or infallible accounting.
+The two earlier source/save and accounting-outcome gaps now have direct regression coverage. API
+tests commit an edit, archive, deletion or membership revocation after the final service read and
+verify that the transaction rejects all candidates. Another test proves rejected staged questions
+cannot leak through a later save. Application tests inject failed accounting and cleanup, proving
+no question staging on failed settlement, one settlement attempt, and preservation of the original
+provider cancellation. This does not claim infallible accounting storage, an automatic model retry,
+provider usefulness, or a complete Context Fabric processing/recall pipeline.
