@@ -27,7 +27,7 @@ test('card companion keeps explicit sources and revision preview beside shared t
   await companion.getByRole('button', { name: 'Choose sources', exact: true }).click()
   await companion.getByRole('button', { name: 'Include the card you are working on' }).click()
   await companion.getByLabel('Include shared thinking for this card').check()
-  await companion.getByLabel(/Unknown delivery date/).check()
+  await companion.getByRole('checkbox', { name: /Unknown delivery date/ }).check()
   await companion.getByLabel('Automation instruction').fill('create card "Contextual next step"')
   const sent = page.waitForRequest(req => req.method() === 'POST' && /chat\/sessions\/[^/]+\/messages$/.test(new URL(req.url()).pathname))
   await companion.getByRole('button', { name: 'Send Message', exact: true }).click()
