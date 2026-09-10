@@ -17,7 +17,7 @@ const confirmed: ThinkingAudio = { ...written, revision: 3, representationId: 'c
 ] }
 const global = { stubs: {
   RouterLink: { template: '<a><slot /></a>' },
-  AudioAnswerRecorder: { name: 'AudioAnswerRecorder', props: ['modelValue', 'disabled'], emits: ['update:modelValue', 'busy'], template: '<div>Recorder draft: {{ modelValue?.name }}</div>' },
+  AudioAnswerRecorder: { name: 'AudioAnswerRecorder', props: ['modelValue', 'disabled'], emits: ['update:modelValue', 'busy', 'draft-started'], template: '<div>Recorder draft: {{ modelValue?.name }}</div>' },
 } }
 function button(wrapper: ReturnType<typeof mount>, text: string) { return wrapper.findAll('button').find(x => x.text() === text)! }
 beforeEach(() => {
@@ -28,6 +28,27 @@ beforeEach(() => {
 })
 
 describe('private audio answers', () => {
+  it.each(['selected', 'recording'])('binds a %s draft to the question revision at its start', async kind => {
+    const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
+    const recorder = wrapper.findComponent({ name: 'AudioAnswerRecorder' })
+    recorder.vm.$emit('draft-started')
+    const file = new File(['audio'], 'prior-question.wav', { type: 'audio/wav' })
+    if (kind === 'selected') recorder.vm.$emit('update:modelValue', file)
+    await wrapper.setProps({ revision: 4 }); await flushPromises()
+    if (kind === 'recording') recorder.vm.$emit('update:modelValue', file)
+    await flushPromises()
+    expect(wrapper.text()).toContain('question changed after this audio draft began')
+    expect(wrapper.text()).toContain('prior-question.wav')
+    expect(button(wrapper, 'Save original privately').attributes('disabled')).toBeDefined()
+    await button(wrapper, 'Save original privately').trigger('click')
+    expect(thinkingAudioApi.upload).not.toHaveBeenCalled()
+    recorder.vm.$emit('update:modelValue', null); recorder.vm.$emit('draft-started')
+    recorder.vm.$emit('update:modelValue', new File(['new'], 'current.wav', { type: 'audio/wav' })); await flushPromises()
+    vi.mocked(thinkingAudioApi.upload).mockResolvedValue(original)
+    await button(wrapper, 'Save original privately').trigger('click'); await flushPromises()
+    expect(thinkingAudioApi.upload).toHaveBeenCalledWith('board', 'card', 'question', 4, expect.any(String), expect.objectContaining({ name: 'current.wav' }))
+    wrapper.unmount()
+  })
   it('keeps the original unanswered through a saved written version and confirms separately', async () => {
     const wrapper = mount(ThinkingAudioAnswer, { props, global }); await flushPromises()
     const file = new File(['audio'], 'voice.wav', { type: 'audio/wav' })

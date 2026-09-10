@@ -2,7 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps<{ modelValue: File | null; disabled?: boolean }>()
-const emit = defineEmits<{ 'update:modelValue': [file: File | null]; busy: [busy: boolean] }>()
+const emit = defineEmits<{ 'update:modelValue': [file: File | null]; busy: [busy: boolean]; 'draft-started': [] }>()
 const maximumBytes = 2 * 1024 * 1024
 const maximumSeconds = 60
 const error = ref('')
@@ -53,10 +53,11 @@ function choose(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
-  if (!props.disabled && !requesting.value && !recording.value && file) accept(file)
+  if (!props.disabled && !requesting.value && !recording.value && file) { emit('draft-started'); accept(file) }
 }
 async function start() {
   if (props.disabled || requesting.value || recording.value || !supported.value) return
+  emit('draft-started')
   error.value = ''
   const request = ++generation
   requesting.value = true
