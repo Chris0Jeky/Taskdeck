@@ -79,6 +79,9 @@ export const useTelemetryStore = defineStore('telemetry', () => {
   /** Guard to prevent concurrent flushes causing duplicate sends */
   let isFlushing = false
 
+  /** Invalidates in-flight retry ownership when consent is withdrawn. */
+  let consentEpoch = 0
+
   // ── Computed ────────────────────────────────────────────────────────
 
   /** Telemetry is active only when BOTH user consents AND server enables it */
@@ -116,21 +119,33 @@ export const useTelemetryStore = defineStore('telemetry', () => {
       consentGiven.value = false
       return
     }
-    const stored = localStorage.getItem(CONSENT_KEY)
-    consentGiven.value = stored === 'true'
+    try {
+      const stored = localStorage.getItem(CONSENT_KEY)
+      consentGiven.value = stored === 'true'
+    } catch {
+      // Storage can be unavailable. Never turn that into implicit consent.
+      consentGiven.value = false
+    }
   }
 
-  /** Set user consent and persist */
+  /** Set user consent; persistence failure must not prevent revocation. */
   function setConsent(value: boolean) {
     consentGiven.value = value
-    localStorage.setItem(CONSENT_KEY, String(value))
 
     if (!value) {
-      // User revoked consent — clear buffer and stop flushing
+      // Invalidate old requests even if the user opts in again before they settle.
+      consentEpoch += 1
       eventBuffer.value = []
+      sessionId.value = generateSessionId()
       stopFlushTimer()
     } else {
       startFlushTimer()
+    }
+
+    try {
+      localStorage.setItem(CONSENT_KEY, String(value))
+    } catch {
+      // The in-memory choice still applies. It may not survive a reload.
     }
   }
 
@@ -188,16 +203,19 @@ export const useTelemetryStore = defineStore('telemetry', () => {
     }
     isFlushing = true
 
+    const flushEpoch = consentEpoch
     const eventsToSend = [...eventBuffer.value]
     eventBuffer.value = []
 
     try {
       await telemetryApi.sendEvents(eventsToSend)
     } catch {
-      // Re-buffer events on failure (up to max size)
-      eventBuffer.value = [...eventsToSend, ...eventBuffer.value].slice(
-        -MAX_BUFFER_SIZE,
-      )
+      // Retry only inside the same uninterrupted consent period.
+      if (flushEpoch === consentEpoch && isActive.value) {
+        eventBuffer.value = [...eventsToSend, ...eventBuffer.value].slice(
+          -MAX_BUFFER_SIZE,
+        )
+      }
     } finally {
       isFlushing = false
     }
