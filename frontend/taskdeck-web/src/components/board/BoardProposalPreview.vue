@@ -26,6 +26,9 @@ function clear() {
 function invalidate() {
   clear(); error.value = 'The board or session changed. Refresh to check this proposal again.'
 }
+function close() {
+  clear(); emit('close')
+}
 watch([() => props.proposalId, () => props.available, () => session.userId, () => !!session.token], invalidate, { flush: 'sync' })
 watch([() => props.board, () => props.cards], invalidate, { deep: true, flush: 'sync' })
 
@@ -85,7 +88,7 @@ onScopeDispose(clear)
       <h2>Proposed board changes</h2>
       <button type="button" :disabled="loading || !available" @click="load">{{ loading ? 'Checking proposal…' : 'Refresh board preview' }}</button>
       <RouterLink :to="{ path: '/workspace/review', query: { boardId: board.id }, hash: `#proposal-${proposalId}` }">Open Review</RouterLink>
-      <button type="button" @click="emit('close')">Close preview</button>
+      <button type="button" @click="close">Close preview</button>
     </div>
     <p v-if="error" role="status">{{ error }}</p>
     <template v-if="preview && proposal">

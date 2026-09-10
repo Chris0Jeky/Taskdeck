@@ -57,6 +57,27 @@ describe('board proposal preview', () => {
     expect(wrapper.emitted('markers')?.at(-1)?.[0]).toEqual({})
     wrapper.unmount()
   })
+  it('clears displayed markers immediately on close before route removal', async () => {
+    const { wrapper, load } = setup(); await load()
+    await wrapper.findAll('button')[1]!.trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(wrapper.find('pre').exists()).toBe(false)
+    expect(wrapper.emitted('markers')?.at(-1)?.[0]).toEqual({})
+    wrapper.unmount()
+  })
+  it('ignores a pending response after close even while route removal is delayed', async () => {
+    let resolve!: (value: ProposalPreview) => void
+    api.preview.mockReturnValue(new Promise<ProposalPreview>(done => { resolve = done }))
+    const { wrapper } = setup()
+    await wrapper.get('button').trigger('click')
+    await wrapper.findAll('button')[1]!.trigger('click')
+    resolve(receipt()); await flushPromises()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(wrapper.find('pre').exists()).toBe(false)
+    expect(wrapper.emitted('markers')?.every(event => Object.keys(event[0] as BoardProposalMarkers).length === 0)).toBe(true)
+    expect(wrapper.get('button').text()).toBe('Refresh board preview')
+    wrapper.unmount()
+  })
   it('uses the approved pin instead of a newer pending revision', async () => {
     api.preview.mockResolvedValue({ ...receipt(), status: 'Approved' })
     api.detail.mockResolvedValue({ ...detail(), status: 'Approved', latestRevisionId: 'r3', approvedRevisionId: 'r2' })
