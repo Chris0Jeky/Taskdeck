@@ -103,6 +103,7 @@ public sealed class ProcessingPolicySnapshotTests
     [InlineData("Taskdeck.WhisperX")]
     [InlineData("taskdeck..whisperx")]
     [InlineData(" taskdeck.whisperx")]
+    [InlineData("taskdeck.whisperx\n")]
     [InlineData("")]
     public void Constructor_ShouldRejectAmbiguousProcessorIds(string processorId)
     {
@@ -144,9 +145,11 @@ public sealed class ProcessingPolicySnapshotTests
     {
         var negativeAmount = () => new ProcessingCostCeiling(-0.01m, "GBP");
         var lowerCaseCurrency = () => new ProcessingCostCeiling(1m, "gbp");
+        var trailingNewlineCurrency = () => new ProcessingCostCeiling(1m, "GBP\n");
 
         negativeAmount.Should().Throw<ArgumentOutOfRangeException>();
         lowerCaseCurrency.Should().Throw<ArgumentException>();
+        trailingNewlineCurrency.Should().Throw<ArgumentException>();
     }
 
     private static ProcessingPolicySnapshot CreateBaseline() => new(
