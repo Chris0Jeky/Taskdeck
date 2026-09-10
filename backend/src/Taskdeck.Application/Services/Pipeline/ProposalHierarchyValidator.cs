@@ -65,6 +65,8 @@ public static class ProposalHierarchyValidator
             if (create)
             {
                 var cardId = Guid.TryParse(op.TargetId, out var proposedId) ? proposedId : Guid.NewGuid();
+                if (cardId == Guid.Empty || graph.Any(existing => existing.Id == cardId))
+                    return Result.Failure<Dictionary<int, string>>(ErrorCodes.ValidationError, "Create card id must be new and non-empty.");
                 card = new Card(cardId, id, Guid.NewGuid(), "Proposed card");
             }
             else
@@ -105,7 +107,9 @@ public static class ProposalHierarchyValidator
                 catch (DomainException ex) { return Result.Failure<Dictionary<int, string>>(ex.ErrorCode, ex.Message); }
                 string DescribeParent(Guid? value) => value is Guid parent
                     ? $"'{graph.First(candidate => candidate.Id == parent).Title}' ({parent})" : "none";
-                descriptions[op.Sequence] = $"Parent of '{card.Title}' ({card.Id}): {DescribeParent(card.ParentCardId)} -> {DescribeParent(parentId)}";
+                var title = create ? OperationParameterParser.GetOptionalString(parameters, "title") ?? "New card" : card.Title;
+                var identity = create && string.IsNullOrWhiteSpace(op.TargetId) ? "new card" : card.Id.ToString();
+                descriptions[op.Sequence] = $"Parent of '{title}' ({identity}): {DescribeParent(card.ParentCardId)} -> {DescribeParent(parentId)}";
             }
         }
         return Result.Success(descriptions);

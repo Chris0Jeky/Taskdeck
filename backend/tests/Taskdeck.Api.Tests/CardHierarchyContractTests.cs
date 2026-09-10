@@ -15,6 +15,26 @@ namespace Taskdeck.Api.Tests;
 public class CardHierarchyContractTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
     [Theory]
+    [InlineData("duplicate")]
+    [InlineData("multiple")]
+    public async Task HierarchyProposalRejectsDuplicateCreateIdsAndMultipleGraphChanges(string shape)
+    {
+        using var client = factory.CreateClient(); var actor = await ApiTestHarness.AuthenticateAsync(client, "hierarchy-shape");
+        var boardId = await ApiTestHarness.CreateBoardWithColumnAsync(client, "Hierarchy shape");
+        var board = (await client.GetFromJsonAsync<BoardDetailDto>($"/api/boards/{boardId}"))!;
+        var response = await client.PostAsJsonAsync($"/api/boards/{boardId}/cards", new CreateCardDto(boardId, board.Columns[0].Id, "Parent", null, null, null));
+        var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        var operations = new List<CreateProposalOperationDto> {
+            new(0, "create", "card", JsonSerializer.Serialize(new { boardId, columnId = card.ColumnId, title = "Child", parentCardId = card.Id }), Guid.NewGuid().ToString(), shape == "duplicate" ? card.Id.ToString() : Guid.NewGuid().ToString())
+        };
+        if (shape == "multiple") operations.Add(new(1, "update", "card", JsonSerializer.Serialize(new { cardId = card.Id, clearParent = true, expectedUpdatedAt = card.UpdatedAt }), Guid.NewGuid().ToString(), card.Id.ToString()));
+        var created = await client.PostAsJsonAsync("/api/automation/proposals", new CreateProposalDto(ProposalSourceType.Manual, actor.UserId, "Bad hierarchy shape", RiskLevel.Low, Guid.NewGuid().ToString(), boardId, Operations: operations));
+        created.EnsureSuccessStatusCode(); var proposal = (await created.Content.ReadFromJsonAsync<ProposalDto>())!;
+        (await client.GetAsync($"/api/automation/proposals/{proposal.Id}/diff")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await client.GetFromJsonAsync<List<CardDto>>($"/api/boards/{boardId}/cards"))!.Should().ContainSingle();
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task ParentAssignmentAndRemovalProposalsShowActualChangeAndOnlyApplyAfterApproval(bool clear)
