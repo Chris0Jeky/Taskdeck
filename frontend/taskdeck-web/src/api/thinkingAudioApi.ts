@@ -8,7 +8,22 @@ export interface ThinkingAudio {
   writtenVersions: { id: string; text: string; quality: string; supersededById: string | null }[]
 }
 const questionPath = (board: string, card: string, layer: string) => `/thinking-audio/questions/${board}/${card}/${layer}`
+export interface AudioLibraryEntry {
+  id: string; fileName: string; byteSize: number; createdAt: string; questionExcerpt: string
+  hasWrittenVersion: boolean; hasConfirmedAnswer: boolean; boardRemoved: boolean
+}
+export interface AudioLibraryPage { items: AudioLibraryEntry[]; nextOffset: number | null }
+export interface AudioLibraryDetail { recording: ThinkingAudio; currentBoardId: string | null; currentCardId: string | null }
 export const thinkingAudioApi = {
+  async library(offset = 0): Promise<AudioLibraryPage> {
+    return (await http.get<AudioLibraryPage>('/thinking-audio/library', { params: { offset }, skipRetry: true, timeout: 15000 })).data
+  },
+  async libraryDetail(id: string): Promise<AudioLibraryDetail> {
+    return (await http.get<AudioLibraryDetail>(`/thinking-audio/library/${id}`, { skipRetry: true, timeout: 15000 })).data
+  },
+  async libraryOriginal(id: string): Promise<Blob> {
+    return (await http.get<Blob>(`/thinking-audio/library/${id}/original`, { responseType: 'blob', skipRetry: true, timeout: 30000 })).data
+  },
   async get(board: string, card: string, layer: string): Promise<ThinkingAudio | null> {
     return (await http.get<ThinkingAudio | null>(questionPath(board, card, layer), { skipRetry: true, timeout: 15000 })).data || null
   },

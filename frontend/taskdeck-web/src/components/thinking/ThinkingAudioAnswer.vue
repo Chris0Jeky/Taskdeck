@@ -124,7 +124,7 @@ onUnmounted(() => { live = false; generation++; if (playbackUrl.value) URL.revok
       </template>
       <RouterLink v-else :to="{ path: '/workspace/memory', query: { boardId } }">Review or correct the confirmed answer in private memory</RouterLink>
       <details v-if="saved.writtenVersions.length"><summary>Saved written versions ({{ saved.writtenVersions.length }})</summary><ol><li v-for="version in saved.writtenVersions" :key="version.id"><strong>{{ version.quality === 'Verified' ? 'Confirmed by you' : version.quality === 'Superseded' ? 'Previous version' : 'Written, unconfirmed' }}</strong><p class="verbatim">{{ version.text }}</p></li></ol></details>
-      <template v-if="file"><AudioAnswerRecorder :model-value="file" disabled /><p>Your local audio draft is still kept after reload. <button type="button" :disabled="busy" @click="file = null">Discard this local audio draft</button></p></template>
+      <template v-if="file"><AudioAnswerRecorder :model-value="file" disabled /><p>Reloading the saved recording keeps this local draft while this page stays open. A browser refresh or closing the page loses an unuploaded file. <button type="button" :disabled="busy" @click="file = null">Discard this local audio draft</button></p></template>
     </template>
     <p v-if="pending" role="status">Saving… Wait here for the receipt. Closing this page does not cancel a request already received by the server.</p>
   </section>
