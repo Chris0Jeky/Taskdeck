@@ -158,6 +158,7 @@ public sealed class EfCaptureStore : ICaptureStore
         // owned dependants before the existing explicit source-child deletion below.
         var ownedCaptureIds = _context.Captures.Where(x => x.UserId == userId).Select(x => x.Id);
         var ownedRepresentationIds = _context.Representations.Where(x => x.UserId == userId && x.CaptureId.HasValue && ownedCaptureIds.Contains(x.CaptureId.Value)).Select(x => x.Id);
+        await _context.AudioTranscriptionAttempts.Where(x => x.UserId == userId && ownedCaptureIds.Contains(x.CaptureId)).ExecuteDeleteAsync(cancellationToken);
         await _context.ThinkingAudioAnswers.Where(x => x.UserId == userId && ownedCaptureIds.Contains(x.CaptureId)).ExecuteDeleteAsync(cancellationToken);
         await _context.RepresentationSupersessions.Where(x => ownedRepresentationIds.Contains(x.RepresentationId)).ExecuteDeleteAsync(cancellationToken);
         await _context.Representations.Where(x => ownedRepresentationIds.Contains(x.Id)).ExecuteDeleteAsync(cancellationToken);

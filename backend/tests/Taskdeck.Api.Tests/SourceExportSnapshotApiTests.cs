@@ -86,5 +86,7 @@ public sealed class SourceExportSnapshotApiTests
         public IAsyncEnumerable<SourceBlobChunkExportDto> ChunksAsync(Guid userId, CancellationToken ct) => inner.ChunksAsync(userId, ct);
         public IAsyncEnumerable<RepresentationDescriptor> RepresentationsAsync(Guid userId, CancellationToken ct) => inner.RepresentationsAsync(userId, ct);
         public IAsyncEnumerable<ThinkingAudioExportDto> AudioAnswersAsync(Guid userId, CancellationToken ct) => inner.AudioAnswersAsync(userId, ct);
+        public IAsyncEnumerable<AudioTranscriptionAttemptExportDto> AudioTranscriptionAttemptsAsync(Guid userId, CancellationToken ct) => inner.AudioTranscriptionAttemptsAsync(userId, ct);
+        public IAsyncEnumerable<AudioTranscriptionBudgetExportDto> AudioTranscriptionBudgetsAsync(Guid userId, CancellationToken ct) => inner.AudioTranscriptionBudgetsAsync(userId, ct);
     }
 }
