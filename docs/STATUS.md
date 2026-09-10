@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Source-storage configuration continuation (#2808): all four quota values bind through validated options, and the byte store receives that same validated instance. Nonpositive settings fail API startup before a user attempts an upload, with a message naming the invalid setting. Defaults and valid large limits remain supported; runtime checks remain for directly constructed settings. This prevents a configuration mistake from appearing as a first-upload server error.
+
 Source-storage export continuation (#2808): buffered and streamed account exports now hold one deferred SQLite read snapshot across blob objects, references, chunks, representations and audio-answer rows. Concurrent WAL uploads can commit without reserving the writer for the duration of the export; all five sections retain the earlier view until disposal. This is source-storage consistency, not a claim of a single snapshot across every account-export section or a tested restore workflow.
 
 Planning continuity follow-through (#2808): Classic Home now offers the same private last-worked Focus resume as the other experiences, in both Paper/Grove and Legacy rendering. Personal-plan due dates use canonical calendar-day formatting; Today and tomorrow use the local calendar date without changing card deadlines. This reduces the work needed to resume a thought after switching versions.

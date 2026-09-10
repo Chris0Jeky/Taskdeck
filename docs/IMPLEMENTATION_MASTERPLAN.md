@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Source-storage startup validation (#2808): validate all positive quota bounds through shared infrastructure options and inject the validated instance into the byte store. Prove invalid API startup and standalone DI binding. The CLI currently builds without starting its host; it validates these options on resolution, so no CLI startup guarantee is claimed.
+
 Original-source portability continuation (#2808): hold a store-owned read snapshot across the five source-storage export sections, with deferred SQLite transactions and scoped disposal before later export writes. Prove both account-export routes against a concurrent committed upload and written version. Whole-account point-in-time consistency and restore acceptance remain separate.
 
 Studio/Classic planning continuity (#2808): share existing Focus resume on Classic Home and use the existing calendar-day utilities for plan date controls and card deadlines. Browser acceptance includes a western timezone, Today filtering, both Classic renderers and unchanged board-card data. Failed-plan metadata and accepted-navigation focus timestamps remain separate follow-through.
