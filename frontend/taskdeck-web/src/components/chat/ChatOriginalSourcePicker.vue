@@ -38,9 +38,11 @@ async function load() {
   } catch (cause) {
     if (request === generation) {
       const status = (cause as { response?: { status?: number } }).response?.status
-      if (status === 403 || status === 404) {
+      if (status === 403 || status === 404 || status === 409) {
         items.value = []; loaded.value = false; nextAfterOrdinal.value = -1; emit('change', [])
-        error.value = 'You no longer have access to these private originals. Check board access before retrying.'
+        error.value = status === 409
+          ? 'This memory changed. Refresh sources and clear selection before choosing its originals again.'
+          : 'You no longer have access to these private originals. Check board access before retrying.'
       } else error.value = 'Originals could not be checked. Retry, or refresh all sources if this memory changed.'
     }
   } finally { if (request === generation) loading.value = false }
