@@ -399,6 +399,28 @@ public class CaptureService : ICaptureService
         return Result.Success<IReadOnlyList<CaptureItemSummaryDto>>(summaries);
     }
 
+    public async Task<Result<CaptureTriageStatusDto>> GetStatusAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
+        if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");
+        if (item.UserId != userId)
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.Forbidden, "You do not have permission to access this capture item");
+
+        var (payload, _, _) = await ResolveAppliedConversionProvenanceAsync(
+            item, ParsePayload(item), persistChanges: false, cancellationToken);
+        var status = ResolveCaptureStatus(item, payload);
+        return Result.Success(new CaptureTriageStatusDto(
+            item.Id, status, item.ProcessedAt, item.ErrorMessage,
+            payload.Disposition, CanEditSuggestion(item, status)));
+    }
+
     public async Task<Result<CaptureItemDto>> GetByIdAsync(
         Guid userId,
         Guid itemId,

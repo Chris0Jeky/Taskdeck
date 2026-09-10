@@ -112,6 +112,11 @@ const mockCaptureStore = reactive({
   cancelItem: vi.fn<(itemId: string) => Promise<void>>(),
   triageItem: vi.fn<(itemId: string) => Promise<void>>(),
   triagePollingItemId: null as string | null,
+  triagePollingItemIds: new Set<string>(),
+  triagePollingProblems: {} as Record<string, 'retrying' | 'unavailable'>,
+  triagePollingPaused: false,
+  retryTriagePolling: vi.fn(),
+  stopTriagePolling: vi.fn(),
   pollTriageCompletion: vi.fn<(itemId: string) => () => void>(),
   batchBusy: false,
   batchError: null as string | null,
@@ -300,6 +305,9 @@ describe('InboxView', () => {
     mockCaptureStore.cancelItem.mockResolvedValue(undefined)
     mockCaptureStore.triageItem.mockResolvedValue(undefined)
     mockCaptureStore.triagePollingItemId = null
+    mockCaptureStore.triagePollingItemIds = new Set()
+    mockCaptureStore.triagePollingProblems = {}
+    mockCaptureStore.triagePollingPaused = false
     mockCaptureStore.pollTriageCompletion.mockImplementation(() => () => {})
     mockCaptureStore.batchBusy = false
     mockCaptureStore.batchError = null
@@ -330,6 +338,26 @@ describe('InboxView', () => {
     routeMock.query = {}
     routeMock.hash = ''
     seedItems()
+  })
+
+  it('shows waiting, retry, unavailable and session-paused status truth', async () => {
+    mockCaptureStore.triagePollingItemIds = new Set(['A', 'B'])
+    const wrapper = mount(InboxView)
+    await Promise.resolve()
+    expect(wrapper.get('[data-testid="inbox-polling-notice"]').text()).toContain('Waiting for triage')
+    mockCaptureStore.triagePollingProblems = { A: 'retrying' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="inbox-polling-notice"]').text()).toContain('Retrying automatically')
+    await wrapper.get('[data-testid="inbox-polling-notice"] button').trigger('click')
+    expect(mockCaptureStore.retryTriagePolling).toHaveBeenCalled()
+    mockCaptureStore.triagePollingProblems = { A: 'unavailable' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="inbox-polling-notice"]').text()).toContain('no longer available')
+    mockCaptureStore.triagePollingPaused = true
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('[data-testid="inbox-polling-notice"]').text()).toContain('paused')
+    expect(wrapper.find('[data-testid="inbox-polling-notice"] button').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('loads inbox summaries on mount', async () => {
@@ -875,7 +903,7 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.triageItem).toHaveBeenCalledWith('capture-1')
-    expect(mockCaptureStore.pollTriageCompletion).toHaveBeenCalledWith('capture-1')
+    expect(mockCaptureStore.stopTriagePolling).not.toHaveBeenCalled()
   })
 
   it('does not start triage polling when the refreshed detail is already terminal', async () => {
@@ -915,7 +943,7 @@ describe('InboxView', () => {
     expect(mockCaptureStore.pollTriageCompletion).not.toHaveBeenCalled()
   })
 
-  it('stops the previous triage poll before retrying triage, even when the retry fails', async () => {
+  it('leaves other watches alone when a triage action fails', async () => {
     const stopFirstPoll = vi.fn()
     mockCaptureStore.fetchDetail.mockImplementationOnce(async (itemId: string) => {
       mockCaptureStore.detailById[itemId] = {
@@ -954,7 +982,7 @@ describe('InboxView', () => {
     await waitForUi()
 
     expect(mockCaptureStore.triageItem).toHaveBeenCalledTimes(2)
-    expect(stopFirstPoll).toHaveBeenCalledTimes(1)
+    expect(stopFirstPoll).not.toHaveBeenCalled()
   })
 
   it('navigates to linked proposal route when detail includes proposal provenance', async () => {
