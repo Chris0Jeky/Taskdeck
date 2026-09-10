@@ -6,6 +6,7 @@ import { TdSkeleton } from '../components/ui'
 import { workspaceInsightsApi } from '../api/workspaceInsights'
 import { useBoardStore } from '../store/boardStore'
 import TdDialog from '../components/ui/TdDialog.vue'
+import GroundedObservationsPanel from '../components/workspace/GroundedObservationsPanel.vue'
 import { useUnsavedWorkspaceNavigation } from '../composables/useUnsavedWorkspaceNavigation'
 import type { Board } from '../types/board'
 import type {
@@ -25,6 +26,7 @@ const insights = ref<Insight[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const analyzing = ref(false)
+const modelBusy = ref(false)
 const initialized = ref(false)
 let insightsRequestGeneration = 0
 const busyInsightIds = ref(new Set<string>())
@@ -34,7 +36,7 @@ const answeringInsightId = ref<string | null>(null)
 const answerText = ref('')
 const answerStatus = ref<MemoryStatus>('statement')
 const answerError = ref<string | null>(null)
-const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => Boolean(answeringInsightId.value && answerText.value.trim()) || busyInsightIds.value.size > 0)
+const { leaveRequested, decide } = useUnsavedWorkspaceNavigation(() => Boolean(answeringInsightId.value && answerText.value.trim()) || busyInsightIds.value.size > 0 || modelBusy.value)
 
 const selectedBoard = computed(() => boards.value.find((board) => board.id === selectedBoardId.value) ?? null)
 
@@ -69,6 +71,15 @@ function statusLabel(state: Insight['state']): string {
 }
 
 function evidenceItems(evidence: string): Array<{ label: string; value: string }> {
+  try {
+    const source = JSON.parse(evidence)
+    if (typeof source.Quote === 'string' && typeof source.Fingerprint === 'string') return [
+      { label: 'Quoted evidence', value: source.Quote },
+      { label: 'Source', value: source.SourceTitle },
+      { label: 'Model analysis', value: `${source.Provider} / ${source.Model} · ${formatDate(source.GeneratedAt)}` },
+      { label: 'Freshness', value: 'Expires after one day or when the card changes. A question is not a verified claim.' },
+    ]
+  } catch { /* Structural evidence is ordinary text. */ }
   return [{ label: 'Evidence', value: evidence }]
 }
 
@@ -143,7 +154,7 @@ async function loadInsights() {
 }
 
 async function analyzeBoard() {
-  if (!selectedBoardId.value || loading.value || analyzing.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
+  if (!selectedBoardId.value || loading.value || analyzing.value || modelBusy.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
   const boardId = selectedBoardId.value
   const generation = ++insightsRequestGeneration
   analyzing.value = true
@@ -164,7 +175,7 @@ async function analyzeBoard() {
 }
 
 async function applyAction(insight: Insight, action: InsightAction) {
-  if (analyzing.value || loading.value || isBusy(insight.id) || answeringInsightId.value) return
+  if (analyzing.value || modelBusy.value || loading.value || isBusy(insight.id) || answeringInsightId.value) return
   const boardId = selectedBoardId.value
   setBusy(insight.id, true)
   cardErrors.value = { ...cardErrors.value, [insight.id]: '' }
@@ -183,7 +194,7 @@ async function applyAction(insight: Insight, action: InsightAction) {
 }
 
 function openAnswer(insight: Insight) {
-  if (analyzing.value || loading.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
+  if (analyzing.value || modelBusy.value || loading.value || answeringInsightId.value || busyInsightIds.value.size > 0) return
   answeringInsightId.value = insight.id
   answerText.value = ''
   answerStatus.value = 'statement'
@@ -259,7 +270,7 @@ watch(queryBoardId, () => {
     <section class="paper-insights__panel paper-insights__controls" aria-label="Insight controls">
       <label class="paper-insights__field" for="insights-board-select">
         <span class="paper-insights__label">Board</span>
-        <select id="insights-board-select" v-model="selectedBoardId" :disabled="boardLoading || boards.length === 0 || analyzing || loading || Boolean(answeringInsightId) || busyInsightIds.size > 0">
+        <select id="insights-board-select" v-model="selectedBoardId" :disabled="boardLoading || boards.length === 0 || analyzing || modelBusy || loading || Boolean(answeringInsightId) || busyInsightIds.size > 0">
           <option value="" disabled>Select a board</option>
           <option v-for="board in boards" :key="board.id" :value="board.id">{{ board.name }}</option>
         </select>
@@ -271,13 +282,16 @@ watch(queryBoardId, () => {
       <PaperHLBtn
         data-action="analyze-insights"
         variant="ember"
-        :disabled="!selectedBoardId || analyzing || loading || Boolean(answeringInsightId) || busyInsightIds.size > 0"
+        :disabled="!selectedBoardId || analyzing || modelBusy || loading || Boolean(answeringInsightId) || busyInsightIds.size > 0"
         @click="analyzeBoard"
       >
         {{ analyzing ? 'Analyzing…' : 'Analyze now' }}
       </PaperHLBtn>
     </section>
 
+    <GroundedObservationsPanel v-if="selectedBoardId && !boardError" :board-id="selectedBoardId"
+      :disabled="analyzing || loading || Boolean(answeringInsightId) || busyInsightIds.size > 0"
+      @busy="modelBusy = $event" @generated="loadInsights" />
     <p class="paper-insights__trust-note">
       Analysis reads board structure and records private insights. It does not edit cards or columns.
     </p>
@@ -324,7 +338,7 @@ watch(queryBoardId, () => {
     <section v-else class="paper-insights__grid" aria-label="Quiet insights">
       <article v-for="insight in insights" :key="insight.id" class="paper-insights__card" :class="`paper-insights__card--${insight.state}`">
         <div class="paper-insights__card-topline">
-          <span class="paper-insights__rule">{{ insight.rule === 'blocked-next-step' ? 'A way forward' : 'Working knowledge' }}</span>
+          <span class="paper-insights__rule">{{ insight.rule.startsWith('model-question-') ? 'Model question · review the evidence' : insight.rule === 'blocked-next-step' ? 'A way forward' : 'Working knowledge' }}</span>
           <span class="paper-insights__status">{{ statusLabel(insight.state) }}</span>
         </div>
         <h2>{{ insight.title }}</h2>
@@ -350,7 +364,7 @@ watch(queryBoardId, () => {
             :key="action"
             :data-action="`${action}-insight`"
             variant="ghost"
-            :disabled="analyzing || loading || isBusy(insight.id) || Boolean(answeringInsightId)"
+            :disabled="analyzing || modelBusy || loading || isBusy(insight.id) || Boolean(answeringInsightId)"
             @click="applyAction(insight, action)"
           >
             {{ actionLabel(action) }}
@@ -359,7 +373,7 @@ watch(queryBoardId, () => {
             v-if="insight.state === 'available'"
             data-action="answer-insight"
             variant="primary"
-            :disabled="analyzing || loading || isBusy(insight.id) || Boolean(answeringInsightId) || busyInsightIds.size > 0"
+            :disabled="analyzing || modelBusy || loading || isBusy(insight.id) || Boolean(answeringInsightId) || busyInsightIds.size > 0"
             @click="openAnswer(insight)"
           >
             Answer privately
