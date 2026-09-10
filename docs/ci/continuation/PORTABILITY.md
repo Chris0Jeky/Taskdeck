@@ -8,8 +8,8 @@ The exporter reads immutable Git blobs from a full commit ID. It does not scan t
 
 ```sh
 node scripts/ci/smart-ci/continuation/tools/export-kit.mjs --repo /path/to/Taskdeck --commit FULL_REVIEWED_COMMIT_SHA --out /path/outside/Taskdeck/ci-continuation-kit
+node /independently/trusted/Taskdeck/scripts/ci/smart-ci/continuation/tools/verify-export.mjs --dir /path/outside/Taskdeck/ci-continuation-kit
 cd /path/outside/Taskdeck/ci-continuation-kit
-node tools/verify-export.mjs --dir .
 node --test
 node examples/demo.mjs
 ```
@@ -25,6 +25,8 @@ LICENSE is copied byte-for-byte from the selected source commit. The existing Ta
 `export-manifest.json` records source commit/tree and each file's Git blob (where applicable), byte count and SHA-256 checksum. Generated README/package metadata have no source blob. Repeating an export from identical input produces the same payload and manifest, regardless of dirty working-tree changes.
 
 Verification detects missing, altered, extra, symlink and special files and checks bounded inventory/depth. It is **checksum integrity, not signature/authenticity verification**. An attacker who can replace both a payload and its manifest can replace the checksums. Preserve a trusted manifest/source revision separately. Verify a pristine export; generated configs/reports should be written outside it to avoid legitimate additions being reported as unexpected files.
+
+Obtain the self-contained verifier independently from a reviewed source revision and run it before any export code. It imports only Node built-ins and reads the target as data. The bundled copy is for an already trusted export; executing an untrusted verifier is not verification.
 
 ## Other-repository adoption
 

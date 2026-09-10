@@ -33,7 +33,9 @@ test('export refuses source destinations, existing output and symbolic commit re
 test('missing and symlink source files fail before creating output', () => fixture(f => {
   rmSync(join(f.repo, KIT_PREFIX, 'core/primitives.mjs')); gitCommit(f, 'remove');
   assert.throws(() => exportKit({ ...f, commit: f.git('rev-parse', 'HEAD') })); assert.ok(!existsSync(f.out));
-  symlinkSync('../../../../../../LICENSE', join(f.repo, KIT_PREFIX, 'core/primitives.mjs')); gitCommit(f, 'link');
+  // Git symlink object: no Windows symlink privilege required.
+  const blob = execFileSync('git', ['-C', f.repo, 'hash-object', '-w', '--stdin'], { input: '../../../../../../LICENSE', encoding: 'utf8' }).trim();
+  f.git('update-index', '--add', '--cacheinfo', `120000,${blob},${KIT_PREFIX}core/primitives.mjs`); f.git('commit', '-m', 'link');
   assert.throws(() => exportKit({ ...f, commit: f.git('rev-parse', 'HEAD') })); assert.ok(!existsSync(f.out));
 }));
 function gitCommit(f, message) { f.git('add', '-A'); f.git('commit', '-m', message); }
@@ -41,7 +43,20 @@ test('verification rejects tampering, extra files and output symlinks', () => fi
   exportKit(f); const path = join(f.out, 'cli.mjs'), original = readFileSync(path);
   writeFileSync(path, 'changed'); assert.throws(() => verifyExport(f.out)); writeFileSync(path, original);
   writeFileSync(join(f.out, 'unexpected'), 'x'); assert.throws(() => verifyExport(f.out)); rmSync(join(f.out, 'unexpected'));
-  rmSync(path); symlinkSync(join(f.repo, KIT_PREFIX, 'cli.mjs'), path); assert.throws(() => verifyExport(f.out));
+  // A junction tests linked path components without elevation on Windows.
+  rmSync(join(f.out, 'core'), { recursive: true });
+  symlinkSync(join(f.repo, KIT_PREFIX, 'core'), join(f.out, 'core'), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => verifyExport(f.out));
+}));
+
+test('trusted standalone verifier never executes altered export modules', () => fixture(f => {
+  exportKit(f);
+  const marker = join(f.dir, 'executed'), trusted = join(f.dir, 'trusted-verifier.mjs');
+  writeFileSync(trusted, readFileSync(join(kit, 'tools/verify-export.mjs')));
+  const malicious = `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'executed');`;
+  for (const name of ['core/primitives.mjs', 'cli.mjs', 'tools/verify-export.mjs']) writeFileSync(join(f.out, name), malicious);
+  assert.throws(() => execFileSync(process.execPath, [trusted, '--dir', f.out], { stdio: 'pipe' }));
+  assert.equal(existsSync(marker), false);
 }));
 test('exported provider-neutral regression suite runs without Taskdeck files', () => fixture(f => {
   exportKit(f);

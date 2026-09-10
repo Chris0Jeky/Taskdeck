@@ -3,8 +3,13 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { invariant, isGitId, validPath } from '../core/primitives.mjs';
-import { options } from '../cli.mjs';
+
+// Self-contained: run from independently trusted tooling, never from an untrusted export.
+const invariant = (condition, message) => { if (!condition) throw new Error(message); };
+const isGitId = value => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
+const validPath = value => typeof value === 'string' && value.length > 0 && !value.startsWith('/') &&
+  !/[\\\x00-\x1f\x7f]/.test(value) && !/^[A-Za-z]:/.test(value) &&
+  value.split('/').every(part => part !== '' && part !== '.' && part !== '..');
 
 /** Integrity against an unsigned manifest, NOT source authenticity or CI qualification. */
 export function verifyExport(directory) {
@@ -40,6 +45,10 @@ export function verifyExport(directory) {
   return { valid: true, authority: 'checksums-only', sourceCommit: manifest.sourceCommit, files: seen.size };
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  try { const o = options(process.argv.slice(2), ['--dir']); invariant(o['--dir'], '--dir required'); console.log(JSON.stringify(verifyExport(o['--dir']), null, 2)); }
+  try {
+    const args = process.argv.slice(2);
+    invariant(args.length === 2 && args[0] === '--dir' && args[1] && !args[1].startsWith('--'), 'usage: trusted-verify-export.mjs --dir DIRECTORY');
+    console.log(JSON.stringify(verifyExport(args[1]), null, 2));
+  }
   catch (error) { console.error(error.message); process.exitCode = 1; }
 }

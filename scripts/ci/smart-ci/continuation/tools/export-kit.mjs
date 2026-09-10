@@ -27,7 +27,7 @@ Run from this directory with Node 22+ and Git:
 
     node --test
     node examples/demo.mjs
-    node tools/verify-export.mjs --dir .
+    node /independently-trusted/verify-export.mjs --dir .
     node cli.mjs init --kind node --repository-id YOUR_NUMERIC_REPO_ID --root . --out ../candidate-config.json
     node cli.mjs validate --manifest ../candidate-config.json
 
@@ -39,7 +39,7 @@ All adapters are observation-only. Enforce-mode examples are fictional; importin
 
 Read Taskdeck docs/ci/continuation for complete engineering, adapter, observer, admission, rollback and activation requirements. Supply equivalent protected-controller integration and independent full-audit evidence before activating any optimisation in another repository.
 
-LICENSE is copied byte-for-byte from the source commit. This export adds no licence grant, exception or package publication. The manifest contains source Git identities and file checksums, not a signature or proof of trusted authorship. Verification only checks integrity against that manifest. Keep the original manifest in a trusted location.
+Before executing export code, use a verifier obtained independently from a reviewed source revision. The bundled verifier is a convenience for exports you already trust; an untrusted export cannot verify itself. LICENSE is copied byte-for-byte from the source commit. This export adds no licence grant, exception or package publication. The manifest contains source Git identities and file checksums, not a signature or proof of trusted authorship. Verification only checks integrity against that manifest. Keep the original manifest in a trusted location.
 `;
 
 /** Immutable-object export. Never scans/copies the worktree or executes repository code. */
@@ -51,7 +51,7 @@ export function exportKit({ repo, commit, out }) {
   for (const name of [...PORTABLE_FILES, 'LICENSE'].sort()) {
     const sourcePath = name === 'LICENSE' ? name : KIT_PREFIX + name, entry = byPath.get(sourcePath);
     invariant(entry && ['100644', '100755'].includes(entry.mode), `missing or non-regular export input: ${sourcePath}`);
-    const bytes = execFileSync('git', ['--no-replace-objects', '-C', source, 'cat-file', 'blob', entry.oid], { timeout: 30000, maxBuffer: 1024 * 1024, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1' } });
+    const bytes = execFileSync('git', ['--no-replace-objects', '-C', source, 'cat-file', 'blob', entry.oid], { timeout: 30000, maxBuffer: 1024 * 1024, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', GIT_NO_LAZY_FETCH: '1', GIT_ALLOW_PROTOCOL: '' } });
     total += bytes.length; invariant(bytes.length > 0 && total <= 8 * 1024 * 1024, 'export size budget exceeded');
     files.push({ path: name, bytes, sourcePath, gitBlob: entry.oid });
   }
