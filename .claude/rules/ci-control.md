@@ -1,14 +1,56 @@
 ---
 paths:
   - ".github/**"
+  - ".github/workflows/**"
+  - ".github/actions/**"
+  - ".github/dependabot.yml"
+  - ".github/release.yml"
+  - ".github/CODEOWNERS"
+  - ".github/actionlint.yaml"
+  - ".github/actionlint.yml"
+  - ".github/settings.yml"
+  - "CODEOWNERS"
+  - ".config/dotnet-tools.json"
+  - "nuget.config"
+  - "NuGet.Config"
+  - "backend/nuget.config"
+  - "backend/Directory.Build.targets"
+  - "package.json"
+  - "package-lock.json"
+  - ".npmrc"
+  - "**/.npmrc"
+  - "frontend/package-lock.json"
+  - "frontend/taskdeck-web/.nvmrc"
+  - ".nvmrc"
   - "ci/**"
   - "scripts/ci/**"
+  - "scripts/build-release.ps1"
+  - "scripts/build-release.sh"
+  - "scripts/deploy/**"
+  - "scripts/security/**"
+  - "global.json"
+  - "backend/Directory.Build.props"
+  - "backend/Directory.Packages.props"
+  - "frontend/taskdeck-web/package.json"
+  - "frontend/taskdeck-web/package-lock.json"
+  - ".gitleaks.toml"
+  - ".gitleaksignore"
+  - ".semgrepignore"
+  - ".semgrep/**"
 ---
 
 # CI-control region
 
-You are editing CI control: workflows, the Smart CI planner/policy, or CI scripts. This is the one region
-no `CLAUDE.md` covers by directory, so these rules load by path.
+You are editing a **control path**: a workflow, the Smart CI planner/policy, a CI script, a deploy or
+security script, a release build script, or a dependency manifest. No `CLAUDE.md` covers this region by
+directory, so these rules load by path, and the `paths:` list above mirrors `ci/policy.v1.json`'s
+`controlPaths` entry for entry. **`ci/policy.v1.json` is the authority; this frontmatter is a mirror.**
+The one deliberate addition is `.github/**`, kept from this file's earlier scope so an edit to something
+like `.github/ISSUE_TEMPLATE/**` still loads the region's proving and review guidance even though policy
+does not class it as a control path. Everything else is a mirror, not a judgement.
+If you add a control path there, add it here in the same PR, or this rule silently stops loading for it —
+which is how `#2866` came to add 15 lines to `scripts/deploy/audio-response-policies.test.mjs`, a declared
+control path, with nothing telling the agent it had just made an R4 change.
 
 - **Risk class R4** (ADR-0066 Smart CI Fabric, tracker CI-00 `#2324`). CI-control changes qualify
   **hosted-only**: the proving check is the hosted run on the exact PR head, never a local approximation.
