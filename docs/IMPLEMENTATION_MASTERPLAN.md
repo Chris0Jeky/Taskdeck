@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Optional attention (#2808): default-off account reminders reuse existing revalidated questions with one shared two-per-UTC-day/two-hour budget. Board-page quiet-time, typing/dialog/Focus/Zen/visibility and identity guards suppress interruptions; no model or analysis runs automatically. Local proof and limits are in the overhaul validation ledger and attention policy; hosted qualification remains on the continuation PR.
+
 Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
 
 Comparison attribution follow-through (#2808): retain the resolved Auto appearance in the existing portable theme label and exclude known non-shipped test inputs from the frontend fingerprint. Preserve legacy checksums/file semantics and prove live light/night switching, export/import and HTTP LAN compatibility together.

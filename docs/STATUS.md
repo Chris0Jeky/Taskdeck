@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Optional attention (#2808): default-off account reminders reuse existing revalidated questions with one shared two-per-UTC-day/two-hour budget. Board-page quiet-time, typing/dialog/Focus/Zen/visibility and identity guards suppress interruptions; no model or analysis runs automatically. Local proof and limits are in the overhaul validation ledger and attention policy; hosted qualification remains on the continuation PR.
+
 Receipt/Review recovery (#2808): bound post-send receipt reads to 15 seconds with explicit read-only retry, and expose eligible Legacy board previews independently of capture provenance. Focused tests and both browser journeys pass; hosted qualification remains on the continuation PR.
 
 Original-source conflict recovery (#2808): a pagination revision conflict retracts the displayed originals and their selection immediately, then directs the user to refresh source metadata before selecting again. The browser proof changes a memory from revision 12 to 13 between selection and pagination, refreshes, and sends only the current revision. Server permission/revision enforcement remains unchanged.

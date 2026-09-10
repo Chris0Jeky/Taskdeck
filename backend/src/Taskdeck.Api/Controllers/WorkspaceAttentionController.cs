@@ -7,9 +7,18 @@ using Taskdeck.Application.Services;
 
 namespace Taskdeck.Api.Controllers;
 
-[ApiController, Authorize, Route("api/workspace-attention")]
-public sealed class WorkspaceAttentionController(WorkspaceAttentionService service, IUserContext context) : AuthenticatedControllerBase(context)
+[ApiController]
+[Authorize]
+[Route("api/workspace-attention")]
+public class WorkspaceAttentionController : AuthenticatedControllerBase
 {
+    private readonly WorkspaceAttentionService service;
+
+    public WorkspaceAttentionController(WorkspaceAttentionService service, IUserContext context) : base(context)
+    {
+        this.service = service;
+    }
+
     [HttpGet]
     public async Task<IActionResult> Get(CancellationToken ct)
     {
