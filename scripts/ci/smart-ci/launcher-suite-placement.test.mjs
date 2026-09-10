@@ -2,118 +2,72 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
 
-const frontendUnitWorkflowUrl = new URL(
-  '../../../.github/workflows/reusable-frontend-unit.yml',
-  import.meta.url,
-)
-
+const frontendUnitWorkflowUrl = new URL('../../../.github/workflows/reusable-frontend-unit.yml', import.meta.url)
+const policyUrl = new URL('../../../ci/policy.v1.json', import.meta.url)
 const LAUNCHER_STEP_NAME = 'Run source launcher regression suite'
 const UNCONDITIONAL_STEP_NAMES = [
-  'Run frontend lint',
-  'Run frontend typecheck',
-  'Run frontend build',
-  'Run frontend tests with coverage thresholds',
+  'Run frontend lint', 'Run frontend typecheck', 'Run frontend build', 'Run frontend tests with coverage thresholds',
 ]
-
-function workflowLines(workflow) {
-  return workflow.replaceAll('\r\n', '\n').split('\n')
+function extractJob(workflow, id) {
+  const lines = workflow.replaceAll('\r\n', '\n').split('\n')
+  const jobsIndex = lines.findIndex(line => line.trim() === 'jobs:')
+  assert.notEqual(jobsIndex, -1)
+  const jobIndex = lines.findIndex((line, i) => i > jobsIndex && line === `  ${id}:`)
+  assert.notEqual(jobIndex, -1, `missing ${id}`)
+  const next = lines.findIndex((line, i) => i > jobIndex && /^ {2}[A-Za-z0-9_-]+:\s*$/.test(line))
+  return lines.slice(jobIndex, next === -1 ? lines.length : next)
 }
-
-function extractFrontendUnitJob(workflow) {
-  const lines = workflowLines(workflow)
-  const jobsIndex = lines.findIndex((line) => line.trim() === 'jobs:')
-  assert.notEqual(jobsIndex, -1, 'reusable-frontend-unit.yml is missing the top-level jobs mapping')
-
-  const jobIndex = lines.findIndex(
-    (line, index) => index > jobsIndex && /^ {2}frontend-unit:\s*$/.test(line),
-  )
-  assert.notEqual(jobIndex, -1, 'reusable-frontend-unit.yml is missing the frontend-unit job')
-
-  const nextJobIndex = lines.findIndex(
-    (line, index) => index > jobIndex && /^ {2}[A-Za-z0-9_-]+:\s*$/.test(line),
-  )
-  return lines.slice(jobIndex, nextJobIndex === -1 ? lines.length : nextJobIndex)
-}
-
-function extractMatrixOperatingSystems(jobLines) {
-  const osIndex = jobLines.findIndex((line) => /^ {8}os:\s*$/.test(line))
-  assert.notEqual(osIndex, -1, 'frontend-unit is missing its matrix.os list')
-
-  const operatingSystems = []
-  for (const line of jobLines.slice(osIndex + 1)) {
-    const item = line.match(/^ {10}-\s*([A-Za-z0-9_.-]+)\s*$/)
-    if (item) {
-      operatingSystems.push(item[1])
-      continue
-    }
-    if (line.trim() === '') continue
-    break
-  }
-  return operatingSystems
-}
-
-function extractSteps(jobLines) {
-  const stepsIndex = jobLines.findIndex((line) => /^ {4}steps:\s*$/.test(line))
-  assert.notEqual(stepsIndex, -1, 'frontend-unit is missing its steps list')
-
+function extractSteps(lines) {
+  const start = lines.findIndex(line => /^ {4}steps:\s*$/.test(line))
+  assert.notEqual(start, -1)
   const steps = []
-  let current = null
-  for (const line of jobLines.slice(stepsIndex + 1)) {
-    if (/^ {6}- /.test(line)) {
-      const name = line.match(/^ {6}-\s*name:\s*(.+?)\s*$/)
-      current = { name: name ? name[1] : null, body: [line] }
-      steps.push(current)
-      continue
-    }
-    if (current) current.body.push(line)
+  for (const line of lines.slice(start + 1)) {
+    if (/^ {6}- /.test(line)) steps.push({ name: line.match(/^ {6}-\s*name:\s*(.+?)\s*$/)?.[1], body: [] })
+    if (steps.length) steps.at(-1).body.push(line)
   }
-  return steps.map((step) => ({ name: step.name, body: step.body.join('\n') }))
+  return steps.map(s => ({ name: s.name, body: s.body.join('\n') }))
 }
+function step(steps, name) { const found = steps.find(s => s.name === name); assert.ok(found, `missing ${name}`); return found }
+const condition = s => s.body.match(/^ {8}if:\s*(.+?)\s*$/m)?.[1] ?? null
 
-function findStep(steps, name) {
-  const step = steps.find((candidate) => candidate.name === name)
-  assert.ok(step, `frontend-unit is missing the "${name}" step`)
-  return step
-}
-
-function extractStepCondition(step) {
-  const condition = step.body.match(/^ {8}if:\s*(.+?)\s*$/m)
-  return condition ? condition[1] : null
-}
-
-test('the launcher regression suite runs on the Linux leg only (#2331, SC-3)', async () => {
-  const workflow = await readFile(frontendUnitWorkflowUrl, 'utf8')
-  const steps = extractSteps(extractFrontendUnitJob(workflow))
-  const launcherStep = findStep(steps, LAUNCHER_STEP_NAME)
-
-  assert.match(
-    launcherStep.body,
-    /^ {8}run: node --test --test-concurrency=1 --test-timeout=30000 scripts\/ci\/dev-up\.test\.mjs$/m,
-    'the launcher step must still run scripts/ci/dev-up.test.mjs',
-  )
-  assert.equal(
-    extractStepCondition(launcherStep),
-    "runner.os == 'Linux'",
-    'the launcher step must be gated to the Linux leg',
-  )
+test('source launcher remains Linux-only with the exact command and step budget (#2331/#2332)', async () => {
+  const text = await readFile(frontendUnitWorkflowUrl, 'utf8'), lines = extractJob(text, 'source-launcher')
+  assert.ok(lines.includes('    runs-on: ubuntu-latest'))
+  assert.ok(!lines.some(line => /^ {4}if:/.test(line)))
+  const launcher = step(extractSteps(lines), LAUNCHER_STEP_NAME)
+  assert.match(launcher.body, /^ {8}run: node --test --test-concurrency=1 --test-timeout=30000 scripts\/ci\/dev-up\.test\.mjs$/m)
+  assert.match(launcher.body, /^ {8}timeout-minutes: 10$/m)
+  assert.equal(condition(launcher), "runner.os == 'Linux'")
+  assert.equal(text.split('scripts/ci/dev-up.test.mjs').length - 1, 1)
 })
-
-test('the frontend-unit matrix still covers both hosted operating systems', async () => {
-  const workflow = await readFile(frontendUnitWorkflowUrl, 'utf8')
-  const operatingSystems = extractMatrixOperatingSystems(extractFrontendUnitJob(workflow))
-
-  assert.deepEqual([...operatingSystems].sort(), ['ubuntu-latest', 'windows-latest'])
+test('frontend semantics no longer execute launcher tests or wait for launcher results', async () => {
+  const lines = extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit')
+  assert.ok(!lines.some(line => /dev-up\.test|^ {4}needs:/.test(line)))
 })
-
-test('lint, typecheck, build and coverage stay unconditional on both legs', async () => {
-  const workflow = await readFile(frontendUnitWorkflowUrl, 'utf8')
-  const steps = extractSteps(extractFrontendUnitJob(workflow))
-
-  for (const name of UNCONDITIONAL_STEP_NAMES) {
-    assert.equal(
-      extractStepCondition(findStep(steps, name)),
-      null,
-      `"${name}" must carry no OS condition`,
-    )
+test('frontend-unit retains both hosted operating systems', async () => {
+  const lines = extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit')
+  const index = lines.findIndex(line => /^ {8}os:\s*$/.test(line)); assert.notEqual(index, -1)
+  const os = []
+  for (const line of lines.slice(index + 1)) { const match = line.match(/^ {10}-\s*([A-Za-z0-9_.-]+)\s*$/); if (match) os.push(match[1]); else if (line.trim()) break }
+  assert.deepEqual(os.sort(), ['ubuntu-latest', 'windows-latest'])
+})
+test('lint/typecheck/build/full coverage remain unconditional on both frontend legs', async () => {
+  const steps = extractSteps(extractJob(await readFile(frontendUnitWorkflowUrl, 'utf8'), 'frontend-unit'))
+  for (const name of UNCONDITIONAL_STEP_NAMES) assert.equal(condition(step(steps, name)), null)
+})
+test('new launcher checkout has no persisted credentials and no write grants', async () => {
+  const text = await readFile(frontendUnitWorkflowUrl, 'utf8'), steps = extractSteps(extractJob(text, 'source-launcher'))
+  assert.match(step(steps, 'Checkout').body, /persist-credentials: false/)
+  assert.ok(!/\bwrite\b/.test(text)); assert.ok(!extractJob(text, 'source-launcher').some(line => /continue-on-error:/.test(line)))
+})
+test('canonical lane inherits existing ownership without masking unknown paths', async () => {
+  const policy = JSON.parse(await readFile(policyUrl, 'utf8'))
+  assert.equal(policy.mode, 'shadow')
+  assert.equal(policy.lanes['source-launcher-linux'].checkName, 'Frontend Unit / Source Launcher (Linux)')
+  assert.equal(policy.lanes['source-launcher-linux'].runner, 'hostedLinux')
+  assert.ok(!policy.pathGroups.some(g => g.id === 'source-launcher-inputs'))
+  for (const id of ['backend-domain', 'backend-api', 'frontend-src', 'frontend-e2e', 'scripts-other', 'launchers-windows']) {
+    assert.ok(policy.pathGroups.find(g => g.id === id).lanes.includes('source-launcher-linux'))
   }
+  assert.ok(!policy.pathGroups.some(g => g.patterns.includes('backend/**') || g.patterns.includes('frontend/**')))
 })

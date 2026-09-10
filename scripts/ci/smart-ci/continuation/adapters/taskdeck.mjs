@@ -35,8 +35,9 @@ export function taskdeckContracts(policy) {
     let components = ['repository'];
     if (id.startsWith('backend-') || id.startsWith('api-integration') || id === 'migration-validation') components = ['backend', 'scripts'];
     if (id === 'frontend-unit-windows' || id === 'paper-color-audit') components = ['frontend', 'scripts'];
-    // Linux Frontend currently executes dev-up.test.mjs, including the API process.
-    if (id === 'frontend-unit-linux') components = ['launcher'];
+    // Preserve broad historical contracts when inspecting pre-split canonical plans.
+    if (id === 'frontend-unit-linux') components = Object.hasOwn(policy.lanes, 'source-launcher-linux') ? ['frontend', 'scripts'] : ['launcher'];
+    if (id === 'source-launcher-linux') components = ['launcher'];
     if (id === 'e2e-smoke' || id === 'container-images') components = ['journeys'];
     const isWindows = id.endsWith('-windows') || id === 'worktree-helper-windows';
     graph.tasks[id] = {

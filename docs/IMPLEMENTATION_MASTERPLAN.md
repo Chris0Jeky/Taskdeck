@@ -17,6 +17,8 @@ Source-storage startup validation (#2808): validate all positive quota bounds th
 
 Grounded observations (#2808): deliver explicit one-card evidence preview and bounded model questions over the private insight queue. Prove quote/schema rejection, request budgets, identity/source changes, expiry and preserved user decisions; keep the provider-independent reader in shared infrastructure and the model service in API setup. [Usefulness evaluation](product/GROUNDED_OBSERVATIONS.md) precedes unattended attention. General semantic candidates/recall, commit-time evidence fencing and attention budgets remain follow-through.
 
+Source upload bounds (#2808): coalesce fragmented reads into fixed 64 KiB database chunks with one final tail, preserving quota/size/hash/rollback checks. Twenty-four focused API tests pass; exact hosted repair qualification remains on the integration PR.
+
 Original-source portability continuation (#2808): hold a store-owned read snapshot across the five source-storage export sections, with deferred SQLite transactions and scoped disposal before later export writes. Prove both account-export routes against a concurrent committed upload and written version. Whole-account point-in-time consistency and restore acceptance remain separate.
 
 Studio/Classic planning continuity (#2808): share existing Focus resume on Classic Home and use the existing calendar-day utilities for plan date controls and card deadlines. Browser acceptance includes a western timezone, Today filtering, both Classic renderers and unchanged board-card data. Failed-plan metadata, overlapping reads and uncertain-write recovery are covered by the next continuation; accepted-navigation Focus timestamps are covered by the next shared navigation continuation.

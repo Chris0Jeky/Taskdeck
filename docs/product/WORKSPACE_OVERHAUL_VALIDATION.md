@@ -35,6 +35,10 @@ New confirmations retain a SHA-256 fingerprint of the original expected recordin
 
 The nullable receipt is included in both account export routes. The additive migration was applied successfully to an isolated empty SQLite database. Ten API tests passed, including all four mismatched fields, exact retry identity, unchanged representation count, both exports and a legacy null receipt. Full backend qualification passed 9,223 tests with 34 existing skips. Exact-head hosted state belongs to the continuation PR. Independent review found no HIGH/CRITICAL defect. No working database was migrated.
 
+## Fragmented upload bounds (2026-09-10)
+
+The byte store fills its existing 64 KiB buffer before inserting a chunk, except for the final short tail. This prevents tiny network fragments from creating a database row each while retaining bounded memory, size validation, content hashing and savepoint rollback. Four new fragment/mismatch cases and all selected blob, audio and source-export regressions pass: 24 API tests. This scoped repair follows the earlier full backend qualification; exact-head hosted checks remain required.
+
 
 
 ## Board-object proposal overlays (2026-09-10)
