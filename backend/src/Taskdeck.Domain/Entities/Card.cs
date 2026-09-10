@@ -1,5 +1,6 @@
 using Taskdeck.Domain.Common;
 using Taskdeck.Domain.Exceptions;
+using Taskdeck.Domain.Enums;
 
 namespace Taskdeck.Domain.Entities;
 
@@ -33,6 +34,7 @@ public class Card : Entity
     public DateTimeOffset? DueDate { get; private set; }
     public bool IsBlocked { get; private set; }
     public bool IsArchived { get; private set; }
+    public CardWorkItemType WorkItemType { get; private set; } = CardWorkItemType.Task;
     public string? BlockReason { get; private set; }
     public int Position { get; private set; }
 
@@ -75,6 +77,23 @@ public class Card : Entity
     {
         EnsureActive();
         DueDate = null;
+        Touch();
+    }
+
+    public static CardWorkItemType ParseWorkItemType(string value) => value switch
+    {
+        "Task" => CardWorkItemType.Task,
+        "Epic" => CardWorkItemType.Epic,
+        "Spike" => CardWorkItemType.Spike,
+        _ => throw new DomainException(ErrorCodes.ValidationError, "WorkItemType must be Task, Epic, or Spike")
+    };
+
+    public void SetWorkItemType(CardWorkItemType workItemType)
+    {
+        EnsureActive();
+        if (!Enum.IsDefined(workItemType))
+            throw new DomainException(ErrorCodes.ValidationError, "WorkItemType must be Task, Epic, or Spike");
+        WorkItemType = workItemType;
         Touch();
     }
 

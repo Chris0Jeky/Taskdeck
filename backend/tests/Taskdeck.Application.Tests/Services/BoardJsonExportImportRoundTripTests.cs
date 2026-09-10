@@ -57,6 +57,38 @@ public class BoardJsonExportImportRoundTripTests
     }
 
     [Fact]
+    public async Task WorkItemType_RoundTripRetainsActiveAndArchivedTypesWithFreshIds()
+    {
+        var owner = CreateUser("type-owner");
+        var board = new Board("Types", ownerId: owner.Id);
+        var column = new Column(board.Id, "Work", 0);
+        var epic = new Card(board.Id, column.Id, "Epic");
+        epic.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Epic);
+        var spike = new Card(board.Id, column.Id, "Archived spike", position: 1);
+        spike.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Spike);
+        spike.Archive();
+        AddToPrivateCollection(column, "_cards", epic);
+        AddToPrivateCollection(column, "_cards", spike);
+        AddToPrivateCollection(board, "_columns", column);
+        SetupExportMocks(board, owner);
+        SetupImportMocks(owner);
+        var imported = new List<Card>();
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
+            .Callback<Card, CancellationToken>((card, _) => imported.Add(card)).ReturnsAsync((Card card, CancellationToken _) => card);
+        var exported = await _service.ExportBoardToJsonAsync(board.Id, owner.Id);
+        exported.IsSuccess.Should().BeTrue();
+        var result = await _service.ImportBoardFromJsonAsync(exported.Value, owner.Id);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        imported.Should().HaveCount(2);
+        imported.Single(c => c.Title == "Epic").WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Epic);
+        var archived = imported.Single(c => c.Title == "Archived spike");
+        archived.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Spike);
+        archived.IsArchived.Should().BeTrue();
+        archived.Id.Should().NotBe(spike.Id);
+        imported.Select(c => c.Id).Should().NotContain(epic.Id);
+    }
+
+    [Fact]
     public async Task RoundTrip_FullBoard_PreservesAllData()
     {
         // Arrange: create board with columns, cards, labels, positions

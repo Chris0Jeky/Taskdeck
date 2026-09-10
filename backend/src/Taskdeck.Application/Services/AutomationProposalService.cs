@@ -1632,7 +1632,7 @@ public class AutomationProposalService : IAutomationProposalService
                 foreach (var card in cards)
                 {
                     cardTitles[card.Id] = card.Title;
-                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason, card.IsArchived);
+                    cardStates[card.Id] = new CardDiffState(card.IsBlocked, card.BlockReason, card.IsArchived, card.WorkItemType.ToString());
                 }
 
                 var labels = await _unitOfWork.Labels.GetByBoardIdAsync(boardId.Value, cancellationToken);
@@ -1957,7 +1957,7 @@ public class AutomationProposalService : IAutomationProposalService
         string? TargetId,
         string Parameters);
 
-    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason, bool IsArchived = false);
+    private readonly record struct CardDiffState(bool IsBlocked, string? BlockReason, bool IsArchived = false, string WorkItemType = "Task");
 
     private static void ApplyPreviewCreatedCardState(
         DiffOperationView operation,
@@ -1975,7 +1975,7 @@ public class AutomationProposalService : IAutomationProposalService
         if (title is not null)
             cardTitles[plannedCardId] = title;
 
-        cardStates[plannedCardId] = new CardDiffState(false, null);
+        cardStates[plannedCardId] = new CardDiffState(false, null, WorkItemType: ExtractStringParameter(operation.Parameters, "workItemType") ?? "Task");
     }
 
     private static void ApplyPreviewCardArchiveState(
@@ -2133,6 +2133,14 @@ public class AutomationProposalService : IAutomationProposalService
                 description += $" in column {columnDisplay}";
         }
 
+        var workItemType = ExtractStringParameter(operation.Parameters, "workItemType");
+        if (isCardTarget && workItemType is not null)
+        {
+            var typeCardId = ExtractGuidParameter(operation.Parameters, "cardId");
+            var before = typeCardId.HasValue && cardStates.TryGetValue(typeCardId.Value, out var typeState)
+                ? typeState.WorkItemType : "(new card)";
+            description += $"; Work item type: {before} -> {workItemType}";
+        }
         var cardEffects = DescribeCardParameterEffects(operation.Parameters, labelNames);
         if (isCardTarget && cardEffects.Count > 0)
             description += $"; {string.Join("; ", cardEffects)}";

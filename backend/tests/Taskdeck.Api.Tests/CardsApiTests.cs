@@ -18,6 +18,68 @@ public class CardsApiTests : IClassFixture<TestWebApplicationFactory>
     private bool _isAuthenticated;
 
     [Fact]
+    public async Task WorkItemType_OmittedPayloadsPreserveDefaultsAndArchivedOrForeignCardsRejectWrites()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Type guards", null);
+        var response = await _client.PostAsJsonAsync($"/api/boards/{board.Id}/cards",
+            new { columnId = column.Id, title = "Default" });
+        var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        card.WorkItemType.Should().Be("Task");
+        var path = $"/api/boards/{board.Id}/cards/{card.Id}";
+        var changed = await _client.PatchAsJsonAsync(path, new { workItemType = "Epic", expectedUpdatedAt = card.UpdatedAt });
+        card = (await changed.Content.ReadFromJsonAsync<CardDto>())!;
+        var titleOnly = await _client.PatchAsJsonAsync(path, new { title = "Keep type" });
+        card = (await titleOnly.Content.ReadFromJsonAsync<CardDto>())!;
+        card.WorkItemType.Should().Be("Epic");
+        var otherBoard = await CreateBoardAsync();
+        (await _client.PatchAsJsonAsync($"/api/boards/{otherBoard.Id}/cards/{card.Id}",
+            new { workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt })).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await _client.PatchAsJsonAsync(path, new { title = "Must not change", workItemType = "Question", expectedUpdatedAt = card.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.GetFromJsonAsync<CardDto>(path))!.Title.Should().Be("Keep type");
+        using var anonymous = _factory.CreateClient();
+        await ApiTestHarness.AssertUnauthorizedAsync(await anonymous.PatchAsJsonAsync(path,
+            new { workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt }));
+        var archivedResponse = await _client.PostAsJsonAsync(path + "/archive", new { expectedUpdatedAt = card.UpdatedAt });
+        var archived = (await archivedResponse.Content.ReadFromJsonAsync<CardDto>())!;
+        (await _client.PatchAsJsonAsync(path, new { workItemType = "Spike", expectedUpdatedAt = archived.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        archived.WorkItemType.Should().Be("Epic");
+        await ApiTestHarness.AuthenticateAsync(_client, "type-outsider");
+        await ApiTestHarness.AssertForbiddenAsync(await _client.PatchAsJsonAsync(path,
+            new { workItemType = "Spike", expectedUpdatedAt = archived.UpdatedAt }));
+    }
+
+    [Fact]
+    public async Task WorkItemType_RoundTripsAndRejectsUnknownOrUnversionedChanges()
+    {
+        var board = await CreateBoardAsync();
+        var column = await CreateColumnAsync(board.Id, "Types", null);
+        var path = $"/api/boards/{board.Id}/cards";
+        var response = await _client.PostAsJsonAsync(path,
+            new { columnId = column.Id, title = "An epic", workItemType = "Epic" });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var card = (await response.Content.ReadFromJsonAsync<CardDto>())!;
+        card.WorkItemType.Should().Be("Epic");
+        (await _client.PostAsJsonAsync(path, new { columnId = column.Id, title = "Invalid", workItemType = "Mystery" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await _client.PatchAsJsonAsync(path + $"/{card.Id}", new { workItemType = "Spike" }))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var changed = await _client.PatchAsJsonAsync(path + $"/{card.Id}",
+            new { workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt });
+        changed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var spike = (await changed.Content.ReadFromJsonAsync<CardDto>())!;
+        spike.WorkItemType.Should().Be("Spike");
+        spike.Id.Should().Be(card.Id);
+        spike.ColumnId.Should().Be(card.ColumnId);
+        (await _client.PatchAsJsonAsync(path + $"/{card.Id}",
+            new { workItemType = "Task", expectedUpdatedAt = card.UpdatedAt }))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+        (await _client.GetFromJsonAsync<CardDto>(path + $"/{card.Id}"))!.WorkItemType.Should().Be("Spike");
+    }
+
+    [Fact]
     public async Task CardLifecycle_RejectsMissingVersionArchivedWritesFullRestoreAndArchivedBoard()
     {
         var board = await CreateBoardAsync();
