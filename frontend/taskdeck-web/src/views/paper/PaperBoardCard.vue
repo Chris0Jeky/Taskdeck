@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import CardAssignees from '../../components/board/CardAssignees.vue'
 /* eslint-disable vuejs-accessibility/no-static-element-interactions -- the article and aria-hidden drag glyph are pointer drag boundaries; named-button activation and board keyboard movement remain separate */
 import { computed, ref } from 'vue'
 import { useBoardProposalMarker } from '../../composables/useBoardProposalMarker'
@@ -224,6 +225,7 @@ const proposalMarker = useBoardProposalMarker('card', () => props.card.id)
       </header>
 
       <h4 class="paper-board-card__title">{{ card.title }}</h4>
+    <CardAssignees :assignments="card.assignments" />
 
       <p v-if="presentation !== 'classic' && card.isBlocked" class="paper-board-card__blocked">
         <strong>Blocked</strong><span v-if="card.blockReason"> · {{ card.blockReason }}</span>

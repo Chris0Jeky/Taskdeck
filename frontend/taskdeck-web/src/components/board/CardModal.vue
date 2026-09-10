@@ -7,6 +7,7 @@ import { useCardModal } from '../../composables/useCardModal'
 import { useVisualViewport } from '../../composables/useVisualViewport'
 import TdDialog from '../ui/TdDialog.vue'
 import CardParentField from './CardParentField.vue'
+import CardAssignmentField from './CardAssignmentField.vue'
 import CardDetachList from './CardDetachList.vue'
 import CardArchiveAction from './CardArchiveAction.vue'
 import { useBoardStore } from '../../store/boardStore'
@@ -47,6 +48,13 @@ async function refreshArchiveState() {
   await boardStore.fetchBoard(props.card.boardId)
 }
 const pendingThinkingPath = ref<string | null>(null)
+const assignmentDirty = ref(false)
+const hasUnsavedChanges = computed(() => hasCardUnsavedChanges.value || assignmentDirty.value)
+function acceptAssignments(saved: Card, previousVersion?: string) {
+  acceptAssignmentVersion(saved.updatedAt, previousVersion)
+  const index = boardStore.currentBoardCards.findIndex(c => c.id === saved.id)
+  if (index >= 0) boardStore.currentBoardCards.splice(index, 1, saved)
+}
 
 const dialogRef = ref<HTMLElement | null>(null)
 const showDiscardConfirm = ref(false)
@@ -201,7 +209,8 @@ const {
   blockReason,
   selectedLabelIds,
   isFormValid,
-  hasUnsavedChanges,
+  hasUnsavedChanges: hasCardUnsavedChanges,
+  acceptAssignmentVersion,
   isSaving,
   saveError,
 
@@ -317,6 +326,9 @@ useEscapeToClose(
     >
         <CardModalHeader @close="handleClose" />
         <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || !!card.isArchived" />
+        <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
+          :read-only="boardStore.currentBoard?.id !== card.boardId || boardStore.currentBoard?.canWrite !== true || !!boardStore.currentBoard?.isArchived || !!card.isArchived"
+          @dirty-change="assignmentDirty = $event" @saved="acceptAssignments" />
         <CardArchiveAction :key="card.updatedAt" :card="card" :disabled="hasUnsavedChanges"
           @changed="emit('updated'); emit('close')" @refresh="refreshArchiveState" />
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
@@ -370,8 +382,9 @@ useEscapeToClose(
           />
         </fieldset>
 
+      <p v-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
       <CardModalActions
-          :is-form-valid="isFormValid && !card.isArchived && !isSaving"
+          :is-form-valid="isFormValid && !card.isArchived && !isSaving && !assignmentDirty"
           :is-saving="isSaving"
           :card="card"
           @save="handleSave"

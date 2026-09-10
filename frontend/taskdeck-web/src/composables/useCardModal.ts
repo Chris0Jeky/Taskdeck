@@ -117,6 +117,16 @@ export function useCardModal(options: UseCardModalOptions) {
   watch(() => options.getCard(), (newCard, previousCard) => {
     if (newCard) {
       const switchedCards = Boolean(previousCard && previousCard.id !== newCard.id)
+      // Realtime and assignment saves replace the card object. Keep independently
+      // edited card fields instead of overwriting the draft with that fresh object.
+      if (!switchedCards && previousCard && options.getIsOpen() && (
+        title.value !== previousCard.title || description.value !== (previousCard.description || '') ||
+        parentCardId.value !== (previousCard.parentCardId ?? null) ||
+        workItemType.value !== (previousCard.workItemType ?? 'Task') ||
+        dueDate.value !== (toCalendarDateKey(previousCard.dueDate) ?? '') ||
+        isBlocked.value !== previousCard.isBlocked || blockReason.value !== (previousCard.blockReason || '') ||
+        [...selectedLabelIds.value].sort().join() !== previousCard.labels.map(l => l.id).sort().join()
+      )) return
       if (switchedCards) {
         isSaving.value = false
         saveError.value = null
@@ -482,6 +492,11 @@ export function useCardModal(options: UseCardModalOptions) {
   })
 
   return {
+    acceptAssignmentVersion: (updatedAt: string, previousVersion?: string) => {
+      // Only advance the draft's CAS after our own write from its exact version.
+      // A conflict refresh must not silently authorize overwriting someone else's edit.
+      if (previousVersion === expectedUpdatedAt.value) expectedUpdatedAt.value = updatedAt
+    },
     // Form state
     parentCardId,
     detachPreview,

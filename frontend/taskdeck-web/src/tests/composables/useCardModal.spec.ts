@@ -139,6 +139,24 @@ function mountComposable(optionOverrides: Partial<UseCardModalOptions> = {}) {
 // ---------------------------------------------------------------------------
 
 describe('useCardModal', () => {
+  it('keeps other field drafts across assignment updates without advancing an unrelated stale version', async () => {
+    const state = mountComposable()
+    state.isOpenRef.value = true; await nextTick()
+    const original = state.cardRef.value.updatedAt
+    state.result.title.value = 'Unsaved thought'
+    state.result.acceptAssignmentVersion('own-assignment', original)
+    state.cardRef.value = { ...state.cardRef.value, updatedAt: 'own-assignment' }
+    await nextTick()
+    expect(state.result.title.value).toBe('Unsaved thought')
+    state.result.acceptAssignmentVersion('remote-refresh')
+    state.cardRef.value = { ...state.cardRef.value, title: 'Someone else', updatedAt: 'remote-refresh' }
+    await nextTick()
+    expect(state.result.title.value).toBe('Unsaved thought')
+    await state.result.handleSave()
+    expect(mockBoardStore.updateCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({
+      title: 'Unsaved thought', expectedUpdatedAt: 'own-assignment',
+    }))
+  })
   afterEach(() => {
     vi.unstubAllEnvs()
   })

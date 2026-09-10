@@ -2,6 +2,15 @@ import http, { type BoardReadOptions } from './http'
 import type { CardDetachPreview, Card, CardCaptureProvenance, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
 
 export const cardsApi = {
+  async getParticipants(boardId: string): Promise<import('../types/board').BoardParticipant[]> {
+    const { data } = await http.get(`/boards/${boardId}/participants`, { skipRetry: true })
+    return data
+  },
+  async replaceAssignments(boardId: string, cardId: string, userIds: string[], expectedUpdatedAt: string): Promise<Card> {
+    const { data } = await http.put<Card>(`/boards/${boardId}/cards/${cardId}/assignments`,
+      { userIds, expectedUpdatedAt }, { skipRetry: true })
+    return data
+  },
   async previewDetach(boardId: string, cardId: string): Promise<CardDetachPreview> {
     const { data } = await http.get<CardDetachPreview>(`/boards/${boardId}/cards/${cardId}/detach-preview`, { skipRetry: true })
     return data
