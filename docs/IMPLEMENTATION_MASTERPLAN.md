@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Prepare v0.4 qualification through [#2898](https://github.com/Chris0Jeky/Taskdeck/issues/2898): maintain the [feature capability catalogue](product/FEATURE_CAPABILITIES.md), run the eleven linked session workstreams against pinned candidates, and record the 44 initial cases in the [qualification plan](testing/V04_QUALIFICATION_PLAN.md). Preparation is delivered separately from execution; all seeded outcomes remain NOT RUN. Reuse existing performance, visual-baseline, hosted, dogfooding and release owners, preserving their milestones and the existing release decision gates.
+
 Finish delivery of #2895 and its bounded #2896 reminder-save ownership follow-up. The latter replaces a component-wide boolean with a request identity so an older account's completion cannot discard a newer account's unsaved hours. Its reproduced interleavings, full frontend suite, typecheck/build and lint pass. Keep the final #2808 completion record tied to the merged delivery receipts.
 
 The #2893/#2894 recovery follow-up is implemented in [PR #2895](https://github.com/Chris0Jeky/Taskdeck/pull/2895): preserve reminder drafts, report concurrent question writes accurately and align model payloads with the evidence preview. Keep the existing privacy/revision/usage boundaries, prove the reproduced cases and publish one reviewed follow-up. Local full suites, focused final payload checks, browser recovery and bounded independent review pass.
