@@ -4,6 +4,8 @@ using Taskdeck.Api.Extensions;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
 using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
 
 namespace Taskdeck.Api.Controllers;
 
@@ -55,8 +57,16 @@ public class ThinkingAudioController : AuthenticatedControllerBase
     public async Task<IActionResult> Upload(Guid boardId, Guid cardId, Guid layerId, [FromQuery] ThinkingAudioUploadDto dto, CancellationToken ct)
     {
         if (!TryGetCurrentUserId(out var userId, out var error)) return error!;
-        var result = await service.UploadAsync(userId, boardId, cardId, layerId, dto, Request.ContentType ?? "", Request.Body, ct);
-        return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+        try
+        {
+            var result = await service.UploadAsync(userId, boardId, cardId, layerId, dto, Request.ContentType ?? "", Request.Body, ct);
+            return result.IsSuccess ? Ok(result.Value) : result.ToErrorActionResult();
+        }
+        catch (BadHttpRequestException exception) when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return Result.Failure(ErrorCodes.PayloadTooLarge,
+                $"Recording exceeds the {ThinkingAudioService.MaximumBytes}-byte size limit").ToErrorActionResult();
+        }
     }
     [HttpPut("{id:guid}/written-version")]
     public async Task<IActionResult> Write(Guid id, ThinkingAudioWriteDto dto, CancellationToken ct)

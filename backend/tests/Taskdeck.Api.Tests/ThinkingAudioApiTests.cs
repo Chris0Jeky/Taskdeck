@@ -3,10 +3,18 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using Taskdeck.Api.Controllers;
+using Taskdeck.Api.Contracts;
 using Taskdeck.Api.Tests.Support;
 using Taskdeck.Application.DTOs;
 using Taskdeck.Application.Interfaces;
+using Taskdeck.Application.Services;
+using Taskdeck.Domain.Common;
+using Taskdeck.Domain.Exceptions;
 using Taskdeck.Domain.Entities;
 using Taskdeck.Domain.Enums;
 using Taskdeck.Infrastructure.Persistence;
@@ -16,6 +24,49 @@ namespace Taskdeck.Api.Tests;
 
 public sealed class ThinkingAudioApiTests(TestWebApplicationFactory factory) : IClassFixture<TestWebApplicationFactory>
 {
+    [Fact]
+    public async Task HostRejectedOversizedBodyKeeps413AndRollsBackOriginalStorage()
+    {
+        var (client, user, board, card, question) = await Setup();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var actor = new Mock<IUserContext>();
+            actor.SetupGet(x => x.IsAuthenticated).Returns(true);
+            actor.SetupGet(x => x.UserId).Returns(user.ToString());
+            var context = new DefaultHttpContext();
+            context.Request.ContentType = "audio/wav";
+            context.Request.Body = new HostRejectedAudioStream(Audio());
+            var controller = new ThinkingAudioController(scope.ServiceProvider.GetRequiredService<ThinkingAudioService>(), actor.Object)
+            { ControllerContext = new ControllerContext { HttpContext = context } };
+            var result = await controller.Upload(board, card, question.Id,
+                new ThinkingAudioUploadDto(Guid.NewGuid(), 1, 70000, "original.wav"), default);
+            var response = result.Should().BeOfType<ObjectResult>().Subject;
+            response.StatusCode.Should().Be(StatusCodes.Status413PayloadTooLarge);
+            response.Value.Should().BeOfType<ApiErrorResponse>().Which.ErrorCode.Should().Be(ErrorCodes.PayloadTooLarge);
+        }
+        using var verify = factory.Services.CreateScope();
+        var db = verify.ServiceProvider.GetRequiredService<TaskdeckDbContext>();
+        (await db.StoredBlobs.AnyAsync(x => x.OwnerUserId == user)).Should().BeFalse();
+        (await db.StoredBlobReferences.AnyAsync(x => x.OwnerUserId == user)).Should().BeFalse();
+        (await db.Captures.AnyAsync(x => x.UserId == user)).Should().BeFalse();
+        (await db.ThinkingAudioAnswers.AnyAsync(x => x.UserId == user)).Should().BeFalse();
+        (await db.LlmRequests.AnyAsync(x => x.UserId == user)).Should().BeFalse();
+        (await client.GetAsync(Url(board, card, question.Id))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    private sealed class HostRejectedAudioStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        private bool read;
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
+        {
+            if (read) throw new BadHttpRequestException("Request body too large", StatusCodes.Status413PayloadTooLarge);
+            read = true;
+            return base.ReadAsync(buffer[..Math.Min(buffer.Length, 32)], ct);
+        }
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct)
+            => ReadAsync(buffer.AsMemory(offset, count), ct).AsTask();
+    }
+
     private async Task<(HttpClient Client, Guid User, Guid Board, Guid Card, ThinkingLayer Question)> Setup()
     {
         var client = factory.CreateClient(); var user = await ApiTestHarness.AuthenticateAsync(client, "audio-owner");
