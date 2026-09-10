@@ -8,6 +8,19 @@ import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
 
 export function createCardActions(state: BoardState, helpers: BoardHelpers) {
+  async function setCardArchived(boardId: string, cardId: string, archive: boolean, expectedUpdatedAt: string) {
+    helpers.guardDemoMutation()
+    const updated = await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt)
+    helpers.markBoardDetailMutation(boardId)
+    if (state.currentBoard.value?.id === boardId) {
+      const existed = state.currentBoardCards.value.some(card => card.id === cardId)
+      state.currentBoardCards.value = state.currentBoardCards.value.filter(card => card.id !== cardId)
+      if (!archive) state.currentBoardCards.value.push(updated)
+      if (archive && existed) helpers.updateColumnCardCount(updated.columnId, -1)
+      if (!archive && !existed) helpers.updateColumnCardCount(updated.columnId, 1)
+    }
+    return updated
+  }
   async function fetchCards(
     boardId: string,
     filters?: { search?: string; labelId?: string; columnId?: string },
@@ -172,6 +185,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
   }
 
   return {
+    setCardArchived,
     fetchCards,
     createCard,
     updateCard,

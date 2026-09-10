@@ -11,6 +11,7 @@ import { useBoardKeyboardNav } from '../composables/useBoardKeyboardNav'
 import { useShellKeyboardHelp } from '../composables/useShellKeyboardHelp'
 import { usePerformanceMark } from '../composables/usePerformanceMark'
 import BoardToolbar from '../components/board/BoardToolbar.vue'
+import BoardCardArchive from '../components/board/BoardCardArchive.vue'
 import BoardActionRail from '../components/board/BoardActionRail.vue'
 import BoardCanvas from '../components/board/BoardCanvas.vue'
 import BoardProposalPreview from '../components/board/BoardProposalPreview.vue'
@@ -535,6 +536,7 @@ useKeyboardShortcuts([
 </script>
 
 <template>
+  <BoardCardArchive v-if="routedBoard" :board-id="routedBoard.id" />
   <BoardProposalPreview
     v-if="previewProposalId && routedBoard"
     :proposal-id="previewProposalId"
