@@ -1467,3 +1467,8 @@ combined across releases with atomic validation, stable IDs and duplicate/confli
 frontend inputs receive a build fingerprint; legacy/dev observations keep unknown attribution.
 Grouped descriptive outcomes preserve scenario/layout/theme/build conditions. Notes remain manually
 retained files with no automatic telemetry. Exact local/hosted checks belong to the continuation PR.
+September 9 older-memory continuation (#2808): explicit preservation on the Memory page admits up to
+50 displayed legacy memories, with all-or-nothing revision and ownership checks. It retains exact
+originals and historical corrections through the native-source/export path without editing content,
+enqueuing processing or changing board work. Targeted API14 and frontend20 checks passed; full-suite
+and hosted qualification are recorded separately in the continuation PR.

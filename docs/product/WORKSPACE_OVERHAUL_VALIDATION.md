@@ -210,3 +210,21 @@ Proving seams: workspaceExperimentStore.spec.ts, WorkspaceComparisonFiles.spec.t
 `node --test build/frontendIdentity.node-check.mjs`; the extended comparison/Grove browser journey exports,
 reloads, imports, skips duplicates and checks all four experiences at desktop/tablet/375px widths.
 
+## Preserve older memory originals (2026-09-09)
+
+The Memory page offers explicit preservation for displayed older entries without native sources,
+including the archived filter. Batches contain at most 50 owner-scoped IDs and expected revisions.
+Every entry is checked against the active accessible board before one transactional save; stale,
+foreign or invalid selections admit nothing. Preservation advances the concurrency revision without
+changing wording, status or archive state. Existing history is linked to immutable originals, and
+retrying already preserved entries with current revisions creates no duplicate capture. No migration
+or background backfill runs. Source retention and account export/deletion follow the native-memory
+policy above; approval and board Apply remain separate.
+
+Direct checks: `LegacyMemorySourceApiTests` and `PrivateMemorySourceApiTests` cover exact text,
+archived history, ownership, bad/stale batches, repeat admission and competing saves.
+`WorkspaceMemoryPreservation.spec.ts` covers bounded selection, conflict retry, identity/revision
+changes and unmount. The browser journey `legacy-memory-originals.spec.ts` requires
+`TASKDECK_E2E_DB=legacy-originals.e2e.db`; it inserts one legacy-shaped synthetic row in that exact
+isolated database, then uses the real UI/API to preserve, inspect, export and reload it at 375px.
+Exact executed results belong to the continuation PR; hosted checks are separate.
