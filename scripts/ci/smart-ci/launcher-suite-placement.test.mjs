@@ -60,12 +60,14 @@ test('new launcher checkout has no persisted credentials and no write grants', a
   assert.match(step(steps, 'Checkout').body, /persist-credentials: false/)
   assert.ok(!/\bwrite\b/.test(text)); assert.ok(!extractJob(text, 'source-launcher').some(line => /continue-on-error:/.test(line)))
 })
-test('canonical shadow policy accounts for the new job and its coarse input boundary', async () => {
+test('canonical lane inherits existing ownership without masking unknown paths', async () => {
   const policy = JSON.parse(await readFile(policyUrl, 'utf8'))
   assert.equal(policy.mode, 'shadow')
   assert.equal(policy.lanes['source-launcher-linux'].checkName, 'Frontend Unit / Source Launcher (Linux)')
   assert.equal(policy.lanes['source-launcher-linux'].runner, 'hostedLinux')
-  const group = policy.pathGroups.find(g => g.id === 'source-launcher-inputs')
-  assert.deepEqual(group.patterns, ['backend/**', 'frontend/**', 'scripts/**'])
-  assert.deepEqual(group.lanes, ['source-launcher-linux'])
+  assert.ok(!policy.pathGroups.some(g => g.id === 'source-launcher-inputs'))
+  for (const id of ['backend-domain', 'backend-api', 'frontend-src', 'frontend-e2e', 'scripts-other', 'launchers-windows']) {
+    assert.ok(policy.pathGroups.find(g => g.id === id).lanes.includes('source-launcher-linux'))
+  }
+  assert.ok(!policy.pathGroups.some(g => g.patterns.includes('backend/**') || g.patterns.includes('frontend/**')))
 })
