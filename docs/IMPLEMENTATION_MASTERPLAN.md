@@ -2,6 +2,8 @@
 
 Last Updated: 2026-09-10
 
+Complete the bounded #2915 Review-health follow-up to merged #2911: restore retained warnings on visibility changes, preserve newer warnings, and retire recovery on scope changes. Focused state and browser regressions pass; PR delivery records carry the full frontend and hosted gates. No release gate or product-authority change.
+
 Prepare v0.4 qualification through [#2898](https://github.com/Chris0Jeky/Taskdeck/issues/2898): maintain the [feature capability catalogue](product/FEATURE_CAPABILITIES.md), run the eleven linked session workstreams against pinned candidates, and record the 44 initial cases in the [qualification plan](testing/V04_QUALIFICATION_PLAN.md). Preparation is delivered separately from execution; all seeded outcomes remain NOT RUN. Reuse existing performance, visual-baseline, hosted, dogfooding and release owners, preserving their milestones and the existing release decision gates.
 
 Finish delivery of #2895 and its bounded #2896 reminder-save ownership follow-up. The latter replaces a component-wide boolean with a request identity so an older account's completion cannot discard a newer account's unsaved hours. Its reproduced interleavings, full frontend suite, typecheck/build and lint pass. Keep the final #2808 completion record tied to the merged delivery receipts.
