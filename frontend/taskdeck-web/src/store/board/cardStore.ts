@@ -6,8 +6,21 @@ import { getErrorMessage } from '../../utils/errorMessage'
 import type { CardDetachPreview, CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
+import type { BoardFetchOptions } from './boardCrudStore'
 
-export function createCardActions(state: BoardState, helpers: BoardHelpers) {
+export function createCardActions(
+  state: BoardState,
+  helpers: BoardHelpers,
+  refreshBoard: (boardId: string, options?: BoardFetchOptions) => Promise<boolean>,
+) {
+  async function refreshDetachedChildren(boardId: string) {
+    // The mutation already committed. The shared detail reader owns cancellation,
+    // session/navigation generations and any current-context refresh warning.
+    await refreshBoard(boardId, {
+      intent: 'background',
+      backgroundFailureMessage: 'Card change saved, but child links could not be refreshed. Refresh the board before editing.',
+    })
+  }
   async function setCardArchived(boardId: string, cardId: string, archive: boolean, expectedUpdatedAt: string, expectedChildrenFingerprint?: string) {
     helpers.guardDemoMutation()
     const updated = expectedChildrenFingerprint === undefined
@@ -21,7 +34,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
       if (archive && existed) helpers.updateColumnCardCount(updated.columnId, -1)
       if (!archive && !existed) helpers.updateColumnCardCount(updated.columnId, 1)
     }
-    if (archive && state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)) await fetchCards(boardId)
+    if (archive && state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)) await refreshDetachedChildren(boardId)
     return updated
   }
   async function fetchCards(
@@ -103,6 +116,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
 
   async function deleteCard(boardId: string, cardId: string, confirmation?: CardDetachPreview) {
     helpers.guardDemoMutation()
+    let refreshChildren: boolean
     try {
       state.loading.value = true
       state.error.value = null
@@ -121,7 +135,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
         helpers.updateColumnCardCount(existingCard.columnId, -1)
       }
 
-      if (state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)) await fetchCards(boardId)
+      refreshChildren = state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)
       helpers.toast.success('Card deleted successfully')
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to delete card')
@@ -129,6 +143,8 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
     } finally {
       state.loading.value = false
     }
+    // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
+    if (refreshChildren) await refreshDetachedChildren(boardId)
   }
 
   async function moveCard(
