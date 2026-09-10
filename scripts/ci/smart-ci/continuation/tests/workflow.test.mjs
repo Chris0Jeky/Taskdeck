@@ -18,6 +18,14 @@ test('E2E waits for frontend and existing backend prerequisites', () => {
 test('API does not wait for the full backend unit platform matrix', () => {
   const b = block(workflow(), 'api-integration'); assert.ok(b.includes('      - backend-architecture\n')); assert.ok(!b.includes('      - backend-unit\n'));
 });
+
+test('split API staging refuses a skipped or misrouted Windows qualifier', () => {
+  for (const replacement of ['      platform: linux\n', '      platform: unknown\n']) {
+    assert.throws(() => stageWorkflow(workflow().replace('      platform: windows\n', replacement)), /split API qualification/);
+  }
+  assert.throws(() => stageWorkflow(workflow().replace('  api-integration-windows:\n', '  api-integration-windows:\n    if: false\n')), /split API qualification/);
+  assert.ok(stageWorkflow(workflow(), 'compute').changes.some(change => change.job === 'api-integration-windows' && change.added.includes('backend-unit')));
+});
 test('PR-only secret scan remains independent of push and merge-group barriers', () => {
   const text = workflow(); assert.ok(block(text, 'secret-scan').includes("if: ${{ github.event_name == 'pull_request' }}"));
   assert.ok(!text.includes('      - secret-scan\n')); assert.match(text, /^  push:/m); assert.match(text, /^  pull_request:/m); assert.match(text, /^  merge_group:/m);
