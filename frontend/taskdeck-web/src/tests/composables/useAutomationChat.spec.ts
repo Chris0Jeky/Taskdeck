@@ -566,7 +566,7 @@ describe('useAutomationChat', () => {
       await chat.handleSendMessage()
 
       expect(chatApiMocks.getSession).toHaveBeenNthCalledWith(1, 's1')
-      expect(chatApiMocks.getSession).toHaveBeenLastCalledWith('s1', { skipRetry: true })
+      expect(chatApiMocks.getSession).toHaveBeenLastCalledWith('s1', { skipRetry: true, timeout: 15_000 })
       expect(chat.sendingMessage.value).toBe(false)
       expect(chat.selectedSession.value?.recentMessages.map((message) => message.content)).toEqual([
         'older instruction',
