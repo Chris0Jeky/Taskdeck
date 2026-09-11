@@ -21,11 +21,17 @@ public class AutomationExecutorService : IAutomationExecutorService
     private readonly ILogger<AutomationExecutorService>? _logger;
 
     /// <summary>
-    /// Board realtime events staged by operations inside the outer transaction (#2934). Flushed
-    /// once the transaction commits and dropped on every path that does not reach the commit,
-    /// so subscribers never see a lifecycle change that was rolled back.
+    /// Card lifecycle realtime events (archive/restore and the child detachments they cause)
+    /// staged inside the outer transaction (#2934). Flushed once the transaction commits and
+    /// dropped on every path that does not reach the commit, so subscribers never see a lifecycle
+    /// change that was rolled back. Every other operation still notifies through its own service.
+    /// <para>
+    /// Null when no realtime notifier was supplied: with nothing to flush into, buffering would
+    /// silently swallow the lifecycle event instead of falling back, so the handler lane is left
+    /// to notify through the card service's own notifier exactly as it did before this bridge.
+    /// </para>
     /// </summary>
-    private readonly DeferredBoardRealtimeNotifier _deferredNotifications;
+    private readonly DeferredBoardRealtimeNotifier? _deferredNotifications;
 
     public AutomationExecutorService(
         IUnitOfWork unitOfWork,
@@ -52,7 +58,9 @@ public class AutomationExecutorService : IAutomationExecutorService
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
-        _deferredNotifications = new DeferredBoardRealtimeNotifier(realtimeNotifier);
+        _deferredNotifications = realtimeNotifier is null
+            ? null
+            : new DeferredBoardRealtimeNotifier(realtimeNotifier);
         _handlerRegistry = new OperationHandlerRegistry(
             unitOfWork, cardService, boardService, columnService, assignments, _deferredNotifications);
         _auditRecorder = new ExecutionAuditRecorder(unitOfWork);
@@ -398,10 +406,12 @@ public class AutomationExecutorService : IAutomationExecutorService
             }
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
+            // Only now is the lifecycle change real for subscribers — and this is the first
+            // statement after the commit on purpose: anything that throws later in this tail
+            // would otherwise reach the finally below and discard events for a change that is
+            // already durable. Every path that did not reach this line drops them, correctly.
+            await FlushDeferredNotificationsAsync();
             await _handlerRegistry.NotifyAssignmentsCommittedAsync(orderedOperations, cancellationToken);
-            // Only now is the lifecycle change real for subscribers. Every path that did not
-            // reach this line drops the staged events in the finally below.
-            await FlushDeferredNotificationsAsync(cancellationToken);
 
             var captureSyncResult = await SyncLinkedCaptureConversionAsync(
                 effectiveProposal with
@@ -473,20 +483,25 @@ public class AutomationExecutorService : IAutomationExecutorService
             // Single drain point for every non-commit exit: the rollback returns, the guard
             // refusals, the unexpected-error catch, and cancellation. A successful flush already
             // emptied the buffer, so this is a no-op there.
-            _deferredNotifications.Discard();
+            _deferredNotifications?.Discard();
         }
     }
 
     /// <summary>
-    /// Publishes the board realtime events staged inside the committed transaction. Delivery is
-    /// best-effort: the board write is already durable, so a failing notification channel must not
-    /// turn an applied proposal into a reported failure.
+    /// Publishes the board realtime events staged inside the committed transaction. Deliberately
+    /// takes no cancellation token: the board write is already durable, and a caller who walked
+    /// away (aborted request, proxy timeout) must not leave subscribers looking at a stale board.
+    /// Delivery is otherwise best-effort — a failing notification channel must not turn an applied
+    /// proposal into a reported failure.
     /// </summary>
-    private async Task FlushDeferredNotificationsAsync(CancellationToken cancellationToken)
+    private async Task FlushDeferredNotificationsAsync()
     {
+        if (_deferredNotifications is null)
+            return;
+
         try
         {
-            await _deferredNotifications.FlushAsync(cancellationToken);
+            await _deferredNotifications.FlushAsync(CancellationToken.None);
         }
         catch (Exception)
         {

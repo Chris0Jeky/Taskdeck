@@ -97,10 +97,83 @@ public class ProposalLifecycleNotificationTests
         var result = await _executor.ExecuteProposalAsync(proposalId, "execution-key");
 
         result.IsSuccess.Should().BeFalse();
+        // Guard against a vacuous pass: an empty publish list only proves anything if the archive
+        // operation itself really ran and was saved inside the transaction before the failure.
+        card.IsArchived.Should().BeTrue("the archive operation must have applied before the failure");
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
         _rolledBack.Should().BeTrue("the failing operation must roll the archive back");
         _committed.Should().BeFalse();
         _notifier.Published.Should().BeEmpty(
             "a lifecycle change that was rolled back must never reach realtime subscribers");
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldDeferTheDetachedChildEventsTooAndPublishThemAfterCommit()
+    {
+        // The archive detaches children in the same staged write, so those card.updated events are
+        // exactly as premature as the lifecycle event itself and must ride the same bridge.
+        var (board, column, card) = SeedBoard(archived: false);
+        var child = TestDataBuilder.CreateCard(board.Id, column.Id, "Child");
+        child.SetParent(card.Id);
+        _cardRepoMock.Setup(r => r.GetHierarchyByBoardIdAsync(board.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[] { card, child });
+
+        var proposalId = Guid.NewGuid();
+        var operations = new List<ProposalOperationDto>
+        {
+            new(
+                Guid.NewGuid(),
+                proposalId,
+                0,
+                "archive-lifecycle",
+                "card",
+                null,
+                $$"""
+                  {"cardId":"{{card.Id}}","expectedUpdatedAt":"{{card.UpdatedAt:O}}","expectedChildrenFingerprint":"{{CardService.ChildrenFingerprint(new[] { child })}}"}
+                  """,
+                "key-lifecycle-child",
+                null)
+        };
+        ArrangeApprovedProposal(proposalId, board.Id, operations);
+
+        var result = await _executor.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        child.ParentCardId.Should().BeNull("the archive detaches the child in the same write");
+        _notifier.Published.Should().HaveCount(2);
+        _notifier.Published.Should().OnlyContain(p => p.CommittedAtPublishTime,
+            "every event staged inside the transaction waits for the commit");
+        _notifier.Published.Select(p => (p.Mutation.Operation, p.Mutation.EntityId))
+            .Should().Equal(("archived", (Guid?)card.Id), ("updated", child.Id));
+    }
+
+    [Fact]
+    public async Task ExecuteProposal_ShouldStillNotifyThroughTheCardService_WhenNoRealtimeNotifierWasSupplied()
+    {
+        // An executor built without a notifier has nothing to flush into. It must fall back to the
+        // card service's own notifier rather than stage the event into a buffer that drops it:
+        // a silently swallowed lifecycle event would be a worse regression than the one being fixed.
+        var executorWithoutNotifier = new AutomationExecutorService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            _cardService,
+            new BoardService(_unitOfWorkMock.Object),
+            new ColumnService(_unitOfWorkMock.Object));
+
+        var (board, column, card) = SeedBoard(archived: false);
+        var proposalId = Guid.NewGuid();
+        var operations = new List<ProposalOperationDto>
+        {
+            LifecycleOperation(proposalId, sequence: 0, card, archive: true)
+        };
+        ArrangeApprovedProposal(proposalId, board.Id, operations);
+
+        var result = await executorWithoutNotifier.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue();
+        _notifier.Published.Should().ContainSingle();
+        _notifier.Published.Single().Mutation.Operation.Should().Be("archived");
     }
 
     [Theory]
