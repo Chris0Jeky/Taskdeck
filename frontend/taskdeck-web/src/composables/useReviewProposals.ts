@@ -1097,8 +1097,8 @@ export function useReviewProposals() {
    * Whether health owned by `healthScope` still describes what a reviewer can
    * see now that `scope` is the requested read identity.
    *
-   * It does when the two are the same read, and it ALSO does whenever the
-   * queue that landed for `healthScope` is still rendering under the new
+   * It does for an empty queue in the same scope, and whenever the
+   * queue that landed for `healthScope` is still rendering under the requested
    * filter. That second case is the one the disclosure exists for: only a
    * landing replaces `proposals`, so a widening to All boards whose read fails
    * leaves board B's rows on screen -- and `matchesActiveBoardFilter` admits
@@ -1124,7 +1124,7 @@ export function useReviewProposals() {
     if (landedQueueScope.value !== healthScope) return false
     // An empty queue can itself be stale. For its own scope, keep the warning
     // even when filters hide every row; only a successful read proves recovery.
-    if (healthScope === scope) return true
+    if (healthScope === scope && visibleProposals.value.length === 0) return true
     const healthBoard = healthScope.slice(0, healthScope.lastIndexOf(':'))
     return visibleProposals.value.some(proposal =>
       landedQueueProposalIds.value.has(proposal.id.toLowerCase()) &&
@@ -1781,9 +1781,12 @@ export function useReviewProposals() {
 
   // Visibility also changes without a read: completed filtering, snooze expiry,
   // and hash navigation can reveal retained rows after their health was parked.
+  // A list-only success may also raise recovery while that warning is already
+  // visible. Recheck both changes; a full landing clears retained health before
+  // this watcher runs, so its genuine recovery announcement remains intact.
   watch(
-    visibleRetainedQueueHealth,
-    (health) => {
+    [visibleRetainedQueueHealth, queueRefreshRecoveredKind],
+    ([health]) => {
       if (health?.stale || health?.refused) retireQueueRecovery()
     },
   )
