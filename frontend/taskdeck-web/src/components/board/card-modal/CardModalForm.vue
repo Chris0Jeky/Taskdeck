@@ -71,7 +71,7 @@ defineEmits<{
       data-testid="card-type-permission-unknown"
       class="mt-1 flex flex-wrap items-center gap-2 text-xs text-on-surface-variant"
     >
-      <span>{{ t('cardModal.workItemType.permissionUnknown') }}</span>
+      <span role="status">{{ t('cardModal.workItemType.permissionUnknown') }}</span>
       <button
         type="button"
         data-testid="card-type-permission-refresh"
