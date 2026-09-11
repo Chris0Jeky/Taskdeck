@@ -104,6 +104,8 @@ npx vitest --run --pool=threads --maxWorkers=1 src/tests/utils/timeZone.spec.ts
 
 Deliberately not an npm script: `frontend/taskdeck-web/package.json` is a declared control path
 (`ci/policy.v1.json`), so adding one would make an otherwise ordinary test change an R4 PR.
+(`mutation:smoke` below is the deliberate exception: it is invoked by the workflow itself, so it
+has to be a script, and its PR is accepted as R4 for that reason.)
 
 **Known pool-dependent trap — timezone stubs (#2943).** `vi.stubEnv('TZ', zone)` changes the runtime
 zone only as a side effect of Node's real environment store notifying V8. That notification does not
@@ -121,7 +123,9 @@ host in any zone.
 
 ### CI
 
-The mutation testing workflow is manual-only via `workflow_dispatch` from the Actions tab. The frontend job runs the activation smoke test before the non-blocking full mutation report, so an incompatible test-runner upgrade fails early instead of producing an apparently valid zero-execution report.
+The mutation testing workflow is manual-only via `workflow_dispatch` from the Actions tab. The frontend job runs the activation smoke test before the non-blocking full mutation report.
+
+**What the smoke does and does not prove.** It proves Stryker can instrument the selected seam and that the Vitest CLI kills the resulting mutants. It does **not** exercise `@stryker-mutator/vitest-runner`, which is the runner the *full* report in the next step still uses, so a green smoke step is not evidence that the full step executed any test. Read the two steps separately. In particular the full frontend lane cannot fail on a zero-execution result on its own: `stryker.config.mjs` sets `break: 0`, so a run in which every mutant survives scores `0.00`, exits 0 and uploads a report that looks valid. Judge the full lane by its mutation score and its per-mutant test counts, never by the job's green tick.
 
 Reports are uploaded as GitHub Actions artifacts with 30-day retention.
 The backend job has a finite 180-minute ceiling for the full Domain mutation set, and artifact upload fails when no report was produced.

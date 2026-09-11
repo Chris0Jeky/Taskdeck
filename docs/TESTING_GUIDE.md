@@ -1412,7 +1412,7 @@ CI: `reusable-visual-regression.yml` in extended CI (testing/visual label). Uplo
 ### Mutation Testing (TST-05, `#90`/`#796`)
 
 Backend (Stryker.NET 4.16.0): targets `Taskdeck.Domain` from the `Taskdeck.Domain.Tests` project context. Thresholds: break=0, low=60, high=80. The checked-in preflight rejects obsolete config keys and solution-context/workflow drift before the long mutation run.
-Frontend (Stryker JS): targets `captureStore`, `boardStore`, and `board/*.ts` submodules with the Vitest runner. Run the focused activation smoke (`npm run mutation:smoke`) before the full report; it drives Vitest through Stryker's command runner so it stays independent of the `@stryker-mutator/vitest-runner` / Vitest pairing, and `scripts/check-mutation-smoke.mjs` fails the command when the probe yields no mutants.
+Frontend (Stryker JS): targets `captureStore`, `boardStore`, and `board/*.ts` submodules with the Vitest runner. Run the focused activation smoke (`npm run mutation:smoke`) before the full report; it drives Vitest through Stryker's command runner so it stays independent of the `@stryker-mutator/vitest-runner` / Vitest pairing, and `scripts/check-mutation-smoke.mjs` fails the command when the probe yields no mutants. The smoke therefore does not vouch for the full report: that lane still runs on `@stryker-mutator/vitest-runner`, which was measured executing zero tests per mutant on this repository's Vitest 5 line, and its `break: 0` threshold lets an all-survived run exit green. See `docs/testing/MUTATION_TESTING_POLICY.md`.
 
 Run commands:
 ```bash
