@@ -226,6 +226,43 @@ public class ProposalLifecycleNotificationTests
         _notifier.Published.Single().Mutation.EntityId.Should().Be(card.Id);
     }
 
+    [Fact]
+    public async Task ExecuteProposal_ShouldStayApplied_WhenTheNotificationChannelThrowsAfterCommit()
+    {
+        // The catch inside FlushDeferredNotificationsAsync is load-bearing. Without it a throwing
+        // notifier unwinds into the executor's outer catch, which rolls back an already-committed
+        // transaction (a no-op) and then flips the Applied proposal to Failed - reporting failure
+        // for a board change that really happened. This pins that it cannot.
+        var throwingNotifier = new ThrowingBoardRealtimeNotifier();
+        var executor = new AutomationExecutorService(
+            _unitOfWorkMock.Object,
+            _proposalServiceMock.Object,
+            _policyEngineMock.Object,
+            new CardService(_unitOfWorkMock.Object, throwingNotifier),
+            new BoardService(_unitOfWorkMock.Object),
+            new ColumnService(_unitOfWorkMock.Object),
+            logger: null,
+            assignments: null,
+            realtimeNotifier: throwingNotifier);
+
+        var (board, column, card) = SeedBoard(archived: false);
+        var proposalId = Guid.NewGuid();
+        var operations = new List<ProposalOperationDto>
+        {
+            LifecycleOperation(proposalId, sequence: 0, card, archive: true)
+        };
+        var entity = ArrangeApprovedProposal(proposalId, board.Id, operations);
+
+        var result = await executor.ExecuteProposalAsync(proposalId, "execution-key");
+
+        result.IsSuccess.Should().BeTrue("the board change committed; a dead notification channel is not a failure");
+        throwingNotifier.Attempts.Should().Be(1, "the flush really did reach the channel");
+        _committed.Should().BeTrue();
+        _rolledBack.Should().BeFalse("there is nothing to roll back after a commit");
+        entity.Status.Should().Be(ProposalStatus.Applied);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     private (Board Board, Column Column, Card Card) SeedBoard(bool archived)
     {
         var board = TestDataBuilder.CreateBoard();
@@ -253,7 +290,7 @@ public class ProposalLifecycleNotificationTests
             $"key-lifecycle-{sequence}",
             null);
 
-    private void ArrangeApprovedProposal(Guid proposalId, Guid boardId, List<ProposalOperationDto> operations)
+    private AutomationProposal ArrangeApprovedProposal(Guid proposalId, Guid boardId, List<ProposalOperationDto> operations)
     {
         var userId = Guid.NewGuid();
         var proposal = new ProposalDto(
@@ -293,6 +330,7 @@ public class ProposalLifecycleNotificationTests
                 userId, boardId, operations, BoardAccessBar.Write, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Result.Success());
         _proposalRepoMock.Setup(r => r.GetByIdAsync(proposalId, It.IsAny<CancellationToken>())).ReturnsAsync(entity);
+        return entity;
     }
 
     /// <summary>
@@ -312,6 +350,18 @@ public class ProposalLifecycleNotificationTests
         {
             _published.Add((mutation, _committedProbe()));
             return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>A notification channel that is simply down — the shape the executor must survive.</summary>
+    private sealed class ThrowingBoardRealtimeNotifier : IBoardRealtimeNotifier
+    {
+        public int Attempts { get; private set; }
+
+        public Task NotifyBoardMutationAsync(BoardRealtimeEvent mutation, CancellationToken cancellationToken = default)
+        {
+            Attempts++;
+            throw new InvalidOperationException("realtime channel unavailable");
         }
     }
 }
