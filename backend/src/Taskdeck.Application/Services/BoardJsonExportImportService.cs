@@ -149,6 +149,21 @@ public class BoardJsonExportImportService : IBoardJsonExportImportService
                 if (source.SourceId == Guid.Empty || !cardIds.TryAdd(source.SourceId!.Value, Guid.NewGuid()))
                     throw new DomainException(ErrorCodes.ValidationError, "Invalid or duplicate source card ID.");
 
+            // Parent archive state belongs to the full graph contract: the create, update and proposal
+            // lanes all refuse an archived parent, and ordinary archival detaches every direct child, so
+            // only a hand-crafted payload can name one. Reject before anything is constructed, next to the
+            // other whole-payload checks, so a rejected graph can never leave a partially created board.
+            // Archived children whose parent stays active remain valid and still import.
+            var archivedSourceIds = cards
+                .Where(card => card.IsArchived && card.SourceId is Guid archivedId && archivedId != Guid.Empty)
+                .Select(card => card.SourceId!.Value)
+                .ToHashSet();
+            foreach (var card in cards)
+                if (card.ParentCardId is Guid parentSourceId && archivedSourceIds.Contains(parentSourceId))
+                    throw new DomainException(
+                        ErrorCodes.ValidationError,
+                        $"Card '{card.Title}' references an archived parent. Restore the parent card before assigning it.");
+
             var board = new Board(dto.Name, dto.Description, userId);
             await _unitOfWork.Boards.AddAsync(board);
 
