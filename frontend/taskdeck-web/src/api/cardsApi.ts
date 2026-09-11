@@ -1,7 +1,11 @@
 import http, { type BoardReadOptions } from './http'
-import type { Card, CardCaptureProvenance, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
+import type { CardDetachPreview, Card, CardCaptureProvenance, CreateCardDto, UpdateCardDto, MoveCardDto } from '../types/board'
 
 export const cardsApi = {
+  async previewDetach(boardId: string, cardId: string): Promise<CardDetachPreview> {
+    const { data } = await http.get<CardDetachPreview>(`/boards/${boardId}/cards/${cardId}/detach-preview`, { skipRetry: true })
+    return data
+  },
   async getCard(boardId: string, cardId: string): Promise<Card> {
     const { data } = await http.get<Card>(`/boards/${boardId}/cards/${cardId}`, { skipRetry: true })
     return data
@@ -11,10 +15,10 @@ export const cardsApi = {
     return data
   },
 
-  async setArchived(boardId: string, cardId: string, archived: boolean, expectedUpdatedAt: string): Promise<Card> {
+  async setArchived(boardId: string, cardId: string, archived: boolean, expectedUpdatedAt: string, expectedChildrenFingerprint?: string): Promise<Card> {
     const { data } = await http.post<Card>(
       `/boards/${boardId}/cards/${cardId}/${archived ? 'archive' : 'restore'}`,
-      { expectedUpdatedAt }, { skipRetry: true },
+      { expectedUpdatedAt, expectedChildrenFingerprint }, { skipRetry: true },
     )
     return data
   },
@@ -49,8 +53,8 @@ export const cardsApi = {
     return data
   },
 
-  async deleteCard(boardId: string, cardId: string): Promise<void> {
-    await http.delete(`/boards/${boardId}/cards/${cardId}`)
+  async deleteCard(boardId: string, cardId: string, confirmation?: CardDetachPreview): Promise<void> {
+    await http.delete(`/boards/${boardId}/cards/${cardId}`, { params: confirmation ? { expectedUpdatedAt: confirmation.expectedUpdatedAt, expectedChildrenFingerprint: confirmation.expectedChildrenFingerprint } : undefined, skipRetry: true })
   },
 
   async getCardProvenance(boardId: string, cardId: string): Promise<CardCaptureProvenance | null> {

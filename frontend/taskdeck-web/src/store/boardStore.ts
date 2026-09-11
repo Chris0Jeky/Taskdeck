@@ -25,7 +25,7 @@ export const useBoardStore = defineStore('board', () => {
   // Domain action groups
   const boardCrud = createBoardCrudActions(state, helpers)
   const columns = createColumnActions(state, helpers)
-  const cards = createCardActions(state, helpers)
+  const cards = createCardActions(state, helpers, boardCrud.fetchBoard)
   const comments = createCardCommentActions(state, helpers)
   const labels = createLabelActions(state, helpers)
   const filtering = createCardFilterActions(state)

@@ -50,6 +50,7 @@ public class CardServiceTests
 
     public CardServiceTests()
     {
+
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _boardRepoMock = new Mock<IBoardRepository>();
         _columnRepoMock = new Mock<IColumnRepository>();
@@ -61,6 +62,7 @@ public class CardServiceTests
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _cardRepoMock.Setup(r => r.GetHierarchyByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
         _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_automationProposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
@@ -1185,7 +1187,7 @@ public class CardServiceTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        board.ConcurrencyToken.Should().Be(originalConcurrencyToken);
+        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
         _cardRepoMock.Verify(r => r.DeleteAsync(card, default), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
