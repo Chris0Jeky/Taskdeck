@@ -175,6 +175,23 @@ test('existsCaseExact accepts the real casing and rejects any other', () => {
   })
 })
 
+test('a fresh scan observes files added after an earlier scan', () => {
+  withFixture(
+    {
+      'docs/index.md': '[old](./old.md)\n',
+      'docs/old.md': '# old\n',
+    },
+    (root) => {
+      assert.deepEqual(findBrokenLinks(root), [])
+
+      writeFileSync(join(root, 'docs', 'new.md'), '# new\n', 'utf8')
+      writeFileSync(join(root, 'docs', 'index.md'), '[new](./new.md)\n', 'utf8')
+
+      assert.deepEqual(findBrokenLinks(root), [])
+    },
+  )
+})
+
 test('findings render as readable file:line -> target (reason) lines', () => {
   assert.deepEqual(
     formatBrokenLinks([{ file: 'docs/a.md', line: 12, target: './gone.md', reason: 'missing' }]),
