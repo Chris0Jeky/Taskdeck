@@ -22,8 +22,65 @@ public class CardServiceTests
     private readonly Mock<IAuditLogRepository> _auditLogRepoMock;
     private readonly CardService _service;
 
+    [Fact]
+    public async Task Archive_PersistsAuditBeforeRealtime_AndRestoreRejectsMissingColumn()
+    {
+        var board = new Board("Archive audit");
+        var card = new Card(board.Id, Guid.NewGuid(), "Retained");
+        var actor = Guid.NewGuid();
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        var notifier = new Mock<IBoardRealtimeNotifier>();
+        var saved = false;
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).Callback(() => saved = true).ReturnsAsync(1);
+        notifier.Setup(n => n.NotifyBoardMutationAsync(It.IsAny<BoardRealtimeEvent>(), It.IsAny<CancellationToken>()))
+            .Callback(() => saved.Should().BeTrue()).Returns(Task.CompletedTask);
+        var service = new CardService(_unitOfWorkMock.Object, notifier.Object);
+        var result = await service.SetArchivedAsync(board.Id, card.Id, true, new(card.UpdatedAt), actor);
+        result.IsSuccess.Should().BeTrue();
+        _auditLogRepoMock.Verify(r => r.AddAsync(It.Is<AuditLog>(log => log.EntityId == card.Id && log.UserId == actor &&
+            log.Action == Taskdeck.Domain.Enums.AuditAction.Archived), It.IsAny<CancellationToken>()), Times.Once);
+        notifier.Verify(n => n.NotifyBoardMutationAsync(It.Is<BoardRealtimeEvent>(e => e.BoardId == board.Id && e.EntityId == card.Id && e.Operation == "archived"), It.IsAny<CancellationToken>()), Times.Once);
+        var restore = await service.SetArchivedAsync(board.Id, card.Id, false, new(card.UpdatedAt), actor);
+        restore.IsSuccess.Should().BeFalse();
+        restore.ErrorMessage.Should().Contain("original column");
+        card.IsArchived.Should().BeTrue();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SetArchived_WithRecordLifecycleAuditFalse_StagesNoServiceReceipt(bool archive)
+    {
+        // #2939 regression: on the proposal apply lane ExecutionAuditRecorder writes the single
+        // Archived/Unarchived receipt (with proposal provenance), so CardService must not stage a
+        // second one. Direct API calls keep the default (covered by the test above).
+        var board = new Board("Lifecycle audit suppression");
+        var column = new Column(board.Id, "Todo", 0);
+        var card = new Card(board.Id, column.Id, "Retained");
+        if (!archive) card.Archive();
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+        var service = new CardService(_unitOfWorkMock.Object);
+
+        var result = await service.SetArchivedAsync(
+            board.Id, card.Id, archive, new(card.UpdatedAt), actorUserId: null, recordLifecycleAudit: false);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        card.IsArchived.Should().Be(archive);
+        _auditLogRepoMock.Verify(r => r.AddAsync(
+            It.Is<AuditLog>(log => log.EntityId == card.Id &&
+                (log.Action == Taskdeck.Domain.Enums.AuditAction.Archived ||
+                 log.Action == Taskdeck.Domain.Enums.AuditAction.Unarchived)),
+            It.IsAny<CancellationToken>()), Times.Never);
+    }
+
     public CardServiceTests()
     {
+
         _unitOfWorkMock = new Mock<IUnitOfWork>();
         _boardRepoMock = new Mock<IBoardRepository>();
         _columnRepoMock = new Mock<IColumnRepository>();
@@ -35,6 +92,7 @@ public class CardServiceTests
         _unitOfWorkMock.Setup(u => u.Boards).Returns(_boardRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Columns).Returns(_columnRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.Cards).Returns(_cardRepoMock.Object);
+        _cardRepoMock.Setup(r => r.GetHierarchyByBoardIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<Card>());
         _unitOfWorkMock.Setup(u => u.Labels).Returns(_labelRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AutomationProposals).Returns(_automationProposalRepoMock.Object);
         _unitOfWorkMock.Setup(u => u.AuditLogs).Returns(_auditLogRepoMock.Object);
@@ -1159,7 +1217,7 @@ public class CardServiceTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        board.ConcurrencyToken.Should().Be(originalConcurrencyToken);
+        board.ConcurrencyToken.Should().NotBe(originalConcurrencyToken);
         _cardRepoMock.Verify(r => r.DeleteAsync(card, default), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }

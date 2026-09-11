@@ -18,9 +18,9 @@ import type {
   CardHistoryRowDto,
   ConflictToneWireValue,
   CardHistoryStatusWireValue,
-  SimilarPastResultDto,
   ProposalProvenanceMetadataDto,
 } from '../api/proposalDeepReviewApi'
+import { mapSimilarPast, type SimilarPastRow } from '../utils/paperReviewSimilarPast'
 import {
   proposalIdsEqual,
   proposalRevisionIdentity,
@@ -120,12 +120,7 @@ export interface HistoryRow {
   status: 'pending' | 'applied' | 'past' | 'unknown'
 }
 
-export interface SimilarPastRow {
-  serial: string
-  title: string
-  verdict: 'applied' | 'rejected'
-  date: string
-}
+export type { SimilarPastRow } from '../utils/paperReviewSimilarPast'
 
 export interface SimilarPastApplyRate {
   applied: number
@@ -573,15 +568,6 @@ function applyRateOf(rows: SimilarPastRow[]): SimilarPastApplyRate {
   const applied = rows.filter((r) => r.verdict === 'applied').length
   const total = rows.length
   return { applied, total, ratio: total === 0 ? 0 : applied / total }
-}
-
-function mapSimilarPast(dto: SimilarPastResultDto): SimilarPastRow[] {
-  return dto.decisions.map((d) => ({
-    serial: d.serial,
-    title: d.title,
-    verdict: d.verdict.toLowerCase() === 'applied' ? 'applied' : 'rejected',
-    date: d.date,
-  }))
 }
 
 export function usePaperReviewSelectors(

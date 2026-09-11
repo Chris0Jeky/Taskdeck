@@ -106,11 +106,11 @@ public sealed class NoteImportService : INoteImportService
                 continue;
             }
 
-            // Truncate to CaptureRequestContract max if needed
-            if (captureText.Length > CaptureRequestContract.MaxRawTextLength)
-            {
-                captureText = captureText[..CaptureRequestContract.MaxRawTextLength];
-            }
+            // Truncate to CaptureRequestContract max without splitting a surrogate pair.
+            captureText = SurrogateSafeTruncation.Truncate(
+                captureText,
+                CaptureRequestContract.MaxRawTextLength,
+                string.Empty);
 
             var titleHint = section.Heading;
             if (titleHint != null && titleHint.Length > MaxTitleLength)
@@ -141,7 +141,7 @@ public sealed class NoteImportService : INoteImportService
 
             items.Add(new NoteImportItemResultDto(
                 result.Value.Id,
-                BuildExcerpt(captureText, 200),
+                CaptureTextExcerpt.Build(captureText),
                 "markdown",
                 truncatedRef));
             sectionIndex++;
@@ -201,10 +201,10 @@ public sealed class NoteImportService : INoteImportService
                 $"Title cannot exceed {MaxTitleLength} characters");
 
         var captureText = $"[Web Clip] {request.Url}\n\n{request.Content}";
-        if (captureText.Length > CaptureRequestContract.MaxRawTextLength)
-        {
-            captureText = captureText[..CaptureRequestContract.MaxRawTextLength];
-        }
+        captureText = SurrogateSafeTruncation.Truncate(
+            captureText,
+            CaptureRequestContract.MaxRawTextLength,
+            string.Empty);
 
         var externalRef = TruncateExternalRef(request.Url);
 
@@ -221,7 +221,7 @@ public sealed class NoteImportService : INoteImportService
 
         var item = new NoteImportItemResultDto(
             result.Value.Id,
-            BuildExcerpt(captureText, 200),
+            CaptureTextExcerpt.Build(captureText),
             "webclip",
             externalRef);
 
@@ -315,17 +315,6 @@ public sealed class NoteImportService : INoteImportService
         return value.Length <= CaptureRequestContract.MaxExternalRefLength
             ? value
             : value[..CaptureRequestContract.MaxExternalRefLength];
-    }
-
-    private static string BuildExcerpt(string text, int maxLength)
-    {
-        var normalized = string.Join(
-            " ",
-            text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-
-        return normalized.Length <= maxLength
-            ? normalized
-            : normalized[..maxLength];
     }
 
     internal sealed record MarkdownSection(string? Heading, string Body);

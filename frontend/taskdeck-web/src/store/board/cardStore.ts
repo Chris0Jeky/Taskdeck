@@ -3,11 +3,40 @@
  */
 import { cardsApi } from '../../api/cardsApi'
 import { getErrorMessage } from '../../utils/errorMessage'
-import type { CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
+import type { CardDetachPreview, CreateCardDto, UpdateCardDto, CardCaptureProvenance } from '../../types/board'
 import type { BoardState } from './boardState'
 import type { BoardHelpers } from './boardStoreHelpers'
+import type { BoardFetchOptions } from './boardCrudStore'
 
-export function createCardActions(state: BoardState, helpers: BoardHelpers) {
+export function createCardActions(
+  state: BoardState,
+  helpers: BoardHelpers,
+  refreshBoard: (boardId: string, options?: BoardFetchOptions) => Promise<boolean>,
+) {
+  async function refreshDetachedChildren(boardId: string) {
+    // The mutation already committed. The shared detail reader owns cancellation,
+    // session/navigation generations and any current-context refresh warning.
+    await refreshBoard(boardId, {
+      intent: 'background',
+      backgroundFailureMessage: 'Card change saved, but child links could not be refreshed. Refresh the board before editing.',
+    })
+  }
+  async function setCardArchived(boardId: string, cardId: string, archive: boolean, expectedUpdatedAt: string, expectedChildrenFingerprint?: string) {
+    helpers.guardDemoMutation()
+    const updated = expectedChildrenFingerprint === undefined
+      ? await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt)
+      : await cardsApi.setArchived(boardId, cardId, archive, expectedUpdatedAt, expectedChildrenFingerprint)
+    helpers.markBoardDetailMutation(boardId)
+    if (state.currentBoard.value?.id === boardId) {
+      const existed = state.currentBoardCards.value.some(card => card.id === cardId)
+      state.currentBoardCards.value = state.currentBoardCards.value.filter(card => card.id !== cardId)
+      if (!archive) state.currentBoardCards.value.push(updated)
+      if (archive && existed) helpers.updateColumnCardCount(updated.columnId, -1)
+      if (!archive && !existed) helpers.updateColumnCardCount(updated.columnId, 1)
+    }
+    if (archive && state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)) await refreshDetachedChildren(boardId)
+    return updated
+  }
   async function fetchCards(
     boardId: string,
     filters?: { search?: string; labelId?: string; columnId?: string },
@@ -85,13 +114,14 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
     }
   }
 
-  async function deleteCard(boardId: string, cardId: string) {
+  async function deleteCard(boardId: string, cardId: string, confirmation?: CardDetachPreview) {
     helpers.guardDemoMutation()
+    let refreshChildren: boolean
     try {
       state.loading.value = true
       state.error.value = null
       const existingCard = state.currentBoardCards.value.find((card) => card.id === cardId)
-      await cardsApi.deleteCard(boardId, cardId)
+      await cardsApi.deleteCard(boardId, cardId, confirmation)
       helpers.markBoardDetailMutation(boardId)
 
       // Remove the card from the store
@@ -105,6 +135,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
         helpers.updateColumnCardCount(existingCard.columnId, -1)
       }
 
+      refreshChildren = state.currentBoard.value?.id === boardId && state.currentBoardCards.value.some(card => card.parentCardId === cardId)
       helpers.toast.success('Card deleted successfully')
     } catch (e: unknown) {
       helpers.handleApiError(e, 'Failed to delete card')
@@ -112,6 +143,8 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
     } finally {
       state.loading.value = false
     }
+    // Finish mutation-owned loading/error writes before a refresh can outlive navigation.
+    if (refreshChildren) await refreshDetachedChildren(boardId)
   }
 
   async function moveCard(
@@ -172,6 +205,7 @@ export function createCardActions(state: BoardState, helpers: BoardHelpers) {
   }
 
   return {
+    setCardArchived,
     fetchCards,
     createCard,
     updateCard,

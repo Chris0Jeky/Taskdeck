@@ -17,15 +17,27 @@ public class ReadTools
     private readonly BoardService _boardService;
     private readonly CardService _cardService;
     private readonly IUserContextProvider _userContext;
+    private readonly CardAssignmentService? _assignments;
 
     public ReadTools(
         BoardService boardService,
         CardService cardService,
-        IUserContextProvider userContext)
+        IUserContextProvider userContext,
+        CardAssignmentService? assignments = null)
     {
         _boardService = boardService;
         _cardService = cardService;
         _userContext = userContext;
+        _assignments = assignments;
+    }
+
+    [McpServerTool(Name = "list_board_participants"), Description("Lists active eligible assignees on an authorized board, including its owner. Returns names and IDs only; assignment never grants authority.")]
+    public async Task<string> ListBoardParticipants(string board_id)
+    {
+        if (_assignments is null || !Guid.TryParse(board_id, out var boardId))
+            return JsonSerializer.Serialize(new { error = "Provide a valid board ID." }, BoardResources.SerializerOptions);
+        var result = await _assignments.ParticipantsAsync(boardId, await _userContext.GetCurrentUserIdAsync());
+        return result.IsSuccess ? JsonSerializer.Serialize(result.Value, BoardResources.SerializerOptions) : Error(result);
     }
 
     /// <summary>
@@ -144,6 +156,10 @@ public class ReadTools
             columnId = card.ColumnId,
             columnName,
             title = card.Title,
+            workItemType = card.WorkItemType,
+            parentCardId = card.ParentCardId,
+            assignments = card.Assignments,
+            updatedAt = card.UpdatedAt,
             hasDescription = !string.IsNullOrWhiteSpace(card.Description),
             labels = card.Labels.Select(l => l.Name),
             position = card.Position,

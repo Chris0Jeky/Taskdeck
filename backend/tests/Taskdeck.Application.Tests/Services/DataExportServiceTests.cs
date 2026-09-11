@@ -39,6 +39,10 @@ public class DataExportServiceTests
     public DataExportServiceTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(r => r.GetExportPageByUserIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cards.Object);
         _historyServiceMock = new Mock<IHistoryService>();
         _userRepoMock = new Mock<IUserRepository>();
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
@@ -1024,6 +1028,10 @@ public class DataExportServiceStreamingTests
     public DataExportServiceStreamingTests()
     {
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(r => r.GetExportPageByUserIdAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Card>());
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cards.Object);
         _historyServiceMock = new Mock<IHistoryService>();
         _userRepoMock = new Mock<IUserRepository>();
         _boardAccessRepoMock = new Mock<IBoardAccessRepository>();
@@ -1074,6 +1082,29 @@ public class DataExportServiceStreamingTests
             _artefactRepoMock.Object,
             _extractionRepoMock.Object,
             _transcriptRepoMock.Object, EmptyWorkspaceInsightRepository.Create());
+    }
+
+    [Fact]
+    public async Task WorkItemType_BufferedAndStreamedAccountExportsRetainArchivedType()
+    {
+        SetupUserFound();
+        SetupEmptyRepositories();
+        var card = new Card(Guid.NewGuid(), Guid.NewGuid(), "Archived epic");
+        card.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Epic);
+        card.Archive();
+        var cards = new Mock<ICardRepository>();
+        cards.Setup(r => r.GetExportPageByUserIdAsync(_userId, 0, 500, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { card });
+        _unitOfWorkMock.Setup(u => u.Cards).Returns(cards.Object);
+        var buffered = await _service.ExportUserDataAsync(_userId);
+        buffered.IsSuccess.Should().BeTrue(buffered.ErrorMessage);
+        buffered.Value.Data.Cards!.Single().WorkItemType.Should().Be("Epic");
+        using var stream = new MemoryStream();
+        var streamed = await _service.StreamUserDataExportAsync(_userId, stream);
+        streamed.IsSuccess.Should().BeTrue(streamed.ErrorMessage);
+        using var json = System.Text.Json.JsonDocument.Parse(stream.ToArray());
+        var exported = json.RootElement.GetProperty("data").GetProperty("cards")[0];
+        exported.GetProperty("workItemType").GetString().Should().Be("Epic");
+        exported.GetProperty("isArchived").GetBoolean().Should().BeTrue();
     }
 
     [Fact]

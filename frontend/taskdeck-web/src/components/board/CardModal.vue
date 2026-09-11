@@ -4,8 +4,14 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useEscapeToClose } from '../../composables/useEscapeToClose'
 import { useCardModal } from '../../composables/useCardModal'
+import { useCardTypePermission } from '../../composables/useCardTypePermission'
 import { useVisualViewport } from '../../composables/useVisualViewport'
 import TdDialog from '../ui/TdDialog.vue'
+import CardParentField from './CardParentField.vue'
+import CardAssignmentField from './CardAssignmentField.vue'
+import CardDetachList from './CardDetachList.vue'
+import CardArchiveAction from './CardArchiveAction.vue'
+import { useBoardStore } from '../../store/boardStore'
 import {
   CardModalHeader,
   CardModalForm,
@@ -33,11 +39,130 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'updated'): void
   (e: 'dirty-change', dirty: boolean): void
+  (e: 'saving-change', saving: boolean): void
 }>()
 
 const { t } = useI18n()
 const router = useRouter()
+const boardStore = useBoardStore()
+/*
+ * #2969. Archive recovery and archive completion were the two close paths that
+ * emitted `close` without asking what every other path asks first: is there an
+ * unsaved draft, and is a change already on its way to the server (#2981)? Both
+ * now funnel through the same guards.
+ *
+ * `pendingArchiveRefresh` carries the board refetch that "Refresh card state"
+ * owes with the close it requests, so the refetch runs when — and only when —
+ * the editor actually closes.
+ */
+const pendingArchiveRefresh = ref(false)
+/*
+ * The completed archive/restore state, recorded when a request settles over a
+ * kept draft. Both hosts hold the open card in a snapshot ref (`ColumnLane`,
+ * `PaperBoardView`), so `props.card` never learns that the card is now archived
+ * while this editor stays open — its `isArchived` stays permanently false.
+ * `cardIsArchived` is therefore the only truthful archive state this editor
+ * has, and EVERY control that turns on it reads this, not the prop: the form
+ * fieldset, the parent field, the assignment field, the type selector, the save
+ * gate, the notice, and the archive control’s own label and operation. A
+ * half-migrated gate is worse than none — it leaves a writable control whose
+ * request the server can only reject with a confusing explanation.
+ */
+const archiveStateAfterChange = ref<boolean | null>(null)
+const archiveCompletedWithDraft = ref(false)
+const cardIsArchived = computed(() => archiveStateAfterChange.value ?? props.card.isArchived === true)
+// What is actually possible from this state: the card is archived, so nothing
+// can be saved on it; the archive control cannot restore it either, because
+// restoring is a lifecycle change and this editor still holds unsaved work.
+const archiveDraftNotice = computed(() => cardIsArchived.value
+  ? 'Your unsaved changes are still here. This card is now archived, so they cannot be saved; close the editor to discard them, or restore the card from the board and reopen it.'
+  : 'Your unsaved changes are still here. This card was restored, so the editor stayed open — save them, or close the editor to discard them.')
+
+function forgetArchiveCompletion() {
+  archiveCompletedWithDraft.value = false
+  archiveStateAfterChange.value = null
+}
+
+/*
+ * "Refresh card state" is the recovery control on a failed archive: it drops
+ * this editor and refetches the board. It is a close, so it asks `handleClose`
+ * — which refuses while an assignment save is in flight (#2997) and raises the
+ * discard confirmation over an unsaved draft — instead of emitting `close`
+ * itself. A clean editor closes and refetches exactly as before.
+ */
+function refreshArchiveState() {
+  // A host that owns its own discard prompt (the Paper board, while its dialog
+  // is open) owns this close too: `handleClose` is inert there, so arm nothing.
+  if (props.suppressDiscardPrompt) return
+  pendingArchiveRefresh.value = true
+  handleClose()
+}
+
+/*
+ * A completed archive/restore. `updated` is not a neutral "something changed"
+ * signal — `ColumnLane` maps it straight to its close handler and the Paper
+ * board resolves a held navigation with it — so a draft that survives this
+ * request must not emit it either. The committed change still reaches the board
+ * through the store mutation plus the refetch the recovery path runs.
+ */
+function handleArchiveChanged() {
+  // A request that settles after the editor already closed has nothing left to
+  // close: emitting again would be a second close for one user action.
+  if (!props.isOpen) return
+
+  if (hasUnsavedChanges.value) {
+    archiveStateAfterChange.value = !cardIsArchived.value
+    archiveCompletedWithDraft.value = true
+    void boardStore.fetchBoard(props.card.boardId)
+    return
+  }
+
+  emit('updated')
+  closeWithoutPrompt()
+}
 const pendingThinkingPath = ref<string | null>(null)
+const assignmentDirty = ref(false)
+/*
+ * #2981. An assignment PUT that has left the browser cannot be recalled, so
+ * while one is unanswered this editor may not offer — or honour — any
+ * affordance whose promise is "discarded". Every close path funnels through
+ * `handleClose`/`closeWithoutPrompt`, and both refuse in favour of a notice
+ * that says what is actually true. The state is also emitted upward so a host
+ * that owns its own switch/navigation prompts (the Paper board) can refuse the
+ * same way.
+ */
+const assignmentSaving = ref(false)
+const showSavePendingNotice = ref(false)
+const hasUnsavedChanges = computed(() => hasCardUnsavedChanges.value || assignmentDirty.value)
+function refuseWhileAssignmentSaving() {
+  showDiscardConfirm.value = false
+  // A refused close is not a deferred one: the board refetch "Refresh card
+  // state" armed is dropped with it, so it cannot fire behind an unrelated
+  // close later on.
+  pendingArchiveRefresh.value = false
+  showSavePendingNotice.value = true
+}
+function dismissSavePendingNotice() {
+  showSavePendingNotice.value = false
+}
+function acceptAssignments(saved: Card, previousVersion?: string) {
+  acceptAssignmentVersion(saved.updatedAt, previousVersion)
+  const index = boardStore.currentBoardCards.findIndex(c => c.id === saved.id)
+  if (index >= 0) boardStore.currentBoardCards.splice(index, 1, saved)
+}
+
+/*
+ * #2952. The work-item type gate asks the server for the caller's board write
+ * permission when the loaded board payload does not state it, instead of reading
+ * an omitted optional field as "no". Viewer, archived board and archived card stay
+ * read-only exactly as before, and the write itself remains server-authoritative.
+ */
+const { canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown, refreshPermission: refreshTypePermission } =
+  useCardTypePermission({
+    getBoardId: () => props.card.boardId,
+    getIsOpen: () => props.isOpen,
+    getCardIsArchived: () => cardIsArchived.value,
+  })
 
 const dialogRef = ref<HTMLElement | null>(null)
 const showDiscardConfirm = ref(false)
@@ -113,6 +238,7 @@ watch(
     if (isOpen) {
       if (!wasOpen) {
         previouslyFocusedElement = document.activeElement as HTMLElement | null
+        forgetArchiveCompletion()
       }
       await nextTick()
       focusInitialControl()
@@ -133,6 +259,8 @@ watch(
 watch(
   () => props.card.id,
   async (cardId, previousCardId) => {
+    // Another card's archive state is not this one's.
+    forgetArchiveCompletion()
     if (!props.isOpen || cardId === previousCardId) return
     await nextTick()
     focusInitialControl()
@@ -156,14 +284,28 @@ onUnmounted(() => {
 })
 
 function closeWithoutPrompt() {
+  if (assignmentSaving.value) {
+    refuseWhileAssignmentSaving()
+    return
+  }
+
   const destination = pendingThinkingPath.value
+  const refreshBoard = pendingArchiveRefresh.value
   pendingThinkingPath.value = null
+  pendingArchiveRefresh.value = false
   showDiscardConfirm.value = false
+  forgetArchiveCompletion()
   emit('close')
   if (destination) void router.push(destination)
+  if (refreshBoard) void boardStore.fetchBoard(props.card.boardId)
 }
 
 function openThinkingDeck() {
+  if (assignmentSaving.value) {
+    refuseWhileAssignmentSaving()
+    return
+  }
+
   const destination = `/workspace/boards/${props.card.boardId}/cards/${props.card.id}/thinking`
   if (hasUnsavedChanges.value) {
     pendingThinkingPath.value = destination
@@ -175,11 +317,17 @@ function openThinkingDeck() {
 
 function keepEditing() {
   pendingThinkingPath.value = null
+  pendingArchiveRefresh.value = false
   showDiscardConfirm.value = false
 }
 
 const {
   // Form state
+  parentCardId,
+  detachPreview,
+  deletePreviewError,
+  deletePreviewLoading,
+  workItemType,
   title,
   description,
   dueDate,
@@ -187,7 +335,10 @@ const {
   blockReason,
   selectedLabelIds,
   isFormValid,
-  hasUnsavedChanges,
+  hasUnsavedChanges: hasCardUnsavedChanges,
+  acceptAssignmentVersion,
+  isSaving,
+  saveError,
 
   // Due date
   formattedDueDate,
@@ -242,15 +393,34 @@ watch(hasUnsavedChanges, (dirty) => {
   emit('dirty-change', dirty)
 }, { immediate: true })
 
+// A save that starts behind an already-open discard confirmation replaces it:
+// that dialog's only action is now a promise the editor cannot keep. When the
+// save settles the notice is withdrawn, restoring every control and leaving the
+// field to show the committed assignees or the failure and the kept draft.
+watch(assignmentSaving, (saving) => {
+  emit('saving-change', saving)
+  if (saving) {
+    if (showDiscardConfirm.value) refuseWhileAssignmentSaving()
+    return
+  }
+  dismissSavePendingNotice()
+}, { immediate: true })
+
 watch(() => props.suppressDiscardPrompt, (suppress) => {
   if (!suppress) return
 
   pendingThinkingPath.value = null
+  pendingArchiveRefresh.value = false
   showDiscardConfirm.value = false
 }, { immediate: true })
 
 function handleClose() {
   if (props.suppressDiscardPrompt) return
+
+  if (assignmentSaving.value) {
+    refuseWhileAssignmentSaving()
+    return
+  }
 
   if (hasUnsavedChanges.value) {
     showDiscardConfirm.value = true
@@ -263,6 +433,7 @@ useEscapeToClose(
   () =>
     props.isOpen &&
     !props.suppressDiscardPrompt &&
+    !showSavePendingNotice.value &&
     !showDiscardConfirm.value &&
     !showDeleteConfirm.value &&
     !showCommentDeleteConfirm.value,
@@ -300,12 +471,28 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
+        <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || cardIsArchived" />
+        <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
+          :read-only="boardStore.currentBoard?.id !== card.boardId || boardStore.currentBoard?.canWrite !== true || !!boardStore.currentBoard?.isArchived || cardIsArchived"
+          @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
+          @saved="acceptAssignments" />
+        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :disabled="hasUnsavedChanges"
+          @changed="handleArchiveChanged" @refresh="refreshArchiveState" />
+        <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
+          {{ archiveDraftNotice }}
+        </p>
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
-        <div class="space-y-4">
+        <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
+        <fieldset :disabled="cardIsArchived || isSaving" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
+            v-model:work-item-type="workItemType"
+            :can-edit-type="canEditType"
+            :type-permission-checking="typePermissionChecking"
+            :type-permission-unknown="typePermissionUnknown"
+            @refresh-type-permission="refreshTypePermission"
             v-model:description="description"
             v-model:due-date="dueDate"
             v-model:is-blocked="isBlocked"
@@ -346,10 +533,13 @@ useEscapeToClose(
             :capture-href-fn="captureHref"
             :proposal-href-fn="proposalHref"
           />
-        </div>
+        </fieldset>
 
+      <p v-if="assignmentSaving" role="status" class="text-sm">Saving assignments… the editor stays open until the server answers.</p>
+      <p v-else-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
       <CardModalActions
-          :is-form-valid="isFormValid"
+          :is-form-valid="isFormValid && !cardIsArchived && !isSaving && !assignmentDirty"
+          :is-saving="isSaving"
           :card="card"
           @save="handleSave"
           @close="handleClose"
@@ -357,6 +547,26 @@ useEscapeToClose(
       />
     </div>
   </div>
+
+  <!-- In-flight assignment save: the honest answer to a close request -->
+  <TdDialog
+    :open="showSavePendingNotice"
+    title="Saving assignments…"
+    description="This assignment change was already sent to the server, so it cannot be discarded or cancelled. Wait for the save to finish, then close the editor."
+    :close-on-backdrop="true"
+    @close="dismissSavePendingNotice"
+  >
+    <template #footer>
+      <button
+        type="button"
+        class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
+        data-testid="card-assignment-save-pending-dismiss"
+        @click="dismissSavePendingNotice"
+      >
+        Keep editing
+      </button>
+    </template>
+  </TdDialog>
 
   <!-- Delete Confirmation Dialog -->
   <TdDialog
@@ -392,6 +602,9 @@ useEscapeToClose(
     :close-on-backdrop="!isDeleting"
     @close="handleDeleteCancel"
   >
+    <p v-if="deletePreviewLoading" role="status">Loading every affected child...</p>
+    <p v-if="deletePreviewError" role="alert">{{ deletePreviewError }}</p>
+    <CardDetachList v-if="detachPreview" :preview="detachPreview" />
     <template #footer>
       <button
         type="button"
@@ -403,7 +616,7 @@ useEscapeToClose(
       </button>
       <button
         type="button"
-        :disabled="isDeleting"
+        :disabled="isDeleting || !detachPreview || !!deletePreviewError"
         class="px-4 py-2 text-sm font-medium text-on-error bg-error hover:brightness-110 border border-transparent rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         @click="handleDeleteConfirm"
       >

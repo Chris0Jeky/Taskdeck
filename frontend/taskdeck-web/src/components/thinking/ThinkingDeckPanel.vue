@@ -4,16 +4,17 @@ import ThinkingStepCard from './ThinkingStepCard.vue'
 import ThinkingQuestionAnswer from './ThinkingQuestionAnswer.vue'
 import CardDependencies from './CardDependencies.vue'
 import { useThinkingDeck } from '../../composables/useThinkingDeck'
-import type { ThinkingKind, ThinkingLayer } from '../../types/thinking'
+import type { ThinkingLayer } from '../../types/thinking'
+import { isThinkingItemLayer, thinkingItemLabel, thinkingKinds } from '../../utils/thinkingLayerPresentation'
 
 const props = defineProps<{ boardId: string; cardId: string }>()
 const emit = defineEmits<{ 'dirty-change': [dirty: boolean]; busy: [busy: boolean] }>()
-const { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, save, add, move, acceptPromotion } =
+const { layers, revision, loading, saving, ready, canWrite, error, conflict, dirty, load, refreshPermission, save, add, move, acceptPromotion } =
   useThinkingDeck(toRef(props, 'boardId'), toRef(props, 'cardId'))
 const view = ref<'stack' | 'path'>('stack')
 const confirmReload = ref(false)
 const pendingRemoval = ref<string | null>(null)
-const kinds: ThinkingKind[] = ['note', 'question', 'options', 'steps', 'thread']
+const kinds = thinkingKinds
 const promoting = ref(false)
 const dependenciesBusy = ref(false)
 const stepDrafts = ref<Record<string, boolean>>({})
@@ -75,7 +76,7 @@ function reload() { confirmReload.value = false; void load() }
           <input v-model="layer.title" :aria-label="`Layer ${index + 1} title`" class="layer-title" maxlength="200" :placeholder="layer.kind === 'question' ? 'What is still unknown?' : 'Give this thought a title'">
           <textarea v-model="layer.body" :aria-label="`Layer ${index + 1} details`" maxlength="8000" rows="3" :placeholder="layer.kind === 'question' ? 'Add context or your working answer…' : 'Write a little, or leave this open…'" />
           <p v-if="privateDrafts[layer.id]" class="hint">Keep or explicitly discard your private answer and audio draft before removing this question.</p>
-          <ul v-if="['options', 'steps', 'thread'].includes(layer.kind)" class="items">
+          <ul v-if="isThinkingItemLayer(layer.kind)" class="items">
             <li v-for="(item, itemIndex) in layer.items" :key="item.id">
               <input v-if="layer.kind === 'steps'" v-model="item.completed" :disabled="!!item.linkedCardId" type="checkbox" :aria-label="`Complete step ${itemIndex + 1}`">
               <input v-if="layer.kind === 'options'" v-model="layer.selectedOptionId" type="radio" :name="`option-${layer.id}`" :value="item.id" :aria-label="`Choose option ${itemIndex + 1}`">
@@ -83,8 +84,8 @@ function reload() { confirmReload.value = false; void load() }
               <button type="button" :aria-label="`Remove item ${itemIndex + 1}`" @click="removeItem(layer, item.id)">×</button>
             </li>
           </ul>
-          <div v-if="['options', 'steps', 'thread'].includes(layer.kind)" class="item-actions">
-            <button type="button" :disabled="layer.items.length >= 50" @click="addItem(layer)">+ Add {{ layer.kind === 'steps' ? 'step' : layer.kind === 'options' ? 'option' : 'thought' }}</button>
+          <div v-if="isThinkingItemLayer(layer.kind)" class="item-actions">
+            <button type="button" :disabled="layer.items.length >= 50" @click="addItem(layer)">+ Add {{ thinkingItemLabel(layer.kind) }}</button>
             <button v-if="layer.kind === 'options' && layer.selectedOptionId" type="button" @click="layer.selectedOptionId = null">Clear choice</button>
           </div>
           <p v-if="layer.kind === 'options'" class="hint">Choosing keeps every alternative.</p>
@@ -103,7 +104,7 @@ function reload() { confirmReload.value = false; void load() }
         <span role="status">{{ dirty ? 'Unsaved thinking' : revision ? 'Thinking saved' : 'No layers yet' }}</span>
         <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict || answering" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
       </footer>
-      <CardDependencies :board-id="boardId" :card-id="cardId" @busy="dependenciesBusy = $event" />
+      <CardDependencies :board-id="boardId" :card-id="cardId" :can-write="canWrite" :refresh-permission="refreshPermission" @busy="dependenciesBusy = $event" />
     </template>
   </section>
 </template>

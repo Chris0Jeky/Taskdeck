@@ -35,13 +35,34 @@ public static class ProposalOperationContractValidator
         IEnumerable<ProposalOperationDto> operations,
         CancellationToken cancellationToken = default)
     {
+        var materializedOperations = operations.ToList();
+        var hierarchyResult = await ProposalHierarchyValidator.ValidateAsync(unitOfWork, proposalBoardId, materializedOperations, cancellationToken);
+        if (!hierarchyResult.IsSuccess) return Result.Failure(hierarchyResult.ErrorCode, hierarchyResult.ErrorMessage);
         var validationContext = new BoardValidationContext(unitOfWork, proposalBoardId);
 
         // Apply executes operations in Sequence order. Validate in that same order so
         // an operation may safely reference an entity created by an earlier step,
         // while references to not-yet-created entities still fail closed.
-        foreach (var operation in operations.OrderBy(operation => operation.Sequence))
+        foreach (var operation in materializedOperations.OrderBy(operation => operation.Sequence))
         {
+            if (operation.ActionType.Equals(ProposalAssignmentContract.Action, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+                    !OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var assignmentParameters, out _))
+                    return Result.Failure(ErrorCodes.ValidationError, "Assignment operation requires a card and valid parameters.");
+                var assignment = await ProposalAssignmentContract.ValidateAsync(unitOfWork, proposalBoardId, assignmentParameters, cancellationToken);
+                if (!assignment.IsSuccess) return Result.Failure(assignment.ErrorCode, assignment.ErrorMessage);
+                var assignmentCardId = assignmentParameters.GetProperty("cardId").GetGuid();
+                foreach (var other in materializedOperations.Where(other => !ReferenceEquals(other, operation) &&
+                             other.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (Guid.TryParse(other.TargetId, out var target) && target == assignmentCardId ||
+                        OperationParameterParser.TryDeserializeParameters(other.Parameters, out var otherParameters, out _) &&
+                        OperationParameterParser.TryGetRequiredGuid(otherParameters, "cardId", out var otherCardId, out _) && otherCardId == assignmentCardId)
+                        return Result.Failure(ErrorCodes.ValidationError,
+                            "An assignment replacement must be the only operation on that card in a proposal.");
+                }
+            }
             if (!OperationParameterParser.TryDeserializeParameters(operation.Parameters, out var parameters, out var parseError))
                 return Result.Failure(ErrorCodes.ValidationError, parseError);
 
@@ -78,6 +99,9 @@ public static class ProposalOperationContractValidator
             if (!fieldResult.IsSuccess)
                 return fieldResult;
 
+            var cardStateResult = await validationContext.ValidateCardArchiveStateAsync(operation, parameters, cancellationToken);
+            if (!cardStateResult.IsSuccess) return cardStateResult;
+
             var archiveStateResult = validationContext.ValidateOperationAfterPlannedBoardArchive(operation, parameters);
             if (!archiveStateResult.IsSuccess)
                 return archiveStateResult;
@@ -90,6 +114,11 @@ public static class ProposalOperationContractValidator
             {
                 validationContext.RegisterPlannedCard(createdCardId);
             }
+
+            // Record this operation's effect on column occupancy only after it has been
+            // accepted, so a later restore in the same proposal is measured against the
+            // board Apply will actually see at that point (#2926).
+            await validationContext.ProjectColumnOccupancyAsync(operation, parameters, cancellationToken);
         }
 
         return Result.Success();
@@ -257,6 +286,20 @@ public static class ProposalOperationContractValidator
             return Result.Success();
 
         var normalizedAction = operation.ActionType.ToLowerInvariant();
+
+        // Only the create and update card handlers read 'workItemType'
+        // (OperationHandlerRegistry.CreateCardAsync / UpdateCardAsync); move, archive,
+        // the lifecycle verbs, delete, assignment replacement and the label verbs all
+        // ignore it at Apply. Accepting it on those actions let the approval preview
+        // announce a "Work item type: Task -> Epic" transition that Apply never performs,
+        // so reject it here in the shared preview/apply gate instead (#2950 preview == apply).
+        if (normalizedAction is not ("create" or "update") && parameters.TryGetProperty("workItemType", out _))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Parameter 'workItemType' is not supported by card action '{operation.ActionType}'");
+        }
+
         if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) ||
             normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
         {
@@ -271,6 +314,9 @@ public static class ProposalOperationContractValidator
             {
                 return Result.Failure(ErrorCodes.ValidationError, cardIdError);
             }
+
+            if (!OperationParameterParser.TryGetWorkItemType(parameters, out var workItemType, out var typeError))
+                return Result.Failure(ErrorCodes.ValidationError, typeError);
 
             // Enforce the Card aggregate string limits before preview so an
             // over-length title/description cannot preview successfully and then
@@ -313,11 +359,11 @@ public static class ProposalOperationContractValidator
                 var labelsProvided = parameters.TryGetProperty("labels", out _);
                 var labelIdsProvided = parameters.TryGetProperty("labelIds", out _);
                 if (title == null && description == null && !dueDateProvided && !clearDueDate &&
-                    !labelsProvided && !labelIdsProvided)
+                    !labelsProvided && !labelIdsProvided && workItemType is null && !parameters.TryGetProperty("parentCardId", out _) && !parameters.TryGetProperty("clearParent", out _))
                 {
                     return Result.Failure(
                         ErrorCodes.ValidationError,
-                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', or 'labelIds'");
+                        "Update card operation requires at least one of 'title', 'description', 'dueDate', 'clearDueDate', 'labels', 'labelIds', or 'workItemType'");
                 }
             }
         }
@@ -359,7 +405,15 @@ public static class ProposalOperationContractValidator
         if (normalizedAction is "create" or "update")
             return Result.Success();
 
-        if (normalizedAction is "move" or "archive")
+        if (normalizedAction == ProposalAssignmentContract.Action)
+        {
+            try { ProposalAssignmentContract.Read(parameters); }
+            catch (DomainException ex) { return Result.Failure(ex.ErrorCode, ex.Message); }
+            return OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var assignmentError)
+                ? Result.Success() : Result.Failure(ErrorCodes.ValidationError, assignmentError);
+        }
+
+        if (normalizedAction is "move" or "archive" or "archive-lifecycle" or "restore-lifecycle" or "delete")
         {
             if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out _, out var cardIdError))
                 return Result.Failure(ErrorCodes.ValidationError, cardIdError);
@@ -619,6 +673,17 @@ public static class ProposalOperationContractValidator
     private sealed class BoardValidationContext(IUnitOfWork unitOfWork, Guid? boardId)
     {
         private readonly Dictionary<Guid, Guid?> _cardBoardIds = [];
+        private readonly Dictionary<Guid, Taskdeck.Domain.Entities.Card?> _cards = [];
+
+        private async Task<Taskdeck.Domain.Entities.Card?> ReadCardAsync(Guid cardId, CancellationToken ct)
+        {
+            if (!_cards.TryGetValue(cardId, out var card))
+            {
+                card = await unitOfWork.Cards.GetByIdAsync(cardId, ct);
+                _cards[cardId] = card;
+            }
+            return card;
+        }
         private readonly Dictionary<Guid, Guid?> _columnBoardIds = [];
         private readonly HashSet<Guid> _plannedCardIds = [];
         private readonly HashSet<int> _plannedColumnPositions = [];
@@ -628,8 +693,196 @@ public static class ProposalOperationContractValidator
 
         public Guid? BoardId { get; } = boardId;
         private bool _isBoardArchivedInProposal;
+        private readonly HashSet<Guid> _mutatedCards = [];
+        private readonly HashSet<Guid> _lifecycleCards = [];
+
+        // Ordered projection of what this proposal does to each column's active-card count,
+        // plus the column each card is projected to occupy once the preceding operations have
+        // run. Apply mutates the board operation by operation, so the restore contract has to
+        // be measured against that moving count rather than the snapshot the proposal started
+        // from (#2926).
+        private readonly Dictionary<Guid, int> _projectedColumnActiveDelta = [];
+        private readonly Dictionary<Guid, Guid> _projectedCardColumns = [];
+        private readonly Dictionary<Guid, Taskdeck.Domain.Entities.Column?> _columnsWithCards = [];
+
+        public async Task<Result> ValidateCardArchiveStateAsync(ProposalOperationDto operation, JsonElement parameters, CancellationToken ct)
+        {
+            if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase) ||
+                operation.ActionType.Equals("create", StringComparison.OrdinalIgnoreCase)) return Result.Success();
+            if (!OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out var cardId, out _)) return Result.Success();
+            var action = operation.ActionType.ToLowerInvariant();
+            var lifecycle = action is "archive-lifecycle" or "restore-lifecycle";
+            var typeChange = action == "update" && (parameters.TryGetProperty("workItemType", out _) || parameters.TryGetProperty("parentCardId", out _) || parameters.TryGetProperty("clearParent", out _));
+            var pinned = lifecycle || typeChange || action == "delete";
+            // A lifecycle approval pins one exact card revision. Mixing another write to that
+            // card would invalidate its timestamp during Apply; reject this at Preview too.
+            if (_lifecycleCards.Contains(cardId) || (pinned && _mutatedCards.Contains(cardId)))
+                return Result.Failure(ErrorCodes.ValidationError, "Archive, restore, or work-item type change must be the only operation for that card in a proposal.");
+            _mutatedCards.Add(cardId);
+            if (pinned) _lifecycleCards.Add(cardId);
+            var card = await ReadCardAsync(cardId, ct);
+            if (card is null) return pinned
+                ? Result.Failure(ErrorCodes.NotFound, "Archive, restore, and type changes require an existing card") : Result.Success();
+            if (!pinned) return card.IsArchived
+                ? Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing.") : Result.Success();
+            if (!parameters.TryGetProperty("expectedUpdatedAt", out var timestamp) ||
+                timestamp.ValueKind != JsonValueKind.String || !timestamp.TryGetDateTimeOffset(out var expected))
+                return Result.Failure(ErrorCodes.ValidationError, "expectedUpdatedAt must be the card's displayed timestamp");
+            if (card.UpdatedAt != expected)
+                return Result.Failure(ErrorCodes.Conflict, "Card changed since this proposal was prepared. Refresh and create a new proposal.");
+            if (action == "delete") return Result.Success();
+            if (typeChange) return card.IsArchived
+                ? Result.Failure(ErrorCodes.InvalidOperation, "Card is archived. Restore it before editing.") : Result.Success();
+            var archive = action == "archive-lifecycle";
+            if (card.IsArchived == archive)
+                return Result.Failure(ErrorCodes.InvalidOperation, archive ? "Card is already archived" : "Card is already active");
+            if (!archive)
+            {
+                var column = await unitOfWork.Columns.GetByIdWithCardsAsync(card.ColumnId, ct);
+                if (column is null || column.BoardId != card.BoardId)
+                    return Result.Failure(ErrorCodes.InvalidOperation, "Restore the original column before restoring this card.");
+                if (WouldProjectedAddExceedWipLimit(column))
+                    return Result.Failure(ErrorCodes.WipLimitExceeded, "The original column is full. Free space or adjust its WIP limit before restoring this card.");
+            }
+            return Result.Success();
+        }
 
         public void RegisterPlannedCard(Guid cardId) => _plannedCardIds.Add(cardId);
+
+        /// <summary>
+        /// Folds one already-accepted operation into the projected column occupancy.
+        /// Only operations that Apply turns into a change in a column's ACTIVE card count
+        /// participate: card create, card move, and the two lifecycle actions. The legacy
+        /// <c>archive</c> verb keeps Block semantics and leaves the card active, so it
+        /// contributes nothing. <c>delete</c> is deliberately not projected: it is hierarchy-
+        /// affecting, so it can never precede a restore under the gate described below, and an
+        /// unprojected delete can only leave the restore check stricter than Apply, never looser.
+        /// The two lifecycle deltas are latent today, because
+        /// <see cref="ProposalHierarchyValidator"/> admits at most one hierarchy-affecting
+        /// operation per proposal and so no lifecycle operation can precede a restore. They are
+        /// carried anyway so that relaxing that gate - the batch-restore direction #2926 asks to
+        /// keep open - does not silently reintroduce the cumulative-WIP hole.
+        /// </summary>
+        public async Task ProjectColumnOccupancyAsync(
+            ProposalOperationDto operation,
+            JsonElement parameters,
+            CancellationToken cancellationToken)
+        {
+            if (!operation.TargetType.Equals("card", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            switch (operation.ActionType.ToLowerInvariant())
+            {
+                case "create":
+                {
+                    if (!OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out var createColumnId, out _))
+                        return;
+                    AddProjectedColumnDelta(createColumnId, 1);
+                    if (Guid.TryParse(operation.TargetId, out var createdCardId))
+                        _projectedCardColumns[createdCardId] = createColumnId;
+                    return;
+                }
+
+                case "move":
+                {
+                    if (!TryGetOperationCardId(operation, parameters, out var moveCardId) ||
+                        !OperationParameterParser.TryGetRequiredGuid(parameters, "columnId", out var targetColumnId, out _))
+                        return;
+                    var sourceColumnId = await GetProjectedCardColumnAsync(moveCardId, cancellationToken);
+                    // Apply skips the WIP check for a same-column move, and so does this projection.
+                    if (sourceColumnId == targetColumnId)
+                        return;
+                    // Only a move Apply can actually perform frees its source slot. If the target
+                    // column is already at its limit, CardService.MoveCardAsync rejects the move
+                    // and the whole proposal rolls back, so releasing the source here would hand a
+                    // later restore capacity that never materializes - the same "passes approve,
+                    // fails mid-apply" shape this change exists to remove. Leaving the projection
+                    // untouched keeps that restore refused, exactly as before #2926. Checking the
+                    // move itself at preview is a wider gate change, tracked as #3020.
+                    var targetColumn = await ReadColumnWithCardsAsync(targetColumnId, cancellationToken);
+                    if (targetColumn is not null && WouldProjectedAddExceedWipLimit(targetColumn))
+                        return;
+                    // The source decrement is otherwise unconditional because
+                    // ValidateCardArchiveStateAsync has already refused a move of an archived card,
+                    // so the moved card is proven to be in the source column's ACTIVE count.
+                    // Relaxing the one-lifecycle gate would let a restore precede a move of that
+                    // same card, and this branch would then need the projected archive state, not
+                    // just the projected column.
+                    if (sourceColumnId.HasValue)
+                        AddProjectedColumnDelta(sourceColumnId.Value, -1);
+                    AddProjectedColumnDelta(targetColumnId, 1);
+                    _projectedCardColumns[moveCardId] = targetColumnId;
+                    return;
+                }
+
+                case "archive-lifecycle":
+                case "restore-lifecycle":
+                {
+                    if (!TryGetOperationCardId(operation, parameters, out var lifecycleCardId))
+                        return;
+                    var card = await ReadCardAsync(lifecycleCardId, cancellationToken);
+                    if (card is null)
+                        return;
+                    var lifecycleColumnId = _projectedCardColumns.TryGetValue(lifecycleCardId, out var plannedColumnId)
+                        ? plannedColumnId
+                        : card.ColumnId;
+                    AddProjectedColumnDelta(
+                        lifecycleColumnId,
+                        operation.ActionType.Equals("archive-lifecycle", StringComparison.OrdinalIgnoreCase) ? -1 : 1);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Whether one more active card would breach <paramref name="column"/>'s WIP limit on the
+        /// board Apply will see at this point in the proposal. With no preceding occupancy change
+        /// this is exactly <see cref="Taskdeck.Domain.Entities.Column.WouldExceedWipLimitIfAdded"/>;
+        /// the delta is what stops an operation that takes the last slot first from letting a
+        /// restore pass preview and then fail at execute with a full-proposal rollback (#2926).
+        /// </summary>
+        private bool WouldProjectedAddExceedWipLimit(Taskdeck.Domain.Entities.Column column)
+        {
+            if (!column.WipLimit.HasValue)
+                return false;
+
+            var projectedActiveCount = column.Cards.Count(card => !card.IsArchived) +
+                                       _projectedColumnActiveDelta.GetValueOrDefault(column.Id);
+            return projectedActiveCount >= column.WipLimit.Value;
+        }
+
+        private async Task<Taskdeck.Domain.Entities.Column?> ReadColumnWithCardsAsync(Guid columnId, CancellationToken cancellationToken)
+        {
+            if (!_columnsWithCards.TryGetValue(columnId, out var column))
+            {
+                column = await unitOfWork.Columns.GetByIdWithCardsAsync(columnId, cancellationToken);
+                _columnsWithCards[columnId] = column;
+            }
+            return column;
+        }
+
+        private void AddProjectedColumnDelta(Guid columnId, int delta) =>
+            _projectedColumnActiveDelta[columnId] = _projectedColumnActiveDelta.GetValueOrDefault(columnId) + delta;
+
+        private async Task<Guid?> GetProjectedCardColumnAsync(Guid cardId, CancellationToken cancellationToken)
+        {
+            if (_projectedCardColumns.TryGetValue(cardId, out var plannedColumnId))
+                return plannedColumnId;
+            // A create with no targetId leaves Apply to generate the id, so a later move of that
+            // card cannot be paired with its source column; leaving it unknown keeps the target
+            // side of the delta and omits a source decrement we cannot attribute.
+            if (_plannedCardIds.Contains(cardId))
+                return null;
+            return (await ReadCardAsync(cardId, cancellationToken))?.ColumnId;
+        }
+
+        private static bool TryGetOperationCardId(ProposalOperationDto operation, JsonElement parameters, out Guid cardId)
+        {
+            // Scope validation has already proven these agree when both are present.
+            if (OperationParameterParser.TryGetRequiredGuid(parameters, "cardId", out cardId, out _))
+                return true;
+            return Guid.TryParse(operation.TargetId, out cardId);
+        }
 
         public Result ValidateOperationAfterPlannedBoardArchive(ProposalOperationDto operation, JsonElement parameters)
         {
@@ -674,7 +927,7 @@ public static class ProposalOperationContractValidator
 
             if (!_cardBoardIds.TryGetValue(cardId, out var existingCardBoardId))
             {
-                existingCardBoardId = (await unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken))?.BoardId;
+                existingCardBoardId = (await ReadCardAsync(cardId, cancellationToken))?.BoardId;
                 _cardBoardIds[cardId] = existingCardBoardId;
             }
 
@@ -693,7 +946,7 @@ public static class ProposalOperationContractValidator
 
             if (!_cardBoardIds.TryGetValue(cardId, out var cardBoardId))
             {
-                cardBoardId = (await unitOfWork.Cards.GetByIdAsync(cardId, cancellationToken))?.BoardId;
+                cardBoardId = (await ReadCardAsync(cardId, cancellationToken))?.BoardId;
                 _cardBoardIds[cardId] = cardBoardId;
             }
 

@@ -11,6 +11,61 @@ public class CardTests
     private readonly Guid _columnId = Guid.NewGuid();
 
     [Fact]
+    public void WorkItemType_DefaultsToTask_ChangesInPlace_AndArchivePreservesIt()
+    {
+        var card = new Card(_boardId, _columnId, "Type", "Details", position: 3);
+        var id = card.Id;
+        var label = new CardLabel(card.Id, Guid.NewGuid());
+        card.AddLabel(label);
+        card.Block("Waiting");
+        card.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Task);
+        foreach (var type in Enum.GetValues<Taskdeck.Domain.Enums.CardWorkItemType>())
+        {
+            card.SetWorkItemType(type);
+            card.WorkItemType.Should().Be(type);
+            card.Id.Should().Be(id);
+            card.Position.Should().Be(3);
+            card.ColumnId.Should().Be(_columnId);
+            card.CardLabels.Should().ContainSingle().Which.Should().Be(label);
+            card.BlockReason.Should().Be("Waiting");
+        }
+        Action invalid = () => card.SetWorkItemType((Taskdeck.Domain.Enums.CardWorkItemType)99);
+        invalid.Should().Throw<DomainException>();
+        card.Archive();
+        Action archived = () => card.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Task);
+        archived.Should().Throw<DomainException>();
+        card.Restore();
+        card.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Spike);
+    }
+
+    [Fact]
+    public void Archive_RetainsIdentityPlacementLabelsAndBlock_AndRejectsOrdinaryWrites()
+    {
+        var card = new Card(_boardId, _columnId, "Keep", "Evidence", DateTimeOffset.UtcNow, 3);
+        var label = new CardLabel(card.Id, Guid.NewGuid());
+        card.AddLabel(label);
+        card.Block("Waiting");
+        var id = card.Id;
+        card.IsArchived.Should().BeFalse();
+        card.Archive();
+        card.IsArchived.Should().BeTrue();
+        Action[] writes = [() => card.Update(title: "Changed"), () => card.ClearDueDate(),
+            () => card.MoveToColumn(Guid.NewGuid(), 1), () => card.SetPosition(0), () => card.Block("Other"),
+            () => card.Unblock(), () => card.AddLabel(new CardLabel(card.Id, Guid.NewGuid())),
+            () => card.RemoveLabel(label), () => card.ClearLabels()];
+        foreach (var write in writes) write.Should().Throw<DomainException>();
+        card.Id.Should().Be(id);
+        card.ColumnId.Should().Be(_columnId);
+        card.Position.Should().Be(3);
+        card.CardLabels.Should().ContainSingle().Which.Should().Be(label);
+        card.BlockReason.Should().Be("Waiting");
+        card.Restore();
+        card.IsArchived.Should().BeFalse();
+        card.Update(title: "Active again");
+        card.Title.Should().Be("Active again");
+    }
+
+    [Fact]
     public void Constructor_ShouldCreateCard_WithValidData()
     {
         // Arrange & Act

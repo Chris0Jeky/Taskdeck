@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n'
 import { getErrorDisplay, getErrorDetails } from '../../composables/useErrorMapper'
 import { useInboxCounts } from '../../composables/useInboxCounts'
 import { useInboxOrchestrator } from '../../composables/useInboxOrchestrator'
-import { isTriageTerminalStatus } from '../../types/capture'
 import { useSessionStore } from '../../store/sessionStore'
 import { onAuthExpired } from '../../utils/authExpiry'
 import {
@@ -19,6 +18,7 @@ import type { CaptureItem } from '../../types/capture'
 import PaperCaptureNib from './inbox/PaperCaptureNib.vue'
 import PaperCaptureComposer from './inbox/PaperCaptureComposer.vue'
 import PaperTriageTable from './inbox/PaperTriageTable.vue'
+import InboxPollingNotice from '../../components/inbox/InboxPollingNotice.vue'
 import PaperHLBtn from '../../components/paper/PaperHLBtn.vue'
 import PaperScopeDisclosure from '../../components/paper/PaperScopeDisclosure.vue'
 
@@ -147,7 +147,6 @@ const historyProposalHref = computed<string | null>(() => {
   return `/workspace/review?${params.toString()}#proposal-${encodeURIComponent(proposalId)}`
 })
 
-let stopTriagePolling: (() => void) | null = null
 
 function toggleVariant() {
   if (isArchivedHistory.value) return
@@ -293,22 +292,10 @@ async function onComposerSubmit(payload: {
 
 async function onTriageAccept(itemId: string, boardId?: string | null) {
   if (isArchivedHistory.value) return
-  if (stopTriagePolling) {
-    stopTriagePolling()
-    stopTriagePolling = null
-  }
   try {
     await captureStore.triageItem(itemId, boardId)
-    const latestStatus = captureStore.detailById[itemId]?.status
-    if (latestStatus !== undefined && isTriageTerminalStatus(latestStatus)) {
-      return
-    }
-    stopTriagePolling = captureStore.pollTriageCompletion(itemId)
   } catch {
-    if (stopTriagePolling) {
-      stopTriagePolling()
-      stopTriagePolling = null
-    }
+    // Store handles enqueue failures; other accepted watches keep running.
   }
 }
 
@@ -517,10 +504,6 @@ onUnmounted(() => {
     clearTimeout(bleedTimer)
     bleedTimer = null
   }
-  if (stopTriagePolling) {
-    stopTriagePolling()
-    stopTriagePolling = null
-  }
 })
 
 defineExpose({ variant, toggleVariant, setVariant })
@@ -681,13 +664,21 @@ defineExpose({ variant, toggleVariant, setVariant })
       </p>
     </section>
 
+    <InboxPollingNotice
+      :problems="captureStore.triagePollingProblems"
+      :paused="captureStore.triagePollingPaused"
+      :watched-ids="captureStore.triagePollingItemIds"
+      @refresh="captureStore.retryTriagePolling()"
+    />
+
     <PaperTriageTable
       :items="items"
       :loading-list="captureStore.loadingList"
       :list-error="captureStore.listError"
       :scope-replacement="isScopeReplacement"
       :action-busy-item-id="captureStore.actionBusyItemId"
-      :triage-polling-item-id="captureStore.triagePollingItemId"
+      :triage-polling-item-ids="captureStore.triagePollingItemIds"
+      :triage-polling-problems="captureStore.triagePollingProblems"
       :scope-label="scopeLabel"
       :scope-clear-label="$t('inbox.scope.clear')"
       :read-only="isArchivedHistory"

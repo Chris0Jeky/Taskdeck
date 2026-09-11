@@ -5,6 +5,7 @@ import type { Card } from '../../../types/board'
 
 const props = defineProps<{
   isFormValid: boolean
+  isSaving?: boolean
   card: Card
 }>()
 
@@ -59,7 +60,7 @@ async function handleShare() {
         type="button"
         class="px-4 py-2 text-sm font-medium text-on-primary-container bg-primary-container hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all"
       >
-        Save Changes
+        {{ isSaving ? 'Saving...' : 'Save Changes' }}
       </button>
     </div>
   </div>

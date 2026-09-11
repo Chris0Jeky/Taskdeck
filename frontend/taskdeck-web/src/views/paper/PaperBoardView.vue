@@ -16,6 +16,24 @@ import TdDialog from '../../components/ui/TdDialog.vue'
 import type { Card, Column } from '../../types/board'
 import type { PaperBoardCardVariant } from './PaperBoardCard.vue'
 import { logError } from '../../utils/errorReporting'
+import {
+  BOARD_CARD_DETAIL_KEY,
+  BOARD_COLUMN_WIDTH_KEY,
+  BOARD_COLUMN_WIDTH_PRESETS,
+  BOARD_DENSITY_KEY,
+  DEFAULT_BOARD_CARD_DETAIL,
+  DEFAULT_BOARD_COLUMN_WIDTH,
+  isBoardDensity,
+  isBoardCardDetail,
+  isBoardColumnWidth,
+  readCollapsedColumnIds,
+  readStoredPreference,
+  type BoardCardDetail,
+  type BoardColumnWidth,
+  type BoardDensity,
+  writeCollapsedColumnIds,
+  writeStoredPreference,
+} from '../../utils/paperBoardPreferences'
 
 /**
  * PaperBoardView — Paper / Graphite kanban surface.
@@ -101,36 +119,18 @@ const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
 const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
 const cardEditorDirty = ref(false)
+/*
+ * #2981. The inspector's assignment field submits a PUT that cannot be
+ * recalled. This board owns the card-switch and route-leave prompts, whose only
+ * action is "discard" — a promise it cannot keep for a mutation the server
+ * already has. While the editor reports a save in flight both are refused with
+ * a truthful notice instead, and the notice is withdrawn when the save settles.
+ */
+const cardEditorSaving = ref(false)
+const savePendingNotice = ref(false)
 const routeDiscarding = ref(false)
-type BoardDensity = 'comfortable' | 'compact'
-const BOARD_DENSITY_KEY = 'td.paper.board-density.v1'
 const density = ref<BoardDensity>('comfortable')
-const BOARD_COLUMN_WIDTH_KEY = 'td.paper.board-column-width.v1'
-const BOARD_COLLAPSED_COLUMNS_KEY = 'td.paper.board-collapsed-columns.v2'
-/*
- * Card detail is a *presentation* preference, not a card prop: `titles` hides
- * the excerpt and the meta row through the board's own scoped rules while every
- * card renders whole. Passing it down to `PaperBoardCard` and dropping those
- * nodes would also drop nothing the user needs — but it would put the opener
- * and the drag handle one refactor away from disappearing with them, and #2090
- * AC2 requires keyboard access, counts and drag order to survive the mode.
- */
-type BoardCardDetail = 'full' | 'titles'
-const BOARD_CARD_DETAIL_KEY = 'td.paper.board-card-detail.v1'
-const DEFAULT_BOARD_CARD_DETAIL: BoardCardDetail = 'full'
 const cardDetail = ref<BoardCardDetail>(DEFAULT_BOARD_CARD_DETAIL)
-/*
- * `value` is the persisted preference (`td.paper.board-column-width.v1`) and
- * the type guard's vocabulary, so it stays an English identifier and never
- * follows the locale; only `labelKey` is copy.
- */
-const BOARD_COLUMN_WIDTH_PRESETS = [
-  { value: 'narrow', labelKey: 'boardDetail.actions.widthNarrow', width: '240px' },
-  { value: 'standard', labelKey: 'boardDetail.actions.widthStandard', width: '280px' },
-  { value: 'wide', labelKey: 'boardDetail.actions.widthWide', width: '340px' },
-] as const
-type BoardColumnWidth = typeof BOARD_COLUMN_WIDTH_PRESETS[number]['value']
-const DEFAULT_BOARD_COLUMN_WIDTH: BoardColumnWidth = 'standard'
 const columnWidth = ref<BoardColumnWidth>(DEFAULT_BOARD_COLUMN_WIDTH)
 const persistedCollapsedColumnIds = ref<Set<string>>(new Set())
 const selectedColumnWidth = computed(() => BOARD_COLUMN_WIDTH_PRESETS
@@ -165,107 +165,49 @@ const discardDialogDescription = computed(() => pendingCard.value
 const discardConfirmLabel = computed(() => pendingCard.value ? 'Discard and switch' : 'Discard and leave')
 
 function handleBeforeUnload(event: BeforeUnloadEvent) {
-  if (!selectedCard.value || !cardEditorDirty.value) return
+  if (!selectedCard.value || (!cardEditorDirty.value && !cardEditorSaving.value)) return
   event.preventDefault()
   event.returnValue = ''
 }
 
-function isBoardColumnWidth(value: string | null): value is BoardColumnWidth {
-  return BOARD_COLUMN_WIDTH_PRESETS.some((preset) => preset.value === value)
-}
-
-// Total over the stored string: anything that is not one of the two written
-// values — a stale key, a hand-edited value, another tab's future mode — is not
-// a card-detail mode, and the board falls back to full detail.
-function isBoardCardDetail(value: string | null): value is BoardCardDetail {
-  return value === 'full' || value === 'titles'
-}
-
-function parseCollapsedColumnIds(value: string | null): Set<string> {
-  if (!value) return new Set()
-
-  try {
-    const parsed: unknown = JSON.parse(value)
-    if (!Array.isArray(parsed)) return new Set()
-    return new Set(parsed.filter((entry): entry is string => typeof entry === 'string'))
-  } catch {
-    return new Set()
-  }
-}
-
-/**
- * Collapsing a lane is an individual workspace preference. The old v1 key was
- * shared by every account using the browser profile, so it is deliberately not
- * migrated into whichever account happens to load the board first. Until an
- * authenticated identity is available the preference remains session-local.
- */
-function collapsedColumnsStorageKey(userId: string | null | undefined): string | null {
-  const normalizedUserId = userId?.trim()
-  return normalizedUserId ? `${BOARD_COLLAPSED_COLUMNS_KEY}:${normalizedUserId}` : null
-}
-
-function readCollapsedColumnIds(userId: string | null | undefined): Set<string> {
-  const storageKey = collapsedColumnsStorageKey(userId)
-  if (!storageKey) return new Set()
-
-  try {
-    return parseCollapsedColumnIds(window.localStorage.getItem(storageKey))
-  } catch {
-    return new Set()
-  }
-}
-
 onMounted(() => {
-  try {
-    density.value = window.localStorage.getItem(BOARD_DENSITY_KEY) === 'compact'
-      ? 'compact'
-      : 'comfortable'
-  } catch {
-    density.value = 'comfortable'
-  }
-  try {
-    const storedColumnWidth = window.localStorage.getItem(BOARD_COLUMN_WIDTH_KEY)
-    columnWidth.value = isBoardColumnWidth(storedColumnWidth)
-      ? storedColumnWidth
-      : DEFAULT_BOARD_COLUMN_WIDTH
-  } catch {
-    columnWidth.value = DEFAULT_BOARD_COLUMN_WIDTH
-  }
-  try {
-    const storedCardDetail = window.localStorage.getItem(BOARD_CARD_DETAIL_KEY)
-    cardDetail.value = isBoardCardDetail(storedCardDetail)
-      ? storedCardDetail
-      : DEFAULT_BOARD_CARD_DETAIL
-  } catch {
-    cardDetail.value = DEFAULT_BOARD_CARD_DETAIL
-  }
-  persistedCollapsedColumnIds.value = readCollapsedColumnIds(session.userId)
+  density.value = readStoredPreference<BoardDensity>(
+    window.localStorage,
+    BOARD_DENSITY_KEY,
+    'comfortable',
+    isBoardDensity,
+  )
+  columnWidth.value = readStoredPreference<BoardColumnWidth>(
+    window.localStorage,
+    BOARD_COLUMN_WIDTH_KEY,
+    DEFAULT_BOARD_COLUMN_WIDTH,
+    isBoardColumnWidth,
+  )
+  cardDetail.value = readStoredPreference<BoardCardDetail>(
+    window.localStorage,
+    BOARD_CARD_DETAIL_KEY,
+    DEFAULT_BOARD_CARD_DETAIL,
+    isBoardCardDetail,
+  )
+  persistedCollapsedColumnIds.value = readCollapsedColumnIds(window.localStorage, session.userId)
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 watch(
   () => session.userId,
   (userId) => {
-    persistedCollapsedColumnIds.value = readCollapsedColumnIds(userId)
+    persistedCollapsedColumnIds.value = readCollapsedColumnIds(window.localStorage, userId)
   },
 )
 
 function toggleDensity() {
   density.value = density.value === 'compact' ? 'comfortable' : 'compact'
-  try {
-    window.localStorage.setItem(BOARD_DENSITY_KEY, density.value)
-  } catch {
-    // Local fallback only. The preference remains active for this mounted board.
-  }
+  writeStoredPreference(window.localStorage, BOARD_DENSITY_KEY, density.value)
 }
 
 function toggleCardDetail() {
   cardDetail.value = cardDetail.value === 'titles' ? 'full' : 'titles'
-  try {
-    window.localStorage.setItem(BOARD_CARD_DETAIL_KEY, cardDetail.value)
-  } catch {
-    // Local fallback only. The preference remains active for this mounted board.
-  }
+  writeStoredPreference(window.localStorage, BOARD_CARD_DETAIL_KEY, cardDetail.value)
 }
 
 function changeColumnWidth(event: Event) {
@@ -273,12 +215,7 @@ function changeColumnWidth(event: Event) {
   columnWidth.value = isBoardColumnWidth(requestedWidth)
     ? requestedWidth
     : DEFAULT_BOARD_COLUMN_WIDTH
-
-  try {
-    window.localStorage.setItem(BOARD_COLUMN_WIDTH_KEY, columnWidth.value)
-  } catch {
-    // Local fallback only. The preference remains active for this mounted board.
-  }
+  writeStoredPreference(window.localStorage, BOARD_COLUMN_WIDTH_KEY, columnWidth.value)
 }
 
 const sortedColumns = computed<Column[]>(() => {
@@ -309,14 +246,7 @@ function toggleColumnCollapse(column: Column) {
   }
   persistedCollapsedColumnIds.value = next
 
-  const storageKey = collapsedColumnsStorageKey(session.userId)
-  if (!storageKey) return
-
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify([...next].sort()))
-  } catch {
-    // Local fallback only. The collapse remains active for this mounted board.
-  }
+  writeCollapsedColumnIds(window.localStorage, session.userId, next)
 }
 
 const cardsByColumn = computed<Map<string, Card[]>>(() => {
@@ -344,6 +274,8 @@ watch(boardId, () => {
   pendingCard.value = null
   routeDiscarding.value = false
   cardEditorDirty.value = false
+  cardEditorSaving.value = false
+  savePendingNotice.value = false
   // Switching boards must not carry a half-typed card draft, an open column
   // dialog, or an error banner across to a board they do not belong to.
   resetBoardManagementState()
@@ -443,6 +375,10 @@ function openCard(card: Card) {
   routeDiscarding.value = false
 
   if (selectedCard.value?.id === card.id) return
+  if (selectedCard.value && cardEditorSaving.value) {
+    savePendingNotice.value = true
+    return
+  }
   if (selectedCard.value && cardEditorDirty.value) {
     pendingCard.value = card
     return
@@ -457,6 +393,10 @@ function closeCard() {
   selectedCard.value = null
   pendingCard.value = null
   cardEditorDirty.value = false
+  // The editor only emits `close` once no assignment save is in flight, so this
+  // clears state that is already settled rather than abandoning a live save.
+  cardEditorSaving.value = false
+  savePendingNotice.value = false
 }
 
 /**
@@ -486,6 +426,21 @@ function handleCardEditorDirtyChange(dirty: boolean) {
   cardEditorDirty.value = dirty
 }
 
+function handleCardEditorSavingChange(saving: boolean) {
+  cardEditorSaving.value = saving
+  if (!saving) {
+    savePendingNotice.value = false
+    return
+  }
+  // A discard prompt that is already open now offers something this board
+  // cannot deliver. Settle it as a cancellation — the card stays selected and
+  // the navigation is refused — and say why instead.
+  if (discardDialogOpen.value) {
+    cancelPendingDiscard()
+    savePendingNotice.value = true
+  }
+}
+
 function cancelPendingDiscard() {
   routeDiscarding.value = false
   pendingCard.value = null
@@ -494,6 +449,14 @@ function cancelPendingDiscard() {
 }
 
 async function confirmPendingDiscard() {
+  // Defence in depth: a save started behind this dialog makes its one action a
+  // promise the board cannot keep. The pending switch/navigation is kept so the
+  // user can confirm it once the save has settled.
+  if (cardEditorSaving.value) {
+    savePendingNotice.value = true
+    return
+  }
+
   const cardToOpen = pendingCard.value
   const navigation = pendingNavigation.value
   pendingCard.value = null
@@ -512,6 +475,13 @@ async function confirmPendingDiscard() {
 }
 
 function guardDirtyNavigation(): boolean | Promise<boolean> {
+  // Leaving cannot cancel a submitted assignment PUT, and the only honest
+  // answer is to stay put until it settles — not a dialog offering to discard
+  // it. The user can navigate again once the editor reports the save finished.
+  if (selectedCard.value && cardEditorSaving.value) {
+    savePendingNotice.value = true
+    return false
+  }
   if (!selectedCard.value || !cardEditorDirty.value) return true
 
   // Router navigation can be requested again while the discard confirmation is
@@ -1141,7 +1111,26 @@ async function addStarterColumns() {
           @close="closeCard"
           @updated="handleCardUpdated"
           @dirty-change="handleCardEditorDirtyChange"
+          @saving-change="handleCardEditorSavingChange"
         />
+
+        <TdDialog
+          v-if="savePendingNotice"
+          :open="true"
+          title="Saving assignments…"
+          description="This assignment change was already sent to the server, so it cannot be discarded or cancelled. Wait for the save to finish, then try again."
+          @close="savePendingNotice = false"
+        >
+          <template #footer>
+            <PaperHLBtn
+              type="button"
+              variant="primary"
+              label="Keep editing"
+              data-testid="card-save-pending-dismiss"
+              @click="savePendingNotice = false"
+            />
+          </template>
+        </TdDialog>
 
         <TdDialog
           v-if="discardDialogOpen"

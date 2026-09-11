@@ -12,13 +12,32 @@ old public-ZIP evidence as v3. Focused proving seams are `CaptureTriageOutputCon
 is `tests/e2e/packaged-desktop.spec.ts`; focused unit checks do not substitute for its release proof.
 
 
-Last Updated: 2026-09-08
+Last Updated: 2026-09-10
 Companion Active Docs:
 - `docs/STATUS.md`
 - `docs/IMPLEMENTATION_MASTERPLAN.md`
 - `docs/TESTING_GUIDE.md`
 - `docs/MANUAL_TEST_CHECKLIST.md`
 - `docs/GOLDEN_PRINCIPLES.md`
+
+## Card archive/restore (#2920)
+
+From the repository root, run the lifecycle and dependency regression seam:
+
+```powershell
+dotnet test backend/tests/Taskdeck.Api.Tests/Taskdeck.Api.Tests.csproj -c Release -m:1 --filter "FullyQualifiedName~CardLifecycle|FullyQualifiedName~BoardDependencyApiTests|FullyQualifiedName~CardUpdateConflictTests|FullyQualifiedName~McpToolsTests"
+```
+
+Also run the full backend solution and frontend checks below. The browser journey is
+`frontend/taskdeck-web/tests/e2e/card-archive.spec.ts` (Paper and Legacy, synthetic Mock state).
+Cover archive/history/restore, original placement and WIP rejection, stale writes, migration
+up/down, export/import, and dependency GET while archived followed by restore and stale PUT.
+That last write must conflict without losing retained edges; failed restore must not advance
+the graph revision. Historical `ArchiveItem` snapshot recovery is a separate lifecycle.
+
+The current MCP inventory has 13 tools, including proposal-only `archive_card_lifecycle` and
+`restore_archived_card`. Legacy `archive_card` still proposes Block. The historical 11-tool
+delivery receipt below and the separate 11-tool Chat orchestrator are unchanged.
 
 ## Context Fabric benchmark corpus (#2319)
 

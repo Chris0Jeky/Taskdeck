@@ -948,8 +948,16 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("DueDate")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("IsArchived")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsBlocked")
                         .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("ParentCardId")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Position")
                         .HasColumnType("INTEGER");
@@ -960,7 +968,13 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
+                        .IsConcurrencyToken()
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("WorkItemType")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(0);
 
                     b.HasKey("Id");
 
@@ -970,6 +984,29 @@ namespace Taskdeck.Infrastructure.Migrations
                         .HasDatabaseName("IX_Cards_BoardId_ColumnId");
 
                     b.ToTable("Cards", (string)null);
+                });
+
+            modelBuilder.Entity("Taskdeck.Domain.Entities.CardAssignment", b =>
+                {
+                    b.Property<Guid>("CardId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("AssignedByUserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("CardId", "UserId");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("CardAssignments", (string)null);
                 });
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.CardComment", b =>
@@ -3364,6 +3401,31 @@ namespace Taskdeck.Infrastructure.Migrations
                     b.Navigation("Column");
                 });
 
+            modelBuilder.Entity("Taskdeck.Domain.Entities.CardAssignment", b =>
+                {
+                    b.HasOne("Taskdeck.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.Card", "Card")
+                        .WithMany("Assignments")
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Taskdeck.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Card");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Taskdeck.Domain.Entities.CardComment", b =>
                 {
                     b.HasOne("Taskdeck.Domain.Entities.User", "AuthorUser")
@@ -3915,6 +3977,8 @@ namespace Taskdeck.Infrastructure.Migrations
 
             modelBuilder.Entity("Taskdeck.Domain.Entities.Card", b =>
                 {
+                    b.Navigation("Assignments");
+
                     b.Navigation("CardLabels");
                 });
 

@@ -57,6 +57,135 @@ public class BoardJsonExportImportRoundTripTests
     }
 
     [Fact]
+    public async Task WorkItemType_RoundTripRetainsActiveAndArchivedTypesWithFreshIds()
+    {
+        var owner = CreateUser("type-owner");
+        var board = new Board("Types", ownerId: owner.Id);
+        var column = new Column(board.Id, "Work", 0);
+        var epic = new Card(board.Id, column.Id, "Epic");
+        epic.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Epic);
+        var spike = new Card(board.Id, column.Id, "Archived spike", position: 1);
+        spike.SetWorkItemType(Taskdeck.Domain.Enums.CardWorkItemType.Spike);
+        spike.Archive();
+        AddToPrivateCollection(column, "_cards", epic);
+        AddToPrivateCollection(column, "_cards", spike);
+        AddToPrivateCollection(board, "_columns", column);
+        SetupExportMocks(board, owner);
+        SetupImportMocks(owner);
+        var imported = new List<Card>();
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
+            .Callback<Card, CancellationToken>((card, _) => imported.Add(card)).ReturnsAsync((Card card, CancellationToken _) => card);
+        var exported = await _service.ExportBoardToJsonAsync(board.Id, owner.Id);
+        exported.IsSuccess.Should().BeTrue();
+        var result = await _service.ImportBoardFromJsonAsync(exported.Value, owner.Id);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        imported.Should().HaveCount(2);
+        imported.Single(c => c.Title == "Epic").WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Epic);
+        var archived = imported.Single(c => c.Title == "Archived spike");
+        archived.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Spike);
+        archived.IsArchived.Should().BeTrue();
+        archived.Id.Should().NotBe(spike.Id);
+        imported.Select(c => c.Id).Should().NotContain(epic.Id);
+    }
+
+    [Fact]
+    public async Task ImportBoardAsync_RejectsArchivedParentTarget_BeforeCreatingAnything()
+    {
+        var user = CreateUser("archived-parent");
+        SetupImportMocks(user);
+        var parentSourceId = Guid.NewGuid();
+        var dto = new ImportBoardDto(
+            "Hand-crafted hierarchy",
+            null,
+            new[] { new ImportColumnDto("Original", 0, null) },
+            new[]
+            {
+                new ImportCardDto("Child first", null, "Original", 0, null, Array.Empty<string>(),
+                    SourceId: Guid.NewGuid(), ParentCardId: parentSourceId),
+                new ImportCardDto("Archived parent", null, "Original", 1, null, Array.Empty<string>(),
+                    SourceId: parentSourceId, IsArchived: true)
+            },
+            Array.Empty<ImportLabelDto>());
+
+        var result = await _service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        result.ErrorMessage.Should().Contain("Restore the parent card before assigning it.");
+        _boardRepoMock.Verify(r => r.AddAsync(It.IsAny<Board>(), default), Times.Never);
+        _columnRepoMock.Verify(r => r.AddAsync(It.IsAny<Column>(), default), Times.Never);
+        _cardRepoMock.Verify(r => r.AddAsync(It.IsAny<Card>(), default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Never);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ImportBoardAsync_ImportsArchivedChildWhenItsParentStaysActive()
+    {
+        var user = CreateUser("archived-child");
+        SetupImportMocks(user);
+        var imported = new List<Card>();
+        _cardRepoMock.Setup(r => r.AddAsync(It.IsAny<Card>(), It.IsAny<CancellationToken>()))
+            .Callback<Card, CancellationToken>((card, _) => imported.Add(card))
+            .ReturnsAsync((Card card, CancellationToken _) => card);
+        var parentSourceId = Guid.NewGuid();
+        var dto = new ImportBoardDto(
+            "Archived child",
+            null,
+            new[] { new ImportColumnDto("Original", 0, null) },
+            new[]
+            {
+                new ImportCardDto("Archived child", null, "Original", 0, null, Array.Empty<string>(),
+                    SourceId: Guid.NewGuid(), IsArchived: true, ParentCardId: parentSourceId),
+                new ImportCardDto("Active parent", null, "Original", 1, null, Array.Empty<string>(),
+                    SourceId: parentSourceId)
+            },
+            Array.Empty<ImportLabelDto>());
+
+        var result = await _service.ImportBoardAsync(dto, user.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        imported.Should().HaveCount(2);
+        var parent = imported.Single(card => card.Title == "Active parent");
+        var child = imported.Single(card => card.Title == "Archived child");
+        parent.IsArchived.Should().BeFalse();
+        parent.Id.Should().NotBe(parentSourceId);
+        child.IsArchived.Should().BeTrue();
+        child.ParentCardId.Should().Be(parent.Id);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task ImportBoardFromJsonAsync_StillImportsVersion2PayloadWithoutHierarchy()
+    {
+        var user = CreateUser("legacy-import");
+        SetupImportMocks(user);
+        var columnId = Guid.NewGuid();
+        var now = DateTimeOffset.UtcNow;
+        var payload = new ExportBoardDto(
+            new BoardDto(Guid.NewGuid(), "Legacy board", "Exported before hierarchy", false, now, now),
+            new[] { new ColumnDto(columnId, Guid.NewGuid(), "Todo", 0, null, 1, now, now) },
+            new[]
+            {
+                new CardDto(Guid.NewGuid(), Guid.NewGuid(), columnId, "Legacy card", "Description",
+                    null, false, null, 0, new List<LabelDto>(), now, now)
+            },
+            Array.Empty<LabelDto>(),
+            Array.Empty<BoardAccessDto>(),
+            now,
+            "tester");
+        var json = JsonSerializer.Serialize(new BoardExportEnvelope("taskdeck-board", 2, payload), JsonOptions);
+
+        var result = await _service.ImportBoardFromJsonAsync(json, user.Id);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        result.Value.ColumnsImported.Should().Be(1);
+        result.Value.CardsImported.Should().Be(1);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(default), Times.Once);
+    }
+
+    [Fact]
     public async Task RoundTrip_FullBoard_PreservesAllData()
     {
         // Arrange: create board with columns, cards, labels, positions

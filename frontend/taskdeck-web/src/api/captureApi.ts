@@ -7,6 +7,7 @@ import type {
   CaptureItemSummary,
   CaptureListQuery,
   CaptureTriageEnqueueResult,
+  CaptureTriageStatus,
   CreateCaptureItemDto,
   UpdateCaptureSuggestionDto,
 } from '../types/capture'
@@ -43,6 +44,12 @@ export const captureApi = {
     const { data } = options
       ? await http.get<CaptureItem>(url, options)
       : await http.get<CaptureItem>(url)
+    return data
+  },
+
+  async getStatus(itemId: string, options?: CaptureReadOptions): Promise<CaptureTriageStatus> {
+    const { data } = await http.get<CaptureTriageStatus>(
+      `/capture/items/${encodePathSegment(itemId)}/status`, options)
     return data
   },
 

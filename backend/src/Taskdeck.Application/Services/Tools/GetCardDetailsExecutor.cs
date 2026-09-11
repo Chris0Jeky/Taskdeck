@@ -31,7 +31,8 @@ public sealed class GetCardDetailsExecutor : IToolExecutor
         }
 
         // Resolve short ID to full GUID
-        var allCards = await _unitOfWork.Cards.GetByBoardIdAsync(boardId, ct);
+        var allCards = (await _unitOfWork.Cards.GetByBoardIdAsync(boardId, ct))
+            .Concat(await _unitOfWork.Cards.GetArchivedByBoardIdAsync(boardId, ct));
         var card = allCards.FirstOrDefault(c =>
             BoardContextBuilder.FormatShortId(c.Id).Equals(cardId, StringComparison.OrdinalIgnoreCase));
 
@@ -61,6 +62,10 @@ public sealed class GetCardDetailsExecutor : IToolExecutor
         {
             id = BoardContextBuilder.FormatShortId(card.Id),
             title = card.Title,
+            is_archived = card.IsArchived,
+            workItemType = card.WorkItemType.ToString(),
+            parentCardId = card.ParentCardId,
+            assignments = CardService.MapToDto(card).Assignments,
             description = card.Description ?? "",
             column = column?.Name ?? "Unknown",
             labels = cardLabels,

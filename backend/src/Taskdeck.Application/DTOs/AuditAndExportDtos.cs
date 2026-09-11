@@ -39,7 +39,13 @@ public record ImportBoardDto(
     IEnumerable<ImportColumnDto> Columns,
     IEnumerable<ImportCardDto> Cards,
     IEnumerable<ImportLabelDto> Labels,
-    IReadOnlyList<CardDependency>? Dependencies = null);
+    IReadOnlyList<CardDependency>? Dependencies = null,
+    IReadOnlyDictionary<string, Guid?>? AssigneeMappings = null);
+
+public record ImportSourceAssigneeDto(string SourceKey, string DisplayName);
+public record ImportAssigneePreviewDto(string SourceKey, string DisplayName, int AffectedCardCount);
+public record BoardImportPreviewDto(ImportBoardDto Board, int CardCount, int ColumnCount,
+    IReadOnlyList<ImportAssigneePreviewDto> SourceAssignees, BoardParticipantDto Me);
 
 public record ImportColumnDto(
     string Name,
@@ -53,7 +59,8 @@ public record ImportCardDto(
     int Position,
     DateTimeOffset? DueDate,
     IEnumerable<string>? Labels,
-    ThinkingMaterialDto? Thinking = null, Guid? SourceId = null);
+    ThinkingMaterialDto? Thinking = null, Guid? SourceId = null, bool IsArchived = false, string WorkItemType = "Task", Guid? ParentCardId = null,
+    IReadOnlyList<ImportSourceAssigneeDto>? SourceAssignees = null);
 
 public record ImportLabelDto(
     string Name,

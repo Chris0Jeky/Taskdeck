@@ -3,8 +3,10 @@ import { ref, nextTick, defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { useCardModal, type UseCardModalOptions } from '../../composables/useCardModal'
-import type { Card, Label } from '../../types/board'
+import { cardsApi } from '../../api/cardsApi'
+import type { Card, CardDetachPreview, Label } from '../../types/board'
 import type { CardComment } from '../../types/comments'
+import { installTimeZone } from '../utils/timeZone'
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -26,6 +28,11 @@ const mockBoardStore = {
 const mockSessionStore = {
   userId: 'user-1',
 }
+
+vi.mock('../../api/cardsApi', () => ({ cardsApi: {
+  getCards: vi.fn().mockResolvedValue([]),
+  previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
+} }))
 
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: () => mockBoardStore,
@@ -87,6 +94,37 @@ function makeLabel(overrides: Partial<Label> = {}): Label {
   }
 }
 
+function makePreview(expectedChildrenFingerprint: string, cardId = 'card-1'): CardDetachPreview {
+  return {
+    cardId,
+    expectedUpdatedAt: '2025-06-15T00:00:00Z',
+    expectedChildrenFingerprint,
+    children: [],
+  }
+}
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (reason?: unknown) => void
+}
+
+/** A promise whose settlement the test drives, so two attempts can overlap deterministically. */
+function defer<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+/** Drain the microtask queue so awaited continuations inside the composable have run. */
+function flush(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0))
+}
+
 /**
  * Mount useCardModal inside a thin wrapper component so Vue lifecycle hooks
  * (watchers, onBeforeUnmount) fire correctly.
@@ -134,8 +172,34 @@ function mountComposable(optionOverrides: Partial<UseCardModalOptions> = {}) {
 // ---------------------------------------------------------------------------
 
 describe('useCardModal', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', ...)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where it silently leaves the host zone in place
+  // (#2943).
+  let restoreZone: (() => void) | null = null
+
   afterEach(() => {
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
+  })
+
+  it('keeps other field drafts across assignment updates without advancing an unrelated stale version', async () => {
+    const state = mountComposable()
+    state.isOpenRef.value = true; await nextTick()
+    const original = state.cardRef.value.updatedAt
+    state.result.title.value = 'Unsaved thought'
+    state.result.acceptAssignmentVersion('own-assignment', original)
+    state.cardRef.value = { ...state.cardRef.value, updatedAt: 'own-assignment' }
+    await nextTick()
+    expect(state.result.title.value).toBe('Unsaved thought')
+    state.result.acceptAssignmentVersion('remote-refresh')
+    state.cardRef.value = { ...state.cardRef.value, title: 'Someone else', updatedAt: 'remote-refresh' }
+    await nextTick()
+    expect(state.result.title.value).toBe('Unsaved thought')
+    await state.result.handleSave()
+    expect(mockBoardStore.updateCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({
+      title: 'Unsaved thought', expectedUpdatedAt: 'own-assignment',
+    }))
   })
 
   beforeEach(() => {
@@ -170,7 +234,7 @@ describe('useCardModal', () => {
     })
 
     it('keeps the UTC calendar key in the date input west of UTC', async () => {
-      vi.stubEnv('TZ', 'America/Los_Angeles')
+      restoreZone = installTimeZone('America/Los_Angeles')
       const ctx = mountComposable()
       ctx.cardRef.value = makeCard({ dueDate: '2026-08-23T00:00:00.000Z' })
       await nextTick()
@@ -659,6 +723,25 @@ describe('useCardModal', () => {
       )
     })
 
+    it.each([
+      'Card parents cannot form a cycle.',
+      'Card hierarchy supports at most three links (four levels), including descendants.',
+    ])('keeps the parent draft and explains validation: %s', async (message) => {
+      mockBoardStore.updateCard.mockRejectedValue({ response: { status: 400, data: { errorCode: 'ValidationError', message } } })
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      await nextTick()
+      ctx.result.parentCardId.value = 'selected-parent'
+
+      await ctx.result.handleSave()
+
+      expect(ctx.result.saveError.value).toBe(`${message} Your draft is kept.`)
+      expect(ctx.result.parentCardId.value).toBe('selected-parent')
+      expect(ctx.onUpdated).not.toHaveBeenCalled()
+      expect(ctx.onClose).not.toHaveBeenCalled()
+    })
+
     it('handles updateCard failure gracefully', async () => {
       mockBoardStore.updateCard.mockRejectedValue(new Error('Save failed'))
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -703,9 +786,10 @@ describe('useCardModal', () => {
       const ctx = mountComposable()
       await nextTick()
 
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
-      expect(mockBoardStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1')
+      expect(mockBoardStore.deleteCard).toHaveBeenCalledWith('board-1', 'card-1', expect.objectContaining({ expectedChildrenFingerprint: 'v1:fixed' }))
       expect(ctx.result.showDeleteConfirm.value).toBe(false)
       expect(ctx.onUpdated).toHaveBeenCalled()
       expect(ctx.onClose).toHaveBeenCalled()
@@ -717,6 +801,7 @@ describe('useCardModal', () => {
       await nextTick()
 
       ctx.result.isDeleting.value = true
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
       expect(mockBoardStore.deleteCard).not.toHaveBeenCalled()
@@ -729,12 +814,187 @@ describe('useCardModal', () => {
       const ctx = mountComposable()
       await nextTick()
 
+      await ctx.result.handleDeleteClick()
       await ctx.result.handleDeleteConfirm()
 
       expect(consoleSpy).toHaveBeenCalledWith('Failed to delete card:', expect.any(Error))
       expect(ctx.result.isDeleting.value).toBe(false)
 
       consoleSpy.mockRestore()
+    })
+  })
+
+  // -------------------------------------------------------------------------
+  // Delete preview request ownership (GH-2968)
+  // -------------------------------------------------------------------------
+
+  describe('delete preview ownership', () => {
+    const defaultPreview = makePreview('v1:fixed')
+    const previewDetachMock = vi.mocked(cardsApi.previewDetach)
+    let pending: Deferred<CardDetachPreview>[]
+
+    beforeEach(() => {
+      pending = []
+      previewDetachMock.mockImplementation(() => {
+        const attempt = defer<CardDetachPreview>()
+        pending.push(attempt)
+        return attempt.promise
+      })
+    })
+
+    afterEach(() => {
+      previewDetachMock.mockReset()
+      previewDetachMock.mockResolvedValue(defaultPreview)
+    })
+
+    it('drops a canceled attempt that resolves after the reopened one started', async () => {
+      const ctx = mountComposable()
+      await nextTick()
+
+      const first = ctx.result.handleDeleteClick()
+      ctx.result.handleDeleteCancel()
+      const second = ctx.result.handleDeleteClick()
+      expect(pending).toHaveLength(2)
+
+      pending[0].resolve(makePreview('v1:stale'))
+      await flush()
+
+      // The stale reply must not populate the new dialog nor clear its loading state.
+      expect(ctx.result.detachPreview.value).toBeNull()
+      expect(ctx.result.deletePreviewError.value).toBeNull()
+      expect(ctx.result.deletePreviewLoading.value).toBe(true)
+
+      pending[1].resolve(makePreview('v2:fresh'))
+      await Promise.all([first, second])
+      await flush()
+
+      expect(ctx.result.detachPreview.value?.expectedChildrenFingerprint).toBe('v2:fresh')
+      expect(ctx.result.deletePreviewLoading.value).toBe(false)
+    })
+
+    it('does not let a stale attempt replace a newer preview that already landed', async () => {
+      const ctx = mountComposable()
+      await nextTick()
+
+      const first = ctx.result.handleDeleteClick()
+      ctx.result.handleDeleteCancel()
+      const second = ctx.result.handleDeleteClick()
+
+      pending[1].resolve(makePreview('v2:fresh'))
+      await flush()
+      expect(ctx.result.detachPreview.value?.expectedChildrenFingerprint).toBe('v2:fresh')
+      expect(ctx.result.deletePreviewLoading.value).toBe(false)
+
+      pending[0].resolve(makePreview('v1:stale'))
+      await Promise.all([first, second])
+      await flush()
+
+      expect(ctx.result.detachPreview.value?.expectedChildrenFingerprint).toBe('v2:fresh')
+      expect(ctx.result.deletePreviewLoading.value).toBe(false)
+    })
+
+    it('does not surface a stale attempt failure as an error in the new dialog', async () => {
+      const ctx = mountComposable()
+      await nextTick()
+
+      const first = ctx.result.handleDeleteClick()
+      ctx.result.handleDeleteCancel()
+      const second = ctx.result.handleDeleteClick()
+
+      pending[0].reject(new Error('preview failed'))
+      await flush()
+
+      expect(ctx.result.deletePreviewError.value).toBeNull()
+      expect(ctx.result.deletePreviewLoading.value).toBe(true)
+
+      pending[1].resolve(makePreview('v2:fresh'))
+      await Promise.all([first, second])
+      await flush()
+
+      expect(ctx.result.deletePreviewError.value).toBeNull()
+      expect(ctx.result.detachPreview.value?.expectedChildrenFingerprint).toBe('v2:fresh')
+    })
+
+    it('cancel clears the displayed child list, the error and the loading state', async () => {
+      const ctx = mountComposable()
+      await nextTick()
+
+      const attempt = ctx.result.handleDeleteClick()
+      pending[0].resolve(makePreview('v1:shown'))
+      await attempt
+      await flush()
+      expect(ctx.result.detachPreview.value?.expectedChildrenFingerprint).toBe('v1:shown')
+
+      ctx.result.handleDeleteCancel()
+
+      expect(ctx.result.showDeleteConfirm.value).toBe(false)
+      expect(ctx.result.detachPreview.value).toBeNull()
+      expect(ctx.result.deletePreviewError.value).toBeNull()
+      expect(ctx.result.deletePreviewLoading.value).toBe(false)
+    })
+
+    it('discards an in-flight preview when the card changes mid-flight', async () => {
+      const ctx = mountComposable()
+      await nextTick()
+
+      const attempt = ctx.result.handleDeleteClick()
+      expect(ctx.result.deletePreviewLoading.value).toBe(true)
+
+      ctx.cardRef.value = makeCard({ id: 'card-2', title: 'Other Card' })
+      await nextTick()
+
+      pending[0].resolve(makePreview('v1:card-1'))
+      await attempt
+      await flush()
+
+      expect(ctx.result.detachPreview.value).toBeNull()
+      expect(ctx.result.deletePreviewError.value).toBeNull()
+      // The finally effect of the abandoned attempt must not leave the next dialog spinning.
+      expect(ctx.result.deletePreviewLoading.value).toBe(false)
+    })
+
+    it('discards an in-flight preview when the card modal closes', async () => {
+      const ctx = mountComposable()
+      ctx.isOpenRef.value = true
+      await nextTick()
+      await flush()
+
+      const attempt = ctx.result.handleDeleteClick()
+      ctx.isOpenRef.value = false
+      await nextTick()
+      await flush()
+
+      expect(ctx.result.showDeleteConfirm.value).toBe(false)
+
+      pending[0].resolve(makePreview('v1:closed'))
+      await attempt
+      await flush()
+
+      expect(ctx.result.detachPreview.value).toBeNull()
+      expect(ctx.result.deletePreviewLoading.value).toBe(false)
+    })
+
+    it('confirms deletion against the child list the user is currently shown', async () => {
+      const ctx = mountComposable()
+      await nextTick()
+
+      const first = ctx.result.handleDeleteClick()
+      ctx.result.handleDeleteCancel()
+      const second = ctx.result.handleDeleteClick()
+
+      pending[1].resolve(makePreview('v2:fresh'))
+      await flush()
+      pending[0].resolve(makePreview('v1:stale'))
+      await Promise.all([first, second])
+      await flush()
+
+      await ctx.result.handleDeleteConfirm()
+
+      expect(mockBoardStore.deleteCard).toHaveBeenCalledWith(
+        'board-1',
+        'card-1',
+        expect.objectContaining({ expectedChildrenFingerprint: 'v2:fresh' }),
+      )
     })
   })
 
@@ -881,6 +1141,37 @@ describe('useCardModal', () => {
   })
 
   describe('handleSaveEditComment', () => {
+    it.each(['success', 'failure'] as const)(
+      'keeps card-save recovery usable after comment update %s',
+      async (outcome) => {
+        const ctx = mountComposable()
+        await nextTick()
+        ctx.result.workItemType.value = 'Epic'
+        mockBoardStore.updateCard.mockRejectedValueOnce(new Error('card save unavailable'))
+        await ctx.result.handleSave()
+        const cardSaveError = ctx.result.saveError.value
+        expect(cardSaveError).toBeTruthy()
+
+        ctx.result.editingCommentId.value = 'c-1'
+        ctx.result.editingCommentContent.value = 'Edited comment'
+        if (outcome === 'failure') {
+          mockBoardStore.updateCardComment.mockRejectedValueOnce(new Error('comment save unavailable'))
+        }
+        await ctx.result.handleSaveEditComment('c-1')
+
+        expect(ctx.result.isSaving.value).toBe(false)
+        expect(ctx.result.saveError.value).toBe(cardSaveError)
+        expect(ctx.result.workItemType.value).toBe('Epic')
+        await ctx.result.handleSave()
+        expect(mockBoardStore.updateCard).toHaveBeenCalledTimes(2)
+        expect(mockBoardStore.updateCard).toHaveBeenLastCalledWith(
+          'board-1', 'card-1', expect.objectContaining({ workItemType: 'Epic' }),
+        )
+        expect(ctx.onClose).toHaveBeenCalledOnce()
+        ctx.wrapper.unmount()
+      },
+    )
+
     it('updates the comment and clears editing state', async () => {
       const ctx = mountComposable()
       await nextTick()

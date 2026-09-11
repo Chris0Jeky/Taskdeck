@@ -32,7 +32,8 @@ public record UserDataExportContentDto(
     IReadOnlyList<UserDataExportWorkspaceMemoryDto>? WorkspaceMemories = null,
     IReadOnlyList<UserDataExportQuietInsightDto>? QuietInsights = null,
     IReadOnlyList<UserDataExportNativeCaptureDto>? NativeCaptures = null,
-    SourceStorageExportDto? SourceStorage = null);
+    SourceStorageExportDto? SourceStorage = null,
+    IReadOnlyList<CardDto>? Cards = null);
 
 public record UserDataExportNativeCaptureDto(Guid Id, Guid? BoardId, UserDataExportDurableCaptureDto Capture);
 
@@ -235,4 +236,5 @@ public record AccountDeletionResultDto(
     int DurableCapturesDeleted = 0,
     int WorkspaceMemoriesDeleted = 0,
     int WorkspaceMemoryRevisionsDeleted = 0,
-    int QuietInsightsDeleted = 0);
+    int QuietInsightsDeleted = 0,
+    int CardAssignmentsRemoved = 0);

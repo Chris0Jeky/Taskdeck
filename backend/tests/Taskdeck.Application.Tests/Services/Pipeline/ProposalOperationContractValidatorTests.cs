@@ -13,6 +13,144 @@ namespace Taskdeck.Application.Tests.Services.Pipeline;
 public class ProposalOperationContractValidatorTests
 {
     [Fact]
+    public async Task WorkItemType_RequiresValidTypeCurrentVersionAndOneWrite()
+    {
+        var boardId = Guid.NewGuid();
+        var card = new Card(boardId, Guid.NewGuid(), "Type proposal");
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        unit.Setup(u => u.Cards).Returns(cards.Object);
+        cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        var valid = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Epic", expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [valid])).IsSuccess.Should().BeTrue();
+        var missing = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Epic" });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [missing])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        var invalid = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Question", expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [invalid])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        var stale = CreateOperation(0, "update", card.Id, new { cardId = card.Id, workItemType = "Spike", expectedUpdatedAt = card.UpdatedAt.AddMinutes(-1) });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [stale])).ErrorCode.Should().Be(ErrorCodes.Conflict);
+        var second = CreateOperation(1, "update", card.Id, new { cardId = card.Id, title = "Other" });
+        foreach (var operations in new[] { new[] { valid, second }, new[] { second, valid } })
+            (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, operations)).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        card.WorkItemType.Should().Be(Taskdeck.Domain.Enums.CardWorkItemType.Task);
+    }
+
+    [Fact]
+    public async Task WorkItemType_IsRejectedOnCardActionsThatDoNotApplyIt()
+    {
+        // #2950: only the create/update card handlers read 'workItemType'. A move carrying an
+        // extra workItemType passed this gate, and the approval preview then announced a
+        // "Work item type: Task -> Epic" transition the move never performs. Preview and Apply
+        // share this validator, so rejecting the unsupported parameter keeps both honest.
+        var boardId = Guid.NewGuid();
+        var sourceColumn = new Column(boardId, "Backlog", 0);
+        var targetColumn = new Column(boardId, "Done", 1);
+        var card = new Card(boardId, sourceColumn.Id, "Move me");
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        cards.Setup(repository => repository.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        columns.Setup(repository => repository.GetByIdAsync(targetColumn.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(targetColumn);
+
+        var moveWithType = CreateOperation(
+            0, "move", card.Id, new { cardId = card.Id, columnId = targetColumn.Id, workItemType = "Epic" });
+        var rejectedMove = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [moveWithType]);
+        rejectedMove.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        rejectedMove.ErrorMessage.Should().Be("Parameter 'workItemType' is not supported by card action 'move'");
+
+        var archiveWithType = CreateOperation(0, "archive", card.Id, new { cardId = card.Id, workItemType = "Epic" });
+        var rejectedArchive = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [archiveWithType]);
+        rejectedArchive.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        rejectedArchive.ErrorMessage.Should().Be("Parameter 'workItemType' is not supported by card action 'archive'");
+
+        // The supported shapes are untouched: a plain move still validates, and an update that
+        // really does apply the type still passes with its pinned card version.
+        var plainMove = CreateOperation(0, "move", card.Id, new { cardId = card.Id, columnId = targetColumn.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [plainMove]))
+            .IsSuccess.Should().BeTrue();
+        var typedUpdate = CreateOperation(
+            0, "update", card.Id, new { cardId = card.Id, workItemType = "Epic", expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [typedUpdate]))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Lifecycle_RejectsStaleApprovalMissingTimestampAndMixedWrites_AndAcceptsCurrentVersion()
+    {
+        var boardId = Guid.NewGuid();
+        var board = new Board("Hierarchy");
+        boardId = board.Id;
+        var card = new Card(boardId, Guid.NewGuid(), "Lifecycle validation");
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        unit.Setup(u => u.Cards).Returns(cards.Object);
+        cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        var boards = new Mock<IBoardRepository>();
+        unit.SetupGet(u => u.Boards).Returns(boards.Object);
+        boards.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        cards.Setup(r => r.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { card });
+        var valid = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [valid])).IsSuccess.Should().BeTrue();
+        var missing = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [missing])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        var stale = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt.AddMinutes(-1) });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [stale])).ErrorCode.Should().Be(ErrorCodes.Conflict);
+        var second = CreateOperation(1, "archive", card.Id, new { cardId = card.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [valid, second])).ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        card.Archive();
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [second])).ErrorCode.Should().Be(ErrorCodes.InvalidOperation);
+    }
+    [Theory]
+    [InlineData("archive-lifecycle")]
+    [InlineData("restore-lifecycle")]
+    public async Task Lifecycle_RejectsTargetIdThatDisagreesWithParameterCardId(string action)
+    {
+        // #2939: ExecutionAuditRecorder keys the single lifecycle receipt on operation.TargetId
+        // while the handler mutates parameters.cardId, so the two must be proven to agree. This
+        // pins the shared identity-agreement guard for both lifecycle actions; loosening it would
+        // let one card be archived while the receipt landed on an unrelated id.
+        var board = new Board("Lifecycle target binding");
+        var boardId = board.Id;
+        var column = new Column(boardId, "Now", 0);
+        var card = new Card(boardId, column.Id, "Real lifecycle target");
+        var decoy = new Card(boardId, column.Id, "Unrelated receipt target");
+        if (action == "restore-lifecycle") card.Archive();
+        var unit = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unit.Setup(u => u.Columns).Returns(columns.Object);
+        columns.Setup(r => r.GetByIdWithCardsAsync(column.Id, It.IsAny<CancellationToken>())).ReturnsAsync(column);
+        unit.Setup(u => u.Cards).Returns(cards.Object);
+        cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        cards.Setup(r => r.GetByIdAsync(decoy.Id, It.IsAny<CancellationToken>())).ReturnsAsync(decoy);
+        cards.Setup(r => r.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { card, decoy });
+        var boards = new Mock<IBoardRepository>();
+        unit.SetupGet(u => u.Boards).Returns(boards.Object);
+        boards.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+
+        object parameters = new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt };
+
+        var mismatched = CreateOperation(0, action, decoy.Id, parameters);
+        var mismatchResult = await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [mismatched]);
+        mismatchResult.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        mismatchResult.ErrorMessage.Should().Contain("targetId must match parameter 'cardId'");
+
+        var matching = CreateOperation(0, action, card.Id, parameters);
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [matching]))
+            .IsSuccess.Should().BeTrue();
+
+        // With no typed targetId the recorder falls back to parameters.cardId, so there is
+        // nothing to disagree with and the operation stays valid.
+        var noTargetId = CreateOperation(0, action, null, parameters);
+        (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [noTargetId]))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ValidateAsync_ShouldCacheBoundedEntityLookupsAcrossOperations()
     {
         var boardId = Guid.NewGuid();
@@ -780,6 +918,236 @@ public class ProposalOperationContractValidatorTests
 
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Board name cannot exceed 100");
+    }
+
+    [Fact]
+    public async Task Restore_RejectsASecondLifecycleOperationInTheSameProposal()
+    {
+        // #2926's originating trigger - restore(A) + restore(B) into a WIP-1 column - is closed by
+        // ProposalHierarchyValidator, which admits at most one hierarchy-affecting operation per
+        // proposal, so the pair never reaches the cumulative WIP projection below. This pins that
+        // gate: if batch lifecycle proposals are ever enabled, the projection in
+        // BoardValidationContext is what has to keep the WIP contract honest, and the
+        // archive/restore deltas it already carries are why relaxing this gate stays safe.
+        var fixtureBoard = new Board("Cumulative restore");
+        var boardId = fixtureBoard.Id;
+        var column = new Column(boardId, "Now", 0, wipLimit: 1);
+        var first = new Card(boardId, column.Id, "Archived A");
+        var second = new Card(boardId, column.Id, "Archived B");
+        first.Archive();
+        second.Archive();
+        column.AddCard(first);
+        column.AddCard(second);
+        var unitOfWork = CreateLifecycleMocks(fixtureBoard, [column], [first, second]);
+
+        var restoreFirst = CreateOperation(0, "restore-lifecycle", first.Id,
+            new { cardId = first.Id, expectedUpdatedAt = first.UpdatedAt });
+        var restoreSecond = CreateOperation(1, "restore-lifecycle", second.Id,
+            new { cardId = second.Id, expectedUpdatedAt = second.UpdatedAt });
+
+        var combined = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, [restoreFirst, restoreSecond]);
+        combined.IsSuccess.Should().BeFalse();
+        combined.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        combined.ErrorMessage.Should().Contain("separate proposal for each hierarchy-affecting operation");
+
+        // Control: a single restore into the same empty WIP-1 column is still valid.
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [restoreFirst]))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Restore_CountsAPrecedingCardThatOccupiesTheOriginalColumn(bool fillByCreate)
+    {
+        // #2926: Apply runs operations in Sequence order, so a create into - or a move into - the
+        // restore target column takes the last WIP slot before the restore handler runs. Validating
+        // every restore against the proposal's starting count let that pass preview and fail at
+        // execute, rolling the whole proposal back. Preview must now reject it with the existing
+        // WipLimitExceeded shape.
+        var fixtureBoard = new Board("Preceding occupant");
+        var boardId = fixtureBoard.Id;
+        var column = new Column(boardId, "Now", 0, wipLimit: 1);
+        var otherColumn = new Column(boardId, "Later", 1);
+        var archived = new Card(boardId, column.Id, "Archived A");
+        archived.Archive();
+        column.AddCard(archived);
+        var mover = new Card(boardId, otherColumn.Id, "Moves in");
+        otherColumn.AddCard(mover);
+        var unitOfWork = CreateLifecycleMocks(fixtureBoard, [column, otherColumn], [archived, mover]);
+
+        var occupy = fillByCreate
+            ? CreateOperation(0, "create", null, new { boardId, columnId = column.Id, title = "Takes the slot" })
+            : CreateOperation(0, "move", mover.Id, new { cardId = mover.Id, columnId = column.Id });
+        var restore = CreateOperation(1, "restore-lifecycle", archived.Id,
+            new { cardId = archived.Id, expectedUpdatedAt = archived.UpdatedAt });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, [occupy, restore]);
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+        result.ErrorMessage.Should().Contain("original column is full");
+
+        // Order-sensitivity control: with the restore first, Apply restores into the still-free
+        // slot and the RESTORE contract is satisfied, so the projection must not reject it. Note
+        // what this does and does not say - Apply would then fail on the following create/move,
+        // because this validator has never WIP-checked create or move at preview and this change
+        // does not add that. The assertion is scoped to the restore contract only.
+        var reordered = new[]
+        {
+            CreateOperation(0, "restore-lifecycle", archived.Id,
+                new { cardId = archived.Id, expectedUpdatedAt = archived.UpdatedAt }),
+            fillByCreate
+                ? CreateOperation(1, "create", null, new { boardId, columnId = column.Id, title = "Takes the slot" })
+                : CreateOperation(1, "move", mover.Id, new { cardId = mover.Id, columnId = column.Id })
+        };
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, reordered))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Restore_CountsTheSlotFreedByAPrecedingMoveOutOfTheOriginalColumn()
+    {
+        // The same ordered projection has to release capacity as well as consume it, or a valid
+        // "make room, then restore" proposal would be rejected at preview even though Apply would
+        // accept it. Free the only WIP-1 slot by moving its occupant away, then restore.
+        var fixtureBoard = new Board("Freed slot");
+        var boardId = fixtureBoard.Id;
+        var column = new Column(boardId, "Now", 0, wipLimit: 1);
+        var elsewhere = new Column(boardId, "Later", 1);
+        var occupant = new Card(boardId, column.Id, "Occupant");
+        var archived = new Card(boardId, column.Id, "Archived A");
+        archived.Archive();
+        column.AddCard(occupant);
+        column.AddCard(archived);
+        var unitOfWork = CreateLifecycleMocks(fixtureBoard, [column, elsewhere], [occupant, archived]);
+
+        var moveOut = CreateOperation(0, "move", occupant.Id, new { cardId = occupant.Id, columnId = elsewhere.Id });
+        var restore = CreateOperation(1, "restore-lifecycle", archived.Id,
+            new { cardId = archived.Id, expectedUpdatedAt = archived.UpdatedAt });
+
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [moveOut, restore]))
+            .IsSuccess.Should().BeTrue();
+
+        // Without the move the column is genuinely full, and the restore is rejected as before.
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [restore]))
+            .ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+    }
+
+    [Fact]
+    public async Task Restore_DoesNotCountASlotFreedByAMoveApplyWouldReject()
+    {
+        // Raised independently by the Codex review of #3019 and by the fresh-context review.
+        // Only a move Apply can actually perform frees its source slot. Column C (limit 1) holds
+        // active X plus archived A; column D (limit 1) is already full. "Move X to D, then restore
+        // A" must stay refused: CardService.MoveCardAsync rejects the move at D's WIP check, so the
+        // slot in C is never freed and approving this proposal would just move the failure to
+        // execute - the exact shape #2926 exists to remove.
+        var fixtureBoard = new Board("Impossible move");
+        var boardId = fixtureBoard.Id;
+        var column = new Column(boardId, "Now", 0, wipLimit: 1);
+        var full = new Column(boardId, "Later", 1, wipLimit: 1);
+        var occupant = new Card(boardId, column.Id, "Occupant");
+        var archived = new Card(boardId, column.Id, "Archived A");
+        archived.Archive();
+        column.AddCard(occupant);
+        column.AddCard(archived);
+        var blocker = new Card(boardId, full.Id, "Already there");
+        full.AddCard(blocker);
+        var unitOfWork = CreateLifecycleMocks(fixtureBoard, [column, full], [occupant, archived, blocker]);
+
+        var impossibleMove = CreateOperation(0, "move", occupant.Id, new { cardId = occupant.Id, columnId = full.Id });
+        var restore = CreateOperation(1, "restore-lifecycle", archived.Id,
+            new { cardId = archived.Id, expectedUpdatedAt = archived.UpdatedAt });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, [impossibleMove, restore]);
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be(ErrorCodes.WipLimitExceeded);
+
+        // Control: the same move into a column with room does free the slot.
+        var roomy = new Column(boardId, "Roomy", 2, wipLimit: 5);
+        var roomyUnitOfWork = CreateLifecycleMocks(fixtureBoard, [column, roomy], [occupant, archived]);
+        var possibleMove = CreateOperation(0, "move", occupant.Id, new { cardId = occupant.Id, columnId = roomy.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(
+                roomyUnitOfWork.Object, boardId, [possibleMove, restore]))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Restore_AllowsAPrecedingOccupantWhenTheWipLimitStillHasRoom()
+    {
+        // Valid multi-operation control: the projection must not turn a proposal that fits into a
+        // false rejection. Limit 2, one active card, one create and one restore into the same
+        // column - Apply ends at exactly the limit, so preview accepts it.
+        var fixtureBoard = new Board("Within limit");
+        var boardId = fixtureBoard.Id;
+        var column = new Column(boardId, "Now", 0, wipLimit: 2);
+        var archived = new Card(boardId, column.Id, "Archived A");
+        archived.Archive();
+        column.AddCard(archived);
+        var unitOfWork = CreateLifecycleMocks(fixtureBoard, [column], [archived]);
+
+        var create = CreateOperation(0, "create", null, new { boardId, columnId = column.Id, title = "Also fits" });
+        var restore = CreateOperation(1, "restore-lifecycle", archived.Id,
+            new { cardId = archived.Id, expectedUpdatedAt = archived.UpdatedAt });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, [create, restore]);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task Restore_IgnoresOccupancyChangesInOtherColumnsAndUnlimitedColumns()
+    {
+        // The projection is per column and only applies where a WIP limit exists: a create into a
+        // different column must not consume the restore column's capacity.
+        var fixtureBoard = new Board("Scoped projection");
+        var boardId = fixtureBoard.Id;
+        var column = new Column(boardId, "Now", 0, wipLimit: 1);
+        var elsewhere = new Column(boardId, "Later", 1);
+        var archived = new Card(boardId, column.Id, "Archived A");
+        archived.Archive();
+        column.AddCard(archived);
+        var unitOfWork = CreateLifecycleMocks(fixtureBoard, [column, elsewhere], [archived]);
+
+        var createElsewhere = CreateOperation(0, "create", null,
+            new { boardId, columnId = elsewhere.Id, title = "Unrelated column" });
+        var restore = CreateOperation(1, "restore-lifecycle", archived.Id,
+            new { cardId = archived.Id, expectedUpdatedAt = archived.UpdatedAt });
+
+        var result = await ProposalOperationContractValidator.ValidateAsync(
+            unitOfWork.Object, boardId, [createElsewhere, restore]);
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+    }
+
+    private static Mock<IUnitOfWork> CreateLifecycleMocks(Board board, Column[] columns, Card[] cards)
+    {
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cardRepository = new Mock<ICardRepository>();
+        var columnRepository = new Mock<IColumnRepository>();
+        var boardRepository = new Mock<IBoardRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cardRepository.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columnRepository.Object);
+        unitOfWork.SetupGet(instance => instance.Boards).Returns(boardRepository.Object);
+        boardRepository.Setup(repository => repository.GetByIdAsync(board.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(board);
+        cardRepository.Setup(repository => repository.GetHierarchyByBoardIdAsync(board.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(cards);
+        foreach (var card in cards)
+        {
+            cardRepository.Setup(repository => repository.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(card);
+        }
+        foreach (var column in columns)
+        {
+            columnRepository.Setup(repository => repository.GetByIdAsync(column.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(column);
+            columnRepository.Setup(repository => repository.GetByIdWithCardsAsync(column.Id, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(column);
+        }
+        return unitOfWork;
     }
 
     private static (Mock<IUnitOfWork> unitOfWork, Mock<ICardRepository> cards, Mock<IColumnRepository> columns, Mock<ILabelRepository> labels) CreateMocks()

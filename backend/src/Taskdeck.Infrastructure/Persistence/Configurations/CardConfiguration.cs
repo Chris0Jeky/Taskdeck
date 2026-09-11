@@ -15,6 +15,9 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
         builder.Property(c => c.Id)
             .ValueGeneratedNever();
 
+        builder.Property(c => c.ParentCardId).IsRequired(false);
+        builder.Navigation(c => c.Assignments).AutoInclude();
+
         builder.Property(c => c.Title)
             .IsRequired()
             .HasMaxLength(200);
@@ -28,6 +31,14 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
         builder.Property(c => c.IsBlocked)
             .IsRequired();
 
+        builder.Property(c => c.IsArchived)
+            .HasDefaultValue(false)
+            .IsRequired();
+
+        builder.Property(c => c.WorkItemType)
+            .HasDefaultValue(Taskdeck.Domain.Enums.CardWorkItemType.Task)
+            .IsRequired();
+
         builder.Property(c => c.BlockReason)
             .HasMaxLength(500);
 
@@ -38,7 +49,8 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
             .IsRequired();
 
         builder.Property(c => c.UpdatedAt)
-            .IsRequired();
+            .IsRequired()
+            .IsConcurrencyToken();
 
         builder.HasMany(c => c.CardLabels)
             .WithOne(cl => cl.Card)

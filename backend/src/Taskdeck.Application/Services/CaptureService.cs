@@ -12,8 +12,6 @@ public class CaptureService : ICaptureService
 {
     private const int DefaultListLimit = 50;
     private const int MaxListLimit = 200;
-    private const int ExcerptLength = 200;
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAuthorizationService _authorizationService;
     private readonly CaptureIntakeService _captureIntake;
@@ -397,6 +395,28 @@ public class CaptureService : ICaptureService
         }
 
         return Result.Success<IReadOnlyList<CaptureItemSummaryDto>>(summaries);
+    }
+
+    public async Task<Result<CaptureTriageStatusDto>> GetStatusAsync(
+        Guid userId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        if (userId == Guid.Empty)
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.ValidationError, "UserId cannot be empty");
+
+        var item = await _unitOfWork.LlmQueue.GetByIdAsync(itemId, cancellationToken);
+        if (item == null || !CaptureRequestContract.IsCaptureRequestType(item.RequestType))
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.NotFound, $"Capture item with ID {itemId} not found");
+        if (item.UserId != userId)
+            return Result.Failure<CaptureTriageStatusDto>(ErrorCodes.Forbidden, "You do not have permission to access this capture item");
+
+        var (payload, _, _) = await ResolveAppliedConversionProvenanceAsync(
+            item, ParsePayload(item), persistChanges: false, cancellationToken);
+        var status = ResolveCaptureStatus(item, payload);
+        return Result.Success(new CaptureTriageStatusDto(
+            item.Id, status, item.ProcessedAt, item.ErrorMessage,
+            payload.Disposition, CanEditSuggestion(item, status)));
     }
 
     public async Task<Result<CaptureItemDto>> GetByIdAsync(
@@ -1443,7 +1463,7 @@ public class CaptureService : ICaptureService
         CaptureListMaterial? durable = null)
     {
         var material = ResolveCaptureMaterial(item, payload, durable);
-        var excerpt = BuildExcerpt(material.Text);
+        var excerpt = CaptureTextExcerpt.Build(material.Text);
         var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemSummaryDto(
@@ -1467,7 +1487,7 @@ public class CaptureService : ICaptureService
         CaptureListMaterial? durable = null)
     {
         var material = ResolveCaptureMaterial(item, payload, durable);
-        var excerpt = BuildExcerpt(material.Text);
+        var excerpt = CaptureTextExcerpt.Build(material.Text);
         var status = ResolveCaptureStatus(item, payload);
 
         return new CaptureItemDto(
@@ -1620,18 +1640,5 @@ public class CaptureService : ICaptureService
                                 proposalId != Guid.Empty;
         var isConverted = payload.Provenance?.ConvertedAt is not null;
         return CaptureStatusPolicy.MapFromQueueStatus(item.Status, hasLinkedProposal, isConverted);
-    }
-
-    private static string BuildExcerpt(string rawText)
-    {
-        var normalized = string.Join(
-            " ",
-            rawText
-                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-
-        if (normalized.Length <= ExcerptLength)
-            return normalized;
-
-        return normalized[..ExcerptLength];
     }
 }
