@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import TdDialog from '../ui/TdDialog.vue'
 import CardDetachList from './CardDetachList.vue'
 import { cardsApi } from '../../api/cardsApi'
@@ -22,6 +22,22 @@ const error = ref<string | null>(null)
 const refreshed = ref(false)
 const dialogRecoveryButton = ref<HTMLButtonElement | null>(null)
 const pageRecoveryButton = ref<HTMLButtonElement | null>(null)
+// Context ownership survives neither card switches nor unmount. Dialog ownership
+// additionally ends on dismissal; closing a dialog does not cancel a submitted write.
+let contextGeneration = 0
+let confirmationGeneration = 0
+watch([() => props.card.boardId, () => props.card.id], () => {
+  contextGeneration++
+  confirmationGeneration++
+  preview.value = null
+  error.value = null
+  refreshed.value = false
+  busy.value = false
+}, { flush: 'sync' })
+onBeforeUnmount(() => {
+  contextGeneration++
+  confirmationGeneration++
+})
 const confirming = computed(() => preview.value !== null)
 const allowed = computed(() => boardStore.currentBoard?.id === props.card.boardId
   && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived)
@@ -31,8 +47,9 @@ const allowed = computed(() => boardStore.currentBoard?.id === props.card.boardI
 // active `aria-modal` element and inside its Tab cycle. Never awaited from a `catch`
 // — the `finally` that clears `busy` has to run first or the target is still
 // `disabled` when `focus()` lands on it.
-async function focusRecovery() {
+async function focusRecovery(context = contextGeneration, confirmation = confirmationGeneration) {
   await nextTick()
+  if (context !== contextGeneration || confirmation !== confirmationGeneration) return
   const target = confirming.value ? dialogRecoveryButton.value : pageRecoveryButton.value
   target?.focus()
 }
@@ -40,14 +57,21 @@ async function focusRecovery() {
 async function requestChange() {
   if (props.card.isArchived) return change()
   if (!allowed.value || props.disabled || busy.value || error.value) return
+  const context = contextGeneration
+  const confirmation = confirmationGeneration
   busy.value = true
   refreshed.value = false
-  try { preview.value = await cardsApi.previewDetach(props.card.boardId, props.card.id) }
-  catch (e) {
+  try {
+    const fresh = await cardsApi.previewDetach(props.card.boardId, props.card.id)
+    if (context !== contextGeneration || confirmation !== confirmationGeneration) return
+    preview.value = fresh
+  } catch (e) {
+    if (context !== contextGeneration || confirmation !== confirmationGeneration) return
     error.value = getErrorDisplay(e, PREVIEW_FAILURE).message
-    void focusRecovery()
+    void focusRecovery(context, confirmation)
+  } finally {
+    if (context === contextGeneration) busy.value = false
   }
-  finally { busy.value = false }
 }
 
 // In-dialog recovery. It re-reads the child list and the expected-state tokens the
@@ -58,20 +82,28 @@ async function requestChange() {
 // refresh only re-enables Confirm for an explicit second press.
 async function refreshChildren() {
   if (busy.value || !confirming.value) return
+  const context = contextGeneration
+  const confirmation = confirmationGeneration
   busy.value = true
   try {
-    preview.value = await cardsApi.previewDetach(props.card.boardId, props.card.id)
+    const fresh = await cardsApi.previewDetach(props.card.boardId, props.card.id)
+    if (context !== contextGeneration || confirmation !== confirmationGeneration) return
+    preview.value = fresh
     error.value = null
     refreshed.value = true
   } catch (e) {
+    if (context !== contextGeneration || confirmation !== confirmationGeneration) return
     error.value = getErrorDisplay(e, PREVIEW_FAILURE).message
-    void focusRecovery()
-  } finally { busy.value = false }
+    void focusRecovery(context, confirmation)
+  } finally {
+    if (context === contextGeneration) busy.value = false
+  }
 }
 
 // Escape, the backdrop and Cancel all land here. It stays unconditional: a request
 // that never settles must not be able to trap a keyboard user inside the modal.
 function closeConfirmation() {
+  confirmationGeneration++
   preview.value = null
   refreshed.value = false
   // An unresolved failure survives the close, so its alert and Refresh re-render on
@@ -82,17 +114,26 @@ function closeConfirmation() {
 
 async function change() {
   if (!allowed.value || props.disabled || busy.value || error.value) return
+  const context = contextGeneration
+  const confirmation = confirmationGeneration
   busy.value = true
   try {
     await boardStore.setCardArchived(props.card.boardId, props.card.id, !props.card.isArchived, preview.value?.expectedUpdatedAt ?? props.card.updatedAt, preview.value?.expectedChildrenFingerprint)
+    if (context !== contextGeneration) return
     preview.value = null
     refreshed.value = false
+    // Escape dismisses the confirmation, not the already-submitted operation.
+    // Preserve its completion receipt for the same card without reopening the dialog.
     emit('changed')
   } catch (e) {
+    if (context !== contextGeneration) return
     error.value = getErrorDisplay(e, CHANGE_FAILURE).message
     refreshed.value = false
-    void focusRecovery()
-  } finally { busy.value = false }
+    // Report failure on the page after dismissal, without stealing focus back.
+    void focusRecovery(context, confirmation)
+  } finally {
+    if (context === contextGeneration) busy.value = false
+  }
 }
 </script>
 
