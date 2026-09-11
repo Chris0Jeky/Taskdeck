@@ -112,6 +112,27 @@ describe('timeZone test helper (#2943)', () => {
         /does not exist in America\/New_York/,
       )
     })
+
+    it('refuses an impossible calendar tuple instead of normalizing it', () => {
+      // `Date.UTC` would quietly turn each of these into a different, valid
+      // instant, and a spec asserting on a boundary would then be measuring
+      // some other day (PR #3007 review).
+      expect(() => instantAtZonedWallClock([2026, 1, 30, 12, 0, 0], 'UTC')).toThrow(
+        /out-of-range|does not exist/,
+      )
+      expect(() => instantAtZonedWallClock([26, 7, 19, 12, 0, 0], 'UTC')).toThrow(
+        /out-of-range year/,
+      )
+      expect(() => instantAtZonedWallClock([2026, 12, 1, 12, 0, 0], 'UTC')).toThrow(
+        /out-of-range month/,
+      )
+      expect(() => instantAtZonedWallClock([2026, 7, 19, 24, 0, 0], 'UTC')).toThrow(
+        /out-of-range hour/,
+      )
+      expect(() => instantAtZonedWallClock([2026, 7, 19, 12, 0, 0.5], 'UTC')).toThrow(
+        /out-of-range second/,
+      )
+    })
   })
 
   describe('installTimeZone', () => {

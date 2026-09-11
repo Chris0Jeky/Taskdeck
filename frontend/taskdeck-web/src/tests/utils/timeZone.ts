@@ -113,14 +113,33 @@ export function offsetMinutesAt(instant: Date, timeZone: string): number {
   return Math.round((utcSeconds - wallClockAsUtcMs(zonedParts(instant, timeZone))) / 60_000)
 }
 
+const WALL_CLOCK_FIELDS: Array<[keyof ZonedParts, number, number]> = [
+  // `Date.UTC` maps years 0-99 onto 1900-1999, so anything below 100 would
+  // silently name a different century.
+  ['year', 100, 275_760],
+  ['month', 0, 11],
+  ['day', 1, 31],
+  ['hour', 0, 23],
+  ['minute', 0, 59],
+  ['second', 0, 59],
+]
+
 /**
  * The UTC instant at which `timeZone` shows `wall`.
  *
  * Two passes: guess with a zero offset, correct with the offset in force at the
  * guess, then re-check — enough for every real zone, including DST edges, since
- * offsets move by at most a couple of hours. Throws on a wall clock that does
- * not exist in the zone (the skipped hour of a DST spring-forward) rather than
- * returning a silently shifted instant.
+ * offsets move by at most a couple of hours.
+ *
+ * Throws rather than returning a silently shifted instant when the wall clock
+ * is not one this zone ever shows. Two ways that happens, both caught:
+ *
+ * - the tuple is not a real calendar time. `Date.UTC` would normalize it
+ *   (`[2026, 1, 30]` → 2 March, year `26` → 1926) and the round-trip below
+ *   would then agree with the normalized value, so the range check runs first
+ *   and the round-trip compares against the ORIGINAL tuple, not against the
+ *   normalized milliseconds.
+ * - the wall clock falls in a DST gap — the hour a spring-forward skips.
  */
 export function instantAtZonedWallClock(wall: WallClock, timeZone: string): Date {
   const target: ZonedParts = {
@@ -131,14 +150,28 @@ export function instantAtZonedWallClock(wall: WallClock, timeZone: string): Date
     minute: wall[4],
     second: wall[5],
   }
+  for (const [field, min, max] of WALL_CLOCK_FIELDS) {
+    const value = target[field]
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new Error(
+        `Wall clock [${wall.join(', ')}] has an out-of-range ${field}: ` +
+          `${value} is not an integer in [${min}, ${max}].`,
+      )
+    }
+  }
+
   const naiveMs = wallClockAsUtcMs(target)
   let instant = new NativeDate(naiveMs + offsetMinutesAt(new NativeDate(naiveMs), timeZone) * 60_000)
   instant = new NativeDate(naiveMs + offsetMinutesAt(instant, timeZone) * 60_000)
 
+  // Compared field by field against `wall` itself: `wallClockAsUtcMs(target)`
+  // would have absorbed a normalization such as 30 February and then matched.
   const reached = zonedParts(instant, timeZone)
-  if (wallClockAsUtcMs(reached) !== naiveMs) {
+  const agrees = WALL_CLOCK_FIELDS.every(([field]) => reached[field] === target[field])
+  if (!agrees) {
     throw new Error(
-      `Wall clock [${wall.join(', ')}] does not exist in ${timeZone} (a DST gap); ` +
+      `Wall clock [${wall.join(', ')}] does not exist in ${timeZone} ` +
+        `(an impossible calendar time, or the hour a DST spring-forward skips); ` +
         `the closest instant shows [${reached.year}, ${reached.month}, ${reached.day}, ` +
         `${reached.hour}, ${reached.minute}, ${reached.second}].`,
     )
