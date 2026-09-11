@@ -36,6 +36,49 @@ public class ProposalOperationContractValidatorTests
     }
 
     [Fact]
+    public async Task WorkItemType_IsRejectedOnCardActionsThatDoNotApplyIt()
+    {
+        // #2950: only the create/update card handlers read 'workItemType'. A move carrying an
+        // extra workItemType passed this gate, and the approval preview then announced a
+        // "Work item type: Task -> Epic" transition the move never performs. Preview and Apply
+        // share this validator, so rejecting the unsupported parameter keeps both honest.
+        var boardId = Guid.NewGuid();
+        var sourceColumn = new Column(boardId, "Backlog", 0);
+        var targetColumn = new Column(boardId, "Done", 1);
+        var card = new Card(boardId, sourceColumn.Id, "Move me");
+        var unitOfWork = new Mock<IUnitOfWork>();
+        var cards = new Mock<ICardRepository>();
+        var columns = new Mock<IColumnRepository>();
+        unitOfWork.Setup(instance => instance.Cards).Returns(cards.Object);
+        unitOfWork.Setup(instance => instance.Columns).Returns(columns.Object);
+        cards.Setup(repository => repository.GetByIdAsync(card.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        columns.Setup(repository => repository.GetByIdAsync(targetColumn.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(targetColumn);
+
+        var moveWithType = CreateOperation(
+            0, "move", card.Id, new { cardId = card.Id, columnId = targetColumn.Id, workItemType = "Epic" });
+        var rejectedMove = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [moveWithType]);
+        rejectedMove.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        rejectedMove.ErrorMessage.Should().Be("Parameter 'workItemType' is not supported by card action 'move'");
+
+        var archiveWithType = CreateOperation(0, "archive", card.Id, new { cardId = card.Id, workItemType = "Epic" });
+        var rejectedArchive = await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [archiveWithType]);
+        rejectedArchive.ErrorCode.Should().Be(ErrorCodes.ValidationError);
+        rejectedArchive.ErrorMessage.Should().Be("Parameter 'workItemType' is not supported by card action 'archive'");
+
+        // The supported shapes are untouched: a plain move still validates, and an update that
+        // really does apply the type still passes with its pinned card version.
+        var plainMove = CreateOperation(0, "move", card.Id, new { cardId = card.Id, columnId = targetColumn.Id });
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [plainMove]))
+            .IsSuccess.Should().BeTrue();
+        var typedUpdate = CreateOperation(
+            0, "update", card.Id, new { cardId = card.Id, workItemType = "Epic", expectedUpdatedAt = card.UpdatedAt });
+        (await ProposalOperationContractValidator.ValidateAsync(unitOfWork.Object, boardId, [typedUpdate]))
+            .IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task Lifecycle_RejectsStaleApprovalMissingTimestampAndMixedWrites_AndAcceptsCurrentVersion()
     {
         var boardId = Guid.NewGuid();

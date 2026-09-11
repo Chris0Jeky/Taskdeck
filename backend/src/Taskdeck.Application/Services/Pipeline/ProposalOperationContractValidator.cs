@@ -281,6 +281,20 @@ public static class ProposalOperationContractValidator
             return Result.Success();
 
         var normalizedAction = operation.ActionType.ToLowerInvariant();
+
+        // Only the create and update card handlers read 'workItemType'
+        // (OperationHandlerRegistry.CreateCardAsync / UpdateCardAsync); move, archive,
+        // the lifecycle verbs, delete, assignment replacement and the label verbs all
+        // ignore it at Apply. Accepting it on those actions let the approval preview
+        // announce a "Work item type: Task -> Epic" transition that Apply never performs,
+        // so reject it here in the shared preview/apply gate instead (#2950 preview == apply).
+        if (normalizedAction is not ("create" or "update") && parameters.TryGetProperty("workItemType", out _))
+        {
+            return Result.Failure(
+                ErrorCodes.ValidationError,
+                $"Parameter 'workItemType' is not supported by card action '{operation.ActionType}'");
+        }
+
         if (normalizedAction.Equals("create", StringComparison.OrdinalIgnoreCase) ||
             normalizedAction.Equals("update", StringComparison.OrdinalIgnoreCase))
         {
