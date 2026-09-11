@@ -21,6 +21,7 @@ Card operations:
 Invariants:
 
 - Operations remain proposal-first; handlers are reached only after approval and policy revalidation.
+- Every `ExecutionAuditRecorder` row - the lifecycle receipts included - is stamped with the authenticated applying user, not the proposal's requester, so it agrees with the actor a handler's own mutation row records; the requester is preserved as `requested by user <id>` in the row's provenance text, and remains the actor only on internal lanes that execute without an authenticated caller (`#2978`).
 - Every operation carries its own idempotency key. Label add/remove is also state-idempotent when retried.
 - Due dates are parsed from exact `YYYY-MM-DD` or ISO-8601 timestamps with explicit `Z`/numeric offsets and normalized to UTC before apply. Offsetless timestamps and locale-formatted dates are rejected.
 - Label names and IDs resolve only against the target card or create operation's board. Name-based operations reject case-insensitive duplicate matches as ambiguous; callers must use a label ID or make the board's label names unique.

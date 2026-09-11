@@ -68,7 +68,10 @@ keeps them eligible. Account erasure removes that user's assignments, including
 archived cards, before anonymization and reports `cardAssignmentsRemoved`.
 Assignment audit reasons are `assignment-replace`, `access-revoked`,
 `account-erased`, and `assignment-import-mapping`. Assignment effects and audit
-rows commit together; realtime invalidation happens after commit.
+rows commit together; realtime invalidation happens after commit. When a proposal
+is applied, both the `assignment-replace` row and the generic execution-history row
+name the authenticated applying user; the requester is named in the
+execution-history row's provenance text instead.
 
 ## Board JSON and account portability
 
