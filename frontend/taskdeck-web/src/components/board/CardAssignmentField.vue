@@ -6,7 +6,11 @@ import type { BoardParticipant, Card, CardAssignment } from '../../types/board'
 import CardAssignees from './CardAssignees.vue'
 
 const props = defineProps<{ card: Card; readOnly: boolean; disabled?: boolean }>()
-const emit = defineEmits<{ saved: [card: Card, previousVersion?: string]; 'dirty-change': [dirty: boolean] }>()
+const emit = defineEmits<{
+  saved: [card: Card, previousVersion?: string]
+  'dirty-change': [dirty: boolean]
+  'saving-change': [saving: boolean]
+}>()
 const session = useSessionStore()
 const participants = ref<BoardParticipant[]>([])
 const selected = ref<string[]>([])
@@ -22,6 +26,15 @@ let generation = 0
 const dirty = computed(() => [...selected.value].sort().join() !== [...baseline.value].sort().join())
 const locked = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value)
 watch(dirty, value => emit('dirty-change', value))
+/*
+ * A submitted PUT cannot be recalled. The host editor needs the in-flight state
+ * synchronously so its close, discard and navigation affordances never promise
+ * to cancel a mutation the server already has (#2981). `flush: 'sync'` keeps the
+ * host truthful inside the same click that starts or settles the save; the card
+ * identity watcher below resets it, so a host that keeps this field mounted
+ * across cards is told the new card is not saving.
+ */
+watch(saving, value => emit('saving-change', value), { immediate: true, flush: 'sync' })
 function reset(card: Card) {
   displayedAssignments.value = card.assignments ?? []
   archived.value = !!card.isArchived
@@ -102,6 +115,7 @@ onBeforeUnmount(() => { generation++ })
     <p v-if="readOnly || archived" class="text-sm">Assignments are read-only.</p>
     <p v-if="loading" role="status">Loading participants…</p>
     <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="saving" role="status">Saving assignments… this change was sent and cannot be discarded.</p>
     <button v-if="needsRefresh" type="button" :disabled="loading || saving" @click="load(true)">Refresh current assignments</button>
     <fieldset :disabled="locked" class="space-y-1">
       <legend class="sr-only">Choose board participants</legend>

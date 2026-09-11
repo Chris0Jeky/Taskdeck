@@ -38,6 +38,7 @@ const emit = defineEmits<{
   (e: 'close'): void
   (e: 'updated'): void
   (e: 'dirty-change', dirty: boolean): void
+  (e: 'saving-change', saving: boolean): void
 }>()
 
 const { t } = useI18n()
@@ -49,7 +50,25 @@ async function refreshArchiveState() {
 }
 const pendingThinkingPath = ref<string | null>(null)
 const assignmentDirty = ref(false)
+/*
+ * #2981. An assignment PUT that has left the browser cannot be recalled, so
+ * while one is unanswered this editor may not offer — or honour — any
+ * affordance whose promise is "discarded". Every close path funnels through
+ * `handleClose`/`closeWithoutPrompt`, and both refuse in favour of a notice
+ * that says what is actually true. The state is also emitted upward so a host
+ * that owns its own switch/navigation prompts (the Paper board) can refuse the
+ * same way.
+ */
+const assignmentSaving = ref(false)
+const showSavePendingNotice = ref(false)
 const hasUnsavedChanges = computed(() => hasCardUnsavedChanges.value || assignmentDirty.value)
+function refuseWhileAssignmentSaving() {
+  showDiscardConfirm.value = false
+  showSavePendingNotice.value = true
+}
+function dismissSavePendingNotice() {
+  showSavePendingNotice.value = false
+}
 function acceptAssignments(saved: Card, previousVersion?: string) {
   acceptAssignmentVersion(saved.updatedAt, previousVersion)
   const index = boardStore.currentBoardCards.findIndex(c => c.id === saved.id)
@@ -173,6 +192,11 @@ onUnmounted(() => {
 })
 
 function closeWithoutPrompt() {
+  if (assignmentSaving.value) {
+    refuseWhileAssignmentSaving()
+    return
+  }
+
   const destination = pendingThinkingPath.value
   pendingThinkingPath.value = null
   showDiscardConfirm.value = false
@@ -181,6 +205,11 @@ function closeWithoutPrompt() {
 }
 
 function openThinkingDeck() {
+  if (assignmentSaving.value) {
+    refuseWhileAssignmentSaving()
+    return
+  }
+
   const destination = `/workspace/boards/${props.card.boardId}/cards/${props.card.id}/thinking`
   if (hasUnsavedChanges.value) {
     pendingThinkingPath.value = destination
@@ -267,6 +296,19 @@ watch(hasUnsavedChanges, (dirty) => {
   emit('dirty-change', dirty)
 }, { immediate: true })
 
+// A save that starts behind an already-open discard confirmation replaces it:
+// that dialog's only action is now a promise the editor cannot keep. When the
+// save settles the notice is withdrawn, restoring every control and leaving the
+// field to show the committed assignees or the failure and the kept draft.
+watch(assignmentSaving, (saving) => {
+  emit('saving-change', saving)
+  if (saving) {
+    if (showDiscardConfirm.value) refuseWhileAssignmentSaving()
+    return
+  }
+  dismissSavePendingNotice()
+}, { immediate: true })
+
 watch(() => props.suppressDiscardPrompt, (suppress) => {
   if (!suppress) return
 
@@ -276,6 +318,11 @@ watch(() => props.suppressDiscardPrompt, (suppress) => {
 
 function handleClose() {
   if (props.suppressDiscardPrompt) return
+
+  if (assignmentSaving.value) {
+    refuseWhileAssignmentSaving()
+    return
+  }
 
   if (hasUnsavedChanges.value) {
     showDiscardConfirm.value = true
@@ -288,6 +335,7 @@ useEscapeToClose(
   () =>
     props.isOpen &&
     !props.suppressDiscardPrompt &&
+    !showSavePendingNotice.value &&
     !showDiscardConfirm.value &&
     !showDeleteConfirm.value &&
     !showCommentDeleteConfirm.value,
@@ -328,7 +376,8 @@ useEscapeToClose(
         <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || !!card.isArchived" />
         <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
           :read-only="boardStore.currentBoard?.id !== card.boardId || boardStore.currentBoard?.canWrite !== true || !!boardStore.currentBoard?.isArchived || !!card.isArchived"
-          @dirty-change="assignmentDirty = $event" @saved="acceptAssignments" />
+          @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
+          @saved="acceptAssignments" />
         <CardArchiveAction :key="card.updatedAt" :card="card" :disabled="hasUnsavedChanges"
           @changed="emit('updated'); emit('close')" @refresh="refreshArchiveState" />
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
@@ -382,7 +431,8 @@ useEscapeToClose(
           />
         </fieldset>
 
-      <p v-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
+      <p v-if="assignmentSaving" role="status" class="text-sm">Saving assignments… the editor stays open until the server answers.</p>
+      <p v-else-if="assignmentDirty" class="text-sm">Save or cancel assignment changes before saving other card fields.</p>
       <CardModalActions
           :is-form-valid="isFormValid && !card.isArchived && !isSaving && !assignmentDirty"
           :is-saving="isSaving"
@@ -393,6 +443,26 @@ useEscapeToClose(
       />
     </div>
   </div>
+
+  <!-- In-flight assignment save: the honest answer to a close request -->
+  <TdDialog
+    :open="showSavePendingNotice"
+    title="Saving assignments…"
+    description="This assignment change was already sent to the server, so it cannot be discarded or cancelled. Wait for the save to finish, then close the editor."
+    :close-on-backdrop="true"
+    @close="dismissSavePendingNotice"
+  >
+    <template #footer>
+      <button
+        type="button"
+        class="px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high border border-outline-variant/40 rounded-md transition-colors"
+        data-testid="card-assignment-save-pending-dismiss"
+        @click="dismissSavePendingNotice"
+      >
+        Keep editing
+      </button>
+    </template>
+  </TdDialog>
 
   <!-- Delete Confirmation Dialog -->
   <TdDialog
