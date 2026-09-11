@@ -26,6 +26,7 @@ public static class McpResourcesAndToolsRegistration
         new Dictionary<string, ApiKeyScope>(StringComparer.Ordinal)
         {
             ["search_cards"] = ApiKeyScope.Read,
+            ["list_board_participants"] = ApiKeyScope.Read,
             ["get_board_summary"] = ApiKeyScope.Read,
             ["get_proposal_status"] = ApiKeyScope.Read,
             ["list_proposals"] = ApiKeyScope.Read,
@@ -34,6 +35,7 @@ public static class McpResourcesAndToolsRegistration
             ["update_card"] = ApiKeyScope.Propose,
             ["archive_card"] = ApiKeyScope.Propose,
             ["archive_card_lifecycle"] = ApiKeyScope.Propose,
+            ["replace_card_assignments"] = ApiKeyScope.Propose,
             ["restore_archived_card"] = ApiKeyScope.Propose,
             ["create_column"] = ApiKeyScope.Propose,
             ["dismiss_proposal"] = ApiKeyScope.Manage,

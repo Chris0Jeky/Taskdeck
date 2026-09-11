@@ -119,6 +119,15 @@ const selectedCard = ref<Card | null>(null)
 const pendingCard = ref<Card | null>(null)
 const pendingNavigation = ref<{ resolve: (allow: boolean) => void } | null>(null)
 const cardEditorDirty = ref(false)
+/*
+ * #2981. The inspector's assignment field submits a PUT that cannot be
+ * recalled. This board owns the card-switch and route-leave prompts, whose only
+ * action is "discard" — a promise it cannot keep for a mutation the server
+ * already has. While the editor reports a save in flight both are refused with
+ * a truthful notice instead, and the notice is withdrawn when the save settles.
+ */
+const cardEditorSaving = ref(false)
+const savePendingNotice = ref(false)
 const routeDiscarding = ref(false)
 const density = ref<BoardDensity>('comfortable')
 const cardDetail = ref<BoardCardDetail>(DEFAULT_BOARD_CARD_DETAIL)
@@ -156,7 +165,7 @@ const discardDialogDescription = computed(() => pendingCard.value
 const discardConfirmLabel = computed(() => pendingCard.value ? 'Discard and switch' : 'Discard and leave')
 
 function handleBeforeUnload(event: BeforeUnloadEvent) {
-  if (!selectedCard.value || !cardEditorDirty.value) return
+  if (!selectedCard.value || (!cardEditorDirty.value && !cardEditorSaving.value)) return
   event.preventDefault()
   event.returnValue = ''
 }
@@ -265,6 +274,8 @@ watch(boardId, () => {
   pendingCard.value = null
   routeDiscarding.value = false
   cardEditorDirty.value = false
+  cardEditorSaving.value = false
+  savePendingNotice.value = false
   // Switching boards must not carry a half-typed card draft, an open column
   // dialog, or an error banner across to a board they do not belong to.
   resetBoardManagementState()
@@ -364,6 +375,10 @@ function openCard(card: Card) {
   routeDiscarding.value = false
 
   if (selectedCard.value?.id === card.id) return
+  if (selectedCard.value && cardEditorSaving.value) {
+    savePendingNotice.value = true
+    return
+  }
   if (selectedCard.value && cardEditorDirty.value) {
     pendingCard.value = card
     return
@@ -378,6 +393,10 @@ function closeCard() {
   selectedCard.value = null
   pendingCard.value = null
   cardEditorDirty.value = false
+  // The editor only emits `close` once no assignment save is in flight, so this
+  // clears state that is already settled rather than abandoning a live save.
+  cardEditorSaving.value = false
+  savePendingNotice.value = false
 }
 
 /**
@@ -407,6 +426,21 @@ function handleCardEditorDirtyChange(dirty: boolean) {
   cardEditorDirty.value = dirty
 }
 
+function handleCardEditorSavingChange(saving: boolean) {
+  cardEditorSaving.value = saving
+  if (!saving) {
+    savePendingNotice.value = false
+    return
+  }
+  // A discard prompt that is already open now offers something this board
+  // cannot deliver. Settle it as a cancellation — the card stays selected and
+  // the navigation is refused — and say why instead.
+  if (discardDialogOpen.value) {
+    cancelPendingDiscard()
+    savePendingNotice.value = true
+  }
+}
+
 function cancelPendingDiscard() {
   routeDiscarding.value = false
   pendingCard.value = null
@@ -415,6 +449,14 @@ function cancelPendingDiscard() {
 }
 
 async function confirmPendingDiscard() {
+  // Defence in depth: a save started behind this dialog makes its one action a
+  // promise the board cannot keep. The pending switch/navigation is kept so the
+  // user can confirm it once the save has settled.
+  if (cardEditorSaving.value) {
+    savePendingNotice.value = true
+    return
+  }
+
   const cardToOpen = pendingCard.value
   const navigation = pendingNavigation.value
   pendingCard.value = null
@@ -433,6 +475,13 @@ async function confirmPendingDiscard() {
 }
 
 function guardDirtyNavigation(): boolean | Promise<boolean> {
+  // Leaving cannot cancel a submitted assignment PUT, and the only honest
+  // answer is to stay put until it settles — not a dialog offering to discard
+  // it. The user can navigate again once the editor reports the save finished.
+  if (selectedCard.value && cardEditorSaving.value) {
+    savePendingNotice.value = true
+    return false
+  }
   if (!selectedCard.value || !cardEditorDirty.value) return true
 
   // Router navigation can be requested again while the discard confirmation is
@@ -1062,7 +1111,26 @@ async function addStarterColumns() {
           @close="closeCard"
           @updated="handleCardUpdated"
           @dirty-change="handleCardEditorDirtyChange"
+          @saving-change="handleCardEditorSavingChange"
         />
+
+        <TdDialog
+          v-if="savePendingNotice"
+          :open="true"
+          title="Saving assignments…"
+          description="This assignment change was already sent to the server, so it cannot be discarded or cancelled. Wait for the save to finish, then try again."
+          @close="savePendingNotice = false"
+        >
+          <template #footer>
+            <PaperHLBtn
+              type="button"
+              variant="primary"
+              label="Keep editing"
+              data-testid="card-save-pending-dismiss"
+              @click="savePendingNotice = false"
+            />
+          </template>
+        </TdDialog>
 
         <TdDialog
           v-if="discardDialogOpen"

@@ -27,6 +27,7 @@ public static class ApplicationServiceRegistration
                 sp.GetService<ILogger<BoardService>>()));
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
+        services.AddScoped<CardAssignmentService>();
         services.AddScoped<CardCommentService>();
         services.AddScoped<ThinkingDeckService>();
         services.AddScoped<BoardDependencyService>();

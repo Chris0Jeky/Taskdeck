@@ -1653,6 +1653,13 @@ public class AutomationProposalService : IAutomationProposalService
         foreach (var operation in orderedOperations)
         {
             var description = DescribeOperationReadable(operation, columnNames, cardTitles, cardStates, labelNames);
+            if (operation.ActionType.Equals(ProposalAssignmentContract.Action, StringComparison.OrdinalIgnoreCase))
+            {
+                using var assignmentJson = JsonDocument.Parse(operation.Parameters);
+                var assignment = await ProposalAssignmentContract.ValidateAsync(_unitOfWork, boardId, assignmentJson.RootElement, cancellationToken);
+                if (!assignment.IsSuccess) return Result.Failure<string>(assignment.ErrorCode, assignment.ErrorMessage);
+                description = $"{operation.Sequence}. {assignment.Value}";
+            }
             if (hierarchy.Value.TryGetValue(operation.Sequence, out var hierarchyDescription))
                 description += Environment.NewLine + hierarchyDescription;
             descriptions.Add(description);

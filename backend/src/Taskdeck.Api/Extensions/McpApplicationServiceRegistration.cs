@@ -29,6 +29,7 @@ public static class McpApplicationServiceRegistration
                 sp.GetRequiredService<IAuthorizationService>()));
         services.AddScoped<ColumnService>();
         services.AddScoped<CardService>();
+        services.AddScoped<CardAssignmentService>();
         services.AddScoped<LabelService>();
         services.AddScoped<AutomationProposalService>();
         services.AddScoped<IAutomationProposalService>(
