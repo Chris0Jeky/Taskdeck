@@ -18,9 +18,16 @@ drafts survive assignment saves. A submitted set replacement cannot be recalled,
 while one is in flight the editor never offers a discard: closing, Escape, the
 backdrop, the header close, switching card and leaving the board all answer that the
 change was already sent and must be waited out, and an open discard confirmation is
-withdrawn. Settlement restores every control and shows either the committed assignees
-or the failure with the kept draft. An uncertain save or version conflict keeps the
-selection, requires a current-state refresh, and leaves the retry explicit. Removed
+withdrawn. Settlement shows either the committed assignees or the failure with the
+kept draft, and restores every control except after a refusal for lost edit
+permission. An uncertain save or version conflict keeps the
+selection, requires a current-state refresh, and leaves the retry explicit. A
+save refused because edit permission was revoked is distinguished from an
+uncertain one: it says so and locks the selection control and Save assignments,
+because the reads a Viewer can still complete are not evidence that writing is
+allowed. That lock releases when the board reports write permission again or the
+card is reopened; Clear and Cancel stay available throughout, so the draft can
+still be dismissed and the editor is never left permanently unsaved. Removed
 participants remain visible in the draft so the user can remove them. Archived
 cards and boards are read-only; historical assignments remain visible.
 
