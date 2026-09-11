@@ -12,6 +12,8 @@ public class Card : Entity
     public Guid BoardId { get; private set; }
     public Board Board { get; private set; } = null!;
 
+    public Guid? ParentCardId { get; private set; }
+
     public Guid ColumnId { get; private set; }
     public Column Column { get; private set; } = null!;
 
@@ -163,6 +165,22 @@ public class Card : Entity
     {
         EnsureActive();
         _cardLabels.Clear();
+        Touch();
+    }
+
+    public void SetParent(Guid? parentCardId)
+    {
+        EnsureActive();
+        if (parentCardId == Id || parentCardId == Guid.Empty)
+            throw new DomainException(ErrorCodes.ValidationError, "A card cannot be its own parent or have an empty parent ID.");
+        ParentCardId = parentCardId;
+        Touch();
+    }
+
+    // Lifecycle detachment also covers archived children without restoring them.
+    public void DetachParent()
+    {
+        ParentCardId = null;
         Touch();
     }
 
