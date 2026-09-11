@@ -266,6 +266,49 @@ describe('CardModal assignment save in flight (#2981)', () => {
     })
   }
 
+  /*
+   * #2997. Archive recovery ("Refresh card state") is a close: it drops this
+   * editor and refetches the board. It was the one close path that never
+   * reached `handleClose`, so it walked out from under an unanswered PUT
+   * without the truthful notice every other path gives.
+   */
+  it('refuses archive recovery while an assignment save is unanswered', async () => {
+    vi.mocked(cardsApi.previewDetach).mockRejectedValueOnce(new Error('preview unavailable'))
+    const wrapper = mount(CardModal, {
+      props: { card, isOpen: true, labels, presentation: 'modal' },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    // Fail an archive first, so the page-level recovery control is on screen.
+    await fieldButton(wrapper, 'Archive card')!.trigger('click')
+    await flushPromises()
+    expect(fieldButton(wrapper, 'Refresh card state')).toBeDefined()
+
+    // Then submit an assignment change the server has not answered.
+    const deferred = createDeferred<Card>()
+    vi.mocked(cardsApi.replaceAssignments).mockReturnValue(deferred.promise)
+    const assignments = wrapper.get('[aria-label="Card assignments"]')
+    await assignments.findAll('input[type="checkbox"]')[0]!.setValue(true)
+    await fieldButton(wrapper, 'Save assignments')!.trigger('click')
+    await nextTick()
+
+    await fieldButton(wrapper, 'Refresh card state')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('close')).toBeUndefined()
+    expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+    expect(discardConfirmButton()).toBeNull()
+    expect(savePendingDismissButton()).not.toBeNull()
+    expect(noticeText()).toContain('already sent to the server')
+
+    deferred.resolve(savedCard)
+    await flushPromises()
+    expect(wrapper.emitted('close')).toBeUndefined()
+
+    wrapper.unmount()
+  })
+
   it('still drops a delayed receipt that belongs to a card the editor has left', async () => {
     const { wrapper, deferred } = await mountWithPendingAssignmentSave('inspector')
     const otherCard: Card = { ...card, id: 'card-2', title: 'Another card', updatedAt: 'other-v1' }
