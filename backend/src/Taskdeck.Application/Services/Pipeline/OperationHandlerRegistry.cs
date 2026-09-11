@@ -322,7 +322,10 @@ public class OperationHandlerRegistry
         // positions were non-contiguous (#3025): a deleted middle card leaves 0 and 2, and an
         // archived card holds a position without occupying a slot, so max + 1 overshot the list
         // and CardService threw and rolled the proposal back. The service clamps an overshoot
-        // anyway, so this stays correct even if the two reads ever disagree.
+        // anyway, so this stays correct even if the two reads ever disagree - and it is what
+        // carries the one case that still overshoots by design: a move into the card's own
+        // column counts the mover here but excludes it there, so the clamp lands it at the
+        // bottom, which is what "move to the column it is already in" means.
         var position = targetColumn.Cards.Count(card => !card.IsArchived);
         var dto = new MoveCardDto(columnId, position);
         var result = await _cardService.MoveCardAsync(cardId, dto, cancellationToken);

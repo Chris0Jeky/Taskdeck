@@ -586,4 +586,38 @@ public class OperationHandlerRegistryTests
         // The archived card is not in the reordered list, so its stored placement is untouched.
         shelved.Position.Should().Be(1);
     }
+
+    [Fact]
+    public async Task ExecuteOperationAsync_ShouldSendCardToTheBottom_WhenMoveTargetsItsOwnColumn()
+    {
+        // #3025 review, LOW-3. A proposal move whose columnId is the card's current column is the
+        // one path where the append index still overshoots by design: the mover is counted in
+        // Column.Cards but excluded from the list CardService reorders, so the index is
+        // orderedCards.Count + 1 and the service's clamp is load-bearing rather than insurance.
+        // Before this change the overshoot threw and rolled the proposal back; the meaning of
+        // "move to the column it is already in" is now "send it to the bottom", which is what the
+        // preview projection has always assumed (its move branch returns early for a same-column
+        // move, treating it as executable).
+        var board = TestDataBuilder.CreateBoard();
+        var mover = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Mover", position: 0);
+        var other = TestDataBuilder.CreateCard(board.Id, Guid.NewGuid(), "Other", position: 1);
+        var column = TestDataBuilder.CreateColumnWithCards(board.Id, "Doing", new[] { mover, other }, 0);
+
+        _boardRepoMock.Setup(r => r.GetByIdAsync(board.Id, default)).ReturnsAsync(board);
+        _columnRepoMock.Setup(r => r.GetByIdWithCardsAsync(column.Id, default)).ReturnsAsync(column);
+        _cardRepoMock.Setup(r => r.GetByIdWithLabelsAsync(mover.Id, default)).ReturnsAsync(mover);
+        _cardRepoMock.Setup(r => r.GetByColumnIdAsync(column.Id, default))
+            .ReturnsAsync(new List<Card> { mover, other });
+
+        var operation = new ProposalOperationDto(
+            Guid.NewGuid(), Guid.NewGuid(), 0, "move", "card", mover.Id.ToString(),
+            $$"""{"cardId":"{{mover.Id}}","columnId":"{{column.Id}}"}""", "move-same-column", null);
+
+        var result = await _registry.ExecuteOperationAsync(operation, default);
+
+        result.IsSuccess.Should().BeTrue(result.ErrorMessage);
+        mover.ColumnId.Should().Be(column.Id);
+        other.Position.Should().Be(0);
+        mover.Position.Should().Be(1);
+    }
 }

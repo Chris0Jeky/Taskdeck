@@ -474,7 +474,12 @@ public partial class CardService
             await _realtimeNotifier.NotifyBoardMutationAsync(
                 new BoardRealtimeEvent(card.BoardId, "card", "moved", card.Id, DateTimeOffset.UtcNow),
                 cancellationToken);
-            await SafeLogAsync("card", card.Id, AuditAction.Moved, actorUserId, $"target_column={dto.TargetColumnId}; position={dto.TargetPosition}");
+            // The effective index, not the requested one. They were always equal before the
+            // clamp above existed; a clamped request would otherwise write a position the board
+            // never held into a trail operators read (#3025 review, LOW-1). The
+            // `target_column=...; position=...` shape is unchanged - BoardMetricsService and
+            // ForecastingService parse the column out of it.
+            await SafeLogAsync("card", card.Id, AuditAction.Moved, actorUserId, $"target_column={dto.TargetColumnId}; position={card.Position}");
 
             var movedCard = await _unitOfWork.Cards.GetByIdWithLabelsAsync(id, cancellationToken);
             return Result.Success(MapToDto(movedCard!));
