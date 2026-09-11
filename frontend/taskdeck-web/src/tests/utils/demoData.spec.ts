@@ -8,10 +8,18 @@ import {
   buildDemoCaptureItems,
 } from '../../utils/demoData'
 import { toCalendarDateKey } from '../../utils/dueDates'
+import { installTimeZone } from './timeZone'
 
 describe('demoData', () => {
+  // `installTimeZone`, not `vi.stubEnv('TZ', …)`: the env stub only moves the
+  // runtime zone under the default `forks` pool, and Stryker's Vitest dry run
+  // forces `pool: 'threads'`, where these rows silently measured the host zone
+  // instead (#2943).
+  let restoreZone: (() => void) | null = null
+
   afterEach(() => {
-    vi.unstubAllEnvs()
+    restoreZone?.()
+    restoreZone = null
     vi.useRealTimers()
   })
 
@@ -82,8 +90,8 @@ describe('demoData', () => {
       ['UTC', '2026-08-24T00:30:00.000Z', '2026-08-24', '2026-08-23'],
       ['Pacific/Kiritimati', '2026-08-24T12:30:00.000Z', '2026-08-25', '2026-08-24'],
     ])('uses the local calendar day for Today demo buckets in %s', (timeZone, instant, todayKey, yesterdayKey) => {
-      vi.stubEnv('TZ', timeZone)
       vi.useFakeTimers()
+      restoreZone = installTimeZone(timeZone)
       vi.setSystemTime(new Date(instant))
 
       const summary = buildDemoTodaySummary()
