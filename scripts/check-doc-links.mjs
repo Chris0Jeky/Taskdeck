@@ -83,21 +83,21 @@ export function extractLocalTargets(markdown) {
 }
 
 /**
- * Directory listings, cached per run, used for the case-exact existence check.
- * Keyed by absolute directory path; a directory that cannot be read caches as
- * null so the caller can fall back rather than retry it for every link.
+ * Directory listings, cached for one check, used for the case-exact existence
+ * check. Keyed by absolute directory path; a directory that cannot be read
+ * caches as null so the caller can fall back rather than retry it for every
+ * link. The cache belongs to the caller so a long-lived process can run a
+ * second check after files have been added or renamed without stale results.
  */
-const directoryEntries = new Map()
-
-function readDirectoryCached(directory) {
-  if (!directoryEntries.has(directory)) {
+function readDirectoryCached(directory, directoryCache) {
+  if (!directoryCache.has(directory)) {
     try {
-      directoryEntries.set(directory, new Set(readdirSync(directory)))
+      directoryCache.set(directory, new Set(readdirSync(directory)))
     } catch {
-      directoryEntries.set(directory, null)
+      directoryCache.set(directory, null)
     }
   }
-  return directoryEntries.get(directory)
+  return directoryCache.get(directory)
 }
 
 /**
@@ -111,13 +111,13 @@ function readDirectoryCached(directory) {
  *
  * `target` must already be absolute and inside `root`.
  */
-export function existsCaseExact(target, root) {
+export function existsCaseExact(target, root, directoryCache = new Map()) {
   if (!existsSync(target)) return false
   const relativePath = relative(root, target)
   if (relativePath === '') return true
   let current = root
   for (const segment of relativePath.split(sep)) {
-    const entries = readDirectoryCached(current)
+    const entries = readDirectoryCached(current, directoryCache)
     // An unreadable directory is not evidence of a bad link; trust existsSync.
     if (entries === null) return true
     if (!entries.has(segment)) return false
@@ -154,7 +154,12 @@ export function collectMarkdownFiles(root = repoRoot) {
 }
 
 /** Resolve one target against the file that declared it; null when it resolves. */
-export function resolveTarget(sourceFile, pathPart, root = repoRoot) {
+export function resolveTarget(
+  sourceFile,
+  pathPart,
+  root = repoRoot,
+  directoryCache = new Map(),
+) {
   let decoded = pathPart
   try {
     decoded = decodeURIComponent(pathPart)
@@ -171,12 +176,13 @@ export function resolveTarget(sourceFile, pathPart, root = repoRoot) {
     return { reason: 'outside the repository' }
   }
   if (!existsSync(target)) return { reason: 'missing' }
-  if (!existsCaseExact(target, root)) return { reason: 'wrong case' }
+  if (!existsCaseExact(target, root, directoryCache)) return { reason: 'wrong case' }
   return null
 }
 
 export function findBrokenLinks(root = repoRoot) {
   const broken = []
+  const directoryCache = new Map()
   for (const file of collectMarkdownFiles(root)) {
     let contents
     try {
@@ -185,7 +191,7 @@ export function findBrokenLinks(root = repoRoot) {
       continue
     }
     for (const { target, pathPart, line } of extractLocalTargets(contents)) {
-      const failure = resolveTarget(file, pathPart, root)
+      const failure = resolveTarget(file, pathPart, root, directoryCache)
       if (failure) {
         broken.push({
           file: relative(root, file).split(sep).join('/'),
