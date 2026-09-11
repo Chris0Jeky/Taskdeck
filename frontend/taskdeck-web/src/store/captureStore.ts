@@ -34,6 +34,8 @@ export type DetailCacheOutcome = 'cached' | 'superseded' | 'generation' | 'epoch
 
 type DetailLoadOptions = {
   forceRefresh?: boolean
+  /** Internal: terminal hydration continues the authority of its status read. */
+  readAuthority?: symbol
   recordError?: boolean
   showToast?: boolean
   syncSummary?: boolean
@@ -69,7 +71,7 @@ type DetailLoadOptions = {
    *   that resolve from state already present, the non-forced cached early
    *   return and the demo branch: the question a caller asks is whether the
    *   store holds this detail, not whether this call did the writing.
-   * - `superseded` — the caller's `shouldCache` said no, or a newer detail
+   * - `superseded` — the caller's `shouldCache` said no, or a newer status or detail
    *   read for the same id is already the authority.
    * - `generation` — a successful write for this id landed mid-read. Reachable
    *   in a LIVE session, not only after a logout: a first open observes
@@ -159,7 +161,9 @@ export const useCaptureStore = defineStore('capture', () => {
   const loadingList = ref(false)
   const loadingDetail = ref(false)
   let latestListLoadRequestId = 0
-  const latestDetailReadById = new Map<string, symbol>()
+  // Keep the latest authority after completion: older pending reads stay obsolete,
+  // even when the newer read fails or is cancelled. Logout clears this with the caches.
+  const latestCaptureReadById = new Map<string, symbol>()
   // One monotonic clock for both guards below. A write records it to reject
   // older reads; a summary records it so an older BACKGROUND list snapshot
   // cannot regress a row that moved after that read began (#2301).
@@ -317,6 +321,7 @@ export const useCaptureStore = defineStore('capture', () => {
       shouldCache = () => true,
       trackLoading = true,
       onCacheOutcome,
+      readAuthority = Symbol(),
     } = options
 
     if (!forceRefresh && detailById.value[itemId]) {
@@ -336,8 +341,7 @@ export const useCaptureStore = defineStore('capture', () => {
 
     const observedDetailWriteGeneration = detailWriteGeneration(itemId)
     const observedSessionEpoch = sessionEpoch
-    const readToken = Symbol()
-    latestDetailReadById.set(itemId, readToken)
+    latestCaptureReadById.set(itemId, readAuthority)
     try {
       if (trackLoading) {
         loadingDetail.value = true
@@ -359,7 +363,7 @@ export const useCaptureStore = defineStore('capture', () => {
         outcome = 'epoch'
       } else if (observedDetailWriteGeneration !== detailWriteGeneration(itemId)) {
         outcome = 'generation'
-      } else if (latestDetailReadById.get(itemId) !== readToken) {
+      } else if (latestCaptureReadById.get(itemId) !== readAuthority) {
         outcome = 'superseded'
       }
       if (outcome === 'cached') {
@@ -377,9 +381,6 @@ export const useCaptureStore = defineStore('capture', () => {
       }
       throw e
     } finally {
-      if (latestDetailReadById.get(itemId) === readToken) {
-        latestDetailReadById.delete(itemId)
-      }
       if (trackLoading) {
         loadingDetail.value = false
       }
@@ -595,8 +596,10 @@ export const useCaptureStore = defineStore('capture', () => {
     triageRunning = true
     const epoch = sessionEpoch
     const generation = detailWriteGeneration(entry.id)
+    const readAuthority = Symbol()
+    latestCaptureReadById.set(entry.id, readAuthority)
     const isCurrent = () => sessionEpoch === epoch && triageWatches.get(entry.id) === entry &&
-      detailWriteGeneration(entry.id) === generation
+      detailWriteGeneration(entry.id) === generation && latestCaptureReadById.get(entry.id) === readAuthority
     try {
       const status = await readTriage(entry, options => captureApi.getStatus(entry.id, options))
       if (!isCurrent()) return
@@ -615,6 +618,7 @@ export const useCaptureStore = defineStore('capture', () => {
       if (isTriageTerminalStatus(status.status)) {
         let cached = false
         const detail = await readTriage(entry, options => fetchDetail(entry.id, {
+          readAuthority,
           forceRefresh: true,
           recordError: false,
           showToast: false,
@@ -1173,7 +1177,7 @@ export const useCaptureStore = defineStore('capture', () => {
     stopTriagePolling()
     triagePollingPaused.value = false
     latestDetailWriteGenerationById.clear()
-    latestDetailReadById.clear()
+    latestCaptureReadById.clear()
     latestSummaryGenerationById.clear()
     sessionEpoch += 1
   }

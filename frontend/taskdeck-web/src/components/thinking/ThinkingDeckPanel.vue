@@ -103,7 +103,7 @@ function reload() { confirmReload.value = false; void load() }
         <span role="status">{{ dirty ? 'Unsaved thinking' : revision ? 'Thinking saved' : 'No layers yet' }}</span>
         <button v-if="canWrite" type="button" class="save-button" :disabled="!dirty || saving || promoting || conflict || answering" @click="save">{{ saving ? 'Saving…' : 'Save thinking' }}</button>
       </footer>
-      <CardDependencies :board-id="boardId" :card-id="cardId" @busy="dependenciesBusy = $event" />
+      <CardDependencies :board-id="boardId" :card-id="cardId" :can-write="canWrite" @busy="dependenciesBusy = $event" />
     </template>
   </section>
 </template>

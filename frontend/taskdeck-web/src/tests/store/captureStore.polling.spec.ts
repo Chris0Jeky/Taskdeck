@@ -19,8 +19,9 @@ const status = (id: string, value: CaptureItem['status'] = 'Triaging'): CaptureT
 })
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(r => { resolve = r })
-  return { promise, resolve }
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
 }
 
 describe('ordinary Inbox triage status polling', () => {
@@ -100,6 +101,116 @@ describe('ordinary Inbox triage status polling', () => {
     await vi.advanceTimersByTimeAsync(2000)
     expect(store.triagePollingItemIds.has('A')).toBe(true)
     expect(counts).not.toHaveBeenCalled()
+  })
+
+  it('rejects older foreground detail after a newer nonterminal status observation', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A', 'New')]
+    store.detailById.A = detail('A', 'New')
+    const old = deferred<CaptureItem>()
+    const outcome = vi.fn()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(old.promise)
+    const foreground = store.fetchDetail('A', { forceRefresh: true, onCacheOutcome: outcome })
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(store.detailById.A?.status).toBe('Triaging')
+    old.resolve({ ...detail('A', 'New'), rawText: 'obsolete detail' })
+    await foreground
+    expect(outcome).toHaveBeenCalledWith('superseded')
+    expect(store.detailById.A?.status).toBe('Triaging')
+    expect(store.detailById.A?.rawText).toBe('private source')
+    expect(store.items[0]?.status).toBe('Triaging')
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+  })
+
+  it.each(['Triaging', 'Failed'] as const)('rejects delayed %s status after newer terminal foreground detail', async pollStatus => {
+    const store = useCaptureStore()
+    store.items = [detail('A')]
+    store.detailById.A = detail('A')
+    const old = deferred<CaptureTriageStatus>()
+    vi.mocked(captureApi.getStatus).mockReturnValueOnce(old.promise)
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    await store.fetchDetail('A', { forceRefresh: true })
+    old.resolve(status('A', pollStatus))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(store.detailById.A?.status).toBe('ProposalCreated')
+    expect(store.items[0]?.status).toBe('ProposalCreated')
+    expect(captureApi.getItem).toHaveBeenCalledTimes(1)
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    expect(counts).not.toHaveBeenCalled()
+  })
+
+  it('retains the newer foreground error instead of accepting an older pending status', async () => {
+    const store = useCaptureStore()
+    store.items = [detail('A', 'New')]
+    store.detailById.A = detail('A', 'New')
+    const old = deferred<CaptureTriageStatus>()
+    vi.mocked(captureApi.getStatus).mockReturnValueOnce(old.promise)
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce(new Error('foreground failed'))
+    await expect(store.fetchDetail('A', { forceRefresh: true })).rejects.toThrow('foreground failed')
+    const foregroundError = store.detailError
+    expect(foregroundError).toBeTruthy()
+    old.resolve(status('A'))
+    await vi.advanceTimersByTimeAsync(1)
+    expect(store.detailById.A?.status).toBe('New')
+    expect(store.items[0]?.status).toBe('New')
+    expect(store.detailError).toBe(foregroundError)
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(store.detailById.A?.status).toBe('Triaging')
+    expect(store.detailError).toBe(foregroundError)
+  })
+
+  it.each([401, 403, 500])('does not apply superseded status failure %s after fresh foreground detail', async code => {
+    const store = useCaptureStore()
+    const old = deferred<CaptureTriageStatus>()
+    vi.mocked(captureApi.getStatus).mockReturnValueOnce(old.promise)
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    await store.fetchDetail('A', { forceRefresh: true })
+    old.reject({ response: { status: code } })
+    await vi.advanceTimersByTimeAsync(1)
+    expect(store.triagePollingPaused).toBe(false)
+    expect(store.triagePollingProblems.A).toBeUndefined()
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    expect(store.detailById.A?.status).toBe('ProposalCreated')
+  })
+
+  it('does not revive an older detail response when its superseding status read times out', async () => {
+    const store = useCaptureStore()
+    store.detailById.A = detail('A')
+    const old = deferred<CaptureItem>()
+    const outcome = vi.fn()
+    vi.mocked(captureApi.getItem).mockReturnValueOnce(old.promise)
+    const foreground = store.fetchDetail('A', { forceRefresh: true, onCacheOutcome: outcome })
+    vi.mocked(captureApi.getStatus).mockReturnValueOnce(deferred<CaptureTriageStatus>().promise)
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(12_000)
+    old.resolve(detail('A', 'New'))
+    await foreground
+    expect(outcome).toHaveBeenCalledWith('superseded')
+    expect(store.detailById.A?.status).toBe('Triaging')
+    expect(store.triagePollingProblems.A).toBe('retrying')
+    expect(store.loadingDetail).toBe(false)
+  })
+
+  it('keeps terminal hydration failures visible and completes only after a fresh successful retry', async () => {
+    const store = useCaptureStore()
+    vi.mocked(captureApi.getStatus).mockResolvedValue(status('A', 'ProposalCreated'))
+    vi.mocked(captureApi.getItem).mockRejectedValueOnce({ response: { status: 500 } })
+    store.pollTriageCompletion('A')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(store.triagePollingProblems.A).toBe('retrying')
+    expect(store.triagePollingItemIds.has('A')).toBe(true)
+    expect(counts).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(store.detailById.A?.status).toBe('ProposalCreated')
+    expect(store.triagePollingProblems.A).toBeUndefined()
+    expect(store.triagePollingItemIds.size).toBe(0)
+    expect(counts).toHaveBeenCalledTimes(1)
   })
 
   it('rejects older foreground detail after terminal hydration retires its watch', async () => {

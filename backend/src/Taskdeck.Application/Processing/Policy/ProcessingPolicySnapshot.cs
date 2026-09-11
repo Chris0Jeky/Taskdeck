@@ -11,14 +11,15 @@ namespace Taskdeck.Application.Processing.Policy;
 
 /// <summary>
 /// The immutable constraints in force when a processing job is created.
-/// CF-10 will produce snapshots; CF-03 job persistence will retain only this snapshot's digest.
+/// CF-10 will produce snapshots; CF-03 job persistence will retain the canonical snapshot (or
+/// equivalent immutable fields) beside this snapshot's digest.
 /// </summary>
 public sealed class ProcessingPolicySnapshot
 {
     public const int SchemaVersion = 1;
     public const int MaxProcessorIdLength = 120;
 
-    private static readonly Regex ProcessorIdPattern = new("^[a-z0-9]+(?:[._-][a-z0-9]+)*$", RegexOptions.Compiled);
+    private static readonly Regex ProcessorIdPattern = new("\\A[a-z0-9]+(?:[._-][a-z0-9]+)*\\z", RegexOptions.Compiled);
 
     public ProcessingPolicySnapshot(
         ProcessingEgressClass egressClass,
@@ -91,7 +92,7 @@ public sealed class ProcessingPolicySnapshot
 /// </summary>
 public sealed class ProcessingCostCeiling
 {
-    private static readonly Regex CurrencyPattern = new("^[A-Z]{3}$", RegexOptions.Compiled);
+    private static readonly Regex CurrencyPattern = new("\\A[A-Z]{3}\\z", RegexOptions.Compiled);
 
     public ProcessingCostCeiling(decimal amount, string currency)
     {
