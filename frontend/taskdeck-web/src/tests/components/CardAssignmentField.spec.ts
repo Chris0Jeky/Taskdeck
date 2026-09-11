@@ -205,6 +205,16 @@ describe('CardAssignmentField', () => {
       // The stale promise that the shown assignees are current must be gone.
       expect(wrapper.text()).not.toContain('the current assignees stay readable')
       expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+      /*
+       * The third route to a stranded draft: a failed refresh sets needsRefresh,
+       * which used to disable Clear and Cancel too. If read access is gone for
+       * good, or the network stays down, that leaves the host permanently dirty
+       * with no way out but discarding or reopening the whole editor.
+       */
+      const cancel = button(wrapper, 'Cancel assignment changes')
+      expect(cancel.attributes('disabled')).toBeUndefined()
+      await cancel.trigger('click'); await flushPromises()
+      expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([false])
     })
 
     it('unlocks only when the parent reports write permission again', async () => {

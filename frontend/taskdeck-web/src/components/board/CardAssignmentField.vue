@@ -42,7 +42,7 @@ const permissionLost = computed(() => saveFailure.value === 'permission')
 const error = computed(() => {
   // The sticky permission message must not swallow a read that failed AFTER it,
   // nor keep promising readable assignees once the refresh stopped confirming them.
-  if (permissionLost.value && loadFailed.value) return 'Your edit permission was revoked, so this assignment save was refused, and the latest refresh also failed — the assignees shown may be out of date. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft is kept; refresh again to confirm the current assignees.'
+  if (permissionLost.value && loadFailed.value) return 'Your edit permission was revoked, so this assignment save was refused, and the latest refresh also failed — the assignees shown may be out of date. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft is kept and you can still clear or cancel it; refresh again to confirm the current assignees.'
   if (permissionLost.value) return 'Your edit permission was revoked, so this assignment save was refused. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft and the current assignees stay readable, and Clear and Cancel still work.'
   if (loadFailed.value) return 'Could not load current participants. Your draft is kept.'
   if (saveFailure.value === 'conflict') return 'The card changed. Refresh current assignments, review your kept draft, then save again.'
@@ -60,20 +60,22 @@ const dirty = computed(() => [...selected.value].sort().join() !== [...baseline.
  * `draftLocked`— gates Clear and Cancel, which only edit the local draft.
  *
  * Why `draftLocked` is not just `busy`: discarding a draft is a local action, so
- * a revoked permission must never strand one. Both of the ways that used to
- * happen are closed here. Folding the permission lock into one gate killed
- * Cancel directly; and when the board refetch confirms the downgrade it turns
- * `readOnly` true, which would take Clear and Cancel away through `busy` — the
- * same stranded draft by the other route. The host reads `dirty-change`, so a
- * field stuck dirty keeps the card modal's own save and archive disabled and
- * raises a discard prompt on every close path, for the life of the mount. While
- * `permissionLost` holds, `readOnly` alone therefore stops blocking the
- * draft-side controls; every other reason still does, and Save disappears
- * outright because the board does say this field is read-only.
+ * a revoked permission must never strand one. The host reads `dirty-change`, so
+ * a field stuck dirty keeps the card modal's own save and archive disabled and
+ * raises a discard prompt on every close path, for the life of the mount. There
+ * were three routes into that, all closed here — folding the permission lock
+ * into a single gate killed Cancel directly; the board refetch confirming the
+ * downgrade turns `readOnly` true; and a Refresh that then fails (access fully
+ * revoked, or the network still down) sets `needsRefresh`. So while
+ * `permissionLost` holds, neither `readOnly` nor `needsRefresh` blocks the
+ * draft-side controls. What still blocks them is only what makes discarding
+ * meaningless or unsafe: an archived card, an in-flight read or write, or a host
+ * that disabled the field. Save disappears outright once the board says
+ * read-only, because that one IS a write.
  */
 const busy = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value)
 const locked = computed(() => busy.value || permissionLost.value)
-const draftLocked = computed(() => archived.value || props.disabled || loading.value || saving.value || needsRefresh.value || (props.readOnly && !permissionLost.value))
+const draftLocked = computed(() => archived.value || props.disabled || loading.value || saving.value || (!permissionLost.value && (props.readOnly || needsRefresh.value)))
 watch(dirty, value => emit('dirty-change', value))
 /*
  * A submitted PUT cannot be recalled. The host editor needs the in-flight state
