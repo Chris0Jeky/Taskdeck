@@ -20,8 +20,18 @@ const CHANGE_FAILURE = 'The card state could not be confirmed. Refresh before tr
  * "false": Vue casts an absent Boolean prop to `false` unless a default is
  * declared, which would have told every existing caller its card is active.
  */
-const props = withDefaults(defineProps<{ card: Card; disabled?: boolean; archived?: boolean }>(), {
+/*
+ * `canWrite` is the same kind of optional override for this control's own board-permission
+ * read (#3028). A host that has already resolved the caller's write permission server-side —
+ * `CardModal`, whose card editor asks once for all four of its write gates — passes the
+ * answer, so a board payload that omits the optional `canWrite` field no longer reads as "no"
+ * here while the editor's type selector says yes. Hosts that have not resolved it omit the
+ * prop and keep the payload-derived answer; the `undefined` default is what keeps "omitted"
+ * distinguishable from "false", exactly as for `archived` above.
+ */
+const props = withDefaults(defineProps<{ card: Card; disabled?: boolean; archived?: boolean; canWrite?: boolean }>(), {
   archived: undefined,
+  canWrite: undefined,
 })
 const emit = defineEmits<{ changed: []; refresh: [] }>()
 const boardStore = useBoardStore()
@@ -36,8 +46,8 @@ const dialogRecoveryButton = ref<HTMLButtonElement | null>(null)
 const pageRecoveryButton = ref<HTMLButtonElement | null>(null)
 const archived = computed(() => props.archived ?? props.card.isArchived === true)
 const confirming = computed(() => preview.value !== null)
-const allowed = computed(() => boardStore.currentBoard?.id === props.card.boardId
-  && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived)
+const allowed = computed(() => props.canWrite ?? (boardStore.currentBoard?.id === props.card.boardId
+  && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived))
 
 // The control that owns the failure is the one that must receive focus: while the
 // confirmation is open that is the in-dialog Refresh, so recovery stays inside the

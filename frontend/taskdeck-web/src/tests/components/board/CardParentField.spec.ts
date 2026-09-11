@@ -16,8 +16,13 @@ const makeCard = (id: string, title = `Card ${id}`) =>
 
 const forbidden = () => ({ response: { status: 403 } })
 
-const mountField = (card: Card = makeCard('self')) =>
-  mount(CardParentField, { props: { card, modelValue: null } })
+/*
+ * `canWrite` is the host's resolved, server-authoritative answer (#3028). This field no
+ * longer derives one from the loaded board payload, so the default here is the writer case
+ * and a test that wants the read-only case says so explicitly.
+ */
+const mountField = (card: Card = makeCard('self'), canWrite = true) =>
+  mount(CardParentField, { props: { card, canWrite, modelValue: null } })
 
 /** A promise whose settlement this test controls, so request ordering is explicit. */
 function deferred<T>() {
@@ -41,6 +46,18 @@ describe('CardParentField', () => {
     expect(wrapper.get('select').attributes('disabled')).toBeUndefined()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Optional, on this board.')
+  })
+
+  // #3028. The board payload here omits `canWrite` entirely — a payload cached before the
+  // field existed — which this field used to read as "no". It now answers from the host's
+  // one server-authoritative read instead, so an authorized writer keeps the selector.
+  it('offers the selector on the host answer, not on what the loaded payload states', async () => {
+    useBoardStore().currentBoard = { id: 'b', isArchived: false, columns: [] } as unknown as BoardDetail
+    const wrapper = mountField(); await flushPromises()
+    expect(wrapper.get('select').attributes('disabled')).toBeUndefined()
+
+    const readOnly = mountField(makeCard('self'), false); await flushPromises()
+    expect(readOnly.get('select').attributes('disabled')).toBeDefined()
   })
 
   it('names revoked board access instead of offering a retry that cannot succeed', async () => {

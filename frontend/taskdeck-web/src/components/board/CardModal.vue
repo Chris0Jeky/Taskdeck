@@ -152,12 +152,16 @@ function acceptAssignments(saved: Card, previousVersion?: string) {
 }
 
 /*
- * #2952. The work-item type gate asks the server for the caller's board write
- * permission when the loaded board payload does not state it, instead of reading
- * an omitted optional field as "no". Viewer, archived board and archived card stay
- * read-only exactly as before, and the write itself remains server-authoritative.
+ * #2952, #3028. The editor's write gates ask the server for the caller's board write
+ * permission when the loaded board payload does not state it, instead of reading an
+ * omitted optional field as "no". ONE read answers all four — the type selector, the
+ * parent selector, the archive/restore control and the assignment field — because they
+ * ask the same question of the same board, and because an editor that enables one of
+ * them and disables the other three on the same payload is the defect itself. Viewer,
+ * archived board and archived card stay read-only exactly as before, no ownership is
+ * inferred on the client, and every write remains server-authoritative regardless.
  */
-const { canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown, refreshPermission: refreshTypePermission } =
+const { canWrite: boardCanWrite, canEditType, permissionChecking: typePermissionChecking, permissionUnknown: typePermissionUnknown, refreshPermission: refreshTypePermission } =
   useCardTypePermission({
     getBoardId: () => props.card.boardId,
     getIsOpen: () => props.isOpen,
@@ -471,12 +475,12 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
-        <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || cardIsArchived" />
+        <CardParentField v-model="parentCardId" :card="card" :can-write="boardCanWrite" :disabled="isSaving || cardIsArchived" />
         <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
-          :read-only="boardStore.currentBoard?.id !== card.boardId || boardStore.currentBoard?.canWrite !== true || !!boardStore.currentBoard?.isArchived || cardIsArchived"
+          :read-only="!boardCanWrite || cardIsArchived"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
           @saved="acceptAssignments" />
-        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :disabled="hasUnsavedChanges"
+        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :can-write="boardCanWrite" :disabled="hasUnsavedChanges"
           @changed="handleArchiveChanged" @refresh="refreshArchiveState" />
         <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}
