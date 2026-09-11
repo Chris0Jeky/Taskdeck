@@ -96,9 +96,9 @@ for (const theme of ['paper', 'legacy'] as const) {
     await assertOk(await request.post(`${API_BASE_URL}/boards/${boardId}/cards/${card.id}/restore`, {
       headers, data: { expectedUpdatedAt: archived.updatedAt },
     }), 'Restore connected task')
-    // A fresh current-card read, rather than the old board graph, re-enables editing.
-    await page.reload()
-    await page.getByRole('button', { name: 'Explore dependencies', exact: true }).click()
+    // A fresh current-card read, rather than the old board graph, re-enables editing - and
+    // Refresh dependencies performs that read in place, with no page or route reload (#2958).
+    await region.getByRole('button', { name: 'Refresh dependencies', exact: true }).click()
     await expect(region.getByRole('link', { name: prerequisite.title, exact: true })).toBeVisible()
     await expect(region.getByRole('button', { name: `Remove prerequisite ${prerequisite.title}`, exact: true })).toBeEnabled()
     expect(writes).toEqual([])

@@ -119,7 +119,9 @@ Choose **Explore dependencies** in a card's thinking space to see its prerequisi
 that depend on it. **Add prerequisite** and **Remove link** save explicit relationships immediately.
 The server rejects cycles, duplicate/self links and references outside the board. Read-only and archived
 boards retain read access; editing requires write permission on an active board. **Refresh dependencies**
-reloads current card status and board relationships. A failed save clears stale metadata and requires a
+reloads current card status and board relationships. It re-reads whether this card is still editable, so a
+restore or an access change made in another session takes effect in place, with no page reload; a failed
+refresh keeps the panel read-only and says so. A failed save clears stale metadata and requires a
 reload, including when a response may have been lost. Neither action changes task status, assignments,
 deadlines or the original thinking step. Use the normal review/approve/apply flow for automation.
 
