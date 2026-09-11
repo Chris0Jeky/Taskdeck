@@ -68,7 +68,7 @@ public class OperationHandlerRegistryTests
     public async Task ExecuteOperationAsync_ShouldReturnFailure_ForUnsupportedCardAction()
     {
         var operation = new ProposalOperationDto(
-            Guid.NewGuid(), Guid.NewGuid(), 0, "delete", "card", null,
+            Guid.NewGuid(), Guid.NewGuid(), 0, "unsupported", "card", null,
             """{"cardId":"some-id"}""", "key1", null);
 
         var result = await _registry.ExecuteOperationAsync(operation, default);

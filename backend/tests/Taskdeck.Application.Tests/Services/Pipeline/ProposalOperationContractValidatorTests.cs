@@ -39,11 +39,17 @@ public class ProposalOperationContractValidatorTests
     public async Task Lifecycle_RejectsStaleApprovalMissingTimestampAndMixedWrites_AndAcceptsCurrentVersion()
     {
         var boardId = Guid.NewGuid();
+        var board = new Board("Hierarchy");
+        boardId = board.Id;
         var card = new Card(boardId, Guid.NewGuid(), "Lifecycle validation");
         var unit = new Mock<IUnitOfWork>();
         var cards = new Mock<ICardRepository>();
         unit.Setup(u => u.Cards).Returns(cards.Object);
         cards.Setup(r => r.GetByIdAsync(card.Id, It.IsAny<CancellationToken>())).ReturnsAsync(card);
+        var boards = new Mock<IBoardRepository>();
+        unit.SetupGet(u => u.Boards).Returns(boards.Object);
+        boards.Setup(r => r.GetByIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(board);
+        cards.Setup(r => r.GetHierarchyByBoardIdAsync(boardId, It.IsAny<CancellationToken>())).ReturnsAsync(new[] { card });
         var valid = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id, expectedUpdatedAt = card.UpdatedAt });
         (await ProposalOperationContractValidator.ValidateAsync(unit.Object, boardId, [valid])).IsSuccess.Should().BeTrue();
         var missing = CreateOperation(0, "archive-lifecycle", card.Id, new { cardId = card.Id });

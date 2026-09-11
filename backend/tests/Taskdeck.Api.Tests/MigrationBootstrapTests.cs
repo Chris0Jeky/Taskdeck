@@ -25,6 +25,28 @@ public class MigrationBootstrapTests : IDisposable
     private readonly TaskdeckDbContext _context;
 
     [Fact]
+    public async Task ParentHierarchyMigration_DefaultsOldCardsToNull_AndDownPreservesRows()
+    {
+        var migrations = _context.Database.GetMigrations().ToList();
+        var index = migrations.FindIndex(name => name.EndsWith("_AddCardParentHierarchy"));
+        index.Should().BeGreaterThan(0);
+        var migrator = _context.GetService<IMigrator>();
+        await migrator.MigrateAsync(migrations[index - 1]);
+        var user = new User("migration-parent", "migration-parent@example.com", "hash");
+        var board = new Board("Parents", ownerId: user.Id);
+        var column = new Column(board.Id, "Original", 0);
+        _context.AddRange(user, board, column);
+        await _context.SaveChangesAsync();
+        var id = Guid.NewGuid().ToString().ToUpperInvariant();
+        await _context.Database.ExecuteSqlInterpolatedAsync($"INSERT INTO Cards (Id, BoardId, ColumnId, Title, Description, IsBlocked, IsArchived, Position, CreatedAt, UpdatedAt, WorkItemType) VALUES ({id}, {board.Id}, {column.Id}, 'Legacy parent', 'Keep', 1, 1, 3, '2026-01-01', '2026-01-01', 2)");
+        await migrator.MigrateAsync(migrations[index]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM Cards WHERE ParentCardId IS NULL AND Title='Legacy parent'").SingleAsync()).Should().Be(1);
+        await migrator.MigrateAsync(migrations[index - 1]);
+        (await _context.Database.SqlQueryRaw<int>("SELECT Position AS Value FROM Cards WHERE Title='Legacy parent'").SingleAsync()).Should().Be(3);
+        (await _context.Database.SqlQueryRaw<int>("SELECT WorkItemType AS Value FROM Cards WHERE Title='Legacy parent'").SingleAsync()).Should().Be(2);
+    }
+
+    [Fact]
     public async Task WorkItemTypeMigration_UpDefaultsOldCardsToTask_AndDownPreservesIdentity()
     {
         var migrations = _context.Database.GetMigrations().ToList();

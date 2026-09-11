@@ -30,8 +30,8 @@ public static class ProcessorManifestValidator
     public const int MaxHostLength = 255;
     public const int MaxSchemaIdentifierLength = 200;
 
-    private static readonly Regex IdPattern = new("^[a-z0-9]+(?:[._-][a-z0-9]+)*$", RegexOptions.Compiled);
-    private static readonly Regex CurrencyPattern = new("^[A-Z]{3}$", RegexOptions.Compiled);
+    private static readonly Regex IdPattern = new(@"\A[a-z0-9]+(?:[._-][a-z0-9]+)*\z", RegexOptions.Compiled);
+    private static readonly Regex CurrencyPattern = new(@"\A[A-Z]{3}\z", RegexOptions.Compiled);
     private static readonly HashSet<string> DataClasses = new(StringComparer.Ordinal)
     {
         "text", "audio", "image", "document", "metadata"

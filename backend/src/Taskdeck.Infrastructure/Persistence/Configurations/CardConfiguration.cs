@@ -15,6 +15,8 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
         builder.Property(c => c.Id)
             .ValueGeneratedNever();
 
+        builder.Property(c => c.ParentCardId).IsRequired(false);
+
         builder.Property(c => c.Title)
             .IsRequired()
             .HasMaxLength(200);

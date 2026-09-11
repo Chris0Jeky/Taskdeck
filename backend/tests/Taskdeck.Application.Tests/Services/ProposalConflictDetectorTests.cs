@@ -206,6 +206,43 @@ public class ProposalConflictDetectorTests
 
     #region Warn: WIP Limit
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task DetectConflictsAsync_ArchivedCardsDoNotConsumeProjectedWip(int activeCards)
+    {
+        var columnId = Guid.NewGuid();
+        var cardId = Guid.NewGuid();
+        var card = CreateCard(cardId);
+        var proposal = CreateProposalWithMoveOp(_userId, _boardId, cardId, columnId, riskLevel: RiskLevel.High);
+        _proposalRepoMock.Setup(repository => repository.GetByIdAsync(proposal.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(proposal);
+        var column = new Column(_boardId, "In Progress", 1, wipLimit: 1);
+        AddCardsToColumn(column, activeCards + 1);
+        column.Cards.First().Archive();
+        _columnRepoMock.Setup(repository => repository.GetByIdWithCardsAsync(columnId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(column);
+        _cardRepoMock.Setup(repository => repository.GetByIdAsync(cardId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(card);
+        SetupEmptySecondaryChecks(proposal, cardId);
+
+        var result = await _detector.DetectConflictsAsync(proposal.Id, _userId);
+
+        result.IsSuccess.Should().BeTrue();
+        if (activeCards == 0)
+        {
+            result.Value.Should().NotContain(row => row.Key == "wip-limit");
+            result.Value.Should().Contain(row => row.Key == "capacity" && row.Tone == ConflictTone.Ok
+                && row.Value.Contains("(1/1)", StringComparison.Ordinal));
+        }
+        else
+        {
+            result.Value.Should().Contain(row => row.Key == "wip-limit" && row.Tone == ConflictTone.Warn
+                && row.Value.Contains("(2/1)", StringComparison.Ordinal));
+            result.Value.Should().NotContain(row => row.Key == "capacity");
+        }
+    }
+
     [Fact]
     public async Task DetectConflictsAsync_ColumnAtWipLimit_ReturnsWipWarning()
     {

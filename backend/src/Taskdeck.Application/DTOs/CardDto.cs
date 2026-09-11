@@ -16,10 +16,14 @@ public record CardDto(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
     bool IsArchived = false,
-    string WorkItemType = "Task"
+    string WorkItemType = "Task",
+    Guid? ParentCardId = null
 );
 
-public record CardLifecycleDto(DateTimeOffset? ExpectedUpdatedAt);
+public record CardLifecycleDto(DateTimeOffset? ExpectedUpdatedAt, string? ExpectedChildrenFingerprint = null);
+
+public record CardDetachChildDto(Guid Id, Guid? ParentCardId, string Title, bool IsArchived, DateTimeOffset UpdatedAt);
+public record CardDetachPreviewDto(Guid CardId, DateTimeOffset ExpectedUpdatedAt, string ExpectedChildrenFingerprint, IReadOnlyList<CardDetachChildDto> Children);
 
 public record CreateCardDto(
     Guid BoardId,
@@ -28,7 +32,8 @@ public record CreateCardDto(
     string? Description,
     DateTimeOffset? DueDate,
     List<Guid>? LabelIds,
-    string? WorkItemType = null
+    string? WorkItemType = null,
+    Guid? ParentCardId = null
 );
 
 public record UpdateCardDto(
@@ -40,7 +45,9 @@ public record UpdateCardDto(
     List<Guid>? LabelIds,
     DateTimeOffset? ExpectedUpdatedAt = null,
     bool ClearDueDate = false,
-    string? WorkItemType = null
+    string? WorkItemType = null,
+    Guid? ParentCardId = null,
+    bool ClearParent = false
 );
 
 public record MoveCardDto(
