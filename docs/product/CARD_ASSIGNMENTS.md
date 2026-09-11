@@ -14,7 +14,12 @@ addresses, invitations, or a global user directory.
 
 The shared Paper inspector and Legacy card editor show the current assignees and
 offer a multiple-selection control, Clear, Cancel, and Save assignments. Other card
-drafts survive assignment saves. An uncertain save or version conflict keeps the
+drafts survive assignment saves. A submitted set replacement cannot be recalled, so
+while one is in flight the editor never offers a discard: closing, Escape, the
+backdrop, the header close, switching card and leaving the board all answer that the
+change was already sent and must be waited out, and an open discard confirmation is
+withdrawn. Settlement restores every control and shows either the committed assignees
+or the failure with the kept draft. An uncertain save or version conflict keeps the
 selection, requires a current-state refresh, and leaves the retry explicit. Removed
 participants remain visible in the draft so the user can remove them. Archived
 cards and boards are read-only; historical assignments remain visible.
@@ -115,3 +120,6 @@ an assignment-aware importer.
 - `MigrationBootstrapTests.AssignmentMigrationStartsEmptyAndDownPreservesCardsAndHierarchy`.
 - Frontend `CardAssignmentField.spec.ts`, `useCardModal.spec.ts`,
   `ExportImportView.spec.ts`; real-API Chromium `card-assignments.spec.ts`.
+- In-flight save honesty: `CardModalAssignmentSave.spec.ts` (Paper and Legacy,
+  delayed success and failure, Escape/backdrop/header/confirmation) and the
+  card-switch, route-leave and unload refusals in `PaperBoardView.spec.ts`.

@@ -42,6 +42,11 @@ The migration's developer rollback drops type metadata while preserving cards; a
 defaults those cards to Task, so former Epic/Spike distinctions are lost. Back up the database
 before upgrading; this rollback behavior does not establish support for application downgrades.
 
+`20260910165817_AddCardArchiveLifecycle` adds `IsArchived` with false for existing cards. Its Down
+migration drops archive state; reapplying the migration makes every retained card active. This is
+schema rollback with metadata loss, not a supported application downgrade or data recovery.
+Preserve a compatible backup/export before a developer rollback.
+
 Private audio answers add `StoredBlobs`, `StoredBlobChunks`, `StoredBlobReferences`, `Representations`,
 `RepresentationSupersessions` and `ThinkingAudioAnswers`. Three additive migrations introduce these
 tables; existing audio/artefact bytes and legacy transcript rows are not rewritten or backfilled.
