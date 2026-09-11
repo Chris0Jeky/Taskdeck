@@ -80,3 +80,95 @@ for (const theme of ['paper', 'legacy'] as const) {
     await page.screenshot({ path: testInfo.outputPath(`${theme}-triages-recovered.png`), fullPage: true })
   })
 }
+
+for (const delayedRead of ['detail', 'status'] as const) {
+  test(`legacy keeps the newer observation when an older ${delayedRead} response arrives last`, async ({ page, request }, testInfo) => {
+    await registerAndAttachSession(page, request, `inbox-order-${delayedRead}`, { theme: 'legacy' })
+    await page.clock.install()
+    const id = '11111111-1111-4111-8111-111111111111'
+    const path = apiRoutePath(API_BASE_URL, 'capture/items')
+    let state = 'New'
+    let holdDetail = false
+    let complete = false
+    let statusReads = 0
+    let detailReads = 0
+    const writes: string[] = []
+    let release!: () => void
+    const delayed = new Promise<void>(resolve => { release = resolve })
+    const summary = (status = state) => ({
+      id, userId: 'synthetic-owner', boardId: null, status, source: 'Typed',
+      textExcerpt: 'Synthetic ordering capture', createdAt: '2026-09-10T10:00:00Z',
+      processedAt: null, errorMessage: null, disposition: null, canEditSuggestion: status === 'New',
+    })
+    await page.route(url => url.origin === API_ORIGIN && url.pathname.startsWith(path), async route => {
+      const url = new URL(route.request().url())
+      const action = url.pathname.slice(path.length + 1).split('/')[1]
+      const json = (value: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(value) })
+      if (route.request().method() === 'POST') {
+        writes.push(action ?? '')
+        expect(action).toBe('triage')
+        state = 'Triaging'
+        return json({ id, status: state, alreadyTriaging: false })
+      }
+      if (url.pathname === path) return json([summary()])
+      if (action === 'status') {
+        statusReads++
+        if (delayedRead === 'status') await delayed
+        return json({ id, status: complete ? 'ProposalCreated' : 'Triaging', processedAt: null, errorMessage: null, disposition: null, canEditSuggestion: false })
+      }
+      detailReads++
+      if (holdDetail) {
+        await delayed
+        // An older server observation before another attempt started.
+        return json({ ...summary('Failed'), rawText: 'Obsolete full detail', retryCount: 0, provenance: null })
+      }
+      return json({ ...summary(), rawText: 'Current private capture source', retryCount: 0, provenance: null })
+    })
+    await page.goto('/workspace/inbox')
+    const row = page.getByTestId('inbox-item').filter({ hasText: 'Synthetic ordering capture' })
+    await row.click()
+    const panel = page.getByRole('region', { name: 'Capture item detail' })
+    await expect(panel).toContainText('Current private capture source')
+    await page.getByRole('button', { name: 'Start Triage', exact: true }).click()
+    await expect.poll(() => writes.length).toBe(1)
+    const initialDetailReads = detailReads
+    if (delayedRead === 'detail') {
+      holdDetail = true
+      await page.getByRole('button', { name: 'Refresh Detail', exact: true }).click()
+      await expect.poll(() => detailReads).toBe(initialDetailReads + 1)
+      await page.clock.runFor(2_001)
+      await expect.poll(() => statusReads).toBe(1)
+      await expect(row).toContainText('Triaging')
+    } else {
+      await page.clock.runFor(2_001)
+      await expect.poll(() => statusReads).toBe(1)
+      state = 'ProposalCreated'
+      await page.getByRole('button', { name: 'Refresh Detail', exact: true }).click()
+      await expect(row).toContainText('Ready for review')
+    }
+    const lastResponse = page.waitForResponse(response => {
+      const url = new URL(response.url())
+      return url.pathname === `${path}/${id}${delayedRead === 'status' ? '/status' : ''}`
+    })
+    release()
+    await (await lastResponse).finished()
+    await page.clock.runFor(1)
+    await expect(page.getByRole('button', { name: 'Refresh Detail', exact: true })).toBeEnabled()
+    const expectedStatus = delayedRead === 'detail' ? 'Triaging' : 'Ready for review'
+    await expect(row).toContainText(expectedStatus)
+    await expect(panel.locator('.td-inbox-detail__meta')).toContainText(expectedStatus)
+    await expect(panel).toContainText('Current private capture source')
+    await expect(panel).not.toContainText('Obsolete full detail')
+    await expect(page.getByTestId('inbox-polling-notice')).toContainText('Waiting for triage')
+    expect(writes).toEqual(['triage'])
+    await page.screenshot({ path: testInfo.outputPath(`legacy-delayed-${delayedRead}.png`), fullPage: true, animations: 'disabled' })
+    complete = true
+    holdDetail = false
+    state = 'ProposalCreated'
+    await page.clock.runFor(4_001)
+    await expect(page.getByTestId('inbox-polling-notice')).toHaveCount(0)
+    await expect(row).toContainText('Ready for review')
+    await expect(panel).toContainText('Current private capture source')
+    expect(writes).toEqual(['triage'])
+  })
+}
