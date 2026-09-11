@@ -1,6 +1,6 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-10
+Last Updated: 2026-09-11
 
 Card archive/restore (#2920): explicit, version-checked lifecycle actions preserve card identity,
 placement, labels, block state and history. Active surfaces exclude archived cards; Paper and
@@ -9,8 +9,12 @@ limit. Archive/restore invalidates dependency projections atomically, preventing
 graph saves from deleting retained edges. Board JSON and scoped account exports include archive
 state. Legacy `card/archive`, MCP `archive_card` and Chat archive proposals continue to mean Block;
 new lifecycle proposals remain review-first. Concurrent stale card writes now return 409 even
-when an older client omits a version; refresh before retrying. Hierarchy is still #2087, with the
-accepted maximum of three links/four levels. Cumulative multi-card restore preview remains #2926.
+when an older client omits a version; refresh before retrying. Hierarchy #2087 is delivered in PR
+#2965: one same-board parent, maximum three links/four levels, confirmed atomic direct-child detach
+on archive/delete (including archived children), and no reattachment on restore. See
+[card parents](product/CARD_HIERARCHY.md). Cumulative multi-card restore preview remains #2926.
+
+Work-model and Review deliveries, verified 2026-09-11 against live GitHub. Merged: Task/Epic/Spike card work-item types (#2949, `7695211a0`), same-board hierarchy (#2965, `86c6f1bdf`), true card archive and restore (#2932, `19dc823c3`), active-card WIP and import counts excluding archived cards (#2951, `02abedfe9`), archived cards excluded from new workspace analysis (#2957, `93ca1cd21`), Inbox captures that keep updating through long triage runs (#2945, `fad49351f`), and Review/Apply legibility (#2942, `e9316fd82`; #2948, `be0e1349f`). Three more landed on 2026-09-11 as their own delivery records: archived-card dependency controls read-only (#2955, `34d1a4c8f`), Inbox status polls ordered with detail refreshes (#2959, `b58c1da4b`), and Review warnings tied to retained rows with truthful recovery (#2961, `401fd648c`). **Assignment #2240 is NOT shipped.** Its PR #2977 is open and parked on HIGH #2981 (an assignment discard can misrepresent an in-flight save); #2240 sits in v0.4 under the 2026-09-06 ruling, so nothing about multiple card assignments or explicit import mapping is delivered. #2930 remains open on its delayed-pin announcement residual. What this paragraph verifies is merge-level: each PR shows a merge commit and the issue state was read live. The per-PR behavioural claims and their test counts were **not** re-run by this pass and remain the authoring lane's record on each PR.
 
 Review retained health (#2915): stale/refused disclosures return when completed filtering, snooze expiry or a hash target reveals retained rows after a failed scope change. Restoring an older disclosure preserves newer warnings; only a successful read clears them. Scope changes retire the prior recovery announcement. Real-Vue regressions cover these transitions and the intentional empty same-scope warning; 197 focused tests and a Chromium journey pass. Browser evidence uses a synthetic list response, with expected missing-detail 404s; real screen-reader output is not verified.
 
