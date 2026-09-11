@@ -742,6 +742,11 @@ public static class ProposalOperationContractValidator
         /// contributes nothing. <c>delete</c> is deliberately not projected: its cascade to
         /// child cards is not modelled here, and an unprojected delete can only leave the
         /// restore check stricter than Apply, never looser.
+        /// The two lifecycle deltas are latent today, because
+        /// <see cref="ProposalHierarchyValidator"/> admits at most one hierarchy-affecting
+        /// operation per proposal and so no lifecycle operation can precede a restore. They are
+        /// carried anyway so that relaxing that gate - the batch-restore direction #2926 asks to
+        /// keep open - does not silently reintroduce the cumulative-WIP hole.
         /// </summary>
         public async Task ProjectColumnOccupancyAsync(
             ProposalOperationDto operation,
@@ -802,8 +807,8 @@ public static class ProposalOperationContractValidator
         /// The restore contract measured against the board Apply will see at this point in the
         /// proposal. With no preceding occupancy change this is exactly
         /// <see cref="Taskdeck.Domain.Entities.Column.WouldExceedWipLimitIfAdded"/>; the delta is
-        /// what stops two restores into a WIP-1 column from both passing preview and then failing
-        /// at execute with a full-proposal rollback (#2926).
+        /// what stops an operation that takes the last slot first from letting the restore pass
+        /// preview and then fail at execute with a full-proposal rollback (#2926).
         /// </summary>
         private bool WouldProjectedRestoreExceedWipLimit(Taskdeck.Domain.Entities.Column column)
         {
