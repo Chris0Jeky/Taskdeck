@@ -470,7 +470,7 @@ describe('PaperBoardView', () => {
 
     expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
     expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
     expect(wrapper.get('[role="dialog"]').text()).toContain('cannot be discarded or cancelled')
 
     // Settling withdraws the notice and restores the ordinary confirmation.
@@ -492,7 +492,7 @@ describe('PaperBoardView', () => {
     await nextTick()
     expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
     expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
 
     // Once the save settles the guard falls back to the discard confirmation.
     await settleSave(wrapper)
@@ -508,14 +508,14 @@ describe('PaperBoardView', () => {
 
     const navigation = routeLeaveGuard!()
     await nextTick()
-    expect(wrapper.get('[data-testid="card-switch-confirm"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(true)
 
     wrapper.findComponent({ name: 'CardModal' }).vm.$emit('saving-change', true)
     await expect(navigation).resolves.toBe(false)
     await nextTick()
 
     expect(wrapper.find('[data-testid="card-switch-confirm"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="card-save-pending-dismiss"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="paper-card-modal"]').text()).toContain('A')
   })
 
