@@ -783,12 +783,7 @@ export const findPersistedStateFindings = (source, path) =>
   findCatchBlockFindings(source, path, 'persisted-unknown-failure')
 
 async function listCsharpFiles(directory) {
-  let entries
-  try {
-    entries = await readdir(directory, { withFileTypes: true })
-  } catch {
-    return []
-  }
+  const entries = await readdir(directory, { withFileTypes: true })
   const files = []
   for (const entry of entries) {
     const full = join(directory, entry.name)
@@ -801,7 +796,22 @@ async function listCsharpFiles(directory) {
 export async function scanTree(root = repoRoot) {
   const findings = []
 
-  for (const file of await listCsharpFiles(resolve(root, MCP_DIRECTORY))) {
+  let mcpFiles
+  try {
+    mcpFiles = await listCsharpFiles(resolve(root, MCP_DIRECTORY))
+  } catch {
+    // A deleted, moved or unreadable MCP surface must not look clean merely because
+    // the file walker could not enumerate it.
+    findings.push({
+      rule: 'mcp-surface-unreadable',
+      path: MCP_DIRECTORY,
+      line: 0,
+      message: 'guarded MCP directory could not be read; refusing to treat it as empty',
+    })
+    mcpFiles = []
+  }
+
+  for (const file of mcpFiles) {
     const relativePath = relative(root, file).split(sep).join('/')
     const source = await readFile(file, 'utf8')
     findings.push(...findMcpFindings(source, relativePath))
