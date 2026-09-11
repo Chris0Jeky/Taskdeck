@@ -1,6 +1,6 @@
 # Taskdeck Product Direction
 
-Last Updated: 2026-08-30
+Last Updated: 2026-09-11
 
 **Status: ACTIVE — the canonical current strategy document.**
 **Authority:** this file owns the product identity, direction, and release-theme ladder. The active
@@ -121,6 +121,26 @@ GitHub milestones mirror this ladder (milestone 4 = v0.3, 5 = v0.4 (renamed 2026
 no due dates). Git tags and releases are historical artifacts, never edited to make documentation agree.
 The wave map and dependency order for v0.4–v0.6 live on tracker CF-00 `#2254` and in
 `docs/architecture/CONTEXT_FABRIC.md`.
+
+### Work-model delivery implications (2026-09-11)
+
+**SHIPPED:** true card archive/restore, Task/Epic/Spike and same-board hierarchy now extend
+the existing Card identity. **COMMITTED:** three links/four levels, explicit assignee import
+mapping, and effort minutes displayed as hours/minutes. Assignments, estimates and richer
+typed links are not yet shipped. Delivery and proof boundaries are in the
+[product-trust reconciliation](../analysis/2026-09-11-product-trust-reconciliation.md).
+
+**PROVISIONAL execution recommendation within the accepted ladder:** finish pending-write
+receipt/discard correctness and existing delivery debt, then build the estimate/roll-up and
+typed-link verticals on the retained card model. This makes captured context more actionable
+without requiring Project/WorkItem identity migration. Validate combined lifecycle, permission,
+import and concurrent-write behavior before claiming a dependable work model.
+
+For v0.5, new capture and semantic producers can use these destination contracts once delivered;
+confidence and evidence selection still cannot authorize Apply. For v0.6, richer receipts support
+user control but do not satisfy delegated-authority evidence gates. Hosted registration, stages
+4-5, general restore, live-model usefulness and release go/no-go remain separate existing gates.
+The release-theme ladder and commercial direction are unchanged.
 
 ## 6. Direction guardrails (what this document does NOT change)
 
