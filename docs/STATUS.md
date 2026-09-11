@@ -1,6 +1,18 @@
 # Taskdeck Status (Source of Truth)
 
-Last Updated: 2026-09-11
+Last Updated: 2026-09-12
+
+Board import rejects conflicting assignee labels (#2980, PR #3014): the shared import validator now
+requires one consistent display label per source assignee key, so a payload that repeats a key with a
+different - including case-only or whitespace-only different - label fails on preview and on both Apply
+routes before any board, column, card, label or audit row is built, and an explicit "Me" or
+"Unassigned" mapping does not waive it. No trimming, case folding or name-to-identity matching is
+introduced, and the existing bounded-field, missing-mapping, unknown-key and importer-only target rules
+are unchanged. Evidence: 18 new Application tests (eight proven red against the pre-fix validator,
+each rejection asserting no repository Add, no SaveChanges, no commit and one rollback) plus 103
+passing export/import cases. These are mocked-repository application-boundary assertions, not a real
+SQLite proof. This is a bounded validator repair inside the import path; the wider #2240 assignment
+slice is untouched and its status is unchanged.
 
 Card archive/restore (#2920): explicit, version-checked lifecycle actions preserve card identity,
 placement, labels, block state and history. Active surfaces exclude archived cards; Paper and

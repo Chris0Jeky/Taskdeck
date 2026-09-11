@@ -101,6 +101,14 @@ reject missing mappings, unknown source keys and targets other than the importer
 or null, and revalidate the submitted payload atomically. Preview never authorizes
 an altered or now-invalid Apply payload.
 
+One source key carries exactly one display label. A payload that repeats a key with
+a different label - including a case-only or whitespace-only difference - is
+rejected by the shared validator before any board, column, card, label or audit row
+is built, on preview and on both Apply routes, and choosing "Me" or "Unassigned"
+does not waive it. Preview groups by key and shows the first label, so a mismatched
+repeat would otherwise be hidden. Labels are never trimmed, case-folded or
+normalized to resolve the ambiguity; correct the source file instead.
+
 ## Migration and rollback
 
 `AddCardAssignments` is additive. Existing cards have an empty assignment set;
