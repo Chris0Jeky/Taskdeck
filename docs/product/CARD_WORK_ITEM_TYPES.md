@@ -10,6 +10,10 @@ The shared Paper and Legacy card editor displays the type and lets a board write
 change it. Quick card creation still creates a Task; open the card to select Epic
 or Spike. Save uses the displayed card version. A failed save keeps the draft and
 shows recovery guidance. Archived cards and boards cannot accept type changes.
+When the loaded board payload does not state the caller's write permission - an older
+cached payload omits the optional field - the editor reads the board back from the
+server before offering the control, and offers an explicit permission refresh instead
+of a silently disabled selector when that read fails (#2952).
 Changing type retains the card ID, column, position, labels, block state and history.
 
 ## API and proposals

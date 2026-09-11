@@ -4,6 +4,7 @@ import { nextTick } from 'vue'
 import { setActivePinia, createPinia } from 'pinia'
 import CardModal from '../../components/board/CardModal.vue'
 import { cardsApi } from '../../api/cardsApi'
+import { boardsApi } from '../../api/boardsApi'
 import { useBoardStore } from '../../store/boardStore'
 import { useSessionStore } from '../../store/sessionStore'
 import type { Card, Label } from '../../types/board'
@@ -24,6 +25,10 @@ vi.mock('../../api/cardsApi', () => ({ cardsApi: {
   getParticipants: vi.fn().mockResolvedValue([]),
   previewDetach: vi.fn().mockResolvedValue({ cardId: 'card-1', expectedUpdatedAt: '2025-06-15T00:00:00Z', expectedChildrenFingerprint: 'v1:fixed', children: [] }),
 } }))
+
+// #2952: the work-item type gate reads the board back when the loaded payload does not
+// state the caller's write permission. Every other case in this file leaves it unused.
+vi.mock('../../api/boardsApi', () => ({ boardsApi: { getBoard: vi.fn() } }))
 
 vi.mock('../../store/boardStore', () => ({
   useBoardStore: vi.fn(),
@@ -92,6 +97,7 @@ describe('CardModal', () => {
     }
     mockSessionStore = { userId: 'user-1' }
 
+    vi.mocked(boardsApi.getBoard).mockReset()
     vi.mocked(useBoardStore).mockReturnValue(mockStore as any)
     vi.mocked(useSessionStore).mockReturnValue(mockSessionStore as any)
   })
@@ -121,6 +127,70 @@ describe('CardModal', () => {
     const selector = wrapper.get('#card-work-item-type').element as HTMLSelectElement
     expect(selector.value).toBe('Task')
     expect(selector.disabled).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  // #2952. A board payload cached before `canWrite` existed omits it; the contract in
+  // types/board.ts treats only an explicit false as read-only, so the gate asks the
+  // server rather than reading the silence as "no".
+  it('offers the type selector to a writer whose cached board payload omits canWrite', async () => {
+    mockStore.currentBoard = { id: card.boardId, isArchived: false }
+    vi.mocked(boardsApi.getBoard).mockResolvedValue({ id: card.boardId, canWrite: true, isArchived: false } as any)
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+
+    expect(wrapper.get('[data-testid="card-type-permission-checking"]').exists()).toBe(true)
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+
+    await flushPromises()
+
+    expect(boardsApi.getBoard).toHaveBeenCalledWith(card.boardId, expect.objectContaining({ skipRetry: true }))
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="card-type-permission-checking"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('offers an explicit permission refresh instead of a silently disabled type selector', async () => {
+    mockStore.currentBoard = { id: card.boardId, isArchived: false }
+    vi.mocked(boardsApi.getBoard).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.get('[data-testid="card-type-permission-unknown"]').exists()).toBe(true)
+
+    vi.mocked(boardsApi.getBoard).mockResolvedValueOnce({ id: card.boardId, canWrite: true, isArchived: false } as any)
+    await wrapper.get('[data-testid="card-type-permission-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(boardsApi.getBoard).toHaveBeenCalledTimes(2)
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(false)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps the type selector read-only on an archived card without asking for permission', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: false }
+    card.isArchived = true
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the type selector read-only on an archived board', async () => {
+    mockStore.currentBoard = { id: card.boardId, canWrite: true, isArchived: true }
+    const wrapper = mount(CardModal, { props: { card, isOpen: true, labels } })
+    await flushPromises()
+
+    expect((wrapper.get('#card-work-item-type').element as HTMLSelectElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="card-type-permission-unknown"]').exists()).toBe(false)
+    expect(boardsApi.getBoard).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
