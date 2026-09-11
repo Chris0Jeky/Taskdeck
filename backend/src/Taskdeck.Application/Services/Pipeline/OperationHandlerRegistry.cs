@@ -19,19 +19,22 @@ public class OperationHandlerRegistry
     private readonly BoardService _boardService;
     private readonly ColumnService _columnService;
     private readonly CardAssignmentService? _assignments;
+    private readonly DeferredBoardRealtimeNotifier? _deferredNotifications;
 
     public OperationHandlerRegistry(
         IUnitOfWork unitOfWork,
         CardService cardService,
         BoardService boardService,
         ColumnService columnService,
-        CardAssignmentService? assignments = null)
+        CardAssignmentService? assignments = null,
+        DeferredBoardRealtimeNotifier? deferredNotifications = null)
     {
         _unitOfWork = unitOfWork;
         _cardService = cardService;
         _boardService = boardService;
         _columnService = columnService;
         _assignments = assignments;
+        _deferredNotifications = deferredNotifications;
     }
 
     public async Task<Result> ExecuteOperationAsync(ProposalOperationDto operation, CancellationToken cancellationToken, Guid? actorUserId = null)
@@ -150,9 +153,13 @@ public class OperationHandlerRegistry
         if (card is null) return Result.Failure(ErrorCodes.NotFound, "Card not found");
         // The Archived/Unarchived receipt for this operation is written by ExecutionAuditRecorder
         // (which alone knows the proposal), so the service must not stage a second one.
+        // The lifecycle realtime event goes to the executor's deferred buffer (#2934) instead of
+        // straight out: this write is still inside the outer transaction, which a later operation
+        // can still roll back.
         var result = await _cardService.SetArchivedAsync(card.BoardId, cardId, archive,
             new CardLifecycleDto(expected, OperationParameterParser.GetOptionalString(parameters, "expectedChildrenFingerprint")),
-            recordLifecycleAudit: false, cancellationToken: cancellationToken);
+            recordLifecycleAudit: false, notificationSink: _deferredNotifications,
+            cancellationToken: cancellationToken);
         return result.IsSuccess ? Result.Success() : Result.Failure(result.ErrorCode, result.ErrorMessage);
     }
 

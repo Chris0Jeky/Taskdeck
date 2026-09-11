@@ -20,6 +20,13 @@ public class AutomationExecutorService : IAutomationExecutorService
     private readonly ExecutionAuditRecorder _auditRecorder;
     private readonly ILogger<AutomationExecutorService>? _logger;
 
+    /// <summary>
+    /// Board realtime events staged by operations inside the outer transaction (#2934). Flushed
+    /// once the transaction commits and dropped on every path that does not reach the commit,
+    /// so subscribers never see a lifecycle change that was rolled back.
+    /// </summary>
+    private readonly DeferredBoardRealtimeNotifier _deferredNotifications;
+
     public AutomationExecutorService(
         IUnitOfWork unitOfWork,
         IAutomationProposalService proposalService,
@@ -39,12 +46,15 @@ public class AutomationExecutorService : IAutomationExecutorService
         BoardService boardService,
         ColumnService columnService,
         ILogger<AutomationExecutorService>? logger,
-        CardAssignmentService? assignments = null)
+        CardAssignmentService? assignments = null,
+        IBoardRealtimeNotifier? realtimeNotifier = null)
     {
         _unitOfWork = unitOfWork;
         _proposalService = proposalService;
         _policyEngine = policyEngine;
-        _handlerRegistry = new OperationHandlerRegistry(unitOfWork, cardService, boardService, columnService, assignments);
+        _deferredNotifications = new DeferredBoardRealtimeNotifier(realtimeNotifier);
+        _handlerRegistry = new OperationHandlerRegistry(
+            unitOfWork, cardService, boardService, columnService, assignments, _deferredNotifications);
         _auditRecorder = new ExecutionAuditRecorder(unitOfWork);
         _logger = logger;
     }
@@ -389,6 +399,9 @@ public class AutomationExecutorService : IAutomationExecutorService
 
             await _unitOfWork.CommitTransactionAsync(cancellationToken);
             await _handlerRegistry.NotifyAssignmentsCommittedAsync(orderedOperations, cancellationToken);
+            // Only now is the lifecycle change real for subscribers. Every path that did not
+            // reach this line drops the staged events in the finally below.
+            await FlushDeferredNotificationsAsync(cancellationToken);
 
             var captureSyncResult = await SyncLinkedCaptureConversionAsync(
                 effectiveProposal with
@@ -454,6 +467,31 @@ public class AutomationExecutorService : IAutomationExecutorService
             return Result.Failure<ProposalExecutionReceipt>(
                 ErrorCodes.UnexpectedError,
                 GenericUnexpectedErrorMessage);
+        }
+        finally
+        {
+            // Single drain point for every non-commit exit: the rollback returns, the guard
+            // refusals, the unexpected-error catch, and cancellation. A successful flush already
+            // emptied the buffer, so this is a no-op there.
+            _deferredNotifications.Discard();
+        }
+    }
+
+    /// <summary>
+    /// Publishes the board realtime events staged inside the committed transaction. Delivery is
+    /// best-effort: the board write is already durable, so a failing notification channel must not
+    /// turn an applied proposal into a reported failure.
+    /// </summary>
+    private async Task FlushDeferredNotificationsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _deferredNotifications.FlushAsync(cancellationToken);
+        }
+        catch (Exception)
+        {
+            _logger?.LogError(
+                "Automation proposal execution committed but could not publish its deferred board notifications");
         }
     }
 
