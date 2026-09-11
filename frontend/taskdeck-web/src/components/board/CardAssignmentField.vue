@@ -40,6 +40,9 @@ const saveFailure = ref<'permission' | 'conflict' | 'ineligible' | 'unknown' | n
 let generation = 0
 const permissionLost = computed(() => saveFailure.value === 'permission')
 const error = computed(() => {
+  // The sticky permission message must not swallow a read that failed AFTER it,
+  // nor keep promising readable assignees once the refresh stopped confirming them.
+  if (permissionLost.value && loadFailed.value) return 'Your edit permission was revoked, so this assignment save was refused, and the latest refresh also failed — the assignees shown may be out of date. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft is kept; refresh again to confirm the current assignees.'
   if (permissionLost.value) return 'Your edit permission was revoked, so this assignment save was refused. The participant selector and Save assignments stay locked until this board reports write permission again or you reopen the card. Your draft and the current assignees stay readable, and Clear and Cancel still work.'
   if (loadFailed.value) return 'Could not load current participants. Your draft is kept.'
   if (saveFailure.value === 'conflict') return 'The card changed. Refresh current assignments, review your kept draft, then save again.'
@@ -59,6 +62,16 @@ const dirty = computed(() => [...selected.value].sort().join() !== [...baseline.
  */
 const busy = computed(() => props.readOnly || archived.value || props.disabled || loading.value || saving.value || needsRefresh.value)
 const locked = computed(() => busy.value || permissionLost.value)
+/*
+ * Discarding a draft is a local action, never a write, so a revoked permission
+ * must not strand one. The board refetch that confirms the downgrade turns
+ * `readOnly` true, which would otherwise take Clear and Cancel away through
+ * `busy` — the same permanently-dirty host the permission lock was fixed to
+ * avoid, reached by the other route. So while `permissionLost` holds, `readOnly`
+ * alone stops blocking the draft-side controls; every other reason still does,
+ * and Save stays gone because the board says this field is read-only.
+ */
+const draftLocked = computed(() => archived.value || props.disabled || loading.value || saving.value || needsRefresh.value || (props.readOnly && !permissionLost.value))
 watch(dirty, value => emit('dirty-change', value))
 /*
  * A submitted PUT cannot be recalled. The host editor needs the in-flight state
@@ -187,10 +200,10 @@ onBeforeUnmount(() => { generation++ })
     <!-- Outside the selector fieldset on purpose: Clear and Cancel only edit the local
          draft, so they follow `busy` and survive a revoked permission. Save is the write
          and names `locked` itself rather than relying on ancestor propagation. -->
-    <div v-if="!readOnly" class="flex gap-3">
-      <button type="button" :disabled="busy || !selected.length" @click="selected = []">Clear</button>
-      <button type="button" :disabled="busy || !dirty" @click="cancel">Cancel assignment changes</button>
-      <button type="button" :disabled="locked || !dirty || unavailable.length > 0" @click="save">{{ saving ? 'Saving…' : 'Save assignments' }}</button>
+    <div v-if="!readOnly || permissionLost" class="flex gap-3">
+      <button type="button" :disabled="draftLocked || !selected.length" @click="selected = []">Clear</button>
+      <button type="button" :disabled="draftLocked || !dirty" @click="cancel">Cancel assignment changes</button>
+      <button v-if="!readOnly" type="button" :disabled="locked || !dirty || unavailable.length > 0" @click="save">{{ saving ? 'Saving…' : 'Save assignments' }}</button>
     </div>
   </section>
 </template>

@@ -183,6 +183,30 @@ describe('CardAssignmentField', () => {
       expect(button(wrapper, 'Save assignments').attributes('disabled')).toBeDefined()
     })
 
+    it('keeps the draft dismissible once the board refresh confirms the downgrade', async () => {
+      const wrapper = await downgradedDuringSave()
+      // The board refetch catches up and reports canWrite:false.
+      await wrapper.setProps({ readOnly: true }); await flushPromises()
+      expect(button(wrapper, 'Save assignments')).toBeUndefined()
+      const cancel = button(wrapper, 'Cancel assignment changes')
+      expect(cancel.attributes('disabled')).toBeUndefined()
+      expect(cancel.element.closest('fieldset[disabled]')).toBeNull()
+      await cancel.trigger('click'); await flushPromises()
+      expect(wrapper.emitted('dirty-change')?.at(-1)).toEqual([false])
+      expect(cardsApi.replaceAssignments).toHaveBeenCalledTimes(1)
+    })
+
+    it('surfaces a refresh that fails after the refusal instead of swallowing it', async () => {
+      const wrapper = await downgradedDuringSave()
+      vi.mocked(cardsApi.getCard).mockRejectedValue({ response: { status: 500 } })
+      await button(wrapper, 'Refresh current assignments').trigger('click'); await flushPromises()
+      expect(wrapper.text()).toContain('refresh also failed')
+      expect(wrapper.text()).toContain('may be out of date')
+      // The stale promise that the shown assignees are current must be gone.
+      expect(wrapper.text()).not.toContain('the current assignees stay readable')
+      expect(wrapper.find('fieldset').attributes('disabled')).toBeDefined()
+    })
+
     it('unlocks only when the parent reports write permission again', async () => {
       const wrapper = await downgradedDuringSave()
       await wrapper.setProps({ readOnly: true }); await flushPromises()
