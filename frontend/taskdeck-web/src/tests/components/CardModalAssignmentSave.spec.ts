@@ -306,6 +306,13 @@ describe('CardModal assignment save in flight (#2981)', () => {
     await flushPromises()
     expect(wrapper.emitted('close')).toBeUndefined()
 
+    // The refused refresh was dropped with the close it asked for, so the next,
+    // unrelated close is an ordinary close and not a stale board refetch.
+    await wrapper.get('[aria-label="Close card editor"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+
     wrapper.unmount()
   })
 

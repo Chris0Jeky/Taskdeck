@@ -55,17 +55,27 @@ const boardStore = useBoardStore()
  * the editor actually closes.
  */
 const pendingArchiveRefresh = ref(false)
-// The completed archive/restore state, recorded when a request settles over a
-// kept draft. Both hosts hold the open card in a snapshot ref (`ColumnLane`,
-// `PaperBoardView`), so `props.card` does not learn that the card is now
-// archived while this editor stays open; the affordances this editor still owns
-// have to speak from the state the server actually holds.
+/*
+ * The completed archive/restore state, recorded when a request settles over a
+ * kept draft. Both hosts hold the open card in a snapshot ref (`ColumnLane`,
+ * `PaperBoardView`), so `props.card` never learns that the card is now archived
+ * while this editor stays open — its `isArchived` stays permanently false.
+ * `cardIsArchived` is therefore the only truthful archive state this editor
+ * has, and EVERY control that turns on it reads this, not the prop: the form
+ * fieldset, the parent field, the assignment field, the type selector, the save
+ * gate, the notice, and the archive control’s own label and operation. A
+ * half-migrated gate is worse than none — it leaves a writable control whose
+ * request the server can only reject with a confusing explanation.
+ */
 const archiveStateAfterChange = ref<boolean | null>(null)
 const archiveCompletedWithDraft = ref(false)
 const cardIsArchived = computed(() => archiveStateAfterChange.value ?? props.card.isArchived === true)
+// What is actually possible from this state: the card is archived, so nothing
+// can be saved on it; the archive control cannot restore it either, because
+// restoring is a lifecycle change and this editor still holds unsaved work.
 const archiveDraftNotice = computed(() => cardIsArchived.value
-  ? 'This card was archived. Your unsaved changes are still here, so the editor stayed open. An archived card cannot be saved — restore it to save them, or close the editor to discard them.'
-  : 'This card was restored. Your unsaved changes are still here, so the editor stayed open. Save them or close the editor to discard them.')
+  ? 'Your unsaved changes are still here. This card is now archived, so they cannot be saved; close the editor to discard them, or restore the card from the board and reopen it.'
+  : 'Your unsaved changes are still here. This card was restored, so the editor stayed open — save them, or close the editor to discard them.')
 
 function forgetArchiveCompletion() {
   archiveCompletedWithDraft.value = false
@@ -125,6 +135,10 @@ const showSavePendingNotice = ref(false)
 const hasUnsavedChanges = computed(() => hasCardUnsavedChanges.value || assignmentDirty.value)
 function refuseWhileAssignmentSaving() {
   showDiscardConfirm.value = false
+  // A refused close is not a deferred one: the board refetch "Refresh card
+  // state" armed is dropped with it, so it cannot fire behind an unrelated
+  // close later on.
+  pendingArchiveRefresh.value = false
   showSavePendingNotice.value = true
 }
 function dismissSavePendingNotice() {
@@ -443,12 +457,12 @@ useEscapeToClose(
       @click.stop
     >
         <CardModalHeader @close="handleClose" />
-        <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || !!card.isArchived" />
+        <CardParentField v-model="parentCardId" :card="card" :disabled="isSaving || cardIsArchived" />
         <CardAssignmentField v-if="isOpen" :card="card" :disabled="isSaving"
-          :read-only="boardStore.currentBoard?.id !== card.boardId || boardStore.currentBoard?.canWrite !== true || !!boardStore.currentBoard?.isArchived || !!card.isArchived"
+          :read-only="boardStore.currentBoard?.id !== card.boardId || boardStore.currentBoard?.canWrite !== true || !!boardStore.currentBoard?.isArchived || cardIsArchived"
           @dirty-change="assignmentDirty = $event" @saving-change="assignmentSaving = $event"
           @saved="acceptAssignments" />
-        <CardArchiveAction :key="card.updatedAt" :card="card" :disabled="hasUnsavedChanges"
+        <CardArchiveAction :key="card.updatedAt" :card="card" :archived="cardIsArchived" :disabled="hasUnsavedChanges"
           @changed="handleArchiveChanged" @refresh="refreshArchiveState" />
         <p v-if="archiveCompletedWithDraft" role="status" data-testid="card-archive-kept-draft" class="my-3 text-sm text-on-surface-variant">
           {{ archiveDraftNotice }}
@@ -456,12 +470,12 @@ useEscapeToClose(
         <button type="button" class="mb-4 rounded-md border border-outline-variant/40 px-3 py-2 text-sm text-on-surface hover:bg-surface-container-high" @click="openThinkingDeck">Open thinking deck <span aria-hidden="true">↗</span></button>
 
         <p v-if="saveError" role="alert" class="my-3 text-sm text-error">{{ saveError }}</p>
-        <fieldset :disabled="card.isArchived || isSaving" class="space-y-4">
+        <fieldset :disabled="cardIsArchived || isSaving" class="space-y-4">
           <CardModalForm
             :card="card"
             v-model:title="title"
             v-model:work-item-type="workItemType"
-            :can-edit-type="boardStore.currentBoard?.id === card.boardId && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived && !card.isArchived"
+            :can-edit-type="boardStore.currentBoard?.id === card.boardId && boardStore.currentBoard.canWrite === true && !boardStore.currentBoard.isArchived && !cardIsArchived"
             v-model:description="description"
             v-model:due-date="dueDate"
             v-model:is-blocked="isBlocked"

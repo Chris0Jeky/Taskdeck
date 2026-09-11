@@ -1231,12 +1231,27 @@ describe('CardModal', () => {
       // must not emit it either.
       expect(wrapper.emitted('updated')).toBeUndefined()
       expect(titleValue(wrapper)).toBe(DRAFT)
-      expect(wrapper.get('[data-testid="card-archive-kept-draft"]').text())
-        .toContain('This card was archived')
       expect(mockStore.fetchBoard).toHaveBeenCalledWith('board-1')
-      // The card the server now holds is archived, so the editor stops offering
-      // a save that could only fail.
+
+      // The notice describes what is actually possible from here: no save, and
+      // no restore from this editor while it still holds unsaved work.
+      const notice = wrapper.get('[data-testid="card-archive-kept-draft"]').text()
+      expect(notice).toContain('Your unsaved changes are still here')
+      expect(notice).toContain('This card is now archived, so they cannot be saved')
+      expect(notice).toContain('restore the card from the board and reopen it')
+
+      // Every gate reads the settled state, not the host's stale snapshot: the
+      // whole editor is read-only over an archived card while the draft stays
+      // visible, and no control offers a request the server would reject.
       expect((editorButton(wrapper, 'Save Changes')!.element as HTMLButtonElement).disabled).toBe(true)
+      expect((wrapper.get('#card-title').element.closest('fieldset') as HTMLFieldSetElement).disabled).toBe(true)
+      const assignments = wrapper.get('[aria-label="Card assignments"]')
+      expect(assignments.text()).toContain('Assignments are read-only.')
+      expect(assignments.findAll('button').some(button => button.text() === 'Save assignments')).toBe(false)
+      expect(editorButton(wrapper, 'Archive card')).toBeUndefined()
+      expect(editorButton(wrapper, 'Restore card')).toBeDefined()
+      // Restoring is still an explicit lifecycle change, refused while dirty.
+      expect((editorButton(wrapper, 'Restore card')!.element as HTMLButtonElement).disabled).toBe(true)
 
       // Closing from here is still an explicit discard.
       await editorButton(wrapper, 'Cancel')!.trigger('click')
@@ -1292,6 +1307,35 @@ describe('CardModal', () => {
 
       expect(wrapper.emitted('close')).toHaveLength(1)
       expect(wrapper.emitted('updated')).toBeUndefined()
+      wrapper.unmount()
+    })
+
+    it('leaves archive recovery to the host that owns the discard prompt', async () => {
+      vi.mocked(cardsApi.previewDetach).mockRejectedValueOnce(new Error('preview unavailable'))
+      const wrapper = mount(CardModal, {
+        props: { card, isOpen: true, labels, presentation: 'inspector', suppressDiscardPrompt: true },
+        attachTo: document.body,
+      })
+      await flushPromises()
+      await editorButton(wrapper, 'Archive card')!.trigger('click')
+      await flushPromises()
+
+      await editorButton(wrapper, 'Refresh card state')!.trigger('click')
+      await flushPromises()
+
+      // The Paper board suppresses this editor's prompts while its own dialog is
+      // open, and `handleClose` is inert then. The refresh is a deliberate
+      // no-op there rather than a close that walks out from under that dialog —
+      // and nothing is armed, so a later close cannot fire a stale refetch.
+      expect(wrapper.emitted('close')).toBeUndefined()
+      expect(mockStore.fetchBoard).not.toHaveBeenCalled()
+      expect(document.body.querySelector('[data-testid="card-discard-confirm"]')).toBeNull()
+
+      await wrapper.setProps({ suppressDiscardPrompt: false })
+      await editorButton(wrapper, 'Cancel')!.trigger('click')
+      await flushPromises()
+      expect(wrapper.emitted('close')).toHaveLength(1)
+      expect(mockStore.fetchBoard).not.toHaveBeenCalled()
       wrapper.unmount()
     })
 
